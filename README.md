@@ -19,11 +19,19 @@ These instructions will get you a copy of the project up and running on your loc
 
 ### Prerequisites
 
-What things you need to install the software and how to install them
+1. [rustup](https://rustup.rs/)
 
-``` powershell
-Give examples
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+2. Protobuf compiler
+
+```bash
+sudo apt-get install -y protobuf-compiler libprotobuf-dev
+```
+
+3. rust-analyzer VS Code extension (recommended)
 
 ### Installing
 
