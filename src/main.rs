@@ -1,15 +1,12 @@
-use std::net::SocketAddr;
-
 use clap::{Parser, Subcommand};
-use tonic::transport::Server;
-use trident::{config::ConfigFile, GreeterImpl, GreeterServer};
+use trident::config::ConfigFile;
 
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
-    #[clap(short, long)]
+    #[clap(global = true, short, long)]
     config: Option<String>,
-    #[clap(short, long)]
+    #[clap(global = true, short, long)]
     verbose: bool,
     #[clap(subcommand)]
     subcmd: SubCommand,
@@ -31,18 +28,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
     let config: ConfigFile = toml::from_str(&config).expect("Failed to parse config file");
 
+    if let Some(phonehome) = config.phonehome {
+        reqwest::Client::new()
+            .post(&phonehome)
+            .body("hello-from-trident")
+            .send()
+            .await?;
+    }
+
     match args.subcmd {
         SubCommand::Validate => {}
         SubCommand::Run => {
             println!("Running");
 
-            Server::builder()
-                .add_service(GreeterServer::new(GreeterImpl::default()))
-                .serve(SocketAddr::new(
-                    "::1".parse().unwrap(),
-                    config.listen_port.unwrap_or(50051),
-                ))
-                .await?;
+            trident::serve(
+                "0.0.0.0".parse().unwrap(),
+                config.listen_port.unwrap_or(50051),
+            )
+            .await?;
         }
     }
 

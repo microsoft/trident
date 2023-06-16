@@ -1,14 +1,25 @@
 syntax = "proto3";
 package trident;
 
-service Greeter {
-    rpc SayHello (HelloRequest) returns (HelloReply);
+service Imaging {
+    rpc WriteImage (ImageRequest) returns (EmptyReply);
+    rpc ChrootExec (ChrootExecRequest) returns (EmptyReply);
+    rpc Kexec (KexecRequest) returns (EmptyReply);
 }
 
-message HelloRequest {
-   string name = 1;
+message ImageRequest {
+    string disk = 2;
+    string url = 1;
 }
 
-message HelloReply {
-    string message = 1;
+message ChrootExecRequest {
+    string rootPartition = 1;
+    string script = 2;
 }
+
+message KexecRequest {
+    string rootPartition = 1;
+    string cmdline = 2;
+}
+
+message EmptyReply {}

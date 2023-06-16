@@ -23,8 +23,8 @@ steps:
     echo "##vso[task.setvariable variable=PATH;]$PATH:$HOME/.cargo/bin"
   displayName: Install Rust toolchain
 
-- script: sudo tdnf install -y protobuf protobuf-c
-  displayName: Install protobuf compiler
+- script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel
+  displayName: Install native dependencies
 
 - script: cargo fmt -- --check 2>&1
   displayName: Check formatting
