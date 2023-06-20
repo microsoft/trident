@@ -1,0 +1,24 @@
+core:
+  phonehome: http://<SOME_IP>:<SOME_PORT>
+
+network-provision:
+  # This is just netplan
+  ethernets:
+    vmeths:
+      match:
+        name: enp*
+      dhcp4: false
+      addresses: [192.168.242.50/24]
+      routes:
+        - to: 0.0.0.0/0
+          via: 192.168.242.1
+      nameservers:
+        addresses: [192.168.242.1]
+
+network:
+  # This is just netplan
+  ethernets:
+    vmeths:
+      match:
+        name: enp*
+      dhcp4: true

@@ -26,9 +26,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .config
         .map(|filename| std::fs::read_to_string(filename).expect("Failed to read config file"))
         .unwrap_or_default();
-    let config: ConfigFile = toml::from_str(&config).expect("Failed to parse config file");
+    let config: ConfigFile = serde_yaml::from_str(&config).expect("Failed to parse config file");
 
-    if let Some(phonehome) = config.phonehome {
+    println!("Starting network!");
+    trident::start_provisioning_network(config.network, config.network_provision);
+
+    if let Some(phonehome) = config.core.phonehome {
         reqwest::Client::new()
             .post(&phonehome)
             .body("hello-from-trident")
@@ -40,10 +43,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         SubCommand::Validate => {}
         SubCommand::Run => {
             println!("Running");
-
             trident::serve(
                 "0.0.0.0".parse().unwrap(),
-                config.listen_port.unwrap_or(50051),
+                config.core.listen_port.unwrap_or(50051),
             )
             .await?;
         }
