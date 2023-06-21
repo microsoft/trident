@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
 /// Definition of Trident's full configuration.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct ConfigFile {
     /// This field contains configuration for trident itself
     pub core: CoreConfig,
@@ -15,7 +15,7 @@ pub struct ConfigFile {
     pub network_provision: Option<Value>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CoreConfig {
     /// Port for the gRPC server.
     /// Default is 50051.

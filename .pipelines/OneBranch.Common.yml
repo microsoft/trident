@@ -20,16 +20,15 @@ steps:
 #     toolchainFeed: https://mscodehub.pkgs.visualstudio.com/Rust/_packaging/RustSample/nuget/v3/index.json
 - script: |
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    echo "##vso[task.setvariable variable=PATH;]$PATH:$HOME/.cargo/bin"
   displayName: Install Rust toolchain
 
-- script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel
+- script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust systemd-units
   displayName: Install native dependencies
 
 - script: cargo fmt -- --check 2>&1
   displayName: Check formatting
 
-- script: cargo clippy --locked -- -D warnings 2>&1
+- script: $HOME/.cargo/bin/cargo clippy --locked -- -D warnings 2>&1
   displayName: Clippy (Linting)
 
 - script: cargo build --locked 2>&1
@@ -47,3 +46,12 @@ steps:
     targetFolder: '$(ob_outputDirectory)'
     contents: '*'
   displayName: Copy files to output
+
+- script: rpmbuild -bb --build-in-place trident.spec
+  displayName: Build RPM
+
+- task: CopyFiles@2
+  inputs:
+    sourceFolder: '/usr/src/mariner/RPMS/x86_64'
+    targetFolder: '$(ob_outputDirectory)'
+  displayName: Copy RPM file to output

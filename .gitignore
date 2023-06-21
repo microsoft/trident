@@ -338,3 +338,6 @@ reports/
 
 # Added by cargo
 /target
+
+# RPM output
+/trident-*.rpm

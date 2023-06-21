@@ -1,0 +1,12 @@
+[Unit]
+Description=Trident Agent
+Before=network.target
+
+[Service]
+Environment=RUST_LOG=info
+ExecStart=/usr/bin/trident run
+Restart=always
+RestartSec=0
+
+[Install]
+WantedBy=network.target
