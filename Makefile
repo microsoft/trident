@@ -22,4 +22,4 @@ rpm:
 	id=$$(docker create trident/trident:latest) && \
 	docker cp $$id:/work/trident.tar.gz bin/ && \
 	docker rm -v $$id && \
-	tar xf trident.tar.gz -C bin/
+	tar xf bin/trident.tar.gz -C bin/
