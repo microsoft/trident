@@ -5,7 +5,7 @@ RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel
 WORKDIR /work
 
 COPY trident.spec .
-COPY trident.service .
+COPY systemd ./systemd
 COPY Cargo.toml .
 COPY proto ./proto
 COPY build.rs .
@@ -14,4 +14,5 @@ COPY src ./src
 RUN \
     --mount=type=cache,target=/work/target \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    rpmbuild -bb --build-in-place trident.spec
+    rpmbuild -bb --build-in-place trident.spec && \
+    tar -czvf trident.tar.gz -C /usr/src/mariner ./RPMS
