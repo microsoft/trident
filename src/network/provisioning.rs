@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use log::warn;
+
 use super::netplan;
 
 pub fn start(network: Option<serde_yaml::Value>, network_provision: Option<serde_yaml::Value>) {
@@ -14,16 +16,16 @@ pub fn start(network: Option<serde_yaml::Value>, network_provision: Option<serde
             // TODO: implement
             // Today mariner ships with a decent default to do DHCP on all
             // interfaces, and that seems ok for now.
-            println!("NETWORK CONFIG NOT PROVIDED!");
+            warn!("NETWORK CONFIG NOT PROVIDED!");
         }
-    };
+    }
 }
 
 fn render_yaml(value: serde_yaml::Value) -> Option<String> {
     let final_map = HashMap::from([("network", value)]);
 
     serde_yaml::to_string(&final_map)
-        .map_err(|e| println!("WARN: failed to serialize YAML: {}", e))
+        .map_err(|e| warn!("failed to serialize YAML: {}", e))
         .ok()
 }
 

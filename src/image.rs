@@ -5,13 +5,14 @@ use std::{
     os::{fd::IntoRawFd, unix},
 };
 
+use log::info;
 use nix::NixPath;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
 pub async fn write_image(disk: String, url: String) -> Result<(), Box<dyn std::error::Error>> {
     // Download and decompress the image.
     let body = reqwest::get(&url).await?.bytes().await?;
-    println!("Downloaded {} bytes", body.len());
+    info!("Downloaded {} bytes", body.len());
 
     // Stream the image to the target disk.
     let mut device_file = fs::File::options().write(true).open(&disk)?;
@@ -26,7 +27,7 @@ pub async fn write_image(disk: String, url: String) -> Result<(), Box<dyn std::e
 
 pub fn mount_partition(partition: &str) -> Result<UnmountDrop<Mount>, Box<dyn std::error::Error>> {
     fs::create_dir_all("/partitionMount")?;
-    println!("Mounting disk");
+    info!("Mounting disk");
     Ok(Mount::builder()
         .fstype("ext4")
         .mount(partition, "/partitionMount")?
@@ -40,11 +41,11 @@ pub async fn chroot_exec(
     let _mount = mount_partition(&partition)?;
 
     // Write cexec script.
-    println!("Writing cexecScript");
+    info!("Writing cexecScript");
     fs::write("/partitionMount/cexecScript", script.as_bytes())?;
 
     // Mount special dirs.
-    println!("Mounting special directories");
+    info!("Mounting special directories");
     let _mount = Mount::builder()
         .fstype("devtmpfs")
         .flags(MountFlags::RDONLY)
@@ -61,22 +62,22 @@ pub async fn chroot_exec(
         .into_unmount_drop(UnmountFlags::empty());
 
     // Enter the chroot.
-    println!("Entering chroot");
+    info!("Entering chroot");
     let rootfd = fs::File::open("/")?.into_raw_fd();
     unix::fs::chroot("/partitionMount")?;
     std::env::set_current_dir("/")?;
 
     // Run script.
-    println!("Running cexecScript");
+    info!("Running cexecScript");
     let status = std::process::Command::new("/bin/bash")
         .arg("/cexecScript")
         .status()?;
-    println!("Script exited with status: {}", status);
+    info!("Script exited with status: {}", status);
 
     // Exit the chroot.
     nix::unistd::fchdir(rootfd)?;
     unix::fs::chroot(".")?;
-    println!("Exited chroot");
+    info!("Exited chroot");
 
     Ok(())
 }
@@ -84,7 +85,7 @@ pub async fn chroot_exec(
 pub async fn kexec(partition: String, args: String) -> Result<(), Box<dyn std::error::Error>> {
     let _mount = mount_partition(&partition)?;
 
-    println!("Searching for kernel and initrd");
+    info!("Searching for kernel and initrd");
     let kernel_path = glob::glob("/partitionMount/boot/vmlinuz-*")?
         .next()
         .ok_or(std::io::Error::new(
@@ -98,13 +99,13 @@ pub async fn kexec(partition: String, args: String) -> Result<(), Box<dyn std::e
             "No initrd found",
         ))??;
 
-    println!("Opening kernel and initrd");
+    info!("Opening kernel and initrd");
     let kernel = fs::File::open(kernel_path)?.into_raw_fd();
     let initrd = fs::File::open(initrd_path)?.into_raw_fd();
     let args = CString::new(args)?;
 
     // Run kexec file load.
-    println!("Loading kernel");
+    info!("Loading kernel");
     let r = unsafe {
         libc::syscall(
             libc::SYS_kexec_file_load,
@@ -120,7 +121,7 @@ pub async fn kexec(partition: String, args: String) -> Result<(), Box<dyn std::e
     }
 
     // Kexec into image.
-    println!("Rebooting system");
+    info!("Rebooting system");
     let r = unsafe { libc::reboot(libc::LINUX_REBOOT_CMD_KEXEC) };
     if r < 0 {
         return Err(std::io::Error::last_os_error().into());
