@@ -4,8 +4,15 @@ use log::warn;
 
 use super::netplan;
 
-pub fn start(network: Option<serde_yaml::Value>, network_provision: Option<serde_yaml::Value>) {
-    let custom_config = network_provision.or(network).and_then(render_yaml);
+pub fn start(
+    override_network: Option<serde_yaml::Value>,
+    network_provision: Option<serde_yaml::Value>,
+    network: Option<serde_yaml::Value>,
+) {
+    let custom_config = override_network
+        .or(network_provision)
+        .or(network)
+        .and_then(render_yaml);
 
     match custom_config {
         Some(config) => {

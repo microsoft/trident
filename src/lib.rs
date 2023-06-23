@@ -7,12 +7,7 @@ pub mod config;
 mod image;
 mod network;
 
-pub fn start_provisioning_network(
-    network: Option<serde_yaml::Value>,
-    network_provision: Option<serde_yaml::Value>,
-) {
-    network::provisioning::start(network, network_provision);
-}
+pub use network::provisioning::start as start_provisioning_network;
 
 mod protobufs {
     tonic::include_proto!("trident");
