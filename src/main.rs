@@ -58,19 +58,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(phonehome) = config.phonehome {
         info!("Phonehome to {}", phonehome);
-        reqwest::Client::new()
+        let _ = reqwest::Client::new()
             .post(&phonehome)
             .body("hello-from-trident")
             .send()
-            .await?;
+            .await
+            .map_err(|e| error!("Failed to phonehome: {}", e));
     }
 
     match args.subcmd {
         SubCommand::Run => match config.mode {
             trident::config::Mode::AutoProvision => match host_config {
-                Some(_) => {
+                Some(config) => {
                     info!("Auto provisioning");
-                    // TODO
+                    trident::auto_provision(&config).await.unwrap();
                 }
                 None => {
                     error!("No host config available, cannot auto provision");

@@ -3,19 +3,45 @@ use std::{
     fs,
     io::Write,
     os::{fd::IntoRawFd, unix},
+    path::Path,
 };
 
-use log::info;
+use log::{error, info};
 use nix::NixPath;
+use sha2::Digest;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
-pub async fn write_image(disk: String, url: String) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn write_image(
+    disk: &Path,
+    url: &str,
+    sha256: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Download and decompress the image.
-    let body = reqwest::get(&url).await?.bytes().await?;
+    let body = reqwest::get(url).await?.bytes().await?;
     info!("Downloaded {} bytes", body.len());
 
+    // Verify the image.
+    let computed_sha256 = {
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&body);
+        format!("{:x}", hasher.finalize())
+    };
+    if computed_sha256 != sha256 {
+        error!(
+            "SHA256 mismatch for disk image: expected {}, got {}",
+            sha256, computed_sha256
+        );
+        return Err(format!(
+            "SHA256 mismatch: expected {}, got {}",
+            sha256, computed_sha256
+        )
+        .into());
+    } else {
+        info!("Validated image hash");
+    }
+
     // Stream the image to the target disk.
-    let mut device_file = fs::File::options().write(true).open(&disk)?;
+    let mut device_file = fs::File::options().write(true).open(disk)?;
     {
         let mut writer = std::io::BufWriter::with_capacity(4 << 20, &mut device_file);
         zstd::stream::copy_decode(&mut &*body, &mut writer)?;
@@ -25,7 +51,7 @@ pub async fn write_image(disk: String, url: String) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
-pub fn mount_partition(partition: &str) -> Result<UnmountDrop<Mount>, Box<dyn std::error::Error>> {
+pub fn mount_partition(partition: &Path) -> Result<UnmountDrop<Mount>, Box<dyn std::error::Error>> {
     fs::create_dir_all("/partitionMount")?;
     info!("Mounting disk");
     Ok(Mount::builder()
@@ -34,11 +60,8 @@ pub fn mount_partition(partition: &str) -> Result<UnmountDrop<Mount>, Box<dyn st
         .into_unmount_drop(UnmountFlags::DETACH))
 }
 
-pub async fn chroot_exec(
-    partition: String,
-    script: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let _mount = mount_partition(&partition)?;
+pub async fn chroot_exec(partition: &Path, script: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let _mount = mount_partition(partition)?;
 
     // Write cexec script.
     info!("Writing cexecScript");
@@ -82,8 +105,8 @@ pub async fn chroot_exec(
     Ok(())
 }
 
-pub async fn kexec(partition: String, args: String) -> Result<(), Box<dyn std::error::Error>> {
-    let _mount = mount_partition(&partition)?;
+pub async fn kexec(partition: &Path, args: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let _mount = mount_partition(partition)?;
 
     info!("Searching for kernel and initrd");
     let kernel_path = glob::glob("/partitionMount/boot/vmlinuz-*")?

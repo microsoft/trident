@@ -8,8 +8,9 @@ service Imaging {
 }
 
 message ImageRequest {
-    string disk = 2;
-    string url = 1;
+    string disk = 1;
+    string url = 2;
+    string sha256 = 3;
 }
 
 message ChrootExecRequest {

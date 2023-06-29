@@ -47,9 +47,35 @@ pub enum HostConfigSource {
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct HostConfig {
+    pub disk: Disk,
+
     /// Netplan configuration for the provisioning OS _ONLY_.
     pub network_provision: Option<Value>,
 
     /// Netplan configuration for the runtime OS.
     pub network: Option<Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(rename_all = "kebab-case")]
+pub struct Disk {
+    /// The path to the disk. For instance, "/dev/sda" or
+    /// "/dev/disk/by-path/pci-0000:00:1f.2-ata-1".
+    pub device: PathBuf,
+
+    /// The partition to use as the root partition. For instance, "/dev/sda1" or
+    /// "/dev/disk/by-path/pci-0000:00:1f.2-ata-1-part1". Trident itself doesn't create this
+    /// partition, it is expected to already exist within the disk image.
+    ///
+    /// Specifically, trident copies the full raw image onto the disk without trying to parse or
+    /// understand it. That means that the partition field here is really metadata about the disk
+    /// image, rather than a directive to trident on how to partition the disk.
+    pub partition: PathBuf,
+
+    /// The URL to download the disk image from. Currently must be a ZStandard compressed raw disk
+    /// image.
+    pub image_url: String,
+
+    /// The SHA256 of the disk image.
+    pub image_sha256: String,
 }

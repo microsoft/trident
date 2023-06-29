@@ -1,5 +1,7 @@
+use config::HostConfig;
 use protobufs::*;
 use std::net::{IpAddr, SocketAddr};
+use std::path::Path;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
@@ -30,7 +32,7 @@ impl imaging_server::Imaging for ImagingImpl {
         request: Request<ImageRequest>,
     ) -> Result<Response<EmptyReply>, Status> {
         let request = request.into_inner();
-        image::write_image(request.disk, request.url)
+        image::write_image(Path::new(&request.disk), &request.url, &request.sha256)
             .await
             .map_err(|e| Status::unknown(e.to_string()))?;
 
@@ -42,7 +44,7 @@ impl imaging_server::Imaging for ImagingImpl {
         request: Request<ChrootExecRequest>,
     ) -> Result<Response<EmptyReply>, Status> {
         let request = request.into_inner();
-        image::chroot_exec(request.root_partition, request.script)
+        image::chroot_exec(Path::new(&request.root_partition), &request.script)
             .await
             .map_err(|e| Status::unknown(e.to_string()))?;
 
@@ -51,11 +53,30 @@ impl imaging_server::Imaging for ImagingImpl {
 
     async fn kexec(&self, request: Request<KexecRequest>) -> Result<Response<EmptyReply>, Status> {
         let request = request.into_inner();
-        image::kexec(request.root_partition, request.cmdline)
+        image::kexec(Path::new(&request.root_partition), &request.cmdline)
             .await
             .map_err(|e| Status::unknown(e.to_string()))?;
         unreachable!()
     }
+}
+
+pub async fn auto_provision(host_config: &HostConfig) -> Result<(), Box<dyn std::error::Error>> {
+    image::write_image(
+        &host_config.disk.device,
+        &host_config.disk.image_url,
+        &host_config.disk.image_sha256,
+    )
+    .await?;
+
+    image::chroot_exec(
+        &host_config.disk.partition,
+        "useradd -p $(openssl passwd -1 tink) -s /bin/bash -d /home/tink/ -m -G sudo tink",
+    )
+    .await?;
+
+    image::kexec(&host_config.disk.partition, "console=tty1 console=ttyS0").await?;
+
+    unreachable!()
 }
 
 #[cfg(test)]
