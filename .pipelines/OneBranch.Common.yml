@@ -18,17 +18,13 @@ steps:
 #     # When setting up the upstream NuGet feed, use following Azure Artifacts feed locator:
 #     #   azure-feed://mscodehub/Rust/Rust@Release
 #     toolchainFeed: https://mscodehub.pkgs.visualstudio.com/Rust/_packaging/RustSample/nuget/v3/index.json
-- script: |
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  displayName: Install Rust toolchain
-
 - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust systemd-units
   displayName: Install native dependencies
 
 - script: cargo fmt -- --check 2>&1
   displayName: Check formatting
 
-- script: $HOME/.cargo/bin/cargo clippy --locked -- -D warnings 2>&1
+- script: cargo clippy --locked -- -D warnings 2>&1
   displayName: Clippy (Linting)
 
 - script: cargo build --locked 2>&1
