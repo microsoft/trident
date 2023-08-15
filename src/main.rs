@@ -1,5 +1,6 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Duration};
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 use trident::config::{ConfigFile, HostConfigSource};
@@ -33,18 +34,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
     debug!("Config: {:#?}", config);
 
-    let host_config = config.host_config.and_then(|source| match source {
+    let host_config = match config.host_config {
         HostConfigSource::File(path) => {
             info!("Loading host config from '{}'", path.display());
-            let contents = fs::read_to_string(path)
+            fs::read_to_string(path)
                 .map_err(|e| warn!("Failed to read host config file: {e}"))
-                .ok()?;
-            serde_yaml::from_str(&contents)
-                .map_err(|e| warn!("Failed to parse host config file: {e}"))
                 .ok()
+                .and_then(|contents| {
+                    serde_yaml::from_str(&contents)
+                        .map_err(|e| warn!("Failed to parse host config file: {e}"))
+                        .ok()
+                })
         }
         HostConfigSource::Embedded(contents) => Some(contents),
-    });
+        HostConfigSource::NoHostConfig => None,
+    };
+    // let host_config = Some(&config.host_config);
     debug!("Host config: {:#?}", host_config);
 
     info!("Starting network");
@@ -58,12 +63,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(phonehome) = config.phonehome {
         info!("Phonehome to {}", phonehome);
-        let _ = reqwest::Client::new()
-            .post(&phonehome)
-            .body("hello-from-trident")
-            .send()
-            .await
-            .map_err(|e| error!("Failed to phonehome: {}", e));
+        for _ in 0..5 {
+            if reqwest::Client::new()
+                .post(&phonehome)
+                .body("hello-from-trident")
+                .send()
+                .await
+                .map_err(|e| error!("Failed to phonehome: {}", e))
+                .is_ok()
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
     }
 
     match args.subcmd {
@@ -71,7 +83,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             trident::config::Mode::AutoProvision => match host_config {
                 Some(config) => {
                     info!("Auto provisioning");
-                    trident::auto_provision(&config).await.unwrap();
+                    if let Err(e) =
+                        trident::auto_provision(&config).context("Failed to autoprovision")
+                    {
+                        error!("{e:?}");
+                    }
                 }
                 None => {
                     error!("No host config available, cannot auto provision");
