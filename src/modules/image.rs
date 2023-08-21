@@ -3,19 +3,19 @@ use std::{
     fs,
     io::{self, BufWriter, Cursor, Read},
     os::{fd::IntoRawFd, unix},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use anyhow::{bail, Context, Error};
-use log::{error, info, warn};
+use log::info;
 use nix::NixPath;
 use sha2::Digest;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
 use crate::{
-    config::{HostConfig, Image, PartImageType, PartitionType},
+    config::{HostConfig, Image, ImageFormat},
     modules::Module,
-    status::{self, HostStatus, PartitionContents, UpdateKind},
+    status::{HostStatus, PartitionContents, UpdateKind},
 };
 
 pub fn download_image(image: &Image) -> Result<Vec<u8>, Error> {
@@ -44,116 +44,58 @@ pub fn download_image(image: &Image) -> Result<Vec<u8>, Error> {
     Ok(body.into())
 }
 
-pub fn write_image(
+pub(crate) fn stream_images(
     host_status: &mut HostStatus,
-    image: &Image,
-    contents: &[u8],
+    host_config: &HostConfig,
 ) -> Result<(), Error> {
-    // Decompress the first 4MB of the image to get the GPT header.
-    let mut image_prefix = Vec::new();
-    zstd::stream::read::Decoder::new(contents)
-        .context("Failed to start decompression")?
-        .take(4 << 20)
-        .read_to_end(&mut image_prefix)
-        .context("Failed to decompress image")?;
+    for (image_type, image) in &host_config.imaging.images {
+        let partition_type = image_type.to_part_type(true); // TODO: Properly pick A/B partition
 
-    // TODO: Use a better way to determine the block size.
-    let block_size = gpt::disk::DEFAULT_SECTOR_SIZE;
+        // Iterate over all partitions on all disks to find the first one with a matching type.
+        let partition = host_status
+            .storage
+            .disks
+            .values_mut()
+            .flat_map(|d| &mut d.partitions)
+            .find(|p| p.ty == partition_type)
+            .ok_or_else(|| anyhow::anyhow!("No partition of type {:?} found", partition_type))?;
 
-    // Read the GPT header and partitions.
-    let header =
-        gpt::header::read_header_from_arbitrary_device(&mut Cursor::new(&image_prefix), block_size)
-            .context("Failed to read image header")?;
-    let partitions =
-        gpt::partition::file_read_partitions(&mut Cursor::new(&image_prefix), &header, block_size)
-            .context("Failed to read image partitions")?;
-    let mut partitions: Vec<_> = partitions.into_values().collect();
-    partitions.sort_by_key(|p| p.first_lba);
+        // TODO: Add more options for download sources
+        let contents = download_image(image).context("failed to download disk image from")?;
 
-    // Write each partition image to disk.
-    let mut position = 0;
-    let mut decoder = zstd::stream::read::Decoder::new(contents)?;
-    for (index, partition) in partitions.iter().enumerate() {
-        info!(
-            "Writing partition {} (size = {}MiB)",
-            partition.name,
-            partition.bytes_len(block_size)? >> 20
-        );
-        info!("partition UUID = {:?}", partition.part_type_guid);
-
-        let start = partition.bytes_start(block_size)?;
-        if position > start {
-            error!("Image file contains overlapping partitions");
-            continue;
-        }
-
-        io::copy(&mut (&mut decoder).take(start - position), &mut io::sink())?;
-        position = start;
-
-        let ty = match &partition.part_type_guid {
-            &gpt::partition_types::EFI => PartImageType::Esp,
-            &gpt::partition_types::LINUX_FS | &gpt::partition_types::LINUX_ROOT_X64 => {
-                PartImageType::Root
-            }
-            t => {
-                info!("Ignoring partition within image with unknown type: {t:?}");
-                continue;
-            }
-        };
-        let ty = ty.to_part_type(true);
-
-        let Ok((disk_path, part_index, part_path)) = find_partition(&host_status.storage, ty) else {
-            warn!("Skipping write of partition with type {:?}", ty);
-            continue;
+        let mut decoder = match image.format {
+            ImageFormat::RawZstd => zstd::stream::read::Decoder::new(Cursor::new(contents))?,
         };
 
-        let partition_len = partition
-            .bytes_len(block_size)
-            .context("Disk image is invalid")?;
-        position += partition_len;
+        // Open the partition for writing.
+        let file = fs::File::options()
+            .write(true)
+            .open(&partition.path)
+            .context(format!("Failed to open '{}'", partition.path.display()))?;
 
-        let mut file = BufWriter::with_capacity(
-            4 << 20,
-            fs::File::options()
-                .write(true)
-                .open(&part_path)
-                .context(format!("Failed to open '{}'", part_path.display()))?,
-        );
-        io::copy(&mut (&mut decoder).take(partition_len), &mut file)
-            .context("Failed to copy image")?;
+        // Buffer small writes to the disk, ensuring we write blocks of at least 4MB.
+        let mut file = BufWriter::with_capacity(4 << 20, file);
+
+        // Mark the partition as having unknown contents in case the write operation is interrupted.
+        partition.contents = PartitionContents::Unknown;
+
+        // Decompress the image and write it to the partition, making sure not to write past the end.
+        io::copy(
+            &mut (&mut decoder).take(partition.end - partition.start),
+            &mut file,
+        )
+        .context("Failed to copy image")?;
         file.into_inner()
             .context("Failed to flush")?
             .sync_all()
             .context("Failed to sync")?;
 
-        host_status
-            .storage
-            .disks
-            .get_mut(&disk_path)
-            .unwrap()
-            .partitions[part_index]
-            .contents = PartitionContents::SubImage {
-            image_sha256: image.sha256.clone(),
-            subimage_index: index,
-        }
+        partition.contents = PartitionContents::Image {
+            sha256: image.sha256.clone(),
+        };
     }
 
     Ok(())
-}
-
-/// Returns the disk path, partition index, and path of the partition with the given type.
-fn find_partition(
-    storage: &status::Storage,
-    ty: PartitionType,
-) -> Result<(PathBuf, usize, PathBuf), Error> {
-    for (disk_path, disk) in &storage.disks {
-        for (part_index, part) in disk.partitions.iter().enumerate() {
-            if part.ty == ty {
-                return Ok((disk_path.clone(), part_index, part.path.clone()));
-            }
-        }
-    }
-    bail!("No partition of type {:?} found on disks", ty);
 }
 
 pub fn mount_partition(partition: &Path) -> Result<UnmountDrop<Mount>, Error> {
@@ -166,37 +108,47 @@ pub fn mount_partition(partition: &Path) -> Result<UnmountDrop<Mount>, Error> {
 }
 
 pub fn chroot_run<T, F: FnOnce() -> Result<T, Error>>(partition: &Path, f: F) -> Result<T, Error> {
-    let _mount = mount_partition(partition)?;
+    let _mount = mount_partition(partition).context(format!(
+        "Failed to mount partition '{}'",
+        partition.display()
+    ))?;
 
     // Mount special dirs.
     info!("Mounting special directories");
     let _mount = Mount::builder()
         .fstype("devtmpfs")
         .flags(MountFlags::RDONLY)
-        .mount("devtmpfs", "/partitionMount/dev")?
+        .mount("devtmpfs", "/partitionMount/dev")
+        .context("Failed to mount '/dev' for chroot")?
         .into_unmount_drop(UnmountFlags::empty());
     let _mount = Mount::builder()
         .fstype("proc")
         .flags(MountFlags::RDONLY)
-        .mount("proc", "/partitionMount/proc")?;
+        .mount("proc", "/partitionMount/proc")
+        .context("Failed to mount '/proc' for chroot")?
+        .into_unmount_drop(UnmountFlags::empty());
     let _mount = Mount::builder()
         .fstype("sysfs")
         .flags(MountFlags::RDONLY)
-        .mount("sysfs", "/partitionMount/sys")?
+        .mount("sysfs", "/partitionMount/sys")
+        .context("Failed to mount '/sys' for chroot")?
         .into_unmount_drop(UnmountFlags::empty());
 
     // Enter the chroot.
     info!("Entering chroot");
-    let rootfd = fs::File::open("/")?.into_raw_fd();
-    unix::fs::chroot("/partitionMount")?;
-    std::env::set_current_dir("/")?;
+    let rootfd = fs::File::open("/")
+        .context("Failed to open '/'")?
+        .into_raw_fd();
+    unix::fs::chroot("/partitionMount").context("Failed to enter chroot")?;
+    std::env::set_current_dir("/")
+        .context("Failed to set current directory to be inside chroot")?;
 
     // Run the closure.
     let t = f()?;
 
     // Exit the chroot.
-    nix::unistd::fchdir(rootfd)?;
-    unix::fs::chroot(".")?;
+    nix::unistd::fchdir(rootfd).context("Failed to exit chroot")?;
+    unix::fs::chroot(".").context("Failed to set current directory out of chroot")?;
     info!("Exited chroot");
 
     Ok(t)

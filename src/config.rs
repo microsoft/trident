@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 /// Definition of Trident's full configuration.
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -122,7 +122,7 @@ impl PartitionType {
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct Imaging {
-    pub images: Vec<Image>,
+    pub images: HashMap<PartImageType, Image>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -130,13 +130,12 @@ pub struct Imaging {
 pub struct Image {
     pub url: String,
     pub sha256: String,
-    pub kind: ImageKind,
-    pub parts: BTreeMap<PartImageType, String>,
+    pub format: ImageFormat,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
-pub enum ImageKind {
+pub enum ImageFormat {
     RawZstd,
 }
 

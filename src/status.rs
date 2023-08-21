@@ -67,10 +67,6 @@ pub enum PartitionContents {
     Image {
         sha256: String,
     },
-    SubImage {
-        image_sha256: String,
-        subimage_index: usize,
-    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]

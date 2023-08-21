@@ -102,23 +102,16 @@ pub fn apply_host_config(host_config: &HostConfig, clean_install: bool) -> Resul
         PartitionModule::create_partitions(&mut host_status, host_config)
             .context("Failed to create disk partitions")?;
 
-        for img in &host_config.imaging.images {
-            let contents = image::download_image(img).context("failed to download disk image")?;
-            image::write_image(&mut host_status, img, &contents)
-                .context("Failed to write disk image")?;
-        }
+        image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
 
         // TODO: fstab updates and user creation should happen in modules (and not be hardcoded).
         image::chroot_exec(
             Path::new("/dev/disk/by-partlabel/mariner-root-a"),
             r#"sudo sh -c 'echo root:password | chpasswd'
             useradd -p $(openssl passwd -1 tink) -s /bin/bash -d /home/tink/ -m -G sudo tink
-            sed -i 's+PARTUUID=[^\s]* / +PARTLABEL=mariner-root-a / +g' /etc/fstab
-            sed -i 's+PARTUUID=[^\s]* /boot/efi +PARTLABEL=mariner-esp /boot/efi +g' /etc/fstab
             "#,
         )
-        .context("Failed ")?;
-
+        .context("Failed to apply system config")?;
         host_status.reconcile_state = ReconcileState::CleanInstall;
     } else {
         let update_kind = modules

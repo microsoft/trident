@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -53,6 +54,43 @@ impl Module for PartitionModule {
         _host_status: &mut HostStatus,
         _host_config: &HostConfig,
     ) -> Result<(), Error> {
+        let fstab = fs::read_to_string("/etc/fstab").context("Failed to read /etc/fstab")?;
+
+        let mut edited_fstab = Vec::new();
+        for line in fstab.lines() {
+            let tokens = line.split_whitespace().collect::<Vec<_>>();
+            if tokens.is_empty() || tokens[0].starts_with('#') {
+                writeln!(&mut edited_fstab, "{}", line).unwrap();
+                continue;
+            }
+
+            // The first column of /etc/fstab is the device identifier and the second column is the
+            // mount point. Thus we match against the second token (index 1 given 0-based indexing)
+            // and overwrite the first column with the partition label.
+            match tokens.get(1) {
+                Some(&"/") => {
+                    writeln!(
+                        &mut edited_fstab,
+                        "PARTLABEL=mariner-root-a {}",
+                        &tokens[1..].join(" ")
+                    )
+                    .unwrap();
+                }
+                Some(&"/boot/efi") => {
+                    writeln!(
+                        &mut edited_fstab,
+                        "PARTLABEL=mariner-esp {}",
+                        &tokens[1..].join(" ")
+                    )
+                    .unwrap();
+                }
+                _ => {
+                    writeln!(&mut edited_fstab, "{}", line)?;
+                }
+            }
+        }
+        fs::write("/etc/fstab", edited_fstab).context("Failed to write new /etc/fstab")?;
+
         Ok(())
     }
 }
@@ -138,6 +176,8 @@ impl PartitionModule {
                 // Round up to a multiple of 4K
                 let size = (size.saturating_sub(1) / 4096 + 1) * 4096;
 
+                // TODO: find a more robust way to determine the physical block size rather than
+                // hardcoding 512 bytes.
                 run(Command::new("flock")
                     .arg("--timeout")
                     .arg("5")
@@ -148,7 +188,7 @@ impl PartitionModule {
                     .arg("mkpart")
                     .arg(&name)
                     .arg(format!("{start}B"))
-                    .arg(format!("{}B", start + size - 4096)))?;
+                    .arg(format!("{}B", start + size - 512)))?;
 
                 partprobe(&disk_path)?;
 
