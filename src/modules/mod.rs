@@ -108,7 +108,7 @@ pub fn apply_host_config(host_config: &HostConfig, clean_install: bool) -> Resul
         image::chroot_exec(
             Path::new("/dev/disk/by-partlabel/mariner-root-a"),
             r#"sudo sh -c 'echo root:password | chpasswd'
-            useradd -p $(openssl passwd -1 tink) -s /bin/bash -d /home/tink/ -m -G sudo tink
+            useradd -p $(openssl passwd -1 password) -s /bin/bash -d /home/mariner_user/ -m -G sudo mariner_user
             "#,
         )
         .context("Failed to apply system config")?;
@@ -188,7 +188,7 @@ pub fn apply_host_config(host_config: &HostConfig, clean_install: bool) -> Resul
             info!("Rebooting");
             image::kexec(
                 Path::new("/dev/disk/by-partlabel/mariner-root-a"),
-                "console=tty1 console=ttyS0",
+                "console=tty1 console=ttyS0 root=PARTLABEL=mariner-root-a",
             )
             .context("Failed to perform kexec")?;
             unreachable!("kexec should never return");
