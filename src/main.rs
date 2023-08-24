@@ -59,7 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .as_ref()
             .and_then(|c| c.network_provision.clone()),
         host_config.as_ref().and_then(|c| c.network.clone()),
-    );
+    )
+    .context("Failed to start provisioning network")?;
 
     if let Some(phonehome) = config.phonehome {
         info!("Phonehome to {}", phonehome);

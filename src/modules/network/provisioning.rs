@@ -1,66 +1,30 @@
-use std::collections::HashMap;
-
-use log::warn;
+use anyhow::Context;
+use log::info;
 
 use super::netplan;
+
+use anyhow::Error;
 
 pub fn start(
     override_network: Option<serde_yaml::Value>,
     network_provision: Option<serde_yaml::Value>,
     network: Option<serde_yaml::Value>,
-) {
-    let custom_config = override_network
-        .or(network_provision)
-        .or(network)
-        .and_then(render_yaml);
+) -> Result<(), Error> {
+    let custom_config = override_network.or(network_provision).or(network);
 
     match custom_config {
         Some(config) => {
-            netplan::write(&config).expect("failed to write netplan config");
-            netplan::apply().expect("failed to apply netplan config");
+            let config = netplan::render_netplan_yaml(&config)
+                .context("failed to render provisioning network netplan yaml")?;
+            netplan::write(&config).context("failed to write provisioning netplan config")?;
+            netplan::apply().context("failed to apply provisioning netplan config")?;
         }
         None => {
             // TODO: implement
             // Today mariner ships with a decent default to do DHCP on all
             // interfaces, and that seems ok for now.
-            warn!("NETWORK CONFIG NOT PROVIDED!");
+            info!("Network config not provided");
         }
-    }
-}
-
-fn render_yaml(value: serde_yaml::Value) -> Option<String> {
-    let final_map = HashMap::from([("network", value)]);
-
-    serde_yaml::to_string(&final_map)
-        .map_err(|e| warn!("failed to serialize YAML: {}", e))
-        .ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::render_yaml;
-    use indoc::indoc;
-
-    #[test]
-    fn test_render_yaml() {
-        let sample = indoc! {"
-        ethernets:
-          test:
-            match:
-              name: e*
-        "};
-
-        let expected = indoc! {"
-        network:
-          ethernets:
-            test:
-              match:
-                name: e*
-        "};
-
-        let parsed = serde_yaml::from_str(sample).expect("Test yaml should be valid!");
-        let out = render_yaml(parsed).expect("failed to render test yaml");
-
-        assert_eq!(out, expected);
-    }
+    };
+    Ok(())
 }

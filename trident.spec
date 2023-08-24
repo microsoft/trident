@@ -8,6 +8,8 @@ BuildRequires:  openssl-devel
 BuildRequires:  rust
 BuildRequires:  systemd-units
 
+Requires:       netplan
+
 %description
 Agent for bare metal platform
 

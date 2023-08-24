@@ -3,7 +3,9 @@ use crate::{
     modules::Module,
     status::{HostStatus, UpdateKind},
 };
-use anyhow::Error;
+
+use anyhow::{Context, Error};
+use log::info;
 
 mod netplan;
 pub mod provisioning;
@@ -38,8 +40,19 @@ impl Module for NetworkModule {
     fn reconcile(
         &mut self,
         _host_status: &mut HostStatus,
-        _host_config: &HostConfig,
+        host_config: &HostConfig,
     ) -> Result<(), Error> {
+        match host_config.network.as_ref() {
+            Some(config) => {
+                let config = netplan::render_netplan_yaml(config)
+                    .context("failed to render runtime network netplan yaml")?;
+                netplan::write(&config).context("failed to write netplan config")?;
+                netplan::apply().context("failed to apply netplan config")?;
+            }
+            None => {
+                info!("Network config not provided");
+            }
+        }
         Ok(())
     }
 }
