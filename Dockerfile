@@ -7,6 +7,7 @@ WORKDIR /work
 COPY trident.spec .
 COPY systemd ./systemd
 COPY Cargo.toml .
+COPY Cargo.lock .
 COPY proto ./proto
 COPY build.rs .
 COPY src ./src
