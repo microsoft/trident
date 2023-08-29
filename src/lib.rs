@@ -17,7 +17,7 @@ mod protobufs {
 
 pub async fn serve(addr: IpAddr, port: u16) -> Result<(), tonic::transport::Error> {
     Server::builder()
-        .add_service(imaging_server::ImagingServer::new(ImagingImpl::default()))
+        .add_service(imaging_server::ImagingServer::new(ImagingImpl))
         .serve(SocketAddr::new(addr, port))
         .await
 }
