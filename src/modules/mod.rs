@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use crate::{
-    config::HostConfig,
+    config::HostConfiguration,
     modules::{image::ImageModule, network::NetworkModule, partition::PartitionModule},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
@@ -26,7 +26,7 @@ pub trait Module: Send {
     fn validate_host_config(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -35,7 +35,7 @@ pub trait Module: Send {
     fn select_update_kind(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
         Some(UpdateKind::HotPatch)
     }
@@ -44,7 +44,7 @@ pub trait Module: Send {
     fn migrate(
         &mut self,
         _host_status: &mut HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -54,7 +54,7 @@ pub trait Module: Send {
     fn reconcile(
         &mut self,
         host_status: &mut HostStatus,
-        host_config: &HostConfig,
+        host_config: &HostConfiguration,
     ) -> Result<(), Error>;
 }
 
@@ -66,7 +66,10 @@ lazy_static::lazy_static! {
     ]);
 }
 
-pub fn apply_host_config(host_config: &HostConfig, clean_install: bool) -> Result<(), Error> {
+pub fn apply_host_config(
+    host_config: &HostConfiguration,
+    clean_install: bool,
+) -> Result<(), Error> {
     // This is a safety check so that nobody accidentally formats their dev machine.
     if clean_install
         && !fs::read_to_string("/proc/cmdline")

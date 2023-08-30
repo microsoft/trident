@@ -13,7 +13,7 @@ use sha2::Digest;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
 use crate::{
-    config::{HostConfig, Image, ImageFormat},
+    config::{HostConfiguration, Image, ImageFormat},
     modules::Module,
     status::{HostStatus, PartitionContents, UpdateKind},
 };
@@ -46,7 +46,7 @@ pub fn download_image(image: &Image) -> Result<Vec<u8>, Error> {
 
 pub(crate) fn stream_images(
     host_status: &mut HostStatus,
-    host_config: &HostConfig,
+    host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     for (image_type, image) in &host_config.imaging.images {
         let partition_type = image_type.to_part_type(true); // TODO: Properly pick A/B partition
@@ -232,7 +232,7 @@ impl Module for ImageModule {
     fn validate_host_config(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -240,7 +240,7 @@ impl Module for ImageModule {
     fn select_update_kind(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
         Some(UpdateKind::HotPatch)
     }
@@ -248,7 +248,7 @@ impl Module for ImageModule {
     fn reconcile(
         &mut self,
         _host_status: &mut HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         Ok(())
     }

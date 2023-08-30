@@ -11,7 +11,7 @@ use std::{
 use uuid::Uuid;
 
 use crate::{
-    config::HostConfig,
+    config::HostConfiguration,
     modules::Module,
     status::{self, HostStatus, UpdateKind},
 };
@@ -36,7 +36,7 @@ impl Module for PartitionModule {
     fn validate_host_config(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -44,7 +44,7 @@ impl Module for PartitionModule {
     fn select_update_kind(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
         Some(UpdateKind::HotPatch)
     }
@@ -52,7 +52,7 @@ impl Module for PartitionModule {
     fn reconcile(
         &mut self,
         _host_status: &mut HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         let fstab = fs::read_to_string("/etc/fstab").context("Failed to read /etc/fstab")?;
 
@@ -98,7 +98,7 @@ impl Module for PartitionModule {
 impl PartitionModule {
     pub fn create_partitions(
         host_status: &mut HostStatus,
-        host_config: &HostConfig,
+        host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         // The commands in this function are run using flock because of past issues with the
         // Mariner toolkit. The commands sometimes would not block when later commands were

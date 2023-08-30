@@ -1,5 +1,5 @@
 use crate::{
-    config::HostConfig,
+    config::HostConfiguration,
     modules::Module,
     status::{HostStatus, UpdateKind},
 };
@@ -24,7 +24,7 @@ impl Module for NetworkModule {
     fn validate_host_config(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -32,7 +32,7 @@ impl Module for NetworkModule {
     fn select_update_kind(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfig,
+        _host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
         Some(UpdateKind::HotPatch)
     }
@@ -40,7 +40,7 @@ impl Module for NetworkModule {
     fn reconcile(
         &mut self,
         _host_status: &mut HostStatus,
-        host_config: &HostConfig,
+        host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         match host_config.network.as_ref() {
             Some(config) => {

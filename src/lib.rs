@@ -1,5 +1,5 @@
 use anyhow::{Context, Error};
-use config::HostConfig;
+use config::HostConfiguration;
 use protobufs::*;
 use std::net::{IpAddr, SocketAddr};
 use tonic::transport::Server;
@@ -60,6 +60,6 @@ impl imaging_server::Imaging for ImagingImpl {
     }
 }
 
-pub fn auto_provision(host_config: &HostConfig) -> Result<(), Error> {
+pub fn auto_provision(host_config: &HostConfiguration) -> Result<(), Error> {
     modules::apply_host_config(host_config, true).context("Failed to apply host config")
 }

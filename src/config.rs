@@ -46,7 +46,7 @@ pub enum HostConfigSource {
 
     /// Use the host config embedded in the config file.
     #[serde(rename = "host-config")]
-    Embedded(HostConfig),
+    Embedded(HostConfiguration),
 
     #[default]
     NoHostConfig,
@@ -54,7 +54,7 @@ pub enum HostConfigSource {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
-pub struct HostConfig {
+pub struct HostConfiguration {
     pub storage: Storage,
 
     pub imaging: Imaging,
