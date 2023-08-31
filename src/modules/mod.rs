@@ -5,13 +5,13 @@ use log::info;
 
 use crate::{
     config::HostConfiguration,
-    modules::{image::ImageModule, network::NetworkModule, partition::PartitionModule},
+    modules::{image::ImageModule, network::NetworkModule, storage::StorageModule},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
 pub mod image;
 pub mod network;
-pub mod partition;
+pub mod storage;
 
 pub trait Module: Send {
     fn name(&self) -> &'static str;
@@ -60,7 +60,7 @@ pub trait Module: Send {
 
 lazy_static::lazy_static! {
     pub static ref MODULES: Mutex<Vec<Box<dyn Module>>> = Mutex::new(vec![
-        Box::<PartitionModule>::default(),
+        Box::<StorageModule>::default(),
         Box::<ImageModule>::default(),
         Box::<NetworkModule>::default(),
     ]);
@@ -102,7 +102,7 @@ pub fn apply_host_config(
     info!("Host config validated");
 
     if clean_install {
-        PartitionModule::create_partitions(&mut host_status, host_config)
+        StorageModule::create_partitions(&mut host_status, host_config)
             .context("Failed to create disk partitions")?;
 
         image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;

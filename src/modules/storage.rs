@@ -17,10 +17,10 @@ use crate::{
 };
 
 #[derive(Default, Debug)]
-pub struct PartitionModule;
-impl Module for PartitionModule {
+pub struct StorageModule;
+impl Module for StorageModule {
     fn name(&self) -> &'static str {
-        "image"
+        "storage"
     }
 
     fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
@@ -95,7 +95,7 @@ impl Module for PartitionModule {
     }
 }
 
-impl PartitionModule {
+impl StorageModule {
     pub fn create_partitions(
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
