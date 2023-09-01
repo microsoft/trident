@@ -1,14 +1,13 @@
-use anyhow::Context;
+use anyhow::{Context, Error};
 use log::info;
+use netplan_types::NetworkConfig;
 
 use super::netplan;
 
-use anyhow::Error;
-
 pub fn start(
-    override_network: Option<serde_yaml::Value>,
-    network_provision: Option<serde_yaml::Value>,
-    network: Option<serde_yaml::Value>,
+    override_network: Option<NetworkConfig>,
+    network_provision: Option<NetworkConfig>,
+    network: Option<NetworkConfig>,
 ) -> Result<(), Error> {
     let custom_config = override_network.or(network_provision).or(network);
 

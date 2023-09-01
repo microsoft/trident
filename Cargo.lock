@@ -874,6 +874,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "netplan-types"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f57b917b818542c45f063875bda9613d96280582cf064850335a0c9ba7a2a538"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "nix"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1700,6 +1709,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "log",
+ "netplan-types",
  "nix",
  "prost",
  "reqwest",

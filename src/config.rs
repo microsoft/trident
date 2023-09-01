@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
-use serde_yaml::Value;
 use std::{collections::HashMap, path::PathBuf};
+
+use netplan_types::NetworkConfig;
 
 /// Definition of Trident's full configuration.
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -17,7 +18,7 @@ pub struct ConfigFile {
     pub mode: Mode,
 
     /// Netplan configuration to use instead of what is specified in the host config.
-    pub network_override: Option<Value>,
+    pub network_override: Option<NetworkConfig>,
 
     /// The host config to use.
     #[serde(flatten)]
@@ -46,7 +47,7 @@ pub enum HostConfigSource {
 
     /// Use the host config embedded in the config file.
     #[serde(rename = "host-config")]
-    Embedded(HostConfiguration),
+    Embedded(Box<HostConfiguration>),
 
     #[default]
     NoHostConfig,
@@ -60,10 +61,10 @@ pub struct HostConfiguration {
     pub imaging: Imaging,
 
     /// Netplan configuration for the provisioning OS _ONLY_.
-    pub network_provision: Option<Value>,
+    pub network_provision: Option<NetworkConfig>,
 
     /// Netplan configuration for the runtime OS.
-    pub network: Option<Value>,
+    pub network: Option<NetworkConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
