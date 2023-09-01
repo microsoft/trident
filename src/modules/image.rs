@@ -1,7 +1,7 @@
 use std::{
     ffi::CString,
-    fs,
-    io::{self, BufWriter, Cursor, Read},
+    fs::{self, File},
+    io::{self, BufWriter, Read},
     os::{fd::IntoRawFd, unix},
     path::Path,
 };
@@ -13,35 +13,31 @@ use sha2::Digest;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
 use crate::{
-    config::{HostConfiguration, Image, ImageFormat},
+    config::{HostConfiguration, ImageFormat},
     modules::Module,
     status::{HostStatus, PartitionContents, UpdateKind},
 };
 
-pub fn download_image(image: &Image) -> Result<Vec<u8>, Error> {
-    // Download and decompress the image.
-    let body = reqwest::blocking::get(&image.url)
-        .and_then(|g| g.bytes())
-        .context(format!("Failed to download {}", image.url))?;
-    info!("Downloaded {} bytes", body.len());
-
-    // Verify the image.
-    let computed_sha256 = {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(&body);
-        format!("{:x}", hasher.finalize())
-    };
-    if computed_sha256 != image.sha256 {
-        bail!(
-            "SHA256 mismatch for disk image: expected {}, got {}",
-            image.sha256,
-            computed_sha256
-        );
-    } else {
-        info!("Validated image hash");
+/// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
+struct HashingReader<R: Read>(R, sha2::Sha256);
+impl<R: Read> HashingReader<R> {
+    fn new(reader: R) -> Self {
+        Self(reader, sha2::Sha256::new())
     }
 
-    Ok(body.into())
+    fn hash(&self) -> String {
+        format!("{:x}", self.1.clone().finalize())
+    }
+}
+impl<R: Read> Read for HashingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // Read the requested amount of data from the inner reader
+        let n = self.0.read(buf)?;
+        // Update the hash with the data we read
+        self.1.update(&buf[..n]);
+        // Return the number of bytes read
+        Ok(n)
+    }
 }
 
 pub(crate) fn stream_images(
@@ -61,10 +57,22 @@ pub(crate) fn stream_images(
             .ok_or_else(|| anyhow::anyhow!("No partition of type {:?} found", partition_type))?;
 
         // TODO: Add more options for download sources
-        let contents = download_image(image).context("failed to download disk image from")?;
+        let stream: Box<dyn Read> = if image.url.starts_with("file://") {
+            Box::new(File::open(&image.url[7..]).context(format!("Failed to open {}", image.url))?)
+        } else if image.url.starts_with("http://") || image.url.starts_with("https://") {
+            Box::new(
+                reqwest::blocking::get(&image.url)
+                    .context(format!("Failed to download {}", image.url))?,
+            )
+        } else if image.url.starts_with("oci://") {
+            todo!("OCI image support")
+        } else {
+            bail!("Unsupported URL scheme")
+        };
+        let mut stream = HashingReader::new(stream);
 
         let mut decoder = match image.format {
-            ImageFormat::RawZstd => zstd::stream::read::Decoder::new(Cursor::new(contents))?,
+            ImageFormat::RawZstd => zstd::stream::read::Decoder::new(&mut stream)?,
         };
 
         // Open the partition for writing.
@@ -80,19 +88,43 @@ pub(crate) fn stream_images(
         partition.contents = PartitionContents::Unknown;
 
         // Decompress the image and write it to the partition, making sure not to write past the end.
-        io::copy(
+        let bytes_copied = io::copy(
             &mut (&mut decoder).take(partition.end - partition.start),
             &mut file,
         )
         .context("Failed to copy image")?;
+
+        info!(
+            "Copied {} bytes to {}",
+            bytes_copied,
+            partition.path.display()
+        );
+
         file.into_inner()
             .context("Failed to flush")?
             .sync_all()
             .context("Failed to sync")?;
 
+        // Attempt to read an additional byte from the stream to see whether the whole image was
+        // consumed.
+        if decoder.read(&mut [0])? != 0 {
+            bail!("Image is larger than destination");
+        }
+
+        let computed_sha256 = stream.hash();
         partition.contents = PartitionContents::Image {
-            sha256: image.sha256.clone(),
+            sha256: computed_sha256.clone(),
+            length: bytes_copied,
         };
+
+        // Confirm that the hash matches what we expected.
+        if computed_sha256 != image.sha256 {
+            bail!(
+                "SHA256 mismatch for disk image: expected {}, got {}",
+                image.sha256,
+                computed_sha256
+            );
+        }
     }
 
     Ok(())
@@ -251,5 +283,25 @@ impl Module for ImageModule {
         _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn hashing_reader() {
+        let input = b"Hello, world!";
+        let mut hasher = HashingReader::new(Cursor::new(&input));
+
+        let mut output = Vec::new();
+        hasher.read_to_end(&mut output).unwrap();
+        assert_eq!(input, &*output);
+        assert_eq!(
+            hasher.hash(),
+            "315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3"
+        );
     }
 }

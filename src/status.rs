@@ -66,6 +66,7 @@ pub enum PartitionContents {
     Zeroed,
     Image {
         sha256: String,
+        length: u64,
     },
 }
 
