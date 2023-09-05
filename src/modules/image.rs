@@ -9,6 +9,7 @@ use std::{
 use anyhow::{bail, Context, Error};
 use log::info;
 use nix::NixPath;
+use reqwest::Url;
 use sha2::Digest;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
@@ -58,14 +59,16 @@ pub(crate) fn stream_images(
             .ok_or_else(|| anyhow::anyhow!("No partition of type {:?} found", partition_type))?;
 
         // TODO: Add more options for download sources
-        let stream: Box<dyn Read> = if image.url.starts_with("file://") {
-            Box::new(File::open(&image.url[7..]).context(format!("Failed to open {}", image.url))?)
-        } else if image.url.starts_with("http://") || image.url.starts_with("https://") {
+        let image_url = Url::parse(image.url.as_str())
+            .context(format!("Failed to parse image URL '{}'", image.url))?;
+        let stream: Box<dyn Read> = if image_url.scheme() == "file" {
+            Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?)
+        } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
             Box::new(
-                reqwest::blocking::get(&image.url)
+                reqwest::blocking::get(image_url)
                     .context(format!("Failed to download {}", image.url))?,
             )
-        } else if image.url.starts_with("oci://") {
+        } else if image_url.scheme() == "oci" {
             todo!("OCI image support")
         } else {
             bail!("Unsupported URL scheme")
