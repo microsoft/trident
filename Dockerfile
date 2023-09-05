@@ -11,6 +11,7 @@ COPY Cargo.lock .
 COPY proto ./proto
 COPY build.rs .
 COPY src ./src
+COPY trident_api ./trident_api
 
 RUN \
     --mount=type=cache,target=/work/target \
