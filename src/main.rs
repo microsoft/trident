@@ -4,7 +4,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 
-use trident_api::config::{ConfigFile, HostConfigSource, Mode};
+use trident_api::config::{ConfigFile, HostConfigurationSource, Mode};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     debug!("Config: {:#?}", config);
 
     let host_config = match config.host_config {
-        HostConfigSource::File(path) => {
+        HostConfigurationSource::File(path) => {
             info!("Loading host config from '{}'", path.display());
             fs::read_to_string(path)
                 .map_err(|e| warn!("Failed to read host config file: {e}"))
@@ -47,8 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .ok()
                 })
         }
-        HostConfigSource::Embedded(contents) => Some(contents),
-        HostConfigSource::NoHostConfig => None,
+        HostConfigurationSource::Embedded(contents) => Some(contents),
+        HostConfigurationSource::NoHostConfig => None,
     };
     // let host_config = Some(&config.host_config);
     debug!("Host config: {:#?}", host_config);

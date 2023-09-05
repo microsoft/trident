@@ -22,7 +22,7 @@ pub struct ConfigFile {
 
     /// The host config to use.
     #[serde(flatten)]
-    pub host_config: HostConfigSource,
+    pub host_config: HostConfigurationSource,
     //pub host_config: HostConfig,
 }
 
@@ -40,7 +40,7 @@ pub enum Mode {
 #[derive(Serialize, Deserialize, Debug, Default)]
 //#[serde(rename_all = "kebab-case")]
 //#[serde(tag = "host-config-source")]
-pub enum HostConfigSource {
+pub enum HostConfigurationSource {
     /// Use the host config file.
     #[serde(rename = "host-config-file")]
     File(PathBuf),
