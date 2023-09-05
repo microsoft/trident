@@ -2,7 +2,6 @@ use anyhow::{bail, Context, Error};
 use log::info;
 use std::{
     collections::HashMap,
-    ffi::OsString,
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -120,13 +119,13 @@ impl StorageModule {
 
             run(Command::new("sfdisk")
                 .arg("--delete")
-                .arg(disk_path.as_os_str()))?;
+                .arg(disk_bus_path.as_os_str()))?;
             run(Command::new("flock")
                 .arg("--timeout")
                 .arg("5")
-                .arg(disk_path.as_os_str())
+                .arg(disk_bus_path.as_os_str())
                 .arg("parted")
-                .arg(disk_path.as_os_str())
+                .arg(disk_bus_path.as_os_str())
                 .arg("--script")
                 .arg("mklabel")
                 .arg("gpt"))?;
@@ -136,22 +135,22 @@ impl StorageModule {
             run(Command::new("flock")
                 .arg("--timeout")
                 .arg("5")
-                .arg(disk_path.as_os_str())
+                .arg(disk_bus_path.as_os_str())
                 .arg("sgdisk")
                 .arg("--disk-guid")
                 .arg(disk_uuid.as_hyphenated().to_string())
-                .arg(disk_path.as_os_str()))?;
+                .arg(disk_bus_path.as_os_str()))?;
 
             host_status.storage.disks.insert(
-                disk_path.clone(),
+                disk_bus_path.clone(),
                 status::Disk {
                     uuid: disk_uuid,
-                    bus_path: disk_bus_path,
+                    bus_path: disk_bus_path.clone(),
                     partitions: Vec::new(),
                     capacity: None,
                 },
             );
-            let disk_status = host_status.storage.disks.get_mut(&disk_path).unwrap();
+            let disk_status = host_status.storage.disks.get_mut(&disk_bus_path).unwrap();
 
             // Allocate partitions in 4KB increments, starting at 4MB to leave space for the
             // partition table.
@@ -182,18 +181,18 @@ impl StorageModule {
                 run(Command::new("flock")
                     .arg("--timeout")
                     .arg("5")
-                    .arg(disk_path.as_os_str())
+                    .arg(disk_bus_path.as_os_str())
                     .arg("parted")
-                    .arg(disk_path.as_os_str())
+                    .arg(disk_bus_path.as_os_str())
                     .arg("--script")
                     .arg("mkpart")
                     .arg(&name)
                     .arg(format!("{start}B"))
                     .arg(format!("{}B", start + size - 512)))?;
 
-                partprobe(&disk_path)?;
+                partprobe(&disk_bus_path)?;
 
-                let part_path = device_to_partition(&disk_path, index + 1);
+                let part_path = device_to_partition(&disk_bus_path, index + 1);
                 info!("part_path: {}", part_path.display());
 
                 disk_status.partitions.push(status::Partition {
@@ -236,11 +235,13 @@ fn partprobe(disk_path: &Path) -> Result<(), Error> {
     .context("Failed to probe partitions")
 }
 
-fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<OsString, Error> {
+/// Returns the path of the first symlink in directory whose canonical path is target.
+/// Requires that target is already a canonical path.
+fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, Error> {
     for f in fs::read_dir(directory)?.flatten() {
         if let Ok(target_path) = f.path().canonicalize() {
             if target_path == target {
-                return Ok(f.file_name());
+                return Ok(f.path());
             }
         }
     }
@@ -264,14 +265,7 @@ fn parse_size(value: &str) -> Result<u64, Error> {
 
 fn device_to_partition(p: &Path, index: usize) -> PathBuf {
     let mut s = p.as_os_str().to_owned();
-    if s.to_string_lossy()
-        .chars()
-        .last()
-        .map(|c| c.is_ascii_digit())
-        .unwrap_or(false)
-    {
-        s.push("p");
-    }
+    s.push("-part");
     s.push(&index.to_string());
     s.into()
 }
@@ -298,12 +292,12 @@ mod tests {
     #[test]
     fn test_device_to_partition() {
         assert_eq!(
-            device_to_partition(Path::new("/dev/sda"), 1),
-            Path::new("/dev/sda1")
+            device_to_partition(Path::new("/dev/disk/by-id/wwn-0x5000bbd357db3c30"), 1),
+            Path::new("/dev/disk/by-id/wwn-0x5000bbd357db3c30-part1")
         );
         assert_eq!(
-            device_to_partition(Path::new("/dev/nvme0n1"), 2),
-            Path::new("/dev/nvme0n1p2")
+            device_to_partition(Path::new("/dev/disk/by-id/nvme-eui.002538123100e442"), 2),
+            Path::new("/dev/disk/by-id/nvme-eui.002538123100e442-part2")
         );
     }
 }

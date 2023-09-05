@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -45,7 +45,7 @@ pub struct Storage {
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Disk {
     pub uuid: Uuid,
-    pub bus_path: OsString,
+    pub bus_path: PathBuf,
     pub capacity: Option<u64>,
     pub partitions: Vec<Partition>,
 }
