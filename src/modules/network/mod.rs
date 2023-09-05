@@ -1,11 +1,12 @@
-use crate::{
+use anyhow::{Context, Error};
+use log::info;
+
+use trident_api::{
     config::HostConfiguration,
-    modules::Module,
     status::{HostStatus, UpdateKind},
 };
 
-use anyhow::{Context, Error};
-use log::info;
+use crate::modules::Module;
 
 mod netplan;
 pub mod provisioning;

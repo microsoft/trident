@@ -3,7 +3,8 @@ use std::{fs, path::PathBuf, time::Duration};
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
-use trident::config::{ConfigFile, HostConfigSource};
+
+use trident_api::config::{ConfigFile, HostConfigSource, Mode};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -81,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.subcmd {
         SubCommand::Run => match config.mode {
-            trident::config::Mode::AutoProvision => match host_config {
+            Mode::AutoProvision => match host_config {
                 Some(config) => {
                     info!("Auto provisioning");
                     if let Err(e) =
@@ -94,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     error!("No host config available, cannot auto provision");
                 }
             },
-            trident::config::Mode::Listen => {
+            Mode::Listen => {
                 info!("Listening");
                 trident::serve(
                     "0.0.0.0".parse().unwrap(),

@@ -3,11 +3,12 @@ use std::{fs, path::Path, sync::Mutex};
 use anyhow::{bail, Context, Error};
 use log::info;
 
-use crate::{
+use trident_api::{
     config::HostConfiguration,
-    modules::{image::ImageModule, network::NetworkModule, storage::StorageModule},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
+
+use crate::modules::{image::ImageModule, network::NetworkModule, storage::StorageModule};
 
 pub mod image;
 pub mod network;

@@ -12,11 +12,12 @@ use nix::NixPath;
 use sha2::Digest;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
-use crate::{
+use trident_api::{
     config::{HostConfiguration, ImageFormat},
-    modules::Module,
     status::{HostStatus, PartitionContents, UpdateKind},
 };
+
+use crate::modules::Module;
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
 struct HashingReader<R: Read>(R, sha2::Sha256);

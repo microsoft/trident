@@ -10,11 +10,12 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::{
+use trident_api::{
     config::HostConfiguration,
-    modules::Module,
     status::{self, HostStatus, UpdateKind},
 };
+
+use crate::modules::Module;
 
 #[derive(Default, Debug)]
 pub struct StorageModule;

@@ -1,13 +1,11 @@
 use anyhow::{Context, Error};
-use config::HostConfiguration;
 use protobufs::*;
 use std::net::{IpAddr, SocketAddr};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use trident_api::config::HostConfiguration;
 
-pub mod config;
 mod modules;
-pub mod status;
 
 pub use modules::network::provisioning::start as start_provisioning_network;
 

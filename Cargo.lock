@@ -1720,8 +1720,19 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "trident_api",
  "uuid",
  "zstd",
+]
+
+[[package]]
+name = "trident_api"
+version = "0.1.0"
+dependencies = [
+ "netplan-types",
+ "serde",
+ "serde_yaml",
+ "uuid",
 ]
 
 [[package]]
