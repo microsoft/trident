@@ -15,6 +15,34 @@ network-provision:
       nameservers:
         addresses: [192.168.242.1]
 
+storage:
+  disks:
+    - device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0"
+      partition-table-type: gpt
+      partitions:
+        - type: esp
+          size: 1G
+          label: boot
+        - type: root-a
+          size: 8G
+          label: A
+        - type: root-b
+          size: 8G
+          label: B
+
+imaging:
+  images:
+    esp:
+      url: "http://10.137.192.130:8088/boot_partition.raw.zst"
+      sha256: b789802a93269486dc070faad41dc4d3bf0c5d018d3dea772917cf457a7f3115
+      format: raw-zstd
+    root:
+      url: "http://10.137.192.130:8088/root_fs_partition.raw.zst"
+      sha256: 8c11d8fe3a99d360f204e789d426ed70aaf4bf72163c8f4476a31fcf894601e6
+      format: raw-zstd
+  overlays:
+
+
 network:
   # This is just netplan
   ethernets:

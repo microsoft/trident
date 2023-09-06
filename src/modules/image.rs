@@ -2,8 +2,7 @@ use std::{
     ffi::CString,
     fs::{self, File},
     io::{self, BufWriter, Read},
-    os::{fd::IntoRawFd, unix},
-    path::Path,
+    os::fd::AsRawFd,
 };
 
 use anyhow::{bail, Context, Error};
@@ -11,14 +10,11 @@ use log::info;
 use nix::NixPath;
 use reqwest::Url;
 use sha2::Digest;
-use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
-
-use trident_api::{
-    config::{HostConfiguration, ImageFormat},
-    status::{HostStatus, PartitionContents, UpdateKind},
-};
+use sys_mount::{Mount, Unmount, UnmountFlags};
 
 use crate::modules::Module;
+use trident_api::config::{HostConfiguration, ImageFormat};
+use trident_api::status::{HostStatus, PartitionContents, UpdateKind};
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
 struct HashingReader<R: Read>(R, sha2::Sha256);
@@ -134,89 +130,19 @@ pub(crate) fn stream_images(
     Ok(())
 }
 
-pub fn mount_partition(partition: &Path) -> Result<UnmountDrop<Mount>, Error> {
-    fs::create_dir_all("/partitionMount")?;
-    info!("Mounting disk");
-    Ok(Mount::builder()
-        .fstype("ext4")
-        .mount(partition, "/partitionMount")?
-        .into_unmount_drop(UnmountFlags::DETACH))
-}
-
-pub fn chroot_run<T, F: FnOnce() -> Result<T, Error>>(partition: &Path, f: F) -> Result<T, Error> {
-    let _mount = mount_partition(partition).context(format!(
-        "Failed to mount partition '{}'",
-        partition.display()
-    ))?;
-
-    // Mount special dirs.
-    info!("Mounting special directories");
-    let _mount = Mount::builder()
-        .fstype("devtmpfs")
-        .flags(MountFlags::RDONLY)
-        .mount("devtmpfs", "/partitionMount/dev")
-        .context("Failed to mount '/dev' for chroot")?
-        .into_unmount_drop(UnmountFlags::empty());
-    let _mount = Mount::builder()
-        .fstype("proc")
-        .flags(MountFlags::RDONLY)
-        .mount("proc", "/partitionMount/proc")
-        .context("Failed to mount '/proc' for chroot")?
-        .into_unmount_drop(UnmountFlags::empty());
-    let _mount = Mount::builder()
-        .fstype("sysfs")
-        .flags(MountFlags::RDONLY)
-        .mount("sysfs", "/partitionMount/sys")
-        .context("Failed to mount '/sys' for chroot")?
-        .into_unmount_drop(UnmountFlags::empty());
-
-    // Enter the chroot.
-    info!("Entering chroot");
-    let rootfd = fs::File::open("/")
-        .context("Failed to open '/'")?
-        .into_raw_fd();
-    unix::fs::chroot("/partitionMount").context("Failed to enter chroot")?;
-    std::env::set_current_dir("/")
-        .context("Failed to set current directory to be inside chroot")?;
-
-    // Run the closure.
-    let t = f()?;
-
-    // Exit the chroot.
-    nix::unistd::fchdir(rootfd).context("Failed to exit chroot")?;
-    unix::fs::chroot(".").context("Failed to set current directory out of chroot")?;
-    info!("Exited chroot");
-
-    Ok(t)
-}
-
-pub fn chroot_exec(partition: &Path, script: &str) -> Result<(), Error> {
-    chroot_run(partition, || {
-        info!("Writing cexecScript");
-        fs::write("/cexecScript", script.as_bytes())?;
-
-        info!("Running cexecScript");
-        let status = std::process::Command::new("/bin/bash")
-            .arg("/cexecScript")
-            .status()?;
-        info!("Script exited with status: {}", status);
-
-        fs::remove_file("/cexecScript")?;
-        Ok(())
-    })
-}
-
-pub fn kexec(partition: &Path, args: &str) -> Result<(), Error> {
-    let _mount = mount_partition(partition)?;
+pub fn kexec(mount: Mount, args: &str) -> Result<(), Error> {
+    let root = mount.target_path().to_str().ok_or_else(|| {
+        anyhow::anyhow!("Non-utf8 mount point: {}", mount.target_path().display())
+    })?;
 
     info!("Searching for kernel and initrd");
-    let kernel_path = glob::glob("/partitionMount/boot/vmlinuz-*")?
+    let kernel_path = glob::glob(&format!("{root}/boot/vmlinuz-*"))?
         .next()
         .ok_or(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "No kernel found",
         ))??;
-    let initrd_path = glob::glob("/partitionMount/boot/initrd.img-*")?
+    let initrd_path = glob::glob(&format!("{root}/boot/initrd.img-*"))?
         .next()
         .ok_or(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -224,8 +150,8 @@ pub fn kexec(partition: &Path, args: &str) -> Result<(), Error> {
         ))??;
 
     info!("Opening kernel and initrd");
-    let kernel = fs::File::open(kernel_path)?.into_raw_fd();
-    let initrd = fs::File::open(initrd_path)?.into_raw_fd();
+    let kernel = fs::File::open(kernel_path)?;
+    let initrd = fs::File::open(initrd_path)?;
     let args = CString::new(args)?;
 
     // Run kexec file load.
@@ -233,8 +159,8 @@ pub fn kexec(partition: &Path, args: &str) -> Result<(), Error> {
     let r = unsafe {
         libc::syscall(
             libc::SYS_kexec_file_load,
-            kernel,
-            initrd,
+            kernel.as_raw_fd(),
+            initrd.as_raw_fd(),
             args.len() + 1,
             args.as_ptr(),
             0,
@@ -243,6 +169,16 @@ pub fn kexec(partition: &Path, args: &str) -> Result<(), Error> {
     if r < 0 {
         return Err(std::io::Error::last_os_error().into());
     }
+
+    // Close remaining files and sync all writes to the filesystem.
+    drop(kernel);
+    drop(initrd);
+    nix::unistd::sync();
+
+    // Unmount the filesystem.
+    mount
+        .unmount(UnmountFlags::empty())
+        .context("Failed to unmount filesystem")?;
 
     // Kexec into image.
     info!("Rebooting system");

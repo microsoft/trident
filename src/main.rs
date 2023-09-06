@@ -1,10 +1,10 @@
-use std::{fs, path::PathBuf, time::Duration};
+use std::{fs, mem, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 
-use trident_api::config::{ConfigFile, HostConfigurationSource, Mode};
+use trident_api::config::{HostConfigSource, LocalConfigFile};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -30,13 +30,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_contents = fs::read_to_string(&args.config)
         .map_err(|e| warn!("Failed to read config file: {e}"))
         .unwrap_or_default();
-    let config: ConfigFile = serde_yaml::from_str(&config_contents)
+    let mut config: LocalConfigFile = serde_yaml::from_str(&config_contents)
         .map_err(|e| warn!("Failed to parse config file: {e}"))
         .unwrap_or_default();
     debug!("Config: {:#?}", config);
 
-    let host_config = match config.host_config {
-        HostConfigurationSource::File(path) => {
+    let host_config = match &mut config.host_config_source {
+        HostConfigSource::File(path) => {
             info!("Loading host config from '{}'", path.display());
             fs::read_to_string(path)
                 .map_err(|e| warn!("Failed to read host config file: {e}"))
@@ -47,8 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .ok()
                 })
         }
-        HostConfigurationSource::Embedded(contents) => Some(contents),
-        HostConfigurationSource::NoHostConfig => None,
+        HostConfigSource::Embedded(contents) => Some(mem::take(contents)),
+        HostConfigSource::GrpcCommand { .. } => None,
     };
     // let host_config = Some(&config.host_config);
     debug!("Host config: {:#?}", host_config);
@@ -81,27 +81,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     match args.subcmd {
-        SubCommand::Run => match config.mode {
-            Mode::AutoProvision => match host_config {
-                Some(config) => {
-                    info!("Auto provisioning");
-                    if let Err(e) =
-                        trident::auto_provision(&config).context("Failed to autoprovision")
-                    {
-                        error!("{e:?}");
-                    }
+        SubCommand::Run => match config.host_config_source {
+            HostConfigSource::File(_) | HostConfigSource::Embedded(_) => {
+                info!("Running");
+                if let Err(e) = trident::run(host_config.as_ref().unwrap(), config.datastore) {
+                    error!("{e:?}");
                 }
-                None => {
-                    error!("No host config available, cannot auto provision");
-                }
-            },
-            Mode::Listen => {
+            }
+            HostConfigSource::GrpcCommand { listen_port } => {
                 info!("Listening");
-                trident::serve(
-                    "0.0.0.0".parse().unwrap(),
-                    config.listen_port.unwrap_or(50051),
-                )
-                .await?;
+                trident::serve("0.0.0.0".parse().unwrap(), listen_port.unwrap_or(50051)).await?;
             }
         },
     }

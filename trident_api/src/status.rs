@@ -5,14 +5,14 @@ use uuid::Uuid;
 
 use crate::config::PartitionType;
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct HostStatus {
     pub reconcile_state: ReconcileState,
     pub storage: Storage,
     pub imaging: Imaging,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub enum ReconcileState {
     /// A clean install is in progress.
     CleanInstall,
@@ -37,12 +37,12 @@ pub enum UpdateKind {
     Incompatible = 4,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Storage {
     pub disks: BTreeMap<PathBuf, Disk>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Disk {
     pub uuid: Uuid,
     pub bus_path: PathBuf,
@@ -50,7 +50,7 @@ pub struct Disk {
     pub partitions: Vec<Partition>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Partition {
     pub path: PathBuf,
     pub start: u64,
@@ -59,7 +59,7 @@ pub struct Partition {
     pub contents: PartitionContents,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub enum PartitionContents {
     #[default]
     Unknown,
@@ -70,13 +70,13 @@ pub enum PartitionContents {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Imaging {
     /// Map from sha256 to Image.
     pub images: BTreeMap<String, Image>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct Image {
     pub url: String,
 }

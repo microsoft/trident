@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+use sys_mount::Mount;
 use uuid::Uuid;
 
 use trident_api::{
@@ -93,6 +94,14 @@ impl Module for StorageModule {
 
         Ok(())
     }
+}
+
+pub fn mount_partition(partition: &Path, mount_point: &Path) -> Result<Mount, Error> {
+    fs::create_dir_all(mount_point)?;
+    info!("Mounting disk");
+    Ok(Mount::builder()
+        .fstype("ext4")
+        .mount(partition, mount_point)?)
 }
 
 impl StorageModule {

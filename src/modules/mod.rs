@@ -8,7 +8,9 @@ use trident_api::{
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
+use crate::datastore::DataStore;
 use crate::modules::{image::ImageModule, network::NetworkModule, storage::StorageModule};
+use crate::mount::{self, Chroot};
 
 pub mod image;
 pub mod network;
@@ -67,23 +69,20 @@ lazy_static::lazy_static! {
     ]);
 }
 
-pub fn apply_host_config(
-    host_config: &HostConfiguration,
-    clean_install: bool,
-) -> Result<(), Error> {
+pub(crate) fn provision(host_config: &HostConfiguration) -> Result<(), Error> {
     // This is a safety check so that nobody accidentally formats their dev machine.
-    if clean_install
-        && !fs::read_to_string("/proc/cmdline")
-            .context("Failed to read /proc/cmdline")?
-            .contains("root=/dev/ram0")
+    if !fs::read_to_string("/proc/cmdline")
+        .context("Failed to read /proc/cmdline")?
+        .contains("root=/dev/ram0")
     {
         bail!("Safety check failed! Requested clean install but not booted from ramdisk");
     }
 
     let mut modules = MODULES.lock().unwrap();
-
-    // TODO: Persist the host status between runs
-    let mut host_status = Default::default();
+    let mut host_status = HostStatus {
+        reconcile_state: ReconcileState::CleanInstall,
+        ..Default::default()
+    };
 
     for m in &mut *modules {
         m.refresh_host_status(&mut host_status).context(format!(
@@ -102,110 +101,156 @@ pub fn apply_host_config(
     }
     info!("Host config validated");
 
-    if clean_install {
-        StorageModule::create_partitions(&mut host_status, host_config)
-            .context("Failed to create disk partitions")?;
+    StorageModule::create_partitions(&mut host_status, host_config)
+        .context("Failed to create disk partitions")?;
 
-        image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
+    image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
 
-        // TODO: fstab updates and user creation should happen in modules (and not be hardcoded).
-        image::chroot_exec(
-            Path::new("/dev/disk/by-partlabel/mariner-root-a"),
-            r#"sudo sh -c 'echo root:password | chpasswd'
-            useradd -p $(openssl passwd -1 password) -s /bin/bash -d /home/mariner_user/ -m -G sudo mariner_user
-            "#,
-        )
-        .context("Failed to apply system config")?;
-        host_status.reconcile_state = ReconcileState::CleanInstall;
-    } else {
-        let update_kind = modules
-            .iter()
-            .filter_map(|m| m.select_update_kind(&host_status, host_config))
-            .max();
-        host_status.reconcile_state = match update_kind {
-            Some(k) => ReconcileState::UpdateInProgress(k),
-            None => ReconcileState::Ready,
-        }
+    let mount = storage::mount_partition(
+        Path::new("/dev/disk/by-partlabel/mariner-root-a"),
+        Path::new("/partitionMount"),
+    )?;
 
-        // TODO: Call pre-update workload hook.
-    }
+    let chroot = Chroot::enter(Path::new("/partitionMount"))?;
 
-    match host_status.reconcile_state {
-        ReconcileState::Ready => {
-            info!("No updates required");
-            return Ok(());
-        }
-        ReconcileState::CleanInstall => {
-            info!("Performing clean install");
-        }
-        ReconcileState::UpdateInProgress(UpdateKind::HotPatch) => {
-            info!("Performing hot patch update");
-        }
-        ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate) => {
-            info!("Performing normal update");
-        }
-        ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => {
-            info!("Performing update and reboot");
-        }
-        ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
-            info!("Performing A/B update");
+    let mut state = DataStore::create(Path::new("/trident.sqlite"), host_status)?;
 
-            // TODO: Download update
-            // TODO: Write update
+    // TODO: user creation should happen in modules (and not be hardcoded).
+    mount::run_script(
+        r#"sudo sh -c 'echo root:password | chpasswd'
+        useradd -p $(openssl passwd -1 password) -s /bin/bash -d /home/mariner_user/ -m -G sudo mariner_user"#
+    ).context("Failed to apply system config")?;
 
-            for m in &mut *modules {
-                m.migrate(&mut host_status, host_config)
-                    .context(format!("Module '{}' failed during pause", m.name()))?;
-            }
-        }
-        ReconcileState::UpdateInProgress(UpdateKind::Incompatible) => {
-            bail!("Requested host config is not compatible with current install");
-        }
-    }
-
-    match host_status.reconcile_state {
-        ReconcileState::CleanInstall | ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
-            // TODO: Properly decide whether to use A or B partition.
-            image::chroot_run(Path::new("/dev/disk/by-partlabel/mariner-root-a"), || {
-                for m in &mut *modules {
-                    m.reconcile(&mut host_status, host_config)
-                        .context(format!("Module '{}' failed during reconcile", m.name()))?;
-                }
-                Ok(())
-            })
-            .context("Failed to reconcile modules within chroot")?;
-        }
-        _ => {
-            for m in &mut *modules {
-                m.reconcile(&mut host_status, host_config)
-                    .context(format!("Module '{}' failed during reconcile", m.name()))?;
-            }
-        }
+    for m in &mut *modules {
+        state.with_host_status(|s| {
+            m.reconcile(s, host_config)
+                .context(format!("Module '{}' failed during reconcile", m.name()))
+        })?;
     }
 
     // TODO: Call post-update workload hook.
 
-    match host_status.reconcile_state {
-        ReconcileState::CleanInstall
-        | ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot)
-        | ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
+    drop(state);
+    chroot.exit().context("Failed to exit chroot")?;
+
+    info!("Rebooting");
+    image::kexec(
+        mount,
+        "console=tty1 console=ttyS0 root=PARTLABEL=mariner-root-a",
+    )
+    .context("Failed to perform kexec")?;
+
+    unreachable!("kexec should never return")
+}
+
+pub(crate) fn update_host_config(
+    host_config: &HostConfiguration,
+    mut state: DataStore,
+) -> Result<(), Error> {
+    let mut modules = MODULES.lock().unwrap();
+
+    for m in &mut *modules {
+        state.with_host_status(|s| {
+            m.refresh_host_status(s).context(format!(
+                "Module '{}' failed to refresh host status",
+                m.name()
+            ))
+        })?;
+    }
+
+    info!("Host status: {:#?}", state.host_status());
+
+    for m in &*modules {
+        m.validate_host_config(state.host_status(), host_config)
+            .context(format!(
+                "Module '{}' failed to validate host config",
+                m.name()
+            ))?;
+    }
+    info!("Host config validated");
+
+    let update_kind = modules
+        .iter()
+        .filter_map(|m| m.select_update_kind(state.host_status(), host_config))
+        .max();
+    state.with_host_status(|s| {
+        s.reconcile_state = match update_kind {
+            Some(k) => ReconcileState::UpdateInProgress(k),
+            None => ReconcileState::Ready,
+        };
+        Ok(())
+    })?;
+
+    match update_kind {
+        None => {
+            info!("No updates required");
+            return Ok(());
+        }
+        Some(UpdateKind::HotPatch) => info!("Performing hot patch update"),
+        Some(UpdateKind::NormalUpdate) => info!("Performing normal update"),
+        Some(UpdateKind::UpdateAndReboot) => info!("Performing update and reboot"),
+        Some(UpdateKind::AbUpdate) => info!("Performing A/B update"),
+        Some(UpdateKind::Incompatible) => {
+            bail!("Requested host config is not compatible with current install")
+        }
+    }
+
+    // TODO: Call pre-update workload hook.
+
+    let rootfs = if let Some(UpdateKind::AbUpdate) = update_kind {
+        // TODO: Download update
+        // TODO: Write update
+
+        for m in &mut *modules {
+            state.with_host_status(|s| {
+                m.migrate(s, host_config)
+                    .context(format!("Module '{}' failed during pause", m.name()))
+            })?;
+        }
+
+        // TODO: Properly decide whether to use A or B partition.
+        let mount = storage::mount_partition(
+            Path::new("/dev/disk/by-partlabel/mariner-root-b"),
+            Path::new("/partitionMount"),
+        )?;
+        Some((Chroot::enter(Path::new("/partitionMount"))?, mount))
+    } else {
+        None
+    };
+
+    for m in &mut *modules {
+        state.with_host_status(|s| {
+            m.reconcile(s, host_config)
+                .context(format!("Module '{}' failed during reconcile", m.name()))
+        })?;
+    }
+
+    // TODO: Call post-update workload hook.
+
+    match update_kind {
+        Some(UpdateKind::UpdateAndReboot) | Some(UpdateKind::AbUpdate) => {
+            drop(state);
+            let (chroot, mount) = rootfs.unwrap();
+            chroot.exit().context("Failed to exit chroot")?;
+
             info!("Rebooting");
             image::kexec(
-                Path::new("/dev/disk/by-partlabel/mariner-root-a"),
+                mount,
                 "console=tty1 console=ttyS0 root=PARTLABEL=mariner-root-a",
             )
             .context("Failed to perform kexec")?;
             unreachable!("kexec should never return");
         }
-        ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)
-        | ReconcileState::UpdateInProgress(UpdateKind::HotPatch) => {
+        Some(UpdateKind::NormalUpdate) | Some(UpdateKind::HotPatch) => {
+            state.with_host_status(|s| {
+                s.reconcile_state = ReconcileState::Ready;
+                Ok(())
+            })?;
             info!("Update complete");
+            Ok(())
         }
-        ReconcileState::Ready | ReconcileState::UpdateInProgress(UpdateKind::Incompatible) => {
+        None | Some(UpdateKind::Incompatible) => {
             unreachable!()
         }
     }
-    host_status.reconcile_state = ReconcileState::Ready;
-
-    Ok(())
 }

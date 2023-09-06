@@ -1,11 +1,15 @@
 use anyhow::{Context, Error};
+use datastore::DataStore;
 use protobufs::*;
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use trident_api::config::HostConfiguration;
 
+mod datastore;
 mod modules;
+mod mount;
 
 pub use modules::network::provisioning::start as start_provisioning_network;
 
@@ -58,6 +62,13 @@ impl imaging_server::Imaging for ImagingImpl {
     }
 }
 
-pub fn auto_provision(host_config: &HostConfiguration) -> Result<(), Error> {
-    modules::apply_host_config(host_config, true).context("Failed to apply host config")
+pub fn run(host_config: &HostConfiguration, datastore: Option<PathBuf>) -> Result<(), Error> {
+    match datastore {
+        Some(path) => {
+            let datastore = DataStore::open(&path).context("Failed to load datastore")?;
+            modules::update_host_config(host_config, datastore)
+                .context("Failed to update host config")
+        }
+        None => modules::provision(host_config).context("Failed to provision"),
+    }
 }
