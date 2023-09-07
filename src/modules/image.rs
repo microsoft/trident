@@ -118,7 +118,9 @@ pub(crate) fn stream_images(
         };
 
         // Confirm that the hash matches what we expected.
-        if computed_sha256 != image.sha256 {
+        if image.sha256 == "ignored" {
+            info!("Ignoring SHA256 for image from '{}'", image.url);
+        } else if computed_sha256 != image.sha256 {
             bail!(
                 "SHA256 mismatch for disk image: expected {}, got {}",
                 image.sha256,
