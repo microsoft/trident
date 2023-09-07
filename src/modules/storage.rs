@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Error};
-use log::info;
+use log::{info, warn};
 use std::{
     collections::HashMap,
     fs,
@@ -126,9 +126,19 @@ impl StorageModule {
                     format!("Failed to find bus path of '{}'", disk_path.display()),
                 )?;
 
-            run(Command::new("sfdisk")
+            // Attempt to delete the partition table, but continue on failure.
+            if let Err(e) = run(Command::new("sfdisk")
                 .arg("--delete")
-                .arg(disk_bus_path.as_os_str()))?;
+                .arg(disk_bus_path.as_os_str()))
+            {
+                warn!(
+                    "Failed to delete partitions on '{}'. Expected if disk is blank: {}",
+                    disk_bus_path.display(),
+                    e
+                );
+            }
+
+            // Create a new partition table.
             run(Command::new("flock")
                 .arg("--timeout")
                 .arg("5")
