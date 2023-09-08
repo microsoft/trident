@@ -8,9 +8,9 @@ use trident_api::{
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
-use crate::datastore::DataStore;
 use crate::modules::{image::ImageModule, network::NetworkModule, storage::StorageModule};
 use crate::mount::{self, Chroot};
+use crate::{datastore::DataStore, get_block_device};
 
 pub mod image;
 pub mod network;
@@ -104,10 +104,23 @@ pub(crate) fn provision(host_config: &HostConfiguration) -> Result<(), Error> {
     StorageModule::create_partitions(&mut host_status, host_config)
         .context("Failed to create disk partitions")?;
 
+    image::refresh_ab_volumes(&mut host_status, host_config);
+
     image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
 
+    // Using the / mount point, figure out what should be used as a root block device.
+    let root_block_device_id = &host_config
+        .storage
+        .mount_points
+        .iter()
+        .find(|mp| mp.path == Path::new("/"))
+        .context("Failed to find root mount point")?
+        .target_id;
+    let root_block_device = get_block_device(&host_status, root_block_device_id)
+        .context("Failed to find root block device")?;
+
     let mount = storage::mount_partition(
-        Path::new("/dev/disk/by-partlabel/mariner-root-a"),
+        root_block_device.path.as_path(),
         Path::new("/partitionMount"),
     )?;
 
@@ -136,17 +149,18 @@ pub(crate) fn provision(host_config: &HostConfiguration) -> Result<(), Error> {
     info!("Rebooting");
     image::kexec(
         mount,
-        "console=tty1 console=ttyS0 root=PARTLABEL=mariner-root-a",
+        format!(
+            "console=tty1 console=ttyS0 root={}",
+            root_block_device.path.to_string_lossy()
+        )
+        .as_str(),
     )
     .context("Failed to perform kexec")?;
 
     unreachable!("kexec should never return")
 }
 
-pub(crate) fn update_host_config(
-    host_config: &HostConfiguration,
-    mut state: DataStore,
-) -> Result<(), Error> {
+pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> Result<(), Error> {
     let mut modules = MODULES.lock().unwrap();
 
     for m in &mut *modules {
@@ -197,6 +211,17 @@ pub(crate) fn update_host_config(
 
     // TODO: Call pre-update workload hook.
 
+    // Using the / mount point, figure out what should be used as a root block device.
+    let root_block_device_id = &host_config
+        .storage
+        .mount_points
+        .iter()
+        .find(|mp| mp.path == Path::new("/"))
+        .context("Failed to find root mount point")?
+        .target_id;
+    let root_block_device = get_block_device(state.host_status(), root_block_device_id)
+        .context("Failed to find root block device")?;
+
     let rootfs = if let Some(UpdateKind::AbUpdate) = update_kind {
         // TODO: Download update
         // TODO: Write update
@@ -208,9 +233,8 @@ pub(crate) fn update_host_config(
             })?;
         }
 
-        // TODO: Properly decide whether to use A or B partition.
         let mount = storage::mount_partition(
-            Path::new("/dev/disk/by-partlabel/mariner-root-b"),
+            root_block_device.path.as_path(),
             Path::new("/partitionMount"),
         )?;
         Some((Chroot::enter(Path::new("/partitionMount"))?, mount))
@@ -236,7 +260,11 @@ pub(crate) fn update_host_config(
             info!("Rebooting");
             image::kexec(
                 mount,
-                "console=tty1 console=ttyS0 root=PARTLABEL=mariner-root-a",
+                format!(
+                    "console=tty1 console=ttyS0 root={}",
+                    root_block_device.path.to_string_lossy()
+                )
+                .as_str(),
             )
             .context("Failed to perform kexec")?;
             unreachable!("kexec should never return");

@@ -5,7 +5,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
-use trident_api::config::HostConfiguration;
+use trident_api::config::{BlockDeviceId, HostConfiguration};
+use trident_api::status::{
+    AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk, HostStatus, Partition,
+    ReconcileState, UpdateKind,
+};
 
 mod datastore;
 mod modules;
@@ -66,9 +70,664 @@ pub fn run(host_config: &HostConfiguration, datastore: Option<PathBuf>) -> Resul
     match datastore {
         Some(path) => {
             let datastore = DataStore::open(&path).context("Failed to load datastore")?;
-            modules::update_host_config(host_config, datastore)
-                .context("Failed to update host config")
+            modules::update(host_config, datastore).context("Failed to update host config")
         }
         None => modules::provision(host_config).context("Failed to provision"),
+    }
+}
+
+fn get_ab_update_volume(host_status: &HostStatus) -> Result<Option<AbVolumeSelection>, Error> {
+    if host_status.imaging.ab_update.is_none() {
+        return Ok(None);
+    }
+
+    let active_volume = &host_status
+        .imaging
+        .ab_update
+        .as_ref()
+        .unwrap()
+        .active_volume;
+    match &host_status.reconcile_state {
+        ReconcileState::UpdateInProgress(update_kind) => match update_kind {
+            UpdateKind::HotPatch => Ok(*active_volume),
+            UpdateKind::NormalUpdate => Ok(*active_volume),
+            UpdateKind::UpdateAndReboot => Ok(*active_volume),
+            UpdateKind::AbUpdate => Ok(Some(
+                if active_volume.unwrap() == AbVolumeSelection::VolumeA {
+                    AbVolumeSelection::VolumeB
+                } else {
+                    AbVolumeSelection::VolumeA
+                },
+            )),
+            UpdateKind::Incompatible => Ok(None),
+        },
+        ReconcileState::Ready => Ok(None),
+        ReconcileState::CleanInstall => Ok(Some(AbVolumeSelection::VolumeA)),
+    }
+}
+
+fn set_host_status_block_device_contents(
+    host_status: &mut HostStatus,
+    block_device_id: &BlockDeviceId,
+    contents: BlockDeviceContents,
+) -> Result<(), Error> {
+    if let Some(disk) = get_disk_mut(host_status, block_device_id) {
+        disk.contents = contents;
+        return Ok(());
+    }
+
+    if let Some(partition) = get_partition_mut(host_status, block_device_id) {
+        partition.contents = contents;
+        return Ok(());
+    }
+
+    if let Some(ab_update) = &host_status.imaging.ab_update {
+        if let Some(ab_volume_pair) = ab_update.volume_pairs.get(block_device_id) {
+            let target_id = match get_ab_update_volume(host_status)? {
+                Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
+                Some(AbVolumeSelection::VolumeB) => Some(&ab_volume_pair.volume_b_id),
+                None => None,
+            };
+            if let Some(target_id) = target_id {
+                return set_host_status_block_device_contents(
+                    host_status,
+                    &target_id.clone(),
+                    contents,
+                );
+            }
+        }
+    }
+
+    anyhow::bail!("No block device with id '{}' found", block_device_id);
+}
+
+pub fn get_block_device(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Result<BlockDeviceInfo, Error> {
+    if let Some(bdi) = get_disk(host_status, block_device_id) {
+        return Ok(bdi);
+    }
+    if let Some(bdi) = get_partition(host_status, block_device_id) {
+        return Ok(bdi);
+    }
+
+    if let Some(bdi) = get_ab_volume(host_status, block_device_id)? {
+        return Ok(bdi);
+    }
+
+    anyhow::bail!("No block device with id '{}' found", block_device_id)
+}
+
+fn get_disk(host_status: &HostStatus, block_device_id: &BlockDeviceId) -> Option<BlockDeviceInfo> {
+    host_status
+        .storage
+        .disks
+        .get(block_device_id)
+        .map(|d| d.to_block_device())
+}
+
+fn get_disk_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut Disk> {
+    host_status.storage.disks.get_mut(block_device_id)
+}
+
+fn get_partition(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<BlockDeviceInfo> {
+    host_status
+        .storage
+        .disks
+        .iter()
+        .flat_map(|(_block_device_id, disk)| &disk.partitions)
+        .find(|p| p.id == *block_device_id)
+        .map(Partition::to_block_device)
+}
+
+fn get_partition_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut Partition> {
+    host_status
+        .storage
+        .disks
+        .iter_mut()
+        .flat_map(|(_block_device_id, disk)| &mut disk.partitions)
+        .find(|p| p.id == *block_device_id)
+}
+
+fn get_ab_volume(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Result<Option<BlockDeviceInfo>, Error> {
+    if let Some(ab_update) = &host_status.imaging.ab_update {
+        let ab_volume = ab_update
+            .volume_pairs
+            .iter()
+            .find(|v| v.0 == block_device_id);
+        if let Some(v) = ab_volume {
+            let block_device = get_ab_update_volume(host_status)?.map(|ab_volume_selection| {
+                match ab_volume_selection {
+                    AbVolumeSelection::VolumeA => {
+                        get_block_device(host_status, &v.1.volume_a_id).unwrap()
+                    }
+                    AbVolumeSelection::VolumeB => {
+                        get_block_device(host_status, &v.1.volume_b_id).unwrap()
+                    }
+                }
+            });
+            return Ok(block_device);
+        }
+    }
+
+    Ok(None)
+}
+
+mod tests {
+    #![allow(unused_imports)]
+    use indoc::indoc;
+    use trident_api::{config::PartitionType, status::BlockDeviceContents};
+
+    use super::*;
+    use std::path::Path;
+
+    /// Validates that the `get_block_device` function works as expected for
+    /// disks, partitions and ab volumes.
+    #[test]
+    fn test_get_block_device() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: null
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                          - id: root
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                          - id: rootb
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+                    data:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 1000
+                        contents: unknown
+                        partitions: []
+            imaging:
+                ab-update:
+                    volume-pairs:
+                        osab:
+                            id: osab
+                            volume-a-id: root
+                            volume-b-id: rootb
+                image-deployment:
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        assert_eq!(
+            get_block_device(&host_status, &"os".to_string()).unwrap(),
+            BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-bus/foobar").to_path_buf(),
+                size: 0,
+            }
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"efi".to_string()).unwrap(),
+            BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-partlabel/osp1").to_path_buf(),
+                size: 0,
+            }
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"root".to_string()).unwrap(),
+            BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-partlabel/osp2").to_path_buf(),
+                size: 900,
+            }
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"foobar".to_string()).is_err(),
+            true
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"data".to_string()).unwrap(),
+            BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-bus/foobar").to_path_buf(),
+                size: 1000,
+            }
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"osab".to_string()).unwrap(),
+            BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-partlabel/osp2").to_path_buf(),
+                size: 900,
+            }
+        );
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+        assert_eq!(
+            super::get_block_device(&host_status, &"osab".to_string()).unwrap(),
+            BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-partlabel/osp2").to_path_buf(),
+                size: 900,
+            }
+        );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        assert_eq!(
+            get_block_device(&host_status, &"osab".to_string()).unwrap(),
+            BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-partlabel/osp3").to_path_buf(),
+                size: 9000,
+            }
+        );
+    }
+
+    /// Validates that the `to_block_device` function works as expected for
+    /// disks and partitions.
+    #[test]
+    fn test_to_block_device() {
+        let mut disk = Disk {
+            path: Path::new("/dev/disk/by-bus/foobar").to_path_buf(),
+            uuid: uuid::Uuid::nil(),
+            capacity: None,
+            contents: BlockDeviceContents::Unknown,
+            partitions: vec![],
+        };
+
+        assert_eq!(
+            &disk.to_block_device(),
+            &BlockDeviceInfo {
+                path: Path::new("/dev/disk/by-bus/foobar").to_path_buf(),
+                size: 0,
+            }
+        );
+
+        disk.capacity = Some(1234567890);
+
+        assert_eq!(
+            &disk.to_block_device(),
+            &BlockDeviceInfo {
+                path: Path::new("/dev/disk/by-bus/foobar").to_path_buf(),
+                size: 1234567890,
+            }
+        );
+
+        let mut partition = Partition {
+            id: "efi".to_string(),
+            path: Path::new("/dev/disk/by-partlabel/osp1").to_path_buf(),
+            contents: BlockDeviceContents::Unknown,
+            start: 0,
+            end: 0,
+            ty: PartitionType::Esp,
+        };
+
+        assert_eq!(
+            &partition.to_block_device(),
+            &BlockDeviceInfo {
+                path: Path::new("/dev/disk/by-partlabel/osp1").to_path_buf(),
+                size: 0,
+            }
+        );
+
+        partition.start = 123;
+        partition.end = 456;
+        assert_eq!(
+            &partition.to_block_device(),
+            &BlockDeviceInfo {
+                path: Path::new("/dev/disk/by-partlabel/osp1").to_path_buf(),
+                size: 333,
+            }
+        );
+    }
+
+    /// Validates logic for querying disks and partitions.
+    #[test]
+    fn test_get_disk_partition() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: null
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                          - id: root
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                          - id: rootb
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+            imaging:
+                ab-update:
+                    volume-pairs:
+                image-deployment:
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        assert_eq!(
+            get_disk(&host_status, &"os".to_string()).unwrap(),
+            BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-bus/foobar").to_path_buf(),
+                size: 0,
+            }
+        );
+        assert_eq!(get_disk(&host_status, &"efi".to_string()).is_none(), true);
+        assert_eq!(
+            get_partition(&host_status, &"os".to_string()).is_none(),
+            true
+        );
+        assert_eq!(
+            get_partition(&host_status, &"efi".to_string()),
+            Some(BlockDeviceInfo {
+                path: std::path::Path::new("/dev/disk/by-partlabel/osp1").to_path_buf(),
+                size: 0
+            })
+        );
+
+        let disk_mut = get_disk_mut(&mut host_status, &"os".to_string());
+        disk_mut.unwrap().contents = BlockDeviceContents::Zeroed;
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_string())
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Zeroed
+        );
+
+        let partition_mut = get_partition_mut(&mut host_status, &"efi".to_string());
+        partition_mut.unwrap().contents = BlockDeviceContents::Initialized;
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_string())
+                .unwrap()
+                .partitions
+                .get(0)
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Initialized
+        );
+    }
+
+    /// Validates logic for determining which A/B volume to update
+    #[test]
+    fn test_get_ab_update_volume() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                disks:
+            imaging:
+                ab-update:
+                    volume-pairs:
+                image-deployment:
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        // test that clean-install will always use volume A for updates
+        assert_eq!(
+            get_ab_update_volume(&host_status).unwrap(),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+
+        assert_eq!(
+            get_ab_update_volume(&host_status).unwrap(),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+
+        assert_eq!(
+            get_ab_update_volume(&host_status).unwrap(),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        // test that UpdateInProgress(HostPatch, NormalUpdate, UpdateAndReboot)
+        // will always use the active volume for updates
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::HotPatch);
+        assert_eq!(
+            get_ab_update_volume(&host_status).unwrap(),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
+        assert_eq!(
+            get_ab_update_volume(&host_status).unwrap(),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot);
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+        assert_eq!(
+            get_ab_update_volume(&host_status).unwrap(),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        // test that UpdateInProgress(AbUpdate) will use the opposite volume
+        // for updates
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        assert_eq!(
+            get_ab_update_volume(&host_status).unwrap(),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+        assert_eq!(
+            get_ab_update_volume(&host_status).unwrap(),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        // test that UpdateInProgress(Incompatible) will return None
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::Incompatible);
+        assert_eq!(get_ab_update_volume(&host_status).unwrap(), None);
+
+        // test that Ready will return None
+        host_status.reconcile_state = ReconcileState::Ready;
+        assert_eq!(get_ab_update_volume(&host_status).unwrap(), None);
+    }
+
+    /// Validates logic for setting block device contents
+    #[test]
+    fn test_set_host_status_block_device_contents() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: null
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                          - id: root
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                          - id: rootb
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+                    data:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 1000
+                        contents: unknown
+                        partitions: []
+            imaging:
+                ab-update:
+                    volume-pairs:
+                        osab:
+                            id: osab
+                            volume-a-id: root
+                            volume-b-id: rootb
+                image-deployment:
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_string())
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_string())
+                .unwrap()
+                .partitions
+                .get(0)
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_string())
+                .unwrap()
+                .partitions
+                .get(1)
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+
+        // test for disks
+        let contents = BlockDeviceContents::Zeroed;
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"os".to_string(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_string())
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        // test for partitions
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"efi".to_string(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_string())
+                .unwrap()
+                .partitions
+                .get(0)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        // test for ab volumes
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"osab".to_string(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_string())
+                .unwrap()
+                .partitions
+                .get(1)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        assert!(set_host_status_block_device_contents(
+            &mut host_status,
+            &"foorbar".to_string(),
+            contents.clone()
+        )
+        .is_err());
     }
 }

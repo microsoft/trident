@@ -17,30 +17,48 @@ network-provision:
 
 storage:
   disks:
-    - device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0"
+    - id: disk0
+      device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0"
       partition-table-type: gpt
       partitions:
-        - type: esp
+        - id: part0
+          type: esp
           size: 1G
           label: boot
-        - type: root-a
+        - id: part1
+          type: root-a
           size: 8G
           label: A
-        - type: root-b
+        - id: part2
+          type: root-b
           size: 8G
           label: B
+  mount-points:
+    - path: /boot/efi
+      target-id: part0
+      filesystem: vfat
+      options: [defaults]
+    - path: /
+      target-id: root
+      filesystem: ext4
+      options: [defaults]
 
 imaging:
   images:
-    esp:
-      url: "http://10.137.192.130:8088/boot_partition.raw.zst"
+    - url: "file:///boot.raw.zst"
       sha256: b789802a93269486dc070faad41dc4d3bf0c5d018d3dea772917cf457a7f3115
       format: raw-zstd
-    root:
-      url: "http://10.137.192.130:8088/root_fs_partition.raw.zst"
+      target-id: part0
+    - url: "file:///rootfs.raw.zst"
       sha256: 8c11d8fe3a99d360f204e789d426ed70aaf4bf72163c8f4476a31fcf894601e6
       format: raw-zstd
+      target-id: root
   overlays:
+  ab-update:
+    volume-pairs:
+      - id: root
+        volume-a-id: part1
+        volume-b-id: part2
 
 
 network:

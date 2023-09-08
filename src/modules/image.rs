@@ -12,9 +12,13 @@ use reqwest::Url;
 use sha2::Digest;
 use sys_mount::{Mount, Unmount, UnmountFlags};
 
+use trident_api::{
+    config::{HostConfiguration, ImageFormat},
+    status::{AbUpdate, AbVolumePair, BlockDeviceContents, HostStatus, UpdateKind},
+};
+
 use crate::modules::Module;
-use trident_api::config::{HostConfiguration, ImageFormat};
-use trident_api::status::{HostStatus, PartitionContents, UpdateKind};
+use crate::{get_block_device, set_host_status_block_device_contents};
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
 struct HashingReader<R: Read>(R, sha2::Sha256);
@@ -42,17 +46,11 @@ pub(crate) fn stream_images(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
-    for (image_type, image) in &host_config.imaging.images {
-        let partition_type = image_type.to_part_type(true); // TODO: Properly pick A/B partition
-
-        // Iterate over all partitions on all disks to find the first one with a matching type.
-        let partition = host_status
-            .storage
-            .disks
-            .values_mut()
-            .flat_map(|d| &mut d.partitions)
-            .find(|p| p.ty == partition_type)
-            .ok_or_else(|| anyhow::anyhow!("No partition of type {:?} found", partition_type))?;
+    for image in &host_config.imaging.images {
+        let block_device = get_block_device(host_status, &image.target_id).context(format!(
+            "No block device with id '{}' found",
+            image.target_id
+        ))?;
 
         // TODO: Add more options for download sources
         let image_url = Url::parse(image.url.as_str())
@@ -78,26 +76,27 @@ pub(crate) fn stream_images(
         // Open the partition for writing.
         let file = fs::File::options()
             .write(true)
-            .open(&partition.path)
-            .context(format!("Failed to open '{}'", partition.path.display()))?;
+            .open(&block_device.path)
+            .context(format!("Failed to open '{}'", block_device.path.display()))?;
 
         // Buffer small writes to the disk, ensuring we write blocks of at least 4MB.
         let mut file = BufWriter::with_capacity(4 << 20, file);
 
-        // Mark the partition as having unknown contents in case the write operation is interrupted.
-        partition.contents = PartitionContents::Unknown;
+        // Mark the block device as having unknown contents in case the write operation is interrupted.
+        set_host_status_block_device_contents(
+            host_status,
+            &image.target_id,
+            BlockDeviceContents::Unknown,
+        )?;
 
-        // Decompress the image and write it to the partition, making sure not to write past the end.
-        let bytes_copied = io::copy(
-            &mut (&mut decoder).take(partition.end - partition.start),
-            &mut file,
-        )
-        .context("Failed to copy image")?;
+        // Decompress the image and write it to the block device, making sure not to write past the end.
+        let bytes_copied = io::copy(&mut (&mut decoder).take(block_device.size), &mut file)
+            .context("Failed to copy image")?;
 
         info!(
             "Copied {} bytes to {}",
             bytes_copied,
-            partition.path.display()
+            block_device.path.display()
         );
 
         file.into_inner()
@@ -112,10 +111,14 @@ pub(crate) fn stream_images(
         }
 
         let computed_sha256 = stream.hash();
-        partition.contents = PartitionContents::Image {
-            sha256: computed_sha256.clone(),
-            length: bytes_copied,
-        };
+        set_host_status_block_device_contents(
+            host_status,
+            &image.target_id,
+            BlockDeviceContents::Image {
+                sha256: computed_sha256.clone(),
+                length: bytes_copied,
+            },
+        )?;
 
         // Confirm that the hash matches what we expected.
         if image.sha256 == "ignored" {
@@ -192,6 +195,39 @@ pub fn kexec(mount: Mount, args: &str) -> Result<(), Error> {
     unreachable!()
 }
 
+pub fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfiguration) {
+    if host_config.imaging.ab_update.is_none() {
+        host_status.imaging.ab_update = None;
+        return;
+    }
+
+    let ab_volume_pairs = host_config
+        .imaging
+        .ab_update
+        .as_ref()
+        .unwrap()
+        .volume_pairs
+        .iter()
+        .map(|p| {
+            (
+                p.id.clone(),
+                AbVolumePair {
+                    id: p.id.clone(),
+                    volume_a_id: p.volume_a_id.clone(),
+                    volume_b_id: p.volume_b_id.clone(),
+                },
+            )
+        })
+        .collect();
+
+    let ab_update_status = AbUpdate {
+        volume_pairs: ab_volume_pairs,
+        active_volume: None,
+    };
+
+    host_status.imaging.ab_update = Some(ab_update_status);
+}
+
 #[derive(Default, Debug)]
 pub struct ImageModule;
 impl Module for ImageModule {
@@ -221,9 +257,11 @@ impl Module for ImageModule {
 
     fn reconcile(
         &mut self,
-        _host_status: &mut HostStatus,
-        _host_config: &HostConfiguration,
+        host_status: &mut HostStatus,
+        host_config: &HostConfiguration,
     ) -> Result<(), Error> {
+        refresh_ab_volumes(host_status, host_config);
+
         Ok(())
     }
 }
@@ -231,10 +269,11 @@ impl Module for ImageModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
     use std::io::Cursor;
 
     #[test]
-    fn hashing_reader() {
+    fn test_hashing_reader() {
         let input = b"Hello, world!";
         let mut hasher = HashingReader::new(Cursor::new(&input));
 
@@ -245,5 +284,33 @@ mod tests {
             hasher.hash(),
             "315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3"
         );
+    }
+
+    /// Validates that refresh_ab_volumes initializes HostStatus correctly.
+    #[test]
+    fn test_refresh_ab_volumes_yaml() {
+        let host_config_yaml = indoc! {r#"
+            storage:
+                disks:
+            imaging:
+                images:
+                ab-update:
+                    volume-pairs:
+                      - id: ab
+                        volume-a-id: a
+                        volume-b-id: b
+        "#};
+        let host_config = serde_yaml::from_str::<HostConfiguration>(host_config_yaml).unwrap();
+        let mut host_status = HostStatus::default();
+
+        refresh_ab_volumes(&mut host_status, &host_config);
+        assert!(host_status.imaging.ab_update.is_some());
+        assert!(host_status
+            .imaging
+            .ab_update
+            .as_ref()
+            .unwrap()
+            .volume_pairs
+            .contains_key("ab"));
     }
 }

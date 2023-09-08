@@ -1761,6 +1761,7 @@ dependencies = [
 name = "trident_api"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "netplan-types",
  "serde",
  "serde_yaml",

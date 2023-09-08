@@ -13,7 +13,7 @@ build:
 
 .PHONY: test
 test:
-	cargo test
+	cargo test --all
 
 .PHONY: rpm
 rpm:
@@ -23,3 +23,8 @@ rpm:
 	docker cp $$id:/work/trident.tar.gz bin/ && \
 	docker rm -v $$id && \
 	tar xf bin/trident.tar.gz -C bin/
+
+.PHONY: clean
+clean:
+	cargo clean
+	rm -rf bin/

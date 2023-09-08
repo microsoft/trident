@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 use netplan_types::NetworkConfig;
 
@@ -43,7 +43,8 @@ impl Default for HostConfigSource {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+/// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct HostConfiguration {
@@ -58,17 +59,26 @@ pub struct HostConfiguration {
     pub network: Option<NetworkConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+/// Storage configuration for a host.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Storage {
     pub disks: Vec<Disk>,
+    #[serde(default)]
+    pub mount_points: Vec<MountPoint>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+/// Identifier for a block device.
+pub type BlockDeviceId = String;
+
+/// Per disk configuration. Carries information about the disk block volume device, the partition table, and the partitions.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Disk {
+    pub id: BlockDeviceId,
+
     /// The path to the disk. For instance, "/dev/sda" or
     /// "/dev/disk/by-path/pci-0000:00:1f.2-ata-1".
     pub device: PathBuf,
@@ -79,7 +89,8 @@ pub struct Disk {
     pub partitions: Vec<Partition>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+/// Partition table type. Currently only GPT is supported.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub enum PartitionTableType {
@@ -87,86 +98,104 @@ pub enum PartitionTableType {
     Gpt,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/// Per partition configuration. Carries information about the partition type,
+/// and the size in bytes.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Partition {
+    pub id: BlockDeviceId,
+
     #[serde(rename = "type")]
     pub partition_type: PartitionType,
+    /// Size in bytes.
     pub size: String,
 }
 
+/// Partition types as defined by The Discoverable Partitions Specification (https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub enum PartitionType {
+    /// EFI System Partition
+    /// C12A7328-F81F-11D2-BA4B-00A0C93EC93B
     Esp,
-    RootA,
-    RootB,
+    /// x64: 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
+    Root,
+    /// A19D880F-05FC-4D3B-A006-743F0F84911E
     Raid,
 }
-impl PartitionType {
-    pub fn to_label_str(&self) -> &'static str {
-        match self {
-            PartitionType::Esp => "mariner-esp",
-            PartitionType::RootA => "mariner-root-a",
-            PartitionType::RootB => "mariner-root-b",
-            PartitionType::Raid => "mariner-raid",
-        }
-    }
+
+/// Mount point configuration. Carries information necessary to populate
+/// /etc/fstab configuration to mount a filesystem on a block device.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct MountPoint {
+    pub path: PathBuf,
+    pub filesystem: String,
+    pub options: Vec<String>,
+    pub target_id: BlockDeviceId,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+/// Imaging configuration for a host. Carries information about the images to
+/// deploy onto host block devices and the A/B update configuration.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Imaging {
-    pub images: HashMap<PartImageType, Image>,
+    pub images: Vec<Image>,
+
+    pub ab_update: Option<AbUpdate>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct ImageConfiguration {
+    pub image: Image,
+    pub mount_point: MountPoint,
+    pub target_id: BlockDeviceId,
+}
+
+/// Per image configuration. Carries information about the image URL
+/// (http(s)://, file://, or oci:// prefixes are supported), the image hash, the
+/// image format, and the target block device to deploy the image onto.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Image {
     pub url: String,
     pub sha256: String,
     pub format: ImageFormat,
+    pub target_id: BlockDeviceId,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/// Image format. Currently only RawZstd is supported, which represents a raw
+/// filesystem image compressed with zstd.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub enum ImageFormat {
     RawZstd,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/// A/B update configuration. Carries information about the A/B update volume
+/// pairs that are used to perform A/B updates.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
-pub struct PartImage {
-    #[serde(rename = "type")]
-    pub ty: PartImageType,
-    pub uuid: String,
+pub struct AbUpdate {
+    pub volume_pairs: Vec<AbVolumePair>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+/// Per A/B update volume pair configuration. Points to the underlying block
+/// devices used for the A/B update.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-pub enum PartImageType {
-    Esp,
-    Root,
-}
-impl PartImageType {
-    pub fn to_part_type(&self, use_a: bool) -> PartitionType {
-        if use_a {
-            match self {
-                PartImageType::Esp => PartitionType::Esp,
-                PartImageType::Root => PartitionType::RootA,
-            }
-        } else {
-            match self {
-                PartImageType::Esp => PartitionType::Esp,
-                PartImageType::Root => PartitionType::RootB,
-            }
-        }
-    }
+pub struct AbVolumePair {
+    pub id: BlockDeviceId,
+
+    pub volume_a_id: BlockDeviceId,
+    pub volume_b_id: BlockDeviceId,
 }
