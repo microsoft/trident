@@ -16,6 +16,16 @@ Agent for bare metal platform
 %files
 %{_bindir}/%{name}
 %dir /etc/%{name}
+%{_unitdir}/%{name}.service
+
+%post
+%systemd_post %{name}.service
+
+%preun
+%systemd_preun %{name}.service
+
+%postun
+%systemd_postun_with_restart %{name}.service
 
 # ------------------------------------------------------------------------------
 
@@ -31,16 +41,16 @@ Conflicts:      %{name}-service
 Trident files for the provisioning OS
 
 %files provisioning
-%{_unitdir}/%{name}-provisioning.service
+%{_unitdir}/%{name}-network.service
 
 %post provisioning
-%systemd_post %{name}-provisioning.service
+%systemd_post %{name}-network.service
 
 %preun provisioning
-%systemd_preun %{name}-provisioning.service
+%systemd_preun %{name}-network.service
 
 %postun provisioning
-%systemd_postun_with_restart %{name}-provisioning.service
+%systemd_postun_with_restart %{name}-network.service
 
 # ------------------------------------------------------------------------------
 
@@ -56,16 +66,6 @@ Conflicts:      %{name}-service
 Trident files for the runtime OS
 
 %files runtime
-%{_unitdir}/%{name}.service
-
-%post runtime
-%systemd_post %{name}.service
-
-%preun runtime
-%systemd_preun %{name}.service
-
-%postun runtime
-%systemd_postun_with_restart %{name}.service
 
 # ------------------------------------------------------------------------------
 
@@ -77,6 +77,6 @@ install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
-install -D -m 644 systemd/%{name}-provisioning.service %{buildroot}%{_unitdir}/%{name}-provisioning.service
+install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
 
 mkdir -p %{buildroot}/etc/%{name}

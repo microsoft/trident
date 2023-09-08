@@ -1,0 +1,13 @@
+[Unit]
+Description=Trident Agent
+StartLimitInterval=200
+StartLimitBurst=5
+
+[Service]
+Environment=RUST_LOG=info
+ExecStart=/usr/bin/trident run
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

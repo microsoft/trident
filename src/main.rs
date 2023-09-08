@@ -18,6 +18,8 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum SubCommand {
     Run,
+    #[clap(name = "start-network")]
+    StartNetwork,
 }
 
 #[tokio::main]
@@ -53,46 +55,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let host_config = Some(&config.host_config);
     debug!("Host config: {:#?}", host_config);
 
-    info!("Starting network");
-    trident::start_provisioning_network(
-        config.network_override,
-        host_config
-            .as_ref()
-            .and_then(|c| c.network_provision.clone()),
-        host_config.as_ref().and_then(|c| c.network.clone()),
-    )
-    .context("Failed to start provisioning network")?;
-
-    if let Some(phonehome) = config.phonehome {
-        info!("Phonehome to {}", phonehome);
-        for _ in 0..5 {
-            if reqwest::Client::new()
-                .post(&phonehome)
-                .body("hello-from-trident")
-                .send()
-                .await
-                .map_err(|e| error!("Failed to phonehome: {}", e))
-                .is_ok()
-            {
-                break;
-            }
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    }
-
     match args.subcmd {
-        SubCommand::Run => match config.host_config_source {
-            HostConfigSource::File(_) | HostConfigSource::Embedded(_) => {
-                info!("Running");
-                if let Err(e) = trident::run(host_config.as_ref().unwrap(), config.datastore) {
-                    error!("{e:?}");
+        SubCommand::Run => {
+            if let Some(phonehome) = config.phonehome {
+                info!("Phonehome to {}", phonehome);
+                for _ in 0..5 {
+                    if reqwest::Client::new()
+                        .post(&phonehome)
+                        .body("hello-from-trident")
+                        .send()
+                        .await
+                        .map_err(|e| error!("Failed to phonehome: {}", e))
+                        .is_ok()
+                    {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_secs(1));
                 }
             }
-            HostConfigSource::GrpcCommand { listen_port } => {
-                info!("Listening");
-                trident::serve("0.0.0.0".parse().unwrap(), listen_port.unwrap_or(50051)).await?;
+
+            match config.host_config_source {
+                HostConfigSource::File(_) | HostConfigSource::Embedded(_) => {
+                    info!("Running");
+                    if let Err(e) = trident::run(host_config.as_ref().unwrap(), config.datastore) {
+                        error!("{e:?}");
+                    }
+                }
+                HostConfigSource::GrpcCommand { listen_port } => {
+                    info!("Listening");
+                    trident::serve("0.0.0.0".parse().unwrap(), listen_port.unwrap_or(50051))
+                        .await?;
+                }
             }
-        },
+        }
+        SubCommand::StartNetwork => {
+            info!("Starting network");
+            trident::start_provisioning_network(config.network_override, host_config.as_deref())
+                .context("Failed to start provisioning network")?;
+        }
     }
 
     Ok(())
