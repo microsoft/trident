@@ -45,6 +45,7 @@ impl Default for HostConfigSource {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct HostConfiguration {
     pub storage: Storage,
 
@@ -59,12 +60,14 @@ pub struct HostConfiguration {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Storage {
     pub disks: Vec<Disk>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Disk {
     /// The path to the disk. For instance, "/dev/sda" or
     /// "/dev/disk/by-path/pci-0000:00:1f.2-ata-1".
@@ -78,6 +81,7 @@ pub struct Disk {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub enum PartitionTableType {
     #[default]
     Gpt,
@@ -85,6 +89,7 @@ pub enum PartitionTableType {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Partition {
     #[serde(rename = "type")]
     pub partition_type: PartitionType,
@@ -93,6 +98,7 @@ pub struct Partition {
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub enum PartitionType {
     Esp,
     RootA,
@@ -112,12 +118,14 @@ impl PartitionType {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Imaging {
     pub images: HashMap<PartImageType, Image>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Image {
     pub url: String,
     pub sha256: String,
@@ -126,12 +134,14 @@ pub struct Image {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub enum ImageFormat {
     RawZstd,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct PartImage {
     #[serde(rename = "type")]
     pub ty: PartImageType,
@@ -140,6 +150,7 @@ pub struct PartImage {
 
 #[derive(Serialize, Deserialize, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub enum PartImageType {
     Esp,
     Root,

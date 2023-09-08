@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::config::PartitionType;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct HostStatus {
     pub reconcile_state: ReconcileState,
     pub storage: Storage,
@@ -13,6 +14,7 @@ pub struct HostStatus {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub enum ReconcileState {
     /// A clean install is in progress.
     CleanInstall,
@@ -24,6 +26,7 @@ pub enum ReconcileState {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
 pub enum UpdateKind {
     /// Update that can be applied without pausing the workload.
     HotPatch = 0,
@@ -38,11 +41,13 @@ pub enum UpdateKind {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Storage {
     pub disks: BTreeMap<PathBuf, Disk>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Disk {
     pub uuid: Uuid,
     pub bus_path: PathBuf,
@@ -51,6 +56,7 @@ pub struct Disk {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Partition {
     pub path: PathBuf,
     pub start: u64,
@@ -60,6 +66,7 @@ pub struct Partition {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub enum PartitionContents {
     #[default]
     Unknown,
@@ -71,12 +78,14 @@ pub enum PartitionContents {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Imaging {
     /// Map from sha256 to Image.
     pub images: BTreeMap<String, Image>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Image {
     pub url: String,
 }
