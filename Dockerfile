@@ -12,6 +12,7 @@ COPY proto ./proto
 COPY build.rs .
 COPY src ./src
 COPY trident_api ./trident_api
+COPY setsail ./setsail
 
 RUN \
     --mount=type=cache,target=/work/target \

@@ -6,6 +6,8 @@ use log::{debug, error, info, warn};
 
 use trident_api::config::{HostConfigSource, LocalConfigFile};
 
+use setsail::{load_kickstart_file, load_kickstart_string, KsTranslator};
+
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
@@ -20,6 +22,9 @@ enum SubCommand {
     Run,
     #[clap(name = "start-network")]
     StartNetwork,
+    ParseKickstart {
+        file: String,
+    },
 }
 
 #[tokio::main]
@@ -51,6 +56,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         HostConfigSource::Embedded(contents) => Some(mem::take(contents)),
         HostConfigSource::GrpcCommand { .. } => None,
+        HostConfigSource::KickstartEmbedded(contents) => {
+            match KsTranslator::new().translate(load_kickstart_string(contents)) {
+                Ok(hc) => Some(Box::new(hc)),
+                Err(e) => {
+                    // TODO: handle & report kickstart errors
+                    error!(
+                        "Failed to translate kickstart:\n{}",
+                        serde_json::to_string_pretty(&e)?
+                    );
+                    None
+                }
+            }
+        }
+        HostConfigSource::Kickstart(file) => {
+            match KsTranslator::new().translate(load_kickstart_file(
+                file.to_str()
+                    .context(format!("Failed to resolve path {}", file.display()))?,
+            )?) {
+                Ok(hc) => Some(Box::new(hc)),
+                Err(e) => {
+                    error!(
+                        // TODO: handle & report kickstart errors
+                        "Failed to translate kickstart:\n{}",
+                        serde_json::to_string_pretty(&e)?
+                    );
+                    None
+                }
+            }
+        }
     };
     // let host_config = Some(&config.host_config);
     debug!("Host config: {:#?}", host_config);
@@ -75,7 +109,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             match config.host_config_source {
-                HostConfigSource::File(_) | HostConfigSource::Embedded(_) => {
+                HostConfigSource::File(_)
+                | HostConfigSource::Embedded(_)
+                | HostConfigSource::Kickstart(_)
+                | HostConfigSource::KickstartEmbedded(_) => {
                     info!("Running");
                     if let Err(e) = trident::run(host_config.as_ref().unwrap(), config.datastore) {
                         error!("{e:?}");
@@ -88,10 +125,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+
         SubCommand::StartNetwork => {
             info!("Starting network");
             trident::start_provisioning_network(config.network_override, host_config.as_deref())
                 .context("Failed to start provisioning network")?;
+        }
+
+        // TODO: Remove this in the future
+        // It's very useful for testing
+        SubCommand::ParseKickstart { file } => {
+            match KsTranslator::new()
+                .translate(load_kickstart_file(&file).context(format!("Failed to read {}", &file))?)
+            {
+                Ok(hc) => {
+                    println!("{}", serde_yaml::to_string(&hc)?);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to translate kickstart:\n{}",
+                        serde_json::to_string_pretty(&e)?
+                    );
+                }
+            }
         }
     }
 

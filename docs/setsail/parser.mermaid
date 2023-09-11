@@ -1,0 +1,25 @@
+flowchart LR
+
+in[\Input Kickstart\]-->line
+
+line[Line Parser]
+section[Section Handler]
+commands[Command Parser]
+incl[Include Handler]
+data[\Parsed Data\]
+
+line-."Empty\nor\nComment".->line
+
+line-."%include".->incl
+incl-."(recursive)".->line
+
+line-."&lt;command&gt;".->commands
+commands-."#92;n".->line
+commands--"Parsed Command"-->data
+
+line-."%&lt;section&gt;".->section
+section-."%end".->line
+section-."*#92;n".->section
+section--"Parsed Section"-->data
+
+line-.EOF.->exit[Exit Parsing]

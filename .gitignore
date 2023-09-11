@@ -341,3 +341,6 @@ reports/
 
 # RPM output
 /trident-*.rpm
+
+# Dev files
+/dev

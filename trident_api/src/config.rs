@@ -31,6 +31,12 @@ pub enum HostConfigSource {
     #[serde(rename = "host-config")]
     Embedded(Box<HostConfiguration>),
 
+    #[serde(rename = "kickstart-file")]
+    Kickstart(PathBuf),
+
+    #[serde(rename = "kickstart")]
+    KickstartEmbedded(String),
+
     #[serde(rename = "grpc")]
     GrpcCommand {
         /// Port for the gRPC server (default is 50051)
@@ -53,10 +59,17 @@ pub struct HostConfiguration {
     pub imaging: Imaging,
 
     /// Netplan configuration for the provisioning OS _ONLY_.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub network_provision: Option<NetworkConfig>,
 
     /// Netplan configuration for the runtime OS.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub network: Option<NetworkConfig>,
+
+    /// Scripts to be run after the installation is complete.
+    /// Should reference the name of a script in the `scripts` section.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub post_install_scripts: Vec<Script>,
 }
 
 /// Storage configuration for a host.
@@ -64,6 +77,7 @@ pub struct HostConfiguration {
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Storage {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub disks: Vec<Disk>,
     #[serde(default)]
     pub mount_points: Vec<MountPoint>,
@@ -144,8 +158,10 @@ pub struct MountPoint {
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct Imaging {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<Image>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ab_update: Option<AbUpdate>,
 }
 
@@ -198,4 +214,21 @@ pub struct AbVolumePair {
 
     pub volume_a_id: BlockDeviceId,
     pub volume_b_id: BlockDeviceId,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(rename_all = "kebab-case")]
+pub struct Script {
+    /// Binary to run the script with.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interpreter: Option<PathBuf>,
+
+    /// The script itself.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub content: String,
+
+    /// Path of a file to write the script's output to.
+    /// THis includes both stdout and stderr.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_file_path: Option<PathBuf>,
 }

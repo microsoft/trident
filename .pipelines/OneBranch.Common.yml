@@ -30,7 +30,7 @@ steps:
 - script: cargo build --locked 2>&1
   displayName: Build Debug
 
-- script: cargo test --locked 2>&1
+- script: cargo test --locked --all 2>&1
   displayName: Test Debug
 
 - script: cargo build --locked --release 2>&1

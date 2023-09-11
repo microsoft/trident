@@ -1,0 +1,41 @@
+use clap::Parser;
+
+use crate::{parser::ParsedData, types::KSLine, SetsailError};
+
+use super::CommandHandler;
+
+#[derive(Parser, Debug, Default)]
+pub struct Rootpw {
+    #[clap(skip)]
+    pub line: KSLine,
+
+    #[arg(long, group = "src", requires = "password")]
+    iscrypted: bool,
+    #[arg(
+        long,
+        group = "src",
+        requires = "password",
+        default_value_if("plaintext", "false", "true")
+    )]
+    plaintext: bool,
+    #[arg(long, group = "src", conflicts_with = "password")]
+    lock: bool,
+    #[arg(required_unless_present = "lock")]
+    password: Option<String>,
+}
+
+impl CommandHandler for Rootpw {
+    fn handle(mut self, line: KSLine, data: &mut ParsedData) -> Result<(), SetsailError> {
+        let mut result = Ok(());
+        if let Some(old) = &data.root {
+            result = Err(SetsailError::new_sem_warn(
+                line.clone(),
+                format!("overriding previous rootpw command at {}", old.line),
+            ));
+        }
+
+        self.line = line;
+        data.root = Some(self);
+        result
+    }
+}

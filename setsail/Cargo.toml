@@ -1,0 +1,18 @@
+[package]
+name = "setsail"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.3.23", features = ["derive"] }
+log = "0.4.20"
+serde = { version = "1.0.185", features = ["derive"] }
+shellwords = "1.1.0"
+
+trident_api = { path = "../trident_api" }
+
+[dev-dependencies]
+indoc = "2"
+tempfile = "3.8.0"
