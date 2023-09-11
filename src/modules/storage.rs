@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Error};
 use log::{info, warn};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -79,8 +79,8 @@ impl Module for StorageModule {
                 for block_device_id in [&p.volume_a_id, &p.volume_b_id] {
                     if !partition_ids_set.contains(block_device_id) {
                         bail!(
-                            "Block device id '{name}' was set as dependency of an A/B update volume '{parent}', but is not defined elsewhere",
-                            name = block_device_id,
+                            "Block device id '{id}' was set as dependency of an A/B update volume '{parent}', but is not defined elsewhere",
+                            id = block_device_id,
                             parent = p.id,
                         );
                     }
@@ -91,8 +91,8 @@ impl Module for StorageModule {
         for image in &host_config.imaging.images {
             if !image_target_ids.contains(&image.target_id) {
                 bail!(
-                    "Block device name '{name}' was set as dependency of an image, but is not defined elsewhere",
-                    name = image.target_id,
+                    "Block device id '{id}' was set as dependency of an image, but is not defined elsewhere",
+                    id = image.target_id,
                 );
             }
         }
@@ -100,8 +100,8 @@ impl Module for StorageModule {
         for mount_point in &host_config.storage.mount_points {
             if !image_target_ids.contains(&mount_point.target_id) {
                 bail!(
-                    "Block device name '{name}' was set as dependency of a mount point, but is not defined elsewhere",
-                    name = mount_point.target_id,
+                    "Block device id '{id}' was set as dependency of a mount point, but is not defined elsewhere",
+                    id = mount_point.target_id,
                 );
             }
         }
@@ -111,8 +111,8 @@ impl Module for StorageModule {
             for p in &ab_update.volume_pairs {
                 if p.volume_a_id == p.volume_b_id {
                     bail!(
-                        "A/B update volume '{name}' has the same target_id both both volumes",
-                        name = p.id,
+                        "A/B update volume id '{id}' has the same target_id both both volumes",
+                        id = p.id,
                     );
                 }
             }
@@ -230,13 +230,7 @@ impl StorageModule {
             // Allocate partitions in 4KB increments, starting at 4MB to leave space for the
             // partition table.
             let mut start = 4 * 1024 * 1024;
-            let mut partition_kind_counts = HashMap::new();
             for (index, partition) in disk.partitions.iter().enumerate() {
-                let count = partition_kind_counts
-                    .entry(partition.partition_type)
-                    .or_insert(0);
-                *count += 1;
-
                 let size = parse_size(&partition.size).context(format!(
                     "Failed to parse size ('{}') for partition '{}'",
                     partition.size, partition.id
@@ -274,6 +268,9 @@ impl StorageModule {
 
                 start += size;
             }
+
+            // ensure all /dev/disk/* symlinks are created
+            run(Command::new("udevadm").arg("settle"))?;
 
             disk_status.contents = status::BlockDeviceContents::Initialized;
         }
