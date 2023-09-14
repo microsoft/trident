@@ -136,8 +136,10 @@ pub enum PartitionType {
     Esp,
     /// x64: 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
     Root,
-    /// A19D880F-05FC-4D3B-A006-743F0F84911E
-    Raid,
+    /// 0657fd6d-a4ab-43c4-84e5-0933c84b4f4f
+    Swap,
+    /// x64: 2c7357ed-ebd2-46d9-aec1-23d437ec2bf5
+    RootVerity,
 }
 
 /// Mount point configuration. Carries information necessary to populate

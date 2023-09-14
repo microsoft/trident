@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 anyhow = { version = "1.0.75", features = ["backtrace"] }
 clap = { version = "4.3.23", features = ["derive"] }
+configparser = "3.0.2"
 env_logger = "0.10.0"
 glob = "0.3.1"
 indoc = "2.0.3"

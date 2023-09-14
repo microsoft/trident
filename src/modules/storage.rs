@@ -1,17 +1,19 @@
 use anyhow::{bail, Context, Error};
-use log::{info, warn};
+use configparser::ini::Ini;
+use log::info;
+use serde_json::Value;
 use std::{
     collections::HashSet,
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Output},
 };
 use sys_mount::Mount;
 use uuid::Uuid;
 
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, Partition, PartitionType},
     status::{self, BlockDeviceContents, HostStatus, UpdateKind},
 };
 
@@ -135,6 +137,9 @@ impl Module for StorageModule {
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         update_fstab_file(host_status, host_config)
+
+        // TODO: update /etc/repart.d directly for the matching disk, derive
+        // from where is the root located
     }
 }
 
@@ -160,16 +165,43 @@ impl StorageModule {
         Ok(())
     }
 
+    fn partition_config_to_repart_config(partition: &Partition) -> Result<Ini, Error> {
+        let partition_type_str = partition_type_to_string(&partition.partition_type)?;
+
+        parse_size(&partition.size).context(format!(
+            "Failed to parse size ('{}') for partition '{}'",
+            partition.size, partition.id
+        ))?;
+
+        let mut repart_config = Ini::new_cs();
+
+        let repart_partition_section = "Partition";
+
+        repart_config.set(repart_partition_section, "Type", Some(partition_type_str));
+        repart_config.set(
+            repart_partition_section,
+            "Label",
+            Some(partition.id.clone()),
+        );
+
+        repart_config.set(
+            repart_partition_section,
+            "SizeMinBytes",
+            Some(partition.size.clone()),
+        );
+        repart_config.set(
+            repart_partition_section,
+            "SizeMaxBytes",
+            Some(partition.size.clone()),
+        );
+
+        Ok(repart_config)
+    }
+
     pub fn create_partitions(
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        // The commands in this function are run using flock because of past issues with the
-        // Mariner toolkit. The commands sometimes would not block when later commands were
-        // expecting them to.
-        //
-        // TODO: Investigate whether this is still necessary.
-
         for disk in &host_config.storage.disks {
             let disk_path = disk.device.canonicalize().context(format!(
                 "Failed to lookup device '{}'",
@@ -181,39 +213,41 @@ impl StorageModule {
                     format!("Failed to find bus path of '{}'", disk_path.display()),
                 )?;
 
-            // Attempt to delete the partition table, but continue on failure.
-            if let Err(e) = run(Command::new("sfdisk")
-                .arg("--delete")
+            let repart_root = tempfile::tempdir()
+                .context("Failed to create temporary directory for systemd-repart files")?;
+            let repart_config_path = repart_root.path().join(&disk.id);
+            info!(
+                "Generating systemd-repart configuration in {}",
+                repart_root.path().to_string_lossy()
+            );
+            generate_repart_config(&repart_config_path, disk)?;
+
+            let repart_output_json = run(Command::new("systemd-repart")
+                .arg(disk_bus_path.as_os_str())
+                .arg("--dry-run=no")
+                .arg("--empty=force")
+                .arg("--seed=random")
+                .arg("--json=short")
+                .arg("--definitions")
+                .arg(repart_config_path))
+            .context(format!("Failed to initialize disk {}", disk.id))?;
+            let partitions_status: Value = serde_json::from_slice(&repart_output_json.stdout)
+                .context("Failed to deserialize output of disk initialization command")?;
+
+            let sfdisk_output_json = run(Command::new("sfdisk")
+                .arg("-J")
                 .arg(disk_bus_path.as_os_str()))
-            {
-                warn!(
-                    "Failed to delete partitions on '{}'. Expected if disk is blank: {}",
-                    disk_bus_path.display(),
-                    e
-                );
-            }
-
-            // Create a new partition table.
-            run(Command::new("flock")
-                .arg("--timeout")
-                .arg("5")
-                .arg(disk_bus_path.as_os_str())
-                .arg("parted")
-                .arg(disk_bus_path.as_os_str())
-                .arg("--script")
-                .arg("mklabel")
-                .arg("gpt"))?;
-
-            // set the disk UUID
-            let disk_uuid = Uuid::new_v4();
-            run(Command::new("flock")
-                .arg("--timeout")
-                .arg("5")
-                .arg(disk_bus_path.as_os_str())
-                .arg("sgdisk")
-                .arg("--disk-guid")
-                .arg(disk_uuid.as_hyphenated().to_string())
-                .arg(disk_bus_path.as_os_str()))?;
+            .context(format!(
+                "Failed to fetch disk GPT UUID for disk {}",
+                disk.id
+            ))?;
+            let disk_status: Value = serde_json::from_slice(&sfdisk_output_json.stdout)
+                .context("Failed to deserialize output of disk status querying command")?;
+            let disk_uuid_str = disk_status["partitiontable"]["id"]
+                .as_str()
+                .context(format!("Failed to find GPT UUID for disk {}", disk.id))?;
+            let disk_uuid = Uuid::parse_str(disk_uuid_str)
+                .context(format!("Failed to parse disk UUID: '{}'", disk_uuid_str))?;
 
             host_status.storage.disks.insert(
                 disk.id.clone(),
@@ -225,38 +259,33 @@ impl StorageModule {
                     contents: BlockDeviceContents::Unknown,
                 },
             );
+
             let disk_status = host_status.storage.disks.get_mut(&disk.id).unwrap();
 
-            // Allocate partitions in 4KB increments, starting at 4MB to leave space for the
-            // partition table.
-            let mut start = 4 * 1024 * 1024;
+            // ensure all /dev/disk/* symlinks are created
+            run(Command::new("udevadm").arg("settle"))?;
+
             for (index, partition) in disk.partitions.iter().enumerate() {
-                let size = parse_size(&partition.size).context(format!(
-                    "Failed to parse size ('{}') for partition '{}'",
-                    partition.size, partition.id
-                ))?;
-                // Round up to a multiple of 4K
-                let size = (size.saturating_sub(1) / 4096 + 1) * 4096;
-
-                // TODO: find a more robust way to determine the physical block size rather than
-                // hardcoding 512 bytes.
-                run(Command::new("flock")
-                    .arg("--timeout")
-                    .arg("5")
-                    .arg(disk_bus_path.as_os_str())
-                    .arg("parted")
-                    .arg(disk_bus_path.as_os_str())
-                    .arg("--script")
-                    .arg("mkpart")
-                    .arg(&partition.id)
-                    .arg(format!("{start}B"))
-                    .arg(format!("{}B", start + size - 512)))?;
-
-                partprobe(&disk_bus_path)?;
-
-                let part_path = device_to_partition(&disk_bus_path, index + 1);
+                let partition_uuid_str =
+                    partitions_status[index]["uuid"].as_str().context(format!(
+                        "Failed to find UUID for partition {} on disk {}",
+                        partition.id, disk.id
+                    ))?;
+                let part_path = Path::new("/dev/disk/by-partuuid").join(partition_uuid_str);
                 info!("part_path: {}", part_path.display());
 
+                let start = partitions_status[index]["offset"]
+                    .as_u64()
+                    .context(format!(
+                        "Failed to find start offset for partition {} on disk {}",
+                        partition.id, disk.id
+                    ))?;
+                let size = partitions_status[index]["raw_size"]
+                    .as_u64()
+                    .context(format!(
+                        "Failed to find size for partition {} on disk {}",
+                        partition.id, disk.id
+                    ))?;
                 disk_status.partitions.push(status::Partition {
                     id: partition.id.clone(),
                     path: part_path,
@@ -264,13 +293,9 @@ impl StorageModule {
                     end: start + size,
                     ty: partition.partition_type,
                     contents: BlockDeviceContents::Unknown,
+                    uuid: Uuid::parse_str(partition_uuid_str)?,
                 });
-
-                start += size;
             }
-
-            // ensure all /dev/disk/* symlinks are created
-            run(Command::new("udevadm").arg("settle"))?;
 
             disk_status.contents = status::BlockDeviceContents::Initialized;
         }
@@ -279,7 +304,59 @@ impl StorageModule {
     }
 }
 
-fn run(command: &mut Command) -> Result<(), Error> {
+fn generate_repart_config(
+    repart_config_path: &PathBuf,
+    disk: &trident_api::config::Disk,
+) -> Result<(), Error> {
+    if disk.partitions.len() >= 100 {
+        bail!(
+            "Too many partitions ({}), maximum is 99",
+            disk.partitions.len()
+        );
+    }
+
+    fs::create_dir_all(repart_config_path).context(format!(
+        "Failed to create {}",
+        repart_config_path.to_string_lossy()
+    ))?;
+
+    for (index, partition) in disk.partitions.iter().enumerate() {
+        parse_size(&partition.size).context(format!(
+            "Failed to parse size ('{}') for partition '{}'",
+            partition.size, partition.id
+        ))?;
+
+        let repart_config =
+            StorageModule::partition_config_to_repart_config(partition).context(format!(
+                "Failed to generate partition configuration for partition {} on disk {}",
+                partition.id, disk.id
+            ))?;
+
+        let partition_config_path = repart_config_path.join(format!(
+            "{:02}-{}.conf",
+            index,
+            partition_type_to_string(&partition.partition_type)?
+        ));
+
+        repart_config
+            .write(&partition_config_path)
+            .context(format!(
+                "Failed to create partition configuration file {}",
+                partition_config_path.to_string_lossy()
+            ))?;
+    }
+
+    Ok(())
+}
+
+fn partition_type_to_string(partition_type: &PartitionType) -> Result<String, Error> {
+    Ok(serde_json::to_value(partition_type)?
+        .as_str()
+        .unwrap()
+        .to_owned())
+}
+
+fn run(command: &mut Command) -> Result<Output, Error> {
     let output = command.output()?;
     if !output.status.success() {
         bail!(
@@ -289,18 +366,7 @@ fn run(command: &mut Command) -> Result<(), Error> {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    Ok(())
-}
-
-fn partprobe(disk_path: &Path) -> Result<(), Error> {
-    run(Command::new("flock")
-        .arg("--timeout")
-        .arg("5")
-        .arg(disk_path.as_os_str())
-        .arg("partprobe")
-        .arg("-s")
-        .arg(disk_path.as_os_str()))
-    .context("Failed to probe partitions")
+    Ok(output)
 }
 
 /// Returns the path of the first symlink in directory whose canonical path is target.
@@ -329,13 +395,6 @@ fn parse_size(value: &str) -> Result<u64, Error> {
     } else {
         value.parse()?
     })
-}
-
-fn device_to_partition(p: &Path, index: usize) -> PathBuf {
-    let mut s = p.as_os_str().to_owned();
-    s.push("-part");
-    s.push(&index.to_string());
-    s.into()
 }
 
 fn update_fstab_file(
@@ -417,18 +476,6 @@ mod tests {
         assert!(parse_size("T1").is_err());
         assert!(parse_size("-3").is_err());
         assert!(parse_size("0x23K").is_err());
-    }
-
-    #[test]
-    fn test_device_to_partition() {
-        assert_eq!(
-            device_to_partition(Path::new("/dev/disk/by-id/wwn-0x5000bbd357db3c30"), 1),
-            Path::new("/dev/disk/by-id/wwn-0x5000bbd357db3c30-part1")
-        );
-        assert_eq!(
-            device_to_partition(Path::new("/dev/disk/by-id/nvme-eui.002538123100e442"), 2),
-            Path::new("/dev/disk/by-id/nvme-eui.002538123100e442-part2")
-        );
     }
 
     /// Validates Storage module HostConfiguration validation logic.
@@ -629,12 +676,14 @@ mod tests {
                             start: 0
                             end: 0
                             type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
                           - id: root
                             path: /dev/disk/by-partlabel/osp2
                             contents: unknown
                             start: 0
                             end: 0
                             type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
             imaging:
                 image-deployment:
                     efi:
@@ -653,5 +702,53 @@ mod tests {
                 .map(|b| b as char)
                 .collect::<String>();
         assert_eq!(edited_fstab, expected_fstab);
+    }
+
+    /// Validates that partition_type_to_string returns the correct string for each PartitionType.
+    #[test]
+    fn test_partition_type_to_string() {
+        assert_eq!(
+            partition_type_to_string(&PartitionType::Esp).unwrap(),
+            "esp"
+        );
+        assert_eq!(
+            partition_type_to_string(&PartitionType::Root).unwrap(),
+            "root"
+        );
+        assert_eq!(
+            partition_type_to_string(&PartitionType::RootVerity).unwrap(),
+            "root-verity"
+        );
+        assert_eq!(
+            partition_type_to_string(&PartitionType::Swap).unwrap(),
+            "swap"
+        );
+    }
+
+    /// Validates that partition_config_to_repart_config returns the correct Ini for each Partition.
+    #[test]
+    fn test_partition_config_to_repart_config() {
+        let partition = Partition {
+            id: "part1".to_owned(),
+            partition_type: PartitionType::Esp,
+            size: "1M".to_owned(),
+        };
+        let repart_config = StorageModule::partition_config_to_repart_config(&partition).unwrap();
+        assert_eq!(
+            repart_config.get("Partition", "Type").unwrap(),
+            "esp".to_owned()
+        );
+        assert_eq!(
+            repart_config.get("Partition", "Label").unwrap(),
+            "part1".to_owned()
+        );
+        assert_eq!(
+            repart_config.get("Partition", "SizeMinBytes").unwrap(),
+            "1M".to_owned()
+        );
+        assert_eq!(
+            repart_config.get("Partition", "SizeMaxBytes").unwrap(),
+            "1M".to_owned()
+        );
     }
 }

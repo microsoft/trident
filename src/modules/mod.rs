@@ -108,16 +108,7 @@ pub(crate) fn provision(host_config: &HostConfiguration) -> Result<(), Error> {
 
     image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
 
-    // Using the / mount point, figure out what should be used as a root block device.
-    let root_block_device_id = &host_config
-        .storage
-        .mount_points
-        .iter()
-        .find(|mp| mp.path == Path::new("/"))
-        .context("Failed to find root mount point")?
-        .target_id;
-    let root_block_device = get_block_device(&host_status, root_block_device_id)
-        .context("Failed to find root block device")?;
+    let root_block_device = get_root_block_device(host_config, &host_status)?;
 
     let mount = storage::mount_partition(
         root_block_device.path.as_path(),
@@ -158,6 +149,21 @@ pub(crate) fn provision(host_config: &HostConfiguration) -> Result<(), Error> {
     .context("Failed to perform kexec")?;
 
     unreachable!("kexec should never return")
+}
+
+/// Using the / mount point, figure out what should be used as a root block device.
+fn get_root_block_device(
+    host_config: &HostConfiguration,
+    host_status: &HostStatus,
+) -> Result<trident_api::status::BlockDeviceInfo, Error> {
+    let root_block_device_id = &host_config
+        .storage
+        .mount_points
+        .iter()
+        .find(|mp| mp.path == Path::new("/"))
+        .context("Failed to find root mount point")?
+        .target_id;
+    get_block_device(host_status, root_block_device_id).context("Failed to find root block device")
 }
 
 pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> Result<(), Error> {
@@ -211,16 +217,7 @@ pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> R
 
     // TODO: Call pre-update workload hook.
 
-    // Using the / mount point, figure out what should be used as a root block device.
-    let root_block_device_id = &host_config
-        .storage
-        .mount_points
-        .iter()
-        .find(|mp| mp.path == Path::new("/"))
-        .context("Failed to find root mount point")?
-        .target_id;
-    let root_block_device = get_block_device(state.host_status(), root_block_device_id)
-        .context("Failed to find root block device")?;
+    let root_block_device = get_root_block_device(host_config, state.host_status())?;
 
     let rootfs = if let Some(UpdateKind::AbUpdate) = update_kind {
         // TODO: Download update

@@ -253,18 +253,21 @@ mod tests {
                             start: 0
                             end: 0
                             type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
                           - id: root
                             path: /dev/disk/by-partlabel/osp2
                             contents: unknown
                             start: 100
                             end: 1000
                             type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
                           - id: rootb
                             path: /dev/disk/by-partlabel/osp3
                             contents: unknown
                             start: 1000
                             end: 10000
                             type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
                     data:
                         path: /dev/disk/by-bus/foobar
                         uuid: 00000000-0000-0000-0000-000000000000
@@ -382,6 +385,7 @@ mod tests {
             start: 0,
             end: 0,
             ty: PartitionType::Esp,
+            uuid: uuid::Uuid::nil(),
         };
 
         assert_eq!(
@@ -421,18 +425,21 @@ mod tests {
                             start: 0
                             end: 0
                             type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
                           - id: root
                             path: /dev/disk/by-partlabel/osp2
                             contents: unknown
                             start: 100
                             end: 1000
                             type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
                           - id: rootb
                             path: /dev/disk/by-partlabel/osp3
                             contents: unknown
                             start: 1000
                             end: 10000
                             type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
             imaging:
                 ab-update:
                     volume-pairs:
@@ -602,18 +609,21 @@ mod tests {
                             start: 0
                             end: 0
                             type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
                           - id: root
                             path: /dev/disk/by-partlabel/osp2
                             contents: unknown
                             start: 100
                             end: 1000
                             type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
                           - id: rootb
                             path: /dev/disk/by-partlabel/osp3
                             contents: unknown
                             start: 1000
                             end: 10000
                             type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
                     data:
                         path: /dev/disk/by-bus/foobar
                         uuid: 00000000-0000-0000-0000-000000000000

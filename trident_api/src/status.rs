@@ -81,6 +81,7 @@ pub struct Partition {
     #[serde(rename = "type")]
     pub ty: PartitionType,
     pub contents: BlockDeviceContents,
+    pub uuid: Uuid,
 }
 
 /// Status of contents of a block device.
