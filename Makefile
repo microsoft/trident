@@ -15,6 +15,14 @@ build:
 test:
 	cargo test --all
 
+.PHONE: coverage
+coverage:
+	CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw' cargo test --all
+	# cargo install grcov
+	mkdir -p target/coverage
+	grcov . --binary-path ./target/debug/deps/ -s . -t html,lcov,covdir --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o target/coverage
+	jq .coveragePercent target/coverage/covdir
+
 .PHONY: rpm
 rpm:
 	docker build -t trident/trident:latest .
@@ -28,3 +36,4 @@ rpm:
 clean:
 	cargo clean
 	rm -rf bin/
+	find . -name "*.profraw" -type f -delete

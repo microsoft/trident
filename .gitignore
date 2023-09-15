@@ -344,3 +344,6 @@ reports/
 
 # Dev files
 /dev
+
+# Code Coverage files
+*.profraw

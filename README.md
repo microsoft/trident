@@ -51,7 +51,12 @@ A step by step series of examples that tell you how to get a development environ
 
 ## Running the tests
 
-Explain how to run the tests for this project that are relevant to users. You can also link to the testing portion of [CONTRIBUTING.md](CONTRIBUTING.md) for tests relevant to contributors.
+Explain how to run the tests for this project that are relevant to users. You
+can also link to the testing portion of [CONTRIBUTING.md](CONTRIBUTING.md) for
+tests relevant to contributors.
+
+To gather code coverage data, invoke `make coverage`. It will store outputs in `target/coverage`.
+To enable code coverage visualization in VS Code, follow this guide: https://blog.rng0.io/how-to-do-code-coverage-in-rust.
 
 ### End-to-end tests
 
