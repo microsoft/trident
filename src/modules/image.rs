@@ -3,6 +3,8 @@ use std::{
     fs::{self, File},
     io::{self, BufWriter, Read},
     os::fd::AsRawFd,
+    path,
+    process::Command,
 };
 
 use anyhow::{bail, Context, Error};
@@ -10,15 +12,14 @@ use log::info;
 use nix::NixPath;
 use reqwest::Url;
 use sha2::Digest;
-use sys_mount::{Mount, Unmount, UnmountFlags};
 
 use trident_api::{
     config::{HostConfiguration, ImageFormat},
     status::{AbUpdate, AbVolumePair, BlockDeviceContents, HostStatus, UpdateKind},
 };
 
-use crate::modules::Module;
-use crate::{get_block_device, set_host_status_block_device_contents};
+use crate::modules::{unmount_target_volumes, Module};
+use crate::{get_block_device, run_command, set_host_status_block_device_contents};
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
 struct HashingReader<R: Read>(R, sha2::Sha256);
@@ -135,10 +136,10 @@ pub(crate) fn stream_images(
     Ok(())
 }
 
-pub fn kexec(mount: Mount, args: &str) -> Result<(), Error> {
-    let root = mount.target_path().to_str().ok_or_else(|| {
-        anyhow::anyhow!("Non-utf8 mount point: {}", mount.target_path().display())
-    })?;
+pub fn kexec(mount_path: &path::Path, args: &str) -> Result<(), Error> {
+    let root = mount_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Non-utf8 mount point: {}", mount_path.display()))?;
 
     info!("Searching for kernel and initrd");
     let kernel_path = glob::glob(&format!("{root}/boot/vmlinuz-*"))?
@@ -180,10 +181,7 @@ pub fn kexec(mount: Mount, args: &str) -> Result<(), Error> {
     drop(initrd);
     nix::unistd::sync();
 
-    // Unmount the filesystem.
-    mount
-        .unmount(UnmountFlags::empty())
-        .context("Failed to unmount filesystem")?;
+    unmount_target_volumes(mount_path)?;
 
     // Kexec into image.
     info!("Rebooting system");
@@ -195,37 +193,38 @@ pub fn kexec(mount: Mount, args: &str) -> Result<(), Error> {
     unreachable!()
 }
 
+pub fn reboot() -> Result<(), Error> {
+    // Sync all writes to the filesystem.
+    nix::unistd::sync();
+
+    info!("Rebooting system");
+    run_command(Command::new("systemctl").arg("reboot")).context("Failed to reboot the host")?;
+
+    unreachable!()
+}
+
 pub fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfiguration) {
-    if host_config.imaging.ab_update.is_none() {
-        host_status.imaging.ab_update = None;
-        return;
-    }
+    host_status.imaging.ab_update = host_config.imaging.ab_update.as_ref().map(|ab_update| {
+        let ab_volume_pairs = ab_update
+            .volume_pairs
+            .iter()
+            .map(|p| {
+                (
+                    p.id.clone(),
+                    AbVolumePair {
+                        id: p.id.clone(),
+                        volume_a_id: p.volume_a_id.clone(),
+                        volume_b_id: p.volume_b_id.clone(),
+                    },
+                )
+            })
+            .collect();
 
-    let ab_volume_pairs = host_config
-        .imaging
-        .ab_update
-        .as_ref()
-        .unwrap()
-        .volume_pairs
-        .iter()
-        .map(|p| {
-            (
-                p.id.clone(),
-                AbVolumePair {
-                    id: p.id.clone(),
-                    volume_a_id: p.volume_a_id.clone(),
-                    volume_b_id: p.volume_b_id.clone(),
-                },
-            )
-        })
-        .collect();
-
-    let ab_update_status = AbUpdate {
-        volume_pairs: ab_volume_pairs,
-        active_volume: None,
-    };
-
-    host_status.imaging.ab_update = Some(ab_update_status);
+        AbUpdate {
+            volume_pairs: ab_volume_pairs,
+            active_volume: None,
+        }
+    });
 }
 
 #[derive(Default, Debug)]

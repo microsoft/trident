@@ -4,13 +4,16 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, OperationType},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
-use crate::modules::{image::ImageModule, network::NetworkModule, storage::StorageModule};
-use crate::mount::{self, Chroot};
+use crate::mount::{self, setup_root_chroot, unmount_target_volumes};
 use crate::{datastore::DataStore, get_block_device};
+use crate::{
+    modules::{image::ImageModule, network::NetworkModule, storage::StorageModule},
+    mount::UpdateTargetEnvironment,
+};
 
 pub mod image;
 pub mod network;
@@ -69,7 +72,10 @@ lazy_static::lazy_static! {
     ]);
 }
 
-pub(crate) fn provision(host_config: &HostConfiguration) -> Result<(), Error> {
+pub(crate) fn provision(
+    host_config: &HostConfiguration,
+    allowed_operations: OperationType,
+) -> Result<(), Error> {
     // This is a safety check so that nobody accidentally formats their dev machine.
     if !fs::read_to_string("/proc/cmdline")
         .context("Failed to read /proc/cmdline")?
@@ -101,6 +107,11 @@ pub(crate) fn provision(host_config: &HostConfiguration) -> Result<(), Error> {
     }
     info!("Host config validated");
 
+    if allowed_operations == OperationType::RefreshOnly {
+        info!("Pause requested, skipping reconcile");
+        return Ok(());
+    }
+
     StorageModule::create_partitions(&mut host_status, host_config)
         .context("Failed to create disk partitions")?;
 
@@ -108,65 +119,49 @@ pub(crate) fn provision(host_config: &HostConfiguration) -> Result<(), Error> {
 
     image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
 
-    let root_block_device = get_root_block_device(host_config, &host_status)?;
+    let chroot_env = setup_root_chroot(host_config, &host_status)
+        .context("Failed to setup target root chroot")?;
 
-    let mount = storage::mount_partition(
-        root_block_device.path.as_path(),
-        Path::new("/partitionMount"),
-    )?;
+    if chroot_env.is_some() {
+        let mut state = DataStore::create(Path::new("/trident.sqlite"), host_status)?;
 
-    let chroot = Chroot::enter(Path::new("/partitionMount"))?;
+        // TODO: user creation should happen in modules (and not be hardcoded).
+        mount::run_script(
+            r#"sudo sh -c 'echo root:password | chpasswd'
+            useradd -p $(openssl passwd -1 password) -s /bin/bash -d /home/mariner_user/ -m -G sudo mariner_user"#
+        ).context("Failed to apply system config")?;
 
-    let mut state = DataStore::create(Path::new("/trident.sqlite"), host_status)?;
+        for m in &mut *modules {
+            state.with_host_status(|s| {
+                m.reconcile(s, host_config)
+                    .context(format!("Module '{}' failed during reconcile", m.name()))
+            })?;
+        }
 
-    // TODO: user creation should happen in modules (and not be hardcoded).
-    mount::run_script(
-        r#"sudo sh -c 'echo root:password | chpasswd'
-        useradd -p $(openssl passwd -1 password) -s /bin/bash -d /home/mariner_user/ -m -G sudo mariner_user"#
-    ).context("Failed to apply system config")?;
-
-    for m in &mut *modules {
-        state.with_host_status(|s| {
-            m.reconcile(s, host_config)
-                .context(format!("Module '{}' failed during reconcile", m.name()))
-        })?;
+        // TODO: Call post-update workload hook.
+        drop(state);
     }
 
-    // TODO: Call post-update workload hook.
+    if allowed_operations == OperationType::Update {
+        info!("Only Update requested, skipping transition");
+        if let Some(chroot_env) = chroot_env {
+            chroot_env.chroot.exit().context("Failed to exit chroot")?;
+            unmount_target_volumes(chroot_env.mount_path.as_path())
+                .context("Failed to unmount target volumes")?;
+        }
+        return Ok(());
+    }
 
-    drop(state);
-    chroot.exit().context("Failed to exit chroot")?;
+    transition(chroot_env)?;
 
-    info!("Rebooting");
-    image::kexec(
-        mount,
-        format!(
-            "console=tty1 console=ttyS0 root={}",
-            root_block_device.path.to_string_lossy()
-        )
-        .as_str(),
-    )
-    .context("Failed to perform kexec")?;
-
-    unreachable!("kexec should never return")
+    Ok(())
 }
 
-/// Using the / mount point, figure out what should be used as a root block device.
-fn get_root_block_device(
+pub(crate) fn update(
     host_config: &HostConfiguration,
-    host_status: &HostStatus,
-) -> Result<trident_api::status::BlockDeviceInfo, Error> {
-    let root_block_device_id = &host_config
-        .storage
-        .mount_points
-        .iter()
-        .find(|mp| mp.path == Path::new("/"))
-        .context("Failed to find root mount point")?
-        .target_id;
-    get_block_device(host_status, root_block_device_id).context("Failed to find root block device")
-}
-
-pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> Result<(), Error> {
+    allowed_operations: OperationType,
+    mut state: DataStore,
+) -> Result<(), Error> {
     let mut modules = MODULES.lock().unwrap();
 
     for m in &mut *modules {
@@ -188,6 +183,11 @@ pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> R
             ))?;
     }
     info!("Host config validated");
+
+    if allowed_operations == OperationType::RefreshOnly {
+        info!("Only status refresh requested, skipping reconcile");
+        return Ok(());
+    }
 
     let update_kind = modules
         .iter()
@@ -217,9 +217,10 @@ pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> R
 
     // TODO: Call pre-update workload hook.
 
-    let root_block_device = get_root_block_device(host_config, state.host_status())?;
+    let mut chroot_env = None;
+    let mut should_reconcile = true;
 
-    let rootfs = if let Some(UpdateKind::AbUpdate) = update_kind {
+    if let Some(UpdateKind::AbUpdate) = update_kind {
         // TODO: Download update
         // TODO: Write update
 
@@ -230,20 +231,18 @@ pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> R
             })?;
         }
 
-        let mount = storage::mount_partition(
-            root_block_device.path.as_path(),
-            Path::new("/partitionMount"),
-        )?;
-        Some((Chroot::enter(Path::new("/partitionMount"))?, mount))
-    } else {
-        None
-    };
+        chroot_env = setup_root_chroot(host_config, state.host_status())
+            .context("Failed to setup root chroot")?;
+        should_reconcile = chroot_env.is_some();
+    }
 
-    for m in &mut *modules {
-        state.with_host_status(|s| {
-            m.reconcile(s, host_config)
-                .context(format!("Module '{}' failed during reconcile", m.name()))
-        })?;
+    if should_reconcile {
+        for m in &mut *modules {
+            state.with_host_status(|s| {
+                m.reconcile(s, host_config)
+                    .context(format!("Module '{}' failed during reconcile", m.name()))
+            })?;
+        }
     }
 
     // TODO: Call post-update workload hook.
@@ -251,20 +250,18 @@ pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> R
     match update_kind {
         Some(UpdateKind::UpdateAndReboot) | Some(UpdateKind::AbUpdate) => {
             drop(state);
-            let (chroot, mount) = rootfs.unwrap();
-            chroot.exit().context("Failed to exit chroot")?;
 
-            info!("Rebooting");
-            image::kexec(
-                mount,
-                format!(
-                    "console=tty1 console=ttyS0 root={}",
-                    root_block_device.path.to_string_lossy()
-                )
-                .as_str(),
-            )
-            .context("Failed to perform kexec")?;
-            unreachable!("kexec should never return");
+            if allowed_operations == OperationType::Update {
+                info!("Only update requested, skipping transition");
+                if let Some(chroot_env) = chroot_env {
+                    chroot_env.chroot.exit().context("Failed to exit chroot")?;
+                    unmount_target_volumes(chroot_env.mount_path.as_path())
+                        .context("Failed to unmount target volumes")?;
+                }
+                return Ok(());
+            }
+            transition(chroot_env)?;
+            Ok(())
         }
         Some(UpdateKind::NormalUpdate) | Some(UpdateKind::HotPatch) => {
             state.with_host_status(|s| {
@@ -278,4 +275,58 @@ pub(crate) fn update(host_config: &HostConfiguration, mut state: DataStore) -> R
             unreachable!()
         }
     }
+}
+
+fn transition(
+    update_target_environment_option: Option<UpdateTargetEnvironment>,
+) -> Result<(), Error> {
+    match update_target_environment_option {
+        Some(update_target_environment) => {
+            update_target_environment
+                .chroot
+                .exit()
+                .context("Failed to exit chroot")?;
+
+            info!("Performing soft reboot");
+            image::kexec(
+                &update_target_environment.mount_path,
+                format!(
+                    "console=tty1 console=ttyS0 root={}",
+                    update_target_environment
+                        .root_block_device
+                        .path
+                        .to_str()
+                        .ok_or(anyhow::anyhow!(
+                            "Failed to convert root device path {:?} to string",
+                            update_target_environment.root_block_device.path
+                        ))?
+                )
+                .as_str(),
+            )
+            .context("Failed to perform kexec")?;
+
+            unreachable!("kexec should never return")
+        }
+        None => {
+            info!("No root block device found, performing reboot");
+            image::reboot().context("Failed to perform reboot")?;
+
+            unreachable!("reboot should never return");
+        }
+    }
+}
+
+/// Using the / mount point, figure out what should be used as a root block device.
+pub fn get_root_block_device(
+    host_config: &HostConfiguration,
+    host_status: &HostStatus,
+) -> Result<Option<trident_api::status::BlockDeviceInfo>, Error> {
+    host_config
+        .storage
+        .mount_points
+        .iter()
+        .find(|mp| mp.path == Path::new("/"))
+        .map(|mp| get_block_device(host_status, &mp.target_id))
+        .transpose()
+        .context("Failed to find root block device")
 }

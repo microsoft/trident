@@ -5,11 +5,9 @@ use serde_json::Value;
 use std::{
     collections::HashSet,
     fs,
-    io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Command,
 };
-use sys_mount::Mount;
 use uuid::Uuid;
 
 use trident_api::{
@@ -17,7 +15,9 @@ use trident_api::{
     status::{self, BlockDeviceContents, HostStatus, UpdateKind},
 };
 
-use crate::{get_block_device, modules::Module};
+use crate::{modules::Module, run_command};
+
+pub mod fstab;
 
 #[derive(Default, Debug)]
 pub struct StorageModule;
@@ -136,19 +136,17 @@ impl Module for StorageModule {
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        update_fstab_file(host_status, host_config)
+        fstab::Fstab::read(Path::new(fstab::DEFAULT_FSTAB_PATH))
+            .context(format!("Failed to read {}", fstab::DEFAULT_FSTAB_PATH))?
+            .update(host_status, host_config)
+            .context(format!("Failed to update {}", fstab::DEFAULT_FSTAB_PATH))?
+            .write(Path::new(fstab::DEFAULT_FSTAB_PATH))
+            .context(format!("Failed to write {}", fstab::DEFAULT_FSTAB_PATH))?;
 
         // TODO: update /etc/repart.d directly for the matching disk, derive
         // from where is the root located
+        Ok(())
     }
-}
-
-pub fn mount_partition(partition: &Path, mount_point: &Path) -> Result<Mount, Error> {
-    fs::create_dir_all(mount_point)?;
-    info!("Mounting disk");
-    Ok(Mount::builder()
-        .fstype("ext4")
-        .mount(partition, mount_point)?)
 }
 
 impl StorageModule {
@@ -222,21 +220,25 @@ impl StorageModule {
             );
             generate_repart_config(&repart_config_path, disk)?;
 
-            let repart_output_json = run(Command::new("systemd-repart")
-                .arg(disk_bus_path.as_os_str())
-                .arg("--dry-run=no")
-                .arg("--empty=force")
-                .arg("--seed=random")
-                .arg("--json=short")
-                .arg("--definitions")
-                .arg(repart_config_path))
+            let repart_output_json = run_command(
+                Command::new("systemd-repart")
+                    .arg(disk_bus_path.as_os_str())
+                    .arg("--dry-run=no")
+                    .arg("--empty=force")
+                    .arg("--seed=random")
+                    .arg("--json=short")
+                    .arg("--definitions")
+                    .arg(repart_config_path),
+            )
             .context(format!("Failed to initialize disk {}", disk.id))?;
             let partitions_status: Value = serde_json::from_slice(&repart_output_json.stdout)
                 .context("Failed to deserialize output of disk initialization command")?;
 
-            let sfdisk_output_json = run(Command::new("sfdisk")
-                .arg("-J")
-                .arg(disk_bus_path.as_os_str()))
+            let sfdisk_output_json = run_command(
+                Command::new("sfdisk")
+                    .arg("-J")
+                    .arg(disk_bus_path.as_os_str()),
+            )
             .context(format!(
                 "Failed to fetch disk GPT UUID for disk {}",
                 disk.id
@@ -260,10 +262,14 @@ impl StorageModule {
                 },
             );
 
-            let disk_status = host_status.storage.disks.get_mut(&disk.id).unwrap();
+            let disk_status = host_status
+                .storage
+                .disks
+                .get_mut(&disk.id)
+                .context(format!("Failed to find disk {} in host status", disk.id))?;
 
             // ensure all /dev/disk/* symlinks are created
-            run(Command::new("udevadm").arg("settle"))?;
+            run_command(Command::new("udevadm").arg("settle"))?;
 
             for (index, partition) in disk.partitions.iter().enumerate() {
                 let partition_uuid_str =
@@ -350,23 +356,13 @@ fn generate_repart_config(
 }
 
 fn partition_type_to_string(partition_type: &PartitionType) -> Result<String, Error> {
-    Ok(serde_json::to_value(partition_type)?
+    serde_json::to_value(partition_type)?
         .as_str()
-        .unwrap()
-        .to_owned())
-}
-
-fn run(command: &mut Command) -> Result<Output, Error> {
-    let output = command.output()?;
-    if !output.status.success() {
-        bail!(
-            "Command failed: {:?}\n\nstdout:\n{}\n\nstderr:\n{}",
-            command,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    Ok(output)
+        .map(|s| s.to_owned())
+        .ok_or(anyhow::anyhow!(
+            "Failed to convert partition type {:?} to string",
+            partition_type
+        ))
 }
 
 /// Returns the path of the first symlink in directory whose canonical path is target.
@@ -395,65 +391,6 @@ fn parse_size(value: &str) -> Result<u64, Error> {
     } else {
         value.parse()?
     })
-}
-
-fn update_fstab_file(
-    host_status: &HostStatus,
-    host_config: &HostConfiguration,
-) -> Result<(), Error> {
-    let fstab = fs::read_to_string("/etc/fstab").context("Failed to read /etc/fstab")?;
-
-    let edited_fstab = update_fstab_contents(fstab, host_config, host_status)?;
-    fs::write("/etc/fstab", edited_fstab).context("Failed to write new /etc/fstab")?;
-
-    Ok(())
-}
-
-fn update_fstab_contents(
-    fstab: String,
-    host_config: &HostConfiguration,
-    host_status: &HostStatus,
-) -> Result<Vec<u8>, Error> {
-    let mut edited_fstab = Vec::new();
-    for line in fstab.lines() {
-        let tokens = line.split_whitespace().collect::<Vec<_>>();
-        if tokens.is_empty() || tokens[0].starts_with('#') {
-            writeln!(&mut edited_fstab, "{}", line).unwrap();
-            continue;
-        }
-
-        // The first column of /etc/fstab is the device identifier and the second column is the
-        // mount point. Thus we match against the second token (index 1 given 0-based indexing)
-        // and overwrite the first column with the partition label.
-        let mount_dir = tokens[1];
-
-        // Try to find the mount point in HostConfiguration corresponding to the current line
-        let it = host_config
-            .storage
-            .mount_points
-            .iter()
-            .find(|mp| mp.path.to_str() == Some(mount_dir));
-        match it {
-            Some(mp) => {
-                writeln!(
-                    &mut edited_fstab,
-                    "{} {}",
-                    get_block_device(host_status, &mp.target_id)
-                        .unwrap()
-                        .path
-                        .to_str()
-                        .unwrap(),
-                    &tokens[1..].join(" "), // TODO use values from HostConfiguration
-                )
-                .unwrap();
-                continue;
-            }
-            None => {
-                writeln!(&mut edited_fstab, "{}", line)?;
-            }
-        }
-    }
-    Ok(edited_fstab)
 }
 
 #[cfg(test)]
@@ -502,9 +439,9 @@ mod tests {
 
         let storage_module = StorageModule::default();
 
-        assert!(storage_module
+        storage_module
             .validate_host_config(&empty_host_status, &empty_host_config)
-            .is_ok());
+            .unwrap();
 
         let host_config_yaml = indoc! {r#"
             storage:
@@ -607,103 +544,6 @@ mod tests {
             .is_err());
     }
 
-    /// Validates /etc/fstab update logic which is used to update devices to mount.
-    #[test]
-    fn test_update_fstab_contents() {
-        let input_fstab = indoc! {r#"
-            # /etc/fstab: static file system information.
-            #
-            # <file system> <mount point>   <type>  <options>       <dump>  <pass>
-            /dev/sda1 /boot/efi vfat defaults 0 0
-            /dev/sda2 / ext4 defaults 0 0
-        "#};
-        let expected_fstab = indoc! {r#"
-            # /etc/fstab: static file system information.
-            #
-            # <file system> <mount point>   <type>  <options>       <dump>  <pass>
-            /dev/disk/by-partlabel/osp1 /boot/efi vfat defaults 0 0
-            /dev/disk/by-partlabel/osp2 / ext4 defaults 0 0
-        "#};
-        let host_config_yaml = indoc! {r#"
-            imaging:
-                images:
-                  - url: file:///path/to/image
-                    sha256: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-                    format: raw-zstd
-                    target-id: efi
-                  - url: file:///path/to/image
-                    sha256: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-                    format: raw-zstd
-                    target-id: root
-            storage:
-                disks:
-                  - id: os
-                    device: /dev/disk/by-bus/foobar
-                    partition-table-type: gpt
-                    partitions:
-                      - id: efi
-                        type: esp
-                        size: 100MiB
-                      - id: root
-                        type: root
-                        size: 1GiB
-                mount-points:
-                  - path: /boot/efi
-                    filesystem: vfat
-                    options:
-                      - defaults
-                    target-id: efi
-                  - path: /
-                    filesystem: ext4
-                    options:
-                      - defaults
-                    target-id: root
-        "#};
-        let host_config: HostConfiguration =
-            serde_yaml::from_str(host_config_yaml).expect("Failed to parse host config");
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: null
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-            imaging:
-                image-deployment:
-                    efi:
-                        url: file:///path/to/image
-                    root:
-                        url: file:///path/to/image
-            reconcile-state: clean-install
-        "#};
-        let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
-            .expect("Failed to parse host status");
-
-        let edited_fstab =
-            update_fstab_contents(input_fstab.to_string(), &host_config, &host_status)
-                .unwrap()
-                .into_iter()
-                .map(|b| b as char)
-                .collect::<String>();
-        assert_eq!(edited_fstab, expected_fstab);
-    }
-
     /// Validates that partition_type_to_string returns the correct string for each PartitionType.
     #[test]
     fn test_partition_type_to_string() {
@@ -722,6 +562,10 @@ mod tests {
         assert_eq!(
             partition_type_to_string(&PartitionType::Swap).unwrap(),
             "swap"
+        );
+        assert_eq!(
+            partition_type_to_string(&PartitionType::Home).unwrap(),
+            "home"
         );
     }
 

@@ -19,16 +19,20 @@ pub struct LocalConfigFile {
     /// The host config to use.
     #[serde(flatten, default)]
     pub host_config_source: HostConfigSource,
+
+    /// Defines the operation to perform.
+    #[serde(default)]
+    pub allowed_operations: OperationType,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum HostConfigSource {
     /// Use the host config file.
-    #[serde(rename = "host-config-file")]
+    #[serde(rename = "host-configuration-file")]
     File(PathBuf),
 
     /// Use the host config embedded in the config file.
-    #[serde(rename = "host-config")]
+    #[serde(rename = "host-configuration")]
     Embedded(Box<HostConfiguration>),
 
     #[serde(rename = "kickstart-file")]
@@ -70,6 +74,24 @@ pub struct HostConfiguration {
     /// Should reference the name of a script in the `scripts` section.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub post_install_scripts: Vec<Script>,
+}
+
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperationType {
+    /// Reconcile the host configuration with the current state of the host and
+    /// perform any transition requested by modules.
+    #[default]
+    UpdateAndTransition,
+
+    /// Reconcile the host configuration with the current state of the host but
+    /// do not perform any transition. This can be used to allow external
+    /// agentry to perform additional logic outside of Trident and perform the transition.
+    Update,
+
+    /// Do not reconcile the host configuration with the current state of the
+    /// host. Host Status will still get refreshed on Host Configuration changes.
+    RefreshOnly,
 }
 
 /// Storage configuration for a host.
@@ -140,6 +162,8 @@ pub enum PartitionType {
     Swap,
     /// x64: 2c7357ed-ebd2-46d9-aec1-23d437ec2bf5
     RootVerity,
+    /// 933ac7e1-2eb4-4f13-b844-0e14e2aef915
+    Home,
 }
 
 /// Mount point configuration. Carries information necessary to populate

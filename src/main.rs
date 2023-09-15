@@ -114,7 +114,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 | HostConfigSource::Kickstart(_)
                 | HostConfigSource::KickstartEmbedded(_) => {
                     info!("Running");
-                    if let Err(e) = trident::run(host_config.as_ref().unwrap(), config.datastore) {
+                    if let Err(e) = trident::run(
+                        host_config.as_ref().unwrap(),
+                        config.allowed_operations,
+                        config.datastore,
+                    ) {
                         error!("{e:?}");
                     }
                 }

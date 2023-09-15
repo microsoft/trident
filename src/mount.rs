@@ -5,13 +5,19 @@ use std::{
         fd::{IntoRawFd, RawFd},
         unix,
     },
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
 };
 
 use anyhow::{bail, Context, Error};
 use log::info;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
+use trident_api::{config::HostConfiguration, status::HostStatus};
+
+use crate::{
+    modules::{get_root_block_device, storage},
+    run_command,
+};
 
 /// Create a chroot environment.
 ///
@@ -89,5 +95,102 @@ pub(crate) fn run_script(script: &str) -> Result<(), Error> {
         }
     }
 
+    Ok(())
+}
+
+pub(crate) struct UpdateTargetEnvironment {
+    pub chroot: Chroot,
+    pub mount_path: PathBuf,
+    pub root_block_device: trident_api::status::BlockDeviceInfo,
+}
+
+pub(crate) fn setup_root_chroot(
+    host_config: &HostConfiguration,
+    host_status: &HostStatus,
+) -> Result<Option<UpdateTargetEnvironment>, Error> {
+    if let Some(root_block_device) = get_root_block_device(host_config, host_status)? {
+        let root_mount_path = Path::new("/partitionMount");
+        let update_fs_target = Path::new("update-fs.target");
+        let update_fstab_root =
+            tempfile::tempdir().context("Failed to create temporary directory")?;
+        let update_fstab_path = update_fstab_root.path().join(Path::new("fstab"));
+        let systemd_unit_root_path = Path::new("/etc/systemd/system");
+
+        storage::fstab::Fstab::from_mount_points(
+            host_status,
+            &host_config.storage.mount_points,
+            root_mount_path,
+            update_fs_target,
+        )
+        .context("Failed to generate bootstrap fstab")?
+        .write(update_fstab_path.as_path())
+        .context("Failed to write bootstrap fstab")?;
+
+        // Create custom target for the filesystems mounted for the update reconciliation.
+        fs::write(
+            systemd_unit_root_path.join(update_fs_target),
+            indoc::indoc! {r#"
+                [Unit]
+                Description=Update File Systems
+                DefaultDependencies=no
+                Conflicts=shutdown.target
+            "#}
+            .as_bytes(),
+        )
+        .context(format!(
+            "Failed to write {}",
+            update_fs_target.to_string_lossy()
+        ))?;
+
+        run_command(
+            Command::new("/usr/lib/systemd/system-generators/systemd-fstab-generator")
+                .arg(systemd_unit_root_path)
+                .arg(systemd_unit_root_path)
+                .arg(systemd_unit_root_path)
+                .env("SYSTEMD_FSTAB", update_fstab_path)
+                .env("SYSTEMD_LOG_TARGET", "console")
+                .env("SYSTEMD_LOG_LEVEL", "debug"),
+        )
+        .context("Failed to reload systemd daemon")?;
+
+        run_command(Command::new("systemctl").arg("daemon-reload"))
+            .context("Failed to reload systemd daemon")?;
+
+        let mount_result =
+            run_command(Command::new("systemctl").arg("start").arg(update_fs_target))
+                .context("Failed to mount target filesystems");
+
+        if let Err(mount_result) = mount_result {
+            unmount_target_volumes(root_mount_path)?;
+            return Err(mount_result);
+        }
+
+        let chroot = Chroot::enter(root_mount_path)?;
+        Ok(Some(UpdateTargetEnvironment {
+            chroot,
+            mount_path: root_mount_path.to_owned(),
+            root_block_device,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+pub(crate) fn unmount_target_volumes(mount_path: &Path) -> Result<(), Error> {
+    let mount_unit = String::from_utf8(
+        run_command(
+            Command::new("systemd-escape")
+                .arg("-p")
+                .arg("--suffix=mount")
+                .arg(mount_path),
+        )
+        .context("Failed to escape root mount path")?
+        .stdout,
+    )
+    .context("Failed to parse systemd-escape output as UTF-8")?
+    .trim()
+    .to_owned();
+    run_command(Command::new("systemctl").arg("stop").arg(mount_unit))
+        .context("Failed to safely unmount target root partition.")?;
     Ok(())
 }
