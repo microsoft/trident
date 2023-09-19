@@ -1,9 +1,10 @@
-use std::{fs, mem, path::PathBuf, time::Duration};
+use std::{fs, mem, path::PathBuf};
 
-use anyhow::Context;
+use anyhow::{Context, Error};
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 
+use trident::{OrchestratorConnection, TRIDENT_LOCAL_CONFIG_PATH};
 use trident_api::config::{HostConfigSource, LocalConfigFile};
 
 use setsail::{load_kickstart_file, load_kickstart_string, KsTranslator};
@@ -11,7 +12,7 @@ use setsail::{load_kickstart_file, load_kickstart_string, KsTranslator};
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
-    #[clap(global = true, short, long, default_value = "/etc/trident/config.yaml")]
+    #[clap(global = true, short, long, default_value = TRIDENT_LOCAL_CONFIG_PATH)]
     config: PathBuf,
     #[clap(subcommand)]
     subcmd: SubCommand,
@@ -27,19 +28,40 @@ enum SubCommand {
     },
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Error> {
     env_logger::builder().format_timestamp(None).init();
 
     let args = Args::parse();
 
+    // Load the config file
     info!("Loading config from '{}'", args.config.display());
     let config_contents = fs::read_to_string(&args.config)
         .map_err(|e| warn!("Failed to read config file: {e}"))
         .unwrap_or_default();
-    let mut config: LocalConfigFile = serde_yaml::from_str(&config_contents)
-        .map_err(|e| warn!("Failed to parse config file: {e}"))
-        .unwrap_or_default();
+
+    // Parse the config file
+    let mut config: LocalConfigFile = match serde_yaml::from_str(&config_contents)
+        .context("Failed to parse trident configuration")
+    {
+        Ok(config) => config,
+        Err(e) => {
+            warn!("{e:?}");
+
+            // If parsing the config file failed, maybe we can still understand enough of it to
+            // extract the phonehome URL.
+            if let Some(url) = config_contents
+                .lines()
+                .find(|l| l.starts_with("phonehome:"))
+                .map(|l| l[10..].trim())
+                .filter(|l| reqwest::Url::parse(l).is_ok())
+            {
+                if let Some(o) = OrchestratorConnection::new(url.to_string()) {
+                    o.report_error(format!("{e:?}"))
+                }
+            }
+            return Err(e);
+        }
+    };
     debug!("Config: {:#?}", config);
 
     let host_config = match &mut config.host_config_source {
@@ -91,22 +113,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.subcmd {
         SubCommand::Run => {
-            if let Some(phonehome) = config.phonehome {
-                info!("Phonehome to {}", phonehome);
-                for _ in 0..5 {
-                    if reqwest::Client::new()
-                        .post(&phonehome)
-                        .body("hello-from-trident")
-                        .send()
-                        .await
-                        .map_err(|e| error!("Failed to phonehome: {}", e))
-                        .is_ok()
-                    {
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_secs(1));
-                }
-            }
+            let orchestrator = config
+                .phonehome
+                .as_ref()
+                .and_then(|url| OrchestratorConnection::new(url.clone()));
 
             match config.host_config_source {
                 HostConfigSource::File(_)
@@ -114,18 +124,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 | HostConfigSource::Kickstart(_)
                 | HostConfigSource::KickstartEmbedded(_) => {
                     info!("Running");
-                    if let Err(e) = trident::run(
+                    match trident::run(
                         host_config.as_ref().unwrap(),
                         config.allowed_operations,
                         config.datastore,
+                        config.phonehome,
                     ) {
-                        error!("{e:?}");
+                        Ok(()) => {
+                            if let Some(orchestrator) = orchestrator {
+                                orchestrator.report_success()
+                            }
+                        }
+                        Err(e) => {
+                            error!("{e:?}");
+                            if let Some(orchestrator) = orchestrator {
+                                orchestrator.report_error(format!("{e:?}"));
+                            }
+                        }
                     }
                 }
                 HostConfigSource::GrpcCommand { listen_port } => {
                     info!("Listening");
-                    trident::serve("0.0.0.0".parse().unwrap(), listen_port.unwrap_or(50051))
-                        .await?;
+                    if let Some(orchestrator) = orchestrator {
+                        orchestrator.report_success()
+                    }
+                    trident::serve("0.0.0.0".parse().unwrap(), listen_port.unwrap_or(50051))?;
                 }
             }
         }

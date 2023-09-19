@@ -4,15 +4,18 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::{HostConfiguration, OperationType},
+    config::{HostConfiguration, LocalConfigFile, OperationType},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
-use crate::mount::{self, setup_root_chroot, unmount_target_volumes};
 use crate::{datastore::DataStore, get_block_device};
 use crate::{
     modules::{image::ImageModule, network::NetworkModule, storage::StorageModule},
     mount::UpdateTargetEnvironment,
+};
+use crate::{
+    mount::{self, setup_root_chroot, unmount_target_volumes},
+    TRIDENT_LOCAL_CONFIG_PATH,
 };
 
 pub mod image;
@@ -75,6 +78,7 @@ lazy_static::lazy_static! {
 pub(crate) fn provision(
     host_config: &HostConfiguration,
     allowed_operations: OperationType,
+    orchestrator_url: Option<String>,
 ) -> Result<(), Error> {
     // This is a safety check so that nobody accidentally formats their dev machine.
     if !fs::read_to_string("/proc/cmdline")
@@ -123,6 +127,8 @@ pub(crate) fn provision(
         .context("Failed to setup target root chroot")?;
 
     if chroot_env.is_some() {
+        // TODO: Storing the datastore on the root filesystem will not work for A/B update or if the
+        // root filesystem is protected by dm-verity.
         let mut state = DataStore::create(Path::new("/trident.sqlite"), host_status)?;
 
         // TODO: user creation should happen in modules (and not be hardcoded).
@@ -137,6 +143,19 @@ pub(crate) fn provision(
                     .context(format!("Module '{}' failed during reconcile", m.name()))
             })?;
         }
+
+        fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
+            .context("Failed to create trident config directory")?;
+        let trident_config = LocalConfigFile {
+            datastore: Some("/trident.sqlite".into()),
+            phonehome: orchestrator_url,
+            ..Default::default()
+        };
+        fs::write(
+            TRIDENT_LOCAL_CONFIG_PATH,
+            serde_yaml::to_string(&trident_config).context("Failed to serialize trident config")?,
+        )
+        .context("Failed to write trident local config")?;
 
         // TODO: Call post-update workload hook.
         drop(state);

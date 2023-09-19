@@ -15,18 +15,28 @@ use trident_api::status::{
 mod datastore;
 mod modules;
 mod mount;
+mod orchestrate;
 
 pub use modules::network::provisioning::start as start_provisioning_network;
+
+pub use orchestrate::OrchestratorConnection;
+
+pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
 
 mod protobufs {
     tonic::include_proto!("trident");
 }
 
-pub async fn serve(addr: IpAddr, port: u16) -> Result<(), tonic::transport::Error> {
-    Server::builder()
-        .add_service(imaging_server::ImagingServer::new(ImagingImpl))
-        .serve(SocketAddr::new(addr, port))
-        .await
+pub fn serve(addr: IpAddr, port: u16) -> Result<(), Error> {
+    tokio::runtime::Runtime::new()
+        .context("Failed to start tokio runtime")?
+        .block_on(async {
+            Server::builder()
+                .add_service(imaging_server::ImagingServer::new(ImagingImpl))
+                .serve(SocketAddr::new(addr, port))
+                .await
+                .context("Failed while serving gRPC requests")
+        })
 }
 
 #[derive(Default)]
@@ -71,6 +81,7 @@ pub fn run(
     host_config: &HostConfiguration,
     allowed_operations: OperationType,
     datastore: Option<PathBuf>,
+    orchestrator_url: Option<String>,
 ) -> Result<(), Error> {
     match datastore {
         Some(path) => {
@@ -78,7 +89,8 @@ pub fn run(
             modules::update(host_config, allowed_operations, datastore)
                 .context("Failed to update host config")
         }
-        None => modules::provision(host_config, allowed_operations).context("Failed to provision"),
+        None => modules::provision(host_config, allowed_operations, orchestrator_url)
+            .context("Failed to provision"),
     }
 }
 
