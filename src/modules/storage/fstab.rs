@@ -16,6 +16,16 @@ pub(crate) struct Fstab {
     fstab_lines: Vec<String>,
 }
 
+#[derive(Debug, PartialEq)]
+pub(crate) struct FstabLine {
+    pub device_path: PathBuf,
+    pub mount_path: PathBuf,
+    pub _filesystem: String,
+    pub _options: Vec<String>,
+    pub _dump: u32,
+    pub _fsck_pass: u32,
+}
+
 pub const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
 impl Fstab {
@@ -41,12 +51,12 @@ impl Fstab {
                     Some(path_prefix),
                     Some(vec![
                         "x-systemd.required-by=".to_owned()
-                            + required_by.to_str().ok_or(anyhow::anyhow!(
+                            + required_by.to_str().context(format!(
                                 "Failed to convert path {:?} to string",
                                 required_by
                             ))?,
                         "x-systemd.before=".to_owned()
-                            + required_by.to_str().ok_or(anyhow::anyhow!(
+                            + required_by.to_str().context(format!(
                                 "Failed to convert path {:?} to string",
                                 required_by
                             ))?,
@@ -64,6 +74,45 @@ impl Fstab {
             fstab_path.to_string_lossy()
         ))?;
         Ok(())
+    }
+
+    pub fn get(&self, path: &Path) -> Option<FstabLine> {
+        self.fstab_lines.iter().find_map(|line| {
+            let line = Fstab::parse_fstab_line(line);
+            match line {
+                Ok(line) => {
+                    if line.mount_path == path {
+                        Some(line)
+                    } else {
+                        None
+                    }
+                }
+                Err(_) => None,
+            }
+        })
+    }
+
+    fn parse_fstab_line(line: &str) -> Result<FstabLine, Error> {
+        let tokens = line.split_whitespace().collect::<Vec<_>>();
+        if tokens.is_empty() || tokens[0].starts_with('#') {
+            return Err(anyhow::anyhow!("Invalid fstab line: {}", line));
+        }
+
+        let device_path = PathBuf::from(tokens[0]);
+        let mount_path = PathBuf::from(tokens[1]);
+        let filesystem = tokens[2].to_owned();
+        let options = tokens[3].split(',').map(|s| s.to_owned()).collect();
+        let dump = tokens[4].parse::<u32>()?;
+        let fsck_pass = tokens[5].parse::<u32>()?;
+
+        Ok(FstabLine {
+            device_path,
+            mount_path,
+            _filesystem: filesystem,
+            _options: options,
+            _dump: dump,
+            _fsck_pass: fsck_pass,
+        })
     }
 
     fn process_line<'a>(
@@ -102,8 +151,13 @@ impl Fstab {
         path_prefix: Option<&path::Path>,
         extra_options: Option<Vec<String>>,
     ) -> Result<String, Error> {
-        let mount_device_path = get_block_device(host_status, &mp.target_id)?.path;
-        let mount_device_path_str = mount_device_path.to_str().ok_or(anyhow::anyhow!(
+        let mount_device_path = get_block_device(host_status, &mp.target_id)
+            .context(format!(
+                "Failed to find block device with id {}",
+                mp.target_id
+            ))?
+            .path;
+        let mount_device_path_str = mount_device_path.to_str().context(format!(
             "Failed to convert mount device path {:?} to string",
             mount_device_path
         ))?;
@@ -117,7 +171,7 @@ impl Fstab {
             }
             None => mp.path.clone(),
         };
-        let mount_path_str = mount_path.to_str().ok_or(anyhow::anyhow!(
+        let mount_path_str = mount_path.to_str().context(format!(
             "Failed to convert mount path {:?} to string",
             mount_path
         ))?;
@@ -125,8 +179,14 @@ impl Fstab {
         let mut options = mp.options.clone();
         // add makefs option to make sure filesystem is created if it does not
         // exist
+        // TODO support skipping makefs if we are placing an image onto the
+        // partition anyway
         if !options.contains(&"x-systemd.makefs".to_owned()) {
             options.push("x-systemd.makefs".to_owned());
+        }
+        // TODO extend the fs list
+        if !options.contains(&"x-systemd.growfs".to_owned()) && filesystem == "ext4" {
+            options.push("x-systemd.growfs".to_owned());
         }
         if let Some(extra_options) = extra_options {
             options.extend(extra_options);
@@ -184,13 +244,14 @@ mod tests {
         status::HostStatus,
     };
 
-    use crate::modules::storage::fstab::Fstab;
+    use crate::modules::storage::fstab::{Fstab, FstabLine};
 
     /// Validates /etc/fstab line generation logic.
     #[test]
     fn test_mount_point_to_fstab_line() {
         let host_status_yaml = indoc! {r#"
             storage:
+                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -227,11 +288,6 @@ mod tests {
                             type: swap
                             uuid: 00000000-0000-0000-0000-000000000000
             imaging:
-                image-deployment:
-                    efi:
-                        url: file:///path/to/efi-image
-                    root:
-                        url: file:///path/to/root-image
             reconcile-state: clean-install
         "#};
         let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
@@ -266,7 +322,23 @@ mod tests {
                 None
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,x-systemd.makefs 0 1"
+            "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,x-systemd.makefs,x-systemd.growfs 0 1"
+        );
+
+        assert_eq!(
+            Fstab::mount_point_to_fstab_line(
+                &host_status,
+                &MountPoint {
+                    path: PathBuf::from("/"),
+                    filesystem: "vfat".to_owned(),
+                    options: vec!["errors=remount-ro".to_owned()],
+                    target_id: "root".to_owned(),
+                },
+                None,
+                None
+            )
+            .unwrap(),
+            "/dev/disk/by-partlabel/osp2 / vfat errors=remount-ro,x-systemd.makefs 0 1"
         );
 
         assert_eq!(
@@ -282,7 +354,7 @@ mod tests {
                 None
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2"
+            "/dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs,x-systemd.growfs 0 2"
         );
 
         assert!(Fstab::mount_point_to_fstab_line(
@@ -340,7 +412,7 @@ mod tests {
                 Some(vec!["foobar".to_owned()])
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,foobar 0 2"
+            "/dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.growfs,foobar 0 2"
         );
     }
 
@@ -360,9 +432,9 @@ mod tests {
             #
             # <file system> <mount point>   <type>  <options>       <dump>  <pass>
             /dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077,x-systemd.makefs 0 2
-            /dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,x-systemd.makefs 0 1
+            /dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,x-systemd.makefs,x-systemd.growfs 0 1
             /dev/sdb1 /random ext4 defaults 0 2
-            /dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2
+            /dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs,x-systemd.growfs 0 2
         "#};
         let host_config_yaml = indoc! {r#"
             imaging:
@@ -412,6 +484,7 @@ mod tests {
             serde_yaml::from_str(host_config_yaml).expect("Failed to parse host config");
         let host_status_yaml = indoc! {r#"
             storage:
+                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -441,11 +514,6 @@ mod tests {
                             type: home
                             uuid: 00000000-0000-0000-0000-000000000000
             imaging:
-                image-deployment:
-                    efi:
-                        url: file:///path/to/efi-image
-                    root:
-                        url: file:///path/to/root-image
             reconcile-state: clean-install
         "#};
         let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
@@ -465,8 +533,8 @@ mod tests {
     fn test_from_mount_points() {
         let expected_fstab = indoc! {r#"
             /dev/disk/by-partlabel/osp1 /mnt/boot/efi vfat umask=0077,x-systemd.makefs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
-            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.makefs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
-            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
+            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.makefs,x-systemd.growfs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
+            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.growfs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
         "#};
 
         let host_config_yaml = indoc! {r#"
@@ -518,6 +586,7 @@ mod tests {
 
         let host_status_yaml = indoc! {r#"
             storage:
+                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -554,11 +623,6 @@ mod tests {
                             type: swap
                             uuid: 00000000-0000-0000-0000-000000000000
             imaging:
-                image-deployment:
-                    efi:
-                        url: file:///path/to/efi-image
-                    root:
-                        url: file:///path/to/root-image
             reconcile-state: clean-install
         "#};
         let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
@@ -577,5 +641,95 @@ mod tests {
                 + "\n",
             expected_fstab
         );
+    }
+
+    #[test]
+    fn test_parse_fstab_line() {
+        assert_eq!(
+            Fstab::parse_fstab_line("/dev/sda1 /boot/efi vfat defaults 0 0").unwrap(),
+            FstabLine {
+                device_path: PathBuf::from("/dev/sda1"),
+                mount_path: PathBuf::from("/boot/efi"),
+                _filesystem: "vfat".to_owned(),
+                _options: vec!["defaults".to_owned()],
+                _dump: 0,
+                _fsck_pass: 0,
+            }
+        );
+
+        assert_eq!(
+            Fstab::parse_fstab_line("/dev/sda2 / ext4 errors=remount-ro 0 0").unwrap(),
+            FstabLine {
+                device_path: PathBuf::from("/dev/sda2"),
+                mount_path: PathBuf::from("/"),
+                _filesystem: "ext4".to_owned(),
+                _options: vec!["errors=remount-ro".to_owned()],
+                _dump: 0,
+                _fsck_pass: 0,
+            }
+        );
+
+        assert_eq!(
+            Fstab::parse_fstab_line("/dev/sdb1 /random ext4 defaults,foobar 0 2").unwrap(),
+            FstabLine {
+                device_path: PathBuf::from("/dev/sdb1"),
+                mount_path: PathBuf::from("/random"),
+                _filesystem: "ext4".to_owned(),
+                _options: vec!["defaults".to_owned(), "foobar".to_owned()],
+                _dump: 0,
+                _fsck_pass: 2,
+            }
+        );
+
+        assert!(Fstab::parse_fstab_line("# /dev/sdb1 /random ext4 defaults 0 2").is_err());
+    }
+
+    #[test]
+    fn test_get() {
+        let fstab = Fstab {
+            fstab_lines: vec![
+                "/dev/sda1 /boot/efi vfat defaults 0 0".to_owned(),
+                "/dev/sda2 / ext4 errors=remount-ro 0 0".to_owned(),
+                "/dev/sdb1 /random ext4 defaults 0 2".to_owned(),
+            ],
+        };
+
+        assert_eq!(
+            fstab.get(Path::new("/boot/efi")).unwrap(),
+            FstabLine {
+                device_path: PathBuf::from("/dev/sda1"),
+                mount_path: PathBuf::from("/boot/efi"),
+                _filesystem: "vfat".to_owned(),
+                _options: vec!["defaults".to_owned()],
+                _dump: 0,
+                _fsck_pass: 0,
+            }
+        );
+
+        assert_eq!(
+            fstab.get(Path::new("/")).unwrap(),
+            FstabLine {
+                device_path: PathBuf::from("/dev/sda2"),
+                mount_path: PathBuf::from("/"),
+                _filesystem: "ext4".to_owned(),
+                _options: vec!["errors=remount-ro".to_owned()],
+                _dump: 0,
+                _fsck_pass: 0,
+            }
+        );
+
+        assert_eq!(
+            fstab.get(Path::new("/random")).unwrap(),
+            FstabLine {
+                device_path: PathBuf::from("/dev/sdb1"),
+                mount_path: PathBuf::from("/random"),
+                _filesystem: "ext4".to_owned(),
+                _options: vec!["defaults".to_owned()],
+                _dump: 0,
+                _fsck_pass: 2,
+            }
+        );
+
+        assert!(fstab.get(Path::new("/foobar")).is_none());
     }
 }

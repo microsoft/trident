@@ -4,22 +4,26 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::{HostConfiguration, LocalConfigFile, OperationType},
-    status::{HostStatus, ReconcileState, UpdateKind},
+    config::{HostConfigSource, HostConfiguration, LocalConfigFile, OperationType},
+    status::{BlockDeviceInfo, HostStatus, ReconcileState, UpdateKind},
 };
 
-use crate::{datastore::DataStore, get_block_device};
+use crate::{
+    datastore::DataStore, get_block_device, modules::osconfig::OsConfigModule, mount::enter_chroot,
+    TRIDENT_DATASTORE_PATH,
+};
 use crate::{
     modules::{image::ImageModule, network::NetworkModule, storage::StorageModule},
     mount::UpdateTargetEnvironment,
 };
 use crate::{
-    mount::{self, setup_root_chroot, unmount_target_volumes},
+    mount::{setup_root_chroot, unmount_target_volumes},
     TRIDENT_LOCAL_CONFIG_PATH,
 };
 
 pub mod image;
 pub mod network;
+pub mod osconfig;
 pub mod storage;
 
 pub trait Module: Send {
@@ -46,7 +50,7 @@ pub trait Module: Send {
         _host_status: &HostStatus,
         _host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
-        Some(UpdateKind::HotPatch)
+        None
     }
 
     /// Migrate state from A-partition to B-partition (or vice versa).
@@ -72,6 +76,7 @@ lazy_static::lazy_static! {
         Box::<StorageModule>::default(),
         Box::<ImageModule>::default(),
         Box::<NetworkModule>::default(),
+        Box::<OsConfigModule>::default(),
     ]);
 }
 
@@ -123,19 +128,23 @@ pub(crate) fn provision(
 
     image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
 
-    let chroot_env = setup_root_chroot(host_config, &host_status)
+    let mut chroot_env = setup_root_chroot(host_config, &host_status, false)
         .context("Failed to setup target root chroot")?;
 
-    if chroot_env.is_some() {
+    if let Some(chroot_env) = chroot_env.as_mut() {
+        // for development only, copy provisioning OS Trident binary to the runtime OS
+        // to ensure we are using the latest bits
+        fs::copy(
+            "/usr/bin/trident",
+            chroot_env.mount_path.join("usr/bin/trident"),
+        )
+        .context("Failed to copy Trident binary to runtime OS")?;
+
+        chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
+
         // TODO: Storing the datastore on the root filesystem will not work for A/B update or if the
         // root filesystem is protected by dm-verity.
-        let mut state = DataStore::create(Path::new("/trident.sqlite"), host_status)?;
-
-        // TODO: user creation should happen in modules (and not be hardcoded).
-        mount::run_script(
-            r#"sudo sh -c 'echo root:password | chpasswd'
-            useradd -p $(openssl passwd -1 password) -s /bin/bash -d /home/mariner_user/ -m -G sudo mariner_user"#
-        ).context("Failed to apply system config")?;
+        let mut state = DataStore::create(Path::new(TRIDENT_DATASTORE_PATH), host_status)?;
 
         for m in &mut *modules {
             state.with_host_status(|s| {
@@ -144,18 +153,7 @@ pub(crate) fn provision(
             })?;
         }
 
-        fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
-            .context("Failed to create trident config directory")?;
-        let trident_config = LocalConfigFile {
-            datastore: Some("/trident.sqlite".into()),
-            phonehome: orchestrator_url,
-            ..Default::default()
-        };
-        fs::write(
-            TRIDENT_LOCAL_CONFIG_PATH,
-            serde_yaml::to_string(&trident_config).context("Failed to serialize trident config")?,
-        )
-        .context("Failed to write trident local config")?;
+        inject_trident_config(orchestrator_url, host_config)?;
 
         // TODO: Call post-update workload hook.
         drop(state);
@@ -164,7 +162,11 @@ pub(crate) fn provision(
     if allowed_operations == OperationType::Update {
         info!("Only Update requested, skipping transition");
         if let Some(chroot_env) = chroot_env {
-            chroot_env.chroot.exit().context("Failed to exit chroot")?;
+            chroot_env
+                .chroot
+                .context("Failed to enter chroot")?
+                .exit()
+                .context("Failed to exit chroot")?;
             unmount_target_volumes(chroot_env.mount_path.as_path())
                 .context("Failed to unmount target volumes")?;
         }
@@ -179,6 +181,7 @@ pub(crate) fn provision(
 pub(crate) fn update(
     host_config: &HostConfiguration,
     allowed_operations: OperationType,
+    orchestrator_url: Option<String>,
     mut state: DataStore,
 ) -> Result<(), Error> {
     let mut modules = MODULES.lock().unwrap();
@@ -228,7 +231,13 @@ pub(crate) fn update(
         Some(UpdateKind::HotPatch) => info!("Performing hot patch update"),
         Some(UpdateKind::NormalUpdate) => info!("Performing normal update"),
         Some(UpdateKind::UpdateAndReboot) => info!("Performing update and reboot"),
-        Some(UpdateKind::AbUpdate) => info!("Performing A/B update"),
+        Some(UpdateKind::AbUpdate) => {
+            info!("Performing A/B update");
+            state.with_host_status(|s| {
+                image::stream_images(s, host_config).context("Failed to stream images")?;
+                Ok(())
+            })?;
+        }
         Some(UpdateKind::Incompatible) => {
             bail!("Requested host config is not compatible with current install")
         }
@@ -250,17 +259,35 @@ pub(crate) fn update(
             })?;
         }
 
-        chroot_env = setup_root_chroot(host_config, state.host_status())
+        chroot_env = setup_root_chroot(host_config, state.host_status(), false)
             .context("Failed to setup root chroot")?;
         should_reconcile = chroot_env.is_some();
     }
 
     if should_reconcile {
+        if update_kind == Some(UpdateKind::AbUpdate) {
+            if let Some(chroot_env) = chroot_env.as_mut() {
+                // development only, copy provisioning OS Trident binary to the runtime OS
+                // to ensure we are using the latest bits
+                fs::copy(
+                    "/usr/bin/trident",
+                    chroot_env.mount_path.join("usr/bin/trident"),
+                )
+                .context("Failed to copy Trident binary to runtime OS")?;
+
+                chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
+            }
+        }
+
         for m in &mut *modules {
             state.with_host_status(|s| {
                 m.reconcile(s, host_config)
                     .context(format!("Module '{}' failed during reconcile", m.name()))
             })?;
+        }
+
+        if update_kind == Some(UpdateKind::AbUpdate) {
+            inject_trident_config(orchestrator_url, host_config)?;
         }
     }
 
@@ -273,7 +300,11 @@ pub(crate) fn update(
             if allowed_operations == OperationType::Update {
                 info!("Only update requested, skipping transition");
                 if let Some(chroot_env) = chroot_env {
-                    chroot_env.chroot.exit().context("Failed to exit chroot")?;
+                    chroot_env
+                        .chroot
+                        .context("Failed to enter chroot")?
+                        .exit()
+                        .context("Failed to exit chroot")?;
                     unmount_target_volumes(chroot_env.mount_path.as_path())
                         .context("Failed to unmount target volumes")?;
                 }
@@ -296,6 +327,26 @@ pub(crate) fn update(
     }
 }
 
+fn inject_trident_config(
+    orchestrator_url: Option<String>,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
+        .context("Failed to create trident config directory")?;
+    let trident_config = LocalConfigFile {
+        datastore: Some(TRIDENT_DATASTORE_PATH.into()),
+        phonehome: orchestrator_url,
+        host_config_source: HostConfigSource::Embedded(Box::new(host_config.clone())),
+        ..Default::default()
+    };
+    fs::write(
+        TRIDENT_LOCAL_CONFIG_PATH,
+        serde_yaml::to_string(&trident_config).context("Failed to serialize trident config")?,
+    )
+    .context("Failed to write trident local config")?;
+    Ok(())
+}
+
 fn transition(
     update_target_environment_option: Option<UpdateTargetEnvironment>,
 ) -> Result<(), Error> {
@@ -303,6 +354,7 @@ fn transition(
         Some(update_target_environment) => {
             update_target_environment
                 .chroot
+                .context("Failed to enter chroot")?
                 .exit()
                 .context("Failed to exit chroot")?;
 
@@ -315,7 +367,7 @@ fn transition(
                         .root_block_device
                         .path
                         .to_str()
-                        .ok_or(anyhow::anyhow!(
+                        .context(format!(
                             "Failed to convert root device path {:?} to string",
                             update_target_environment.root_block_device.path
                         ))?
@@ -339,13 +391,12 @@ fn transition(
 pub fn get_root_block_device(
     host_config: &HostConfiguration,
     host_status: &HostStatus,
-) -> Result<Option<trident_api::status::BlockDeviceInfo>, Error> {
-    host_config
-        .storage
-        .mount_points
-        .iter()
-        .find(|mp| mp.path == Path::new("/"))
-        .map(|mp| get_block_device(host_status, &mp.target_id))
-        .transpose()
-        .context("Failed to find root block device")
+) -> Option<BlockDeviceInfo> {
+    host_config.storage.mount_points.iter().find_map(|mp| {
+        if mp.path == Path::new("/") {
+            get_block_device(host_status, &mp.target_id)
+        } else {
+            None
+        }
+    })
 }

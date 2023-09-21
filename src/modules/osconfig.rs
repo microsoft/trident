@@ -1,21 +1,17 @@
 use anyhow::{Context, Error};
-use log::info;
 
 use trident_api::{
     config::HostConfiguration,
     status::{HostStatus, UpdateKind},
 };
 
-use crate::modules::Module;
-
-mod netplan;
-pub mod provisioning;
+use crate::{modules::Module, mount};
 
 #[derive(Default, Debug)]
-pub struct NetworkModule;
-impl Module for NetworkModule {
+pub struct OsConfigModule;
+impl Module for OsConfigModule {
     fn name(&self) -> &'static str {
-        "network"
+        "os-config"
     }
 
     fn refresh_host_status(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
@@ -41,19 +37,14 @@ impl Module for NetworkModule {
     fn reconcile(
         &mut self,
         _host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
+        _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        match host_config.network.as_ref() {
-            Some(config) => {
-                let config = netplan::render_netplan_yaml(config)
-                    .context("failed to render runtime network netplan yaml")?;
-                netplan::write(&config).context("failed to write netplan config")?;
-                netplan::apply().context("failed to apply netplan config")?;
-            }
-            None => {
-                info!("Network config not provided");
-            }
-        }
+        // TODO: user creation should not be hardcoded.
+        mount::run_script(
+            r#"sudo sh -c 'echo root:password | chpasswd'
+            useradd -p $(openssl passwd -1 password) -s /bin/bash -d /home/mariner_user/ -m -G sudo mariner_user"#
+        ).context("Failed to apply system config")?;
+
         Ok(())
     }
 }

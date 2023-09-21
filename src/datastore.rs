@@ -41,10 +41,10 @@ impl DataStore {
     fn write_host_status(db: &sqlite::Connection, host_status: &HostStatus) -> Result<(), Error> {
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
-            .context("Failed to save host status")?;
+            .context("Failed to save host status (prepare)")?;
         statement
             .bind((1, &*serde_yaml::to_string(host_status)?))
-            .context("Failed to save host status")?;
+            .context("Failed to save host status (bind)")?;
         statement.next().context("Failed to save host status")?;
         Ok(())
     }

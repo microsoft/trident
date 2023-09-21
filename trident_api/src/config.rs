@@ -6,6 +6,7 @@ use netplan_types::NetworkConfig;
 /// Definition of Trident's full configuration.
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct LocalConfigFile {
     /// Optional URL to reach out to when networking is up.
     pub phonehome: Option<String>,
@@ -26,6 +27,7 @@ pub struct LocalConfigFile {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub enum HostConfigSource {
     /// Use the host config file.
     #[serde(rename = "host-configuration-file")]

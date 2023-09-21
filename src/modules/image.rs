@@ -3,7 +3,7 @@ use std::{
     fs::{self, File},
     io::{self, BufWriter, Read},
     os::fd::AsRawFd,
-    path,
+    path::Path,
     process::Command,
 };
 
@@ -14,12 +14,16 @@ use reqwest::Url;
 use sha2::Digest;
 
 use trident_api::{
-    config::{HostConfiguration, ImageFormat},
-    status::{AbUpdate, AbVolumePair, BlockDeviceContents, HostStatus, UpdateKind},
+    config::{HostConfiguration, Image, ImageFormat},
+    status::{
+        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, HostStatus, UpdateKind,
+    },
 };
 
-use crate::modules::{unmount_target_volumes, Module};
+use crate::modules::{storage::fstab::Fstab, unmount_target_volumes, Module};
 use crate::{get_block_device, run_command, set_host_status_block_device_contents};
+
+const HASH_IGNORED: &str = "ignored";
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
 struct HashingReader<R: Read>(R, sha2::Sha256);
@@ -47,7 +51,7 @@ pub(crate) fn stream_images(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
-    for image in &host_config.imaging.images {
+    for image in get_images_for_updating(host_status, host_config) {
         let block_device = get_block_device(host_status, &image.target_id).context(format!(
             "No block device with id '{}' found",
             image.target_id
@@ -118,15 +122,17 @@ pub(crate) fn stream_images(
             BlockDeviceContents::Image {
                 sha256: computed_sha256.clone(),
                 length: bytes_copied,
+                url: image.url.clone(),
             },
         )?;
 
         // Confirm that the hash matches what we expected.
-        if image.sha256 == "ignored" {
+        if image.sha256 == HASH_IGNORED {
             info!("Ignoring SHA256 for image from '{}'", image.url);
         } else if computed_sha256 != image.sha256 {
             bail!(
-                "SHA256 mismatch for disk image: expected {}, got {}",
+                "SHA256 mismatch for disk image {}: expected {}, got {}",
+                image.url,
                 image.sha256,
                 computed_sha256
             );
@@ -136,10 +142,10 @@ pub(crate) fn stream_images(
     Ok(())
 }
 
-pub fn kexec(mount_path: &path::Path, args: &str) -> Result<(), Error> {
+pub fn kexec(mount_path: &Path, args: &str) -> Result<(), Error> {
     let root = mount_path
         .to_str()
-        .ok_or_else(|| anyhow::anyhow!("Non-utf8 mount point: {}", mount_path.display()))?;
+        .context(format!("Non-utf8 mount point: {}", mount_path.display()))?;
 
     info!("Searching for kernel and initrd");
     let kernel_path = glob::glob(&format!("{root}/boot/vmlinuz-*"))?
@@ -227,6 +233,29 @@ pub fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfig
     });
 }
 
+/// Returns a list of images that need to be updated/provisioned.
+fn get_images_for_updating<'a>(
+    host_status: &HostStatus,
+    host_config: &'a HostConfiguration,
+) -> Vec<&'a Image> {
+    host_config
+        .imaging
+        .images
+        .iter()
+        .filter(|image| {
+            if let Some(bdi) = get_block_device(host_status, &image.target_id) {
+                if let BlockDeviceContents::Image { sha256, url, .. } = bdi.contents {
+                    if url == image.url && (sha256 == image.sha256 || image.sha256 == HASH_IGNORED)
+                    {
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .collect()
+}
+
 #[derive(Default, Debug)]
 pub struct ImageModule;
 impl Module for ImageModule {
@@ -234,7 +263,55 @@ impl Module for ImageModule {
         "image"
     }
 
-    fn refresh_host_status(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
+    fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
+        // update root_device_path of the active root volume
+        let proc_mounts =
+            Fstab::read(Path::new("/proc/mounts")).context("Failed to read /proc/mounts")?;
+        host_status.imaging.root_device_path =
+            proc_mounts.get(Path::new("/")).map(|l| l.device_path);
+
+        // if a/b update is enabled
+        if let Some(ab_update) = &host_status.imaging.ab_update {
+            // and mount points have a reference to root volume
+            if let Some(root_device_id) = host_status
+                .storage
+                .mount_points
+                .iter()
+                .find(|(_id, mp)| mp.path == Path::new("/"))
+                .map(|(id, _mp)| id.clone())
+            {
+                // and one of the a/b update volumes points to the root volume
+                if let Some(root_device_pair) = ab_update.volume_pairs.get(&root_device_id) {
+                    let volume_a_path =
+                        get_block_device(host_status, &root_device_pair.volume_a_id)
+                            .context("Failed to get block device for volume A")?
+                            .path;
+
+                    let volume_b_path =
+                        get_block_device(host_status, &root_device_pair.volume_b_id)
+                            .context("Failed to get block device for volume B")?
+                            .path;
+
+                    // update the active volume in the a/b scheme based on what
+                    // is the current root volume
+                    if let Some(root_device_path) = &host_status.imaging.root_device_path {
+                        host_status
+                            .imaging
+                            .ab_update
+                            .as_mut()
+                            .unwrap()
+                            .active_volume = if &volume_a_path.canonicalize()? == root_device_path {
+                            Some(AbVolumeSelection::VolumeA)
+                        } else if &volume_b_path.canonicalize()? == root_device_path {
+                            Some(AbVolumeSelection::VolumeB)
+                        } else {
+                            None
+                        };
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -248,10 +325,15 @@ impl Module for ImageModule {
 
     fn select_update_kind(
         &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
+        host_status: &HostStatus,
+        host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
-        Some(UpdateKind::HotPatch)
+        let update_images = get_images_for_updating(host_status, host_config);
+        if update_images.is_empty() {
+            None
+        } else {
+            Some(UpdateKind::AbUpdate)
+        }
     }
 
     fn reconcile(

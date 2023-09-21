@@ -128,7 +128,7 @@ impl Module for StorageModule {
         _host_status: &HostStatus,
         _host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
-        Some(UpdateKind::HotPatch)
+        None
     }
 
     fn reconcile(
@@ -142,6 +142,22 @@ impl Module for StorageModule {
             .context(format!("Failed to update {}", fstab::DEFAULT_FSTAB_PATH))?
             .write(Path::new(fstab::DEFAULT_FSTAB_PATH))
             .context(format!("Failed to write {}", fstab::DEFAULT_FSTAB_PATH))?;
+
+        host_status.storage.mount_points = host_config
+            .storage
+            .mount_points
+            .iter()
+            .map(|mount_point| {
+                (
+                    mount_point.target_id.clone(),
+                    status::MountPoint {
+                        path: mount_point.path.clone(),
+                        filesystem: mount_point.filesystem.clone(),
+                        options: mount_point.options.clone(),
+                    },
+                )
+            })
+            .collect();
 
         // TODO: update /etc/repart.d directly for the matching disk, derive
         // from where is the root located
@@ -298,7 +314,7 @@ impl StorageModule {
                     start,
                     end: start + size,
                     ty: partition.partition_type,
-                    contents: BlockDeviceContents::Unknown,
+                    contents: BlockDeviceContents::Initialized,
                     uuid: Uuid::parse_str(partition_uuid_str)?,
                 });
             }
@@ -359,7 +375,7 @@ fn partition_type_to_string(partition_type: &PartitionType) -> Result<String, Er
     serde_json::to_value(partition_type)?
         .as_str()
         .map(|s| s.to_owned())
-        .ok_or(anyhow::anyhow!(
+        .context(format!(
             "Failed to convert partition type {:?} to string",
             partition_type
         ))
@@ -431,8 +447,8 @@ mod tests {
             reconcile-state: clean-install
             storage:
                 disks:
+                mount-points:
             imaging:
-                image-deployment:
         "#};
         let empty_host_status = serde_yaml::from_str(empty_host_status_yaml)
             .expect("Failed to parse empty host status");

@@ -54,6 +54,7 @@ pub enum UpdateKind {
 #[serde(rename_all = "kebab-case")]
 pub struct Storage {
     pub disks: BTreeMap<BlockDeviceId, Disk>,
+    pub mount_points: BTreeMap<BlockDeviceId, MountPoint>,
 }
 
 /// Per disk status.
@@ -95,8 +96,19 @@ pub enum BlockDeviceContents {
     Image {
         sha256: String,
         length: u64,
+        url: String,
     },
     Initialized,
+}
+
+/// Mount point status.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct MountPoint {
+    pub path: PathBuf,
+    pub filesystem: String,
+    pub options: Vec<String>,
 }
 
 /// Imaging status of a host.
@@ -104,18 +116,10 @@ pub enum BlockDeviceContents {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 pub struct Imaging {
-    /// Map from block device name to image.
-    pub image_deployment: BTreeMap<BlockDeviceId, Image>,
     /// A/B update status.
     pub ab_update: Option<AbUpdate>,
-}
-
-/// Per image status.
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
-pub struct Image {
-    pub url: String,
+    /// Path to the root block device.
+    pub root_device_path: Option<PathBuf>,
 }
 
 /// A/B update status. Carries information about the A/B update volume pairs and
@@ -162,4 +166,5 @@ pub struct AbVolumePair {
 pub struct BlockDeviceInfo {
     pub path: PathBuf,
     pub size: u64,
+    pub contents: BlockDeviceContents,
 }

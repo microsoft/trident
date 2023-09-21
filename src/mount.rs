@@ -99,7 +99,7 @@ pub(crate) fn run_script(script: &str) -> Result<(), Error> {
 }
 
 pub(crate) struct UpdateTargetEnvironment {
-    pub chroot: Chroot,
+    pub chroot: Option<Chroot>,
     pub mount_path: PathBuf,
     pub root_block_device: trident_api::status::BlockDeviceInfo,
 }
@@ -107,8 +107,9 @@ pub(crate) struct UpdateTargetEnvironment {
 pub(crate) fn setup_root_chroot(
     host_config: &HostConfiguration,
     host_status: &HostStatus,
+    do_enter_chroot: bool,
 ) -> Result<Option<UpdateTargetEnvironment>, Error> {
-    if let Some(root_block_device) = get_root_block_device(host_config, host_status)? {
+    if let Some(root_block_device) = get_root_block_device(host_config, host_status) {
         let root_mount_path = Path::new("/partitionMount");
         let update_fs_target = Path::new("update-fs.target");
         let update_fstab_root =
@@ -165,15 +166,24 @@ pub(crate) fn setup_root_chroot(
             return Err(mount_result);
         }
 
-        let chroot = Chroot::enter(root_mount_path)?;
+        let chroot = if do_enter_chroot {
+            Some(enter_chroot(root_mount_path)?)
+        } else {
+            None
+        };
         Ok(Some(UpdateTargetEnvironment {
             chroot,
             mount_path: root_mount_path.to_owned(),
             root_block_device,
         }))
     } else {
+        info!("No root block device found, will skip reconciling root filesystem.");
         Ok(None)
     }
+}
+
+pub(crate) fn enter_chroot(root_mount_path: &Path) -> Result<Chroot, Error> {
+    Chroot::enter(root_mount_path).context("Failed to enter updated filesystem chroot")
 }
 
 pub(crate) fn unmount_target_volumes(mount_path: &Path) -> Result<(), Error> {
