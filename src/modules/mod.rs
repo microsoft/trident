@@ -4,13 +4,16 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::{HostConfigSource, HostConfiguration, LocalConfigFile, OperationType},
+    config::{
+        HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
+        TridentConfiguration,
+    },
     status::{BlockDeviceInfo, HostStatus, ReconcileState, UpdateKind},
 };
 
 use crate::{
     datastore::DataStore, get_block_device, modules::osconfig::OsConfigModule, mount::enter_chroot,
-    TRIDENT_DATASTORE_PATH,
+    TRIDENT_BINARY_PATH, TRIDENT_DATASTORE_PATH,
 };
 use crate::{
     modules::{image::ImageModule, network::NetworkModule, storage::StorageModule},
@@ -82,8 +85,7 @@ lazy_static::lazy_static! {
 
 pub(crate) fn provision(
     host_config: &HostConfiguration,
-    allowed_operations: OperationType,
-    orchestrator_url: Option<String>,
+    trident_config: &TridentConfiguration,
 ) -> Result<(), Error> {
     // This is a safety check so that nobody accidentally formats their dev machine.
     if !fs::read_to_string("/proc/cmdline")
@@ -116,8 +118,11 @@ pub(crate) fn provision(
     }
     info!("Host config validated");
 
-    if allowed_operations == OperationType::RefreshOnly {
-        info!("Pause requested, skipping reconcile");
+    if !trident_config
+        .allowed_operations
+        .contains(Operations::Update)
+    {
+        info!("Update not requested, skipping reconcile");
         return Ok(());
     }
 
@@ -132,13 +137,15 @@ pub(crate) fn provision(
         .context("Failed to setup target root chroot")?;
 
     if let Some(chroot_env) = chroot_env.as_mut() {
-        // for development only, copy provisioning OS Trident binary to the runtime OS
-        // to ensure we are using the latest bits
-        fs::copy(
-            "/usr/bin/trident",
-            chroot_env.mount_path.join("usr/bin/trident"),
-        )
-        .context("Failed to copy Trident binary to runtime OS")?;
+        if trident_config.self_upgrade {
+            // for development only, copy provisioning OS Trident binary to the runtime OS
+            // to ensure we are using the latest bits
+            fs::copy(
+                TRIDENT_BINARY_PATH,
+                chroot_env.mount_path.join(&TRIDENT_BINARY_PATH[1..]),
+            )
+            .context("Failed to copy Trident binary to runtime OS")?;
+        }
 
         chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
 
@@ -153,14 +160,17 @@ pub(crate) fn provision(
             })?;
         }
 
-        inject_trident_config(orchestrator_url, host_config)?;
+        inject_trident_config(trident_config.phonehome.clone(), host_config)?;
 
         // TODO: Call post-update workload hook.
         drop(state);
     }
 
-    if allowed_operations == OperationType::Update {
-        info!("Only Update requested, skipping transition");
+    if !trident_config
+        .allowed_operations
+        .contains(Operations::Transition)
+    {
+        info!("Transition not requested, skipping transition");
         if let Some(chroot_env) = chroot_env {
             chroot_env
                 .chroot
@@ -180,8 +190,7 @@ pub(crate) fn provision(
 
 pub(crate) fn update(
     host_config: &HostConfiguration,
-    allowed_operations: OperationType,
-    orchestrator_url: Option<String>,
+    trident_config: &TridentConfiguration,
     mut state: DataStore,
 ) -> Result<(), Error> {
     let mut modules = MODULES.lock().unwrap();
@@ -206,8 +215,11 @@ pub(crate) fn update(
     }
     info!("Host config validated");
 
-    if allowed_operations == OperationType::RefreshOnly {
-        info!("Only status refresh requested, skipping reconcile");
+    if !trident_config
+        .allowed_operations
+        .contains(Operations::Update)
+    {
+        info!("Update not requested, skipping reconcile");
         return Ok(());
     }
 
@@ -267,13 +279,15 @@ pub(crate) fn update(
     if should_reconcile {
         if update_kind == Some(UpdateKind::AbUpdate) {
             if let Some(chroot_env) = chroot_env.as_mut() {
-                // development only, copy provisioning OS Trident binary to the runtime OS
-                // to ensure we are using the latest bits
-                fs::copy(
-                    "/usr/bin/trident",
-                    chroot_env.mount_path.join("usr/bin/trident"),
-                )
-                .context("Failed to copy Trident binary to runtime OS")?;
+                if trident_config.self_upgrade {
+                    // development only, copy provisioning OS Trident binary to the runtime OS
+                    // to ensure we are using the latest bits
+                    fs::copy(
+                        TRIDENT_BINARY_PATH,
+                        chroot_env.mount_path.join(&TRIDENT_BINARY_PATH[1..]),
+                    )
+                    .context("Failed to copy Trident binary to runtime OS")?;
+                }
 
                 chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
             }
@@ -287,7 +301,7 @@ pub(crate) fn update(
         }
 
         if update_kind == Some(UpdateKind::AbUpdate) {
-            inject_trident_config(orchestrator_url, host_config)?;
+            inject_trident_config(trident_config.phonehome.clone(), host_config)?;
         }
     }
 
@@ -297,8 +311,11 @@ pub(crate) fn update(
         Some(UpdateKind::UpdateAndReboot) | Some(UpdateKind::AbUpdate) => {
             drop(state);
 
-            if allowed_operations == OperationType::Update {
-                info!("Only update requested, skipping transition");
+            if !trident_config
+                .allowed_operations
+                .contains(Operations::Transition)
+            {
+                info!("Transition not requested, skipping transition");
                 if let Some(chroot_env) = chroot_env {
                     chroot_env
                         .chroot
@@ -334,10 +351,12 @@ fn inject_trident_config(
     fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
         .context("Failed to create trident config directory")?;
     let trident_config = LocalConfigFile {
-        datastore: Some(TRIDENT_DATASTORE_PATH.into()),
-        phonehome: orchestrator_url,
-        host_config_source: HostConfigSource::Embedded(Box::new(host_config.clone())),
-        ..Default::default()
+        trident_config: TridentConfiguration {
+            datastore: Some(TRIDENT_DATASTORE_PATH.into()),
+            phonehome: orchestrator_url,
+            ..Default::default()
+        },
+        host_config_source: HostConfigurationSource::Embedded(Box::new(host_config.clone())),
     };
     fs::write(
         TRIDENT_LOCAL_CONFIG_PATH,

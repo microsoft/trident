@@ -8,6 +8,19 @@ use netplan_types::NetworkConfig;
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct LocalConfigFile {
+    /// Configuration for Trident itself.
+    #[serde(flatten, default)]
+    pub trident_config: TridentConfiguration,
+
+    /// The host config to use.
+    #[serde(flatten, default)]
+    pub host_config_source: HostConfigurationSource,
+}
+
+/// Configuration that Trident needs which doesn't belong in the host config.
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(rename_all = "kebab-case")]
+pub struct TridentConfiguration {
     /// Optional URL to reach out to when networking is up.
     pub phonehome: Option<String>,
 
@@ -17,18 +30,18 @@ pub struct LocalConfigFile {
     /// Netplan configuration to use instead of what is specified in the host config.
     pub network_override: Option<NetworkConfig>,
 
-    /// The host config to use.
-    #[serde(flatten, default)]
-    pub host_config_source: HostConfigSource,
-
     /// Defines the operation to perform.
     #[serde(default)]
-    pub allowed_operations: OperationType,
+    pub allowed_operations: Operations,
+
+    /// Have Trident copy itself from the provisioning OS to the runtime OS.
+    #[serde(default, skip_serializing_if = "Clone::clone")]
+    pub self_upgrade: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub enum HostConfigSource {
+pub enum HostConfigurationSource {
     /// Use the host config file.
     #[serde(rename = "host-configuration-file")]
     File(PathBuf),
@@ -49,9 +62,9 @@ pub enum HostConfigSource {
         listen_port: Option<u16>,
     },
 }
-impl Default for HostConfigSource {
+impl Default for HostConfigurationSource {
     fn default() -> Self {
-        HostConfigSource::GrpcCommand { listen_port: None }
+        HostConfigurationSource::GrpcCommand { listen_port: None }
     }
 }
 
@@ -78,22 +91,19 @@ pub struct HostConfiguration {
     pub post_install_scripts: Vec<Script>,
 }
 
-#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum OperationType {
-    /// Reconcile the host configuration with the current state of the host and
-    /// perform any transition requested by modules.
-    #[default]
-    UpdateAndTransition,
-
-    /// Reconcile the host configuration with the current state of the host but
-    /// do not perform any transition. This can be used to allow external
-    /// agentry to perform additional logic outside of Trident and perform the transition.
-    Update,
-
-    /// Do not reconcile the host configuration with the current state of the
-    /// host. Host Status will still get refreshed on Host Configuration changes.
-    RefreshOnly,
+bitflags::bitflags! {
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct Operations: u32 {
+        /// Reconcile the host configuration with the current state of the host.
+        const Update = 0b1;
+        /// Restart the machine (either via kexec or a normal reboot) if needed by an update.
+        const Transition = 0b10;
+    }
+}
+impl Default for Operations {
+    fn default() -> Self {
+        Operations::all()
+    }
 }
 
 /// Storage configuration for a host.
@@ -103,7 +113,8 @@ pub enum OperationType {
 pub struct Storage {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub disks: Vec<Disk>,
-    #[serde(default)]
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mount_points: Vec<MountPoint>,
 }
 

@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 
 use trident::{OrchestratorConnection, TRIDENT_LOCAL_CONFIG_PATH};
-use trident_api::config::{HostConfigSource, LocalConfigFile};
+use trident_api::config::{HostConfigurationSource, LocalConfigFile};
 
 use setsail::{load_kickstart_file, load_kickstart_string, KsTranslator};
 
@@ -65,7 +65,7 @@ fn main() -> Result<(), Error> {
     debug!("Config: {:#?}", config);
 
     let host_config = match &mut config.host_config_source {
-        HostConfigSource::File(path) => {
+        HostConfigurationSource::File(path) => {
             info!("Loading host config from '{}'", path.display());
             fs::read_to_string(path)
                 .map_err(|e| warn!("Failed to read host config file: {e}"))
@@ -76,9 +76,9 @@ fn main() -> Result<(), Error> {
                         .ok()
                 })
         }
-        HostConfigSource::Embedded(contents) => Some(mem::take(contents)),
-        HostConfigSource::GrpcCommand { .. } => None,
-        HostConfigSource::KickstartEmbedded(contents) => {
+        HostConfigurationSource::Embedded(contents) => Some(mem::take(contents)),
+        HostConfigurationSource::GrpcCommand { .. } => None,
+        HostConfigurationSource::KickstartEmbedded(contents) => {
             match KsTranslator::new().translate(load_kickstart_string(contents)) {
                 Ok(hc) => Some(Box::new(hc)),
                 Err(e) => {
@@ -91,7 +91,7 @@ fn main() -> Result<(), Error> {
                 }
             }
         }
-        HostConfigSource::Kickstart(file) => {
+        HostConfigurationSource::Kickstart(file) => {
             match KsTranslator::new().translate(load_kickstart_file(
                 file.to_str()
                     .context(format!("Failed to resolve path {}", file.display()))?,
@@ -114,22 +114,18 @@ fn main() -> Result<(), Error> {
     match args.subcmd {
         SubCommand::Run => {
             let orchestrator = config
+                .trident_config
                 .phonehome
                 .as_ref()
                 .and_then(|url| OrchestratorConnection::new(url.clone()));
 
             match config.host_config_source {
-                HostConfigSource::File(_)
-                | HostConfigSource::Embedded(_)
-                | HostConfigSource::Kickstart(_)
-                | HostConfigSource::KickstartEmbedded(_) => {
+                HostConfigurationSource::File(_)
+                | HostConfigurationSource::Embedded(_)
+                | HostConfigurationSource::Kickstart(_)
+                | HostConfigurationSource::KickstartEmbedded(_) => {
                     info!("Running");
-                    match trident::run(
-                        host_config.as_ref().unwrap(),
-                        config.allowed_operations,
-                        config.datastore,
-                        config.phonehome,
-                    ) {
+                    match trident::run(host_config.as_ref().unwrap(), &config.trident_config) {
                         Ok(()) => {
                             if let Some(orchestrator) = orchestrator {
                                 orchestrator.report_success()
@@ -143,7 +139,7 @@ fn main() -> Result<(), Error> {
                         }
                     }
                 }
-                HostConfigSource::GrpcCommand { listen_port } => {
+                HostConfigurationSource::GrpcCommand { listen_port } => {
                     info!("Listening");
                     if let Some(orchestrator) = orchestrator {
                         orchestrator.report_success()
@@ -155,8 +151,11 @@ fn main() -> Result<(), Error> {
 
         SubCommand::StartNetwork => {
             info!("Starting network");
-            trident::start_provisioning_network(config.network_override, host_config.as_deref())
-                .context("Failed to start provisioning network")?;
+            trident::start_provisioning_network(
+                config.trident_config.network_override,
+                host_config.as_deref(),
+            )
+            .context("Failed to start provisioning network")?;
         }
 
         // TODO: Remove this in the future

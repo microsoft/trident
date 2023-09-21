@@ -2,11 +2,11 @@ use anyhow::{bail, Context, Error};
 use datastore::DataStore;
 use protobufs::*;
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+
 use std::process::{Command, Output};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
-use trident_api::config::{BlockDeviceId, HostConfiguration, OperationType};
+use trident_api::config::{BlockDeviceId, HostConfiguration, TridentConfiguration};
 use trident_api::status::{
     AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk, HostStatus, Partition,
     ReconcileState, UpdateKind,
@@ -23,6 +23,7 @@ pub use orchestrate::OrchestratorConnection;
 
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
 pub const TRIDENT_DATASTORE_PATH: &str = "/trident.sqlite";
+pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 
 mod protobufs {
     tonic::include_proto!("trident");
@@ -80,18 +81,15 @@ impl imaging_server::Imaging for ImagingImpl {
 
 pub fn run(
     host_config: &HostConfiguration,
-    allowed_operations: OperationType,
-    datastore: Option<PathBuf>,
-    orchestrator_url: Option<String>,
+    trident_config: &TridentConfiguration,
 ) -> Result<(), Error> {
-    match datastore {
-        Some(path) => {
-            let datastore = DataStore::open(&path).context("Failed to load datastore")?;
-            modules::update(host_config, allowed_operations, orchestrator_url, datastore)
-                .context("Failed to update host")
+    match trident_config.datastore {
+        Some(ref path) => {
+            let datastore = DataStore::open(path).context("Failed to load datastore")?;
+            modules::update(host_config, trident_config, datastore)
+                .context("Failed to update host config")
         }
-        None => modules::provision(host_config, allowed_operations, orchestrator_url)
-            .context("Failed to provision"),
+        None => modules::provision(host_config, trident_config).context("Failed to provision"),
     }
 }
 
@@ -248,7 +246,7 @@ mod tests {
     use trident_api::{config::PartitionType, status::BlockDeviceContents};
 
     use super::*;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     /// Validates that the `get_block_device` function works as expected for
     /// disks, partitions and ab volumes.
