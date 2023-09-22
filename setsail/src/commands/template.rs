@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 
-use crate::setsail::{parser::ParsedData, types::KSLine, ParserError};
+use crate::{data::ParsedData, types::KSLine, SetsailError};
 
 use super::CommandHandler;
 
@@ -8,7 +8,7 @@ use super::CommandHandler;
 pub struct Template {}
 
 impl CommandHandler for Template {
-    // fn handle(self, line: KSLine, data: &mut ParsedData) -> Result<(), ParserError> {
+    // fn handle(self, line: KSLine, data: &mut ParsedData) -> Result<(), SetsailError> {
     //     debug!("Handling {} command: {:?}", std::any::type_name::<Self>() ,self);
     //     todo!();
     // }

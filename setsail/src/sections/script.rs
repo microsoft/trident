@@ -7,9 +7,9 @@ use std::{
 use clap::Parser;
 
 use crate::{
+    data::ParsedData,
     errors::{ToResultSetsailError, ToSetsailPreScriptError},
     handlers::SectionHandler,
-    parser::ParsedData,
     types::KSLine,
     SetsailError,
 };

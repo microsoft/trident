@@ -1,8 +1,8 @@
 use clap::Parser;
 
-use crate::{parser::ParsedData, types::KSLine, SetsailError};
+use crate::{data::ParsedData, types::KSLine, SetsailError};
 
-use super::CommandHandler;
+use super::HandleCommand;
 
 #[derive(Parser, Debug)]
 pub struct User {
@@ -48,7 +48,7 @@ pub struct User {
     groups: Option<Vec<String>>,
 }
 
-impl CommandHandler for User {
+impl HandleCommand for User {
     fn handle(mut self, line: KSLine, data: &mut ParsedData) -> Result<(), SetsailError> {
         if self.name == "root" {
             return Err(SetsailError::new_semantic(

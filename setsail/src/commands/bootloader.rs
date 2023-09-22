@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 
-use super::CommandHandler;
+use super::HandleCommand;
 
 #[derive(Parser, Debug)]
 pub struct Bootloader {
@@ -20,7 +20,7 @@ pub enum BootloaderLocation {
     Boot,
 }
 
-impl CommandHandler for Bootloader {
+impl HandleCommand for Bootloader {
     // fn handle(self, line: KSLine, data: &mut ParsedData) -> Result<(), ParserError> {
     //     debug!("Handling {} command: {:?}", std::any::type_name::<Self>() ,self);
     //     todo!();

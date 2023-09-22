@@ -1,7 +1,8 @@
 use log::debug;
 
+use crate::data::ParsedData;
+
 use super::errors::SetsailError;
-use super::parser::ParsedData;
 use super::types::KSLine;
 
 pub trait SectionHandler {

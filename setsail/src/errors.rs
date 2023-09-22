@@ -26,6 +26,7 @@ pub enum SetsailErrorType {
     SemanticError(String),
     SemanticWarning(String),
     PreScriptFailed { context: String, error: String },
+    TranslationError(String),
 }
 
 impl SetsailError {
@@ -127,6 +128,13 @@ impl SetsailError {
         }
     }
 
+    pub fn new_translation(line: KSLine, error: String) -> Self {
+        Self {
+            line,
+            error: SetsailErrorType::TranslationError(error),
+        }
+    }
+
     pub fn from_clap(line: KSLine, mut error: clap::Error) -> Self {
         // Suppress usage info
         error.insert(
@@ -141,8 +149,11 @@ impl SetsailError {
         );
 
         // Get only the first line of the error
-        let mut string = error.to_string();
-        string.truncate(string.find('\n').unwrap_or(string.len()));
+        let string = error
+            .to_string()
+            .replace("For more information, try '--help'.", "")
+            .trim()
+            .to_owned();
 
         Self {
             line,
@@ -171,6 +182,7 @@ impl std::fmt::Display for SetsailError {
             SetsailErrorType::PreScriptFailed { context, error } => {
                 write!(f, "%pre script failed: {} {}", context, error)
             }
+            SetsailErrorType::TranslationError(e) => write!(f, "Translation error: {}", e),
         }?;
         write!(
             f,

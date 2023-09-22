@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use super::CommandHandler;
+use super::HandleCommand;
 
 #[derive(Parser, Debug)]
 pub struct Timezone {
@@ -13,7 +13,7 @@ pub struct Timezone {
     timezone: Option<String>,
 }
 
-impl CommandHandler for Timezone {
+impl HandleCommand for Timezone {
     // fn handle(self, line: KSLine, data: &mut ParsedData) -> Result<(), ParserError> {
     //     debug!("Handling {} command: {:?}", std::any::type_name::<Self>() ,self);
     //     todo!();

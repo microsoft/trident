@@ -2,23 +2,15 @@ use log::debug;
 use std::collections::{HashMap, VecDeque};
 use std::path;
 
-use super::commands::{self as cmd, handle_command};
-use super::errors::ToResultSetsailError;
-use super::handlers::{SectionHandler, TrashHandler, UnsuportedSectionHandler};
-use super::load::load_to_kslines;
-use super::sections::{Script, ScriptHandler, ScriptType};
-use super::types::KSLine;
-use super::types::KSLineSource;
-use super::SetsailError;
-
-/// Struct to hold all meaningful data parsed from a kickstart file
-#[derive(Debug, Default)]
-pub struct ParsedData {
-    pub scripts: Vec<Script>,
-    pub partitions: Vec<cmd::Partition>,
-    pub users: HashMap<String, cmd::User>,
-    pub root: Option<cmd::Rootpw>,
-}
+use crate::commands::CommandHandler;
+use crate::data::ParsedData;
+use crate::errors::ToResultSetsailError;
+use crate::handlers::{SectionHandler, TrashHandler, UnsuportedSectionHandler};
+use crate::load::load_to_kslines;
+use crate::sections::{ScriptHandler, ScriptType};
+use crate::types::KSLine;
+use crate::types::KSLineSource;
+use crate::SetsailError;
 
 pub struct Parser {
     // parsed data
@@ -170,7 +162,7 @@ impl Parser {
             // We assume this is a command
             _ if self.flag_parse_commands => {
                 // Match aliases
-                handle_command(line, tokens, &mut self.data)?;
+                CommandHandler::new(tokens, line, &mut self.data).handle()?;
             }
 
             // Just log that we skipped something:

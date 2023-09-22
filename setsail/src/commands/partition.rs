@@ -1,8 +1,8 @@
 use clap::{Parser, ValueEnum};
 
-use crate::{parser::ParsedData, types::KSLine, SetsailError};
+use crate::{data::ParsedData, types::KSLine, SetsailError};
 
-use super::CommandHandler;
+use super::HandleCommand;
 
 #[derive(Parser, Debug)]
 pub struct Partition {
@@ -96,7 +96,7 @@ impl std::fmt::Display for FsType {
     }
 }
 
-impl CommandHandler for Partition {
+impl HandleCommand for Partition {
     fn handle(mut self, line: KSLine, data: &mut ParsedData) -> Result<(), SetsailError> {
         let mut result = Ok(());
         if data

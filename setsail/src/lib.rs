@@ -1,4 +1,5 @@
-mod commands;
+pub mod commands;
+mod data;
 mod errors;
 mod handlers;
 mod load;

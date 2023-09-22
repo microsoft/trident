@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use super::CommandHandler;
+use super::HandleCommand;
 
 #[derive(Parser, Debug)]
 pub struct LiveImg {
@@ -17,7 +17,7 @@ pub struct LiveImg {
     checksum: Option<String>,
 }
 
-impl CommandHandler for LiveImg {
+impl HandleCommand for LiveImg {
     // fn handle(self, line: KSLine, data: &mut ParsedData) -> Result<(), ParserError> {
     //     debug!("Handling {} command: {:?}", std::any::type_name::<Self>() ,self);
     //     todo!();

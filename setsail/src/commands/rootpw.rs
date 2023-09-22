@@ -1,8 +1,8 @@
 use clap::Parser;
 
-use crate::{parser::ParsedData, types::KSLine, SetsailError};
+use crate::{data::ParsedData, types::KSLine, SetsailError};
 
-use super::CommandHandler;
+use super::HandleCommand;
 
 #[derive(Parser, Debug, Default)]
 pub struct Rootpw {
@@ -24,7 +24,7 @@ pub struct Rootpw {
     password: Option<String>,
 }
 
-impl CommandHandler for Rootpw {
+impl HandleCommand for Rootpw {
     fn handle(mut self, line: KSLine, data: &mut ParsedData) -> Result<(), SetsailError> {
         let mut result = Ok(());
         if let Some(old) = &data.root {
