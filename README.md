@@ -15,76 +15,197 @@ You can expand on project description in subsequent paragraphs. It is a good pra
 
 ## Getting Started
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
+These instructions will get you a copy of the project up and running on your
+local machine for development and testing purposes. See deployment for notes on
+how to deploy the project on a live system.
 
-### Prerequisites
+## Trident configuration
 
-1. [rustup](https://rustup.rs/)
+This configuration file is used by the Trident agent to configure the host. It
+is composed of the following sections:
+- **allowed-operations**: a combination of flags representing allowed
+  operations. This is a list of operations that Trident is allowed to perform on
+  the host. Supported flags are:
+  - **Update**: Trident will update the host based on the host configuration,
+    but it will not transition the host to the new configuration. This is useful
+    if you want to drive additional operations on the host outside of Trident.
+  - **Transition**: Trident will transition the host to the new configuration,
+    which can include rebooting the host. This will only happen if `Update` is
+    also specified.
+  
+  You can pass multiple flags, separated by `|`. Example: `Update | Transition`.
+  You can pass `''` to disable all operations.
+- **host-configuration**: describes the host configuration. This is the
+  configuration that Trident will apply to the host. See below details.
 
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+The Host Configuration contains the following sections:
+- **storage**: describes the storage configuration of the host.
+- **imaging**: describes the imaging configuration of the host.
+- **network**: describes the network configuration of the host.
+
+### Storage
+Storage configuration describes the disks and partitions of the host that will
+be used to store the OS and data. Not all disks of the host need to be captured
+inside the Host Configuration, only those that Trident should operate on. The
+configuration is divided into two sections: **disks** and **mount-points**. 
+
+#### Disks
+The **disks** section describes the disks of the host. Each disk is described by
+the following fields:
+- **id**: a unique identifier for the disk. This is a user defined string that
+  allows to link the disk to what is consuming it and also to results in the
+  Host Status.
+- **device**: the device path of the disk. Points to the disk device in the
+  host. It is recommended to use stable paths, such as the ones under
+  `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).
+- **partition-table-type**: the partition table type of the disk. Supported
+  values are: `gpt`.
+- **partitions**: a list of partitions that will be created on the disk. Each
+  partition is described by the following fields:
+  - **id**: a unique identifier for the partition. This is a user defined string
+    that allows to link the partition to the mount points and also to results in
+    the Host Status.
+  - **type**: the type of the partition. Supported values are: `esp`, `root`,
+    `root-verity` `swap`, `home`. These correspond to [Discoverable Partition
+    Types](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
+  - **size**: the size of the partition. This is a string with the following
+    format: `<number>[<unit>]`. Supported units are: `K`, `M`, `G`, `T`. If no
+    unit is specified, the number is interpreted as bytes. If a unit letter is
+    specified, it corresponds to `KiB`, `MiB`, `GiB`, `TiB` respectively.
+    Examples: `1G`, `10M`, `1000000000`.
+
+TBD: At the moment, the partition table is created from scratch. In the future,
+it will be possible to consume an existing partition table.
+
+#### Mount Points
+The **mount-points** section describes the mount points of the host. These are
+used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount
+the volumes. Each mount point is described by the following fields:
+- **path**: the path of the mount point. This is the path where the volume will
+  be mounted in the runtime OS. For `swap` partitions, the path should be
+  `none`.
+- **target-id**: the id of the partition that will be mounted at this mount
+  point.
+- **filesystem**: the filesystem to be used for this mount point. This value
+  will be used to format the partition.
+- **options**: a list of options to be used for this mount point. These will be
+  passed as is to the `/etc/fstab` file.
+
+The resulting `/etc/fstab` is produced as follows:
+- For each mount point, a line is added to the `/etc/fstab` file, if the `path`
+  does not already exist in the `/etc/fstab` supplied in the runtime OS image.
+  If the `path` already exists in the `/etc/fstab` supplied in the runtime OS,
+  it will be updated to match the configuration provided in the Host
+  Configuration mount points. 
+- If a mount point is not present in the Host Configuration, but present in the
+  `/etc/fstab`, the line will be preserved as is in the `/etc/fstab`.
+
+Note that you do not need to specify the mounts points, if your runtime OS
+`/etc/fstab` carries the correct configuration already. In this case, Trident
+will not modify the `/etc/fstab` file nor will it format the partitions.
+
+### Imaging
+Imaging configuration describes the filesystem images that will be used to
+deploy onto the host. The configuration is divided into two sections: **images**
+and **ab-update**.
+
+#### Images
+The **images** section describes the filesystem images that will be used to
+deploy onto the host. Each image is described by the following fields:
+- **url**: the URL of the image. Supported schemes are: `file`, `http`, `https`.
+- **sha256**: the SHA256 checksum of the image. This is used to verify the
+  integrity of the image. The checksum is a 64 character hexadecimal string.
+  Temporarily, you can pass `ignored` to skip the checksum verification.
+- **format**: the format of the image. Supported values are: `raw-zstd`.
+- **target-id**: the id of the partition that will be used to store the image.
+
+#### AB Update
+Under development, initial logic for illustration purposes only.
+
+The **ab-update** section describes the A/B Update configuration of the host.
+This section is optional. If not present, A/B Update will not be configured on
+the host. This section is described by the following fields:
+- **volume-pairs**: a list of volume pairs that will be used for A/B Update.
+  Each volume pair is described by the following fields:
+  - **id**: a unique identifier for the volume pair. This is a user defined
+    string that allows to link the volume pair to the results in the Host Status
+    and to the mount points.
+  - **volume-a-id**: the id of the partition that will be used as the A volume.
+  - **volume-b-id**: the id of the partition that will be used as the B volume.
+
+You can target the A/B Update volume pair from the `images` and `mount-points`
+and Trident will pick the right volume to use based on the A/B Update state of
+the host.
+
+### Network
+Network configuration describes the network configuration of the host. The
+configuration format is matching the netplan v2 format.
+
+### Sample configuration
+
+```yaml
+host-configuration:
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-1.0
+        partition-table-type: gpt
+        partitions:
+          - id: esp
+            type: esp
+            size: 1G
+          - id: root-a
+            type: root
+            size: 8G
+          - id: root-b
+            type: root
+            size: 8G
+          - id: swap
+            type: swap
+            size: 2G
+          - id: home
+            type: home
+            size: 10G
+    mount-points:
+      - path: /boot/efi
+        target-id: esp
+        filesystem: vfat
+        options: ["umask=0077"]
+      - path: /
+        target-id: root
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /home
+        target-id: home
+        filesystem: ext4
+        options: ["defaults"]
+      - path: none
+        target-id: swap
+        filesystem: swap
+        options: ["sw"]
+  imaging:
+    images:
+      - url: file:///boot.raw.zst
+        sha256: cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8
+        format: raw-zstd
+        target-id: esp
+      - url: file:///rootfs.raw.zst
+        sha256: fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d
+        format: raw-zstd
+        target-id: root
+    ab-update:
+      volume-pairs:
+        - id: root
+          volume-a-id: root-a
+          volume-b-id: root-b
+  network:
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+    version: 2
 ```
-
-2. Protobuf compiler
-
-```bash
-sudo apt-get install -y protobuf-compiler libprotobuf-dev
-```
-
-3. rust-analyzer VS Code extension (recommended)
-
-### Installing
-
-A step by step series of examples that tell you how to get a development environment running
-
-1. Describe what needs to be done first
-
-    ``` batch
-    Give an example of performing step 1
-    ```
-
-2. And then repeat for each step
-
-    ``` sh
-    Another example, this time for step 2
-    ```
-
-## Running the tests
-
-Explain how to run the tests for this project that are relevant to users. You
-can also link to the testing portion of [CONTRIBUTING.md](CONTRIBUTING.md) for
-tests relevant to contributors.
-
-To gather code coverage data, invoke `make coverage`. It will store outputs in `target/coverage`.
-To enable code coverage visualization in VS Code, follow this guide: https://blog.rng0.io/how-to-do-code-coverage-in-rust.
-
-### End-to-end tests
-
-Explain what these tests test and why
-
-```
-Give an example
-```
-
-### Unit tests
-
-Explain what these test and why
-
-```
-Give examples
-```
-
-## Deployment
-
-Add additional notes about how to deploy this on a live system
-
-## Built With
-
-Documenting some of the main tools used to build this project, manage dependencies, etc will help users get more information if they are trying to understand or having difficulties getting the project up and running.
-
-* Link to some dependency manager
-* Link to some framework or build tool
-* Link to some compiler, linting tool, bundler, etc
 
 ## Contributing
 
