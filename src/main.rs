@@ -1,6 +1,6 @@
 use std::{fs, mem, path::PathBuf};
 
-use anyhow::{Context, Error};
+use anyhow::{anyhow, Context, Error};
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 
@@ -23,6 +23,7 @@ enum SubCommand {
     Run,
     #[clap(name = "start-network")]
     StartNetwork,
+    // TODO(5910): Remove this in the future
     ParseKickstart {
         file: String,
     },
@@ -32,6 +33,25 @@ fn main() -> Result<(), Error> {
     env_logger::builder().format_timestamp(None).init();
 
     let args = Args::parse();
+
+    // TODO(5910): Remove this in the future
+    if let SubCommand::ParseKickstart { ref file } = args.subcmd {
+        return match KsTranslator::new()
+            .translate(load_kickstart_file(file).context(format!("Failed to read {}", file))?)
+        {
+            Ok(hc) => {
+                println!("{}", serde_yaml::to_string(&hc)?);
+                Ok(())
+            }
+            Err(e) => {
+                error!(
+                    "Failed to translate kickstart:\n{}",
+                    serde_json::to_string_pretty(&e)?
+                );
+                Err(anyhow!("Failed to translate kickstart"))
+            }
+        };
+    }
 
     // Load the config file
     info!("Loading config from '{}'", args.config.display());
@@ -158,23 +178,8 @@ fn main() -> Result<(), Error> {
             .context("Failed to start provisioning network")?;
         }
 
-        // TODO: Remove this in the future
-        // It's very useful for testing
-        SubCommand::ParseKickstart { file } => {
-            match KsTranslator::new()
-                .translate(load_kickstart_file(&file).context(format!("Failed to read {}", &file))?)
-            {
-                Ok(hc) => {
-                    println!("{}", serde_yaml::to_string(&hc)?);
-                }
-                Err(e) => {
-                    error!(
-                        "Failed to translate kickstart:\n{}",
-                        serde_json::to_string_pretty(&e)?
-                    );
-                }
-            }
-        }
+        // TODO(5910): Remove this in the future
+        SubCommand::ParseKickstart { .. } => unreachable!(),
     }
 
     Ok(())
