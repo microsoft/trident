@@ -1,28 +1,39 @@
 ---
-ArtifactType: nupkg, executable, azure-web-app, azure-cloud-service, etc. More requirements for artifact type standardization may come later.
-Documentation: URL
-Language: typescript, csharp, java, js, python, golang, powershell, markdown, etc. More requirements for language names standardization may come later.
-Platform: windows, node, linux, ubuntu16, azure-function, etc. More requirements for platform standardization may come later.
+ArtifactType: executable, rpm.
+Documentation: ./README.md
+Language: rust
+Platform: mariner
 Stackoverflow: URL
 Tags: comma,separated,list,of,tags
 ---
 
-# Project Title. MUST BE topmost header
+# Trident
 
-One Paragraph of project description goes here. Including links to other user docs or a project website is good here as well. This paragraph will be used as a blurb on CodeHub. Please make the first paragraph short and to the point.
+Deployment and update Agent for Mariner OS, allowing for inplace image
+deployments and atomic updates. Initial focus is on Bare Metal deployments, but
+can be leveraged outside of that as well.
 
-You can expand on project description in subsequent paragraphs. It is a good practice to explain how this project is used and what other projects depend on it.
+## Docs:
+- [BOM Agnostic Single Node Provisioning
+Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shared%20Documents/General/BareMetal/BOM%20Agnostic%20Single%20Node%20Provisioning%20Architecture.docx?web=1).
+- [Trident Agent
+  Design](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shared%20Documents/General/BareMetal/Trident%20Agent%20Design.docx?web=1)
 
 ## Getting Started
 
-These instructions will get you a copy of the project up and running on your
-local machine for development and testing purposes. See deployment for notes on
-how to deploy the project on a live system.
+[Deployment
+instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/README.md&_a=preview).
+
+Build instructions: `cargo build`.
+
+Build, check and and run UTs: `make`.
+
+Code coverage: `make coverage`.
 
 ## Trident configuration
 
-This configuration file is used by the Trident agent to configure the host. It
-is composed of the following sections:
+This configuration file is used by the Trident agent to configure itself. It is
+composed of the following sections:
 - **allowed-operations**: a combination of flags representing allowed
   operations. This is a list of operations that Trident is allowed to perform on
   the host. Supported flags are:
@@ -34,9 +45,46 @@ is composed of the following sections:
     also specified.
   
   You can pass multiple flags, separated by `|`. Example: `Update | Transition`.
-  You can pass `''` to disable all operations.
+  You can pass `''` to disable all operations, which would result in getting
+  refreshed Host Status, but no operations performed on the host.
+- **self-upgrade**: a boolean flag that indicates whether Trident should upgrade
+  itself. If set to `true`, Trident will replicate itself into the runtime OS
+  prior to transitioning. This is useful during development to ensure the
+  matching version of Trident is used. Defaults to `false`.
+- **datastore**: describes the datastore configuration. This is the
+  configuration that Trident will use to store its state. Path `create-path`
+  attribute if you want to store the datastore in a different location than the
+  default `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`,
+  cannot be an existing file and cannot reside on a read-only filesystem or A/B
+  volume.
+- **phonehome**: optional URL to reach out to when networking is up, so Trident
+  can report its status. This is useful for debugging and monitoring purposes,
+  say by an orchestrator. Note that separately the updates to the Host Status
+  can be monitored, once gRPC support is implemented. TODO: document the
+  interface, for reference in the meantime
+  [src/orchestrate.rs](src/orchestrate.rs).
+- **network-override**: optional network configuration for the bootstrap OS. If
+  not specified, the network configuration from Host Configuration (see below)
+  will be used otherwise.
+
+Additionally, to configure the host, the desired host configuration can be
+provided through either one of the following options:
+- **host-configuration-file**: path to the host configuration file. This is a
+  YAML file that describes the host configuration in the Host Configuration
+  format. See below details.
 - **host-configuration**: describes the host configuration. This is the
-  configuration that Trident will apply to the host. See below details.
+  configuration that Trident will apply to the host (same payload as
+  `host-configuration-file`, but directly embedded in the Trident
+  configuration). See below details.
+- **kickstart-file**: path to the kickstart file. This is a kickstart file that
+  describes the host configuration in the kickstart format. WIP, early preview
+  only. TODO: document what is supported.
+- **kickstart**: describes the host configuration in the kickstart format. This
+  is the configuration that Trident will apply to the host (same payload as
+  `kickstart-file`, but directly embedded in the Trident configuration). WIP,
+  early preview only.
+- **grpc**: gRPC port to listen on, through which host configuration can be
+  passed in once networking is up in the provisioning OS. Not yet implemented.
 
 The Host Configuration contains the following sections:
 - **storage**: describes the storage configuration of the host.
@@ -66,7 +114,8 @@ the following fields:
     that allows to link the partition to the mount points and also to results in
     the Host Status.
   - **type**: the type of the partition. Supported values are: `esp`, `root`,
-    `root-verity` `swap`, `home`. These correspond to [Discoverable Partition
+    `root-verity` `swap`, `home`, `var`. These correspond to [Discoverable
+    Partition
     Types](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
   - **size**: the size of the partition. This is a string with the following
     format: `<number>[<unit>]`. Supported units are: `K`, `M`, `G`, `T`. If no
@@ -163,8 +212,8 @@ host-configuration:
           - id: swap
             type: swap
             size: 2G
-          - id: home
-            type: home
+          - id: var
+            type: var
             size: 10G
     mount-points:
       - path: /boot/efi
@@ -175,8 +224,8 @@ host-configuration:
         target-id: root
         filesystem: ext4
         options: ["defaults"]
-      - path: /home
-        target-id: home
+      - path: /var
+        target-id: var
         filesystem: ext4
         options: ["defaults"]
       - path: none
@@ -209,23 +258,29 @@ host-configuration:
 
 ## Contributing
 
-Please read our [CONTRIBUTING.md](CONTRIBUTING.md) which outlines all of our policies, procedures, and requirements for contributing to this project.
+Please read our [CONTRIBUTING.md](CONTRIBUTING.md) which outlines all of our
+policies, procedures, and requirements for contributing to this project.
 
 ## Versioning and changelog
 
-We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](link-to-tags-or-other-release-location).
+We use [SemVer](http://semver.org/) for versioning. For the versions available,
+see the [tags on this repository](link-to-tags-or-other-release-location).
 
-It is a good practice to keep `CHANGELOG.md` file in repository that can be updated as part of a pull request.
+It is a good practice to keep `CHANGELOG.md` file in repository that can be
+updated as part of a pull request.
 
 ## Authors
 
-List main authors of this project with a couple of words about their contribution.
+List main authors of this project with a couple of words about their
+contribution.
 
-Also insert a link to the `owners.txt` file if it exists as well as any other dashboard or other resources that lists all contributors to the project.
+Also insert a link to the `owners.txt` file if it exists as well as any other
+dashboard or other resources that lists all contributors to the project.
 
 ## License
 
-This project is licensed under the < INSERT LICENSE NAME > - see the [LICENSE](LICENSE) file for details
+This project is licensed under the < INSERT LICENSE NAME > - see the
+[LICENSE](LICENSE) file for details
 
 ## Acknowledgments
 

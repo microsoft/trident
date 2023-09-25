@@ -31,7 +31,7 @@ impl OrchestratorConnection {
                 .body(
                     serde_json::to_vec(&Message {
                         state: State::Started,
-                        message: format!("trident started (connection attempt {i})"),
+                        message: format!("Trident started (connection attempt {i})"),
                     })
                     .unwrap(),
                 )

@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, MountPoint},
     status::{self, BlockDeviceContents, HostStatus, UpdateKind},
 };
 
@@ -250,6 +250,18 @@ impl StorageModule {
 
         Ok(())
     }
+}
+
+pub fn path_to_mount_point<'a>(
+    host_config: &'a HostConfiguration,
+    path: &Path,
+) -> Option<&'a MountPoint> {
+    host_config
+        .storage
+        .mount_points
+        .iter()
+        .filter(|mp| path.starts_with(&mp.path))
+        .max_by_key(|mp| mp.path.as_os_str().len())
 }
 
 /// Returns the path of the first symlink in directory whose canonical path is target.

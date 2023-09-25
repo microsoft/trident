@@ -1,18 +1,25 @@
-use std::{fs, path::Path, sync::Mutex};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
     config::{
-        HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
-        TridentConfiguration,
+        DatastoreConfiguration, HostConfiguration, HostConfigurationSource, LocalConfigFile,
+        Operations, TridentConfiguration,
     },
     status::{BlockDeviceInfo, HostStatus, ReconcileState, UpdateKind},
 };
 
 use crate::{
-    datastore::DataStore, get_block_device, modules::osconfig::OsConfigModule, mount::enter_chroot,
+    datastore::DataStore,
+    get_block_device,
+    modules::{osconfig::OsConfigModule, storage::path_to_mount_point},
+    mount::enter_chroot,
     TRIDENT_BINARY_PATH, TRIDENT_DATASTORE_PATH,
 };
 use crate::{
@@ -133,6 +140,8 @@ pub(crate) fn provision(
 
     image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
 
+    let datastore_path = validate_datastore_location(trident_config, host_config)?;
+
     let mut chroot_env = setup_root_chroot(host_config, &host_status, false)
         .context("Failed to setup target root chroot")?;
 
@@ -149,9 +158,12 @@ pub(crate) fn provision(
 
         chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
 
-        // TODO: Storing the datastore on the root filesystem will not work for A/B update or if the
-        // root filesystem is protected by dm-verity.
-        let mut state = DataStore::create(Path::new(TRIDENT_DATASTORE_PATH), host_status)?;
+        if datastore_path.exists() {
+            bail!("Datastore already exists");
+        }
+        fs::create_dir_all(datastore_path.parent().unwrap())
+            .context("Failed to create trident datastore directory")?;
+        let mut state = DataStore::create(datastore_path.as_path(), host_status)?;
 
         for m in &mut *modules {
             state.with_host_status(|s| {
@@ -160,7 +172,11 @@ pub(crate) fn provision(
             })?;
         }
 
-        inject_trident_config(trident_config.phonehome.clone(), host_config)?;
+        inject_trident_config(
+            trident_config.phonehome.clone(),
+            datastore_path.as_path(),
+            host_config,
+        )?;
 
         // TODO: Call post-update workload hook.
         drop(state);
@@ -277,6 +293,8 @@ pub(crate) fn update(
     }
 
     if should_reconcile {
+        let datastore_path = validate_datastore_location(trident_config, host_config)?;
+
         if update_kind == Some(UpdateKind::AbUpdate) {
             if let Some(chroot_env) = chroot_env.as_mut() {
                 if trident_config.self_upgrade {
@@ -301,7 +319,11 @@ pub(crate) fn update(
         }
 
         if update_kind == Some(UpdateKind::AbUpdate) {
-            inject_trident_config(trident_config.phonehome.clone(), host_config)?;
+            inject_trident_config(
+                trident_config.phonehome.clone(),
+                datastore_path.as_path(),
+                host_config,
+            )?;
         }
     }
 
@@ -344,15 +366,56 @@ pub(crate) fn update(
     }
 }
 
+fn validate_datastore_location(
+    trident_config: &TridentConfiguration,
+    host_config: &HostConfiguration,
+) -> Result<PathBuf, Error> {
+    let datastore_path = match &trident_config.datastore {
+        Some(DatastoreConfiguration::Create { create_path }) => create_path.clone(),
+        Some(DatastoreConfiguration::Load { load_path }) => load_path.clone(),
+        None => PathBuf::from(TRIDENT_DATASTORE_PATH),
+    };
+    datastore_path
+        .extension()
+        .and_then(|ext| if ext == "sqlite" { Some(()) } else { None })
+        .ok_or(anyhow::anyhow!(
+            "Datastore path must end with '.sqlite' but received '{}'",
+            datastore_path.display()
+        ))?;
+
+    let datastore_block_device_id = &path_to_mount_point(host_config, datastore_path.as_path())
+        .map(|mp| &mp.target_id)
+        .context("Failed to find mount point for datastore")?;
+
+    if host_config
+        .imaging
+        .ab_update
+        .as_ref()
+        .and_then(|ab_update| {
+            ab_update
+                .volume_pairs
+                .iter()
+                .find(|p| &p.id == *datastore_block_device_id)
+        })
+        .is_some()
+    {
+        bail!("Datastore cannot be on an A/B update volume");
+    }
+    Ok(datastore_path)
+}
+
 fn inject_trident_config(
     orchestrator_url: Option<String>,
+    datastore_path: &Path,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
         .context("Failed to create trident config directory")?;
     let trident_config = LocalConfigFile {
         trident_config: TridentConfiguration {
-            datastore: Some(TRIDENT_DATASTORE_PATH.into()),
+            datastore: Some(DatastoreConfiguration::Load {
+                load_path: datastore_path.to_path_buf(),
+            }),
             phonehome: orchestrator_url,
             ..Default::default()
         },
@@ -418,4 +481,198 @@ pub fn get_root_block_device(
             None
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use indoc::indoc;
+    use trident_api::config::{HostConfiguration, TridentConfiguration};
+
+    use super::validate_datastore_location;
+
+    #[test]
+    fn test_validate_datastore_location() {
+        let trident_config_yaml = indoc! {r#"
+            datastore: 
+              create-path: /trident.sqlite
+        "#};
+        let trident_config: TridentConfiguration =
+            serde_yaml::from_str(trident_config_yaml).unwrap();
+
+        let host_config_yaml = indoc! {r#"
+            storage:
+              disks:
+              mount-points:
+                - path: /
+                  target-id: sda1
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+        "#};
+        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+
+        assert_eq!(
+            validate_datastore_location(&trident_config, &host_config).unwrap(),
+            Path::new("/trident.sqlite")
+        );
+
+        let trident_config_yaml = indoc! {r#"
+            datastore: 
+              create-path: /trident.
+        "#};
+        let trident_config: TridentConfiguration =
+            serde_yaml::from_str(trident_config_yaml).unwrap();
+
+        // expect failure as the datastore path needs to end with .sqlite
+        assert!(validate_datastore_location(&trident_config, &host_config).is_err());
+
+        let trident_config_yaml = indoc! {r#"
+            datastore: 
+              load-path: /foo/trident.sqlite
+        "#};
+        let trident_config: TridentConfiguration =
+            serde_yaml::from_str(trident_config_yaml).unwrap();
+
+        assert_eq!(
+            validate_datastore_location(&trident_config, &host_config).unwrap(),
+            Path::new("/foo/trident.sqlite")
+        );
+
+        let trident_config_yaml = indoc! {r#"
+        "#};
+        let trident_config: TridentConfiguration =
+            serde_yaml::from_str(trident_config_yaml).unwrap();
+
+        assert_eq!(
+            validate_datastore_location(&trident_config, &host_config).unwrap(),
+            Path::new("/var/lib/trident/datastore.sqlite")
+        );
+
+        let trident_config_yaml = indoc! {r#"
+            datastore: 
+              create-path: /foo/bar/trident.sqlite
+        "#};
+        let trident_config: TridentConfiguration =
+            serde_yaml::from_str(trident_config_yaml).unwrap();
+
+        let host_config_yaml = indoc! {r#"
+            storage:
+              disks:
+              mount-points:
+                - path: /
+                  target-id: sda1
+                  filesystem: ext4
+                  options: []
+                - path: /bar
+                  target-id: sda2
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+        "#};
+        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+
+        assert_eq!(
+            validate_datastore_location(&trident_config, &host_config).unwrap(),
+            Path::new("/foo/bar/trident.sqlite")
+        );
+
+        let host_config_yaml = indoc! {r#"
+            storage:
+              disks:
+              mount-points:
+                - path: /
+                  target-id: sda1
+                  filesystem: ext4
+                  options: []
+                - path: /bar
+                  target-id: sda2
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+              ab-update:
+                volume-pairs:
+                    - id: sda2
+                      volume-a-id: sda1
+                      volume-b-id: sda2
+                    - id: sda2
+                      volume-a-id: sda2
+                      volume-b-id: sda1
+        "#};
+        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+
+        assert_eq!(
+            validate_datastore_location(&trident_config, &host_config).unwrap(),
+            Path::new("/foo/bar/trident.sqlite")
+        );
+
+        let trident_config_yaml = indoc! {r#"
+            datastore: 
+              load-path: /bar/foo/trident.sqlite
+        "#};
+        let trident_config: TridentConfiguration =
+            serde_yaml::from_str(trident_config_yaml).unwrap();
+
+        let host_config_yaml = indoc! {r#"
+            storage:
+              disks:
+              mount-points:
+                - path: /
+                  target-id: sda1
+                  filesystem: ext4
+                  options: []
+                - path: /bar
+                  target-id: sda2
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+              ab-update:
+                volume-pairs:
+                    - id: sda1
+                      volume-a-id: sda1
+                      volume-b-id: sda2
+                    - id: sda1
+                      volume-a-id: sda2
+                      volume-b-id: sda1
+        "#};
+        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+
+        assert_eq!(
+            validate_datastore_location(&trident_config, &host_config).unwrap(),
+            Path::new("/bar/foo/trident.sqlite")
+        );
+
+        let host_config_yaml = indoc! {r#"
+            storage:
+              disks:
+              mount-points:
+                - path: /
+                  target-id: sda1
+                  filesystem: ext4
+                  options: []
+                - path: /bar
+                  target-id: sda2
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+              ab-update:
+                volume-pairs:
+                    - id: sda1
+                      volume-a-id: sda1
+                      volume-b-id: sda2
+                    - id: sda2
+                      volume-a-id: sda2
+                      volume-b-id: sda1
+        "#};
+        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+
+        // expect failure, as we cannot land on A/B volume
+        assert!(validate_datastore_location(&trident_config, &host_config).is_err());
+    }
 }

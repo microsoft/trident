@@ -20,12 +20,13 @@ pub struct LocalConfigFile {
 /// Configuration that Trident needs which doesn't belong in the host config.
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct TridentConfiguration {
     /// Optional URL to reach out to when networking is up.
     pub phonehome: Option<String>,
 
-    /// Directory containing the datastore, or None during initial provisioning.
-    pub datastore: Option<PathBuf>,
+    /// Configuration of the datastore with its location.
+    pub datastore: Option<DatastoreConfiguration>,
 
     /// Netplan configuration to use instead of what is specified in the host config.
     pub network_override: Option<NetworkConfig>,
@@ -39,8 +40,25 @@ pub struct TridentConfiguration {
     pub self_upgrade: bool,
 }
 
+/// Configuration for the datastore.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
+#[serde(untagged)]
+pub enum DatastoreConfiguration {
+    /// Directory in the runtime filesystem where to create the datastore during provisioning.
+    #[serde(rename_all = "kebab-case")]
+    Create { create_path: PathBuf },
+
+    /// Directory in the runtime filesystem where the datastore is already present.
+    #[serde(rename_all = "kebab-case")]
+    Load { load_path: PathBuf },
+}
+
+/// HostConfigurationSource is the source of the host configuration.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub enum HostConfigurationSource {
     /// Use the host config file.
     #[serde(rename = "host-configuration-file")]
@@ -93,6 +111,8 @@ pub struct HostConfiguration {
 
 bitflags::bitflags! {
     #[derive(Serialize, Deserialize, Debug)]
+    #[serde(rename_all = "kebab-case")]
+    #[serde(deny_unknown_fields)]
     pub struct Operations: u32 {
         /// Reconcile the host configuration with the current state of the host.
         const Update = 0b1;
@@ -177,6 +197,8 @@ pub enum PartitionType {
     RootVerity,
     /// 933ac7e1-2eb4-4f13-b844-0e14e2aef915
     Home,
+    /// 4d21b016-b534-45c2-a9fb-5c16e091fd2d
+    Var,
 }
 
 /// Mount point configuration. Carries information necessary to populate

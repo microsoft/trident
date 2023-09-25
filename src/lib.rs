@@ -6,7 +6,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::process::{Command, Output};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
-use trident_api::config::{BlockDeviceId, HostConfiguration, TridentConfiguration};
+use trident_api::config::{
+    BlockDeviceId, DatastoreConfiguration, HostConfiguration, TridentConfiguration,
+};
 use trident_api::status::{
     AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk, HostStatus, Partition,
     ReconcileState, UpdateKind,
@@ -22,7 +24,7 @@ pub use modules::network::provisioning::start as start_provisioning_network;
 pub use orchestrate::OrchestratorConnection;
 
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
-pub const TRIDENT_DATASTORE_PATH: &str = "/trident.sqlite";
+pub const TRIDENT_DATASTORE_PATH: &str = "/var/lib/trident/datastore.sqlite";
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 
 mod protobufs {
@@ -83,13 +85,16 @@ pub fn run(
     host_config: &HostConfiguration,
     trident_config: &TridentConfiguration,
 ) -> Result<(), Error> {
-    match trident_config.datastore {
-        Some(ref path) => {
-            let datastore = DataStore::open(path).context("Failed to load datastore")?;
+    match &trident_config.datastore {
+        Some(DatastoreConfiguration::Load { load_path }) => {
+            let datastore =
+                DataStore::open(load_path.as_path()).context("Failed to load datastore")?;
             modules::update(host_config, trident_config, datastore)
                 .context("Failed to update host config")
         }
-        None => modules::provision(host_config, trident_config).context("Failed to provision"),
+        Some(DatastoreConfiguration::Create { .. }) | None => {
+            modules::provision(host_config, trident_config).context("Failed to provision")
+        }
     }
 }
 

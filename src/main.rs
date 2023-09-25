@@ -61,7 +61,7 @@ fn main() -> Result<(), Error> {
 
     // Parse the config file
     let mut config: LocalConfigFile = match serde_yaml::from_str(&config_contents)
-        .context("Failed to parse trident configuration")
+        .context("Failed to parse Trident configuration")
     {
         Ok(config) => config,
         Err(e) => {
