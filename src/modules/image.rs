@@ -20,7 +20,7 @@ use trident_api::{
     },
 };
 
-use crate::modules::{storage::fstab::Fstab, unmount_target_volumes, Module};
+use crate::modules::{storage::tabfile::TabFile, unmount_target_volumes, Module};
 use crate::{get_block_device, run_command, set_host_status_block_device_contents};
 
 const HASH_IGNORED: &str = "ignored";
@@ -265,10 +265,10 @@ impl Module for ImageModule {
 
     fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
         // update root_device_path of the active root volume
-        let proc_mounts =
-            Fstab::read(Path::new("/proc/mounts")).context("Failed to read /proc/mounts")?;
-        host_status.imaging.root_device_path =
-            proc_mounts.get(Path::new("/")).map(|l| l.device_path);
+        host_status.imaging.root_device_path = Some(
+            TabFile::get_device_path(Path::new("/proc/mounts"), Path::new("/"))
+                .context("Failed find root mount point")?,
+        );
 
         // if a/b update is enabled
         if let Some(ab_update) = &host_status.imaging.ab_update {

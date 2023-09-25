@@ -17,7 +17,9 @@ use trident_api::{
 
 use crate::{modules::Module, run_command};
 
-pub mod fstab;
+use self::tabfile::{TabFile, DEFAULT_FSTAB_PATH};
+
+pub mod tabfile;
 
 #[derive(Default, Debug)]
 pub struct StorageModule;
@@ -136,12 +138,10 @@ impl Module for StorageModule {
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        fstab::Fstab::read(Path::new(fstab::DEFAULT_FSTAB_PATH))
-            .context(format!("Failed to read {}", fstab::DEFAULT_FSTAB_PATH))?
-            .update(host_status, host_config)
-            .context(format!("Failed to update {}", fstab::DEFAULT_FSTAB_PATH))?
-            .write(Path::new(fstab::DEFAULT_FSTAB_PATH))
-            .context(format!("Failed to write {}", fstab::DEFAULT_FSTAB_PATH))?;
+        TabFile::from_mount_points(host_status, &host_config.storage.mount_points, None, None)
+            .context("Failed to serialize mount point configuration for the target OS")?
+            .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
+            .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
 
         host_status.storage.mount_points = host_config
             .storage
@@ -182,6 +182,9 @@ impl StorageModule {
     fn partition_config_to_repart_config(partition: &Partition) -> Result<Ini, Error> {
         let partition_type_str = partition_type_to_string(&partition.partition_type)?;
 
+        // validate the size formatting to ensure it is compatible with what
+        // systemd-repart expects, failure during validation will be handled
+        // directly by Trident to ensure higher fidelity error messages
         parse_size(&partition.size).context(format!(
             "Failed to parse size ('{}') for partition '{}'",
             partition.size, partition.id
@@ -343,11 +346,6 @@ fn generate_repart_config(
     ))?;
 
     for (index, partition) in disk.partitions.iter().enumerate() {
-        parse_size(&partition.size).context(format!(
-            "Failed to parse size ('{}') for partition '{}'",
-            partition.size, partition.id
-        ))?;
-
         let repart_config =
             StorageModule::partition_config_to_repart_config(partition).context(format!(
                 "Failed to generate partition configuration for partition {} on disk {}",

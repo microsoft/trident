@@ -15,7 +15,7 @@ use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
 use trident_api::{config::HostConfiguration, status::HostStatus};
 
 use crate::{
-    modules::{get_root_block_device, storage},
+    modules::{get_root_block_device, storage::tabfile::TabFile},
     run_command,
 };
 
@@ -117,11 +117,11 @@ pub(crate) fn setup_root_chroot(
         let update_fstab_path = update_fstab_root.path().join(Path::new("fstab"));
         let systemd_unit_root_path = Path::new("/etc/systemd/system");
 
-        storage::fstab::Fstab::from_mount_points(
+        TabFile::from_mount_points(
             host_status,
             &host_config.storage.mount_points,
-            root_mount_path,
-            update_fs_target,
+            Some(root_mount_path),
+            Some(update_fs_target),
         )
         .context("Failed to generate bootstrap fstab")?
         .write(update_fstab_path.as_path())
