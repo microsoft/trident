@@ -200,7 +200,7 @@ mod tests {
                     os:
                         path: /dev/disk/by-bus/foobar
                         uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: null
+                        capacity: 0
                         contents: unknown
                         partitions:
                           - id: efi
@@ -437,7 +437,7 @@ mod tests {
                     os:
                         path: /dev/disk/by-bus/foobar
                         uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: null
+                        capacity: 0
                         contents: unknown
                         partitions:
                           - id: efi

@@ -7,11 +7,7 @@ pub mod status;
 
 impl Disk {
     pub fn to_block_device(&self) -> BlockDeviceInfo {
-        BlockDeviceInfo::new(
-            self.path.clone(),
-            self.capacity.unwrap_or(0),
-            self.contents.clone(),
-        )
+        BlockDeviceInfo::new(self.path.clone(), self.capacity, self.contents.clone())
     }
 }
 

@@ -64,7 +64,7 @@ pub struct Storage {
 pub struct Disk {
     pub uuid: Uuid,
     pub path: PathBuf,
-    pub capacity: Option<u64>,
+    pub capacity: u64,
     pub partitions: Vec<Partition>,
     pub contents: BlockDeviceContents,
 }

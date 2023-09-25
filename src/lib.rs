@@ -259,7 +259,7 @@ mod tests {
                     os:
                         path: /dev/disk/by-bus/foobar
                         uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: null
+                        capacity: 0
                         contents: unknown
                         partitions:
                           - id: efi
@@ -376,7 +376,7 @@ mod tests {
         let mut disk = Disk {
             path: PathBuf::from("/dev/disk/by-bus/foobar"),
             uuid: uuid::Uuid::nil(),
-            capacity: None,
+            capacity: 0,
             contents: BlockDeviceContents::Unknown,
             partitions: vec![],
         };
@@ -390,7 +390,7 @@ mod tests {
             }
         );
 
-        disk.capacity = Some(1234567890);
+        disk.capacity = 1234567890;
 
         assert_eq!(
             &disk.to_block_device(),
@@ -442,7 +442,7 @@ mod tests {
                     os:
                         path: /dev/disk/by-bus/foobar
                         uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: null
+                        capacity: 0
                         contents: unknown
                         partitions:
                           - id: efi
@@ -628,7 +628,7 @@ mod tests {
                     os:
                         path: /dev/disk/by-bus/foobar
                         uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: null
+                        capacity: 0
                         contents: unknown
                         partitions:
                           - id: efi
