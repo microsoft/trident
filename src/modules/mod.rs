@@ -92,7 +92,7 @@ lazy_static::lazy_static! {
 
 pub(crate) fn provision(
     host_config: &HostConfiguration,
-    trident_config: &TridentConfiguration,
+    trident: &TridentConfiguration,
 ) -> Result<(), Error> {
     // This is a safety check so that nobody accidentally formats their dev machine.
     if !fs::read_to_string("/proc/cmdline")
@@ -103,77 +103,43 @@ pub(crate) fn provision(
     }
 
     let mut modules = MODULES.lock().unwrap();
-    let mut host_status = HostStatus {
-        reconcile_state: ReconcileState::CleanInstall,
-        ..Default::default()
-    };
 
-    for m in &mut *modules {
-        m.refresh_host_status(&mut host_status).context(format!(
-            "Module '{}' failed to refresh host status",
-            m.name()
-        ))?;
-    }
-    info!("Host status: {:#?}", host_status);
+    let mut state = DataStore::new();
+    state.with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)?;
 
-    for m in &*modules {
-        m.validate_host_config(&host_status, host_config)
-            .context(format!(
-                "Module '{}' failed to validate host config",
-                m.name()
-            ))?;
-    }
-    info!("Host config validated");
+    refresh_host_status(&mut modules, &mut state)?;
+    validate_host_config(&modules, &state, host_config)?;
 
-    if !trident_config
-        .allowed_operations
-        .contains(Operations::Update)
-    {
+    if !trident.allowed_operations.contains(Operations::Update) {
         info!("Update not requested, skipping reconcile");
         return Ok(());
     }
 
-    StorageModule::create_partitions(&mut host_status, host_config)
-        .context("Failed to create disk partitions")?;
+    state.try_with_host_status(|s| {
+        StorageModule::create_partitions(s, host_config)
+            .context("Failed to create disk partitions")?;
+        image::refresh_ab_volumes(s, host_config);
+        image::stream_images(s, host_config).context("Failed to stream images")
+    })?;
 
-    image::refresh_ab_volumes(&mut host_status, host_config);
+    let datastore_path = validate_datastore_location(trident, host_config)?;
 
-    image::stream_images(&mut host_status, host_config).context("Failed to stream images")?;
-
-    let datastore_path = validate_datastore_location(trident_config, host_config)?;
-
-    let mut chroot_env = setup_root_chroot(host_config, &host_status, false)
+    let mut chroot_env = setup_root_chroot(host_config, state.host_status(), false)
         .context("Failed to setup target root chroot")?;
 
     if let Some(chroot_env) = chroot_env.as_mut() {
-        if trident_config.self_upgrade {
-            // for development only, copy provisioning OS Trident binary to the runtime OS
-            // to ensure we are using the latest bits
-            fs::copy(
-                TRIDENT_BINARY_PATH,
-                chroot_env.mount_path.join(&TRIDENT_BINARY_PATH[1..]),
-            )
-            .context("Failed to copy Trident binary to runtime OS")?;
+        if trident.self_upgrade {
+            self_upgrade(&chroot_env.mount_path)?;
         }
 
         chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
 
-        if datastore_path.exists() {
-            bail!("Datastore already exists");
-        }
-        fs::create_dir_all(datastore_path.parent().unwrap())
-            .context("Failed to create trident datastore directory")?;
-        let mut state = DataStore::create(datastore_path.as_path(), host_status)?;
+        state.persist(&datastore_path)?;
 
-        for m in &mut *modules {
-            state.with_host_status(|s| {
-                m.reconcile(s, host_config)
-                    .context(format!("Module '{}' failed during reconcile", m.name()))
-            })?;
-        }
+        reconcile(&mut modules, &mut state, host_config)?;
 
         inject_trident_config(
-            trident_config.phonehome.clone(),
+            trident.phonehome.clone(),
             datastore_path.as_path(),
             host_config,
         )?;
@@ -182,10 +148,7 @@ pub(crate) fn provision(
         drop(state);
     }
 
-    if !trident_config
-        .allowed_operations
-        .contains(Operations::Transition)
-    {
+    if !trident.allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
         if let Some(chroot_env) = chroot_env {
             chroot_env
@@ -206,35 +169,15 @@ pub(crate) fn provision(
 
 pub(crate) fn update(
     host_config: &HostConfiguration,
-    trident_config: &TridentConfiguration,
+    trident: &TridentConfiguration,
     mut state: DataStore,
 ) -> Result<(), Error> {
     let mut modules = MODULES.lock().unwrap();
 
-    for m in &mut *modules {
-        state.with_host_status(|s| {
-            m.refresh_host_status(s).context(format!(
-                "Module '{}' failed to refresh host status",
-                m.name()
-            ))
-        })?;
-    }
+    refresh_host_status(&mut modules, &mut state)?;
+    validate_host_config(&modules, &state, host_config)?;
 
-    info!("Host status: {:#?}", state.host_status());
-
-    for m in &*modules {
-        m.validate_host_config(state.host_status(), host_config)
-            .context(format!(
-                "Module '{}' failed to validate host config",
-                m.name()
-            ))?;
-    }
-    info!("Host config validated");
-
-    if !trident_config
-        .allowed_operations
-        .contains(Operations::Update)
-    {
+    if !trident.allowed_operations.contains(Operations::Update) {
         info!("Update not requested, skipping reconcile");
         return Ok(());
     }
@@ -243,7 +186,7 @@ pub(crate) fn update(
         .iter()
         .filter_map(|m| m.select_update_kind(state.host_status(), host_config))
         .max();
-    state.with_host_status(|s| {
+    state.try_with_host_status(|s| {
         s.reconcile_state = match update_kind {
             Some(k) => ReconcileState::UpdateInProgress(k),
             None => ReconcileState::Ready,
@@ -261,9 +204,8 @@ pub(crate) fn update(
         Some(UpdateKind::UpdateAndReboot) => info!("Performing update and reboot"),
         Some(UpdateKind::AbUpdate) => {
             info!("Performing A/B update");
-            state.with_host_status(|s| {
-                image::stream_images(s, host_config).context("Failed to stream images")?;
-                Ok(())
+            state.try_with_host_status(|s| {
+                image::stream_images(s, host_config).context("Failed to stream images")
             })?;
         }
         Some(UpdateKind::Incompatible) => {
@@ -281,7 +223,7 @@ pub(crate) fn update(
         // TODO: Write update
 
         for m in &mut *modules {
-            state.with_host_status(|s| {
+            state.try_with_host_status(|s| {
                 m.migrate(s, host_config)
                     .context(format!("Module '{}' failed during pause", m.name()))
             })?;
@@ -293,34 +235,23 @@ pub(crate) fn update(
     }
 
     if should_reconcile {
-        let datastore_path = validate_datastore_location(trident_config, host_config)?;
+        let datastore_path = validate_datastore_location(trident, host_config)?;
 
         if update_kind == Some(UpdateKind::AbUpdate) {
             if let Some(chroot_env) = chroot_env.as_mut() {
-                if trident_config.self_upgrade {
-                    // development only, copy provisioning OS Trident binary to the runtime OS
-                    // to ensure we are using the latest bits
-                    fs::copy(
-                        TRIDENT_BINARY_PATH,
-                        chroot_env.mount_path.join(&TRIDENT_BINARY_PATH[1..]),
-                    )
-                    .context("Failed to copy Trident binary to runtime OS")?;
+                if trident.self_upgrade {
+                    self_upgrade(&chroot_env.mount_path)?;
                 }
 
                 chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
             }
         }
 
-        for m in &mut *modules {
-            state.with_host_status(|s| {
-                m.reconcile(s, host_config)
-                    .context(format!("Module '{}' failed during reconcile", m.name()))
-            })?;
-        }
+        reconcile(&mut modules, &mut state, host_config)?;
 
         if update_kind == Some(UpdateKind::AbUpdate) {
             inject_trident_config(
-                trident_config.phonehome.clone(),
+                trident.phonehome.clone(),
                 datastore_path.as_path(),
                 host_config,
             )?;
@@ -333,10 +264,7 @@ pub(crate) fn update(
         Some(UpdateKind::UpdateAndReboot) | Some(UpdateKind::AbUpdate) => {
             drop(state);
 
-            if !trident_config
-                .allowed_operations
-                .contains(Operations::Transition)
-            {
+            if !trident.allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
                 if let Some(chroot_env) = chroot_env {
                     chroot_env
@@ -353,10 +281,7 @@ pub(crate) fn update(
             Ok(())
         }
         Some(UpdateKind::NormalUpdate) | Some(UpdateKind::HotPatch) => {
-            state.with_host_status(|s| {
-                s.reconcile_state = ReconcileState::Ready;
-                Ok(())
-            })?;
+            state.with_host_status(|s| s.reconcile_state = ReconcileState::Ready)?;
             info!("Update complete");
             Ok(())
         }
@@ -364,6 +289,62 @@ pub(crate) fn update(
             unreachable!()
         }
     }
+}
+
+fn refresh_host_status(
+    modules: &mut [Box<dyn Module>],
+    state: &mut DataStore,
+) -> Result<(), Error> {
+    for m in modules {
+        state.try_with_host_status(|s| {
+            m.refresh_host_status(s).context(format!(
+                "Module '{}' failed to refresh host status",
+                m.name()
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_host_config(
+    modules: &[Box<dyn Module>],
+    state: &DataStore,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    for m in modules {
+        m.validate_host_config(state.host_status(), host_config)
+            .context(format!(
+                "Module '{}' failed to validate host config",
+                m.name()
+            ))?;
+    }
+    info!("Host config validated");
+    Ok(())
+}
+
+fn reconcile(
+    modules: &mut [Box<dyn Module>],
+    state: &mut DataStore,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    for m in modules {
+        state.try_with_host_status(|s| {
+            m.reconcile(s, host_config)
+                .context(format!("Module '{}' failed during reconcile", m.name()))
+        })?;
+    }
+    Ok(())
+}
+
+/// For development only: copy provisioning OS Trident binary to the runtime OS to ensure we are
+/// using the latest bits.
+fn self_upgrade(mount_path: &Path) -> Result<(), Error> {
+    fs::copy(
+        TRIDENT_BINARY_PATH,
+        mount_path.join(&TRIDENT_BINARY_PATH[1..]),
+    )
+    .context("Failed to copy Trident binary to runtime OS")?;
+    Ok(())
 }
 
 fn validate_datastore_location(
