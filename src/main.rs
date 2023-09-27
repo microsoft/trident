@@ -30,7 +30,19 @@ enum SubCommand {
 }
 
 fn main() -> Result<(), Error> {
-    env_logger::builder().format_timestamp(None).init();
+    // Initialize the loggers
+
+    // Create the logstream
+    let logstream = trident::Logstream::create();
+
+    // Set up the multilogger
+    trident::MultiLogger::new()
+        .with_logger(Box::new(
+            env_logger::builder().format_timestamp(None).build(),
+        ))
+        .with_logger(logstream.make_logger())
+        .init()
+        .expect("Logger already registered");
 
     let args = Args::parse();
 
@@ -83,6 +95,13 @@ fn main() -> Result<(), Error> {
         }
     };
     debug!("Config: {:#?}", config);
+
+    // Set up logstream if configured
+    if let Some(url) = config.trident_config.logstream.as_ref() {
+        logstream
+            .set_server(url.to_string())
+            .context("Failed to set logstream URL")?;
+    }
 
     let host_config = match &mut config.host_config_source {
         HostConfigurationSource::File(path) => {

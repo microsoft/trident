@@ -25,6 +25,9 @@ pub struct TridentConfiguration {
     /// Optional URL to reach out to when networking is up.
     pub phonehome: Option<String>,
 
+    /// Optional URL to stream logs to
+    pub logstream: Option<String>,
+
     /// Configuration of the datastore with its location.
     pub datastore: Option<DatastoreConfiguration>,
 

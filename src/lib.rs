@@ -15,12 +15,16 @@ use trident_api::status::{
 };
 
 mod datastore;
+mod logstream;
 mod modules;
 mod mount;
+mod multilog;
 mod orchestrate;
 
 pub use modules::network::provisioning::start as start_provisioning_network;
 
+pub use logstream::Logstream;
+pub use multilog::MultiLogger;
 pub use orchestrate::OrchestratorConnection;
 
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
