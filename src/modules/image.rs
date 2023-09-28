@@ -2,7 +2,7 @@ use std::{
     ffi::CString,
     fs::{self, File},
     io::{self, BufWriter, Read},
-    os::fd::AsRawFd,
+    os::{fd::AsRawFd, unix::prelude::PermissionsExt},
     path::Path,
     process::Command,
 };
@@ -342,6 +342,22 @@ impl Module for ImageModule {
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         refresh_ab_volumes(host_status, host_config);
+
+        // if we let users mount over /var, some services will fail to start, so
+        // we need to recreate missing directories first
+        let var_log_path = Path::new("/var/log");
+        if !var_log_path.exists() {
+            fs::create_dir(var_log_path)?;
+            fs::set_permissions(var_log_path, fs::Permissions::from_mode(0o755))?;
+        }
+
+        // auditd requires /var/log/audit to be present, and auditd is a
+        // required component for Mariner images
+        let var_log_audit_path = var_log_path.join("audit");
+        if !var_log_audit_path.exists() {
+            fs::create_dir(&var_log_audit_path)?;
+            fs::set_permissions(var_log_audit_path, fs::Permissions::from_mode(0o700))?;
+        }
 
         Ok(())
     }
