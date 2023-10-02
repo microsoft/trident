@@ -4,8 +4,6 @@ use anyhow::{bail, Context, Error};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::run_command;
-
 #[derive(Debug, PartialEq)]
 pub struct SfDisk {
     pub uuid: Uuid,
@@ -13,7 +11,7 @@ pub struct SfDisk {
 }
 
 pub fn get_disk_information(disk_bus_path: &Path) -> Result<SfDisk, Error> {
-    let sfdisk_output_json = run_command(
+    let sfdisk_output_json = crate::run_command(
         Command::new("sfdisk")
             .arg("-J")
             .arg(disk_bus_path.as_os_str()),

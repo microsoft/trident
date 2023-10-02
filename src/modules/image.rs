@@ -20,8 +20,8 @@ use trident_api::{
     },
 };
 
-use crate::modules::{storage::tabfile::TabFile, unmount_target_volumes, Module};
-use crate::{get_block_device, run_command, set_host_status_block_device_contents};
+use crate::modules::{storage::tabfile::TabFile, Module};
+use crate::mount;
 
 const HASH_IGNORED: &str = "ignored";
 
@@ -52,10 +52,9 @@ pub(crate) fn stream_images(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     for image in get_images_for_updating(host_status, host_config) {
-        let block_device = get_block_device(host_status, &image.target_id).context(format!(
-            "No block device with id '{}' found",
-            image.target_id
-        ))?;
+        let block_device = crate::get_block_device(host_status, &image.target_id).context(
+            format!("No block device with id '{}' found", image.target_id),
+        )?;
 
         // TODO: Add more options for download sources
         let image_url = Url::parse(image.url.as_str())
@@ -88,7 +87,7 @@ pub(crate) fn stream_images(
         let mut file = BufWriter::with_capacity(4 << 20, file);
 
         // Mark the block device as having unknown contents in case the write operation is interrupted.
-        set_host_status_block_device_contents(
+        crate::set_host_status_block_device_contents(
             host_status,
             &image.target_id,
             BlockDeviceContents::Unknown,
@@ -116,7 +115,7 @@ pub(crate) fn stream_images(
         }
 
         let computed_sha256 = stream.hash();
-        set_host_status_block_device_contents(
+        crate::set_host_status_block_device_contents(
             host_status,
             &image.target_id,
             BlockDeviceContents::Image {
@@ -187,7 +186,7 @@ pub fn kexec(mount_path: &Path, args: &str) -> Result<(), Error> {
     drop(initrd);
     nix::unistd::sync();
 
-    unmount_target_volumes(mount_path)?;
+    mount::unmount_target_volumes(mount_path)?;
 
     // Kexec into image.
     info!("Rebooting system");
@@ -204,7 +203,8 @@ pub fn reboot() -> Result<(), Error> {
     nix::unistd::sync();
 
     info!("Rebooting system");
-    run_command(Command::new("systemctl").arg("reboot")).context("Failed to reboot the host")?;
+    crate::run_command(Command::new("systemctl").arg("reboot"))
+        .context("Failed to reboot the host")?;
 
     unreachable!()
 }
@@ -243,7 +243,7 @@ fn get_images_for_updating<'a>(
         .images
         .iter()
         .filter(|image| {
-            if let Some(bdi) = get_block_device(host_status, &image.target_id) {
+            if let Some(bdi) = crate::get_block_device(host_status, &image.target_id) {
                 if let BlockDeviceContents::Image { sha256, url, .. } = bdi.contents {
                     if url == image.url && (sha256 == image.sha256 || image.sha256 == HASH_IGNORED)
                     {
@@ -283,12 +283,12 @@ impl Module for ImageModule {
                 // and one of the a/b update volumes points to the root volume
                 if let Some(root_device_pair) = ab_update.volume_pairs.get(&root_device_id) {
                     let volume_a_path =
-                        get_block_device(host_status, &root_device_pair.volume_a_id)
+                        crate::get_block_device(host_status, &root_device_pair.volume_a_id)
                             .context("Failed to get block device for volume A")?
                             .path;
 
                     let volume_b_path =
-                        get_block_device(host_status, &root_device_pair.volume_b_id)
+                        crate::get_block_device(host_status, &root_device_pair.volume_b_id)
                             .context("Failed to get block device for volume B")?
                             .path;
 

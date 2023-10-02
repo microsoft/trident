@@ -10,8 +10,6 @@ use serde_json::Value;
 
 use trident_api::{config::MountPoint, status::HostStatus};
 
-use crate::{get_block_device, run_command};
-
 pub(crate) struct TabFile {
     tab_file_contents: String,
 }
@@ -59,7 +57,7 @@ impl TabFile {
     }
 
     pub fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Error> {
-        let findmnt_output_json = run_command(
+        let findmnt_output_json = crate::run_command(
             Command::new("findmnt")
                 .arg("--tab-file")
                 .arg(tab_file_path)
@@ -92,7 +90,7 @@ impl TabFile {
         path_prefix: &Option<&path::Path>,
         extra_options: &Option<Vec<String>>,
     ) -> Result<String, Error> {
-        let mount_device_path = get_block_device(host_status, &mp.target_id)
+        let mount_device_path = crate::get_block_device(host_status, &mp.target_id)
             .context(format!(
                 "Failed to find block device with id {}",
                 mp.target_id

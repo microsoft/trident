@@ -17,18 +17,12 @@ use trident_api::{
 
 use crate::{
     datastore::DataStore,
-    get_block_device,
-    modules::{osconfig::OsConfigModule, storage::path_to_mount_point},
-    mount::enter_chroot,
-    TRIDENT_BINARY_PATH, TRIDENT_DATASTORE_PATH,
-};
-use crate::{
-    modules::{image::ImageModule, network::NetworkModule, storage::StorageModule},
-    mount::UpdateTargetEnvironment,
-};
-use crate::{
-    mount::{setup_root_chroot, unmount_target_volumes},
-    TRIDENT_LOCAL_CONFIG_PATH,
+    modules::{
+        image::ImageModule, network::NetworkModule, osconfig::OsConfigModule,
+        storage::StorageModule,
+    },
+    mount::{self, UpdateTargetEnvironment},
+    TRIDENT_BINARY_PATH, TRIDENT_DATASTORE_PATH, TRIDENT_LOCAL_CONFIG_PATH,
 };
 
 pub mod image;
@@ -124,7 +118,7 @@ pub(crate) fn provision(
 
     let datastore_path = validate_datastore_location(trident, host_config)?;
 
-    let mut chroot_env = setup_root_chroot(host_config, state.host_status(), false)
+    let mut chroot_env = mount::setup_root_chroot(host_config, state.host_status(), false)
         .context("Failed to setup target root chroot")?;
 
     if let Some(chroot_env) = chroot_env.as_mut() {
@@ -132,7 +126,7 @@ pub(crate) fn provision(
             self_upgrade(&chroot_env.mount_path)?;
         }
 
-        chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
+        chroot_env.chroot = Some(mount::enter_chroot(&chroot_env.mount_path)?);
 
         state.persist(&datastore_path)?;
 
@@ -156,7 +150,7 @@ pub(crate) fn provision(
                 .context("Failed to enter chroot")?
                 .exit()
                 .context("Failed to exit chroot")?;
-            unmount_target_volumes(chroot_env.mount_path.as_path())
+            mount::unmount_target_volumes(chroot_env.mount_path.as_path())
                 .context("Failed to unmount target volumes")?;
         }
         return Ok(());
@@ -229,7 +223,7 @@ pub(crate) fn update(
             })?;
         }
 
-        chroot_env = setup_root_chroot(host_config, state.host_status(), false)
+        chroot_env = mount::setup_root_chroot(host_config, state.host_status(), false)
             .context("Failed to setup root chroot")?;
         should_reconcile = chroot_env.is_some();
     }
@@ -243,7 +237,7 @@ pub(crate) fn update(
                     self_upgrade(&chroot_env.mount_path)?;
                 }
 
-                chroot_env.chroot = Some(enter_chroot(&chroot_env.mount_path)?);
+                chroot_env.chroot = Some(mount::enter_chroot(&chroot_env.mount_path)?);
             }
         }
 
@@ -272,7 +266,7 @@ pub(crate) fn update(
                         .context("Failed to enter chroot")?
                         .exit()
                         .context("Failed to exit chroot")?;
-                    unmount_target_volumes(chroot_env.mount_path.as_path())
+                    mount::unmount_target_volumes(chroot_env.mount_path.as_path())
                         .context("Failed to unmount target volumes")?;
                 }
                 return Ok(());
@@ -364,9 +358,10 @@ fn validate_datastore_location(
             datastore_path.display()
         ))?;
 
-    let datastore_block_device_id = &path_to_mount_point(host_config, datastore_path.as_path())
-        .map(|mp| &mp.target_id)
-        .context("Failed to find mount point for datastore")?;
+    let datastore_block_device_id =
+        &storage::path_to_mount_point(host_config, datastore_path.as_path())
+            .map(|mp| &mp.target_id)
+            .context("Failed to find mount point for datastore")?;
 
     if host_config
         .imaging
@@ -457,7 +452,7 @@ pub fn get_root_block_device(
 ) -> Option<BlockDeviceInfo> {
     host_config.storage.mount_points.iter().find_map(|mp| {
         if mp.path == Path::new("/") {
-            get_block_device(host_status, &mp.target_id)
+            crate::get_block_device(host_status, &mp.target_id)
         } else {
             None
         }
@@ -468,10 +463,9 @@ pub fn get_root_block_device(
 mod tests {
     use std::path::Path;
 
+    use super::*;
     use indoc::indoc;
     use trident_api::config::{HostConfiguration, TridentConfiguration};
-
-    use super::validate_datastore_location;
 
     #[test]
     fn test_validate_datastore_location() {

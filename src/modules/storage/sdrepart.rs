@@ -8,8 +8,6 @@ use tempfile::TempDir;
 use trident_api::config::{Disk, Partition, PartitionType};
 use uuid::Uuid;
 
-use crate::run_command;
-
 pub struct RepartConfiguration {
     repart_root: TempDir,
 }
@@ -64,7 +62,7 @@ impl RepartConfiguration {
     }
 
     pub fn create_partitions(&self, disk_bus_path: &Path) -> Result<Vec<RepartPartition>, Error> {
-        let repart_output_json = run_command(
+        let repart_output_json = crate::run_command(
             Command::new("systemd-repart")
                 .arg(disk_bus_path.as_os_str())
                 .arg("--dry-run=no")

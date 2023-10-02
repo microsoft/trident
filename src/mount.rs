@@ -14,10 +14,7 @@ use log::info;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
 use trident_api::{config::HostConfiguration, status::HostStatus};
 
-use crate::{
-    modules::{get_root_block_device, storage::tabfile::TabFile},
-    run_command,
-};
+use crate::modules::{self, storage::tabfile::TabFile};
 
 /// Create a chroot environment.
 ///
@@ -109,7 +106,7 @@ pub(crate) fn setup_root_chroot(
     host_status: &HostStatus,
     do_enter_chroot: bool,
 ) -> Result<Option<UpdateTargetEnvironment>, Error> {
-    if let Some(root_block_device) = get_root_block_device(host_config, host_status) {
+    if let Some(root_block_device) = modules::get_root_block_device(host_config, host_status) {
         let root_mount_path = Path::new("/partitionMount");
         let update_fs_target = Path::new("update-fs.target");
         let update_fstab_root =
@@ -143,7 +140,7 @@ pub(crate) fn setup_root_chroot(
             update_fs_target.to_string_lossy()
         ))?;
 
-        run_command(
+        crate::run_command(
             Command::new("/usr/lib/systemd/system-generators/systemd-fstab-generator")
                 .arg(systemd_unit_root_path)
                 .arg(systemd_unit_root_path)
@@ -154,11 +151,11 @@ pub(crate) fn setup_root_chroot(
         )
         .context("Failed to reload systemd daemon")?;
 
-        run_command(Command::new("systemctl").arg("daemon-reload"))
+        crate::run_command(Command::new("systemctl").arg("daemon-reload"))
             .context("Failed to reload systemd daemon")?;
 
         let mount_result =
-            run_command(Command::new("systemctl").arg("start").arg(update_fs_target))
+            crate::run_command(Command::new("systemctl").arg("start").arg(update_fs_target))
                 .context("Failed to mount target filesystems");
 
         if let Err(mount_result) = mount_result {
@@ -188,7 +185,7 @@ pub(crate) fn enter_chroot(root_mount_path: &Path) -> Result<Chroot, Error> {
 
 pub(crate) fn unmount_target_volumes(mount_path: &Path) -> Result<(), Error> {
     let mount_unit = String::from_utf8(
-        run_command(
+        crate::run_command(
             Command::new("systemd-escape")
                 .arg("-p")
                 .arg("--suffix=mount")
@@ -200,7 +197,7 @@ pub(crate) fn unmount_target_volumes(mount_path: &Path) -> Result<(), Error> {
     .context("Failed to parse systemd-escape output as UTF-8")?
     .trim()
     .to_owned();
-    run_command(Command::new("systemctl").arg("stop").arg(mount_unit))
+    crate::run_command(Command::new("systemctl").arg("stop").arg(mount_unit))
         .context("Failed to safely unmount target root partition.")?;
     Ok(())
 }

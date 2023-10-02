@@ -7,7 +7,7 @@ use log::{debug, error, info, warn};
 use trident::{OrchestratorConnection, TRIDENT_LOCAL_CONFIG_PATH};
 use trident_api::config::{HostConfigurationSource, LocalConfigFile};
 
-use setsail::{load_kickstart_file, load_kickstart_string, KsTranslator};
+use setsail::KsTranslator;
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -48,9 +48,9 @@ fn main() -> Result<(), Error> {
 
     // TODO(5910): Remove this in the future
     if let SubCommand::ParseKickstart { ref file } = args.subcmd {
-        return match KsTranslator::new()
-            .translate(load_kickstart_file(file).context(format!("Failed to read {}", file))?)
-        {
+        return match KsTranslator::new().translate(
+            setsail::load_kickstart_file(file).context(format!("Failed to read {}", file))?,
+        ) {
             Ok(hc) => {
                 println!("{}", serde_yaml::to_string(&hc)?);
                 Ok(())
@@ -118,7 +118,7 @@ fn main() -> Result<(), Error> {
         HostConfigurationSource::Embedded(contents) => Some(mem::take(contents)),
         HostConfigurationSource::GrpcCommand { .. } => None,
         HostConfigurationSource::KickstartEmbedded(contents) => {
-            match KsTranslator::new().translate(load_kickstart_string(contents)) {
+            match KsTranslator::new().translate(setsail::load_kickstart_string(contents)) {
                 Ok(hc) => Some(Box::new(hc)),
                 Err(e) => {
                     // TODO: handle & report kickstart errors
@@ -131,7 +131,7 @@ fn main() -> Result<(), Error> {
             }
         }
         HostConfigurationSource::Kickstart(file) => {
-            match KsTranslator::new().translate(load_kickstart_file(
+            match KsTranslator::new().translate(setsail::load_kickstart_file(
                 file.to_str()
                     .context(format!("Failed to resolve path {}", file.display()))?,
             )?) {

@@ -10,17 +10,14 @@ use trident_api::{
     status::{self, BlockDeviceContents, HostStatus, UpdateKind},
 };
 
-use crate::{
-    modules::{storage::sfdisk::get_disk_information, Module},
-    run_command,
-};
+use crate::modules::Module;
 
-use self::sdrepart::RepartConfiguration;
+use sdrepart::RepartConfiguration;
 
-use self::tabfile::{TabFile, DEFAULT_FSTAB_PATH};
+use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
 
-pub mod sdrepart;
-pub mod sfdisk;
+mod sdrepart;
+mod sfdisk;
 pub mod tabfile;
 
 #[derive(Default, Debug)]
@@ -142,7 +139,7 @@ impl Module for StorageModule {
     ) -> Result<(), Error> {
         TabFile::from_mount_points(host_status, &host_config.storage.mount_points, None, None)
             .context("Failed to serialize mount point configuration for the target OS")?
-            .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
+            .write(Path::new(DEFAULT_FSTAB_PATH))
             .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
 
         host_status.storage.mount_points = host_config
@@ -205,7 +202,7 @@ impl StorageModule {
                 .create_partitions(&disk_bus_path)
                 .context(format!("Failed to initialize disk {}", disk.id))?;
 
-            let disk_information = get_disk_information(&disk_bus_path)
+            let disk_information = sfdisk::get_disk_information(&disk_bus_path)
                 .context(format!("Failed to retrieve GPT UUID for disk {}", disk.id))?;
 
             host_status.storage.disks.insert(
@@ -226,7 +223,7 @@ impl StorageModule {
                 .context(format!("Failed to find disk {} in host status", disk.id))?;
 
             // ensure all /dev/disk/* symlinks are created
-            run_command(Command::new("udevadm").arg("settle"))?;
+            crate::run_command(Command::new("udevadm").arg("settle"))?;
 
             for (index, partition) in disk.partitions.iter().enumerate() {
                 let partition_uuid = partitions_status[index].uuid;
