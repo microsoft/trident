@@ -24,6 +24,18 @@ Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shar
 [Deployment
 instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/README.md&_a=preview).
 
+### Prerequisites
+- Install [git](https://git-scm.com/downloads). E.g. `sudo apt install git`.
+- Install Rust and Cargo: `curl https://sh.rustup.rs -sSf | sh`.
+- Install `build-essential`, `pkg-config`, `libssl-dev`, `libclang-dev`, and `protobuf-compiler`. E.g. `sudo
+  apt install build-essential pkg-config libssl-dev libclang-dev protobuf-compiler`.
+- Clone the [Trident
+  repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident): 
+  `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
+- Change directory to the Trident repository: `cd trident`.
+ 
+### Building and validating
+
 Build instructions: `cargo build`.
 
 Build, check and and run UTs: `make`.
@@ -238,7 +250,7 @@ host-configuration:
         sha256: cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8
         format: raw-zstd
         target-id: esp
-      - url: file:///rootfs.raw.zst
+      - url: file:///root.raw.zst
         sha256: fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d
         format: raw-zstd
         target-id: root
