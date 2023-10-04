@@ -5,6 +5,7 @@ use crate::{data::ParsedData, types::KSLine, SetsailError};
 use super::HandleCommand;
 
 #[derive(Parser, Debug)]
+#[command(name = "partition", aliases = &["part"])]
 pub struct Partition {
     #[clap(skip)]
     pub line: KSLine,

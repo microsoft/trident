@@ -1,0 +1,64 @@
+# Setsail: Kickstart For Mariner
+
+# Contents
+
+- [Commands](#commands)
+{%- for command in commands %}
+  - [`{{ command.name }}`](#{{ command.name }})
+{%- endfor %}
+
+# Commands
+
+{% for command in commands -%}
+{% if not loop.first -%}
+<hr>
+
+{% endif -%}
+## `{{ command.name }}`
+
+{% if command.aliases -%}
+**Aka:{% for alias in command.aliases %} `{{alias}}`,{% endfor %}**
+
+{% endif -%}
+{% if command.about -%}
+{{ command.about }}
+
+{% endif -%}
+
+```text
+{{ command.usage }}
+```
+
+{%for arg in command.args -%}
+### `{{ arg.show_name }}`{% if arg.required %} (REQUIRED){% endif %}
+
+{% if arg.aliases -%}
+**Aka:{% for alias in arg.aliases %} `--{{alias}}`,{% endfor %}**
+{% endif -%}
+
+{% if arg.help -%}
+{{ arg.help }}
+
+{% endif -%}
+
+{% if arg.possible_values -%}
+Possible values:
+
+{% for value in arg.possible_values -%}
+- `{{ value.name }}`{% if value.help %}: {{ value.help }} {% endif %}
+{% endfor %}
+{% endif -%}
+
+{% if arg.takes_values and arg.defaults and arg.defaults[0] -%}
+Default: `{{ arg.defaults[0] }}`
+
+{% endif -%}
+{% if arg.conflicts -%}
+Conflicts with:
+
+{% for conflict in arg.conflicts -%}
+- `{{ conflict.show_name }}`
+{% endfor %}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}

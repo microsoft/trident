@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "4.3.23", features = ["derive"] }
+clap = { version = "4.3.23", features = ["derive", "wrap_help"] }
 log = "0.4.20"
 netplan-types = "0.4.0"
 serde = { version = "1.0.185", features = ["derive"] }
@@ -15,10 +15,15 @@ shellwords = "1.1.0"
 
 trident_api = { path = "../trident_api" }
 
+# Only required for the docbuilder binary
+tera = { version = "1.19.1", optional = true }
+itertools = { version = "0.11.0", optional = true }
+
 [dev-dependencies]
 indoc = "2"
 tempfile = "3.8.0"
 
 [[bin]]
-path = "src/genhelp.rs"
-name = "genhelp"
+path = "src/makedocs.rs"
+name = "docbuilder"
+required-features = ["tera", "itertools"]

@@ -37,3 +37,10 @@ clean:
 	cargo clean
 	rm -rf bin/
 	find . -name "*.profraw" -type f -delete
+
+.PHONY: setsail-docs
+setsail-docs:
+	cargo build --release --package setsail --bin docbuilder --features tera,itertools
+	mkdir -p target/setsail-docs
+	target/release/docbuilder -o target/setsail-docs
+	@echo Wrote docs to target/setsail-docs

@@ -9,8 +9,6 @@ mod sections;
 mod translator;
 mod types;
 
-// use super::HostConfig;
-
 // Republish
 pub use errors::{SetsailError, SetsailErrorType};
 pub use load::{load_kickstart_file, load_kickstart_string};
