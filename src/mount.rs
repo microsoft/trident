@@ -1,6 +1,5 @@
 use std::{
     fs,
-    io::{Seek, SeekFrom, Write},
     os::{
         fd::{IntoRawFd, RawFd},
         unix,
@@ -9,7 +8,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
 use log::info;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
 use trident_api::{config::HostConfiguration, status::HostStatus};
@@ -72,27 +71,6 @@ impl Chroot {
         }
         Ok(())
     }
-}
-
-pub(crate) fn run_script(script: &str) -> Result<(), Error> {
-    let mut file = tempfile::tempfile().context("Failed to create temporary file")?;
-    file.write_all(script.as_bytes())
-        .context("Failed to write temporary file")?;
-    file.seek(SeekFrom::Start(0))
-        .context("Failed to seek temporary file")?;
-    let status = Command::new("bash")
-        .stdin(file)
-        .status()
-        .context("Failed to execute script")?;
-
-    if !status.success() {
-        match status.code() {
-            Some(code) => bail!("Script exited with status: {code}"),
-            None => bail!("Script was terminated by signal"),
-        }
-    }
-
-    Ok(())
 }
 
 pub(crate) struct UpdateTargetEnvironment {

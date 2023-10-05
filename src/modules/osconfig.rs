@@ -1,11 +1,11 @@
-use anyhow::{Context, Error};
+use anyhow::Error;
 
 use trident_api::{
     config::HostConfiguration,
     status::{HostStatus, UpdateKind},
 };
 
-use crate::{modules::Module, mount};
+use crate::modules::Module;
 
 #[derive(Default, Debug)]
 pub struct OsConfigModule;
@@ -39,11 +39,7 @@ impl Module for OsConfigModule {
         _host_status: &mut HostStatus,
         _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        // TODO: user creation should not be hardcoded.
-        mount::run_script(
-            r#"sudo sh -c 'echo root:password | chpasswd'
-            useradd -p $(openssl passwd -1 password) -s /bin/bash -d /home/mariner_user/ -m -G sudo mariner_user"#
-        ).context("Failed to apply system config")?;
+        // TODO(5993): add user configuration
 
         Ok(())
     }
