@@ -44,7 +44,7 @@ impl Parser {
         obj.configure_default_handlers(true);
         // Don't even bother parsing commands
         obj.parse_commands(false);
-        // Don't follow includes, %pre scrips are not allowd on included files
+        // Don't follow includes, %pre scrips are not allowed on included files
         obj.follow_include(false);
         obj
     }

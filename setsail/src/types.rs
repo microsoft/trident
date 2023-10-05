@@ -22,11 +22,8 @@ impl KSLine {
 
     pub fn get_id(&self) -> String {
         format!(
-            "{}{}",
-            match self.source.get_filename() {
-                Some(filename) => format!("{}-", filename),
-                None => String::from(""),
-            },
+            "{}/{}",
+            self.source.get_filename().unwrap_or("unknown"),
             self.lineno
         )
     }

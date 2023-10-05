@@ -40,23 +40,40 @@ pub struct Script {
 
 impl Script {
     pub fn name(&self) -> String {
-        format!("ks-script-{}", self.line.get_id())
+        format!("ks-script/{}", self.line.get_id())
     }
 
     pub fn run(&self) -> Result<(), SetsailError> {
         debug!("Running {} script from {}", self.script_type, self.line);
-        let path = format!("/tmp/{}.sh", self.name());
-        let log = self
-            .log
-            .to_owned()
-            .unwrap_or(PathBuf::from(format!("/tmp/{}.log", self.name())));
+
+        // Create script file
+        let path = PathBuf::from("/tmp").join(self.name()).with_extension("sh");
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).to_pre_script_error(
+                &self.line,
+                format!("Failed to create script directory: {}", path.display()),
+            )?;
+        }
+
+        // Create log file
+        let log = self.log.to_owned().unwrap_or(path.with_extension("log"));
+        if let Some(parent) = log.parent() {
+            std::fs::create_dir_all(parent).to_pre_script_error(
+                &self.line,
+                format!("Failed to create log directory: {}", path.display()),
+            )?;
+        }
+
         let logf = std::fs::File::create(&log).to_pre_script_error(
             &self.line,
             format!("Failed to create log file: {}", log.display()),
         )?;
 
-        std::fs::write(&path, &self.body)
-            .to_pre_script_error(&self.line, format!("Failed to write script to {}", &path))?;
+        std::fs::write(&path, &self.body).to_pre_script_error(
+            &self.line,
+            format!("Failed to write script to {}", path.display()),
+        )?;
 
         let mut cmd = Command::new(&self.interpreter)
             .arg(path)

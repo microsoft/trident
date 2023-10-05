@@ -4,7 +4,37 @@ use super::errors::SetsailError;
 use super::load::load_to_kslines;
 use super::types::{KSLine, KSLineSource};
 
-pub fn preprocess(lines: Vec<KSLine>, do_ksappend: bool) -> (Vec<KSLine>, Vec<SetsailError>) {
+/// How to process %ksappend lines
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PreprocessMode {
+    /// Do not process %ksappend lines
+    Skip,
+    /// Process %ksappend lines
+    Process,
+    /// Process %ksappend lines, but do not report missing files as errors
+    ProcessNoError,
+}
+
+impl PreprocessMode {
+    fn is_skip(self) -> bool {
+        match self {
+            Self::Skip => true,
+            Self::Process | Self::ProcessNoError => false,
+        }
+    }
+
+    fn missing_is_error(self) -> bool {
+        match self {
+            Self::Skip | Self::Process => true,
+            Self::ProcessNoError => false,
+        }
+    }
+}
+
+pub(crate) fn preprocess(
+    lines: Vec<KSLine>,
+    mode: PreprocessMode,
+) -> (Vec<KSLine>, Vec<SetsailError>) {
     let mut pre_processed: Vec<KSLine> = Vec::new();
     let mut errors: Vec<SetsailError> = Vec::new();
     for line in lines.into_iter() {
@@ -25,7 +55,7 @@ pub fn preprocess(lines: Vec<KSLine>, do_ksappend: bool) -> (Vec<KSLine>, Vec<Se
                     continue;
                 }
 
-                if !do_ksappend {
+                if mode.is_skip() {
                     debug!("Skipping %ksappend: {}", path);
                     continue;
                 }
@@ -38,10 +68,12 @@ pub fn preprocess(lines: Vec<KSLine>, do_ksappend: bool) -> (Vec<KSLine>, Vec<Se
                     }
                     Err(e) => {
                         debug!("Failed to load {}: {}", path, e);
-                        errors.push(SetsailError::new_ksappend(
-                            line,
-                            format!("Failed to load {}: {}", path, e),
-                        ));
+                        if mode.missing_is_error() {
+                            errors.push(SetsailError::new_ksappend(
+                                line,
+                                format!("Failed to load {}: {}", path, e),
+                            ));
+                        }
                     }
                 }
             } else {
@@ -83,7 +115,7 @@ mod tests {
         ));
         let count = src.len();
 
-        let (processed, errors) = preprocess(src, true);
+        let (processed, errors) = preprocess(src, PreprocessMode::Process);
         assert_eq!(errors.len(), 0, "Assert no errors");
         assert_eq!(processed.len(), count, "Check for correct passthrough");
     }
@@ -98,7 +130,7 @@ mod tests {
         ));
         let count = src.len();
 
-        let (processed, errors) = preprocess(src, false);
+        let (processed, errors) = preprocess(src, PreprocessMode::Skip);
 
         assert_eq!(errors.len(), 0, "Assert no errors");
         assert_eq!(processed.len(), count - 1, "Check %ksappend was ignored");
@@ -122,7 +154,7 @@ mod tests {
         ));
         let count = src.len();
 
-        let (processed, errors) = preprocess(src, true);
+        let (processed, errors) = preprocess(src, PreprocessMode::Process);
 
         assert_eq!(errors.len(), 1, "Assert one error");
         assert_eq!(
@@ -149,7 +181,7 @@ mod tests {
         ));
         let count = src.len();
 
-        let (processed, errors) = preprocess(src, true);
+        let (processed, errors) = preprocess(src, PreprocessMode::Process);
 
         assert_eq!(errors.len(), 1, "Assert one error");
         assert_eq!(
@@ -193,13 +225,34 @@ mod tests {
         );
         let count = src.len();
 
-        let (processed, errors) = preprocess(src, true);
+        let (processed, errors) = preprocess(src, PreprocessMode::Process);
 
         assert_eq!(errors.len(), 0, "Assert no errors");
         assert_eq!(
             processed.len(),
             file.lines().count() + count - 1,
             "Check %ksappend was loaded"
+        );
+    }
+
+    #[test]
+    fn test_no_errors() {
+        let src = load_kickstart_string(indoc!(
+            r#"
+            # This file just has a %ksappend
+            %ksappend /tmp/ksappend
+            %ksappend /some-file.ks
+            "#,
+        ));
+        let count = src.len();
+
+        let (processed, errors) = preprocess(src, PreprocessMode::ProcessNoError);
+
+        assert_eq!(errors.len(), 0, "Assert no errors");
+        assert_eq!(
+            processed.len(),
+            count - 2,
+            "Check %ksappend was loaded but not removed"
         );
     }
 }

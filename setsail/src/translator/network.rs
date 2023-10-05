@@ -422,16 +422,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
 
                 NetplanDevice::Ethernet(EthernetConfig {
                     common_all: Some(common_all),
-                    common_physical: Some(CommonPropertiesPhysicalDeviceType {
-                        r#match: Some(MatchConfig {
-                            macaddress: match k.device {
-                                DeviceReference::Mac(mac) => Some(mac.to_string()),
-                                _ => None,
-                            },
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    }),
+                    common_physical: some_if_not_default(common_phys),
                     ..Default::default()
                 })
             }
@@ -454,13 +445,13 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             DeviceType::Bridge => NetplanDevice::Bridge(BridgeConfig {
                 common_all: Some(common_all),
                 interfaces: Some(net.bridgeslaves.clone()),
-                parameters: match net.bondopts.map(map_bridge_opts) {
+                parameters: match net.bridgeopts.map(map_bridge_opts) {
                     Ok(params) => Some(params),
                     Err(errs) => {
                         for err in errs {
                             errors.push(SetsailError::new_translation(
                                 net.line.clone(),
-                                format!("failed to parse bond parameters: {}", err),
+                                format!("failed to parse bridge parameters: {}", err),
                             ));
                         }
                         continue;
@@ -473,6 +464,14 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
     }
 
     envmgr.populate(hc);
+}
+
+fn some_if_not_default<T: Default + PartialEq>(value: T) -> Option<T> {
+    if value == T::default() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 /// This function translates the kickstart names to netplan names
@@ -627,8 +626,7 @@ where
 
 /// This function translates bond options into netplan
 fn map_bridge_opts(key: &str, value: &str, opts: &mut BridgeParameters) -> Result<(), String> {
-    // Imports only used here
-
+    println!("{} = {}", key, value);
     match key {
         "stp" => {
             opts.stp = Some(match value {

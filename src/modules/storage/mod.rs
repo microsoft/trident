@@ -291,8 +291,10 @@ fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, E
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use indoc::indoc;
-    use trident_api::config::{HostConfiguration, Partition, PartitionType};
+    use trident_api::config::{HostConfiguration, Partition, PartitionSize, PartitionType};
 
     use super::*;
 
@@ -371,7 +373,7 @@ mod tests {
         host_config.storage.disks.get_mut(0).unwrap().partitions = vec![Partition {
             id: "part1".to_owned(),
             partition_type: PartitionType::Esp,
-            size: "1M".to_owned(),
+            size: PartitionSize::from_str("1M").unwrap(),
         }];
 
         assert!(storage_module

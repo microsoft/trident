@@ -1,6 +1,6 @@
 use std::{fs, mem, path::PathBuf};
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{bail, Context, Error};
 use clap::{Parser, Subcommand};
 use log::{debug, error, info, warn};
 
@@ -48,19 +48,20 @@ fn main() -> Result<(), Error> {
 
     // TODO(5910): Remove this in the future
     if let SubCommand::ParseKickstart { ref file } = args.subcmd {
-        return match KsTranslator::new().translate(
-            setsail::load_kickstart_file(file).context(format!("Failed to read {}", file))?,
+        let translator = KsTranslator::new().include_fail_is_error(false);
+        match translator.translate(
+            setsail::load_kickstart_file(file).context(format!("Failed to read {file}"))?,
         ) {
             Ok(hc) => {
                 println!("{}", serde_yaml::to_string(&hc)?);
-                Ok(())
+                return Ok(());
             }
             Err(e) => {
                 error!(
                     "Failed to translate kickstart:\n{}",
                     serde_json::to_string_pretty(&e)?
                 );
-                Err(anyhow!("Failed to translate kickstart"))
+                bail!("Failed to translate kickstart");
             }
         };
     }
@@ -94,13 +95,32 @@ fn main() -> Result<(), Error> {
             return Err(e);
         }
     };
-    debug!("Config: {:#?}", config);
 
     // Set up logstream if configured
     if let Some(url) = config.trident_config.logstream.as_ref() {
         logstream
             .set_server(url.to_string())
             .context("Failed to set logstream URL")?;
+    }
+
+    debug!(
+        "Trident config:\n{}",
+        serde_yaml::to_string(&config).unwrap_or("Failed to serialize host config".into())
+    );
+
+    // If we have kickstart it means we don't have networking config readily available.
+    // We _could_ try parsing now, but we are in an early stage of boot and we want to parse on
+    // a later stage so %pre scripts can run and do their thing.
+    // It would also mean parsing twice, unless we updated the config file in place.
+    // That sounds like a can of worms and we still have the issue about being too early.
+    if matches!(args.subcmd, SubCommand::StartNetwork)
+        && matches!(
+            config.host_config_source,
+            HostConfigurationSource::Kickstart(_) | HostConfigurationSource::KickstartEmbedded(_)
+        )
+    {
+        warn!("Cannot set up network early when using kickstart");
+        return Ok(());
     }
 
     let host_config = match &mut config.host_config_source {
@@ -118,7 +138,10 @@ fn main() -> Result<(), Error> {
         HostConfigurationSource::Embedded(contents) => Some(mem::take(contents)),
         HostConfigurationSource::GrpcCommand { .. } => None,
         HostConfigurationSource::KickstartEmbedded(contents) => {
-            match KsTranslator::new().translate(setsail::load_kickstart_string(contents)) {
+            match KsTranslator::new()
+                .run_pre_scripts(true)
+                .translate(setsail::load_kickstart_string(contents))
+            {
                 Ok(hc) => Some(Box::new(hc)),
                 Err(e) => {
                     // TODO: handle & report kickstart errors
@@ -131,10 +154,12 @@ fn main() -> Result<(), Error> {
             }
         }
         HostConfigurationSource::Kickstart(file) => {
-            match KsTranslator::new().translate(setsail::load_kickstart_file(
-                file.to_str()
-                    .context(format!("Failed to resolve path {}", file.display()))?,
-            )?) {
+            match KsTranslator::new()
+                .run_pre_scripts(true)
+                .translate(setsail::load_kickstart_file(
+                    file.to_str()
+                        .context(format!("Failed to resolve path {}", file.display()))?,
+                )?) {
                 Ok(hc) => Some(Box::new(hc)),
                 Err(e) => {
                     error!(
@@ -147,8 +172,11 @@ fn main() -> Result<(), Error> {
             }
         }
     };
-    // let host_config = Some(&config.host_config);
-    debug!("Host config: {:#?}", host_config);
+
+    debug!(
+        "Host config:\n{}",
+        serde_yaml::to_string(&host_config).unwrap_or("Failed to serialize host config".into())
+    );
 
     match args.subcmd {
         SubCommand::Run => {

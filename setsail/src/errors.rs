@@ -23,6 +23,7 @@ pub enum SetsailErrorType {
     UnknownCommand(String),
     UnsupportedCommand(String),
     UnsuportedSection(String),
+    UnsuportedFeature(String),
     SemanticError(String),
     SemanticWarning(String),
     PreScriptFailed { context: String, error: String },
@@ -107,6 +108,13 @@ impl SetsailError {
         }
     }
 
+    pub fn new_unsupported_feature(line: KSLine, feature: String) -> Self {
+        Self {
+            line,
+            error: SetsailErrorType::UnsuportedFeature(feature),
+        }
+    }
+
     pub fn new_semantic(line: KSLine, error: String) -> Self {
         Self {
             line,
@@ -183,6 +191,7 @@ impl std::fmt::Display for SetsailError {
                 write!(f, "%pre script failed: {} {}", context, error)
             }
             SetsailErrorType::TranslationError(e) => write!(f, "Translation error: {}", e),
+            SetsailErrorType::UnsuportedFeature(s) => write!(f, "Unsuported feature: \"{}\"", s),
         }?;
         write!(
             f,

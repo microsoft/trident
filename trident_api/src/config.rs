@@ -199,8 +199,32 @@ pub struct Partition {
 
     #[serde(rename = "type")]
     pub partition_type: PartitionType,
-    /// Size in bytes.
-    pub size: String,
+
+    /// Size of the partition
+    ///
+    /// Format: String
+    ///
+    /// Accepted values:
+    /// - `grow`: Use all available space.
+    /// - A number with optional unit suffixes: K, M, G, T (to the base of 1024),
+    ///   bytes by default when no unit is specified.
+    pub size: PartitionSize,
+}
+
+/// Partition size enum.
+/// Serialize and Deserialize traits are implemented manually in the crate::serde module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PartitionSize {
+    /// Grow a partition to use all available space.
+    /// String equivalent is defined in constants::PARTITION_SIZE_GROW
+    Grow,
+
+    /// Fixed size in bytes.
+    Fixed(u64),
+    // Not implemented yet but left as a reference for the future.
+    // Min(u64),
+    // Max(u64),
+    // MinMax(u64, u64),
 }
 
 /// Partition types as defined by The Discoverable Partitions Specification (https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
@@ -221,6 +245,12 @@ pub enum PartitionType {
     Home,
     /// 4d21b016-b534-45c2-a9fb-5c16e091fd2d
     Var,
+    /// x64: 8484680c-9521-48c6-9c11-b0720656f69e
+    Usr,
+    /// 7ec6f557-3bc5-4aca-b293-16ef5df639d1
+    Tmp,
+    /// 0fc63daf-8483-4772-8e79-3d69d8477de4
+    LinuxGeneric,
 }
 
 /// Mount point configuration. Carries information necessary to populate

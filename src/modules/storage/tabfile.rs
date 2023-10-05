@@ -394,16 +394,16 @@ mod tests {
                     partitions:
                       - id: efi
                         type: esp
-                        size: 100MiB
+                        size: 100M
                       - id: root
                         type: root
-                        size: 1GiB
+                        size: 1G
                       - id: home
                         type: home
-                        size: 10GiB
+                        size: 10G
                       - id: swap
                         type: swap
-                        size: 1GiB
+                        size: 1G
                 mount-points:
                   - path: /boot/efi
                     filesystem: vfat

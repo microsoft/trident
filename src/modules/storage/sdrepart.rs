@@ -5,7 +5,7 @@ use configparser::ini::Ini;
 use log::info;
 use serde_json::Value;
 use tempfile::TempDir;
-use trident_api::config::{Disk, Partition, PartitionType};
+use trident_api::config::{Disk, Partition, PartitionSize, PartitionType};
 use uuid::Uuid;
 
 pub struct RepartConfiguration {
@@ -47,7 +47,7 @@ impl RepartConfiguration {
             let partition_config_path = self.repart_root.path().join(format!(
                 "{:02}-{}.conf",
                 index,
-                partition_type_to_string(&partition.partition_type)?
+                partition_type_to_string(partition.partition_type)
             ));
 
             repart_config
@@ -82,15 +82,7 @@ impl RepartConfiguration {
 }
 
 fn partition_config_to_repart_config(partition: &Partition) -> Result<Ini, Error> {
-    let partition_type_str = partition_type_to_string(&partition.partition_type)?;
-
-    // validate the size formatting to ensure it is compatible with what
-    // systemd-repart expects, failure during validation will be handled
-    // directly by Trident to ensure higher fidelity error messages
-    parse_size(&partition.size).context(format!(
-        "Failed to parse size ('{}') for partition '{}'",
-        partition.size, partition.id
-    ))?;
+    let partition_type_str = partition_type_to_string(partition.partition_type);
 
     let mut repart_config = Ini::new_cs();
 
@@ -103,42 +95,41 @@ fn partition_config_to_repart_config(partition: &Partition) -> Result<Ini, Error
         Some(partition.id.clone()),
     );
 
-    repart_config.set(
-        repart_partition_section,
-        "SizeMinBytes",
-        Some(partition.size.clone()),
-    );
-    repart_config.set(
-        repart_partition_section,
-        "SizeMaxBytes",
-        Some(partition.size.clone()),
-    );
+    // Note: PartitionSize::Grow is the "default" in systemd-repart,
+    // so we don't need to set anything. To create a partition with
+    // a fixed size, we need to set SizeMinBytes and SizeMaxBytes.
+    match partition.size {
+        PartitionSize::Grow => {} // Nothing needs to be done here
+        PartitionSize::Fixed(size) => {
+            repart_config.set(
+                repart_partition_section,
+                "SizeMinBytes",
+                Some(size.to_string()),
+            );
+            repart_config.set(
+                repart_partition_section,
+                "SizeMaxBytes",
+                Some(size.to_string()),
+            );
+        }
+    }
 
     Ok(repart_config)
 }
 
-fn partition_type_to_string(partition_type: &PartitionType) -> Result<String, Error> {
-    serde_json::to_value(partition_type)?
-        .as_str()
-        .map(|s| s.to_owned())
-        .context(format!(
-            "Failed to convert partition type {:?} to string",
-            partition_type
-        ))
-}
-
-fn parse_size(value: &str) -> Result<u64, Error> {
-    Ok(if let Some(n) = value.strip_suffix('K') {
-        n.parse::<u64>()? << 10
-    } else if let Some(n) = value.strip_suffix('M') {
-        n.parse::<u64>()? << 20
-    } else if let Some(n) = value.strip_suffix('G') {
-        n.parse::<u64>()? << 30
-    } else if let Some(n) = value.strip_suffix('T') {
-        n.parse::<u64>()? << 40
-    } else {
-        value.parse()?
-    })
+fn partition_type_to_string(partition_type: PartitionType) -> String {
+    match partition_type {
+        PartitionType::Esp => "esp",
+        PartitionType::Home => "home",
+        PartitionType::LinuxGeneric => "linux-generic",
+        PartitionType::Root => "root",
+        PartitionType::RootVerity => "root-verity",
+        PartitionType::Swap => "swap",
+        PartitionType::Tmp => "tmp",
+        PartitionType::Usr => "usr",
+        PartitionType::Var => "var",
+    }
+    .to_owned()
 }
 
 pub struct RepartPartition {
@@ -177,6 +168,8 @@ fn parse_partition(partition_status: &serde_json::Value) -> Result<RepartPartiti
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use trident_api::config::{Partition, PartitionType};
 
     use super::*;
@@ -261,44 +254,24 @@ mod tests {
         assert!(parse_partition(&partition_status).is_err());
     }
 
-    #[test]
-    fn test_parse_size() {
-        assert_eq!(parse_size("1").unwrap(), 1);
-        assert_eq!(parse_size("1K").unwrap(), 1024);
-        assert_eq!(parse_size("1M").unwrap(), 1024 * 1024);
-        assert_eq!(parse_size("12G").unwrap(), 12 * 1024 * 1024 * 1024);
-        assert_eq!(parse_size("321T").unwrap(), 321 * 1024 * 1024 * 1024 * 1024);
-
-        assert!(parse_size("1Z").is_err());
-        assert!(parse_size("abc").is_err());
-        assert!(parse_size("T1").is_err());
-        assert!(parse_size("-3").is_err());
-        assert!(parse_size("0x23K").is_err());
-    }
-
     /// Validates that partition_type_to_string returns the correct string for each PartitionType.
     #[test]
     fn test_partition_type_to_string() {
+        assert_eq!(partition_type_to_string(PartitionType::Esp), "esp");
+        assert_eq!(partition_type_to_string(PartitionType::Home), "home");
         assert_eq!(
-            partition_type_to_string(&PartitionType::Esp).unwrap(),
-            "esp"
+            partition_type_to_string(PartitionType::LinuxGeneric),
+            "linux-generic"
         );
+        assert_eq!(partition_type_to_string(PartitionType::Root), "root");
         assert_eq!(
-            partition_type_to_string(&PartitionType::Root).unwrap(),
-            "root"
-        );
-        assert_eq!(
-            partition_type_to_string(&PartitionType::RootVerity).unwrap(),
+            partition_type_to_string(PartitionType::RootVerity),
             "root-verity"
         );
-        assert_eq!(
-            partition_type_to_string(&PartitionType::Swap).unwrap(),
-            "swap"
-        );
-        assert_eq!(
-            partition_type_to_string(&PartitionType::Home).unwrap(),
-            "home"
-        );
+        assert_eq!(partition_type_to_string(PartitionType::Swap), "swap");
+        assert_eq!(partition_type_to_string(PartitionType::Tmp), "tmp");
+        assert_eq!(partition_type_to_string(PartitionType::Usr), "usr");
+        assert_eq!(partition_type_to_string(PartitionType::Var), "var");
     }
 
     /// Validates that partition_config_to_repart_config returns the correct Ini for each Partition.
@@ -307,7 +280,7 @@ mod tests {
         let partition = Partition {
             id: "part1".to_owned(),
             partition_type: PartitionType::Esp,
-            size: "1M".to_owned(),
+            size: PartitionSize::from_str("1M").unwrap(),
         };
         let repart_config = partition_config_to_repart_config(&partition).unwrap();
         assert_eq!(
@@ -320,11 +293,31 @@ mod tests {
         );
         assert_eq!(
             repart_config.get("Partition", "SizeMinBytes").unwrap(),
-            "1M".to_owned()
+            "1048576".to_owned()
         );
         assert_eq!(
             repart_config.get("Partition", "SizeMaxBytes").unwrap(),
-            "1M".to_owned()
+            "1048576".to_owned()
         );
+    }
+
+    #[test]
+    fn test_partition_config_to_repart_config_grow() {
+        let partition = Partition {
+            id: "part1".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::Grow,
+        };
+        let repart_config = partition_config_to_repart_config(&partition).unwrap();
+        assert_eq!(
+            repart_config.get("Partition", "Type").unwrap(),
+            "linux-generic".to_owned()
+        );
+        assert_eq!(
+            repart_config.get("Partition", "Label").unwrap(),
+            "part1".to_owned()
+        );
+        assert!(repart_config.get("Partition", "SizeMinBytes").is_none());
+        assert!(repart_config.get("Partition", "SizeMaxBytes").is_none());
     }
 }

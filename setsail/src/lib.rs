@@ -17,7 +17,7 @@ use log::{debug, info};
 
 use trident_api::config::HostConfiguration;
 
-use {parser::Parser, translator::translate, types::KSLine};
+use {parser::Parser, preprocess::PreprocessMode, translator::translate, types::KSLine};
 
 /// Main parser struct
 /// This is the outward facing interface to the parser
@@ -25,40 +25,49 @@ use {parser::Parser, translator::translate, types::KSLine};
 pub struct KsTranslator {
     // Behavior flags
     /// Whether to process %ksappend lines
-    process_ksappend: bool,
+    flag_process_ksappend: bool,
 
     /// Whether missing files errors should be ignored
-    error_on_missing_ksappend: bool,
+    flag_missing_ksappend_is_error: bool,
+
+    /// Whether missing %include files should be ignored
+    flag_include_fail_is_error: bool,
 
     /// Run %pre scripts
-    run_pre: bool,
+    flag_run_pre: bool,
 
     /// Whether to print errors and warnings as such or just print them as debug
-    verbose: bool,
+    flag_verbose: bool,
 }
 
 impl KsTranslator {
     pub fn new() -> Self {
         Self {
-            process_ksappend: true,
-            error_on_missing_ksappend: true,
-            run_pre: false,
-            verbose: false,
+            flag_process_ksappend: true,
+            flag_missing_ksappend_is_error: true,
+            flag_include_fail_is_error: true,
+            flag_run_pre: false,
+            flag_verbose: false,
         }
     }
 
-    pub fn process_ksappend(&mut self, process: bool) -> &mut Self {
-        self.process_ksappend = process;
+    pub fn process_ksappend(mut self, process: bool) -> Self {
+        self.flag_process_ksappend = process;
         self
     }
 
-    pub fn error_on_missing_ksappend_file(&mut self, error: bool) -> &mut Self {
-        self.error_on_missing_ksappend = error;
+    pub fn error_on_missing_ksappend_file(mut self, error: bool) -> Self {
+        self.flag_missing_ksappend_is_error = error;
         self
     }
 
-    pub fn run_pre_scripts(&mut self, run: bool) -> &mut Self {
-        self.run_pre = run;
+    pub fn include_fail_is_error(mut self, error: bool) -> Self {
+        self.flag_include_fail_is_error = error;
+        self
+    }
+
+    pub fn run_pre_scripts(mut self, run: bool) -> Self {
+        self.flag_run_pre = run;
         self
     }
 
@@ -66,12 +75,20 @@ impl KsTranslator {
         // * * * * * * PARSING * * * * * *
 
         // Run preprocess, update lines and errors
-        let (lines, mut errors) = preprocess::preprocess(raw_lines, self.process_ksappend);
+        let preprocess_mode = if !self.flag_process_ksappend {
+            PreprocessMode::Skip
+        } else if self.flag_missing_ksappend_is_error {
+            PreprocessMode::Process
+        } else {
+            PreprocessMode::ProcessNoError
+        };
 
-        if self.run_pre {
+        let (lines, mut errors) = preprocess::preprocess(raw_lines, preprocess_mode);
+
+        if self.flag_run_pre {
             debug!("Starting parser first pass");
             let mut parser = Parser::new_first_pass();
-            parser.verbose_errors(self.verbose);
+            parser.verbose_errors(self.flag_verbose);
             parser.parse(&lines);
             errors.extend(parser.consume_errors());
 
@@ -88,7 +105,8 @@ impl KsTranslator {
         // Do 2nd parser pass
         debug!("Starting parser second pass");
         let mut parser = Parser::new();
-        parser.verbose_errors(self.verbose);
+        parser.include_fail_is_error(self.flag_include_fail_is_error);
+        parser.verbose_errors(self.flag_verbose);
         parser.parse(&lines);
         errors.extend(parser.consume_errors());
 

@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use status::{BlockDeviceContents, BlockDeviceInfo, Disk, Partition};
 
 pub mod config;
+pub mod constants;
 pub mod status;
+
+pub(crate) mod serde;
 
 impl Disk {
     pub fn to_block_device(&self) -> BlockDeviceInfo {

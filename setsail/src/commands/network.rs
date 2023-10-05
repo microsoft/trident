@@ -187,6 +187,7 @@ pub struct Network {
     #[arg(long, requires = "device")]
     #[arg(requires = "bondslaves")]
     #[arg(default_value = "")]
+    #[arg(value_parser(KeyValList::semicolon_alt_parser))]
     #[arg(verbatim_doc_comment)]
     pub bondopts: KeyValList,
 

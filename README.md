@@ -13,7 +13,8 @@ Deployment and update Agent for Mariner OS, allowing for inplace image
 deployments and atomic updates. Initial focus is on Bare Metal deployments, but
 can be leveraged outside of that as well.
 
-## Docs:
+## Docs
+
 - [BOM Agnostic Single Node Provisioning
 Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shared%20Documents/General/BareMetal/BOM%20Agnostic%20Single%20Node%20Provisioning%20Architecture.docx?web=1).
 - [Trident Agent
@@ -25,15 +26,16 @@ Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shar
 instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/README.md&_a=preview).
 
 ### Prerequisites
+
 - Install [git](https://git-scm.com/downloads). E.g. `sudo apt install git`.
 - Install Rust and Cargo: `curl https://sh.rustup.rs -sSf | sh`.
 - Install `build-essential`, `pkg-config`, `libssl-dev`, `libclang-dev`, and `protobuf-compiler`. E.g. `sudo
   apt install build-essential pkg-config libssl-dev libclang-dev protobuf-compiler`.
 - Clone the [Trident
-  repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident): 
+  repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident):
   `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
 - Change directory to the Trident repository: `cd trident`.
- 
+
 ### Building and validating
 
 Build instructions: `cargo build`.
@@ -46,6 +48,7 @@ Code coverage: `make coverage`.
 
 This configuration file is used by the Trident agent to configure itself. It is
 composed of the following sections:
+
 - **allowed-operations**: a combination of flags representing allowed
   operations. This is a list of operations that Trident is allowed to perform on
   the host. Supported flags are:
@@ -74,6 +77,7 @@ composed of the following sections:
 
 Additionally, to configure the host, the desired host configuration can be
 provided through either one of the following options:
+
 - **host-configuration-file**: path to the host configuration file. This is a
   YAML file that describes the host configuration in the Host Configuration
   format. See below details.
@@ -92,12 +96,14 @@ provided through either one of the following options:
   passed in once networking is up in the provisioning OS. Not yet implemented.
 
 The Host Configuration contains the following sections:
+
 - **management**: describes the management configuration of the host.
 - **storage**: describes the storage configuration of the host.
 - **imaging**: describes the imaging configuration of the host.
 - **network**: describes the network configuration of the host.
 
 ### Management
+
 The Management configuration controls the installation of the Trident agent onto
 the runtime OS. It contains a number of fields:
 
@@ -117,14 +123,17 @@ the runtime OS. It contains a number of fields:
   filesystem or A/B volume.
 
 ### Storage
+
 Storage configuration describes the disks and partitions of the host that will
 be used to store the OS and data. Not all disks of the host need to be captured
 inside the Host Configuration, only those that Trident should operate on. The
-configuration is divided into two sections: **disks** and **mount-points**. 
+configuration is divided into two sections: **disks** and **mount-points**.
 
 #### Disks
+
 The **disks** section describes the disks of the host. Each disk is described by
 the following fields:
+
 - **id**: a unique identifier for the disk. This is a user defined string that
   allows to link the disk to what is consuming it and also to results in the
   Host Status.
@@ -142,19 +151,24 @@ the following fields:
     `root-verity` `swap`, `home`, `var`. These correspond to [Discoverable
     Partition
     Types](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
-  - **size**: the size of the partition. This is a string with the following
-    format: `<number>[<unit>]`. Supported units are: `K`, `M`, `G`, `T`. If no
-    unit is specified, the number is interpreted as bytes. If a unit letter is
-    specified, it corresponds to `KiB`, `MiB`, `GiB`, `TiB` respectively.
-    Examples: `1G`, `10M`, `1000000000`.
+  - **size**: the size of the partition. Allowed values are:
+    - `grow` to dynamically grow the partition to fill the remaining space on
+      the disk.
+    - A string with the following format: `<number>[<unit>]`. Supported units
+      are: `K`, `M`, `G`, `T`. If no unit is specified, the number is
+      interpreted as bytes. If a unit letter is specified, it corresponds to
+      `KiB`, `MiB`, `GiB`, `TiB` respectively. Examples: `1G`, `10M`,
+      `1000000000`.
 
 TBD: At the moment, the partition table is created from scratch. In the future,
 it will be possible to consume an existing partition table.
 
 #### Mount Points
+
 The **mount-points** section describes the mount points of the host. These are
 used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount
 the volumes. Each mount point is described by the following fields:
+
 - **path**: the path of the mount point. This is the path where the volume will
   be mounted in the runtime OS. For `swap` partitions, the path should be
   `none`.
@@ -166,11 +180,12 @@ the volumes. Each mount point is described by the following fields:
   passed as is to the `/etc/fstab` file.
 
 The resulting `/etc/fstab` is produced as follows:
+
 - For each mount point, a line is added to the `/etc/fstab` file, if the `path`
   does not already exist in the `/etc/fstab` supplied in the runtime OS image.
   If the `path` already exists in the `/etc/fstab` supplied in the runtime OS,
   it will be updated to match the configuration provided in the Host
-  Configuration mount points. 
+  Configuration mount points.
 - If a mount point is not present in the Host Configuration, but present in the
   `/etc/fstab`, the line will be preserved as is in the `/etc/fstab`.
 
@@ -179,13 +194,16 @@ Note that you do not need to specify the mounts points, if your runtime OS
 will not modify the `/etc/fstab` file nor will it format the partitions.
 
 ### Imaging
+
 Imaging configuration describes the filesystem images that will be used to
 deploy onto the host. The configuration is divided into two sections: **images**
 and **ab-update**.
 
 #### Images
+
 The **images** section describes the filesystem images that will be used to
 deploy onto the host. Each image is described by the following fields:
+
 - **url**: the URL of the image. Supported schemes are: `file`, `http`, `https`.
 - **sha256**: the SHA256 checksum of the image. This is used to verify the
   integrity of the image. The checksum is a 64 character hexadecimal string.
@@ -194,11 +212,13 @@ deploy onto the host. Each image is described by the following fields:
 - **target-id**: the id of the partition that will be used to store the image.
 
 #### AB Update
+
 Under development, initial logic for illustration purposes only.
 
 The **ab-update** section describes the A/B Update configuration of the host.
 This section is optional. If not present, A/B Update will not be configured on
 the host. This section is described by the following fields:
+
 - **volume-pairs**: a list of volume pairs that will be used for A/B Update.
   Each volume pair is described by the following fields:
   - **id**: a unique identifier for the volume pair. This is a user defined
@@ -212,6 +232,7 @@ and Trident will pick the right volume to use based on the A/B Update state of
 the host.
 
 ### Network
+
 Network configuration describes the network configuration of the host. The
 configuration format is matching the netplan v2 format.
 
@@ -311,6 +332,6 @@ This project is licensed under the < INSERT LICENSE NAME > - see the
 
 ## Acknowledgments
 
-* Hat tip to anyone whose code was used
-* Inspiration
-* etc
+- Hat tip to anyone whose code was used
+- Inspiration
+- etc
