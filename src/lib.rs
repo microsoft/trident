@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Error};
 use datastore::DataStore;
+use log::info;
 use protobufs::*;
 use std::net::{IpAddr, SocketAddr};
 
@@ -86,18 +87,23 @@ impl imaging_server::Imaging for ImagingImpl {
 }
 
 pub fn run(
-    host_config: &HostConfiguration,
+    mut host_config: HostConfiguration,
     trident_config: &TridentConfiguration,
 ) -> Result<(), Error> {
+    if trident_config.phonehome.is_some() && host_config.management.phonehome.is_none() {
+        info!("Injecting phonehome into host configuration");
+        host_config.management.phonehome = trident_config.phonehome.clone();
+    }
+
     match &trident_config.datastore {
         Some(DatastoreConfiguration::Load { load_path }) => {
             let datastore =
                 DataStore::open(load_path.as_path()).context("Failed to load datastore")?;
-            modules::update(host_config, trident_config, datastore)
+            modules::update(&host_config, trident_config, datastore)
                 .context("Failed to update host config")
         }
         Some(DatastoreConfiguration::Create { .. }) | None => {
-            modules::provision(host_config, trident_config).context("Failed to provision")
+            modules::provision(&host_config, trident_config).context("Failed to provision")
         }
     }
 }

@@ -59,16 +59,9 @@ composed of the following sections:
   You can pass multiple flags, separated by `|`. Example: `Update | Transition`.
   You can pass `''` to disable all operations, which would result in getting
   refreshed Host Status, but no operations performed on the host.
-- **self-upgrade**: a boolean flag that indicates whether Trident should upgrade
-  itself. If set to `true`, Trident will replicate itself into the runtime OS
-  prior to transitioning. This is useful during development to ensure the
-  matching version of Trident is used. Defaults to `false`.
-- **datastore**: describes the datastore configuration. This is the
-  configuration that Trident will use to store its state. Path `create-path`
-  attribute if you want to store the datastore in a different location than the
-  default `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`,
-  cannot be an existing file and cannot reside on a read-only filesystem or A/B
-  volume.
+- **datastore**: if present, indicates the path to an existing datastore Trident
+  should load its state from. This field should not be included when Trident is
+  running from the provisioning OS.
 - **phonehome**: optional URL to reach out to when networking is up, so Trident
   can report its status. This is useful for debugging and monitoring purposes,
   say by an orchestrator. Note that separately the updates to the Host Status
@@ -99,9 +92,29 @@ provided through either one of the following options:
   passed in once networking is up in the provisioning OS. Not yet implemented.
 
 The Host Configuration contains the following sections:
+- **management**: describes the management configuration of the host.
 - **storage**: describes the storage configuration of the host.
 - **imaging**: describes the imaging configuration of the host.
 - **network**: describes the network configuration of the host.
+
+### Management
+The Management configuration controls the installation of the Trident agent onto
+the runtime OS. It contains a number of fields:
+
+- **disable**: a boolean flag. When set to `true`, prevents Trident from being
+  enabled on the runtime OS. In that case, the remaining fields are ignored.
+- **self-upgrade**: a boolean flag that indicates whether Trident should upgrade
+  itself. If set to `true`, Trident will replicate itself into the runtime OS
+  prior to transitioning. This is useful during development to ensure the
+  matching version of Trident is used. Defaults to `false`.
+- **phonehome**: URL to reach out to when runtime OS networking is up, so
+  Trident can report its status. If not specified, the value from the Trident
+  configuration will be used. This is useful for debugging and monitoring
+  purposes, say by an orchestrator.
+- **datastore-path**: Describes where to place the datastore Trident will use to
+  store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end
+  with `.sqlite`, cannot be an existing file and cannot reside on a read-only
+  filesystem or A/B volume.
 
 ### Storage
 Storage configuration describes the disks and partitions of the host that will
@@ -206,6 +219,8 @@ configuration format is matching the netplan v2 format.
 
 ```yaml
 host-configuration:
+  management:
+    self-upgrade: true
   storage:
     disks:
       - id: os

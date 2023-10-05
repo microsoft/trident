@@ -37,10 +37,6 @@ pub struct TridentConfiguration {
     /// Defines the operation to perform.
     #[serde(default)]
     pub allowed_operations: Operations,
-
-    /// Have Trident copy itself from the provisioning OS to the runtime OS.
-    #[serde(default, skip_serializing_if = "Clone::clone")]
-    pub self_upgrade: bool,
 }
 
 /// Configuration for the datastore.
@@ -94,6 +90,9 @@ impl Default for HostConfigurationSource {
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct HostConfiguration {
+    #[serde(default)]
+    pub management: Management,
+
     pub storage: Storage,
 
     pub imaging: Imaging,
@@ -127,6 +126,26 @@ impl Default for Operations {
     fn default() -> Self {
         Operations::all()
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct Management {
+    /// Whether to skip installing the agent on the runtime OS.
+    #[serde(default)]
+    pub disable: bool,
+
+    /// For debugging, copy the agent from the provisioning OS to the runtime OS.
+    #[serde(default)]
+    pub self_upgrade: bool,
+
+    /// Path to save the datastore, or `None` if the default path should be used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datastore_path: Option<PathBuf>,
+
+    /// Optional URL to reach out to when networking is up.
+    pub phonehome: Option<String>,
 }
 
 /// Storage configuration for a host.

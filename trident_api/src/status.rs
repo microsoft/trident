@@ -12,7 +12,14 @@ use crate::config::{BlockDeviceId, PartitionType};
 #[serde(rename_all = "kebab-case")]
 pub struct HostStatus {
     pub reconcile_state: ReconcileState,
+
+    #[serde(default)]
+    pub management: Management,
+
+    #[serde(default)]
     pub storage: Storage,
+
+    #[serde(default)]
     pub imaging: Imaging,
 }
 
@@ -46,6 +53,12 @@ pub enum UpdateKind {
     AbUpdate = 3,
     /// Update that cannot be applied given the current state of the system.
     Incompatible = 4,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct Management {
+    pub datastore_path: Option<PathBuf>,
 }
 
 /// Storage status of a host.

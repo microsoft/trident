@@ -164,7 +164,7 @@ fn main() -> Result<(), Error> {
                 | HostConfigurationSource::Kickstart(_)
                 | HostConfigurationSource::KickstartEmbedded(_) => {
                     info!("Running");
-                    match trident::run(host_config.as_ref().unwrap(), &config.trident_config) {
+                    match trident::run(*host_config.unwrap(), &config.trident_config) {
                         Ok(()) => {
                             if let Some(orchestrator) = orchestrator {
                                 orchestrator.report_success()

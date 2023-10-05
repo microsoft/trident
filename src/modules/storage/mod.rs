@@ -20,6 +20,75 @@ mod sdrepart;
 mod sfdisk;
 pub mod tabfile;
 
+fn create_partitions(
+    host_status: &mut HostStatus,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    for disk in &host_config.storage.disks {
+        let disk_path = disk.device.canonicalize().context(format!(
+            "Failed to lookup device '{}'",
+            disk.device.display()
+        ))?;
+
+        let disk_bus_path =
+            find_symlink_for_target(&disk_path, Path::new("/dev/disk/by-path")).context(
+                format!("Failed to find bus path of '{}'", disk_path.display()),
+            )?;
+
+        let repart_config = RepartConfiguration::new(disk).context(format!(
+            "Failed to generate systemd-repart config for disk {}",
+            disk.id
+        ))?;
+
+        let partitions_status = repart_config
+            .create_partitions(&disk_bus_path)
+            .context(format!("Failed to initialize disk {}", disk.id))?;
+
+        let disk_information = sfdisk::get_disk_information(&disk_bus_path)
+            .context(format!("Failed to retrieve GPT UUID for disk {}", disk.id))?;
+
+        host_status.storage.disks.insert(
+            disk.id.clone(),
+            status::Disk {
+                uuid: disk_information.uuid,
+                path: disk_bus_path.clone(),
+                partitions: Vec::new(),
+                capacity: disk_information.capacity,
+                contents: BlockDeviceContents::Unknown,
+            },
+        );
+
+        let disk_status = host_status
+            .storage
+            .disks
+            .get_mut(&disk.id)
+            .context(format!("Failed to find disk {} in host status", disk.id))?;
+
+        // ensure all /dev/disk/* symlinks are created
+        crate::run_command(Command::new("udevadm").arg("settle"))?;
+
+        for (index, partition) in disk.partitions.iter().enumerate() {
+            let partition_uuid = partitions_status[index].uuid;
+            let part_path = Path::new("/dev/disk/by-partuuid").join(partition_uuid.to_string());
+
+            let start = partitions_status[index].start;
+            let size = partitions_status[index].size;
+            disk_status.partitions.push(status::Partition {
+                id: partition.id.clone(),
+                path: part_path,
+                start,
+                end: start + size,
+                ty: partition.partition_type,
+                contents: BlockDeviceContents::Initialized,
+                uuid: partition_uuid,
+            });
+        }
+
+        disk_status.contents = status::BlockDeviceContents::Initialized;
+    }
+    Ok(())
+}
+
 #[derive(Default, Debug)]
 pub struct StorageModule;
 impl Module for StorageModule {
@@ -42,6 +111,8 @@ impl Module for StorageModule {
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
+        // TODO: reject any partition changes if we're not doing a clean install.
+
         // Ensure block device naming is unique across all supported block
         // device types.
         let mut block_device_ids = std::collections::HashSet::new();
@@ -132,6 +203,19 @@ impl Module for StorageModule {
         None
     }
 
+    fn migrate(
+        &mut self,
+        host_status: &mut HostStatus,
+        host_config: &HostConfiguration,
+        _mount_path: &Path,
+    ) -> Result<(), Error> {
+        if host_status.reconcile_state != status::ReconcileState::CleanInstall {
+            return Ok(());
+        }
+
+        create_partitions(host_status, host_config)
+    }
+
     fn reconcile(
         &mut self,
         host_status: &mut HostStatus,
@@ -139,7 +223,7 @@ impl Module for StorageModule {
     ) -> Result<(), Error> {
         TabFile::from_mount_points(host_status, &host_config.storage.mount_points, None, None)
             .context("Failed to serialize mount point configuration for the target OS")?
-            .write(Path::new(DEFAULT_FSTAB_PATH))
+            .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
             .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
 
         host_status.storage.mount_points = host_config
@@ -173,76 +257,6 @@ impl StorageModule {
             if !detected_ids.insert(name) {
                 bail!("Block device name '{name}' is used more than once");
             }
-        }
-
-        Ok(())
-    }
-
-    pub fn create_partitions(
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-    ) -> Result<(), Error> {
-        for disk in &host_config.storage.disks {
-            let disk_path = disk.device.canonicalize().context(format!(
-                "Failed to lookup device '{}'",
-                disk.device.display()
-            ))?;
-
-            let disk_bus_path =
-                find_symlink_for_target(&disk_path, Path::new("/dev/disk/by-path")).context(
-                    format!("Failed to find bus path of '{}'", disk_path.display()),
-                )?;
-
-            let repart_config = RepartConfiguration::new(disk).context(format!(
-                "Failed to generate systemd-repart config for disk {}",
-                disk.id
-            ))?;
-
-            let partitions_status = repart_config
-                .create_partitions(&disk_bus_path)
-                .context(format!("Failed to initialize disk {}", disk.id))?;
-
-            let disk_information = sfdisk::get_disk_information(&disk_bus_path)
-                .context(format!("Failed to retrieve GPT UUID for disk {}", disk.id))?;
-
-            host_status.storage.disks.insert(
-                disk.id.clone(),
-                status::Disk {
-                    uuid: disk_information.uuid,
-                    path: disk_bus_path.clone(),
-                    partitions: Vec::new(),
-                    capacity: disk_information.capacity,
-                    contents: BlockDeviceContents::Unknown,
-                },
-            );
-
-            let disk_status = host_status
-                .storage
-                .disks
-                .get_mut(&disk.id)
-                .context(format!("Failed to find disk {} in host status", disk.id))?;
-
-            // ensure all /dev/disk/* symlinks are created
-            crate::run_command(Command::new("udevadm").arg("settle"))?;
-
-            for (index, partition) in disk.partitions.iter().enumerate() {
-                let partition_uuid = partitions_status[index].uuid;
-                let part_path = Path::new("/dev/disk/by-partuuid").join(partition_uuid.to_string());
-
-                let start = partitions_status[index].start;
-                let size = partitions_status[index].size;
-                disk_status.partitions.push(status::Partition {
-                    id: partition.id.clone(),
-                    path: part_path,
-                    start,
-                    end: start + size,
-                    ty: partition.partition_type,
-                    contents: BlockDeviceContents::Initialized,
-                    uuid: partition_uuid,
-                });
-            }
-
-            disk_status.contents = status::BlockDeviceContents::Initialized;
         }
 
         Ok(())

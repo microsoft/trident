@@ -4,7 +4,7 @@ use std::{
         fd::{IntoRawFd, RawFd},
         unix,
     },
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
 };
 
@@ -13,7 +13,7 @@ use log::info;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
 use trident_api::{config::HostConfiguration, status::HostStatus};
 
-use crate::modules::{self, storage::tabfile::TabFile};
+use crate::modules::storage::tabfile::TabFile;
 
 /// Create a chroot environment.
 ///
@@ -73,88 +73,66 @@ impl Chroot {
     }
 }
 
-pub(crate) struct UpdateTargetEnvironment {
-    pub chroot: Option<Chroot>,
-    pub mount_path: PathBuf,
-    pub root_block_device: trident_api::status::BlockDeviceInfo,
-}
-
 pub(crate) fn setup_root_chroot(
     host_config: &HostConfiguration,
     host_status: &HostStatus,
-    do_enter_chroot: bool,
-) -> Result<Option<UpdateTargetEnvironment>, Error> {
-    if let Some(root_block_device) = modules::get_root_block_device(host_config, host_status) {
-        let root_mount_path = Path::new("/partitionMount");
-        let update_fs_target = Path::new("update-fs.target");
-        let update_fstab_root =
-            tempfile::tempdir().context("Failed to create temporary directory")?;
-        let update_fstab_path = update_fstab_root.path().join(Path::new("fstab"));
-        let systemd_unit_root_path = Path::new("/etc/systemd/system");
+    root_mount_path: &Path,
+) -> Result<(), Error> {
+    let update_fs_target = Path::new("update-fs.target");
+    let update_fstab_root = tempfile::tempdir().context("Failed to create temporary directory")?;
+    let update_fstab_path = update_fstab_root.path().join(Path::new("fstab"));
+    let systemd_unit_root_path = Path::new("/etc/systemd/system");
 
-        TabFile::from_mount_points(
-            host_status,
-            &host_config.storage.mount_points,
-            Some(root_mount_path),
-            Some(update_fs_target),
-        )
-        .context("Failed to generate bootstrap fstab")?
-        .write(update_fstab_path.as_path())
-        .context("Failed to write bootstrap fstab")?;
+    TabFile::from_mount_points(
+        host_status,
+        &host_config.storage.mount_points,
+        Some(root_mount_path),
+        Some(update_fs_target),
+    )
+    .context("Failed to generate bootstrap fstab")?
+    .write(update_fstab_path.as_path())
+    .context("Failed to write bootstrap fstab")?;
 
-        // Create custom target for the filesystems mounted for the update reconciliation.
-        fs::write(
-            systemd_unit_root_path.join(update_fs_target),
-            indoc::indoc! {r#"
+    // Create custom target for the filesystems mounted for the update reconciliation.
+    fs::write(
+        systemd_unit_root_path.join(update_fs_target),
+        indoc::indoc! {r#"
                 [Unit]
                 Description=Update File Systems
                 DefaultDependencies=no
                 Conflicts=shutdown.target
             "#}
-            .as_bytes(),
-        )
-        .context(format!(
-            "Failed to write {}",
-            update_fs_target.to_string_lossy()
-        ))?;
+        .as_bytes(),
+    )
+    .context(format!(
+        "Failed to write {}",
+        update_fs_target.to_string_lossy()
+    ))?;
 
-        crate::run_command(
-            Command::new("/usr/lib/systemd/system-generators/systemd-fstab-generator")
-                .arg(systemd_unit_root_path)
-                .arg(systemd_unit_root_path)
-                .arg(systemd_unit_root_path)
-                .env("SYSTEMD_FSTAB", update_fstab_path)
-                .env("SYSTEMD_LOG_TARGET", "console")
-                .env("SYSTEMD_LOG_LEVEL", "debug"),
-        )
+    crate::run_command(
+        Command::new("/usr/lib/systemd/system-generators/systemd-fstab-generator")
+            .arg(systemd_unit_root_path)
+            .arg(systemd_unit_root_path)
+            .arg(systemd_unit_root_path)
+            .env("SYSTEMD_FSTAB", update_fstab_path)
+            .env("SYSTEMD_LOG_TARGET", "console")
+            .env("SYSTEMD_LOG_LEVEL", "debug"),
+    )
+    .context("Failed to reload systemd daemon")?;
+
+    crate::run_command(Command::new("systemctl").arg("daemon-reload"))
         .context("Failed to reload systemd daemon")?;
 
-        crate::run_command(Command::new("systemctl").arg("daemon-reload"))
-            .context("Failed to reload systemd daemon")?;
+    let mount_result =
+        crate::run_command(Command::new("systemctl").arg("start").arg(update_fs_target))
+            .context("Failed to mount target filesystems");
 
-        let mount_result =
-            crate::run_command(Command::new("systemctl").arg("start").arg(update_fs_target))
-                .context("Failed to mount target filesystems");
-
-        if let Err(mount_result) = mount_result {
-            unmount_target_volumes(root_mount_path)?;
-            return Err(mount_result);
-        }
-
-        let chroot = if do_enter_chroot {
-            Some(enter_chroot(root_mount_path)?)
-        } else {
-            None
-        };
-        Ok(Some(UpdateTargetEnvironment {
-            chroot,
-            mount_path: root_mount_path.to_owned(),
-            root_block_device,
-        }))
-    } else {
-        info!("No root block device found, will skip reconciling root filesystem.");
-        Ok(None)
+    if let Err(mount_result) = mount_result {
+        unmount_target_volumes(root_mount_path)?;
+        return Err(mount_result);
     }
+
+    Ok(())
 }
 
 pub(crate) fn enter_chroot(root_mount_path: &Path) -> Result<Chroot, Error> {

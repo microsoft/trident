@@ -1,31 +1,21 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Mutex,
-};
+use std::{fs, path::Path, sync::Mutex};
 
 use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::{
-        DatastoreConfiguration, HostConfiguration, HostConfigurationSource, LocalConfigFile,
-        Operations, TridentConfiguration,
-    },
-    status::{BlockDeviceInfo, HostStatus, ReconcileState, UpdateKind},
+    config::{HostConfiguration, Operations, TridentConfiguration},
+    status::{HostStatus, ReconcileState, UpdateKind},
 };
 
-use crate::{
-    datastore::DataStore,
-    modules::{
-        image::ImageModule, network::NetworkModule, osconfig::OsConfigModule,
-        storage::StorageModule,
-    },
-    mount::{self, UpdateTargetEnvironment},
-    TRIDENT_BINARY_PATH, TRIDENT_DATASTORE_PATH, TRIDENT_LOCAL_CONFIG_PATH,
+use crate::modules::{
+    image::ImageModule, management::ManagementModule, network::NetworkModule,
+    osconfig::OsConfigModule, storage::StorageModule,
 };
+use crate::{datastore::DataStore, mount, TRIDENT_DATASTORE_PATH};
 
 pub mod image;
+pub mod management;
 pub mod network;
 pub mod osconfig;
 pub mod storage;
@@ -57,11 +47,16 @@ pub trait Module: Send {
         None
     }
 
-    /// Migrate state from A-partition to B-partition (or vice versa).
+    /// Initialize state on the Runtime OS from the Provisioning OS, or migrate state from
+    /// A-partition to B-partition (or vice versa).
+    ///
+    /// This method is called before the chroot is entered, and is used to perform any
+    /// provisioning operations that need to be done before the chroot is entered.
     fn migrate(
         &mut self,
         _host_status: &mut HostStatus,
         _host_config: &HostConfiguration,
+        _mount_path: &Path,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -81,6 +76,7 @@ lazy_static::lazy_static! {
         Box::<ImageModule>::default(),
         Box::<NetworkModule>::default(),
         Box::<OsConfigModule>::default(),
+        Box::<ManagementModule>::default(),
     ]);
 }
 
@@ -97,7 +93,6 @@ pub(crate) fn provision(
     }
 
     let mut modules = MODULES.lock().unwrap();
-
     let mut state = DataStore::new();
     state.with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)?;
 
@@ -109,54 +104,39 @@ pub(crate) fn provision(
         return Ok(());
     }
 
-    state.try_with_host_status(|s| {
-        StorageModule::create_partitions(s, host_config)
-            .context("Failed to create disk partitions")?;
-        image::refresh_ab_volumes(s, host_config);
-        image::stream_images(s, host_config).context("Failed to stream images")
-    })?;
+    // TODO: We should have a way to indicate which modules setup the root mount point, and which
+    // depend on it being in place. Right now we just depend on the "storage" and "image" modules
+    // being the first ones to run.
+    let mount_path = Path::new("/partitionMount");
+    migrate(&mut modules, &mut state, host_config, mount_path)?;
 
-    let datastore_path = validate_datastore_location(trident, host_config)?;
+    let chroot = mount::enter_chroot(mount_path)?;
+    state.persist(
+        host_config
+            .management
+            .datastore_path
+            .as_deref()
+            .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH)),
+    )?;
+    reconcile(&mut modules, &mut state, host_config)?;
 
-    let mut chroot_env = mount::setup_root_chroot(host_config, state.host_status(), false)
-        .context("Failed to setup target root chroot")?;
+    let root_device_path = state
+        .host_status()
+        .imaging
+        .root_device_path
+        .clone()
+        .context("Failed to get root device path")?;
 
-    if let Some(chroot_env) = chroot_env.as_mut() {
-        if trident.self_upgrade {
-            self_upgrade(&chroot_env.mount_path)?;
-        }
-
-        chroot_env.chroot = Some(mount::enter_chroot(&chroot_env.mount_path)?);
-
-        state.persist(&datastore_path)?;
-
-        reconcile(&mut modules, &mut state, host_config)?;
-
-        inject_trident_config(
-            trident.phonehome.clone(),
-            datastore_path.as_path(),
-            host_config,
-        )?;
-
-        // TODO: Call post-update workload hook.
-        drop(state);
-    }
+    drop(state);
+    chroot.exit().context("Failed to exit chroot")?;
 
     if !trident.allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
-        if let Some(chroot_env) = chroot_env {
-            chroot_env
-                .chroot
-                .context("Failed to enter chroot")?
-                .exit()
-                .context("Failed to exit chroot")?;
-            mount::unmount_target_volumes(chroot_env.mount_path.as_path())
-                .context("Failed to unmount target volumes")?;
-        }
+        mount::unmount_target_volumes(mount_path).context("Failed to unmount target volumes")?;
         return Ok(());
     }
 
-    transition(chroot_env)?;
+    transition(mount_path, &root_device_path)?;
 
     Ok(())
 }
@@ -196,82 +176,45 @@ pub(crate) fn update(
         Some(UpdateKind::HotPatch) => info!("Performing hot patch update"),
         Some(UpdateKind::NormalUpdate) => info!("Performing normal update"),
         Some(UpdateKind::UpdateAndReboot) => info!("Performing update and reboot"),
-        Some(UpdateKind::AbUpdate) => {
-            info!("Performing A/B update");
-            state.try_with_host_status(|s| {
-                image::stream_images(s, host_config).context("Failed to stream images")
-            })?;
-        }
+        Some(UpdateKind::AbUpdate) => info!("Performing A/B update"),
         Some(UpdateKind::Incompatible) => {
             bail!("Requested host config is not compatible with current install")
         }
     }
 
-    // TODO: Call pre-update workload hook.
-
-    let mut chroot_env = None;
-    let mut should_reconcile = true;
+    let mut chroot = None;
+    let mount_path = Path::new("/partitionMount");
 
     if let Some(UpdateKind::AbUpdate) = update_kind {
-        // TODO: Download update
-        // TODO: Write update
-
-        for m in &mut *modules {
-            state.try_with_host_status(|s| {
-                m.migrate(s, host_config)
-                    .context(format!("Module '{}' failed during pause", m.name()))
-            })?;
-        }
-
-        chroot_env = mount::setup_root_chroot(host_config, state.host_status(), false)
-            .context("Failed to setup root chroot")?;
-        should_reconcile = chroot_env.is_some();
+        migrate(&mut modules, &mut state, host_config, mount_path)?;
+        chroot = Some(mount::enter_chroot(mount_path)?);
     }
 
-    if should_reconcile {
-        let datastore_path = validate_datastore_location(trident, host_config)?;
+    reconcile(&mut modules, &mut state, host_config)?;
 
-        if update_kind == Some(UpdateKind::AbUpdate) {
-            if let Some(chroot_env) = chroot_env.as_mut() {
-                if trident.self_upgrade {
-                    self_upgrade(&chroot_env.mount_path)?;
-                }
-
-                chroot_env.chroot = Some(mount::enter_chroot(&chroot_env.mount_path)?);
-            }
-        }
-
-        reconcile(&mut modules, &mut state, host_config)?;
-
-        if update_kind == Some(UpdateKind::AbUpdate) {
-            inject_trident_config(
-                trident.phonehome.clone(),
-                datastore_path.as_path(),
-                host_config,
-            )?;
-        }
+    if let Some(chroot) = chroot {
+        chroot.exit().context("Failed to exit chroot")?;
     }
-
-    // TODO: Call post-update workload hook.
 
     match update_kind {
         Some(UpdateKind::UpdateAndReboot) | Some(UpdateKind::AbUpdate) => {
+            let root_block_device_path = state
+                .host_status()
+                .imaging
+                .root_device_path
+                .clone()
+                .context("Failed to get root device path")?;
+
             drop(state);
 
             if !trident.allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
-                if let Some(chroot_env) = chroot_env {
-                    chroot_env
-                        .chroot
-                        .context("Failed to enter chroot")?
-                        .exit()
-                        .context("Failed to exit chroot")?;
-                    mount::unmount_target_volumes(chroot_env.mount_path.as_path())
-                        .context("Failed to unmount target volumes")?;
-                }
+                mount::unmount_target_volumes(mount_path)
+                    .context("Failed to unmount target volumes")?;
                 return Ok(());
             }
-            transition(chroot_env)?;
+
+            transition(mount_path, &root_block_device_path)?;
             Ok(())
         }
         Some(UpdateKind::NormalUpdate) | Some(UpdateKind::HotPatch) => {
@@ -316,6 +259,21 @@ fn validate_host_config(
     Ok(())
 }
 
+fn migrate(
+    modules: &mut [Box<dyn Module>],
+    state: &mut DataStore,
+    host_config: &HostConfiguration,
+    mount_point: &Path,
+) -> Result<(), Error> {
+    for m in modules {
+        state.try_with_host_status(|s| {
+            m.migrate(s, host_config, mount_point)
+                .context(format!("Module '{}' failed to migrate", m.name()))
+        })?;
+    }
+    Ok(())
+}
+
 fn reconcile(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
@@ -330,324 +288,16 @@ fn reconcile(
     Ok(())
 }
 
-/// For development only: copy provisioning OS Trident binary to the runtime OS to ensure we are
-/// using the latest bits.
-fn self_upgrade(mount_path: &Path) -> Result<(), Error> {
-    fs::copy(
-        TRIDENT_BINARY_PATH,
-        mount_path.join(&TRIDENT_BINARY_PATH[1..]),
+fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Error> {
+    let root_block_device_path = root_block_device_path.to_str().context(format!(
+        "Failed to convert root device path {:?} to string",
+        root_block_device_path
+    ))?;
+
+    info!("Performing soft reboot");
+    image::kexec(
+        mount_path,
+        &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
     )
-    .context("Failed to copy Trident binary to runtime OS")?;
-    Ok(())
-}
-
-fn validate_datastore_location(
-    trident_config: &TridentConfiguration,
-    host_config: &HostConfiguration,
-) -> Result<PathBuf, Error> {
-    let datastore_path = match &trident_config.datastore {
-        Some(DatastoreConfiguration::Create { create_path }) => create_path.clone(),
-        Some(DatastoreConfiguration::Load { load_path }) => load_path.clone(),
-        None => PathBuf::from(TRIDENT_DATASTORE_PATH),
-    };
-    datastore_path
-        .extension()
-        .and_then(|ext| if ext == "sqlite" { Some(()) } else { None })
-        .ok_or(anyhow::anyhow!(
-            "Datastore path must end with '.sqlite' but received '{}'",
-            datastore_path.display()
-        ))?;
-
-    let datastore_block_device_id =
-        &storage::path_to_mount_point(host_config, datastore_path.as_path())
-            .map(|mp| &mp.target_id)
-            .context("Failed to find mount point for datastore")?;
-
-    if host_config
-        .imaging
-        .ab_update
-        .as_ref()
-        .and_then(|ab_update| {
-            ab_update
-                .volume_pairs
-                .iter()
-                .find(|p| &p.id == *datastore_block_device_id)
-        })
-        .is_some()
-    {
-        bail!("Datastore cannot be on an A/B update volume");
-    }
-    Ok(datastore_path)
-}
-
-fn inject_trident_config(
-    orchestrator_url: Option<String>,
-    datastore_path: &Path,
-    host_config: &HostConfiguration,
-) -> Result<(), Error> {
-    fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
-        .context("Failed to create trident config directory")?;
-    let trident_config = LocalConfigFile {
-        trident_config: TridentConfiguration {
-            datastore: Some(DatastoreConfiguration::Load {
-                load_path: datastore_path.to_path_buf(),
-            }),
-            phonehome: orchestrator_url,
-            ..Default::default()
-        },
-        host_config_source: HostConfigurationSource::Embedded(Box::new(host_config.clone())),
-    };
-    fs::write(
-        TRIDENT_LOCAL_CONFIG_PATH,
-        serde_yaml::to_string(&trident_config).context("Failed to serialize trident config")?,
-    )
-    .context("Failed to write trident local config")?;
-    Ok(())
-}
-
-fn transition(
-    update_target_environment_option: Option<UpdateTargetEnvironment>,
-) -> Result<(), Error> {
-    match update_target_environment_option {
-        Some(update_target_environment) => {
-            update_target_environment
-                .chroot
-                .context("Failed to enter chroot")?
-                .exit()
-                .context("Failed to exit chroot")?;
-
-            info!("Performing soft reboot");
-            image::kexec(
-                &update_target_environment.mount_path,
-                format!(
-                    "console=tty1 console=ttyS0 root={}",
-                    update_target_environment
-                        .root_block_device
-                        .path
-                        .to_str()
-                        .context(format!(
-                            "Failed to convert root device path {:?} to string",
-                            update_target_environment.root_block_device.path
-                        ))?
-                )
-                .as_str(),
-            )
-            .context("Failed to perform kexec")?;
-
-            unreachable!("kexec should never return")
-        }
-        None => {
-            info!("No root block device found, performing reboot");
-            image::reboot().context("Failed to perform reboot")?;
-
-            unreachable!("reboot should never return");
-        }
-    }
-}
-
-/// Using the / mount point, figure out what should be used as a root block device.
-pub fn get_root_block_device(
-    host_config: &HostConfiguration,
-    host_status: &HostStatus,
-) -> Option<BlockDeviceInfo> {
-    host_config.storage.mount_points.iter().find_map(|mp| {
-        if mp.path == Path::new("/") {
-            crate::get_block_device(host_status, &mp.target_id)
-        } else {
-            None
-        }
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::*;
-    use indoc::indoc;
-    use trident_api::config::{HostConfiguration, TridentConfiguration};
-
-    #[test]
-    fn test_validate_datastore_location() {
-        let trident_config_yaml = indoc! {r#"
-            datastore: 
-              create-path: /trident.sqlite
-        "#};
-        let trident_config: TridentConfiguration =
-            serde_yaml::from_str(trident_config_yaml).unwrap();
-
-        let host_config_yaml = indoc! {r#"
-            storage:
-              disks:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-            imaging:
-              images:
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
-
-        assert_eq!(
-            validate_datastore_location(&trident_config, &host_config).unwrap(),
-            Path::new("/trident.sqlite")
-        );
-
-        let trident_config_yaml = indoc! {r#"
-            datastore: 
-              create-path: /trident.
-        "#};
-        let trident_config: TridentConfiguration =
-            serde_yaml::from_str(trident_config_yaml).unwrap();
-
-        // expect failure as the datastore path needs to end with .sqlite
-        assert!(validate_datastore_location(&trident_config, &host_config).is_err());
-
-        let trident_config_yaml = indoc! {r#"
-            datastore: 
-              load-path: /foo/trident.sqlite
-        "#};
-        let trident_config: TridentConfiguration =
-            serde_yaml::from_str(trident_config_yaml).unwrap();
-
-        assert_eq!(
-            validate_datastore_location(&trident_config, &host_config).unwrap(),
-            Path::new("/foo/trident.sqlite")
-        );
-
-        let trident_config_yaml = indoc! {r#"
-        "#};
-        let trident_config: TridentConfiguration =
-            serde_yaml::from_str(trident_config_yaml).unwrap();
-
-        assert_eq!(
-            validate_datastore_location(&trident_config, &host_config).unwrap(),
-            Path::new("/var/lib/trident/datastore.sqlite")
-        );
-
-        let trident_config_yaml = indoc! {r#"
-            datastore: 
-              create-path: /foo/bar/trident.sqlite
-        "#};
-        let trident_config: TridentConfiguration =
-            serde_yaml::from_str(trident_config_yaml).unwrap();
-
-        let host_config_yaml = indoc! {r#"
-            storage:
-              disks:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-                - path: /bar
-                  target-id: sda2
-                  filesystem: ext4
-                  options: []
-            imaging:
-              images:
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
-
-        assert_eq!(
-            validate_datastore_location(&trident_config, &host_config).unwrap(),
-            Path::new("/foo/bar/trident.sqlite")
-        );
-
-        let host_config_yaml = indoc! {r#"
-            storage:
-              disks:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-                - path: /bar
-                  target-id: sda2
-                  filesystem: ext4
-                  options: []
-            imaging:
-              images:
-              ab-update:
-                volume-pairs:
-                    - id: sda2
-                      volume-a-id: sda1
-                      volume-b-id: sda2
-                    - id: sda2
-                      volume-a-id: sda2
-                      volume-b-id: sda1
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
-
-        assert_eq!(
-            validate_datastore_location(&trident_config, &host_config).unwrap(),
-            Path::new("/foo/bar/trident.sqlite")
-        );
-
-        let trident_config_yaml = indoc! {r#"
-            datastore: 
-              load-path: /bar/foo/trident.sqlite
-        "#};
-        let trident_config: TridentConfiguration =
-            serde_yaml::from_str(trident_config_yaml).unwrap();
-
-        let host_config_yaml = indoc! {r#"
-            storage:
-              disks:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-                - path: /bar
-                  target-id: sda2
-                  filesystem: ext4
-                  options: []
-            imaging:
-              images:
-              ab-update:
-                volume-pairs:
-                    - id: sda1
-                      volume-a-id: sda1
-                      volume-b-id: sda2
-                    - id: sda1
-                      volume-a-id: sda2
-                      volume-b-id: sda1
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
-
-        assert_eq!(
-            validate_datastore_location(&trident_config, &host_config).unwrap(),
-            Path::new("/bar/foo/trident.sqlite")
-        );
-
-        let host_config_yaml = indoc! {r#"
-            storage:
-              disks:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-                - path: /bar
-                  target-id: sda2
-                  filesystem: ext4
-                  options: []
-            imaging:
-              images:
-              ab-update:
-                volume-pairs:
-                    - id: sda1
-                      volume-a-id: sda1
-                      volume-b-id: sda2
-                    - id: sda2
-                      volume-a-id: sda2
-                      volume-b-id: sda1
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
-
-        // expect failure, as we cannot land on A/B volume
-        assert!(validate_datastore_location(&trident_config, &host_config).is_err());
-    }
+    .context("Failed to perform kexec")
 }

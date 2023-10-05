@@ -3,7 +3,7 @@ use std::{
     fs::{self, File},
     io::{self, BufWriter, Read},
     os::{fd::AsRawFd, unix::prelude::PermissionsExt},
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -47,7 +47,7 @@ impl<R: Read> Read for HashingReader<R> {
     }
 }
 
-pub(crate) fn stream_images(
+fn stream_images(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
@@ -137,7 +137,6 @@ pub(crate) fn stream_images(
             );
         }
     }
-
     Ok(())
 }
 
@@ -198,6 +197,7 @@ pub fn kexec(mount_path: &Path, args: &str) -> Result<(), Error> {
     unreachable!()
 }
 
+#[allow(unused)]
 pub fn reboot() -> Result<(), Error> {
     // Sync all writes to the filesystem.
     nix::unistd::sync();
@@ -209,7 +209,7 @@ pub fn reboot() -> Result<(), Error> {
     unreachable!()
 }
 
-pub fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfiguration) {
+fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfiguration) {
     host_status.imaging.ab_update = host_config.imaging.ab_update.as_ref().map(|ab_update| {
         let ab_volume_pairs = ab_update
             .volume_pairs
@@ -254,6 +254,19 @@ fn get_images_for_updating<'a>(
             true
         })
         .collect()
+}
+
+/// Using the / mount point, figure out what should be used as a root block device.
+fn get_root_block_device_path(
+    host_config: &HostConfiguration,
+    host_status: &HostStatus,
+) -> Option<PathBuf> {
+    host_config
+        .storage
+        .mount_points
+        .iter()
+        .find(|mp| mp.path == Path::new("/"))
+        .and_then(|mp| Some(crate::get_block_device(host_status, &mp.target_id)?.path))
 }
 
 #[derive(Default, Debug)]
@@ -336,13 +349,34 @@ impl Module for ImageModule {
         }
     }
 
-    fn reconcile(
+    fn migrate(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
+        mount_point: &Path,
     ) -> Result<(), Error> {
         refresh_ab_volumes(host_status, host_config);
 
+        host_status.imaging.root_device_path = Some(
+            get_root_block_device_path(host_config, host_status)
+                .context("Failed to get root block device")?,
+        );
+        info!(
+            "Root device path: {:#?}",
+            host_status.imaging.root_device_path
+        );
+
+        stream_images(host_status, host_config)?;
+        mount::setup_root_chroot(host_config, host_status, mount_point)?;
+
+        Ok(())
+    }
+
+    fn reconcile(
+        &mut self,
+        _host_status: &mut HostStatus,
+        _host_config: &HostConfiguration,
+    ) -> Result<(), Error> {
         // if we let users mount over /var, some services will fail to start, so
         // we need to recreate missing directories first
         let var_log_path = Path::new("/var/log");
