@@ -17,7 +17,7 @@ use log::{debug, info};
 
 use trident_api::config::HostConfiguration;
 
-use {parser::Parser, preprocess::PreprocessMode, translator::translate, types::KSLine};
+use {parser::Parser, preprocess::PreprocessMode, types::KSLine};
 
 /// Main parser struct
 /// This is the outward facing interface to the parser
@@ -119,7 +119,7 @@ impl KsTranslator {
         // Return a Vec of errors if there are any from any stage to inform the
         // caller that something went wrong and installation should NOT proceed.
         // TODO: allow setting warnings to be NOT fatal
-        match translate(parser.data) {
+        match translator::translate(parser.data) {
             Ok(hc) => {
                 if errors.is_empty() {
                     Ok(hc)

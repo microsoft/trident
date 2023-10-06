@@ -20,7 +20,7 @@ pub mod network;
 pub mod osconfig;
 pub mod storage;
 
-pub trait Module: Send {
+trait Module: Send {
     fn name(&self) -> &'static str;
 
     // // TODO: Implement dependencies
@@ -71,7 +71,7 @@ pub trait Module: Send {
 }
 
 lazy_static::lazy_static! {
-    pub static ref MODULES: Mutex<Vec<Box<dyn Module>>> = Mutex::new(vec![
+    static ref MODULES: Mutex<Vec<Box<dyn Module>>> = Mutex::new(vec![
         Box::<StorageModule>::default(),
         Box::<ImageModule>::default(),
         Box::<NetworkModule>::default(),
@@ -80,7 +80,7 @@ lazy_static::lazy_static! {
     ]);
 }
 
-pub(crate) fn provision(
+pub(super) fn provision(
     host_config: &HostConfiguration,
     trident: &TridentConfiguration,
 ) -> Result<(), Error> {
@@ -141,7 +141,7 @@ pub(crate) fn provision(
     Ok(())
 }
 
-pub(crate) fn update(
+pub(super) fn update(
     host_config: &HostConfiguration,
     trident: &TridentConfiguration,
     mut state: DataStore,

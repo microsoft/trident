@@ -6,7 +6,7 @@ use crate::commands::CommandHandler;
 use crate::data::ParsedData;
 use crate::errors::ToResultSetsailError;
 use crate::handlers::{SectionHandler, TrashHandler, UnsuportedSectionHandler};
-use crate::load::load_to_kslines;
+use crate::load;
 use crate::sections::{ScriptHandler, ScriptType};
 use crate::types::KSLine;
 use crate::types::KSLineSource;
@@ -218,7 +218,7 @@ impl Parser {
             }
         };
 
-        match load_to_kslines(
+        match load::load_to_kslines(
             path_str,
             KSLineSource::new_include(path_str.to_string(), &line),
         ) {

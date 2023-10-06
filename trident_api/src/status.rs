@@ -164,8 +164,6 @@ pub enum AbVolumeSelection {
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct AbVolumePair {
-    pub id: BlockDeviceId,
-
     pub volume_a_id: BlockDeviceId,
     pub volume_b_id: BlockDeviceId,
 }

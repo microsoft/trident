@@ -90,7 +90,7 @@ fn create_partitions(
 }
 
 #[derive(Default, Debug)]
-pub struct StorageModule;
+pub(super) struct StorageModule;
 impl Module for StorageModule {
     fn name(&self) -> &'static str {
         "storage"
@@ -263,7 +263,7 @@ impl StorageModule {
     }
 }
 
-pub fn path_to_mount_point<'a>(
+pub(super) fn path_to_mount_point<'a>(
     host_config: &'a HostConfiguration,
     path: &Path,
 ) -> Option<&'a MountPoint> {
@@ -320,7 +320,7 @@ mod tests {
         let empty_host_status = serde_yaml::from_str(empty_host_status_yaml)
             .expect("Failed to parse empty host status");
 
-        let storage_module = StorageModule::default();
+        let storage_module = StorageModule {};
 
         storage_module
             .validate_host_config(&empty_host_status, &empty_host_config)

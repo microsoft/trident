@@ -5,12 +5,12 @@ use serde_json::Value;
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq)]
-pub struct SfDisk {
+pub(super) struct SfDisk {
     pub uuid: Uuid,
     pub capacity: u64,
 }
 
-pub fn get_disk_information(disk_bus_path: &Path) -> Result<SfDisk, Error> {
+pub(super) fn get_disk_information(disk_bus_path: &Path) -> Result<SfDisk, Error> {
     let sfdisk_output_json = crate::run_command(
         Command::new("sfdisk")
             .arg("-J")

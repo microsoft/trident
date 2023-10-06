@@ -218,7 +218,6 @@ fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfigurat
                 (
                     p.id.clone(),
                     AbVolumePair {
-                        id: p.id.clone(),
                         volume_a_id: p.volume_a_id.clone(),
                         volume_b_id: p.volume_b_id.clone(),
                     },
@@ -443,5 +442,67 @@ mod tests {
             .unwrap()
             .volume_pairs
             .contains_key("ab"));
+    }
+
+    #[test]
+    fn test_get_root_block_device_path() {
+        let host_config_yaml = indoc::indoc! {r#"
+            storage:
+              disks: []
+              mount-points:
+                - path: /boot
+                  target-id: boot
+                  filesystem: fat32
+                  options: []
+                - path: /
+                  target-id: root
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+            "#};
+        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+
+        let host_status_yaml = indoc::indoc! {r#"
+            storage:
+              disks:
+                foo: 
+                  uuid: 00000000-0000-0000-0000-000000000000
+                  path: /dev/sda
+                  capacity: 10
+                  contents: initialized
+                  partitions:
+                    - uuid: 00000000-0000-0000-0000-000000000001
+                      path: /dev/sda1
+                      id: boot
+                      start: 1
+                      end: 3
+                      type: esp
+                      contents: initialized
+                    - uuid: 00000000-0000-0000-0000-000000000002
+                      path: /dev/sda2
+                      id: root
+                      start: 4
+                      end: 10
+                      type: root
+                      contents: initialized
+              mount-points:
+                boot:
+                  path: /boot
+                  filesystem: fat32
+                  options: []
+                root:
+                  path: /
+                  filesystem: ext4
+                  options: []
+            reconcile-state: clean-install
+            imaging:
+            "#};
+        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        assert_eq!(
+            get_root_block_device_path(&host_config, &host_status),
+            Some(PathBuf::from("/dev/sda2"))
+        );
     }
 }

@@ -14,10 +14,10 @@ pub(crate) struct TabFile {
     tab_file_contents: String,
 }
 
-pub const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
+pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
 impl TabFile {
-    pub fn from_mount_points(
+    pub(crate) fn from_mount_points(
         host_status: &HostStatus,
         mount_points: &Vec<MountPoint>,
         path_prefix: Option<&path::Path>,
@@ -51,14 +51,14 @@ impl TabFile {
     }
 
     /// Write this tab file to disk at location `tab_file_path`.
-    pub fn write(&self, tab_file_path: &Path) -> Result<(), Error> {
+    pub(crate) fn write(&self, tab_file_path: &Path) -> Result<(), Error> {
         fs::write(tab_file_path, self.tab_file_contents.as_bytes())
             .context(format!("Failed to write new {}", tab_file_path.display()))?;
         Ok(())
     }
 
     /// Based on the given tab file, get the device path for the partition with mount point `path`.
-    pub fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Error> {
+    pub(crate) fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Error> {
         let findmnt_output_json = crate::run_command(
             Command::new("findmnt")
                 .arg("--tab-file")

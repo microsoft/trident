@@ -8,11 +8,11 @@ use tempfile::TempDir;
 use trident_api::config::{Disk, Partition, PartitionSize, PartitionType};
 use uuid::Uuid;
 
-pub struct RepartConfiguration {
+pub(super) struct RepartConfiguration {
     repart_root: TempDir,
 }
 impl RepartConfiguration {
-    pub fn new(disk: &Disk) -> Result<Self, Error> {
+    pub(super) fn new(disk: &Disk) -> Result<Self, Error> {
         let repart_root = tempfile::tempdir()
             .context("Failed to create temporary directory for systemd-repart files")?;
         info!(
@@ -61,7 +61,10 @@ impl RepartConfiguration {
         Ok(())
     }
 
-    pub fn create_partitions(&self, disk_bus_path: &Path) -> Result<Vec<RepartPartition>, Error> {
+    pub(super) fn create_partitions(
+        &self,
+        disk_bus_path: &Path,
+    ) -> Result<Vec<RepartPartition>, Error> {
         let repart_output_json = crate::run_command(
             Command::new("systemd-repart")
                 .arg(disk_bus_path.as_os_str())
@@ -132,7 +135,7 @@ fn partition_type_to_string(partition_type: PartitionType) -> String {
     .to_owned()
 }
 
-pub struct RepartPartition {
+pub(super) struct RepartPartition {
     pub uuid: Uuid,
     pub start: u64,
     pub size: u64,
@@ -317,7 +320,7 @@ mod tests {
             repart_config.get("Partition", "Label").unwrap(),
             "part1".to_owned()
         );
-        assert!(repart_config.get("Partition", "SizeMinBytes").is_none());
-        assert!(repart_config.get("Partition", "SizeMaxBytes").is_none());
+        assert_eq!(repart_config.get("Partition", "SizeMinBytes"), None);
+        assert_eq!(repart_config.get("Partition", "SizeMaxBytes"), None);
     }
 }

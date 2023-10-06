@@ -162,7 +162,7 @@ fn set_host_status_block_device_contents(
     anyhow::bail!("No block device with id '{}' found", block_device_id);
 }
 
-pub fn get_block_device(
+fn get_block_device(
     host_status: &HostStatus,
     block_device_id: &BlockDeviceId,
 ) -> Option<BlockDeviceInfo> {
@@ -235,21 +235,20 @@ fn get_ab_volume(
 fn run_command(command: &mut Command) -> Result<Output, Error> {
     let output = command.output()?;
     if !output.status.success() {
-        if let Some(exit_code) = output.status.code() {
-            bail!(
+        match output.status.code() {
+            Some(exit_code) => bail!(
                 "Command failed: {:?} with exit code: {}\n\nstdout:\n{}\n\nstderr:\n{}",
                 command,
                 exit_code,
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
-            );
-        } else {
-            bail!(
+            ),
+            None => bail!(
                 "Command failed: {:?}\n\nstdout:\n{}\n\nstderr:\n{}",
                 command,
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
-            );
+            ),
         }
     }
     Ok(output)
@@ -308,7 +307,6 @@ mod tests {
                 ab-update:
                     volume-pairs:
                         osab:
-                            id: osab
                             volume-a-id: root
                             volume-b-id: rootb
             reconcile-state: clean-install
@@ -339,10 +337,7 @@ mod tests {
                 contents: BlockDeviceContents::Unknown,
             }
         );
-        assert_eq!(
-            get_block_device(&host_status, &"foobar".to_owned()).is_none(),
-            true
-        );
+        assert_eq!(get_block_device(&host_status, &"foobar".to_owned()), None);
         assert_eq!(
             get_block_device(&host_status, &"data".to_owned()).unwrap(),
             BlockDeviceInfo {
@@ -496,11 +491,8 @@ mod tests {
                 contents: BlockDeviceContents::Unknown,
             }
         );
-        assert_eq!(get_disk(&host_status, &"efi".to_owned()).is_none(), true);
-        assert_eq!(
-            get_partition(&host_status, &"os".to_owned()).is_none(),
-            true
-        );
+        assert_eq!(get_disk(&host_status, &"efi".to_owned()), None);
+        assert_eq!(get_partition(&host_status, &"os".to_owned()), None);
         assert_eq!(
             get_partition(&host_status, &"efi".to_owned()),
             Some(BlockDeviceInfo {
@@ -677,7 +669,6 @@ mod tests {
                 ab-update:
                     volume-pairs:
                         osab:
-                            id: osab
                             volume-a-id: root
                             volume-b-id: rootb
             reconcile-state: clean-install

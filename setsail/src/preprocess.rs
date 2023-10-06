@@ -1,7 +1,7 @@
 use log::debug;
 
 use super::errors::SetsailError;
-use super::load::load_to_kslines;
+use super::load;
 use super::types::{KSLine, KSLineSource};
 
 /// How to process %ksappend lines
@@ -61,7 +61,10 @@ pub(crate) fn preprocess(
                 }
 
                 debug!("Processing &ksappend: {}", path);
-                match load_to_kslines(path, KSLineSource::new_ksappend(path.to_string(), &line)) {
+                match load::load_to_kslines(
+                    path,
+                    KSLineSource::new_ksappend(path.to_string(), &line),
+                ) {
                     Ok(kslines) => {
                         debug!("Loaded {} lines from {}", kslines.len(), path);
                         pre_processed.extend(kslines);
