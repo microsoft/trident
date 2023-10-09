@@ -10,7 +10,7 @@ use trident_api::{
 
 use crate::modules::{
     image::ImageModule, management::ManagementModule, network::NetworkModule,
-    osconfig::OsConfigModule, storage::StorageModule,
+    osconfig::OsConfigModule, scripts::PostInstallScriptsModule, storage::StorageModule,
 };
 use crate::{datastore::DataStore, mount, TRIDENT_DATASTORE_PATH};
 
@@ -18,6 +18,7 @@ pub mod image;
 pub mod management;
 pub mod network;
 pub mod osconfig;
+pub mod scripts;
 pub mod storage;
 
 trait Module: Send {
@@ -77,6 +78,7 @@ lazy_static::lazy_static! {
         Box::<NetworkModule>::default(),
         Box::<OsConfigModule>::default(),
         Box::<ManagementModule>::default(),
+        Box::<PostInstallScriptsModule>::default(),
     ]);
 }
 

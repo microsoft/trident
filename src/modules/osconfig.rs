@@ -40,7 +40,6 @@ impl Module for OsConfigModule {
         _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         // TODO(5993): add user configuration
-
         Ok(())
     }
 }

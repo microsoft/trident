@@ -1,0 +1,11 @@
+[package]
+name = "osutils"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { version = "1.0.75", features = ["backtrace"] }
+tempfile = "3.8.0"
+which = "4.4.2"

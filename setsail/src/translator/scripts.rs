@@ -1,6 +1,6 @@
 use trident_api::config::{HostConfiguration, Script};
 
-use crate::{data::ParsedData, sections::ScriptType};
+use crate::{data::ParsedData, sections::script::ScriptType};
 
 pub fn translate(input: &ParsedData, hc: &mut HostConfiguration) {
     hc.post_install_scripts = input

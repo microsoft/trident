@@ -1,16 +1,10 @@
 use log::debug;
-use std::{
-    path::PathBuf,
-    process::{Command, Stdio},
-};
+use std::{error::Error, path::PathBuf};
 
 use clap::Parser;
 
 use crate::{
-    data::ParsedData,
-    errors::{ToResultSetsailError, ToSetsailPreScriptError},
-    handlers::SectionHandler,
-    types::KSLine,
+    data::ParsedData, errors::ToResultSetsailError, handlers::SectionHandler, types::KSLine,
     SetsailError,
 };
 
@@ -44,63 +38,15 @@ impl Script {
     }
 
     pub fn run(&self) -> Result<(), SetsailError> {
+        self.run_internal()
+            .map_err(|e| SetsailError::new_pre_script_error(self.line.clone(), e.to_string()))
+    }
+
+    fn run_internal(&self) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         debug!("Running {} script from {}", self.script_type, self.line);
-
-        // Create script file
-        let path = PathBuf::from("/tmp").join(self.name()).with_extension("sh");
-
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).to_pre_script_error(
-                &self.line,
-                format!("Failed to create script directory: {}", path.display()),
-            )?;
-        }
-
-        // Create log file
-        let log = self.log.to_owned().unwrap_or(path.with_extension("log"));
-        if let Some(parent) = log.parent() {
-            std::fs::create_dir_all(parent).to_pre_script_error(
-                &self.line,
-                format!("Failed to create log directory: {}", path.display()),
-            )?;
-        }
-
-        let logf = std::fs::File::create(&log).to_pre_script_error(
-            &self.line,
-            format!("Failed to create log file: {}", log.display()),
-        )?;
-
-        std::fs::write(&path, &self.body).to_pre_script_error(
-            &self.line,
-            format!("Failed to write script to {}", path.display()),
-        )?;
-
-        let mut cmd = Command::new(&self.interpreter)
-            .arg(path)
-            .stdout(Stdio::from(logf.try_clone().to_pre_script_error(
-                &self.line,
-                "Failed to merge stderr into stdout".into(),
-            )?))
-            .stderr(Stdio::from(logf.try_clone().to_pre_script_error(
-                &self.line,
-                "Failed to merge stderr into stdout".into(),
-            )?))
-            .spawn()
-            .to_pre_script_error(&self.line, "Failed to start script".to_string())?;
-
-        debug!("Saved output to {}", log.display());
-
-        let status = cmd
-            .wait()
-            .to_pre_script_error(&self.line, "Failed to wait for script".into())?;
-        if !status.success() {
-            return Err(SetsailError::new_pre_script_error(
-                self.line.clone(),
-                format!("Script exited with status {}", status),
-                "".into(),
-            ));
-        }
-
+        osutils::scripts::ScriptRunner::new_interpreter(&self.interpreter, &self.body)?
+            .with_logfile(self.log.as_ref())?
+            .run_check()?;
         Ok(())
     }
 }

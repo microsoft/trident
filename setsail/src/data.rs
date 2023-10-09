@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{commands as cmd, sections::Script};
+use crate::{commands as cmd, sections::script::Script};
 
 /// Struct to hold all meaningful data parsed from a kickstart file
 #[derive(Debug, Default)]

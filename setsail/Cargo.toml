@@ -13,6 +13,7 @@ serde = { version = "1.0.185", features = ["derive"] }
 serde_json = "1.0"
 shellwords = "1.1.0"
 
+osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
 
 # Only required for the docbuilder binary

@@ -32,6 +32,7 @@ tonic = "0.9.2"
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 zstd = "0.12.4"
 
+osutils = { path = "osutils" }
 trident_api = { path = "trident_api" }
 setsail = { path = "setsail" }
 
@@ -42,4 +43,4 @@ tonic-build = "0.9.2"
 indoc = "2"
 
 [workspace]
-members = ["trident_api", "setsail"]
+members = ["trident_api", "setsail", "osutils"]

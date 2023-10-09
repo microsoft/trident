@@ -7,7 +7,7 @@ use crate::data::ParsedData;
 use crate::errors::ToResultSetsailError;
 use crate::handlers::{SectionHandler, TrashHandler, UnsuportedSectionHandler};
 use crate::load;
-use crate::sections::{ScriptHandler, ScriptType};
+use crate::sections::script::{ScriptHandler, ScriptType};
 use crate::types::KSLine;
 use crate::types::KSLineSource;
 use crate::SetsailError;

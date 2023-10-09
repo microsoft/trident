@@ -26,7 +26,7 @@ pub enum SetsailErrorType {
     UnsuportedFeature(String),
     SemanticError(String),
     SemanticWarning(String),
-    PreScriptFailed { context: String, error: String },
+    PreScriptFailed(String),
     TranslationError(String),
 }
 
@@ -129,10 +129,10 @@ impl SetsailError {
         }
     }
 
-    pub fn new_pre_script_error(line: KSLine, context: String, error: String) -> Self {
+    pub fn new_pre_script_error(line: KSLine, error: String) -> Self {
         Self {
             line,
-            error: SetsailErrorType::PreScriptFailed { context, error },
+            error: SetsailErrorType::PreScriptFailed(error),
         }
     }
 
@@ -176,20 +176,18 @@ impl SetsailError {
 impl std::fmt::Display for SetsailError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.error {
-            SetsailErrorType::KSAppendError(e) => write!(f, "%ksappend error: {}", e),
+            SetsailErrorType::KSAppendError(e) => write!(f, "%ksappend error: {e}"),
             SetsailErrorType::MismatechedQuotes => write!(f, "Mismateched quotes"),
-            SetsailErrorType::SyntaxError(e) => write!(f, "Syntax error: {}", e),
-            SetsailErrorType::IncludeError(e) => write!(f, "Include error: {}", e),
-            SetsailErrorType::UnknownSection(e) => write!(f, "Unknown section: {}", e),
-            SetsailErrorType::UnexpectedEndOfFile(e) => write!(f, "Unexpected end of file: {}", e),
-            SetsailErrorType::UnknownCommand(s) => write!(f, "Unrecognized command: \"{}\"", s),
-            SetsailErrorType::UnsupportedCommand(s) => write!(f, "Unsupported command: \"{}\"", s),
-            SetsailErrorType::UnsuportedSection(s) => write!(f, "Unsuported section: \"{}\"", s),
-            SetsailErrorType::SemanticError(e) => write!(f, "Semantic error: {}", e),
-            SetsailErrorType::SemanticWarning(e) => write!(f, "Semantic warning: {}", e),
-            SetsailErrorType::PreScriptFailed { context, error } => {
-                write!(f, "%pre script failed: {} {}", context, error)
-            }
+            SetsailErrorType::SyntaxError(e) => write!(f, "Syntax error: {e}"),
+            SetsailErrorType::IncludeError(e) => write!(f, "Include error: {e}"),
+            SetsailErrorType::UnknownSection(e) => write!(f, "Unknown section: {e}"),
+            SetsailErrorType::UnexpectedEndOfFile(e) => write!(f, "Unexpected end of file: {e}"),
+            SetsailErrorType::UnknownCommand(e) => write!(f, "Unrecognized command: \"{e}\""),
+            SetsailErrorType::UnsupportedCommand(e) => write!(f, "Unsupported command: \"{e}\""),
+            SetsailErrorType::UnsuportedSection(e) => write!(f, "Unsuported section: \"{e}\""),
+            SetsailErrorType::SemanticError(e) => write!(f, "Semantic error: {e}"),
+            SetsailErrorType::SemanticWarning(e) => write!(f, "Semantic warning: {e}"),
+            SetsailErrorType::PreScriptFailed(e) => write!(f, "%pre script failed: {e}"),
             SetsailErrorType::TranslationError(e) => write!(f, "Translation error: {}", e),
             SetsailErrorType::UnsuportedFeature(s) => write!(f, "Unsuported feature: \"{}\"", s),
         }?;
@@ -215,15 +213,5 @@ impl<T> ToResultSetsailError<T> for Result<T, clap::Error> {
 impl<T> ToResultSetsailError<T> for Result<T, shellwords::MismatchedQuotes> {
     fn to_result_parser_error(self, line: &KSLine) -> Result<T, SetsailError> {
         self.map_err(|_| SetsailError::new_mismatched_quotes(line.clone()))
-    }
-}
-
-pub trait ToSetsailPreScriptError<T> {
-    fn to_pre_script_error(self, line: &KSLine, context: String) -> Result<T, SetsailError>;
-}
-
-impl<T> ToSetsailPreScriptError<T> for Result<T, std::io::Error> {
-    fn to_pre_script_error(self, line: &KSLine, context: String) -> Result<T, SetsailError> {
-        self.map_err(|e| SetsailError::new_pre_script_error(line.clone(), context, e.to_string()))
     }
 }
