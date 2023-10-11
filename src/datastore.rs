@@ -120,4 +120,12 @@ impl DataStore {
 
         ret
     }
+
+    pub(crate) fn close(&mut self) {
+        if let Self::Persistent { db: _, host_status } = self {
+            *self = Self::InMemory {
+                host_status: mem::take(host_status),
+            };
+        }
+    }
 }

@@ -85,6 +85,7 @@ lazy_static::lazy_static! {
 pub(super) fn provision(
     host_config: &HostConfiguration,
     trident: &TridentConfiguration,
+    state: &mut DataStore,
 ) -> Result<(), Error> {
     // This is a safety check so that nobody accidentally formats their dev machine.
     if !fs::read_to_string("/proc/cmdline")
@@ -95,11 +96,10 @@ pub(super) fn provision(
     }
 
     let mut modules = MODULES.lock().unwrap();
-    let mut state = DataStore::new();
     state.with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)?;
 
-    refresh_host_status(&mut modules, &mut state)?;
-    validate_host_config(&modules, &state, host_config)?;
+    refresh_host_status(&mut modules, state)?;
+    validate_host_config(&modules, state, host_config)?;
 
     if !trident.allowed_operations.contains(Operations::Update) {
         info!("Update not requested, skipping reconcile");
@@ -110,7 +110,7 @@ pub(super) fn provision(
     // depend on it being in place. Right now we just depend on the "storage" and "image" modules
     // being the first ones to run.
     let mount_path = Path::new("/partitionMount");
-    migrate(&mut modules, &mut state, host_config, mount_path)?;
+    migrate(&mut modules, state, host_config, mount_path)?;
 
     let chroot = mount::enter_chroot(mount_path)?;
     state.persist(
@@ -120,7 +120,7 @@ pub(super) fn provision(
             .as_deref()
             .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH)),
     )?;
-    reconcile(&mut modules, &mut state, host_config)?;
+    reconcile(&mut modules, state, host_config)?;
 
     let root_device_path = state
         .host_status()
@@ -129,7 +129,7 @@ pub(super) fn provision(
         .clone()
         .context("Failed to get root device path")?;
 
-    drop(state);
+    state.close();
     chroot.exit().context("Failed to exit chroot")?;
 
     if !trident.allowed_operations.contains(Operations::Transition) {
@@ -146,12 +146,12 @@ pub(super) fn provision(
 pub(super) fn update(
     host_config: &HostConfiguration,
     trident: &TridentConfiguration,
-    mut state: DataStore,
+    state: &mut DataStore,
 ) -> Result<(), Error> {
     let mut modules = MODULES.lock().unwrap();
 
-    refresh_host_status(&mut modules, &mut state)?;
-    validate_host_config(&modules, &state, host_config)?;
+    refresh_host_status(&mut modules, state)?;
+    validate_host_config(&modules, state, host_config)?;
 
     if !trident.allowed_operations.contains(Operations::Update) {
         info!("Update not requested, skipping reconcile");
@@ -188,11 +188,11 @@ pub(super) fn update(
     let mount_path = Path::new("/partitionMount");
 
     if let Some(UpdateKind::AbUpdate) = update_kind {
-        migrate(&mut modules, &mut state, host_config, mount_path)?;
+        migrate(&mut modules, state, host_config, mount_path)?;
         chroot = Some(mount::enter_chroot(mount_path)?);
     }
 
-    reconcile(&mut modules, &mut state, host_config)?;
+    reconcile(&mut modules, state, host_config)?;
 
     if let Some(chroot) = chroot {
         chroot.exit().context("Failed to exit chroot")?;
@@ -207,7 +207,7 @@ pub(super) fn update(
                 .clone()
                 .context("Failed to get root device path")?;
 
-            drop(state);
+            state.close();
 
             if !trident.allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
