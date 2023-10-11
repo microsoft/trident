@@ -1,6 +1,8 @@
-use log::debug;
-use std::{error::Error, path::PathBuf};
+use log::{debug, error};
+use osutils::scripts::ScriptRunner;
+use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::Parser;
 
 use crate::{
@@ -38,16 +40,14 @@ impl Script {
     }
 
     pub fn run(&self) -> Result<(), SetsailError> {
-        self.run_internal()
-            .map_err(|e| SetsailError::new_pre_script_error(self.line.clone(), e.to_string()))
-    }
-
-    fn run_internal(&self) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-        debug!("Running {} script from {}", self.script_type, self.line);
-        osutils::scripts::ScriptRunner::new_interpreter(&self.interpreter, &self.body)?
-            .with_logfile(self.log.as_ref())?
-            .run_check()?;
-        Ok(())
+        ScriptRunner::new_interpreter(&self.interpreter, &self.body)
+            .with_logfile(self.log.as_ref())
+            .run_check()
+            .context(format!("{} script failed", self.script_type))
+            .map_err(|e| {
+                error!("{:?}", e);
+                SetsailError::new_pre_script_error(self.line.clone(), e.to_string())
+            })
     }
 }
 

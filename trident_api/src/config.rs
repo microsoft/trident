@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use netplan_types::NetworkConfig;
+
+use crate::is_default;
 
 /// Definition of Trident's full configuration.
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -109,6 +111,10 @@ pub struct HostConfiguration {
     /// Should reference the name of a script in the `scripts` section.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub post_install_scripts: Vec<Script>,
+
+    /// OS Configuration
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub osconfig: OsConfig,
 }
 
 bitflags::bitflags! {
@@ -313,6 +319,7 @@ pub enum ImageFormat {
 /// pairs that are used to perform A/B updates.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct AbUpdate {
     pub volume_pairs: Vec<AbVolumePair>,
 }
@@ -331,6 +338,7 @@ pub struct AbVolumePair {
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Script {
     /// Binary to run the script with.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -344,4 +352,57 @@ pub struct Script {
     /// THis includes both stdout and stderr.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_file_path: Option<PathBuf>,
+}
+
+/// Configuration for the host OS.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct OsConfig {
+    #[serde(default)]
+    pub users: HashMap<String, User>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct User {
+    #[serde(default)]
+    pub password: Password,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<String>,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ssh_keys: Vec<String>,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_default")]
+    pub ssh_mode: SshMode,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+#[serde(tag = "password-mode", content = "password")]
+pub enum Password {
+    #[default]
+    Locked,
+    DangerousPlainText(String),
+    DangerousHashed(String),
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub enum SshMode {
+    /// Disable SSH for this entity.
+    #[default]
+    Block,
+    /// Enable SSH for this entity with KEY only. (prohibit-password)
+    KeyOnly,
+    /// Enable SSH for this entity with KEY and PASSWORD.
+    DangerousAllowPassword,
 }

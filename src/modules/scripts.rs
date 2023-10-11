@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Error, Ok};
+use anyhow::{Context, Error, Ok};
 use log::{debug, info, warn};
 
 use osutils::scripts::ScriptRunner;
@@ -44,32 +44,21 @@ impl Module for PostInstallScriptsModule {
             .post_install_scripts
             .iter()
             .try_for_each(|script| {
-                let interpreter = match script.interpreter.as_ref() {
-                    Some(i) => i.clone(),
-                    None => PathBuf::from("/bin/sh"),
-                };
+                let interpreter = script
+                    .interpreter
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or(PathBuf::from("/bin/sh"));
 
                 debug!(
                     "Running post-installation script with {}",
                     interpreter.display()
                 );
 
-                let result = ScriptRunner::new_interpreter(interpreter, &script.content)
-                    .context("Failed to create script runner")?
+                ScriptRunner::new_interpreter(interpreter, &script.content)
                     .with_logfile(script.log_file_path.as_ref())
-                    .context("Failed to set up logfile")?
-                    .run()?;
-
-                // Check the exit code
-                // On error, we want to report the failure and bail
-                if let Err(e) = result.check() {
-                    bail!("Post-install {}. Captured output:\n{}", e, result.stderr());
-                }
-
-                Ok(())
-            })?;
-
-        // The script runner should clean up, but just in case...
-        ScriptRunner::clear_script_dir().context("Failed to cleanup scripts directory")
+                    .run_check()
+                    .context("Post-install script failed")
+            })
     }
 }

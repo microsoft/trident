@@ -9,19 +9,26 @@ pub struct Rootpw {
     #[clap(skip)]
     pub line: KSLine,
 
+    /// States the password provided is already encrypted.
     #[arg(long, group = "src", requires = "password")]
-    iscrypted: bool,
+    pub iscrypted: bool,
+
+    /// States the password provided is in plain text. (Default)
     #[arg(
         long,
         group = "src",
         requires = "password",
         default_value_if("plaintext", "false", "true")
     )]
-    plaintext: bool,
+    pub plaintext: bool,
+
+    /// Locks the root account.
     #[arg(long, group = "src", conflicts_with = "password")]
-    lock: bool,
+    pub lock: bool,
+
+    /// The password to set for the root account.
     #[arg(required_unless_present = "lock")]
-    password: Option<String>,
+    pub password: Option<String>,
 }
 
 impl HandleCommand for Rootpw {

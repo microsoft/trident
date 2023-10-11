@@ -7,6 +7,8 @@ use trident_api::{
 
 use crate::modules::Module;
 
+mod users;
+
 #[derive(Default, Debug)]
 pub struct OsConfigModule;
 impl Module for OsConfigModule {
@@ -37,9 +39,12 @@ impl Module for OsConfigModule {
     fn reconcile(
         &mut self,
         _host_status: &mut HostStatus,
-        _host_config: &HostConfiguration,
+        host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        // TODO(5993): add user configuration
+        users::set_up_users(host_config.osconfig.users.clone())?;
+
+        //TODO(6031): Implement changing sshd_config
+
         Ok(())
     }
 }

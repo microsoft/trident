@@ -2,42 +2,25 @@ use std::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    process::{Command, ExitStatus, Output},
+    process::{Command, ExitStatus},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
+use log::debug;
 use tempfile::NamedTempFile;
+
+use crate::{crate_private::Sealed, exe::OutputChecker};
 
 /// Runs a bash script and checks the exit status
 /// Preferred for simple one-off configuration scripts
 pub fn run_bash_script(script: &str) -> Result<(), Error> {
-    let file = write_script_to_file(std::env::temp_dir(), script)
-        .context("Failed to write script to file")?;
-    let status = Command::new("/bin/bash")
+    let file = write_script_to_file(script).context("Failed to write script to file")?;
+    Command::new("/bin/bash")
         .stdin(file)
         .status()
-        .context("Failed to execute script")?;
-
-    if !status.success() {
-        bail!(
-            "{}",
-            match status.code() {
-                Some(code) => format!("Script exited with status: {code}"),
-                None => "Script was terminated by signal".into(),
-            }
-        )
-    }
-
-    Ok(())
+        .context("Failed to execute script")?
+        .check()
 }
-
-// These paths are purposefully set to /root instead of /tmp for 2 reasons:
-// 1. /root guarantees that we only execute scripts when running as root
-//    because we first need to write the script file to /root. This can
-//    prevent accidents when running in a development environment.
-// 2. For logs, we want to persist them.
-const SCRIPT_DIR: &str = "/root/trident-script";
-const SCRIPT_LOG_DIR: &str = "/root/trident-script-logs";
 
 /// Output of a script
 #[derive(Debug)]
@@ -49,47 +32,45 @@ pub struct ScriptResult {
     pub output: ScriptOutput,
 }
 
-impl ScriptResult {
-    /// Get success
-    pub fn success(&self) -> bool {
+impl Sealed for ScriptResult {}
+
+impl OutputChecker for ScriptResult {
+    fn is_success(&self) -> bool {
         self.status.success()
     }
 
-    /// Get exit code
-    pub fn code(&self) -> Option<i32> {
+    fn exit_code(&self) -> Option<i32> {
         self.status.code()
     }
 
-    /// Check exit code
-    pub fn check(&self) -> Result<(), String> {
-        if self.success() {
-            Ok(())
-        } else {
-            Err(self.explain_exit())
-        }
+    fn end_signal(&self) -> Option<i32> {
+        self.status.end_signal()
     }
 
-    /// Exit code explanation
-    pub fn explain_exit(&self) -> String {
-        match self.code() {
-            Some(code) => format!("script exited with status: {code}"),
-            None => "script was terminated by signal".into(),
-        }
+    fn process_type(&self) -> &'static str {
+        // Report this as a "script" in errors
+        "script"
     }
 
-    /// Get stderr
-    pub fn stderr(&self) -> &str {
+    /// When output is merged, return the merged output
+    /// When output is separate, return stderr
+    /// When output is none, return an empty string
+    fn err_output(&self) -> String {
         match self.output {
-            ScriptOutput::Combined(ref s) => s,
-            ScriptOutput::Separate { ref stderr, .. } => stderr,
+            ScriptOutput::Combined(ref s) => s.clone(),
+            ScriptOutput::Separate { ref stderr, .. } => stderr.clone(),
+            ScriptOutput::None => "".into(),
         }
     }
 
-    /// Get stdout
-    pub fn stdout(&self) -> &str {
+    /// When output is merged, return the merged output
+    /// When output is separate, return stdout
+    /// When output is none, return an empty string
+    fn output(&self) -> String {
         match self.output {
-            ScriptOutput::Combined(ref s) => s,
-            ScriptOutput::Separate { ref stdout, .. } => stdout,
+            ScriptOutput::Combined(ref s) => s.clone(),
+            ScriptOutput::Separate { ref stdout, .. } => stdout.clone(),
+            ScriptOutput::None => "".into(),
         }
     }
 }
@@ -97,6 +78,8 @@ impl ScriptResult {
 /// Output of a script
 #[derive(Debug)]
 pub enum ScriptOutput {
+    /// No output was captured
+    None,
     /// Combined stdout and stderr
     Combined(String),
     /// Separate stdout and stderr
@@ -105,141 +88,142 @@ pub enum ScriptOutput {
 
 /// A flexible helper for running scripts
 ///
-/// Use this for more complex scripts that require a specific interpreter and collecting output.
+/// Use this for more complex scripts that require a specific interpreter and/or collecting output.
 /// For simple scripts, use `run_bash_script`.
 pub struct ScriptRunner {
-    /// The command to run the script
-    command: Command,
+    /// Interpreter to use
+    interpreter: PathBuf,
     /// The script file. We need to keep this around so that it doesn't get deleted.
-    _script: NamedTempFile,
+    script: String,
     /// The path to the logfile
-    logfile: Option<(File, PathBuf)>,
+    logfile: Option<PathBuf>,
+    /// Merge stderr into stdout
+    merge_stderr: bool,
 }
 
 impl ScriptRunner {
-    /// Clean script directory
-    pub fn clear_script_dir() -> Result<(), Error> {
-        let path = PathBuf::from(SCRIPT_DIR);
-        // Only clear the directory if it exists as removing a non-existent directory will fail
-        if path.exists() && path.is_dir() {
-            std::fs::remove_dir_all(SCRIPT_DIR).context("Failed to clear script directory")?;
-        }
-
-        Ok(())
-    }
-
     /// Internal builder
-    fn new<I: AsRef<Path>>(interpreter: I, script: &str) -> Result<Self, Error> {
-        let script = write_script_to_named_file(SCRIPT_DIR, script)?;
-        let mut command = Command::new(interpreter.as_ref());
-        command.arg(script.path());
-        Ok(Self {
-            command,
-            _script: script,
+    fn new<I: AsRef<Path>>(interpreter: I, script: &str) -> Self {
+        Self {
+            interpreter: interpreter.as_ref().to_path_buf(),
+            script: script.to_string(),
             logfile: None,
-        })
+            merge_stderr: false,
+        }
     }
 
     /// Build a new bash script runner
-    pub fn new_bash(script: &str) -> Result<Self, Error> {
+    pub fn new_bash(script: &str) -> Self {
         Self::new("/bin/bash", script)
     }
 
     /// Build a new python script runner
-    pub fn new_python3(script: &str) -> Result<Self, Error> {
+    pub fn new_python3(script: &str) -> Self {
         Self::new("/usr/bin/python3", script)
     }
 
     /// Build a new script runner with the given interpreter
-    pub fn new_interpreter<I: AsRef<Path>>(interpreter: I, script: &str) -> Result<Self, Error> {
-        Self::new(
-            which::which(interpreter.as_ref()).context("Failed to find interpreter")?,
-            script,
-        )
+    pub fn new_interpreter<I: AsRef<Path>>(interpreter: I, script: &str) -> Self {
+        Self::new(interpreter, script)
     }
 
     /// Set the logfile to use for the script
-    /// If `logfile_path` is `None`, a random logfile will be created in the script directory.
+    /// If `logfile_path` is `None`, it's the same as not setting a logfile.
     /// If `logfile_path` is `Some`, the logfile will be created at the given path.
     /// The logfile will contain both stdout and stderr.
-    pub fn with_logfile<S: AsRef<Path>>(mut self, logfile_path: Option<S>) -> Result<Self, Error> {
-        // Create a logfile
-        let (logfile, logfile_path) = match logfile_path {
-            Some(v) => (
-                crate::files::create_file(v.as_ref())?,
-                v.as_ref().to_path_buf(),
-            ),
-            None => crate::files::create_random_file(SCRIPT_LOG_DIR)?,
-        };
-
-        // Set the command to output to the logfile
-        self.command
-            .stdout(logfile.try_clone().context("Failed to redirect stdout")?);
-        self.command
-            .stderr(logfile.try_clone().context("Failed to redirect stderr")?);
-
-        self.logfile = Some((logfile, logfile_path));
-
-        Ok(self)
+    pub fn with_logfile<S: AsRef<Path>>(mut self, logfile_path: Option<S>) -> Self {
+        self.logfile = logfile_path.map(|p| p.as_ref().to_path_buf());
+        self
     }
 
-    /// Run the script
-    /// Returns the output of the script. This function will block until the script exits.
-    /// This function does NOT check if the script exited successfully. Use `run_check` for that.
-    pub fn run(&mut self) -> Result<ScriptResult, Error> {
-        let process_output: Output = self.command.output().context("Failed to run script")?;
+    /// Merge stderr into stdout
+    pub fn merge_stderr(mut self) -> Self {
+        self.merge_stderr = true;
+        self
+    }
 
-        let output = match self.logfile {
-            Some((ref mut logfile, _)) => {
-                logfile
-                    .seek(SeekFrom::Start(0))
-                    .context("Failed to seek to start of logfile")?;
-                let mut output = String::new();
-                logfile
-                    .read_to_string(&mut output)
-                    .context("Failed to read logfile")?;
-                ScriptOutput::Combined(output)
+    fn run_internal(&mut self) -> Result<ScriptResult, Error> {
+        // TODO: consider changing internal implementation to use duct crate
+
+        // Find interpreter's full path
+        self.interpreter = which::which(&self.interpreter).context(format!(
+            "Failed to find interpreter: {}",
+            self.interpreter.display()
+        ))?;
+
+        // Write the script to a file
+        let script_file =
+            write_script_to_named_file(&self.script).context("Failed to write script to file")?;
+
+        // Create command and set up the script file
+        let mut cmd = Command::new(&self.interpreter);
+        cmd.arg(script_file.path());
+
+        let to_file = self.merge_stderr || self.logfile.is_some();
+
+        // Create logfile
+        let mut file = tempfile::tempfile().context("Failed to create log file")?;
+
+        if to_file {
+            // Set the command to output to the logfile
+            debug!("Writing logfile to temp file");
+            cmd.stdout(file.try_clone().context("Failed to redirect stdout")?);
+            cmd.stderr(file.try_clone().context("Failed to redirect stderr")?);
+        }
+
+        let cmd_output = cmd.output().context("Failed to start script")?;
+
+        let output = if to_file {
+            file.flush().context("Failed to flush logfile")?;
+            file.seek(SeekFrom::Start(0))
+                .context("Failed to seek to start of logfile")?;
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf)
+                .context("Failed to read logfile")?;
+
+            // Write the logfile to the given path when requested
+            if let Some(ref logfile) = self.logfile {
+                log::debug!("Writing logfile to {}", logfile.display());
+                crate::files::create_file(logfile)
+                    .context("Failed to create persistent logfile")?
+                    .write_all(&buf)
+                    .context("Failed to write persistent logfile")?;
             }
-            None => ScriptOutput::Separate {
-                stdout: String::from_utf8_lossy(&process_output.stdout).into(),
-                stderr: String::from_utf8_lossy(&process_output.stderr).into(),
-            },
+
+            ScriptOutput::Combined(String::from_utf8_lossy(&buf).into())
+        } else {
+            ScriptOutput::Separate {
+                stdout: String::from_utf8_lossy(&cmd_output.stdout).into(),
+                stderr: String::from_utf8_lossy(&cmd_output.stderr).into(),
+            }
         };
 
         Ok(ScriptResult {
-            status: process_output.status,
+            status: cmd_output.status,
             output,
         })
     }
 
-    /// Run the script and check the exit status
-    pub fn run_check(&mut self) -> Result<(), Error> {
-        let result = self.run()?;
-
-        if let Err(e) = result.check() {
-            bail!(
-                "{}{}",
-                e,
-                match self.logfile {
-                    Some((_, ref logfile)) => format!(" - See logfile: {}", logfile.display()),
-                    None => "".into(),
-                }
-            )
-        }
-
-        Ok(())
+    /// Run the script and get the output
+    /// Returns the output of the script. This function will block until the script exits.
+    /// This function does NOT check if the script exited successfully. Use `run_check` for that.
+    pub fn run(&mut self) -> Result<ScriptResult, Error> {
+        self.run_internal()
     }
 
-    pub fn get_logfile(&self) -> Option<&Path> {
-        self.logfile.as_ref().map(|(_, p)| p.as_ref())
+    /// Run the script and check the exit status
+    pub fn run_check(&mut self) -> Result<(), Error> {
+        self.run()
+            .context("Failed to run script")?
+            .check()
+            .context("Script exited with an error")
     }
 }
 
 /// Writes a script to a temporary UNAMED file and returns the File.
-fn write_script_to_file<P: AsRef<Path>>(dir: P, script_body: &str) -> Result<File, Error> {
-    crate::files::create_dirs(SCRIPT_DIR)?;
+fn write_script_to_file(script_body: &str) -> Result<File, Error> {
     let mut script_file =
-        tempfile::tempfile_in(dir).context("Failed to create temporary file for script")?;
+        tempfile::tempfile().context("Failed to create temporary file for script")?;
     script_file
         .write_all(script_body.as_bytes())
         .context("Failed to write script to temporary file")?;
@@ -251,13 +235,9 @@ fn write_script_to_file<P: AsRef<Path>>(dir: P, script_body: &str) -> Result<Fil
 }
 
 /// Writes a script to a temporary NAMED file and returns the NamedTempFile.
-fn write_script_to_named_file<P: AsRef<Path>>(
-    dir: P,
-    script_body: &str,
-) -> Result<NamedTempFile, Error> {
-    crate::files::create_dirs(SCRIPT_DIR)?;
-    let mut script_file = tempfile::NamedTempFile::new_in(dir)
-        .context("Failed to create temporary file for script")?;
+fn write_script_to_named_file(script_body: &str) -> Result<NamedTempFile, Error> {
+    let mut script_file =
+        tempfile::NamedTempFile::new().context("Failed to create temporary file for script")?;
     script_file
         .write_all(script_body.as_bytes())
         .context("Failed to write script to temporary file")?;

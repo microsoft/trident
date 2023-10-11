@@ -7,6 +7,7 @@ use super::errors::SetsailError;
 mod network;
 mod partitions;
 mod scripts;
+mod users;
 
 mod misc;
 
@@ -22,6 +23,7 @@ pub fn translate(input: ParsedData) -> Result<HostConfiguration, Vec<SetsailErro
     scripts::translate(&input, &mut hc);
     network::translate(&input, &mut hc, &mut errors);
     partitions::translate(&input, &mut hc, &mut errors);
+    users::translate(&input, &mut hc, &mut errors);
 
     if errors.is_empty() {
         Ok(hc)

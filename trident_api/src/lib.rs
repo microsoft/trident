@@ -33,3 +33,9 @@ impl BlockDeviceInfo {
         }
     }
 }
+
+/// Returns true if the given value is equal to its default value.
+/// Useful for #[serde(skip_serializing_if = "default")]
+fn is_default<T: Default + PartialEq>(t: &T) -> bool {
+    *t == Default::default()
+}
