@@ -3,12 +3,11 @@ use osutils::scripts::ScriptRunner;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{Command, CommandFactory, Parser};
 
-use crate::{
-    data::ParsedData, errors::ToResultSetsailError, handlers::SectionHandler, types::KSLine,
-    SetsailError,
-};
+use crate::{data::ParsedData, errors::ToResultSetsailError, types::KSLine, SetsailError};
+
+use super::SectionHandler;
 
 #[derive(Parser, Debug, Clone)]
 pub struct Script {
@@ -21,17 +20,29 @@ pub struct Script {
     #[clap(skip)]
     pub body: String,
 
+    /// If the script fails the installation will be aborted.
+    ///
+    ///
     #[arg(long)]
     pub erroronfail: bool,
 
+    /// The interpreter to use for the script.
+    ///
+    /// lol
     #[arg(long, default_value = "/bin/sh")]
     pub interpreter: PathBuf,
 
-    #[arg(long)]
+    /// The path to a file to log the script's output to.
+    ///
+    ///
+    #[arg(long, alias = "logfile")]
     pub log: Option<PathBuf>,
-
-    #[arg(long)]
-    pub nochroot: bool,
+    // Disabled for now. Trident does not support escaping the
+    // chroot when running post-install scripts.
+    // /// If set, the script will be run outside of the chroot.
+    // /// ONLY VALID IN %post SCRIPTS.
+    // #[arg(long)]
+    // pub nochroot: bool,
 }
 
 impl Script {
@@ -60,30 +71,37 @@ pub enum ScriptType {
     Post,
 }
 
-impl std::fmt::Display for ScriptType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ScriptType {
+    pub fn name(&self) -> &'static str {
         match self {
-            ScriptType::Unknown => write!(f, "Unknown"),
-            ScriptType::Pre => write!(f, "%pre"),
-            ScriptType::PreInstall => write!(f, "%pre-install"),
-            ScriptType::Post => write!(f, "%post"),
+            ScriptType::Unknown => "unknown",
+            ScriptType::Pre => "%pre",
+            ScriptType::PreInstall => "%pre-install",
+            ScriptType::Post => "%post",
         }
     }
 }
 
+impl std::fmt::Display for ScriptType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+#[derive(Debug)]
 pub struct ScriptHandler {
     script_type: ScriptType,
 }
 
 impl ScriptHandler {
-    pub fn new_boxed(script_type: ScriptType) -> Box<dyn SectionHandler> {
-        Box::new(Self { script_type })
+    pub fn new(script_type: ScriptType) -> Self {
+        Self { script_type }
     }
 }
 
 impl SectionHandler for ScriptHandler {
-    fn opener(&self) -> String {
-        self.script_type.to_string()
+    fn opener(&self) -> &'static str {
+        self.script_type.name()
     }
 
     fn handle(
@@ -101,13 +119,14 @@ impl SectionHandler for ScriptHandler {
         );
         let mut script = Script::try_parse_from(tokens).to_result_parser_error(&line)?;
 
+        // Disabled, see note above
         // nochoroot option is only valid for %post scripts
-        if !matches!(self.script_type, ScriptType::Post) && script.nochroot {
-            return Err(SetsailError::new_syntax(
-                line,
-                "nochroot option is only valid for %post scripts".into(),
-            ));
-        }
+        // if !matches!(self.script_type, ScriptType::Post) && script.nochroot {
+        //     return Err(SetsailError::new_syntax(
+        //         line,
+        //         "nochroot option is only valid for %post scripts".into(),
+        //     ));
+        // }
 
         // Finish script object
         script.line = line;
@@ -118,5 +137,23 @@ impl SectionHandler for ScriptHandler {
         data.scripts.push(script);
 
         Ok(())
+    }
+
+    fn name(&self) -> String {
+        format!("{} script", self.script_type.name())
+    }
+
+    fn get_clap_command(&self) -> Option<Command> {
+        let cmd = Script::command();
+        Some(match self.script_type {
+            ScriptType::Pre => cmd.about(
+                "A script to run before the installer start and before kickstart parsing begins.",
+            ),
+            ScriptType::PreInstall => {
+                cmd.about("A script to run right before the installation begins.")
+            }
+            ScriptType::Post => cmd.about("A script to run after the installation is complete."),
+            _ => panic!("Unknown script type"),
+        })
     }
 }

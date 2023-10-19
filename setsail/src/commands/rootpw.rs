@@ -4,7 +4,9 @@ use crate::{data::ParsedData, types::KSLine, SetsailError};
 
 use super::HandleCommand;
 
+/// Set the system's root password.
 #[derive(Parser, Debug, Default)]
+#[command(name = "rootpw", help_expected = true)]
 pub struct Rootpw {
     #[clap(skip)]
     pub line: KSLine,

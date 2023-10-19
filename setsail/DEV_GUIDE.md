@@ -208,6 +208,8 @@ pub struct MyCommand {
 }
 ```
 
+**NOTE:** The empty line between the short and long description is important!
+
 Right now the only things you need to add in extra info are:
 
 - Other field requirements (i.e. this flag is only valid if anothe flag is present)
@@ -216,7 +218,7 @@ Right now the only things you need to add in extra info are:
     /// Requires: <FIELD>
     ```
   
-- Possible Values when the field is an NON-UNIT enum
+- Possible Values when the field is an enum that does NOT implement `ValueEnum`
 
     ```rust
     /// Possible Values: 

@@ -1,0 +1,17 @@
+## {{ command.name }}
+
+{% if command.aliases -%}
+**Aka:{% for alias in command.aliases %} `{{alias}}`,{% endfor %}**
+
+{% endif -%}
+{% if command.about -%}
+{{ command.about }}
+
+{% endif -%}
+{{ command.usage }}
+
+### Arguments
+
+{%for arg in command.args -%}
+{% include "args.md.jinja2" %}
+{% endfor -%}

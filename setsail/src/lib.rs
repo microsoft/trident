@@ -1,11 +1,11 @@
 pub mod commands;
+pub mod sections;
+
 mod data;
 mod errors;
-mod handlers;
 mod load;
 mod parser;
 mod preprocess;
-mod sections;
 mod translator;
 mod types;
 

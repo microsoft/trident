@@ -14,8 +14,8 @@ use super::{misc::KeyValList, HandleCommand};
 ///
 /// Mimics <https://pykickstart.readthedocs.io/en/latest/kickstart-docs.html#network>
 #[derive(Parser, Debug, Clone)]
+#[command(name = "network", help_expected = true)]
 #[clap(group(ArgGroup::new("min").required(true).multiple(true)))]
-#[command(name = "network")]
 pub struct Network {
     #[clap(skip)]
     pub line: KSLine,

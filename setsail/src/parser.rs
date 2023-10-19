@@ -1,18 +1,17 @@
 use log::debug;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::path;
 
 use crate::commands::CommandHandler;
 use crate::data::ParsedData;
 use crate::errors::ToResultSetsailError;
-use crate::handlers::{SectionHandler, TrashHandler, UnsuportedSectionHandler};
 use crate::load;
-use crate::sections::script::{ScriptHandler, ScriptType};
+use crate::sections::SectionManager;
 use crate::types::KSLine;
 use crate::types::KSLineSource;
 use crate::SetsailError;
 
-pub struct Parser {
+pub(crate) struct Parser {
     // parsed data
     pub data: ParsedData,
 
@@ -26,30 +25,14 @@ pub struct Parser {
     errors: Vec<SetsailError>,
     include_stack: Vec<path::PathBuf>,
 
-    // Handlers
-    section_handlers: HashMap<String, Box<dyn SectionHandler>>,
+    // Sections
+    sectionmgr: SectionManager,
 }
 
 impl Parser {
     // Builder
 
     pub fn new() -> Self {
-        let mut obj = Self::new_empty();
-        obj.configure_default_handlers(false);
-        obj
-    }
-
-    pub fn new_first_pass() -> Self {
-        let mut obj = Self::new_empty();
-        obj.configure_default_handlers(true);
-        // Don't even bother parsing commands
-        obj.parse_commands(false);
-        // Don't follow includes, %pre scrips are not allowed on included files
-        obj.follow_include(false);
-        obj
-    }
-
-    pub fn new_empty() -> Self {
         Self {
             // parsed data
             data: ParsedData::default(),
@@ -64,9 +47,27 @@ impl Parser {
             errors: Vec::new(),
             include_stack: Vec::new(),
 
-            // handlers
-            section_handlers: HashMap::new(),
+            // Sections
+            sectionmgr: SectionManager::default(),
         }
+    }
+
+    /// Create a new parser object for the first pass.
+    /// This object will only find and parse %pre script sections.
+    pub fn new_first_pass() -> Self {
+        let mut obj = Self::new();
+
+        // Ignore sections we don't care about in the first pass
+        obj.sectionmgr.ignore_all_except(&["%pre"]);
+
+        // Don't even bother parsing commands
+        obj.parse_commands(false);
+
+        // Don't follow includes, %pre scrips are not allowed on included files
+        // so there is no point in trying to load them
+        obj.follow_include(false);
+
+        obj
     }
 
     #[allow(dead_code)]
@@ -151,7 +152,7 @@ impl Parser {
             }
 
             // This is a section
-            s if s.starts_with('%') => match self.section_handlers.get(s) {
+            s if s.starts_with('%') => match self.sectionmgr.get_handler(s) {
                 Some(handler) => {
                     let body = self.consume_section(&line, queue)?;
                     handler.handle(&mut self.data, line, tokens, body)?;
@@ -265,7 +266,7 @@ impl Parser {
 
                 // If we find another section, we're done
                 // We also want to re-queue this line so the parent can handle it
-                Some(opener) if self.section_handlers.contains_key(opener) => {
+                Some(opener) if self.sectionmgr.is_known_section(opener) => {
                     // We need to clone the line because it is both the error and the start of the next section
                     queue.push_front(line.clone());
                     return Err(SetsailError::new_syntax(
@@ -284,45 +285,6 @@ impl Parser {
         Ok(body)
     }
 
-    // Handler management
-
-    pub fn register_section_handler(&mut self, handler: Box<dyn SectionHandler>) {
-        self.section_handlers.insert(handler.opener(), handler);
-    }
-
-    // default handlers
-
-    fn configure_default_handlers(&mut self, first_pass: bool) {
-        // Unsupported sections
-        self.register_section_handler(UnsuportedSectionHandler::new_boxed("%anaconda"));
-        self.register_section_handler(UnsuportedSectionHandler::new_boxed("%addon"));
-        self.register_section_handler(UnsuportedSectionHandler::new_boxed("%onerror"));
-        self.register_section_handler(UnsuportedSectionHandler::new_boxed("%packages"));
-
-        // We always parse the %pre section
-        self.register_section_handler(ScriptHandler::new_boxed(ScriptType::Pre));
-
-        // If this is a first-pass parser, then we only care about %pre
-        // We don't want to register any other handlers
-        if first_pass {
-            // Register known sections with a dummy handler
-            self.ignore_section("%packages");
-            self.ignore_section("%post");
-            self.ignore_section("%pre-install");
-            return;
-        }
-
-        // Sections
-        self.register_section_handler(ScriptHandler::new_boxed(ScriptType::PreInstall));
-        self.register_section_handler(ScriptHandler::new_boxed(ScriptType::Post));
-    }
-
-    pub fn ignore_section(&mut self, section: &str) {
-        self.register_section_handler(TrashHandler::new_boxed(section));
-    }
-
-    // Internal utils
-
     fn push_error(&mut self, error: SetsailError) {
         error.log(self.flag_error_verbose);
         self.errors.push(error);
@@ -338,7 +300,7 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::*;
-    use crate::{load_kickstart_string, SetsailErrorType};
+    use crate::{load_kickstart_string, sections::script::ScriptType, SetsailErrorType};
 
     #[test]
     fn test_first_pass() {

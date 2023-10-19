@@ -4,7 +4,10 @@ mod docbuilder;
 use docbuilder::DocBuilder;
 
 // ADD NEW COMMANDS HERE
-use setsail::commands::{network::Network, partition::Partition};
+use setsail::{
+    commands::{network::Network, partition::Partition, rootpw::Rootpw, user::User},
+    sections::SectionManager,
+};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -19,6 +22,9 @@ fn main() {
     let doc = DocBuilder::new()
         .with_command::<Network>()
         .with_command::<Partition>()
+        .with_command::<Rootpw>()
+        .with_command::<User>()
+        .with_sections(SectionManager::default())
         .build();
 
     std::fs::write(

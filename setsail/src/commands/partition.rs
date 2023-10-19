@@ -7,8 +7,8 @@ use crate::{data::ParsedData, types::KSLine, SetsailError};
 use super::HandleCommand;
 
 #[derive(Parser, Debug)]
+#[command(name = "partition", aliases = &["part"], help_expected = true)]
 #[clap(group(ArgGroup::new("sizing").required(true)))]
-#[command(name = "partition", aliases = &["part"])]
 pub struct Partition {
     #[clap(skip)]
     pub line: KSLine,
@@ -21,6 +21,7 @@ pub struct Partition {
     ///
     /// - A path to a directory (e.g. `/`, `/boot`, `/home`)
     /// - `swap`
+    #[arg(verbatim_doc_comment)]
     pub mntpoint: PartitionMount,
 
     /// The filesystem type of the partition
@@ -84,6 +85,7 @@ pub struct Partition {
     /// Examples:
     /// - `file:///rootfs.raw.zst`
     /// - `http://example.com/image.img`
+    #[arg(verbatim_doc_comment)]
     #[arg(long)]
     #[arg(value_delimiter = ',')]
     pub image: Option<String>,

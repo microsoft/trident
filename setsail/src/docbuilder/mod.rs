@@ -3,14 +3,17 @@ use std::{env, path::PathBuf};
 use clap::{Command, CommandFactory};
 use tera::{Context, Tera};
 
-mod model;
+use setsail::{sections::SectionHandler, sections::SectionManager};
 
-use model::{CommandModel, DocModel};
+mod models;
+
+use models::{command::CommandModel, section::SectionModel, DocModel};
 
 #[derive(Debug, Default)]
 pub struct DocBuilder {
     commands: Vec<Command>,
     tera: Tera,
+    sections: Vec<Box<dyn SectionHandler>>,
 }
 
 impl DocBuilder {
@@ -43,9 +46,19 @@ impl DocBuilder {
         self
     }
 
+    pub fn with_sections(mut self, section_manager: SectionManager) -> Self {
+        self.sections = section_manager
+            .into_sections()
+            .into_values()
+            .filter(|v| v.get_clap_command().is_some())
+            .collect();
+        self
+    }
+
     pub fn build(mut self) -> String {
         // Sort commands by name
         self.commands.sort_by(|a, b| a.get_name().cmp(b.get_name()));
+        self.sections.sort_by(|a, b| a.opener().cmp(b.opener()));
         let model = self.make_model();
         // println!("{}", serde_json::to_string_pretty(&model).unwrap());
         self.tera
@@ -56,7 +69,9 @@ impl DocBuilder {
             .expect("Failed to render template")
     }
 
-    pub fn make_model(&mut self) -> DocModel {
-        DocModel::new(self.commands.iter().map(CommandModel::from).collect())
+    fn make_model(&mut self) -> DocModel {
+        DocModel::default()
+            .with_commands(self.commands.iter().map(CommandModel::from).collect())
+            .with_sections(self.sections.iter().map(SectionModel::from).collect())
     }
 }
