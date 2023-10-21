@@ -13,6 +13,7 @@ COPY build.rs .
 COPY src ./src
 COPY trident_api ./trident_api
 COPY setsail ./setsail
+COPY osutils ./osutils
 
 RUN \
     --mount=type=cache,target=/work/target \
