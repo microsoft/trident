@@ -101,6 +101,7 @@ The Host Configuration contains the following sections:
 - **storage**: describes the storage configuration of the host.
 - **imaging**: describes the imaging configuration of the host.
 - **network**: describes the network configuration of the host.
+- **osconfig**: describes the OS configuration of the host.
 
 ### Management
 
@@ -236,6 +237,28 @@ the host.
 Network configuration describes the network configuration of the host. The
 configuration format is matching the netplan v2 format.
 
+### OS Config
+
+OS Config describes the OS configuration of the host.
+
+#### Users
+
+The **users** section contains a configuration map with the users that will be
+created on the host. The key of the map is the username.
+
+**NOTE: CURRENTLY ONLY THE `root` USER IS SUPPORTED.**
+
+Each user is described by the following fields:
+
+- **password-mode**: How the password is provided, can be:
+  - `locked`: the user is created with a locked password. This is the default
+     value.
+  - `dangerous-plain-text`: the password is provided in plain text.
+  - `dangerous-hashed`: the password provided has already been already hashed.
+- **password**: The password to be used for the user. (This is **not** used when
+  `password-mode` is `locked`.)
+- **ssh-keys**: The SSH keys to be added to the user. This is a list of strings.
+
 ### Sample configuration
 
 ```yaml
@@ -302,6 +325,13 @@ host-configuration:
           name: enp*
         dhcp4: true
     version: 2
+
+  osconfig:
+    users:
+      root:
+        password-mode: locked # default
+        ssh-keys: 
+          - <MY_PUBLIC_SSH_KEY>
 ```
 
 ## Contributing

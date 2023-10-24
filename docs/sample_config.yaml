@@ -1,70 +1,70 @@
-core:
-  phonehome: http://<SOME_IP>:<SOME_PORT>
+host-configuration:
+  management:
+    self-upgrade: true
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-1.0
+        partition-table-type: gpt
+        partitions:
+          - id: esp
+            type: esp
+            size: 1G
+          - id: root-a
+            type: root
+            size: 8G
+          - id: root-b
+            type: root
+            size: 8G
+          - id: swap
+            type: swap
+            size: 2G
+          - id: var
+            type: var
+            size: 10G
+    mount-points:
+      - path: /boot/efi
+        target-id: esp
+        filesystem: vfat
+        options: ["umask=0077"]
+      - path: /
+        target-id: root
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /var
+        target-id: var
+        filesystem: ext4
+        options: ["defaults"]
+      - path: none
+        target-id: swap
+        filesystem: swap
+        options: ["sw"]
+  imaging:
+    images:
+      - url: file:///boot.raw.zst
+        sha256: cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8
+        format: raw-zstd
+        target-id: esp
+      - url: file:///root.raw.zst
+        sha256: fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d
+        format: raw-zstd
+        target-id: root
+    ab-update:
+      volume-pairs:
+        - id: root
+          volume-a-id: root-a
+          volume-b-id: root-b
+  network:
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+    version: 2
 
-network-provision:
-  # This is just netplan
-  ethernets:
-    vmeths:
-      match:
-        name: enp*
-      dhcp4: false
-      addresses: [192.168.242.50/24]
-      routes:
-        - to: 0.0.0.0/0
-          via: 192.168.242.1
-      nameservers:
-        addresses: [192.168.242.1]
-
-storage:
-  disks:
-    - id: disk0
-      device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0"
-      partition-table-type: gpt
-      partitions:
-        - id: part0
-          type: esp
-          size: 1G
-          label: boot
-        - id: part1
-          type: root-a
-          size: 8G
-          label: A
-        - id: part2
-          type: root-b
-          size: 8G
-          label: B
-  mount-points:
-    - path: /boot/efi
-      target-id: part0
-      filesystem: vfat
-      options: [defaults]
-    - path: /
-      target-id: root
-      filesystem: ext4
-      options: [defaults]
-
-imaging:
-  images:
-    - url: "file:///boot.raw.zst"
-      sha256: b789802a93269486dc070faad41dc4d3bf0c5d018d3dea772917cf457a7f3115
-      format: raw-zstd
-      target-id: part0
-    - url: "file:///rootfs.raw.zst"
-      sha256: 8c11d8fe3a99d360f204e789d426ed70aaf4bf72163c8f4476a31fcf894601e6
-      format: raw-zstd
-      target-id: root
-  overlays:
-  ab-update:
-    volume-pairs:
-      - id: root
-        volume-a-id: part1
-        volume-b-id: part2
-
-
-network:
-  # This is just netplan
-  ethernets:
-    vmeths:
-      match:
-        name: enp*
-      dhcp4: true
+  osconfig:
+    users:
+      root:
+        password-mode: locked # default
+        ssh-keys:
+          - <MY_PUBLIC_SSH_KEY>
