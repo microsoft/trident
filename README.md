@@ -258,6 +258,8 @@ Each user is described by the following fields:
 - **password**: The password to be used for the user. (This is **not** used when
   `password-mode` is `locked`.)
 - **ssh-keys**: The SSH keys to be added to the user. This is a list of strings.
+  Note that to authenticate using the `root` user, you will need to modify the
+  sshd config out of bound.
 
 ### Sample configuration
 
