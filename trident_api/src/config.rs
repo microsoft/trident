@@ -504,7 +504,7 @@ pub struct OsConfig {
 #[serde(deny_unknown_fields)]
 pub struct User {
     /// Password configuration.
-    #[serde(default)]
+    #[serde(default, flatten, skip_serializing_if = "is_default")]
     pub password: Password,
 
     /// List of groups to add the user to. **(IN DEVELOPMENT)**
