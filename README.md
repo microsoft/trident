@@ -285,9 +285,9 @@ host-configuration:
           - id: swap
             type: swap
             size: 2G
-          - id: var
-            type: var
-            size: 10G
+          - id: trident
+            type: linux-generic
+            size: 1G
     mount-points:
       - path: /boot/efi
         target-id: esp
@@ -297,8 +297,8 @@ host-configuration:
         target-id: root
         filesystem: ext4
         options: ["defaults"]
-      - path: /var
-        target-id: var
+      - path: /var/lib/trident
+        target-id: trident
         filesystem: ext4
         options: ["defaults"]
       - path: none
