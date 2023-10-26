@@ -376,6 +376,13 @@ impl Module for ImageModule {
         _host_status: &mut HostStatus,
         _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
+        // Patch /var in case it was injected as a volume
+
+        // TODO - this is a temporary fix for the issue where /var is mounted as
+        // a volume, longer term, we should either require user to provide /var
+        // partition image or allow to copy contents of /var from the root fs
+        // image, similar to what MIC will do
+
         // if we let users mount over /var, some services will fail to start, so
         // we need to recreate missing directories first
         let var_log_path = Path::new("/var/log");
@@ -391,6 +398,21 @@ impl Module for ImageModule {
             fs::create_dir(&var_log_audit_path)?;
             fs::set_permissions(var_log_audit_path, fs::Permissions::from_mode(0o700))?;
         }
+
+        // sshd requires /var/lib/sshd to be present, and sshd is a
+        // required component for Mariner images
+        let var_lib_path = Path::new("/var/lib");
+        if !var_lib_path.exists() {
+            fs::create_dir(var_lib_path)?;
+            fs::set_permissions(var_lib_path, fs::Permissions::from_mode(0o755))?;
+        }
+        let var_lib_sshd_path = var_lib_path.join("sshd");
+        if !var_lib_sshd_path.exists() {
+            fs::create_dir(&var_lib_sshd_path)?;
+            fs::set_permissions(var_lib_sshd_path, fs::Permissions::from_mode(0o700))?;
+        }
+
+        // End of patch block
 
         Ok(())
     }
