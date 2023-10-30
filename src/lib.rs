@@ -360,10 +360,10 @@ fn get_block_device(
     host_status: &HostStatus,
     block_device_id: &BlockDeviceId,
 ) -> Option<BlockDeviceInfo> {
-    get_disk(host_status, block_device_id).or_else(|| {
-        get_partition(host_status, block_device_id)
-            .or_else(|| get_ab_volume(host_status, block_device_id))
-    })
+    get_disk(host_status, block_device_id)
+        .or_else(|| get_partition(host_status, block_device_id))
+        .or_else(|| get_ab_volume(host_status, block_device_id))
+        .or_else(|| get_raid_array(host_status, block_device_id))
 }
 
 fn get_disk(host_status: &HostStatus, block_device_id: &BlockDeviceId) -> Option<BlockDeviceInfo> {
@@ -424,6 +424,17 @@ fn get_ab_volume(
     }
 
     None
+}
+
+fn get_raid_array(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<BlockDeviceInfo> {
+    host_status
+        .storage
+        .raid_arrays
+        .get(block_device_id)
+        .map(|r| r.to_block_device())
 }
 
 fn run_command(command: &mut Command) -> Result<Output, Error> {
@@ -497,6 +508,7 @@ mod tests {
                         capacity: 1000
                         contents: unknown
                         partitions: []
+                raid-arrays:
             imaging:
                 ab-update:
                     volume-pairs:
@@ -670,6 +682,7 @@ mod tests {
                             end: 10000
                             type: root
                             uuid: 00000000-0000-0000-0000-000000000000
+                raid-arrays:
             imaging:
                 ab-update:
                     volume-pairs:
@@ -731,6 +744,7 @@ mod tests {
             storage:
                 disks:
                 mount-points:
+                raid-arrays:
             imaging:
                 ab-update:
                     volume-pairs:
@@ -859,6 +873,7 @@ mod tests {
                         capacity: 1000
                         contents: unknown
                         partitions: []
+                raid-arrays:
             imaging:
                 ab-update:
                     volume-pairs:

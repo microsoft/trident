@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Error};
+use log::info;
 use std::{
     collections::HashSet,
     fs,
@@ -6,7 +7,7 @@ use std::{
     process::Command,
 };
 use trident_api::{
-    config::{HostConfiguration, MountPoint},
+    config::{BlockDeviceId, HostConfiguration, MountPoint, Partition},
     status::{self, BlockDeviceContents, HostStatus, UpdateKind},
 };
 
@@ -15,7 +16,7 @@ use crate::modules::Module;
 use sdrepart::RepartConfiguration;
 
 use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
-
+mod raid;
 mod sdrepart;
 mod sfdisk;
 pub mod tabfile;
@@ -137,6 +138,11 @@ impl Module for StorageModule {
             &mut partition_ids.clone().into_iter(),
         )?;
 
+        StorageModule::check_multiple_instances(
+            &mut block_device_ids,
+            &mut host_config.storage.raid.software.iter().map(|r| &r.id),
+        )?;
+
         if let Some(ab_update) = &host_config.imaging.ab_update {
             let ab_volume_ids: Vec<&String> =
                 ab_update.volume_pairs.iter().map(|v| &v.id).collect();
@@ -162,6 +168,8 @@ impl Module for StorageModule {
             }
         }
 
+        let raid_ids: HashSet<String> = get_raid_array_ids(host_config);
+
         for image in &host_config.imaging.images {
             if !image_target_ids.contains(&image.target_id) {
                 bail!(
@@ -169,12 +177,20 @@ impl Module for StorageModule {
                     id = image.target_id,
                 );
             }
+            if raid_ids.contains(&image.target_id) {
+                bail!(
+                    "Image id '{}' targets a RAID array, which is not supported",
+                    image.target_id,
+                );
+            }
         }
 
         for mount_point in &host_config.storage.mount_points {
-            if !image_target_ids.contains(&mount_point.target_id) {
+            if !image_target_ids.contains(&mount_point.target_id)
+                && !raid_ids.contains(&mount_point.target_id)
+            {
                 bail!(
-                    "Block device id '{id}' was set as dependency of a mount point, but is not defined elsewhere",
+                    "Block device id '{id}' was set as dependency of a mount point, but is not defined as an id of a partition or a raid array",
                     id = mount_point.target_id,
                 );
             }
@@ -188,6 +204,19 @@ impl Module for StorageModule {
                         "A/B update volume id '{id}' has the same target_id both both volumes",
                         id = p.id,
                     );
+                }
+            }
+        }
+
+        // Check that devices are valid partitions and only part of a single RAID array
+        let mut raid_devices = HashSet::<BlockDeviceId>::new();
+        for software_raid_config in &host_config.storage.raid.software {
+            for device_id in &software_raid_config.devices {
+                if get_partition_from_host_config(host_config, device_id).is_none() {
+                    bail!("Device id '{device_id}' was set as dependency of a RAID array, but is not a valid partition");
+                }
+                if !raid_devices.insert(device_id.clone()) {
+                    bail!("Block device '{device_id}' cannot be part of multiple RAID arrays");
                 }
             }
         }
@@ -212,8 +241,10 @@ impl Module for StorageModule {
         if host_status.reconcile_state != status::ReconcileState::CleanInstall {
             return Ok(());
         }
-
-        create_partitions(host_status, host_config)
+        raid::stop_all().context("Failed to stop all existing RAID arrays")?;
+        create_partitions(host_status, host_config).context("Failed to create disk partitions")?;
+        raid::create_sw_raid(host_status, host_config).context("Failed to create software RAID")?;
+        Ok(())
     }
 
     fn reconcile(
@@ -244,6 +275,11 @@ impl Module for StorageModule {
 
         // TODO: update /etc/repart.d directly for the matching disk, derive
         // from where is the root located
+
+        // persist on reboots
+        raid::create_raid_config(host_status)
+            .context("Failed to create mdadm.conf file after RAID creation")?;
+
         Ok(())
     }
 }
@@ -261,6 +297,42 @@ impl StorageModule {
 
         Ok(())
     }
+}
+
+pub fn get_partition_from_host_config<'a>(
+    host_config: &'a HostConfiguration,
+    partition_id: &'a str,
+) -> Option<&'a Partition> {
+    host_config
+        .storage
+        .disks
+        .iter()
+        .flat_map(|disk| disk.partitions.iter())
+        .find(|partition| partition.id == partition_id)
+}
+
+fn udevadm_trigger() -> Result<(), Error> {
+    info!("Triggering udevadm to rescan devices...");
+
+    let trigger_output = Command::new("udevadm").arg("trigger").output()?;
+
+    if !trigger_output.status.success() {
+        bail!(
+            "Udevadm trigger failed:\n{:?}",
+            String::from_utf8(trigger_output.stderr)
+        );
+    }
+    Ok(())
+}
+
+fn get_raid_array_ids(host_config: &HostConfiguration) -> HashSet<String> {
+    host_config
+        .storage
+        .raid
+        .software
+        .iter()
+        .map(|config| config.id.clone())
+        .collect()
 }
 
 pub(super) fn path_to_mount_point<'a>(
@@ -315,6 +387,7 @@ mod tests {
             storage:
                 disks:
                 mount-points:
+                raid-arrays:
             imaging:
         "#};
         let empty_host_status = serde_yaml::from_str(empty_host_status_yaml)

@@ -231,6 +231,7 @@ mod tests {
                             end: 0
                             type: swap
                             uuid: 00000000-0000-0000-0000-000000000000
+                raid-arrays:
             imaging:
             reconcile-state: clean-install
         "#};
@@ -468,6 +469,7 @@ mod tests {
                             end: 0
                             type: swap
                             uuid: 00000000-0000-0000-0000-000000000000
+                raid-arrays:
             imaging:
             reconcile-state: clean-install
         "#};

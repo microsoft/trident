@@ -508,6 +508,7 @@ mod tests {
                       end: 10
                       type: root
                       contents: initialized
+              raid-arrays: {}
               mount-points:
                 boot:
                   path: /boot

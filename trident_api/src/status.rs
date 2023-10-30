@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::config::{BlockDeviceId, PartitionType};
+use crate::config::{BlockDeviceId, PartitionType, RaidLevel};
 
 /// HostStatus is the status of a host. Reflects the current provisioning state
 /// of the host and any encountered errors.
@@ -67,6 +67,7 @@ pub struct Management {
 #[serde(rename_all = "kebab-case")]
 pub struct Storage {
     pub disks: BTreeMap<BlockDeviceId, Disk>,
+    pub raid_arrays: BTreeMap<BlockDeviceId, RaidArray>,
     pub mount_points: BTreeMap<BlockDeviceId, MountPoint>,
 }
 
@@ -114,6 +115,47 @@ pub enum BlockDeviceContents {
     Initialized,
 }
 
+// Status of a raid array.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RaidArray {
+    /// Unique identifier of the raid array.
+    pub name: String,
+    /// List of paths of devices (partitions) that take part in the RAID.
+    pub device_paths: Vec<PathBuf>,
+    /// RAID level.
+    pub level: RaidLevel,
+    /// RAID status (created, ready, failed).
+    pub status: RaidArrayStatus,
+    /// RAID array size.
+    pub array_size: u64,
+    /// RAID array type.
+    pub ty: RaidType,
+    /// Path to the raid array. For example, /dev/md/{name}
+    pub path: PathBuf,
+    /// System generated symlink path to the raid array. For example, /dev/md0
+    pub raid_symlink_path: PathBuf,
+    /// RAID array contents.
+    pub contents: BlockDeviceContents,
+}
+
+/// Type of RAID array (software, hardware). Only software for now.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
+pub enum RaidType {
+    Software,
+}
+
+/// Status of a RAID array in Trident host status.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
+pub enum RaidArrayStatus {
+    Created,
+    Ready,
+    Failed,
+}
 /// Mount point status.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]

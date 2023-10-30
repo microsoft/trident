@@ -54,3 +54,10 @@ where
         .keep()
         .context("Failed to persist file")
 }
+
+/// Reads the content of a file and trims it
+pub fn read_file_trim(file_path: &Path) -> Result<String, Error> {
+    let content = std::fs::read_to_string(file_path)
+        .context(format!("Could not read file contents: {:?}", file_path))?;
+    Ok(content.trim().to_string())
+}

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use status::{BlockDeviceContents, BlockDeviceInfo, Disk, Partition};
+use status::{BlockDeviceContents, BlockDeviceInfo, Disk, Partition, RaidArray};
 
 pub mod config;
 pub mod constants;
@@ -21,6 +21,12 @@ impl Partition {
             self.end - self.start,
             self.contents.clone(),
         )
+    }
+}
+
+impl RaidArray {
+    pub fn to_block_device(&self) -> BlockDeviceInfo {
+        BlockDeviceInfo::new(self.path.clone(), self.array_size, self.contents.clone())
     }
 }
 

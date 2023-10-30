@@ -8,7 +8,7 @@ BuildRequires:  openssl-devel
 BuildRequires:  rust
 BuildRequires:  systemd-units
 
-Requires:       netplan
+Requires:       netplan, mdadm
 
 %description
 Agent for bare metal platform

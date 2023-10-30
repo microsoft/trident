@@ -3,8 +3,9 @@ use std::{collections::HashMap, path::PathBuf};
 
 use netplan_types::NetworkConfig;
 
-use crate::is_default;
+use strum_macros::{Display, EnumString};
 
+use crate::is_default;
 /// Definition of Trident's full configuration.
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -210,6 +211,10 @@ pub struct Storage {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub disks: Vec<Disk>,
 
+    /// RAID configuration.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub raid: RaidConfig,
+
     /// Mount point configuration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mount_points: Vec<MountPoint>,
@@ -347,6 +352,55 @@ pub enum PartitionType {
     LinuxGeneric,
 }
 
+/// RAID configuration for a host.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct RaidConfig {
+    /// Individual software raid configurations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub software: Vec<SoftwareRaidArray>,
+}
+
+// Software RAID configuration.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct SoftwareRaidArray {
+    /// A unique identifier for the RAID array.
+    pub id: BlockDeviceId,
+    /// Name of the RAID array. This will be used for creation
+    pub name: String,
+    /// RAID level. Such as RAID0, RAID1, RAID5, RAID6, RAID10.
+    pub level: RaidLevel,
+    /// Devices that will be used for the RAID array.
+    pub devices: Vec<BlockDeviceId>,
+    /// Superblock version. Such as 0.9, 1.0
+    pub metadata_version: String,
+}
+
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub enum RaidLevel {
+    /// Striping.
+    #[strum(serialize = "0")]
+    Raid0,
+    /// Mirroring.
+    #[strum(serialize = "1")]
+    Raid1,
+    /// Striping with parity.
+    #[strum(serialize = "5")]
+    Raid5,
+    /// Striping with double parity.
+    #[strum(serialize = "6")]
+    Raid6,
+    /// Stripe of mirrors.
+    #[strum(serialize = "10")]
+    Raid10,
+}
+
+/// Mount point configuration. Carries information necessary to populate
 /// Mount point configuration.
 ///
 /// Carries information necessary to populate

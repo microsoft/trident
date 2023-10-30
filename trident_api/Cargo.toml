@@ -12,3 +12,5 @@ netplan-types = "0.4.0"
 serde = { version = "1.0.185", features = ["derive"] }
 serde_yaml = "0.9.25"
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
+strum = "0.25.0"
+strum_macros = "0.25.0"

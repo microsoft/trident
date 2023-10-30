@@ -164,9 +164,36 @@ the following fields:
 TBD: At the moment, the partition table is created from scratch. In the future,
 it will be possible to consume an existing partition table.
 
+
+#### RAID
+
+The **RAID** section describes the RAID arrays for the host. Each software
+RAID is described by the following fields:
+
+ - **id**: a unique identifier for the RAID array. This is a user defined string also used 
+   for mounting the RAID array.
+ - **name**: the name of the RAID array. This is used to reference the RAID array on the 
+   system. For example, `some-raid` will result in `/dev/md/some-raid` on the system.
+ - **level**: the RAID level of the array. Supported and tested values are `raid0`, `raid1`.
+   Other possible values yet to be tested are: `raid5`, `raid6`, `raid10`.
+ - **devices**: a list of devices that will be used to create the RAID array. See the reference links 
+   for picking the right number of devices. Devices are partition ids from the `disks` section.
+ - **metadata-version**: the metadata of the RAID array. Supported and tested values are `1.0`.
+
+The RAID array will be created using the `mdadm` package. During a clean install, all
+the existing RAID arrays that are on disks defined in the host configuration will be unmounted, 
+and stopped.
+
+The RAID arrays that are defined in the host configuration will be created, and mounted if specified in `mount-points`.
+
+To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID)
+
+To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
+
+
 #### Mount Points
 
-The **mount-points** section describes the mount points of the host. These are
+The **mount-points** section describes the mount points of the host. These are 
 used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount
 the volumes. Each mount point is described by the following fields:
 
@@ -288,6 +315,20 @@ host-configuration:
           - id: trident
             type: linux-generic
             size: 1G
+          - id: raid-a
+            type: linux-generic
+            size: 1G
+          - id: raid-b
+            type: linux-generic
+            size: 1G
+    raid:
+      software:
+        - id: some_raid
+          name: some-raid1
+          level: raid1
+          devices:
+            - raid-a
+            - raid-b
     mount-points:
       - path: /boot/efi
         target-id: esp
@@ -305,6 +346,10 @@ host-configuration:
         target-id: swap
         filesystem: swap
         options: ["sw"]
+      - path: /mnt/raid
+        target-id: some_raid
+        filesystem: ext4
+        options: ["defaults"]
   imaging:
     images:
       - url: file:///boot.raw.zst
@@ -351,11 +396,7 @@ updated as part of a pull request.
 
 ## Authors
 
-List main authors of this project with a couple of words about their
-contribution.
-
-Also insert a link to the `owners.txt` file if it exists as well as any other
-dashboard or other resources that lists all contributors to the project.
+yashpanchal@microsoft.com - RAID support
 
 ## License
 
