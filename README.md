@@ -29,8 +29,9 @@ instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/REA
 
 - Install [git](https://git-scm.com/downloads). E.g. `sudo apt install git`.
 - Install Rust and Cargo: `curl https://sh.rustup.rs -sSf | sh`.
-- Install `build-essential`, `pkg-config`, `libssl-dev`, `libclang-dev`, and `protobuf-compiler`. E.g. `sudo
-  apt install build-essential pkg-config libssl-dev libclang-dev protobuf-compiler`.
+- Install `build-essential`, `pkg-config`, `libssl-dev`, `libclang-dev`, and
+  `protobuf-compiler`. E.g. `sudo apt install build-essential pkg-config
+  libssl-dev libclang-dev protobuf-compiler`.
 - Clone the [Trident
   repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident):
   `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
@@ -128,7 +129,8 @@ the runtime OS. It contains a number of fields:
 Storage configuration describes the disks and partitions of the host that will
 be used to store the OS and data. Not all disks of the host need to be captured
 inside the Host Configuration, only those that Trident should operate on. The
-configuration is divided into two sections: **disks** and **mount-points**.
+configuration is divided into the following sections: **disks**, **raid** and
+**mount-points**.
 
 #### Disks
 
@@ -164,36 +166,42 @@ the following fields:
 TBD: At the moment, the partition table is created from scratch. In the future,
 it will be possible to consume an existing partition table.
 
-
 #### RAID
 
-The **RAID** section describes the RAID arrays for the host. Each software
-RAID is described by the following fields:
+The **raid** section describes the RAID arrays for the host. All RAID array
+definitions need to be specified in the **software** section nested in the
+***raid** section. Each software RAID is described by the following fields:
 
- - **id**: a unique identifier for the RAID array. This is a user defined string also used 
-   for mounting the RAID array.
- - **name**: the name of the RAID array. This is used to reference the RAID array on the 
-   system. For example, `some-raid` will result in `/dev/md/some-raid` on the system.
- - **level**: the RAID level of the array. Supported and tested values are `raid0`, `raid1`.
-   Other possible values yet to be tested are: `raid5`, `raid6`, `raid10`.
- - **devices**: a list of devices that will be used to create the RAID array. See the reference links 
-   for picking the right number of devices. Devices are partition ids from the `disks` section.
- - **metadata-version**: the metadata of the RAID array. Supported and tested values are `1.0`.
+ - **id**: a unique identifier for the RAID array. This is a user defined string
+   also used for mounting the RAID array.
+ - **name**: the name of the RAID array. This is used to reference the RAID
+   array on the system. For example, `some-raid` will result in
+   `/dev/md/some-raid` on the system.
+ - **level**: the RAID level of the array. Supported and tested values are
+   `raid0`, `raid1`. Other possible values yet to be tested are: `raid5`,
+   `raid6`, `raid10`.
+ - **devices**: a list of devices that will be used to create the RAID array.
+   See the reference links for picking the right number of devices. Devices are
+   partition ids from the `disks` section.
+ - **metadata-version**: the metadata of the RAID array. Supported and tested
+   values are `1.0`. Note that this is a string attribute.
 
-The RAID array will be created using the `mdadm` package. During a clean install, all
-the existing RAID arrays that are on disks defined in the host configuration will be unmounted, 
-and stopped.
+The RAID array will be created using the `mdadm` package. During a clean
+install, all the existing RAID arrays that are on disks defined in the host
+configuration will be unmounted, and stopped.
 
-The RAID arrays that are defined in the host configuration will be created, and mounted if specified in `mount-points`.
+The RAID arrays that are defined in the host configuration will be created, and
+mounted if specified in `mount-points`.
 
-To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID)
+To learn more about RAID, please refer to the [RAID
+wiki](https://wiki.archlinux.org/title/RAID)
 
-To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
-
+To learn more about `mdadm`, please refer to the [mdadm
+guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
 
 #### Mount Points
 
-The **mount-points** section describes the mount points of the host. These are 
+The **mount-points** section describes the mount points of the host. These are
 used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount
 the volumes. Each mount point is described by the following fields:
 
