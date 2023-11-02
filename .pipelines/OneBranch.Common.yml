@@ -84,8 +84,9 @@ steps:
       set -eux
       tdnf install -y bc
       COVERAGE=`jq .coveragePercent target/coverage/covdir`
-      if (( $(echo "$COVERAGE < 47" | bc -l) )); then
-        echo "Coverage is $COVERAGE, which is less than 47% set as the baseline"
+      BASELINE=48
+      if (( $(echo "$COVERAGE < $BASELINE" | bc -l) )); then
+        echo "Coverage is $COVERAGE, which is less than $BASELINE% set as the baseline"
         exit 1
       fi
     displayName: Assert coverage is above baseline

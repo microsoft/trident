@@ -528,4 +528,142 @@ mod tests {
             Some(PathBuf::from("/dev/sda2"))
         );
     }
+
+    #[test]
+    fn test_get_images_for_updating() {
+        let host_config_yaml = indoc::indoc! {r#"
+            storage:
+              disks: []
+              mount-points:
+                - path: /boot
+                  target-id: boot
+                  filesystem: fat32
+                  options: []
+                - path: /
+                  target-id: root
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+                - url: http://example.com/esp.img
+                  target-id: boot
+                  format: raw-zstd
+                  sha256: foobar
+                - url: http://example.com/image1.img
+                  target-id: root
+                  format: raw-zstd
+                  sha256: ignored
+            "#};
+        let mut host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+        let host_status_yaml = indoc::indoc! {r#"
+            storage:
+              disks:
+                foo: 
+                  uuid: 00000000-0000-0000-0000-000000000000
+                  path: /dev/sda
+                  capacity: 10
+                  contents: initialized
+                  partitions:
+                    - uuid: 00000000-0000-0000-0000-000000000001
+                      path: /dev/sda1
+                      id: boot
+                      start: 1
+                      end: 3
+                      type: esp
+                      contents: !image
+                        url: http://example.com/esp.img
+                        sha256: foobar
+                        length: 100
+                    - uuid: 00000000-0000-0000-0000-000000000002
+                      path: /dev/sda2
+                      id: root
+                      start: 4
+                      end: 10
+                      type: root
+                      contents: !image
+                        url: http://example.com/image1.img
+                        sha256: foobar
+                        length: 100
+              raid-arrays: {}
+              mount-points:
+                boot:
+                  path: /boot
+                  filesystem: fat32
+                  options: []
+                root:
+                  path: /
+                  filesystem: ext4
+                  options: []
+            reconcile-state: clean-install
+            imaging:
+            "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        // should be zero, as images are matching and hash is ignored
+        assert_eq!(get_images_for_updating(&host_status, &host_config).len(), 0);
+
+        // should be zero, as images and hashes are matching
+        host_config.imaging.images[0].sha256 = "foobar".to_string();
+        assert_eq!(get_images_for_updating(&host_status, &host_config).len(), 0);
+
+        // should be one, as image hash is different
+        host_config.imaging.images[0].sha256 = "barfoo".to_string();
+        assert_eq!(
+            get_images_for_updating(&host_status, &host_config),
+            vec![&Image {
+                url: "http://example.com/esp.img".to_string(),
+                target_id: "boot".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "barfoo".to_string(),
+            }]
+        );
+
+        // should be one, as image url is different
+        host_config.imaging.images[0].sha256 = HASH_IGNORED.to_string();
+        host_config.imaging.images[0].url = "http://example.com/image2.img".to_string();
+        assert_eq!(
+            get_images_for_updating(&host_status, &host_config),
+            vec![&Image {
+                url: "http://example.com/image2.img".to_string(),
+                target_id: "boot".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "ignored".to_string(),
+            }]
+        );
+
+        // could be zero, as despite the url being different, the hash is the
+        // same; for now though we reimage to be safe, hence 1
+        host_config.imaging.images[0].sha256 = "foobar".to_string();
+        assert_eq!(
+            get_images_for_updating(&host_status, &host_config),
+            vec![&Image {
+                url: "http://example.com/image2.img".to_string(),
+                target_id: "boot".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "foobar".to_string(),
+            }]
+        );
+
+        // should be 2, as the image is not initialized and the other is from
+        // the previous case
+        host_status.storage.disks.get_mut("foo").unwrap().partitions[1].contents =
+            BlockDeviceContents::Unknown;
+        assert_eq!(
+            get_images_for_updating(&host_status, &host_config),
+            vec![
+                &Image {
+                    url: "http://example.com/image2.img".to_string(),
+                    target_id: "boot".to_string(),
+                    format: ImageFormat::RawZstd,
+                    sha256: "foobar".to_string(),
+                },
+                &Image {
+                    url: "http://example.com/image1.img".to_string(),
+                    target_id: "root".to_string(),
+                    format: ImageFormat::RawZstd,
+                    sha256: "ignored".to_string(),
+                }
+            ]
+        );
+    }
 }
