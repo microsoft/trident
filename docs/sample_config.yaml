@@ -64,7 +64,8 @@ host-configuration:
 
   osconfig:
     users:
-      root:
-        password-mode: locked # default
+      my-new-user:
+        # The password will be locked by default
         ssh-keys:
           - <MY_PUBLIC_SSH_KEY>
+        ssh-mode: key-only

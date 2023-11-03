@@ -112,3 +112,39 @@ impl OutputChecker for ExitStatus {
         self.signal()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::process::Command;
+
+    use super::*;
+
+    #[test]
+    fn test_output_checker() {
+        let output = Command::new("echo").arg("something").output().unwrap();
+
+        assert!(output.is_success());
+        assert_eq!(output.exit_code(), Some(0));
+        assert_eq!(output.end_signal(), None);
+        assert_eq!(output.err_output(), "something\n");
+        assert_eq!(output.output(), "something\n");
+        assert_eq!(output.explain_exit(), "process exited with status: 0");
+        assert!(matches!(output.check(), Ok(())));
+        assert!(matches!(output.check_output(), Ok(s) if s == "something\n"));
+
+        let output = Command::new("false").arg("something").output().unwrap();
+
+        println!("{:?}", output);
+        println!("{:?}", output.status);
+        println!("{:?}", output.status.code());
+
+        assert!(!output.is_success());
+        assert_eq!(output.exit_code(), Some(1));
+        assert_eq!(output.end_signal(), None);
+        assert_eq!(output.err_output(), "");
+        assert_eq!(output.output(), "");
+        assert_eq!(output.explain_exit(), "process exited with status: 1");
+
+        output.check().unwrap_err();
+    }
+}

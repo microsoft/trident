@@ -11,3 +11,6 @@ duct = "0.13.6"
 log = "0.4.20"
 tempfile = "3.8.0"
 which = "4.4.2"
+
+[dev-dependencies]
+indoc = "2"

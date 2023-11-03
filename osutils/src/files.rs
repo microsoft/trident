@@ -1,10 +1,11 @@
 use std::{
-    fs::File,
-    os::unix::fs::PermissionsExt,
+    fs::{File, Permissions},
+    io::{Read, Write},
+    os::{linux::fs::MetadataExt, unix::fs::PermissionsExt},
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Error};
+use anyhow::{bail, Context, Error};
 
 /// Creates a file and all parent directories if they don't exist
 pub fn create_file<S>(path: S) -> Result<File, Error>
@@ -26,8 +27,12 @@ pub fn create_file_mode<S>(path: S, mode: u32) -> Result<File, Error>
 where
     S: AsRef<Path>,
 {
-    let file = create_file(path)?;
-    file.metadata()?.permissions().set_mode(mode);
+    let file = create_file(path.as_ref())?;
+    std::fs::set_permissions(path.as_ref(), Permissions::from_mode(mode)).context(format!(
+        "Could not set permissions {:#o} for file {}",
+        mode,
+        path.as_ref().display()
+    ))?;
     Ok(file)
 }
 
@@ -56,8 +61,170 @@ where
 }
 
 /// Reads the content of a file and trims it
-pub fn read_file_trim(file_path: &Path) -> Result<String, Error> {
-    let content = std::fs::read_to_string(file_path)
-        .context(format!("Could not read file contents: {:?}", file_path))?;
+pub fn read_file_trim<S>(file_path: &S) -> Result<String, Error>
+where
+    S: AsRef<Path>,
+{
+    let content = std::fs::read_to_string(file_path.as_ref()).context(format!(
+        "Could not read file contents: {:?}",
+        file_path.as_ref()
+    ))?;
     Ok(content.trim().to_string())
+}
+
+/// Prepends to a file
+pub fn prepend_file<S>(path: S, must_exist: bool, new_contents: &[u8]) -> Result<(), Error>
+where
+    S: AsRef<Path>,
+{
+    let mut mode = 0o600;
+    let mut content = new_contents.to_owned();
+    if path.as_ref().exists() {
+        if !path.as_ref().is_file() {
+            bail!("Path exists but is not a file: {}", path.as_ref().display());
+        }
+
+        mode = std::fs::metadata(path.as_ref())
+            .context(format!(
+                "Could not get metadata for {}",
+                path.as_ref().display()
+            ))?
+            .permissions()
+            .mode();
+
+        File::open(path.as_ref())
+            .context(format!("Could not open file: {}", path.as_ref().display()))?
+            .read_to_end(&mut content)
+            .context(format!(
+                "Failed to read existing contents of {}",
+                path.as_ref().display(),
+            ))?;
+    } else if must_exist {
+        bail!("Path does not exist: {}", path.as_ref().display());
+    }
+
+    let mut file = create_file_mode(path.as_ref(), mode).context(format!(
+        "Could not create file: {}",
+        path.as_ref().display()
+    ))?;
+
+    file.write_all(&content).context(format!(
+        "Could not write to file: {}",
+        path.as_ref().display()
+    ))?;
+
+    Ok(())
+}
+
+pub fn get_owner_uid<S>(path: S) -> Result<u32, Error>
+where
+    S: AsRef<Path>,
+{
+    Ok(path
+        .as_ref()
+        .metadata()
+        .context(format!(
+            "Failed to get metadata for {}",
+            path.as_ref().display()
+        ))?
+        .st_uid())
+}
+
+pub fn get_owner_gid<S>(path: S) -> Result<u32, Error>
+where
+    S: AsRef<Path>,
+{
+    Ok(path
+        .as_ref()
+        .metadata()
+        .context(format!(
+            "Failed to get metadata for {}",
+            path.as_ref().display()
+        ))?
+        .st_gid())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_create_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("some/path").join("test.txt");
+        create_file(&path).unwrap();
+        assert!(path.exists());
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn test_create_file_mode() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.txt");
+        let file = create_file_mode(&path, 0o600).unwrap();
+        assert!(path.exists());
+        assert!(path.is_file());
+        // Bitwise AND to ignore the file type
+        assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn test_create_dirs() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test").join("test2");
+        create_dirs(&path).unwrap();
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn test_prepend_file() {
+        let dir = tempdir().unwrap();
+        let (mut file, path) = create_random_file(&dir).unwrap();
+
+        let heading = "hello world\n";
+        let contents = indoc::indoc! {r#"
+            line 1
+            line 2
+            line 3
+        "#};
+        let expected = format!("{}{}", heading, contents);
+
+        file.write_all(contents.as_bytes()).unwrap();
+        file.flush().unwrap();
+        // Close file
+        drop(file);
+
+        // Check that the contents are correct
+        assert_eq!(std::fs::read(&path).unwrap(), contents.as_bytes());
+        // Prepend the heading
+        prepend_file(&path, false, heading.as_bytes()).unwrap();
+        // Check that the new contents are correct
+        assert_eq!(std::fs::read(&path).unwrap(), expected.as_bytes());
+
+        // Assert that file is created when requested
+        let nonexistent_path = dir.path().join("nonexistent");
+        assert!(!nonexistent_path.exists());
+        prepend_file(&nonexistent_path, false, heading.as_bytes()).unwrap();
+        assert!(nonexistent_path.exists());
+
+        // Assert error when file does not exist and must_exist=true
+        let nonexistent_path = dir.path().join("nonexistent2");
+        assert!(!nonexistent_path.exists());
+        assert!(prepend_file(&nonexistent_path, true, heading.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn test_read_file_trim() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.txt");
+        let contents = indoc::indoc! {r#"
+
+                 line 1    
+
+
+        "#};
+        std::fs::write(&path, contents).unwrap();
+        assert_eq!(read_file_trim(&path).unwrap(), "line 1");
+    }
 }

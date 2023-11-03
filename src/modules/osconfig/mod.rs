@@ -2,7 +2,7 @@ use anyhow::Error;
 
 use trident_api::{
     config::HostConfiguration,
-    status::{HostStatus, UpdateKind},
+    status::{HostStatus, ReconcileState, UpdateKind},
 };
 
 use crate::modules::Module;
@@ -38,12 +38,16 @@ impl Module for OsConfigModule {
 
     fn reconcile(
         &mut self,
-        _host_status: &mut HostStatus,
+        host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        users::set_up_users(host_config.osconfig.users.clone())?;
+        // TODO: When we switch to MIC, figure out a strategy for handling other kinds of updates
+        // Limit operation to ReconcileState::CleanInstall
+        if host_status.reconcile_state != ReconcileState::CleanInstall {
+            return Ok(());
+        }
 
-        //TODO(6031): Implement changing sshd_config
+        users::set_up_users(host_config.osconfig.users.clone())?;
 
         Ok(())
     }

@@ -558,7 +558,7 @@ pub struct OsConfig {
 #[serde(deny_unknown_fields)]
 pub struct User {
     /// Password configuration.
-    #[serde(default, flatten, skip_serializing_if = "is_default")]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub password: Password,
 
     /// List of groups to add the user to. **(IN DEVELOPMENT)**
@@ -581,17 +581,18 @@ pub struct User {
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-#[serde(tag = "password-mode", content = "password")]
+#[serde(tag = "mode", content = "value")]
 pub enum Password {
-    /// Lock the user's password. (equivalent to `passwd -l`)
-    #[default]
-    Locked,
-
     /// Set the user's password to a plaintext value.
     DangerousPlainText(String),
 
     /// Set the user's password to a hashed value.
     DangerousHashed(String),
+
+    /// Lock the user's password. (equivalent to `passwd -l`)
+    #[default]
+    // #[serde(other)]
+    Locked,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -601,7 +602,7 @@ pub enum SshMode {
     /// Disable SSH for this entity.
     #[default]
     Block,
-    /// Enable SSH for this entity with KEY only. (equivalent to `prohibit-password`)
+    /// Enable SSH for this entity with KEY only.
     KeyOnly,
     /// Enable SSH for this entity with KEY and PASSWORD.
     DangerousAllowPassword,

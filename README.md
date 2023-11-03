@@ -281,20 +281,15 @@ OS Config describes the OS configuration of the host.
 The **users** section contains a configuration map with the users that will be
 created on the host. The key of the map is the username.
 
-**NOTE: CURRENTLY ONLY THE `root` USER IS SUPPORTED.**
-
 Each user is described by the following fields:
 
-- **password-mode**: How the password is provided, can be:
-  - `locked`: the user is created with a locked password. This is the default
-     value.
-  - `dangerous-plain-text`: the password is provided in plain text.
-  - `dangerous-hashed`: the password provided has already been already hashed.
-- **password**: The password to be used for the user. (This is **not** used when
-  `password-mode` is `locked`.)
-- **ssh-keys**: The SSH keys to be added to the user. This is a list of strings.
-  Note that to authenticate using the `root` user, you will need to modify the
-  sshd config out of bound.
+- **`groups`**: (Optional) The groups to be added to the user. This is a list of
+  strings.
+- **`ssh-keys`**: (Optional) The SSH keys to be added to the user. This is a list
+  of strings.
+- **`ssh_mode`**: (Optional) The SSH mode to be used for the user. Can be:
+  - `block`: (default) the user is not allowed to SSH.
+  - `key-only`: the user can SSH only with a key.
 
 ### Sample configuration
 
@@ -383,10 +378,11 @@ host-configuration:
 
   osconfig:
     users:
-      root:
-        password-mode: locked # default
+      my-new-user:
+        # The password will be locked by default
         ssh-keys: 
           - <MY_PUBLIC_SSH_KEY>
+        ssh-mode: key-only
 ```
 
 ## Contributing
