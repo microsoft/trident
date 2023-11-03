@@ -1,4 +1,8 @@
-use std::{fs, path::Path, sync::Mutex};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use anyhow::{bail, Context, Error};
 use log::info;
@@ -122,12 +126,8 @@ pub(super) fn provision(
     )?;
     reconcile(&mut modules, state, host_config)?;
 
-    let root_device_path = state
-        .host_status()
-        .imaging
-        .root_device_path
-        .clone()
-        .context("Failed to get root device path")?;
+    let root_device_path = get_root_block_device_path(state.host_status())
+        .context("Failed to get root block device")?;
 
     state.close();
     chroot.exit().context("Failed to exit chroot")?;
@@ -137,6 +137,8 @@ pub(super) fn provision(
         mount::unmount_target_volumes(mount_path).context("Failed to unmount target volumes")?;
         return Ok(());
     }
+
+    info!("Root device path: {:#?}", root_device_path);
 
     transition(mount_path, &root_device_path)?;
 
@@ -200,12 +202,8 @@ pub(super) fn update(
 
     match update_kind {
         Some(UpdateKind::UpdateAndReboot) | Some(UpdateKind::AbUpdate) => {
-            let root_block_device_path = state
-                .host_status()
-                .imaging
-                .root_device_path
-                .clone()
-                .context("Failed to get root device path")?;
+            let root_block_device_path = get_root_block_device_path(state.host_status())
+                .context("Failed to get root block device")?;
 
             state.close();
 
@@ -215,6 +213,8 @@ pub(super) fn update(
                     .context("Failed to unmount target volumes")?;
                 return Ok(());
             }
+
+            info!("Root device path: {:#?}", root_block_device_path);
 
             transition(mount_path, &root_block_device_path)?;
             Ok(())
@@ -228,6 +228,16 @@ pub(super) fn update(
             unreachable!()
         }
     }
+}
+
+/// Using the / mount point, figure out what should be used as a root block device.
+fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
+    host_status
+        .storage
+        .mount_points
+        .iter()
+        .find(|(_, mp)| mp.path == Path::new("/"))
+        .and_then(|(target_id, _)| Some(crate::get_block_device(host_status, target_id)?.path))
 }
 
 fn refresh_host_status(
@@ -302,4 +312,55 @@ fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Er
         &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
     )
     .context("Failed to perform kexec")
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_get_root_block_device_path() {
+        let host_status_yaml = indoc::indoc! {r#"
+            storage:
+              disks:
+                foo: 
+                  uuid: 00000000-0000-0000-0000-000000000000
+                  path: /dev/sda
+                  capacity: 10
+                  contents: initialized
+                  partitions:
+                    - uuid: 00000000-0000-0000-0000-000000000001
+                      path: /dev/sda1
+                      id: boot
+                      start: 1
+                      end: 3
+                      type: esp
+                      contents: initialized
+                    - uuid: 00000000-0000-0000-0000-000000000002
+                      path: /dev/sda2
+                      id: root
+                      start: 4
+                      end: 10
+                      type: root
+                      contents: initialized
+              raid-arrays: {}
+              mount-points:
+                boot:
+                  path: /boot
+                  filesystem: fat32
+                  options: []
+                root:
+                  path: /
+                  filesystem: ext4
+                  options: []
+            reconcile-state: clean-install
+            imaging:
+            "#};
+        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        assert_eq!(
+            get_root_block_device_path(&host_status),
+            Some(PathBuf::from("/dev/sda2"))
+        );
+    }
 }

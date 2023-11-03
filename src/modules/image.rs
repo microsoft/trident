@@ -3,7 +3,7 @@ use std::{
     fs::{self, File},
     io::{self, BufWriter, Read},
     os::{fd::AsRawFd, unix::prelude::PermissionsExt},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
 };
 
@@ -255,19 +255,6 @@ fn get_images_for_updating<'a>(
         .collect()
 }
 
-/// Using the / mount point, figure out what should be used as a root block device.
-fn get_root_block_device_path(
-    host_config: &HostConfiguration,
-    host_status: &HostStatus,
-) -> Option<PathBuf> {
-    host_config
-        .storage
-        .mount_points
-        .iter()
-        .find(|mp| mp.path == Path::new("/"))
-        .and_then(|mp| Some(crate::get_block_device(host_status, &mp.target_id)?.path))
-}
-
 #[derive(Default, Debug)]
 pub struct ImageModule;
 impl Module for ImageModule {
@@ -355,15 +342,6 @@ impl Module for ImageModule {
         mount_point: &Path,
     ) -> Result<(), Error> {
         refresh_ab_volumes(host_status, host_config);
-
-        host_status.imaging.root_device_path = Some(
-            get_root_block_device_path(host_config, host_status)
-                .context("Failed to get root block device")?,
-        );
-        info!(
-            "Root device path: {:#?}",
-            host_status.imaging.root_device_path
-        );
 
         stream_images(host_status, host_config)?;
         mount::setup_root_chroot(host_config, host_status, mount_point)?;
@@ -464,69 +442,6 @@ mod tests {
             .unwrap()
             .volume_pairs
             .contains_key("ab"));
-    }
-
-    #[test]
-    fn test_get_root_block_device_path() {
-        let host_config_yaml = indoc::indoc! {r#"
-            storage:
-              disks: []
-              mount-points:
-                - path: /boot
-                  target-id: boot
-                  filesystem: fat32
-                  options: []
-                - path: /
-                  target-id: root
-                  filesystem: ext4
-                  options: []
-            imaging:
-              images:
-            "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
-
-        let host_status_yaml = indoc::indoc! {r#"
-            storage:
-              disks:
-                foo: 
-                  uuid: 00000000-0000-0000-0000-000000000000
-                  path: /dev/sda
-                  capacity: 10
-                  contents: initialized
-                  partitions:
-                    - uuid: 00000000-0000-0000-0000-000000000001
-                      path: /dev/sda1
-                      id: boot
-                      start: 1
-                      end: 3
-                      type: esp
-                      contents: initialized
-                    - uuid: 00000000-0000-0000-0000-000000000002
-                      path: /dev/sda2
-                      id: root
-                      start: 4
-                      end: 10
-                      type: root
-                      contents: initialized
-              raid-arrays: {}
-              mount-points:
-                boot:
-                  path: /boot
-                  filesystem: fat32
-                  options: []
-                root:
-                  path: /
-                  filesystem: ext4
-                  options: []
-            reconcile-state: clean-install
-            imaging:
-            "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
-
-        assert_eq!(
-            get_root_block_device_path(&host_config, &host_status),
-            Some(PathBuf::from("/dev/sda2"))
-        );
     }
 
     #[test]
