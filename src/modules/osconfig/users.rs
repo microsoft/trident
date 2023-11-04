@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Error, Ok};
+use anyhow::{bail, Context, Error, Ok};
 use duct::cmd;
 use log::{debug, warn};
 
@@ -15,29 +15,76 @@ const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";
 const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
 
 pub(super) fn set_up_users(mut users: HashMap<String, User>) -> Result<(), Error> {
-    // Create sshd config dir
-    osutils::files::create_dirs(SSHD_CONFIG_DIR).context("Failed to create sshd config dir")?;
+    if Path::new(SSHD_CONFIG_FILE).exists() {
+        debug!("Setting up sshd config...");
 
-    let include_dir = format!("Include {}/*.conf", SSHD_CONFIG_DIR);
+        // Create sshd config dir
+        osutils::files::create_dirs(SSHD_CONFIG_DIR).context("Failed to create sshd config dir")?;
 
-    // Check if the include directive is already in the sshd config.
-    // If not, add it, otherwise do nothing.
-    let config = std::fs::read_to_string(SSHD_CONFIG_FILE).context("Failed to read sshd config")?;
-    if !regex::Regex::new(&format!(r"^ *{}", include_dir))
-        .context("Failed to compile regex")?
-        .is_match(&config)
-    {
-        // Add include directive to sshd config
-        osutils::files::prepend_file(
-            SSHD_CONFIG_FILE,
-            false,
-            format!("# Trident Configuration Overrides\n{}\n\n", include_dir).as_bytes(),
-        )
-        .context("Failed to prepend sshd config")?;
+        let include_dir = format!("Include {}/*.conf", SSHD_CONFIG_DIR);
+
+        // Check if the include directive is already in the sshd config.
+        // If not, add it, otherwise do nothing.
+        let config =
+            std::fs::read_to_string(SSHD_CONFIG_FILE).context("Failed to read sshd config")?;
+        if !regex::Regex::new(&format!(r"^ *{}", include_dir))
+            .context("Failed to compile regex")?
+            .is_match(&config)
+        {
+            // Add include directive to sshd config
+            osutils::files::prepend_file(
+                SSHD_CONFIG_FILE,
+                false,
+                format!("# Trident Configuration Overrides\n{}\n\n", include_dir).as_bytes(),
+            )
+            .context("Failed to prepend sshd config")?;
+        }
+
+        // Set up global sshd config
+        ssh_global_config(&users).context("Failed to set up global sshd config")?;
+    } else {
+        // sshd_config is not installed in a known location, this probably means that sshd is not installed
+        // We should check whether this is a problem or not.
+        // Make a list of users that have non-default ssh modes
+        let users_with_ssh = users
+            .iter()
+            .filter_map(|(name, data)| {
+                if data.ssh_mode != SshMode::Block {
+                    Some(name.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if !users_with_ssh.is_empty() {
+            bail!(
+                "sshd_config not found in {SSHD_CONFIG_FILE}, but there are users with ssh access in configuration: {}",
+                users_with_ssh.join(", ")
+            );
+        }
+
+        // Now, if users have ssh keys, this _could_ be a problem, but we can't be sure.
+        // Maybe that's intentional. Maybe they are using them for something else?
+        let users_with_ssh_keys = users
+            .iter()
+            .filter_map(|(name, data)| {
+                if !data.ssh_keys.is_empty() {
+                    Some(name.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if !users_with_ssh_keys.is_empty() {
+            warn!(
+                "sshd_config not found in {SSHD_CONFIG_FILE}, but there are users with ssh keys in configuration: {}",
+                users_with_ssh_keys.join(", ")
+            );
+        }
+
+        // Otherwise, we still warn the user in case this is a mistake
+        warn!("sshd_config not found, skipping sshd config");
     }
-
-    // Set up global sshd config
-    ssh_global_config(&users).context("Failed to set up global sshd config")?;
 
     debug!("Setting up users...");
 
@@ -72,38 +119,44 @@ fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
     }
 
     // List of users that are allowed to login through SSH
-    buffer.push(format!(
-        "AllowUsers {}",
-        users
-            .iter()
-            .filter_map(|(name, user)| {
-                if user.ssh_mode == SshMode::Block {
-                    None
-                } else {
-                    Some(name.as_str())
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" "),
-    ));
+    let allowusers = users
+        .iter()
+        .filter_map(|(name, user)| {
+            if user.ssh_mode == SshMode::Block {
+                None
+            } else {
+                Some(name.as_str())
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // If there are any users that can login, add a config block for them
+    if !allowusers.is_empty() {
+        buffer.push(format!("AllowUsers {}", allowusers.join(" ")));
+    } else {
+        // If there are no users that can login, block all users
+        buffer.push("DenyUsers *".to_owned());
+    }
 
     // List of users that are allowed to login through SSH with password
-    buffer.push(format!(
-        r#"Match User {}
+    let pwd_users = users
+        .iter()
+        .filter_map(|(name, user)| match user.ssh_mode {
+            SshMode::Block | SshMode::KeyOnly => None,
+            SshMode::DangerousAllowPassword => Some(name.as_str()),
+        })
+        .collect::<Vec<_>>();
+
+    // If there are any users that can login with password, add a config block for them
+    if !pwd_users.is_empty() {
+        buffer.push(format!(
+            r#"Match User {}
     PasswordAuthentication yes
     KbdInteractiveAuthentication yes
-    "#,
-        users
-            .iter()
-            .filter_map(|(name, user)| {
-                match user.ssh_mode {
-                    SshMode::Block | SshMode::KeyOnly => None,
-                    SshMode::DangerousAllowPassword => Some(name.as_str()),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-    ));
+        "#,
+            pwd_users.join(","),
+        ));
+    }
 
     // Add a newline at the end
     buffer.push("\n".to_owned());
