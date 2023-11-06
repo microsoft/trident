@@ -1,32 +1,42 @@
 # Core build logic that is common to all OneBranch builds.
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: '$(Build.SourcesDirectory)'
 
 steps:
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
     displayName: Install native dependencies
 
   - script: cargo fmt -- --check 2>&1
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Check formatting
 
   - script: cargo clippy --locked -- -D warnings 2>&1
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Clippy (Linting)
 
   - script: cargo build --locked 2>&1
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Build Debug
 
   - script: cargo test --locked --all 2>&1
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Test Debug
 
   - script: cargo build --locked --release 2>&1
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Build Release
 
   - task: CopyFiles@2
     inputs:
-      sourceFolder: "$(Build.SourcesDirectory)/target/release"
+      sourceFolder: "${{ parameters.tridentSourceDirectory }}/target/release"
       targetFolder: "$(ob_outputDirectory)"
       contents: "*"
     displayName: Copy files to output
 
   - script: rpmbuild -bb --build-in-place trident.spec
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Build RPM
 
   - task: CopyFiles@2
@@ -36,11 +46,12 @@ steps:
     displayName: Copy RPM file to output
 
   - script: make setsail-docs
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Build Setsail Docs
 
   - task: CopyFiles@2
     inputs:
-      sourceFolder: "$(Build.SourcesDirectory)/target/setsail-docs"
+      sourceFolder: "${{ parameters.tridentSourceDirectory }}/target/setsail-docs"
       targetFolder: "$(ob_outputDirectory)"
     displayName: Copy Setsail Docs to output
 
@@ -66,15 +77,17 @@ steps:
       toolchainFeed: https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/Rust/nuget/v3/index.json
 
   - script: cargo install grcov
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Install grcov
 
   - script: make coverage
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Collect code coverage
 
   - task: PublishCodeCoverageResults@1
     inputs:
       codeCoverageTool: 'Cobertura'
-      summaryFileLocation: target/coverage/cobertura.xml
+      summaryFileLocation: ${{ parameters.tridentSourceDirectory }}/target/coverage/cobertura.xml
       #pathToSources: # string. Path to Source files. 
       #reportDirectory: # string. Report directory. 
       #additionalCodeCoverageFiles: # string. Additional files. 
@@ -89,4 +102,5 @@ steps:
         echo "Coverage is $COVERAGE, which is less than $BASELINE% set as the baseline"
         exit 1
       fi
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Assert coverage is above baseline
