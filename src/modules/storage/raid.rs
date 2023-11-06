@@ -353,6 +353,8 @@ fn create_sw_raid_array(
 mod tests {
     use std::collections::BTreeMap;
 
+    use crate::modules::storage;
+
     use super::*;
     use trident_api::{
         config::PartitionType,
@@ -404,7 +406,8 @@ mod tests {
             ..Default::default()
         };
 
-        let result = get_device_paths(&host_status, &vec!["boot".to_string(), "root".to_string()]);
+        let result: Result<Vec<PathBuf>, Error> =
+            get_device_paths(&host_status, &vec!["boot".to_string(), "root".to_string()]);
 
         assert!(result.is_ok());
 
@@ -414,6 +417,12 @@ mod tests {
         let expected_paths = vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")];
 
         assert_eq!(device_paths, expected_paths);
+
+        let result: Result<Vec<PathBuf>, Error> = get_device_paths(
+            &host_status,
+            &vec!["boot2".to_string(), "root2".to_string()],
+        );
+        assert!(result.is_err());
     }
 
     #[test]
@@ -484,5 +493,87 @@ mod tests {
                 .contents,
             status::BlockDeviceContents::Initialized
         );
+    }
+
+    #[test]
+    fn test_get_partition_from_host_config() {
+        let host_config = HostConfiguration {
+            storage: trident_api::config::Storage {
+                disks: vec![trident_api::config::Disk {
+                    id: "some_disk".to_string(),
+                    partitions: vec![
+                        trident_api::config::Partition {
+                            id: "some_partition".to_string(),
+                            partition_type: trident_api::config::PartitionType::LinuxGeneric,
+                            size: trident_api::config::PartitionSize::Fixed(123),
+                        },
+                        trident_api::config::Partition {
+                            id: "some_partition2".to_string(),
+                            partition_type: trident_api::config::PartitionType::LinuxGeneric,
+                            size: trident_api::config::PartitionSize::Fixed(456),
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let partition = storage::get_partition_from_host_config(&host_config, "some_partition")
+            .expect("Expected to find a partition but not found.");
+
+        assert_eq!(partition.id, "some_partition");
+        assert_eq!(
+            partition.partition_type,
+            trident_api::config::PartitionType::LinuxGeneric
+        );
+        assert_eq!(
+            partition.size,
+            trident_api::config::PartitionSize::Fixed(123)
+        );
+
+        let partition =
+            storage::get_partition_from_host_config(&host_config, "non_existing_partition");
+        assert_eq!(partition, None);
+    }
+
+    #[test]
+    fn test_get_raid_array_ids() {
+        let host_config = HostConfiguration {
+            storage: trident_api::config::Storage {
+                disks: vec![trident_api::config::Disk {
+                    id: "some_disk".to_string(),
+                    partitions: vec![
+                        trident_api::config::Partition {
+                            id: "some_partition".to_string(),
+                            partition_type: trident_api::config::PartitionType::LinuxGeneric,
+                            size: trident_api::config::PartitionSize::Fixed(123),
+                        },
+                        trident_api::config::Partition {
+                            id: "some_partition2".to_string(),
+                            partition_type: trident_api::config::PartitionType::LinuxGeneric,
+                            size: trident_api::config::PartitionSize::Fixed(456),
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                raid: trident_api::config::RaidConfig {
+                    software: vec![trident_api::config::SoftwareRaidArray {
+                        id: "some_raid".to_string(),
+                        name: "raid1".to_string(),
+                        level: trident_api::config::RaidLevel::Raid1,
+                        devices: vec!["some_partition".to_string(), "some_partition2".to_string()],
+                        metadata_version: "1.0".to_string(),
+                    }],
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let raid_array_ids = storage::get_raid_array_ids(&host_config);
+        assert_eq!(raid_array_ids.len(), 1);
+        assert!(raid_array_ids.contains(&"some_raid".to_string()));
     }
 }
