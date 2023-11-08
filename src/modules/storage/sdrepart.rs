@@ -4,15 +4,24 @@ use anyhow::{bail, Context, Error};
 use configparser::ini::Ini;
 use log::info;
 use serde_json::Value;
+use std::collections::HashMap;
 use tempfile::TempDir;
-use trident_api::config::{Disk, Partition, PartitionSize, PartitionType};
+use trident_api::config::{BlockDeviceId, Disk, Partition, PartitionSize};
 use uuid::Uuid;
 
 pub(super) struct RepartConfiguration {
     repart_root: TempDir,
 }
 impl RepartConfiguration {
-    pub(super) fn new(disk: &Disk) -> Result<Self, Error> {
+    // Public function new() accepts two arguments:
+    // 1. disk, which is the disk to be partitioned,
+    // 2. a hashmap of partlabels, which maps partition id to partlabel,
+    // for partitions inside volume-pairs. This is needed so that sysupdate
+    // correctly interprets which partition to update.
+    pub(super) fn new(
+        disk: &Disk,
+        partlabels: &HashMap<BlockDeviceId, String>,
+    ) -> Result<Self, Error> {
         let repart_root = tempfile::tempdir()
             .context("Failed to create temporary directory for systemd-repart files")?;
         info!(
@@ -22,15 +31,21 @@ impl RepartConfiguration {
 
         let myself = Self { repart_root };
 
-        myself.generate_repart_config(disk).context(format!(
-            "Failed to generate systemd-repart configuration for disk {}",
-            disk.id
-        ))?;
+        myself
+            .generate_repart_config(disk, partlabels)
+            .context(format!(
+                "Failed to generate systemd-repart configuration for disk {}",
+                disk.id
+            ))?;
 
         Ok(myself)
     }
 
-    fn generate_repart_config(&self, disk: &Disk) -> Result<(), Error> {
+    fn generate_repart_config(
+        &self,
+        disk: &Disk,
+        partlabels: &HashMap<BlockDeviceId, String>,
+    ) -> Result<(), Error> {
         if disk.partitions.len() >= 100 {
             bail!(
                 "Too many partitions ({}), maximum is 99",
@@ -39,15 +54,20 @@ impl RepartConfiguration {
         }
 
         for (index, partition) in disk.partitions.iter().enumerate() {
-            let repart_config = partition_config_to_repart_config(partition).context(format!(
-                "Failed to generate partition configuration for partition {} on disk {}",
-                partition.id, disk.id
-            ))?;
+            // If there is an entry inside partlabels with partition.id as key,
+            // then pass Some(value), which is desired partlabel, to the function as
+            // the second arg. Otherwise, pass None.
+            let partlabel = partlabels.get(&partition.id);
+            let repart_config =
+                partition_config_to_repart_config(partition, partlabel).context(format!(
+                    "Failed to generate partition configuration for partition {} on disk {}",
+                    partition.id, disk.id
+                ))?;
 
             let partition_config_path = self.repart_root.path().join(format!(
                 "{:02}-{}.conf",
                 index,
-                partition_type_to_string(partition.partition_type)
+                partition.partition_type.to_sdrepart_part_type()
             ));
 
             repart_config
@@ -84,19 +104,27 @@ impl RepartConfiguration {
     }
 }
 
-fn partition_config_to_repart_config(partition: &Partition) -> Result<Ini, Error> {
-    let partition_type_str = partition_type_to_string(partition.partition_type);
+fn partition_config_to_repart_config(
+    partition: &Partition,
+    partlabel: Option<&String>,
+) -> Result<Ini, Error> {
+    let partition_type_str = partition.partition_type.to_sdrepart_part_type();
 
     let mut repart_config = Ini::new_cs();
 
     let repart_partition_section = "Partition";
 
-    repart_config.set(repart_partition_section, "Type", Some(partition_type_str));
     repart_config.set(
         repart_partition_section,
-        "Label",
-        Some(partition.id.clone()),
+        "Type",
+        Some(partition_type_str.to_string()),
     );
+
+    // If partlabel passed into the func is a valid String, use that
+    // as the label for the partition instead
+    let label = partlabel.unwrap_or(&partition.id).clone();
+
+    repart_config.set(repart_partition_section, "Label", Some(label));
 
     // Note: PartitionSize::Grow is the "default" in systemd-repart,
     // so we don't need to set anything. To create a partition with
@@ -118,21 +146,6 @@ fn partition_config_to_repart_config(partition: &Partition) -> Result<Ini, Error
     }
 
     Ok(repart_config)
-}
-
-fn partition_type_to_string(partition_type: PartitionType) -> String {
-    match partition_type {
-        PartitionType::Esp => "esp",
-        PartitionType::Home => "home",
-        PartitionType::LinuxGeneric => "linux-generic",
-        PartitionType::Root => "root",
-        PartitionType::RootVerity => "root-verity",
-        PartitionType::Swap => "swap",
-        PartitionType::Tmp => "tmp",
-        PartitionType::Usr => "usr",
-        PartitionType::Var => "var",
-    }
-    .to_owned()
 }
 
 pub(super) struct RepartPartition {
@@ -257,26 +270,6 @@ mod tests {
         assert!(parse_partition(&partition_status).is_err());
     }
 
-    /// Validates that partition_type_to_string returns the correct string for each PartitionType.
-    #[test]
-    fn test_partition_type_to_string() {
-        assert_eq!(partition_type_to_string(PartitionType::Esp), "esp");
-        assert_eq!(partition_type_to_string(PartitionType::Home), "home");
-        assert_eq!(
-            partition_type_to_string(PartitionType::LinuxGeneric),
-            "linux-generic"
-        );
-        assert_eq!(partition_type_to_string(PartitionType::Root), "root");
-        assert_eq!(
-            partition_type_to_string(PartitionType::RootVerity),
-            "root-verity"
-        );
-        assert_eq!(partition_type_to_string(PartitionType::Swap), "swap");
-        assert_eq!(partition_type_to_string(PartitionType::Tmp), "tmp");
-        assert_eq!(partition_type_to_string(PartitionType::Usr), "usr");
-        assert_eq!(partition_type_to_string(PartitionType::Var), "var");
-    }
-
     /// Validates that partition_config_to_repart_config returns the correct Ini for each Partition.
     #[test]
     fn test_partition_config_to_repart_config() {
@@ -285,7 +278,9 @@ mod tests {
             partition_type: PartitionType::Esp,
             size: PartitionSize::from_str("1M").unwrap(),
         };
-        let repart_config = partition_config_to_repart_config(&partition).unwrap();
+        // If partlabel passed into the func is None, set PARTLABEL to
+        // partition.id
+        let repart_config = partition_config_to_repart_config(&partition, None).unwrap();
         assert_eq!(
             repart_config.get("Partition", "Type").unwrap(),
             "esp".to_owned()
@@ -302,6 +297,30 @@ mod tests {
             repart_config.get("Partition", "SizeMaxBytes").unwrap(),
             "1048576".to_owned()
         );
+        // If partlabel passed into the func is a valid String, set PARTLABEL
+        // to that String instead
+        let repart_config_label =
+            partition_config_to_repart_config(&partition, Some(&"_empty".to_owned())).unwrap();
+        assert_eq!(
+            repart_config_label.get("Partition", "Type").unwrap(),
+            "esp".to_owned()
+        );
+        assert_eq!(
+            repart_config_label.get("Partition", "Label").unwrap(),
+            "_empty".to_owned()
+        );
+        assert_eq!(
+            repart_config_label
+                .get("Partition", "SizeMinBytes")
+                .unwrap(),
+            "1048576".to_owned()
+        );
+        assert_eq!(
+            repart_config_label
+                .get("Partition", "SizeMaxBytes")
+                .unwrap(),
+            "1048576".to_owned()
+        );
     }
 
     #[test]
@@ -311,7 +330,7 @@ mod tests {
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::Grow,
         };
-        let repart_config = partition_config_to_repart_config(&partition).unwrap();
+        let repart_config = partition_config_to_repart_config(&partition, None).unwrap();
         assert_eq!(
             repart_config.get("Partition", "Type").unwrap(),
             "linux-generic".to_owned()

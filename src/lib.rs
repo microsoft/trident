@@ -316,7 +316,7 @@ fn get_ab_update_volume(host_status: &HostStatus) -> Option<AbVolumeSelection> {
             }),
             UpdateKind::Incompatible => None,
         },
-        ReconcileState::Ready => None,
+        ReconcileState::Ready => *active_volume,
         ReconcileState::CleanInstall => Some(AbVolumeSelection::VolumeA),
     }
 }
@@ -830,7 +830,10 @@ mod tests {
 
         // test that Ready will return None
         host_status.reconcile_state = ReconcileState::Ready;
-        assert_eq!(get_ab_update_volume(&host_status), None);
+        assert_eq!(
+            get_ab_update_volume(&host_status),
+            Some(AbVolumeSelection::VolumeB)
+        );
     }
 
     /// Validates logic for setting block device contents

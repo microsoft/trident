@@ -312,6 +312,13 @@ fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Er
         &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
     )
     .context("Failed to perform kexec")
+
+    // TODO: Solve hard reboot(), so that the firmware chooses the correct boot
+    // partition to boot from, after each A/B update. Related ADO task:
+    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6169.
+    //
+    // info!("Performing hard reboot");
+    // image::reboot().context("Failed to perform hard reboot")
 }
 
 #[cfg(test)]

@@ -249,7 +249,10 @@ deploy onto the host. Each image is described by the following fields:
 
 #### AB Update
 
-Under development, initial logic for illustration purposes only.
+Currently, **a basic A/B update flow via systemd-sysupdate** is available with
+Trident. The users are able to update the **root** partition and write to
+**esp** partition that is part of an A/B volume pair. Other types of partitions
+will be eligible for A/B update in a later iteration.
 
 The **ab-update** section describes the A/B Update configuration of the host.
 This section is optional. If not present, A/B Update will not be configured on
@@ -266,6 +269,158 @@ the host. This section is described by the following fields:
 You can target the A/B Update volume pair from the `images` and `mount-points`
 and Trident will pick the right volume to use based on the A/B Update state of
 the host.
+
+##### Getting Started with Systemd-Sysupdate
+- First, the OS image payload needs to be made available for systemd-sysupdate
+to operate on. To use the terms from the sysupdate documentation, the source
+image can be published in the following two ways:
+
+1. **regular-file**: The OS image can be bundled with the installer OS and
+referenced from the initial HostConfiguration as follows:
+
+```yaml
+  imaging:
+    images:
+      - url: file:///boot.raw.xz
+        sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        format: raw-lzma
+        target-id: esp
+      - url: file:///root.raw.xz
+        sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        format: raw-lzma
+        target-id: root
+    ab-update:
+      volume-pairs:
+        - id: root
+          volume-a-id: root-a
+          volume-b-id: root-b
+        - id: esp
+          volume-a-id: esp-a
+          volume-b-id: esp-b
+```
+
+- In the sample HostConfiguration above, we're requesting Trident to create
+**two copies of the esp** partition, i.e., a volume pair with id esp that
+contains two partitions esp-a and esp-b, and to place an image in the raw lzma
+format onto esp. First of all, having an esp A/B volume pair is required for a
+successful boot post-update. Second of all, using systemd-sysupdate to write to
+a partition is valid as long as the block device target-id corresponds to a
+partition that is inside of an A/B volume pair. (This is because
+systemd-sysupdate expects 2+ partitions of the given type to do an update.)
+However, the actual A/B update of the esp partition is **not** fully supported
+since the basic e2e flow does not yet implement all the changes required to
+successfully **update the bootloader**. This distinction is very important.
+
+2. **url-file**: The OS image can be referenced using remote URLs, at an
+HTTP/HTTPS endpoint, e.g. by leveraging Azure blob storage. There are several
+requirements per the systemd-sysupdate flow:
+1) Along with the payload, there needs to be **a SHA256SUMS manifest file**
+published in the same remote directory as the image partition files. E.g., if
+the directory contains root_v2.raw.xz, then SHA256SUMS needs to contain the
+following line:
+`<sha256 hash><2 whitespaces><name of the updated partition file>\n`
+2) The image payload needs to be published with the **.xz extension**, by
+using the LZMA2 compression algorithm, so that systemd-sysupdate can decompress
+the image.
+3) Per current logic, the name of the image partition file corresponds to its
+**version**. Trident will extract the file name from the URL provided by the
+user in the Trident HostConfig and use it inside of the transfer config file,
+to communicate which version is requested from systemd-sysupdate. This means
+that the user needs to use consistent naming for partition files, so that
+the name of the new partition image will be read by systemd-sysupdate as a
+newer version. E.g., a convenient naming scheme could be the following:
+`<partition label/type>_v<version number>.raw.xz`
+For partition labels, it is recommended to use GPT partition type identifiers,
+as defined in the Type section of systemd repart.d manual:
+https://www.man7.org/linux/man-pages/man5/repart.d.5.html.
+4) The Imaging section in the sample HostConfiguration provided above can be
+set in the following way, to request url-file images for the runtime OS:
+
+```yaml
+  imaging:
+    images:
+      - url: <URL to the boot image>
+        sha256: <sha256 hash>
+        format: raw-lzma
+        target-id: esp
+      - url: <URL to the root image>
+        sha256: <sha256 hash>
+        format: raw-lzma
+        target-id: root
+```
+
+- When the installation of the initial runtime OS is completed, the user will
+be able to log into the baremetal host, or the VM simulating a BM host. The
+user can now request an A/B update by applying an edited Trident HostConfig. To
+do so, the user needs to replace the data inside of the Imaging section, to
+request to update **root** and write a new image to **esp**, via format
+**raw-lzma**, from a new URL, with the sha256 hash taken from SHA256SUMS
+published in the first step. For instance, the Imaging section of the new
+HostConfig shown above can be changed in the following way:
+
+```yaml
+  imaging:
+    images:
+      - url: <URL to the updated version of the image>
+        sha256: <sha256 hash>
+        format: raw-lzma
+        target-id: esp
+      - url: <URL to the updated version of the image>
+        sha256: <sha256 hash>
+        format: raw-lzma
+        target-id: root
+```
+
+- To overwrite the Trident HostConfig, the user can use the following command:
+`cat > /etc/trident/config.yaml <<EOF`
+`<body of the updated HostConfig>`
+`EOF`
+After overwriting the HostConfiguration, the user needs to apply the HostConfig
+by restarting Trident with the following command:
+`sudo systemctl restart trident.service`.
+The user can view the Trident logs live with the following command:
+`sudo journalctl -u trident.service -f`.
+
+- When the A/B update completes and the baremetal host, or a VM simulating a
+BM host, reboots, the user will be able to log back into the host by using the
+same credentials. Now, the user can view the changes to the system by
+displaying the HostStatus, which is stored in the datastore:
+`cat /var/lib/trident/datastore.sqlite`.
+The user can use commands such as `blkid` and `mount` to confirm that the
+partitions have been correctly updated and that the correct block devices
+have been mounted at the designated mountpoints, such as /boot/efi and /.
+
+##### TODO: Next Steps
+- After A/B update, Trident will be creating an **overlay** file system for the
+data/state partitions. This is required so that certain folders, as required by
+the user, can be read from and/or written to.
+- The user will be able to request an update from a file that is published to
+other backends. In the next iteration, Trident will support downloading OS
+image payloads published as **OCI artifacts** on Azure Container Registry.
+Moreover, based on the users' needs, other image formats might be supported in
+the future, beyond raw Zstd and raw Lzma.
+- To support downloading OCI artifacts and potentially, other backends, 
+**a hybrid A/B update** will be implemented: when the user provides a URL link
+that systemd-sysupdate cannot correctly download from, Trident will
+independently download the payload, decompress it, verify its hash, and point
+systemd-sysupdate to the local file, to execute an A/B update. This means that
+the overhead associated with generating and publishing the SHA256SUMS manifest
+file can be lifted from the user.
+- Trident will offer support to update the entire image, i.e. all types of
+partitions and not just root, via systemd-sysupdate.
+- Encryption and dm-verity will be supported.
+- In the next iteration, e2e testing with Trident will be implemented.
+Moreover, the next PR will document the performance metrics for the A/B update,
+such as the total downtime.
+- In the next iteration, Trident will support rollback, in case of an interrupted
+or failed A/B update.
+- Currently, the basic e2e A/B update flow is only successful when using
+kexec() to reboot the system post-update. However, the next iteration will
+also support using firmaware reboot, i.e., reboot() in Trident. A mechanism
+will be implemented to point the firmware to the correct esp partition; now,
+although the GRUB configs are correctly overwritten, the firmware still
+attempts to boot into the A partition by default.
+
 
 ### Network
 

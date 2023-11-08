@@ -352,6 +352,26 @@ pub enum PartitionType {
     LinuxGeneric,
 }
 
+impl PartitionType {
+    /// Helper function that returns PartititionType as a string. Return values
+    /// are based on GPT partition type identifiers, as defined in the Type
+    /// section of systemd repart.d manual:
+    /// https://www.man7.org/linux/man-pages/man5/repart.d.5.html.
+    pub fn to_sdrepart_part_type(&self) -> &str {
+        match self {
+            PartitionType::Esp => "esp",
+            PartitionType::Root => "root",
+            PartitionType::Swap => "swap",
+            PartitionType::RootVerity => "root-verity",
+            PartitionType::Home => "home",
+            PartitionType::Var => "var",
+            PartitionType::Usr => "usr",
+            PartitionType::Tmp => "tmp",
+            PartitionType::LinuxGeneric => "linux-generic",
+        }
+    }
+}
+
 /// RAID configuration for a host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "kebab-case")]
@@ -401,9 +421,6 @@ pub enum RaidLevel {
 }
 
 /// Mount point configuration. Carries information necessary to populate
-/// Mount point configuration.
-///
-/// Carries information necessary to populate
 /// /etc/fstab configuration to mount a filesystem on a block device.
 ///
 /// The resulting `/etc/fstab` is produced as follows:
@@ -487,6 +504,9 @@ pub struct Image {
 pub enum ImageFormat {
     /// Raw filesystem image with zstd compression.
     RawZstd,
+    /// Raw filesystem image with lzma compression, required by
+    /// systemd-sysupdate.
+    RawLzma,
 }
 
 /// A/B update configuration. Carries information about the A/B update volume
@@ -606,4 +626,29 @@ pub enum SshMode {
     KeyOnly,
     /// Enable SSH for this entity with KEY and PASSWORD.
     DangerousAllowPassword,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    /// Test that validates that to_sdrepart_part_type() returns the correct string for each
+    /// PartitionType.
+    #[test]
+    fn test_to_sdrepart_part_type() {
+        assert_eq!(PartitionType::Esp.to_sdrepart_part_type(), "esp");
+        assert_eq!(PartitionType::Home.to_sdrepart_part_type(), "home");
+        assert_eq!(
+            PartitionType::LinuxGeneric.to_sdrepart_part_type(),
+            "linux-generic"
+        );
+        assert_eq!(PartitionType::Root.to_sdrepart_part_type(), "root");
+        assert_eq!(
+            PartitionType::RootVerity.to_sdrepart_part_type(),
+            "root-verity"
+        );
+        assert_eq!(PartitionType::Swap.to_sdrepart_part_type(), "swap");
+        assert_eq!(PartitionType::Tmp.to_sdrepart_part_type(), "tmp");
+        assert_eq!(PartitionType::Usr.to_sdrepart_part_type(), "usr");
+        assert_eq!(PartitionType::Var.to_sdrepart_part_type(), "var");
+    }
 }

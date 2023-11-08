@@ -41,9 +41,14 @@ impl Module for OsConfigModule {
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        // TODO: When we switch to MIC, figure out a strategy for handling other kinds of updates
-        // Limit operation to ReconcileState::CleanInstall
-        if host_status.reconcile_state != ReconcileState::CleanInstall {
+        // TODO: When we switch to MIC, figure out a strategy for handling
+        // other kinds of updates. Limit operation to:
+        // 1. ReconcileState::CleanInstall,
+        // 2. ReconcileState::UpdateInProgress(UpdateKind::AbUpdate), to be
+        // able to test e2e A/B update.
+        if host_status.reconcile_state != ReconcileState::CleanInstall
+            && host_status.reconcile_state != ReconcileState::UpdateInProgress(UpdateKind::AbUpdate)
+        {
             return Ok(());
         }
 

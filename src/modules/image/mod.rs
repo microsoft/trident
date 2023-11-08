@@ -1,0 +1,988 @@
+use anyhow::{bail, Context, Error};
+use log::{debug, info};
+use nix::NixPath;
+use reqwest::Url;
+use sha2::Digest;
+use std::{
+    ffi::CString,
+    fs::{self, File},
+    io::{self, Read},
+    os::{fd::AsRawFd, unix::prelude::PermissionsExt},
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+use trident_api::{
+    config::{BlockDeviceId, HostConfiguration, Image, ImageFormat},
+    status::{
+        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo,
+        HostStatus, Partition, ReconcileState, UpdateKind,
+    },
+};
+
+use crate::modules::{storage::tabfile::TabFile, Module};
+use crate::mount;
+
+mod stream_image;
+mod systemd_sysupdate;
+
+const HASH_IGNORED: &str = "ignored";
+
+/// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
+struct HashingReader<R: Read>(R, sha2::Sha256);
+impl<R: Read> HashingReader<R> {
+    fn new(reader: R) -> Self {
+        Self(reader, sha2::Sha256::new())
+    }
+
+    fn hash(&self) -> String {
+        format!("{:x}", self.1.clone().finalize())
+    }
+}
+impl<R: Read> Read for HashingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // Read the requested amount of data from the inner reader
+        let n = self.0.read(buf)?;
+        // Update the hash with the data we read
+        self.1.update(&buf[..n]);
+        // Return the number of bytes read
+        Ok(n)
+    }
+}
+
+/// Function that streams images to block devices:
+/// 1. If image is a local file or an HTTP file published in RawZstd format, Trident will evoke a
+/// sub-module called Stream-Image, which will use HashingReader to write the bytes to the
+/// target block device.
+/// 2. If image is a local file or an HTTP file published in RawLzma format, Trident will run
+/// systemd-sysupdate.rs to download the image, if needed, and write it to the block device. The
+/// block device has to be a part of an A/B volume pair backed by partition block device. This is
+/// b/c sysupdate can only operate if there are 2+ copies of the partition type as the partition
+/// to be updated.
+/// 3. TODO: If image is an HTTP file published as an OCI Artifact, ImageFormat OciArtifact,
+/// Trident will download the image from Azure container registry and pass it to
+/// systemd-sysupdate.rs. ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
+///
+/// This function is called by the migrate() function in the Image module and
+/// returns an error if the image cannot be downloaded or installed correctly.
+fn update_images(
+    host_status: &mut HostStatus,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    for image in get_images_for_updating(host_status, host_config) {
+        // Validate that block device exists
+        let block_device = crate::get_block_device(host_status, &image.target_id).context(
+            format!("No block device with id '{}' found", image.target_id),
+        )?;
+
+        // TODO: Add more options for download sources
+        info!(
+            "Updating image of block device with id '{}'",
+            &image.target_id
+        );
+        info!(
+            "Downloading image from URL '{}' in '{:?}' format",
+            &image.url, &image.format
+        );
+
+        // Parse the URL to determine the download strategy
+        let image_url = Url::parse(image.url.as_str())
+            .context(format!("Failed to parse image URL '{}'", image.url))?;
+
+        // Determine if target-id corresponds to an A/B volume pair; if helper
+        // func returns None, then set bool to false
+        let targets_ab_volume_pair =
+            get_ab_volume_partition(host_status, &image.target_id).is_some();
+
+        if image_url.scheme() == "file" {
+            match image.format {
+                // If image is of format RawLzma AND target-id corresponds to an A/B volume pair,
+                // use systemd-sysupdate.rs to write to the partition
+                ImageFormat::RawLzma => {
+                    // If image format is raw-lzma but block device is not part of an A/B volume
+                    // pair, return error b/c sysupdate requires 2 copies of partitition for an
+                    // update
+                    if !targets_ab_volume_pair {
+                        bail!("Block device with id {} is not part of an A/B volume pair, so image in raw lzma format cannot be written to it.",
+                            &image.target_id)
+                    }
+                    // Fetch directory and filename from image URL
+                    let (directory, filename) = get_local_image(&image_url, image)?;
+                    // Run helper func sysupdate_deploy() to execute A/B update; since image is
+                    // local, pass directory and file name as arg-s
+                    sysupdate_deploy(
+                        image,
+                        host_status,
+                        Some(directory.as_path()),
+                        Some(filename.as_str()),
+                    )
+                    .context(format!(
+                        "Failed to deploy image {} via sysupdate",
+                        image.url
+                    ))?;
+                }
+                // If image format is raw-zstd, run helper func direct_deploy() to write image from
+                // local file via stream_image.rs
+                ImageFormat::RawZstd => {
+                    // 5th arg is False to communicate that image is a local file, i.e.,  is_local
+                    // will be set to True
+                    direct_deploy(image_url, image, host_status, &block_device, true).context(
+                        format!("Failed to deploy image {} via direct streaming", image.url),
+                    )?;
+                }
+            }
+        } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
+            match image.format {
+                // If image is of format RawLzma AND target-id corresponds to an A/B volume pair,
+                // use systemd-sysupdate.rs to write to the partition.
+                //
+                // TODO: Instead of delegating the download of the payload and hash verification to
+                // systemd-sysupdate, do it from Trident, to support more format types and avoid
+                // the SHA256SUMS overhead for the user. Related ADO task:
+                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6175.
+                ImageFormat::RawLzma => {
+                    // If image is of format RawLzma but target-id does NOT
+                    // correspond to an A/B volume pair, report an error
+                    if !targets_ab_volume_pair {
+                        bail!("Block device with id {} is not part of an A/B volume pair, so image in raw lzma format cannot be written to it.\nRaw lzma is not supported for block devices that do not correspond to A/B volume pairs",
+                            &image.target_id)
+                    }
+                    // Run helper func sysupdate_deploy() to execute A/B update; directory and file
+                    // name arg-s are None to communicate that update image is published via URL,
+                    // not locally
+                    sysupdate_deploy(image, host_status, None, None).context(format!(
+                        "Failed to deploy image {} via sysupdate",
+                        image.url
+                    ))?;
+                }
+                // Otherwise, use direct streaming of image bytes onto the block device, by using
+                // stream_image.rs
+                ImageFormat::RawZstd => {
+                    // 5th arg is False to communicate that image is not a local file, i.e.,
+                    // is_local will be set to False
+                    direct_deploy(image_url, image, host_status, &block_device, false).context(
+                        format!("Failed to deploy image {} via direct streaming", image.url),
+                    )?;
+                }
+            }
+        } else if image_url.scheme() == "oci" {
+            // TODO: Need to implement downloading images as OCI artifacts from Azure container
+            // registry and passing them to sysupdate. This functionality will be implemented in
+            // download_oci.rs. After the artifact is downloaded locally, Trident will evoke
+            // systemd-sysupdate.rs to install the image, providing 2 extra arg-s:
+            // 1. local_update_dir, which is a TempDir object pointing to a local directory
+            // containing the update image,
+            // 2. local_update_file, which is a String representing the name of the image file
+            // downloaded by Trident so that sysupdate can operate on it.
+            //
+            // Related ADO task:
+            // https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
+            todo!("Need to implement downloading images as OCI artifacts from Azure container registry")
+        } else {
+            bail!("Unsupported URL scheme")
+        };
+    }
+    Ok(())
+}
+
+/// Directly deploys images via stream_image.rs; returns error if image cannot be downloaded or
+/// installed correctly. Takes in 5 arg-s:
+/// 1. image_url: &Url, which is the URL of the image to be downloaded,
+/// 2. image: &Image, which is the Image object from HostConfig,
+/// 3. host_status: &mut HostStatus, which is the HostStatus object,
+/// 4. block_device: &BlockDeviceInfo, which is the BlockDeviceInfo object,
+/// 5. is_local: bool, which is a boolean indicating whether the image is a local file or not.
+fn direct_deploy(
+    image_url: Url,
+    image: &Image,
+    host_status: &mut HostStatus,
+    block_device: &BlockDeviceInfo,
+    is_local: bool,
+) -> Result<(), Error> {
+    // Check whether image_url is local; depending on result, create a boxed trait object for the
+    // read stream
+    let stream: Box<dyn Read> = if is_local {
+        // For local files, open the file at the given path
+        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?)
+    } else {
+        // For remote files, perform a blocking GET request
+        Box::new(
+            reqwest::blocking::get(image_url)
+                .context(format!("Failed to download {}", image.url))?,
+        )
+    };
+
+    // Initialize HashingReader instance on stream
+    let stream = HashingReader::new(stream);
+    info!("Calling Stream-Image sub-module to stream image to block device");
+    // Stream image to block device
+    let (computed_sha256, bytes_copied) =
+        stream_image::stream_zstd_image(host_status, stream, block_device, &image.target_id)
+            .context(format!("Failed to stream image from {}", image.url))?;
+
+    // Update HostStatus
+    crate::set_host_status_block_device_contents(
+        host_status,
+        &image.target_id,
+        BlockDeviceContents::Image {
+            sha256: computed_sha256.clone(),
+            length: bytes_copied,
+            url: image.url.clone(),
+        },
+    )?;
+
+    // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
+    // SHA256 matches SHA256 in HostConfig
+    if image.sha256 == HASH_IGNORED {
+        info!("Ignoring SHA256 for image from '{}'", image.url);
+    } else if computed_sha256 != image.sha256 {
+        bail!(
+            "SHA256 mismatch for disk image {}: expected {}, got {}",
+            image.url,
+            image.sha256,
+            computed_sha256
+        );
+    }
+
+    Ok(())
+}
+
+/// Returns directory as PathBuf and filename as String from image URL.
+fn get_local_image(image_url: &Url, image: &Image) -> Result<(PathBuf, String), Error> {
+    // Open local image file and read it into a stream of bytes
+    let stream: Box<dyn Read> =
+        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?);
+    // If SHA256 is ignored, log message and skip hash validation; otherwise, use HashingReader
+    // to compute sha256 hash of stream and ensure it is the same as hash in HostConfig
+    if image.sha256 == HASH_IGNORED {
+        info!("Ignoring SHA256 for image from '{}'", image.url);
+    } else {
+        // Initialize HashingReader instance on stream
+        let stream = HashingReader::new(stream);
+        if stream.hash() != image.sha256 {
+            bail!(
+                "SHA256 mismatch for disk image {}: expected {}, got {}",
+                image.url,
+                image.sha256,
+                stream.hash()
+            );
+        }
+    }
+    // Convert image URL to file path
+    let path = image_url
+        .to_file_path()
+        .map_err(|_| anyhow::anyhow!("Failed to convert URL to file path"))?;
+    // Extract directory from URL path
+    let directory = path.parent().context(format!(
+        "Failed to extract local dir from URL path {}",
+        path.display()
+    ))?;
+    // Extract filename as String from URL path
+    let filename = path
+        .file_name()
+        .map(|f| f.to_string_lossy())
+        .context(format!(
+            "Failed to extract filename from URL path {}",
+            path.display()
+        ))?;
+
+    Ok((directory.to_owned(), filename.to_string()))
+}
+
+/// Delegates image deployment to Systemd-Sysupdate sub-module.
+fn sysupdate_deploy(
+    image: &Image,
+    host_status: &mut HostStatus,
+    directory: Option<&Path>,
+    filename: Option<&str>,
+) -> Result<(), Error> {
+    debug!("Calling Systemd-Sysupdate sub-module to execute A/B update");
+    // Create ImageDeployment instance
+    let mut img_deploy_instance =
+        systemd_sysupdate::ImageDeployment::new(image, host_status, directory, filename).context(
+            format!(
+                "Failed to create ImageDeployment instance for block device with id '{}'",
+                &image.target_id
+            ),
+        )?;
+    // Call run_sysupdate(); save return value as number of bytes written
+    let image_length = img_deploy_instance
+        .run_sysupdate(host_status)
+        .context(format!(
+            "Failed to run systemd-sysupdate: Failed to update partition with id {} to version {}.",
+            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
+        ))?;
+    // If A/B update succeeded, update HostStatus
+    if image_length > 0 && img_deploy_instance.status == systemd_sysupdate::Status::Succeeded {
+        // If sysupdate succeeds, update contents of HostStatus
+        crate::set_host_status_block_device_contents(
+            host_status,
+            &image.target_id,
+            BlockDeviceContents::Image {
+                sha256: image.sha256.clone(),
+                length: image_length,
+                url: image.url.clone(),
+            },
+        )?;
+        info!(
+            "Systemd-Sysupdate sub-module successfully updated partition with id {} to version {}",
+            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
+        );
+    } else {
+        // If image_length is not 0 or status is Failed, A/B update failed
+        bail!("Update of partition with id {} to version {} failed. Returned image_length: {}; returned status: {:?}.",
+            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version, image_length, &img_deploy_instance.status
+        );
+    }
+    Ok(())
+}
+
+/// Returns a reference to Partition corresponding to block_device_id.
+fn get_partition_ref<'a>(
+    host_status: &'a HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a Partition> {
+    host_status
+        .storage
+        .disks
+        .iter()
+        .flat_map(|(_block_device_id, disk)| &disk.partitions)
+        .find(|p| p.id == *block_device_id)
+}
+
+/// Returns a reference to the Partition object within an AB volume pair that corresponds to the
+/// inactive partition, or the one to be updated.
+fn get_ab_volume_partition<'a>(
+    host_status: &'a HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a Partition> {
+    if let Some(ab_update) = &host_status.imaging.ab_update {
+        let ab_volume = ab_update
+            .volume_pairs
+            .iter()
+            .find(|v| v.0 == block_device_id);
+        if let Some(v) = ab_volume {
+            return crate::get_ab_update_volume(host_status).and_then(
+                |selection| match selection {
+                    AbVolumeSelection::VolumeA => get_partition_ref(host_status, &v.1.volume_a_id),
+                    AbVolumeSelection::VolumeB => get_partition_ref(host_status, &v.1.volume_b_id),
+                },
+            );
+        }
+    }
+
+    None
+}
+
+pub fn kexec(mount_path: &Path, args: &str) -> Result<(), Error> {
+    let root = mount_path
+        .to_str()
+        .context(format!("Non-utf8 mount point: {}", mount_path.display()))?;
+
+    info!("Searching for kernel and initrd");
+    let kernel_path = glob::glob(&format!("{root}/boot/vmlinuz-*"))?
+        .next()
+        .ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No kernel found",
+        ))??;
+
+    let initrd_path = glob::glob(&format!("{root}/boot/initrd.img-*"))?
+        .next()
+        .ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No initrd found",
+        ))??;
+
+    info!("Opening kernel and initrd");
+    let kernel = fs::File::open(kernel_path)?;
+    let initrd = fs::File::open(initrd_path)?;
+    let args = CString::new(args)?;
+
+    // Run kexec file load.
+    info!("Loading kernel");
+    let r = unsafe {
+        libc::syscall(
+            libc::SYS_kexec_file_load,
+            kernel.as_raw_fd(),
+            initrd.as_raw_fd(),
+            args.len() + 1,
+            args.as_ptr(),
+            0,
+        )
+    };
+    if r < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    // Close remaining files and sync all writes to the filesystem.
+    drop(kernel);
+    drop(initrd);
+    nix::unistd::sync();
+
+    mount::unmount_target_volumes(mount_path)?;
+
+    // Kexec into image.
+    info!("Rebooting system");
+    let r = unsafe { libc::reboot(libc::LINUX_REBOOT_CMD_KEXEC) };
+    if r < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    unreachable!()
+}
+
+#[allow(unused)]
+pub fn reboot() -> Result<(), Error> {
+    // Sync all writes to the filesystem.
+    nix::unistd::sync();
+
+    info!("Rebooting system");
+    crate::run_command(Command::new("systemctl").arg("reboot"))
+        .context("Failed to reboot the host")?;
+
+    unreachable!()
+}
+
+fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfiguration) {
+    host_status.imaging.ab_update = host_config.imaging.ab_update.as_ref().map(|ab_update| {
+        let ab_volume_pairs = ab_update
+            .volume_pairs
+            .iter()
+            .map(|p| {
+                (
+                    p.id.clone(),
+                    AbVolumePair {
+                        volume_a_id: p.volume_a_id.clone(),
+                        volume_b_id: p.volume_b_id.clone(),
+                    },
+                )
+            })
+            .collect();
+
+        AbUpdate {
+            volume_pairs: ab_volume_pairs,
+            active_volume: None,
+        }
+    });
+}
+
+/// Returns a list of images that need to be updated/provisioned.
+fn get_images_for_updating<'a>(
+    host_status: &HostStatus,
+    host_config: &'a HostConfiguration,
+) -> Vec<&'a Image> {
+    host_config
+        .imaging
+        .images
+        .iter()
+        .filter(|image| {
+            if let Some(bdi) = crate::get_block_device(host_status, &image.target_id) {
+                if let BlockDeviceContents::Image { sha256, url, .. } = bdi.contents {
+                    if url == image.url && (sha256 == image.sha256 || image.sha256 == HASH_IGNORED)
+                    {
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .collect()
+}
+
+#[derive(Default, Debug)]
+pub struct ImageModule;
+impl Module for ImageModule {
+    fn name(&self) -> &'static str {
+        "image"
+    }
+
+    fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
+        // update root_device_path of the active root volume
+        host_status.imaging.root_device_path = Some(
+            TabFile::get_device_path(Path::new("/proc/mounts"), Path::new("/"))
+                .context("Failed find root mount point")?,
+        );
+
+        // if a/b update is enabled
+        if let Some(ab_update) = &host_status.imaging.ab_update {
+            // and mount points have a reference to root volume
+            if let Some(root_device_id) = host_status
+                .storage
+                .mount_points
+                .iter()
+                .find(|(_id, mp)| mp.path == Path::new("/"))
+                .map(|(id, _mp)| id.clone())
+            {
+                // and one of the a/b update volumes points to the root volume
+                if let Some(root_device_pair) = ab_update.volume_pairs.get(&root_device_id) {
+                    let volume_a_path =
+                        crate::get_block_device(host_status, &root_device_pair.volume_a_id)
+                            .context("Failed to get block device for volume A")?
+                            .path;
+
+                    let volume_b_path =
+                        crate::get_block_device(host_status, &root_device_pair.volume_b_id)
+                            .context("Failed to get block device for volume B")?
+                            .path;
+
+                    // update the active volume in the a/b scheme based on what
+                    // is the current root volume
+                    if let Some(root_device_path) = &host_status.imaging.root_device_path {
+                        host_status
+                            .imaging
+                            .ab_update
+                            .as_mut()
+                            .unwrap()
+                            .active_volume = if &volume_a_path.canonicalize()? == root_device_path {
+                            Some(AbVolumeSelection::VolumeA)
+                        } else if &volume_b_path.canonicalize()? == root_device_path {
+                            Some(AbVolumeSelection::VolumeB)
+                        } else {
+                            None
+                        };
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_host_config(
+        &self,
+        _host_status: &HostStatus,
+        _host_config: &HostConfiguration,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn select_update_kind(
+        &self,
+        host_status: &HostStatus,
+        host_config: &HostConfiguration,
+    ) -> Option<UpdateKind> {
+        // Don't assume we are in a middle of an update.
+        let mut host_status = host_status.clone();
+        host_status.reconcile_state = ReconcileState::Ready;
+
+        let update_images = get_images_for_updating(&host_status, host_config);
+        if update_images.is_empty() {
+            None
+        } else {
+            Some(UpdateKind::AbUpdate)
+        }
+    }
+
+    fn migrate(
+        &mut self,
+        host_status: &mut HostStatus,
+        host_config: &HostConfiguration,
+        mount_point: &Path,
+    ) -> Result<(), Error> {
+        // Only call refresh_ab_volumes() and set active_volume to None if
+        // the reconcile_state is CleanInstall
+        if host_status.reconcile_state == ReconcileState::CleanInstall {
+            refresh_ab_volumes(host_status, host_config);
+        }
+
+        update_images(host_status, host_config)?;
+        mount::setup_root_chroot(host_config, host_status, mount_point)?;
+
+        Ok(())
+    }
+
+    fn reconcile(
+        &mut self,
+        _host_status: &mut HostStatus,
+        _host_config: &HostConfiguration,
+    ) -> Result<(), Error> {
+        // Patch /var in case it was injected as a volume
+
+        // TODO - this is a temporary fix for the issue where /var is mounted as
+        // a volume, longer term, we should either require user to provide /var
+        // partition image or allow to copy contents of /var from the root fs
+        // image, similar to what MIC will do
+
+        // if we let users mount over /var, some services will fail to start, so
+        // we need to recreate missing directories first
+        let var_log_path = Path::new("/var/log");
+        if !var_log_path.exists() {
+            fs::create_dir(var_log_path)?;
+            fs::set_permissions(var_log_path, fs::Permissions::from_mode(0o755))?;
+        }
+
+        // auditd requires /var/log/audit to be present, and auditd is a
+        // required component for Mariner images
+        let var_log_audit_path = var_log_path.join("audit");
+        if !var_log_audit_path.exists() {
+            fs::create_dir(&var_log_audit_path)?;
+            fs::set_permissions(var_log_audit_path, fs::Permissions::from_mode(0o700))?;
+        }
+
+        // sshd requires /var/lib/sshd to be present, and sshd is a
+        // required component for Mariner images
+        let var_lib_path = Path::new("/var/lib");
+        if !var_lib_path.exists() {
+            fs::create_dir(var_lib_path)?;
+            fs::set_permissions(var_lib_path, fs::Permissions::from_mode(0o755))?;
+        }
+        let var_lib_sshd_path = var_lib_path.join("sshd");
+        if !var_lib_sshd_path.exists() {
+            fs::create_dir(&var_lib_sshd_path)?;
+            fs::set_permissions(var_lib_sshd_path, fs::Permissions::from_mode(0o700))?;
+        }
+
+        // End of patch block
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indoc::indoc;
+    use std::io::Cursor;
+    use trident_api::config::PartitionType;
+
+    /// Validates logic for querying disks and partitions.
+    #[test]
+    fn test_get_partition_ref() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                mount-points:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                            - id: efi
+                              path: /dev/disk/by-partlabel/osp1
+                              contents: unknown
+                              start: 0
+                              end: 0
+                              type: esp
+                              uuid: 00000000-0000-0000-0000-000000000000
+                            - id: root
+                              path: /dev/disk/by-partlabel/osp2
+                              contents: unknown
+                              start: 100
+                              end: 1000
+                              type: root
+                              uuid: 00000000-0000-0000-0000-000000000000
+                            - id: rootb
+                              path: /dev/disk/by-partlabel/osp3
+                              contents: unknown
+                              start: 1000
+                              end: 10000
+                              type: root
+                              uuid: 00000000-0000-0000-0000-000000000000
+                raid-arrays:
+            imaging:
+                ab-update:
+                    volume-pairs:
+            reconcile-state: clean-install
+        "#};
+        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        // New assertions for get_partition_ref
+        assert_eq!(get_partition_ref(&host_status, &"os".to_owned()), None);
+        assert_eq!(
+            get_partition_ref(&host_status, &"efi".to_owned()).map(|p| &p.path),
+            Some(&PathBuf::from("/dev/disk/by-partlabel/osp1"))
+        );
+    }
+
+    #[test]
+    fn test_hashing_reader() {
+        let input = b"Hello, world!";
+        let mut hasher = HashingReader::new(Cursor::new(&input));
+
+        let mut output = Vec::new();
+        hasher.read_to_end(&mut output).unwrap();
+        assert_eq!(input, &*output);
+        assert_eq!(
+            hasher.hash(),
+            "315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3"
+        );
+    }
+
+    /// Validates that refresh_ab_volumes initializes HostStatus correctly.
+    #[test]
+    fn test_refresh_ab_volumes_yaml() {
+        let host_config_yaml = indoc! {r#"
+            storage:
+                disks:
+            imaging:
+                images:
+                ab-update:
+                    volume-pairs:
+                      - id: ab
+                        volume-a-id: a
+                        volume-b-id: b
+        "#};
+        let host_config = serde_yaml::from_str::<HostConfiguration>(host_config_yaml).unwrap();
+        let mut host_status = HostStatus::default();
+
+        refresh_ab_volumes(&mut host_status, &host_config);
+        assert!(host_status.imaging.ab_update.is_some());
+        assert!(host_status
+            .imaging
+            .ab_update
+            .as_ref()
+            .unwrap()
+            .volume_pairs
+            .contains_key("ab"));
+    }
+
+    #[test]
+    fn test_get_images_for_updating() {
+        let host_config_yaml = indoc::indoc! {r#"
+            storage:
+              disks: []
+              mount-points:
+                - path: /boot
+                  target-id: boot
+                  filesystem: fat32
+                  options: []
+                - path: /
+                  target-id: root
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+                - url: http://example.com/esp.img
+                  target-id: boot
+                  format: raw-zstd
+                  sha256: foobar
+                - url: http://example.com/image1.img
+                  target-id: root
+                  format: raw-zstd
+                  sha256: ignored
+            "#};
+        let mut host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+        let host_status_yaml = indoc::indoc! {r#"
+            storage:
+              disks:
+                foo: 
+                  uuid: 00000000-0000-0000-0000-000000000000
+                  path: /dev/sda
+                  capacity: 10
+                  contents: initialized
+                  partitions:
+                    - uuid: 00000000-0000-0000-0000-000000000001
+                      path: /dev/sda1
+                      id: boot
+                      start: 1
+                      end: 3
+                      type: esp
+                      contents: !image
+                        url: http://example.com/esp.img
+                        sha256: foobar
+                        length: 100
+                    - uuid: 00000000-0000-0000-0000-000000000002
+                      path: /dev/sda2
+                      id: root
+                      start: 4
+                      end: 10
+                      type: root
+                      contents: !image
+                        url: http://example.com/image1.img
+                        sha256: foobar
+                        length: 100
+              raid-arrays: {}
+              mount-points:
+                boot:
+                  path: /boot
+                  filesystem: fat32
+                  options: []
+                root:
+                  path: /
+                  filesystem: ext4
+                  options: []
+            reconcile-state: clean-install
+            imaging:
+            "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        // should be zero, as images are matching and hash is ignored
+        assert_eq!(get_images_for_updating(&host_status, &host_config).len(), 0);
+
+        // should be zero, as images and hashes are matching
+        host_config.imaging.images[0].sha256 = "foobar".to_string();
+        assert_eq!(get_images_for_updating(&host_status, &host_config).len(), 0);
+
+        // should be one, as image hash is different
+        host_config.imaging.images[0].sha256 = "barfoo".to_string();
+        assert_eq!(
+            get_images_for_updating(&host_status, &host_config),
+            vec![&Image {
+                url: "http://example.com/esp.img".to_string(),
+                target_id: "boot".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "barfoo".to_string(),
+            }]
+        );
+
+        // should be one, as image url is different
+        host_config.imaging.images[0].sha256 = HASH_IGNORED.to_string();
+        host_config.imaging.images[0].url = "http://example.com/image2.img".to_string();
+        assert_eq!(
+            get_images_for_updating(&host_status, &host_config),
+            vec![&Image {
+                url: "http://example.com/image2.img".to_string(),
+                target_id: "boot".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "ignored".to_string(),
+            }]
+        );
+
+        // could be zero, as despite the url being different, the hash is the
+        // same; for now though we reimage to be safe, hence 1
+        host_config.imaging.images[0].sha256 = "foobar".to_string();
+        assert_eq!(
+            get_images_for_updating(&host_status, &host_config),
+            vec![&Image {
+                url: "http://example.com/image2.img".to_string(),
+                target_id: "boot".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "foobar".to_string(),
+            }]
+        );
+
+        // should be 2, as the image is not initialized and the other is from
+        // the previous case
+        host_status.storage.disks.get_mut("foo").unwrap().partitions[1].contents =
+            BlockDeviceContents::Unknown;
+        assert_eq!(
+            get_images_for_updating(&host_status, &host_config),
+            vec![
+                &Image {
+                    url: "http://example.com/image2.img".to_string(),
+                    target_id: "boot".to_string(),
+                    format: ImageFormat::RawZstd,
+                    sha256: "foobar".to_string(),
+                },
+                &Image {
+                    url: "http://example.com/image1.img".to_string(),
+                    target_id: "root".to_string(),
+                    format: ImageFormat::RawZstd,
+                    sha256: "ignored".to_string(),
+                }
+            ]
+        );
+    }
+
+    /// Validates that get_ab_volume_partition() correctly returns the id of
+    /// the active partition inside of an ab-volume pair.
+    #[test]
+    fn test_get_ab_volume_partition() {
+        // Setting up the sample host_status
+        let host_status_yaml = indoc! {r#"
+            storage:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root-a
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root-b
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                    data:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 1000
+                        contents: unknown
+                        partitions: []
+                mount-points:
+                raid-arrays: {}
+            imaging:
+                ab-update:
+                    volume-pairs:
+                        root:
+                            volume-a-id: root-a
+                            volume-b-id: root-b
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        // 1. Test when the active volume is VolumeA
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+
+        // Declare a new Partition object corresponding to the inactive
+        // partition root-b
+        let partition_root_b = Partition {
+            id: "root-b".to_owned(),
+            path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+            contents: BlockDeviceContents::Unknown,
+            start: 1000,
+            end: 10000,
+            ty: PartitionType::Root,
+            uuid: uuid::Uuid::nil(),
+        };
+
+        assert_eq!(
+            get_ab_volume_partition(&host_status, &"root".to_owned()),
+            Some(&partition_root_b)
+        );
+
+        // 2. Test when the active volume is VolumeB
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+
+        // Declare a new Partition object
+        let partition_root_a = Partition {
+            id: "root-a".to_owned(),
+            path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+            contents: BlockDeviceContents::Unknown,
+            start: 100,
+            end: 1000,
+            ty: PartitionType::Root,
+            uuid: uuid::Uuid::nil(),
+        };
+
+        assert_eq!(
+            get_ab_volume_partition(&host_status, &"root".to_owned()),
+            Some(&partition_root_a)
+        );
+
+        // 3. Test with an ID that doesn't match any volume pair
+        assert_eq!(
+            get_ab_volume_partition(&host_status, &"nonexistent".to_owned()),
+            None
+        );
+    }
+}

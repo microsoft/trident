@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Error};
 use log::info;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -36,7 +36,35 @@ fn create_partitions(
                 format!("Failed to find bus path of '{}'", disk_path.display()),
             )?;
 
-        let repart_config = RepartConfiguration::new(disk).context(format!(
+        // Generate a hash map of {key: partition_id, value: partlabel},
+        // so that sdrepart.rs can give initial "old-version" labels, i.e.
+        // "_empty", to partitions that are inside any volume-pairs. This is so
+        // that when sysupdate is invoked, it interprets PARTLABEL of the
+        // partition to be updated as "old" enough.
+
+        // Initialize an empty hash map, where key is BlockDeviceId,
+        // value is String
+        let mut partlabels: HashMap<BlockDeviceId, String> = HashMap::new();
+
+        // TODO: Potentially, provide support for custom user-provided
+        // PARTLABELs, if required by the users. Related ADO task:
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6125.
+
+        // Iterate through host_status.imaging.ab_update.volume_pairs. For each
+        // volume_pair, add each partition_id to the hash map, where value for
+        // volume-a-id (active) is "a" and value for volume-b-id (inactive) is
+        // "_empty". On next run of sysupdate, "_empty" will be updated.
+        if let Some(ab_update) = &host_config.imaging.ab_update {
+            for volume_pair in &ab_update.volume_pairs {
+                // For volume-a-id
+                partlabels.insert(volume_pair.volume_a_id.clone(), "_empty".to_string());
+                // For volume-b-id
+                partlabels.insert(volume_pair.volume_b_id.clone(), "_empty".to_string());
+            }
+        }
+
+        // Pass hash map as second arg into new()
+        let repart_config = RepartConfiguration::new(disk, &partlabels).context(format!(
             "Failed to generate systemd-repart config for disk {}",
             disk.id
         ))?;
