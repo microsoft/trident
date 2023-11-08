@@ -383,6 +383,9 @@ host-configuration:
         ssh-keys: 
           - <MY_PUBLIC_SSH_KEY>
         ssh-mode: key-only
+  # Uncomment the following if you want to be able to use passwordless sudo using this user
+  # post-install-scripts:
+  # - content: 'echo "my-new-user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/my-new-user'
 ```
 
 ## Contributing
