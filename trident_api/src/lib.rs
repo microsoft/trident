@@ -45,3 +45,42 @@ impl BlockDeviceInfo {
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
     *t == Default::default()
 }
+
+#[cfg(feature = "schemars")]
+mod schema_helpers {
+    use schemars::{
+        gen::SchemaGenerator,
+        schema::{ArrayValidation, InstanceType, Schema, SchemaObject, SingleOrVec},
+    };
+    use serde_json::{json, Map, Value};
+
+    /// Returns a placeholder schema for a netplan field.
+    pub(crate) fn make_placeholder_netplan_schema(gen: &mut SchemaGenerator) -> Schema {
+        let mut schema = gen
+            .subschema_for::<Option<Map<String, Value>>>()
+            .into_object();
+        schema.format = Some("Netplan YAML".to_owned());
+        schema.object().additional_properties = None;
+        schema.extensions.insert("nullable".to_owned(), json!(true));
+        Schema::Object(schema)
+    }
+
+    pub(crate) fn block_device_id_schema(gen: &mut SchemaGenerator) -> Schema {
+        let mut schema = gen.subschema_for::<String>().into_object();
+        schema.format = Some("Block Device ID".to_owned());
+        Schema::Object(schema)
+    }
+
+    pub(crate) fn block_device_id_list_schema(gen: &mut SchemaGenerator) -> Schema {
+        // Build an array schema and then add the block device ID schema as the item schema.
+        let schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::Array))),
+            array: Some(Box::new(ArrayValidation {
+                items: Some(SingleOrVec::Single(Box::new(block_device_id_schema(gen)))),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        Schema::Object(schema)
+    }
+}

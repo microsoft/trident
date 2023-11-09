@@ -1,0 +1,707 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HostConfiguration",
+  "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
+  "type": "object",
+  "required": [
+    "imaging",
+    "storage"
+  ],
+  "properties": {
+    "imaging": {
+      "description": "Filesystem imaging configuration of the host.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Imaging"
+        }
+      ]
+    },
+    "management": {
+      "description": "The Management configuration controls the installation of the Trident agent onto the runtime OS.",
+      "default": {
+        "disable": false,
+        "phonehome": null,
+        "self-upgrade": false
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/Management"
+        }
+      ]
+    },
+    "network": {
+      "description": "Netplan network configuration for the runtime OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
+      "type": "object",
+      "format": "Netplan YAML",
+      "nullable": true
+    },
+    "network-provision": {
+      "description": "Netplan network configuration for the provisioning OS _ONLY_.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.\n\nWhen provided, this configuration will be used to configure the network on the provisioning OS. When not provided, the network configuration from the runtime OS will be used instead.",
+      "type": "object",
+      "format": "Netplan YAML",
+      "nullable": true
+    },
+    "osconfig": {
+      "description": "OS Configuration",
+      "allOf": [
+        {
+          "$ref": "#/definitions/OsConfig"
+        }
+      ]
+    },
+    "post-install-scripts": {
+      "description": "Scripts to be run after the installation is complete.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Script"
+      }
+    },
+    "storage": {
+      "description": "Describes the storage configuration of the host.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Storage"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "AbUpdate": {
+      "description": "A/B update configuration. Carries information about the A/B update volume pairs that are used to perform A/B updates.",
+      "type": "object",
+      "required": [
+        "volume-pairs"
+      ],
+      "properties": {
+        "volume-pairs": {
+          "description": "A list of volume pairs that will be used for A/B Update.\n\nYou can target the A/B Update volume pair from the `images` and `mount-points` and Trident will pick the right volume to use based on the A/B Update state of the host.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AbVolumePair"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "AbVolumePair": {
+      "description": "Per A/B update volume pair configuration. Points to the underlying block devices used for the A/B update.\n\n**Under development, initial logic for illustration purposes only.**",
+      "type": "object",
+      "required": [
+        "id",
+        "volume-a-id",
+        "volume-b-id"
+      ],
+      "properties": {
+        "id": {
+          "description": "A unique identifier for the volume pair.\n\nThis is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "volume-a-id": {
+          "description": "The ID of the partition that will be used as the A volume.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "volume-b-id": {
+          "description": "The ID of the partition that will be used as the B volume.",
+          "type": "string",
+          "format": "Block Device ID"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Disk": {
+      "description": "Per disk configuration.",
+      "type": "object",
+      "required": [
+        "device",
+        "id",
+        "partition-table-type",
+        "partitions"
+      ],
+      "properties": {
+        "device": {
+          "description": "The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).",
+          "type": "string"
+        },
+        "id": {
+          "description": "A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "partition-table-type": {
+          "description": "The partition table type of the disk.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PartitionTableType"
+            }
+          ]
+        },
+        "partitions": {
+          "description": "A list of partitions that will be created on the disk.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Partition"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Image": {
+      "description": "Per image configuration.",
+      "type": "object",
+      "required": [
+        "format",
+        "sha256",
+        "target-id",
+        "url"
+      ],
+      "properties": {
+        "format": {
+          "description": "The format of the image.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ImageFormat"
+            }
+          ]
+        },
+        "sha256": {
+          "description": "The SHA256 checksum of the image.\n\nThis is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string.",
+          "type": "string"
+        },
+        "target-id": {
+          "description": "The ID of the partition that will be used to store the image.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "url": {
+          "description": "The URL of the image.\n\nSupported schemes are: `file`, `http`, `https`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ImageFormat": {
+      "description": "Image format.",
+      "oneOf": [
+        {
+          "title": "Raw Zstd Compressed",
+          "description": "Raw filesystem image with zstd compression.",
+          "type": "string",
+          "enum": [
+            "raw-zstd"
+          ]
+        },
+        {
+          "description": "Raw filesystem image with lzma compression, required by systemd-sysupdate.",
+          "type": "string",
+          "enum": [
+            "raw-lzma"
+          ]
+        }
+      ]
+    },
+    "Imaging": {
+      "description": "Imaging configuration for a host.",
+      "type": "object",
+      "required": [
+        "images"
+      ],
+      "properties": {
+        "ab-update": {
+          "description": "A/B update configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AbUpdate"
+            }
+          ],
+          "nullable": true
+        },
+        "images": {
+          "description": "Per image configuration",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Image"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Management": {
+      "description": "The Management configuration controls the installation of the Trident agent onto the runtime OS.",
+      "type": "object",
+      "properties": {
+        "datastore-path": {
+          "description": "Describes where to place the datastore Trident will use to store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.",
+          "type": "string",
+          "nullable": true
+        },
+        "disable": {
+          "description": "When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.",
+          "default": false,
+          "type": "boolean"
+        },
+        "phonehome": {
+          "description": "URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.",
+          "type": "string",
+          "nullable": true
+        },
+        "self-upgrade": {
+          "description": "(FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should upgrade itself. If set to `true`, Trident will replicate itself into the runtime OS prior to transitioning. This is useful during development to ensure the matching version of Trident is used. Defaults to `false`.",
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MountPoint": {
+      "description": "Mount point configuration. Carries information necessary to populate /etc/fstab configuration to mount a filesystem on a block device.\n\nThe resulting `/etc/fstab` is produced as follows:\n\n- For each mount point, a line is added to the `/etc/fstab` file, if the `path` does not already exist in the `/etc/fstab` supplied in the runtime OS image. If the `path` already exists in the `/etc/fstab` supplied in the runtime OS, it will be updated to match the configuration provided in the Host Configuration mount points. - If a mount point is not present in the Host Configuration, but present in the `/etc/fstab`, the line will be preserved as is in the `/etc/fstab`.\n\nNote that you do not need to specify the mounts points, if your runtime OS `/etc/fstab` carries the correct configuration already. In this case, Trident will not modify the `/etc/fstab` file nor will it format the partitions.",
+      "type": "object",
+      "required": [
+        "filesystem",
+        "options",
+        "path",
+        "target-id"
+      ],
+      "properties": {
+        "filesystem": {
+          "description": "The filesystem to be used for this mount point.\n\nThis value will be used to format the partition.",
+          "type": "string"
+        },
+        "options": {
+          "description": "A list of options to be used for this mount point.\n\nThese will be passed as is to the `/etc/fstab` file.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "path": {
+          "description": "The path of the mount point.\n\nThis is the path where the volume will be mounted in the runtime OS. For `swap` partitions, the path should be `none`.",
+          "type": "string"
+        },
+        "target-id": {
+          "description": "The ID of the partition that will be mounted at this mount point.",
+          "type": "string",
+          "format": "Block Device ID"
+        }
+      },
+      "additionalProperties": false
+    },
+    "OsConfig": {
+      "description": "Configuration for the host OS.",
+      "type": "object",
+      "properties": {
+        "users": {
+          "title": "Users",
+          "description": "Map of users to configure on the host. The key is the username.",
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/User"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Partition": {
+      "description": "Per partition configuration.",
+      "type": "object",
+      "required": [
+        "id",
+        "size",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "description": "A unique identifier for the partition.\n\nThis is a user defined string that allows to link the partition to the mount points and also to results in the Host Status.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "size": {
+          "description": "Size of the partition.\n\nFormat: String `<number>[<unit>]`\n\nAccepted values:\n\n- `grow`: Use all available space.\n\n- A number with optional unit suffixes: K, M, G, T (to the base of 1024), bytes by default when no unit is specified.\n\nExamples:\n\n- `1G`\n\n- `200M`\n\n- `grow`",
+          "type": "string"
+        },
+        "type": {
+          "description": "The type of the partition.\n\nAs defined by the [Discoverable Partitions Specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PartitionType"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "PartitionTableType": {
+      "description": "Partition table type. Currently only GPT is supported.",
+      "oneOf": [
+        {
+          "title": "GPT",
+          "description": "Disk should be formatted with a GUID Partition Table (GPT).",
+          "type": "string",
+          "enum": [
+            "gpt"
+          ]
+        }
+      ]
+    },
+    "PartitionType": {
+      "description": "Partition types as defined by The Discoverable Partitions Specification (https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).",
+      "oneOf": [
+        {
+          "title": "EFI System Partition",
+          "description": "`C12A7328-F81F-11D2-BA4B-00A0C93EC93B`",
+          "type": "string",
+          "enum": [
+            "esp"
+          ]
+        },
+        {
+          "title": "Root partition",
+          "description": "x64: `4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709`",
+          "type": "string",
+          "enum": [
+            "root"
+          ]
+        },
+        {
+          "title": "Swap partition",
+          "description": "`0657fd6d-a4ab-43c4-84e5-0933c84b4f4f`",
+          "type": "string",
+          "enum": [
+            "swap"
+          ]
+        },
+        {
+          "title": "Root partition with dm-verity enabled",
+          "description": "x64: `2c7357ed-ebd2-46d9-aec1-23d437ec2bf5`",
+          "type": "string",
+          "enum": [
+            "root-verity"
+          ]
+        },
+        {
+          "title": "Home partition",
+          "description": "`933ac7e1-2eb4-4f13-b844-0e14e2aef915`",
+          "type": "string",
+          "enum": [
+            "home"
+          ]
+        },
+        {
+          "title": "Var partition",
+          "description": "`4d21b016-b534-45c2-a9fb-5c16e091fd2d`",
+          "type": "string",
+          "enum": [
+            "var"
+          ]
+        },
+        {
+          "title": "Usr partition",
+          "description": "x64: `8484680c-9521-48c6-9c11-b0720656f69e`",
+          "type": "string",
+          "enum": [
+            "usr"
+          ]
+        },
+        {
+          "title": "Tmp partition",
+          "description": "`7ec6f557-3bc5-4aca-b293-16ef5df639d1`",
+          "type": "string",
+          "enum": [
+            "tmp"
+          ]
+        },
+        {
+          "title": "Generic Linux partition",
+          "description": "`0fc63daf-8483-4772-8e79-3d69d8477de4`",
+          "type": "string",
+          "enum": [
+            "linux-generic"
+          ]
+        }
+      ]
+    },
+    "Password": {
+      "description": "Password configuration for a user.",
+      "oneOf": [
+        {
+          "title": "[DEFAULT] Locked Password",
+          "description": "Lock the user's password. (equivalent to `passwd -l`)",
+          "type": "object",
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "locked"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "title": "Plaintext Password",
+          "description": "Set the user's password to a plaintext value.",
+          "type": "object",
+          "required": [
+            "mode",
+            "value"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "dangerous-plain-text"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "title": "Hashed Password",
+          "description": "Set the user's password to a hashed value.",
+          "type": "object",
+          "required": [
+            "mode",
+            "value"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "dangerous-hashed"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RaidConfig": {
+      "description": "RAID configuration for a host.",
+      "type": "object",
+      "properties": {
+        "software": {
+          "description": "Individual software raid configurations.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SoftwareRaidArray"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "RaidLevel": {
+      "oneOf": [
+        {
+          "title": "Striping",
+          "type": "string",
+          "enum": [
+            "raid0"
+          ]
+        },
+        {
+          "title": "Mirroring",
+          "type": "string",
+          "enum": [
+            "raid1"
+          ]
+        },
+        {
+          "title": "Striping with parity",
+          "type": "string",
+          "enum": [
+            "raid5"
+          ]
+        },
+        {
+          "title": "Striping with double parity",
+          "type": "string",
+          "enum": [
+            "raid6"
+          ]
+        },
+        {
+          "title": "Stripe of mirrors",
+          "type": "string",
+          "enum": [
+            "raid10"
+          ]
+        }
+      ]
+    },
+    "Script": {
+      "description": "A script to be run by Trident at a specific stage.",
+      "type": "object",
+      "required": [
+        "content"
+      ],
+      "properties": {
+        "content": {
+          "description": "The contents of the script.",
+          "type": "string"
+        },
+        "interpreter": {
+          "description": "Binary to run the script with.",
+          "type": "string",
+          "nullable": true
+        },
+        "log-file-path": {
+          "description": "Path of a file to write the script's output to.\n\nThis includes both stdout and stderr. The path and file will be created if they don't exist. If the file already exists, it will be truncated.",
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "SoftwareRaidArray": {
+      "type": "object",
+      "required": [
+        "devices",
+        "id",
+        "level",
+        "metadata-version",
+        "name"
+      ],
+      "properties": {
+        "devices": {
+          "description": "Devices that will be used for the RAID array.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "Block Device ID"
+          }
+        },
+        "id": {
+          "description": "A unique identifier for the RAID array.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "level": {
+          "description": "RAID level. Such as RAID0, RAID1, RAID5, RAID6, RAID10.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RaidLevel"
+            }
+          ]
+        },
+        "metadata-version": {
+          "description": "Superblock version. Such as 0.9, 1.0",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the RAID array. This will be used for creation",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SshMode": {
+      "oneOf": [
+        {
+          "title": "[DEFAULT] Blocked",
+          "description": "Disable SSH for this entity.",
+          "type": "string",
+          "enum": [
+            "block"
+          ]
+        },
+        {
+          "title": "Key Only",
+          "description": "Enable SSH for this entity with KEY only.",
+          "type": "string",
+          "enum": [
+            "key-only"
+          ]
+        },
+        {
+          "title": "Key and Password",
+          "description": "Enable SSH for this entity with KEY and PASSWORD.",
+          "type": "string",
+          "enum": [
+            "dangerous-allow-password"
+          ]
+        }
+      ]
+    },
+    "Storage": {
+      "description": "Storage configuration for a host.",
+      "type": "object",
+      "required": [
+        "disks"
+      ],
+      "properties": {
+        "disks": {
+          "description": "Per disk configuration.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Disk"
+          }
+        },
+        "mount-points": {
+          "description": "Mount point configuration.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MountPoint"
+          }
+        },
+        "raid": {
+          "description": "RAID configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RaidConfig"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "User": {
+      "description": "Configuration for a specific user.",
+      "type": "object",
+      "properties": {
+        "groups": {
+          "description": "List of groups to add the user to. **(IN DEVELOPMENT)**",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "password": {
+          "description": "Password configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Password"
+            }
+          ]
+        },
+        "ssh-keys": {
+          "description": "List of SSH keys to add to the user's authorized keys. **(IN DEVELOPMENT)**",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ssh-mode": {
+          "description": "SSH configuration for the user. **(IN DEVELOPMENT)**",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SshMode"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

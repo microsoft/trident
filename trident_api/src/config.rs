@@ -5,11 +5,18 @@ use netplan_types::NetworkConfig;
 
 use strum_macros::{Display, EnumString};
 
+#[cfg(feature = "schemars")]
+use schemars::JsonSchema;
+
+#[cfg(feature = "schemars")]
+use crate::schema_helpers::{
+    block_device_id_list_schema, block_device_id_schema, make_placeholder_netplan_schema,
+};
+
 use crate::is_default;
 /// Definition of Trident's full configuration.
 #[derive(Serialize, Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LocalConfigFile {
     /// Configuration for Trident itself.
     #[serde(flatten, default)]
@@ -22,8 +29,7 @@ pub struct LocalConfigFile {
 
 /// Configuration that Trident needs which doesn't belong in the host config.
 #[derive(Serialize, Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct TridentConfiguration {
     /// Optional URL to reach out to when networking is up, so Trident
     /// can report its status. This is useful for debugging and monitoring purposes,
@@ -57,8 +63,7 @@ pub struct TridentConfiguration {
 
 /// Configuration for the datastore.
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[serde(untagged)]
 pub enum DatastoreConfiguration {
     /// Directory in the runtime filesystem where to create the datastore during provisioning.
@@ -72,8 +77,7 @@ pub enum DatastoreConfiguration {
 
 /// HostConfigurationSource is the source of the host configuration.
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum HostConfigurationSource {
     /// Path to the host configuration file. This is a YAML file that describes the
     /// host configuration in the Host Configuration format.
@@ -114,8 +118,8 @@ impl Default for HostConfigurationSource {
 
 /// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct HostConfiguration {
     /// The Management configuration controls the installation of the Trident agent onto
     /// the runtime OS.
@@ -130,14 +134,26 @@ pub struct HostConfiguration {
 
     /// Netplan network configuration for the provisioning OS _ONLY_.
     ///
+    /// See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
+    ///
     /// When provided, this configuration will be used to configure the network
     /// on the provisioning OS. When not provided, the network configuration from
     /// the runtime OS will be used instead.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(schema_with = "make_placeholder_netplan_schema")
+    )]
     pub network_provision: Option<NetworkConfig>,
 
     /// Netplan network configuration for the runtime OS.
+    ///
+    /// See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(schema_with = "make_placeholder_netplan_schema")
+    )]
     pub network: Option<NetworkConfig>,
 
     /// Scripts to be run after the installation is complete.
@@ -151,8 +167,7 @@ pub struct HostConfiguration {
 
 bitflags::bitflags! {
     #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "kebab-case")]
-    #[serde(deny_unknown_fields)]
+    #[serde(rename_all = "kebab-case", deny_unknown_fields)]
     pub struct Operations: u32 {
         /// Trident will update the host based on the host configuration,
         /// but it will not transition the host to the new configuration. This is useful
@@ -173,8 +188,8 @@ impl Default for Operations {
 /// The Management configuration controls the installation of the Trident agent onto
 /// the runtime OS.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Management {
     /// When set to `true`, prevents Trident from being enabled on the runtime OS.
     /// In that case, the remaining fields are ignored.
@@ -204,8 +219,8 @@ pub struct Management {
 
 /// Storage configuration for a host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Storage {
     /// Per disk configuration.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -225,12 +240,13 @@ pub type BlockDeviceId = String;
 
 /// Per disk configuration.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Disk {
     /// A unique identifier for the disk. This is a user defined string that
     /// allows to link the disk to what is consuming it and also to results in the
     /// Host Status.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
     /// The device path of the disk. Points to the disk device in the host. It is
@@ -247,24 +263,27 @@ pub struct Disk {
 
 /// Partition table type. Currently only GPT is supported.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum PartitionTableType {
-    // Disk should be formatted with a GUID Partition Table (GPT).
+    /// # GPT
+    ///
+    /// Disk should be formatted with a GUID Partition Table (GPT).
     #[default]
     Gpt,
 }
 
 /// Per partition configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Partition {
     /// A unique identifier for the partition.
     ///
     /// This is a user defined string that
     /// allows to link the partition to the mount points and also to results in the
     /// Host Status.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
     /// The type of the partition.
@@ -278,21 +297,37 @@ pub struct Partition {
     /// Format: String `<number>[<unit>]`
     ///
     /// Accepted values:
+    ///
     /// - `grow`: Use all available space.
+    ///
     /// - A number with optional unit suffixes: K, M, G, T (to the base of 1024),
     ///   bytes by default when no unit is specified.
+    ///
+    /// Examples:
+    ///
+    /// - `1G`
+    ///
+    /// - `200M`
+    ///
+    /// - `grow`
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub size: PartitionSize,
 }
 
 /// Partition size enum.
 /// Serialize and Deserialize traits are implemented manually in the crate::serde module.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum PartitionSize {
+    /// # Grow
+    ///
     /// Grow a partition to use all available space.
     ///
     /// String equivalent is defined in constants::PARTITION_SIZE_GROW
     Grow,
 
+    /// # Fixed
+    ///
     /// Fixed size in bytes.
     Fixed(u64),
     // Not implemented yet but left as a reference for the future.
@@ -303,52 +338,52 @@ pub enum PartitionSize {
 
 /// Partition types as defined by The Discoverable Partitions Specification (https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum PartitionType {
-    /// EFI System Partition.
+    /// # EFI System Partition
     ///
-    /// C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+    /// `C12A7328-F81F-11D2-BA4B-00A0C93EC93B`
     Esp,
 
-    /// Root partition.
+    /// # Root partition
     ///
-    /// x64: 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
+    /// x64: `4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709`
     Root,
 
-    /// Swap partition.
+    /// # Swap partition
     ///
-    /// 0657fd6d-a4ab-43c4-84e5-0933c84b4f4f
+    /// `0657fd6d-a4ab-43c4-84e5-0933c84b4f4f`
     Swap,
 
-    /// Root partition with dm-verity enabled.
+    /// # Root partition with dm-verity enabled
     ///
-    /// x64: 2c7357ed-ebd2-46d9-aec1-23d437ec2bf5
+    /// x64: `2c7357ed-ebd2-46d9-aec1-23d437ec2bf5`
     RootVerity,
 
-    /// Home partition.
+    /// # Home partition
     ///
-    /// 933ac7e1-2eb4-4f13-b844-0e14e2aef915
+    /// `933ac7e1-2eb4-4f13-b844-0e14e2aef915`
     Home,
 
-    /// Var partition.
+    /// # Var partition
     ///
-    /// 4d21b016-b534-45c2-a9fb-5c16e091fd2d
+    /// `4d21b016-b534-45c2-a9fb-5c16e091fd2d`
     Var,
 
-    /// Usr partition.
+    /// # Usr partition
     ///
-    /// x64: 8484680c-9521-48c6-9c11-b0720656f69e
+    /// x64: `8484680c-9521-48c6-9c11-b0720656f69e`
     Usr,
 
-    /// Tmp partition.
+    /// # Tmp partition
     ///
-    /// 7ec6f557-3bc5-4aca-b293-16ef5df639d1
+    /// `7ec6f557-3bc5-4aca-b293-16ef5df639d1`
     Tmp,
 
-    /// Generic Linux partition.
+    /// # Generic Linux partition
     ///
-    /// 0fc63daf-8483-4772-8e79-3d69d8477de4
+    /// `0fc63daf-8483-4772-8e79-3d69d8477de4`
     LinuxGeneric,
 }
 
@@ -374,8 +409,8 @@ impl PartitionType {
 
 /// RAID configuration for a host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct RaidConfig {
     /// Individual software raid configurations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -384,38 +419,51 @@ pub struct RaidConfig {
 
 // Software RAID configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct SoftwareRaidArray {
     /// A unique identifier for the RAID array.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
+
     /// Name of the RAID array. This will be used for creation
     pub name: String,
+
     /// RAID level. Such as RAID0, RAID1, RAID5, RAID6, RAID10.
     pub level: RaidLevel,
+
     /// Devices that will be used for the RAID array.
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(schema_with = "block_device_id_list_schema")
+    )]
     pub devices: Vec<BlockDeviceId>,
+
     /// Superblock version. Such as 0.9, 1.0
     pub metadata_version: String,
 }
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum RaidLevel {
-    /// Striping.
+    /// # Striping
     #[strum(serialize = "0")]
     Raid0,
-    /// Mirroring.
+
+    /// # Mirroring
     #[strum(serialize = "1")]
     Raid1,
-    /// Striping with parity.
+
+    /// # Striping with parity
     #[strum(serialize = "5")]
     Raid5,
-    /// Striping with double parity.
+
+    /// # Striping with double parity
     #[strum(serialize = "6")]
     Raid6,
-    /// Stripe of mirrors.
+
+    /// # Stripe of mirrors
     #[strum(serialize = "10")]
     Raid10,
 }
@@ -437,8 +485,8 @@ pub enum RaidLevel {
 /// `/etc/fstab` carries the correct configuration already. In this case, Trident
 /// will not modify the `/etc/fstab` file nor will it format the partitions.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct MountPoint {
     /// The path of the mount point.
     ///
@@ -457,13 +505,14 @@ pub struct MountPoint {
     pub options: Vec<String>,
 
     /// The ID of the partition that will be mounted at this mount point.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub target_id: BlockDeviceId,
 }
 
 /// Imaging configuration for a host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Imaging {
     /// Per image configuration
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -476,8 +525,8 @@ pub struct Imaging {
 
 /// Per image configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Image {
     /// The URL of the image.
     ///
@@ -494,16 +543,20 @@ pub struct Image {
     pub format: ImageFormat,
 
     /// The ID of the partition that will be used to store the image.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub target_id: BlockDeviceId,
 }
 
 /// Image format.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum ImageFormat {
+    /// # Raw Zstd Compressed
+    ///
     /// Raw filesystem image with zstd compression.
     RawZstd,
+
     /// Raw filesystem image with lzma compression, required by
     /// systemd-sysupdate.
     RawLzma,
@@ -512,10 +565,14 @@ pub enum ImageFormat {
 /// A/B update configuration. Carries information about the A/B update volume
 /// pairs that are used to perform A/B updates.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct AbUpdate {
     /// A list of volume pairs that will be used for A/B Update.
+    ///
+    /// You can target the A/B Update volume pair from the `images` and
+    /// `mount-points` and Trident will pick the right volume to use based on
+    /// the A/B Update state of the host.
     pub volume_pairs: Vec<AbVolumePair>,
 }
 
@@ -524,26 +581,29 @@ pub struct AbUpdate {
 ///
 /// **Under development, initial logic for illustration purposes only.**
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct AbVolumePair {
     /// A unique identifier for the volume pair.
     ///
     /// This is a user defined string that allows to link the volume pair
     /// to the results in the Host Status and to the mount points.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
     /// The ID of the partition that will be used as the A volume.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub volume_a_id: BlockDeviceId,
 
     /// The ID of the partition that will be used as the B volume.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub volume_b_id: BlockDeviceId,
 }
 
 /// A script to be run by Trident at a specific stage.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Script {
     /// Binary to run the script with.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -564,18 +624,20 @@ pub struct Script {
 
 /// Configuration for the host OS.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct OsConfig {
-    /// Map of users to configure on the host.
+    /// # Users
+    ///
+    /// Map of users to configure on the host. The key is the username.
     #[serde(default)]
     pub users: HashMap<String, User>,
 }
 
 /// Configuration for a specific user.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct User {
     /// Password configuration.
     #[serde(default, skip_serializing_if = "is_default")]
@@ -599,31 +661,48 @@ pub struct User {
 
 /// Password configuration for a user.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
-#[serde(tag = "mode", content = "value")]
+#[serde(
+    rename_all = "kebab-case",
+    deny_unknown_fields,
+    tag = "mode",
+    content = "value"
+)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum Password {
+    /// # [DEFAULT] Locked Password
+    ///
+    /// Lock the user's password. (equivalent to `passwd -l`)
+    #[default]
+    Locked,
+
+    /// # Plaintext Password
+    ///
     /// Set the user's password to a plaintext value.
     DangerousPlainText(String),
 
+    /// # Hashed Password
+    ///
     /// Set the user's password to a hashed value.
     DangerousHashed(String),
-
-    /// Lock the user's password. (equivalent to `passwd -l`)
-    #[default]
-    // #[serde(other)]
-    Locked,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum SshMode {
+    /// # [DEFAULT] Blocked
+    ///
     /// Disable SSH for this entity.
     #[default]
     Block,
+
+    /// # Key Only
+    ///
     /// Enable SSH for this entity with KEY only.
     KeyOnly,
+
+    /// # Key and Password
+    ///
     /// Enable SSH for this entity with KEY and PASSWORD.
     DangerousAllowPassword,
 }

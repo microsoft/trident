@@ -36,6 +36,11 @@ instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/REA
   repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident):
   `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
 - Change directory to the Trident repository: `cd trident`.
+- (Only for changes to `trident_api`) Download documentation dependencies:
+  
+  ```bash
+  make install-json-schema-for-humans
+  ```
 
 ### Building and validating
 
@@ -44,6 +49,16 @@ Build instructions: `cargo build`.
 Build, check and and run UTs: `make`.
 
 Code coverage: `make coverage`.
+
+Rebuild trident_api documentation: `make build-api-docs`.
+
+### Updating documentation
+
+After any change to trident_api, the documentation needs to be regenerated. Run:
+
+```bash
+make build-api-docs
+```
 
 ## Trident configuration
 
@@ -96,260 +111,124 @@ provided through either one of the following options:
 - **grpc**: gRPC port to listen on, through which host configuration can be
   passed in once networking is up in the provisioning OS. Not yet implemented.
 
-The Host Configuration contains the following sections:
+## Host Configuration
 
-- **management**: describes the management configuration of the host.
-- **storage**: describes the storage configuration of the host.
-- **imaging**: describes the imaging configuration of the host.
-- **network**: describes the network configuration of the host.
-- **osconfig**: describes the OS configuration of the host.
+Host Configuration describes the desired state of the host.
 
-### Management
+### Documentation
 
-The Management configuration controls the installation of the Trident agent onto
-the runtime OS. It contains a number of fields:
+The full schema is available here:
+[trident_api/docs/trident-api.md](trident_api/docs/trident-api.md).
 
-- **disable**: a boolean flag. When set to `true`, prevents Trident from being
-  enabled on the runtime OS. In that case, the remaining fields are ignored.
-- **self-upgrade**: a boolean flag that indicates whether Trident should upgrade
-  itself. If set to `true`, Trident will replicate itself into the runtime OS
-  prior to transitioning. This is useful during development to ensure the
-  matching version of Trident is used. Defaults to `false`.
-- **phonehome**: URL to reach out to when runtime OS networking is up, so
-  Trident can report its status. If not specified, the value from the Trident
-  configuration will be used. This is useful for debugging and monitoring
-  purposes, say by an orchestrator.
-- **datastore-path**: Describes where to place the datastore Trident will use to
-  store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end
-  with `.sqlite`, cannot be an existing file and cannot reside on a read-only
-  filesystem or A/B volume.
+An HTML version is available in `trident_api/docs/html/trident-api.html`
 
-### Storage
+(`make view-docs` may help open your browser automatically!)
 
-Storage configuration describes the disks and partitions of the host that will
-be used to store the OS and data. Not all disks of the host need to be captured
-inside the Host Configuration, only those that Trident should operate on. The
-configuration is divided into the following sections: **disks**, **raid** and
-**mount-points**.
+### Schema
 
-#### Disks
+The raw JSON Schema for Host configuration is here: [trident_api/docs/trident-api-schema.json](trident_api/docs/trident-api-schema.json)
 
-The **disks** section describes the disks of the host. Each disk is described by
-the following fields:
+### Sample
 
-- **id**: a unique identifier for the disk. This is a user defined string that
-  allows to link the disk to what is consuming it and also to results in the
-  Host Status.
-- **device**: the device path of the disk. Points to the disk device in the
-  host. It is recommended to use stable paths, such as the ones under
-  `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).
-- **partition-table-type**: the partition table type of the disk. Supported
-  values are: `gpt`.
-- **partitions**: a list of partitions that will be created on the disk. Each
-  partition is described by the following fields:
-  - **id**: a unique identifier for the partition. This is a user defined string
-    that allows to link the partition to the mount points and also to results in
-    the Host Status.
-  - **type**: the type of the partition. Supported values are: `esp`, `root`,
-    `root-verity` `swap`, `home`, `var`. These correspond to [Discoverable
-    Partition
-    Types](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
-  - **size**: the size of the partition. Allowed values are:
-    - `grow` to dynamically grow the partition to fill the remaining space on
-      the disk.
-    - A string with the following format: `<number>[<unit>]`. Supported units
-      are: `K`, `M`, `G`, `T`. If no unit is specified, the number is
-      interpreted as bytes. If a unit letter is specified, it corresponds to
-      `KiB`, `MiB`, `GiB`, `TiB` respectively. Examples: `1G`, `10M`,
-      `1000000000`.
+An example Host Configuration YAML file is available here: [trident_api/docs/sample-host-configuration.yaml](trident_api/docs/sample-host-configuration.yaml)
 
-TBD: At the moment, the partition table is created from scratch. In the future,
-it will be possible to consume an existing partition table.
-
-#### RAID
-
-The **raid** section describes the RAID arrays for the host. All RAID array
-definitions need to be specified in the **software** section nested in the
-***raid** section. Each software RAID is described by the following fields:
-
- - **id**: a unique identifier for the RAID array. This is a user defined string
-   also used for mounting the RAID array.
- - **name**: the name of the RAID array. This is used to reference the RAID
-   array on the system. For example, `some-raid` will result in
-   `/dev/md/some-raid` on the system.
- - **level**: the RAID level of the array. Supported and tested values are
-   `raid0`, `raid1`. Other possible values yet to be tested are: `raid5`,
-   `raid6`, `raid10`.
- - **devices**: a list of devices that will be used to create the RAID array.
-   See the reference links for picking the right number of devices. Devices are
-   partition ids from the `disks` section.
- - **metadata-version**: the metadata of the RAID array. Supported and tested
-   values are `1.0`. Note that this is a string attribute.
-
-The RAID array will be created using the `mdadm` package. During a clean
-install, all the existing RAID arrays that are on disks defined in the host
-configuration will be unmounted, and stopped.
-
-The RAID arrays that are defined in the host configuration will be created, and
-mounted if specified in `mount-points`.
-
-To learn more about RAID, please refer to the [RAID
-wiki](https://wiki.archlinux.org/title/RAID)
-
-To learn more about `mdadm`, please refer to the [mdadm
-guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
-
-#### Mount Points
-
-The **mount-points** section describes the mount points of the host. These are
-used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount
-the volumes. Each mount point is described by the following fields:
-
-- **path**: the path of the mount point. This is the path where the volume will
-  be mounted in the runtime OS. For `swap` partitions, the path should be
-  `none`.
-- **target-id**: the id of the partition that will be mounted at this mount
-  point.
-- **filesystem**: the filesystem to be used for this mount point. This value
-  will be used to format the partition.
-- **options**: a list of options to be used for this mount point. These will be
-  passed as is to the `/etc/fstab` file.
-
-The resulting `/etc/fstab` is produced as follows:
-
-- For each mount point, a line is added to the `/etc/fstab` file, if the `path`
-  does not already exist in the `/etc/fstab` supplied in the runtime OS image.
-  If the `path` already exists in the `/etc/fstab` supplied in the runtime OS,
-  it will be updated to match the configuration provided in the Host
-  Configuration mount points.
-- If a mount point is not present in the Host Configuration, but present in the
-  `/etc/fstab`, the line will be preserved as is in the `/etc/fstab`.
-
-Note that you do not need to specify the mounts points, if your runtime OS
-`/etc/fstab` carries the correct configuration already. In this case, Trident
-will not modify the `/etc/fstab` file nor will it format the partitions.
-
-### Imaging
-
-Imaging configuration describes the filesystem images that will be used to
-deploy onto the host. The configuration is divided into two sections: **images**
-and **ab-update**.
-
-#### Images
-
-The **images** section describes the filesystem images that will be used to
-deploy onto the host. Each image is described by the following fields:
-
-- **url**: the URL of the image. Supported schemes are: `file`, `http`, `https`.
-- **sha256**: the SHA256 checksum of the image. This is used to verify the
-  integrity of the image. The checksum is a 64 character hexadecimal string.
-  Temporarily, you can pass `ignored` to skip the checksum verification.
-- **format**: the format of the image. Supported values are: `raw-zstd`.
-- **target-id**: the id of the partition that will be used to store the image.
-
-#### AB Update
+## AB Update
 
 Currently, **a basic A/B update flow via systemd-sysupdate** is available with
 Trident. The users are able to update the **root** partition and write to
 **esp** partition that is part of an A/B volume pair. Other types of partitions
 will be eligible for A/B update in a later iteration.
 
-The **ab-update** section describes the A/B Update configuration of the host.
-This section is optional. If not present, A/B Update will not be configured on
-the host. This section is described by the following fields:
 
-- **volume-pairs**: a list of volume pairs that will be used for A/B Update.
-  Each volume pair is described by the following fields:
-  - **id**: a unique identifier for the volume pair. This is a user defined
-    string that allows to link the volume pair to the results in the Host Status
-    and to the mount points.
-  - **volume-a-id**: the id of the partition that will be used as the A volume.
-  - **volume-b-id**: the id of the partition that will be used as the B volume.
+### Getting Started with Systemd-Sysupdate
 
-You can target the A/B Update volume pair from the `images` and `mount-points`
-and Trident will pick the right volume to use based on the A/B Update state of
-the host.
-
-##### Getting Started with Systemd-Sysupdate
-- First, the OS image payload needs to be made available for systemd-sysupdate
+First, the OS image payload needs to be made available for systemd-sysupdate
 to operate on. To use the terms from the sysupdate documentation, the source
 image can be published in the following two ways:
 
 1. **regular-file**: The OS image can be bundled with the installer OS and
 referenced from the initial HostConfiguration as follows:
 
-```yaml
-  imaging:
-    images:
-      - url: file:///boot.raw.xz
-        sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-        format: raw-lzma
-        target-id: esp
-      - url: file:///root.raw.xz
-        sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-        format: raw-lzma
-        target-id: root
-    ab-update:
-      volume-pairs:
-        - id: root
-          volume-a-id: root-a
-          volume-b-id: root-b
-        - id: esp
-          volume-a-id: esp-a
-          volume-b-id: esp-b
-```
+   ```yaml
+     imaging:
+       images:
+         - url: file:///boot.raw.xz
+           sha256:    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+           format: raw-lzma
+           target-id: esp
+         - url: file:///root.raw.xz
+           sha256:    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+           format: raw-lzma
+           target-id: root
+       ab-update:
+         volume-pairs:
+           - id: root
+             volume-a-id: root-a
+             volume-b-id: root-b
+           - id: esp
+             volume-a-id: esp-a
+             volume-b-id: esp-b
+   ```
 
-- In the sample HostConfiguration above, we're requesting Trident to create
-**two copies of the esp** partition, i.e., a volume pair with id esp that
-contains two partitions esp-a and esp-b, and to place an image in the raw lzma
-format onto esp. First of all, having an esp A/B volume pair is required for a
-successful boot post-update. Second of all, using systemd-sysupdate to write to
-a partition is valid as long as the block device target-id corresponds to a
-partition that is inside of an A/B volume pair. (This is because
-systemd-sysupdate expects 2+ partitions of the given type to do an update.)
-However, the actual A/B update of the esp partition is **not** fully supported
-since the basic e2e flow does not yet implement all the changes required to
-successfully **update the bootloader**. This distinction is very important.
+   In the sample HostConfiguration above, we're requesting Trident to create
+   **two copies of the esp** partition, i.e., a volume pair with id esp that
+   contains two partitions esp-a and esp-b, and to place an image in the raw
+   lzma format onto esp. First of all, having an esp A/B volume pair is required
+   for a successful boot post-update. Second of all, using systemd-sysupdate to
+   write to a partition is valid as long as the block device target-id
+   corresponds to a partition that is inside of an A/B volume pair. (This is
+   because systemd-sysupdate expects 2+ partitions of the given type to do an
+   update.) However, the actual A/B update of the esp partition is **not** fully
+   supported since the basic e2e flow does not yet implement all the changes
+   required to successfully **update the bootloader**. This distinction is very
+   important.
 
 2. **url-file**: The OS image can be referenced using remote URLs, at an
 HTTP/HTTPS endpoint, e.g. by leveraging Azure blob storage. There are several
 requirements per the systemd-sysupdate flow:
-1) Along with the payload, there needs to be **a SHA256SUMS manifest file**
-published in the same remote directory as the image partition files. E.g., if
-the directory contains root_v2.raw.xz, then SHA256SUMS needs to contain the
-following line:
-`<sha256 hash><2 whitespaces><name of the updated partition file>\n`
-2) The image payload needs to be published with the **.xz extension**, by
-using the LZMA2 compression algorithm, so that systemd-sysupdate can decompress
-the image.
-3) Per current logic, the name of the image partition file corresponds to its
-**version**. Trident will extract the file name from the URL provided by the
-user in the Trident HostConfig and use it inside of the transfer config file,
-to communicate which version is requested from systemd-sysupdate. This means
-that the user needs to use consistent naming for partition files, so that
-the name of the new partition image will be read by systemd-sysupdate as a
-newer version. E.g., a convenient naming scheme could be the following:
-`<partition label/type>_v<version number>.raw.xz`
-For partition labels, it is recommended to use GPT partition type identifiers,
-as defined in the Type section of systemd repart.d manual:
-https://www.man7.org/linux/man-pages/man5/repart.d.5.html.
-4) The Imaging section in the sample HostConfiguration provided above can be
-set in the following way, to request url-file images for the runtime OS:
 
-```yaml
-  imaging:
-    images:
-      - url: <URL to the boot image>
-        sha256: <sha256 hash>
-        format: raw-lzma
-        target-id: esp
-      - url: <URL to the root image>
-        sha256: <sha256 hash>
-        format: raw-lzma
-        target-id: root
-```
+   1) Along with the payload, there needs to be **a SHA256SUMS manifest file**
+   published in the same remote directory as the image partition files. E.g., if
+   the directory contains root_v2.raw.xz, then SHA256SUMS needs to contain the
+   following line:
 
-- When the installation of the initial runtime OS is completed, the user will
+        ```text
+        <sha256 hash><2 whitespaces><name of the updated partition file>\n
+        ```
+
+   2) The image payload needs to be published with the **.xz extension**, by
+   using the LZMA2 compression algorithm, so that systemd-sysupdate can
+   decompress the image.
+
+   3) Per current logic, the name of the image partition file corresponds to its
+   **version**. Trident will extract the file name from the URL provided by the
+   user in the Trident HostConfig and use it inside of the transfer config file,
+   to communicate which version is requested from systemd-sysupdate. This means
+   that the user needs to use consistent naming for partition files, so that the
+   name of the new partition image will be read by systemd-sysupdate as a newer
+   version. E.g., a convenient naming scheme could be the following:
+   `<partition label/type>_v<version number>.raw.xz` For partition labels, it is
+   recommended to use GPT partition type identifiers, as defined in the Type
+   section of systemd repart.d manual:
+   https://www.man7.org/linux/man-pages/man5/repart.d.5.html.
+
+   4) The Imaging section in the sample HostConfiguration provided above can be
+   set in the following way, to request url-file images for the runtime OS:
+
+      ```yaml
+      imaging:
+        images:
+          - url: <URL to the boot image>
+            sha256: <sha256 hash>
+            format: raw-lzma
+            target-id: esp
+          - url: <URL to the root image>
+            sha256: <sha256 hash>
+            format: raw-lzma
+            target-id: root
+      ```
+
+When the installation of the initial runtime OS is completed, the user will
 be able to log into the baremetal host, or the VM simulating a BM host. The
 user can now request an A/B update by applying an edited Trident HostConfig. To
 do so, the user needs to replace the data inside of the Imaging section, to
@@ -359,38 +238,49 @@ published in the first step. For instance, the Imaging section of the new
 HostConfig shown above can be changed in the following way:
 
 ```yaml
-  imaging:
-    images:
-      - url: <URL to the updated version of the image>
-        sha256: <sha256 hash>
-        format: raw-lzma
-        target-id: esp
-      - url: <URL to the updated version of the image>
-        sha256: <sha256 hash>
-        format: raw-lzma
-        target-id: root
+imaging:
+  images:
+    - url: <URL to the updated version of the image>
+      sha256: <sha256 hash>
+      format: raw-lzma
+      target-id: esp
+    - url: <URL to the updated version of the image>
+      sha256: <sha256 hash>
+      format: raw-lzma
+      target-id: root
 ```
 
 - To overwrite the Trident HostConfig, the user can use the following command:
-`cat > /etc/trident/config.yaml <<EOF`
-`<body of the updated HostConfig>`
-`EOF`
-After overwriting the HostConfiguration, the user needs to apply the HostConfig
-by restarting Trident with the following command:
-`sudo systemctl restart trident.service`.
-The user can view the Trident logs live with the following command:
-`sudo journalctl -u trident.service -f`.
 
-- When the A/B update completes and the baremetal host, or a VM simulating a
-BM host, reboots, the user will be able to log back into the host by using the
-same credentials. Now, the user can view the changes to the system by
-displaying the HostStatus, which is stored in the datastore:
-`cat /var/lib/trident/datastore.sqlite`.
-The user can use commands such as `blkid` and `mount` to confirm that the
-partitions have been correctly updated and that the correct block devices
-have been mounted at the designated mountpoints, such as /boot/efi and /.
+    ```bash
+    cat > /etc/trident/config.yaml << EOF
+    <body of the updated HostConfig>
+    EOF
+    ```
 
-##### TODO: Next Steps
+    After overwriting the HostConfiguration, the user needs to apply the HostConfig
+    by restarting Trident with the following command:
+
+    ```bash
+    sudo systemctl restart trident.service
+    ```
+
+    The user can view the Trident logs live with the following command:
+
+    ```bash
+    sudo journalctl -u trident.service -f
+    ```
+
+When the A/B update completes and the baremetal host, or a VM simulating a BM
+host, reboots, the user will be able to log back into the host by using the same
+credentials. Now, the user can view the changes to the system by displaying the
+HostStatus, which is stored in the datastore:
+`cat /var/lib/trident/datastore.sqlite`. The user can use commands such as
+`blkid` and `mount` to confirm that the partitions have been correctly updated
+and that the correct block devices have been mounted at the designated
+mountpoints, such as /boot/efi and /.
+
+### TODO: Next Steps
 - After A/B update, Trident will be creating an **overlay** file system for the
 data/state partitions. This is required so that certain folders, as required by
 the user, can be read from and/or written to.
@@ -420,128 +310,6 @@ also support using firmaware reboot, i.e., reboot() in Trident. A mechanism
 will be implemented to point the firmware to the correct esp partition; now,
 although the GRUB configs are correctly overwritten, the firmware still
 attempts to boot into the A partition by default.
-
-
-### Network
-
-Network configuration describes the network configuration of the host. The
-configuration format is matching the netplan v2 format.
-
-### OS Config
-
-OS Config describes the OS configuration of the host.
-
-#### Users
-
-The **users** section contains a configuration map with the users that will be
-created on the host. The key of the map is the username.
-
-Each user is described by the following fields:
-
-- **`groups`**: (Optional) The groups to be added to the user. This is a list of
-  strings.
-- **`ssh-keys`**: (Optional) The SSH keys to be added to the user. This is a list
-  of strings.
-- **`ssh_mode`**: (Optional) The SSH mode to be used for the user. Can be:
-  - `block`: (default) the user is not allowed to SSH.
-  - `key-only`: the user can SSH only with a key.
-
-### Sample configuration
-
-```yaml
-host-configuration:
-  management:
-    self-upgrade: true
-  storage:
-    disks:
-      - id: os
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-1.0
-        partition-table-type: gpt
-        partitions:
-          - id: esp
-            type: esp
-            size: 1G
-          - id: root-a
-            type: root
-            size: 8G
-          - id: root-b
-            type: root
-            size: 8G
-          - id: swap
-            type: swap
-            size: 2G
-          - id: trident
-            type: linux-generic
-            size: 1G
-          - id: raid-a
-            type: linux-generic
-            size: 1G
-          - id: raid-b
-            type: linux-generic
-            size: 1G
-    raid:
-      software:
-        - id: some_raid
-          name: some-raid1
-          level: raid1
-          devices:
-            - raid-a
-            - raid-b
-    mount-points:
-      - path: /boot/efi
-        target-id: esp
-        filesystem: vfat
-        options: ["umask=0077"]
-      - path: /
-        target-id: root
-        filesystem: ext4
-        options: ["defaults"]
-      - path: /var/lib/trident
-        target-id: trident
-        filesystem: ext4
-        options: ["defaults"]
-      - path: none
-        target-id: swap
-        filesystem: swap
-        options: ["sw"]
-      - path: /mnt/raid
-        target-id: some_raid
-        filesystem: ext4
-        options: ["defaults"]
-  imaging:
-    images:
-      - url: file:///boot.raw.zst
-        sha256: cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8
-        format: raw-zstd
-        target-id: esp
-      - url: file:///root.raw.zst
-        sha256: fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d
-        format: raw-zstd
-        target-id: root
-    ab-update:
-      volume-pairs:
-        - id: root
-          volume-a-id: root-a
-          volume-b-id: root-b
-  network:
-    ethernets:
-      vmeths:
-        match:
-          name: enp*
-        dhcp4: true
-    version: 2
-
-  osconfig:
-    users:
-      my-new-user:
-        # The password will be locked by default
-        ssh-keys: 
-          - <MY_PUBLIC_SSH_KEY>
-        ssh-mode: key-only
-  # Uncomment the following if you want to be able to use passwordless sudo using this user
-  # post-install-scripts:
-  # - content: 'echo "my-new-user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/my-new-user'
-```
 
 ## Contributing
 

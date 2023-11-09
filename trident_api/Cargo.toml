@@ -3,8 +3,6 @@ name = "trident_api"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = { version = "1.0.75", features = ["backtrace"] }
 bitflags = { version = "2.4.0", features = ["serde"] }
@@ -14,3 +12,19 @@ serde_yaml = "0.9.25"
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 strum = "0.25.0"
 strum_macros = "0.25.0"
+
+# Optional dependencies
+schemars = { version = "0.8.15", optional = true }
+serde_json = { version = "1.0.107", optional = true }
+
+[features]
+schema = ["schemars", "serde_json"]
+
+[[bin]]
+name = "schema"
+path = "src/bin/schema.rs"
+required-features = ["schema"]
+
+[[bin]]
+name = "sample-hc"
+path = "src/bin/sample-hc.rs"
