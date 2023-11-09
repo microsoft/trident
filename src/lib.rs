@@ -3,16 +3,17 @@ use datastore::DataStore;
 use log::{debug, error, info, warn};
 use protobufs::*;
 use setsail::KsTranslator;
-use std::net::{IpAddr, SocketAddr};
-use std::{fs, mem};
+use std::fs;
+use std::net::SocketAddr;
+use tokio::sync::mpsc::{self, Sender, UnboundedSender};
 
 use std::path::Path;
 use std::process::{Command, Output};
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use trident_api::config::{
-    DatastoreConfiguration, HostConfiguration, HostConfigurationSource, LocalConfigFile,
-    TridentConfiguration,
+    DatastoreConfiguration, HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
 };
 
 mod datastore;
@@ -36,60 +37,57 @@ mod protobufs {
     tonic::include_proto!("trident");
 }
 
-pub fn serve(addr: IpAddr, port: u16) -> Result<(), Error> {
-    tokio::runtime::Runtime::new()
-        .context("Failed to start tokio runtime")?
-        .block_on(async {
-            Server::builder()
-                .add_service(imaging_server::ImagingServer::new(ImagingImpl))
-                .serve(SocketAddr::new(addr, port))
-                .await
-                .context("Failed while serving gRPC requests")
-        })
-}
-
-#[derive(Default)]
-pub struct ImagingImpl;
+/// Implementation of the gRPC service.
+///
+/// This struct contains a tokio Sender which it uses to enqueue commands to the main trident
+/// thread. It also implements the gRPC service trait, which allows it to be used as a gRPC server.
+pub struct HostManagementImpl(Sender<HostUpdateCommand>);
 
 #[tonic::async_trait]
-impl imaging_server::Imaging for ImagingImpl {
-    async fn write_image(
+impl host_management_server::HostManagement for HostManagementImpl {
+    type UpdateHostStream = UnboundedReceiverStream<Result<HostStatusState, Status>>;
+
+    async fn update_host(
         &self,
-        request: Request<ImageRequest>,
-    ) -> Result<Response<EmptyReply>, Status> {
-        let _request = request.into_inner();
-        // image::write_image(Path::new(&request.disk), &request.url, &request.sha256)
-        //     .await
-        //     .map_err(|e| Status::unknown(e.to_string()))?;
+        request: Request<HostUpdateRequest>,
+    ) -> Result<Response<Self::UpdateHostStream>, Status> {
+        info!("Received update_host request");
+        let request = request.into_inner();
 
-        Ok(Response::new(EmptyReply {}))
+        let host_config = serde_yaml::from_str(&request.host_configuration)
+            .context("Failed to parse host config")
+            .map_err(|e| Status::invalid_argument(format!("{e:?}")))?;
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.0
+            .send(HostUpdateCommand {
+                allowed_operations: Operations::all(), // TODO
+                host_config,
+                sender: Some(tx),
+            })
+            .await
+            .context("Failed to enqueue provision command")
+            .map_err(|e| Status::from_error(e.into()))?;
+
+        Ok(Response::new(UnboundedReceiverStream::new(rx)))
     }
+}
 
-    async fn chroot_exec(
-        &self,
-        request: Request<ChrootExecRequest>,
-    ) -> Result<Response<EmptyReply>, Status> {
-        let _request = request.into_inner();
-        // image::chroot_exec(Path::new(&request.root_partition), &request.script)
-        //     .await
-        //     .map_err(|e| Status::unknown(e.to_string()))?;
-
-        Ok(Response::new(EmptyReply {}))
-    }
-
-    async fn kexec(&self, request: Request<KexecRequest>) -> Result<Response<EmptyReply>, Status> {
-        let _request = request.into_inner();
-        // image::kexec(Path::new(&request.root_partition), &request.cmdline)
-        //     .await
-        //     .map_err(|e| Status::unknown(e.to_string()))?;
-        unreachable!()
-    }
+/// A command to update the host configuration.
+///
+/// This struct is used to communicate between the gRPC server and the main trident thread. It
+/// includes information on the command to execute, as well as a tokio Sender which the main thread
+/// can use to stream status updates back to the gRPC client.
+struct HostUpdateCommand {
+    allowed_operations: Operations,
+    host_config: HostConfiguration,
+    sender: Option<UnboundedSender<Result<HostStatusState, Status>>>,
 }
 
 pub struct Trident {
     config: LocalConfigFile,
     datastore: DataStore,
-    _server_runtime: Option<tokio::runtime::Runtime>,
+    server_runtime: Option<tokio::runtime::Runtime>,
 }
 impl Trident {
     pub fn new(config_path: &Path, logstream: Logstream) -> Result<Self, Error> {
@@ -124,7 +122,7 @@ impl Trident {
         };
 
         // Set up logstream if configured
-        if let Some(url) = config.trident_config.logstream.as_ref() {
+        if let Some(url) = config.logstream.as_ref() {
             logstream
                 .set_server(url.to_string())
                 .context("Failed to set logstream URL")?;
@@ -135,7 +133,7 @@ impl Trident {
             serde_yaml::to_string(&config).unwrap_or("Failed to serialize host config".into())
         );
 
-        let datastore = match config.trident_config.datastore {
+        let datastore = match config.datastore {
             Some(DatastoreConfiguration::Load { ref load_path }) => {
                 DataStore::open(load_path).context("Failed to load datastore")?
             }
@@ -145,37 +143,33 @@ impl Trident {
         Ok(Self {
             config,
             datastore,
-            _server_runtime: None,
+            server_runtime: None,
         })
     }
 
-    fn load_host_config(&mut self) -> Result<Option<Box<HostConfiguration>>, Error> {
-        let host_config = match &mut self.config.host_config_source {
+    fn load_host_config(source: &HostConfigurationSource) -> Result<Box<HostConfiguration>, Error> {
+        let host_config = match source {
             HostConfigurationSource::File(path) => {
                 info!("Loading host config from '{}'", path.display());
 
-                Some(
-                    serde_yaml::from_str(
-                        &fs::read_to_string(path).context("Failed to read host config file")?,
-                    )
-                    .context("Failed to parse host config file")?,
+                serde_yaml::from_str(
+                    &fs::read_to_string(path).context("Failed to read host config file")?,
                 )
+                .context("Failed to parse host config file")?
             }
-            HostConfigurationSource::Embedded(contents) => Some(mem::take(contents)),
-            HostConfigurationSource::GrpcCommand { .. } => None,
+            HostConfigurationSource::Embedded(contents) => contents.clone(),
             HostConfigurationSource::KickstartEmbedded(contents) => {
                 match KsTranslator::new()
                     .run_pre_scripts(true)
                     .translate(setsail::load_kickstart_string(contents))
                 {
-                    Ok(hc) => Some(Box::new(hc)),
+                    Ok(hc) => Box::new(hc),
                     Err(e) => {
                         // TODO: handle & report kickstart errors
-                        error!(
+                        bail!(
                             "Failed to translate kickstart:\n{}",
                             serde_json::to_string_pretty(&e)?
                         );
-                        None
                     }
                 }
             }
@@ -186,14 +180,13 @@ impl Trident {
                             .context(format!("Failed to resolve path {}", file.display()))?,
                     )?,
                 ) {
-                    Ok(hc) => Some(Box::new(hc)),
+                    Ok(hc) => Box::new(hc),
                     Err(e) => {
-                        error!(
+                        bail!(
                             // TODO: handle & report kickstart errors
                             "Failed to translate kickstart:\n{}",
                             serde_json::to_string_pretty(&e)?
                         );
-                        None
                     }
                 }
             }
@@ -213,88 +206,116 @@ impl Trident {
         // later stage so %pre scripts can run and do their thing. It would also mean parsing twice,
         // unless we updated the config file in place. That sounds like a can of worms and we still
         // have the issue about being too early.
-        if let HostConfigurationSource::Kickstart(_)
-        | HostConfigurationSource::KickstartEmbedded(_) = self.config.host_config_source
+        if let Some(
+            HostConfigurationSource::Kickstart(_) | HostConfigurationSource::KickstartEmbedded(_),
+        ) = self.config.host_config_source
         {
             warn!("Cannot set up network early when using kickstart");
             return Ok(());
         }
 
-        let host_config = self.load_host_config()?;
+        let host_config = self
+            .config
+            .host_config_source
+            .as_ref()
+            .map(Self::load_host_config)
+            .transpose()?;
 
         info!("Starting network");
-        start_provisioning_network(
-            self.config.trident_config.network_override.clone(),
-            host_config.as_deref(),
-        )
-        .context("Failed to start provisioning network")
+        start_provisioning_network(self.config.network_override.clone(), host_config.as_deref())
+            .context("Failed to start provisioning network")?;
+
+        Ok(())
     }
 
     pub fn run(&mut self) -> Result<(), Error> {
-        let host_config = self.load_host_config()?;
-
         let orchestrator = self
             .config
-            .trident_config
             .phonehome
             .as_ref()
             .and_then(|url| OrchestratorConnection::new(url.clone()));
 
-        match self.config.host_config_source {
-            HostConfigurationSource::File(_)
-            | HostConfigurationSource::Embedded(_)
-            | HostConfigurationSource::Kickstart(_)
-            | HostConfigurationSource::KickstartEmbedded(_) => {
-                info!("Running");
-                match run(
-                    *host_config.unwrap(),
-                    &self.config.trident_config,
-                    &mut self.datastore,
-                ) {
-                    Ok(()) => {
-                        if let Some(orchestrator) = orchestrator {
-                            orchestrator.report_success()
-                        }
-                    }
-                    Err(e) => {
-                        error!("{e:?}");
-                        if let Some(orchestrator) = orchestrator {
-                            orchestrator.report_error(format!("{e:?}"));
-                        }
-                    }
-                }
+        // This creates a channel to send commands to the main trident thread. It lets us use the
+        // same logic for processing an initial provision command contained within the trident local
+        // config as for processing commands received from the gRPC endpoint.
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+
+        // If we have a host config source, load it and dispatch it as the first command.
+        if let Some(ref host_config_source) = self.config.host_config_source {
+            let host_config = Self::load_host_config(host_config_source)?;
+
+            info!("Running");
+            sender
+                .blocking_send(HostUpdateCommand {
+                    allowed_operations: self.config.allowed_operations,
+                    host_config: *host_config,
+                    sender: None,
+                })
+                .context("Failed to enqueue provision command")?;
+        }
+
+        // If gRPC connection details were provided, start the gRPC server to accept commands.
+        if let Some(ref grpc) = self.config.grpc {
+            // TODO: make firewall this configurable
+            info!("Opening firewall");
+            let _ = open_firewall_for_grpc().context("Failed to open firewall for gRPC");
+
+            let addr = "0.0.0.0".parse().unwrap();
+            let port = grpc.listen_port.unwrap_or(50051);
+
+            info!("Preparing to listen for gRPC requests");
+
+            let rt = tokio::runtime::Runtime::new().context("Failed to start tokio runtime")?;
+            rt.spawn(async move {
+                Server::builder()
+                    .add_service(host_management_server::HostManagementServer::new(
+                        HostManagementImpl(sender),
+                    ))
+                    .serve(SocketAddr::new(addr, port))
+                    .await
+                    .context("Failed while serving gRPC requests")
+            });
+            self.server_runtime = Some(rt);
+
+            // Notify orchestrator that we are ready to receive commands.
+            if let Some(ref orchestrator) = orchestrator {
+                orchestrator.report_success()
             }
-            HostConfigurationSource::GrpcCommand { listen_port } => {
-                info!("Listening");
-                if let Some(orchestrator) = orchestrator {
-                    orchestrator.report_success()
+        } else {
+            // If no gRPC connection details were provided, drop the sender side of the channel.
+            // This causes the loop below will exit immediately after processing the initial command
+            // that was enqueued above.
+            drop(sender);
+        }
+
+        // Process commands. Starting with the initial command indicated in the local config file
+        // (if any). Once that has been handled, subsequent commands are received from the gRPC
+        // endpoint.
+        while let Some(mut cmd) = receiver.blocking_recv() {
+            if self.config.phonehome.is_some() && cmd.host_config.management.phonehome.is_none() {
+                info!("Injecting phonehome into host configuration");
+                cmd.host_config.management.phonehome = self.config.phonehome.clone();
+            }
+
+            let result = if self.datastore.is_persistent() {
+                modules::update(cmd, &mut self.datastore).context("Failed to update host config")
+            } else {
+                modules::provision(cmd, &mut self.datastore).context("Failed to provision")
+            };
+
+            if let Err(e) = result {
+                if let Some(ref orchestrator) = orchestrator {
+                    orchestrator.report_error(format!("{e:?}"));
                 }
-                serve("0.0.0.0".parse().unwrap(), listen_port.unwrap_or(50051))?;
+                error!("{e:?}");
             }
         }
+
+        if let Some(ref orchestrator) = orchestrator {
+            orchestrator.report_success()
+        }
+
         Ok(())
-    }
-}
-
-fn run(
-    mut host_config: HostConfiguration,
-    trident_config: &TridentConfiguration,
-    datastore: &mut DataStore,
-) -> Result<(), Error> {
-    if trident_config.phonehome.is_some() && host_config.management.phonehome.is_none() {
-        info!("Injecting phonehome into host configuration");
-        host_config.management.phonehome = trident_config.phonehome.clone();
-    }
-
-    match &trident_config.datastore {
-        Some(DatastoreConfiguration::Load { .. }) => {
-            modules::update(&host_config, trident_config, datastore)
-                .context("Failed to update host config")
-        }
-        Some(DatastoreConfiguration::Create { .. }) | None => {
-            modules::provision(&host_config, trident_config, datastore)
-                .context("Failed to provision")
-        }
     }
 }
 
@@ -318,6 +339,22 @@ fn run_command(command: &mut Command) -> Result<Output, Error> {
         }
     }
     Ok(output)
+}
+
+fn open_firewall_for_grpc() -> Result<(), Error> {
+    run_command(
+        Command::new("iptables")
+            .arg("-A")
+            .arg("INPUT")
+            .arg("-p")
+            .arg("tcp")
+            .arg("--dport")
+            .arg("50051") // TODO
+            .arg("-j")
+            .arg("ACCEPT"),
+    )
+    .context("Failed to open firewall for gRPC")?;
+    Ok(())
 }
 
 mod tests {

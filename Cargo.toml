@@ -38,6 +38,7 @@ strum_macros = "0.25.0"
 osutils = { path = "osutils" }
 trident_api = { path = "trident_api" }
 setsail = { path = "setsail" }
+tokio-stream = "0.1.14"
 
 [build-dependencies]
 tonic-build = "0.9.2"

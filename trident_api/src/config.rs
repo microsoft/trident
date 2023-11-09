@@ -18,19 +18,6 @@ use crate::is_default;
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LocalConfigFile {
-    /// Configuration for Trident itself.
-    #[serde(flatten, default)]
-    pub trident_config: TridentConfiguration,
-
-    /// The host config to use.
-    #[serde(flatten, default)]
-    pub host_config_source: HostConfigurationSource,
-}
-
-/// Configuration that Trident needs which doesn't belong in the host config.
-#[derive(Serialize, Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct TridentConfiguration {
     /// Optional URL to reach out to when networking is up, so Trident
     /// can report its status. This is useful for debugging and monitoring purposes,
     /// say by an orchestrator. Note that separately the updates to the Host Status
@@ -59,6 +46,14 @@ pub struct TridentConfiguration {
     /// refreshed Host Status, but no operations performed on the host.
     #[serde(default)]
     pub allowed_operations: Operations,
+
+    /// Grpc configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grpc: Option<GrpcConfiguration>,
+
+    /// The host config to use.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub host_config_source: Option<HostConfigurationSource>,
 }
 
 /// Configuration for the datastore.
@@ -102,18 +97,13 @@ pub enum HostConfigurationSource {
     /// early preview only.
     #[serde(rename = "kickstart")]
     KickstartEmbedded(String),
-
-    /// Start a gRPC server for remote configuration. Not yet implemented.
-    #[serde(rename = "grpc")]
-    GrpcCommand {
-        /// Port for the gRPC server (default is 50051)
-        listen_port: Option<u16>,
-    },
 }
-impl Default for HostConfigurationSource {
-    fn default() -> Self {
-        HostConfigurationSource::GrpcCommand { listen_port: None }
-    }
+
+/// GrpcConfiguration is the configuration for the gRPC server.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct GrpcConfiguration {
+    /// Port for the gRPC server (defaults to 50051 if not set).
+    pub listen_port: Option<u16>,
 }
 
 /// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
@@ -127,9 +117,11 @@ pub struct HostConfiguration {
     pub management: Management,
 
     /// Describes the storage configuration of the host.
+    #[serde(default)]
     pub storage: Storage,
 
     /// Filesystem imaging configuration of the host.
+    #[serde(default)]
     pub imaging: Imaging,
 
     /// Netplan network configuration for the provisioning OS _ONLY_.
@@ -166,7 +158,7 @@ pub struct HostConfiguration {
 }
 
 bitflags::bitflags! {
-    #[derive(Serialize, Deserialize, Debug)]
+    #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
     #[serde(rename_all = "kebab-case", deny_unknown_fields)]
     pub struct Operations: u32 {
         /// Trident will update the host based on the host configuration,
@@ -202,6 +194,11 @@ pub struct Management {
     /// ensure the matching version of Trident is used. Defaults to `false`.
     #[serde(default)]
     pub self_upgrade: bool,
+
+    /// Whether Trident should start a gRPC server to listen for commands when the runtime OS boots.
+    /// Defaults to `false`.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub enable_grpc: bool,
 
     /// Describes where to place the datastore Trident will use to store its state.
     /// Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with
@@ -710,6 +707,27 @@ pub enum SshMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
+
+    #[test]
+    fn test_grpc_and_embedded_host_config() {
+        let local_config_yaml = indoc! {r#"
+            grpc:
+              listen_port: null
+            host-configuration:
+              management:
+                disable: true
+        "#};
+
+        let local_config: LocalConfigFile = serde_yaml::from_str(local_config_yaml).unwrap();
+
+        assert!(local_config.grpc.is_some());
+        assert!(matches!(
+            local_config.host_config_source,
+            Some(HostConfigurationSource::Embedded(_))
+        ));
+    }
+
     /// Test that validates that to_sdrepart_part_type() returns the correct string for each
     /// PartitionType.
     #[test]

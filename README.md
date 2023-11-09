@@ -90,6 +90,13 @@ composed of the following sections:
 - **network-override**: optional network configuration for the bootstrap OS. If
   not specified, the network configuration from Host Configuration (see below)
   will be used otherwise.
+- **grpc**: If present, this indicates that Trident should start a gRPC server
+  to listen for commands. The protocol is described by
+  [proto/trident.proto](proto/trident.proto). This only applies to the current
+  run of Trident. During provisioning, you can control whether gRPC is enabled
+  on the runtime OS via the `enable_grpc` field within the Management section of
+  the Host Configuration. TODO: implement and document authorization for
+  accessing the gRPC endpoint.
 
 Additionally, to configure the host, the desired host configuration can be
 provided through either one of the following options:
@@ -108,8 +115,6 @@ provided through either one of the following options:
   is the configuration that Trident will apply to the host (same payload as
   `kickstart-file`, but directly embedded in the Trident configuration). WIP,
   early preview only.
-- **grpc**: gRPC port to listen on, through which host configuration can be
-  passed in once networking is up in the provisioning OS. Not yet implemented.
 
 ## Host Configuration
 
@@ -310,6 +315,21 @@ also support using firmaware reboot, i.e., reboot() in Trident. A mechanism
 will be implemented to point the firmware to the correct esp partition; now,
 although the GRUB configs are correctly overwritten, the firmware still
 attempts to boot into the A partition by default.
+
+## gRPC Interface
+
+If enabled, Trident will start a gRPC server to listen for commands. You can
+interact with this server using the [evans gRPC
+client](https://github.com/ktr0731/evans). Once installed, you can issue a gRPC
+via the following commands:
+
+```bash
+# Generate command.json from input/hc.yaml
+jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: "update | transition" }' > command.json
+
+# Issue gRPC request and pretty print the output as it is streamed back
+evans --host <target-ip-adddress> --proto path/to/trident/proto/trident.proto cli call --file command.json UpdateHost | jq -r .status
+```
 
 ## Contributing
 

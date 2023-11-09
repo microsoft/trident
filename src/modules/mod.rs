@@ -8,17 +8,20 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::{BlockDeviceId, HostConfiguration, Operations, TridentConfiguration},
+    config::{BlockDeviceId, HostConfiguration, Operations},
     status::{
         AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
     },
 };
 
-use crate::modules::{
-    image::ImageModule, management::ManagementModule, network::NetworkModule,
-    osconfig::OsConfigModule, scripts::PostInstallScriptsModule, storage::StorageModule,
+use crate::{datastore::DataStore, mount, protobufs::HostStatusState, TRIDENT_DATASTORE_PATH};
+use crate::{
+    modules::{
+        image::ImageModule, management::ManagementModule, network::NetworkModule,
+        osconfig::OsConfigModule, scripts::PostInstallScriptsModule, storage::StorageModule,
+    },
+    HostUpdateCommand,
 };
-use crate::{datastore::DataStore, mount, TRIDENT_DATASTORE_PATH};
 
 pub mod image;
 pub mod management;
@@ -88,11 +91,13 @@ lazy_static::lazy_static! {
     ]);
 }
 
-pub(super) fn provision(
-    host_config: &HostConfiguration,
-    trident: &TridentConfiguration,
-    state: &mut DataStore,
-) -> Result<(), Error> {
+pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Result<(), Error> {
+    let HostUpdateCommand {
+        ref host_config,
+        allowed_operations,
+        mut sender,
+    } = command;
+
     // This is a safety check so that nobody accidentally formats their dev machine.
     if !fs::read_to_string("/proc/cmdline")
         .context("Failed to read /proc/cmdline")?
@@ -107,7 +112,16 @@ pub(super) fn provision(
     refresh_host_status(&mut modules, state)?;
     validate_host_config(&modules, state, host_config)?;
 
-    if !trident.allowed_operations.contains(Operations::Update) {
+    if let Some(ref mut sender) = sender {
+        sender
+            .send(Ok(HostStatusState {
+                status: serde_yaml::to_string(state.host_status())
+                    .context("Failed to serialize host status")?,
+            }))
+            .context("Failed to send host status")?;
+    }
+
+    if !allowed_operations.contains(Operations::Update) {
         info!("Update not requested, skipping reconcile");
         return Ok(());
     }
@@ -131,10 +145,20 @@ pub(super) fn provision(
     let root_device_path = get_root_block_device_path(state.host_status())
         .context("Failed to get root block device")?;
 
+    if let Some(sender) = sender {
+        sender
+            .send(Ok(HostStatusState {
+                status: serde_yaml::to_string(state.host_status())
+                    .context("Failed to serialize host status")?,
+            }))
+            .context("Failed to send host status")?;
+        drop(sender);
+    }
+
     state.close();
     chroot.exit().context("Failed to exit chroot")?;
 
-    if !trident.allowed_operations.contains(Operations::Transition) {
+    if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
         mount::unmount_target_volumes(mount_path).context("Failed to unmount target volumes")?;
         return Ok(());
@@ -147,17 +171,28 @@ pub(super) fn provision(
     Ok(())
 }
 
-pub(super) fn update(
-    host_config: &HostConfiguration,
-    trident: &TridentConfiguration,
-    state: &mut DataStore,
-) -> Result<(), Error> {
+pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Result<(), Error> {
+    let HostUpdateCommand {
+        ref host_config,
+        allowed_operations,
+        mut sender,
+    } = command;
+
     let mut modules = MODULES.lock().unwrap();
 
     refresh_host_status(&mut modules, state)?;
     validate_host_config(&modules, state, host_config)?;
 
-    if !trident.allowed_operations.contains(Operations::Update) {
+    if let Some(ref mut sender) = sender {
+        sender
+            .send(Ok(HostStatusState {
+                status: serde_yaml::to_string(state.host_status())
+                    .context("Failed to serialize host status")?,
+            }))
+            .context("Failed to send host status")?;
+    }
+
+    if !allowed_operations.contains(Operations::Update) {
         info!("Update not requested, skipping reconcile");
         return Ok(());
     }
@@ -202,6 +237,16 @@ pub(super) fn update(
         chroot.exit().context("Failed to exit chroot")?;
     }
 
+    if let Some(sender) = sender {
+        sender
+            .send(Ok(HostStatusState {
+                status: serde_yaml::to_string(state.host_status())
+                    .context("Failed to serialize host status")?,
+            }))
+            .context("Failed to send host status")?;
+        drop(sender);
+    }
+
     match update_kind {
         Some(UpdateKind::UpdateAndReboot) | Some(UpdateKind::AbUpdate) => {
             let root_block_device_path = get_root_block_device_path(state.host_status())
@@ -209,7 +254,7 @@ pub(super) fn update(
 
             state.close();
 
-            if !trident.allowed_operations.contains(Operations::Transition) {
+            if !allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
                 mount::unmount_target_volumes(mount_path)
                     .context("Failed to unmount target volumes")?;

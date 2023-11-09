@@ -1,26 +1,15 @@
 syntax = "proto3";
 package trident;
 
-service Imaging {
-    rpc WriteImage (ImageRequest) returns (EmptyReply);
-    rpc ChrootExec (ChrootExecRequest) returns (EmptyReply);
-    rpc Kexec (KexecRequest) returns (EmptyReply);
+service HostManagement {
+    rpc UpdateHost (HostUpdateRequest) returns (stream HostStatusState);
 }
 
-message ImageRequest {
-    string disk = 1;
-    string url = 2;
-    string sha256 = 3;
+message HostUpdateRequest {
+    string hostConfiguration = 1;
+    string allowedOperations = 2;
 }
 
-message ChrootExecRequest {
-    string rootPartition = 1;
-    string script = 2;
+message HostStatusState {
+    string status = 1;
 }
-
-message KexecRequest {
-    string rootPartition = 1;
-    string cmdline = 2;
-}
-
-message EmptyReply {}

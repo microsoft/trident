@@ -3,13 +3,10 @@
   "title": "HostConfiguration",
   "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
   "type": "object",
-  "required": [
-    "imaging",
-    "storage"
-  ],
   "properties": {
     "imaging": {
       "description": "Filesystem imaging configuration of the host.",
+      "default": {},
       "allOf": [
         {
           "$ref": "#/definitions/Imaging"
@@ -58,6 +55,7 @@
     },
     "storage": {
       "description": "Describes the storage configuration of the host.",
+      "default": {},
       "allOf": [
         {
           "$ref": "#/definitions/Storage"
@@ -240,6 +238,10 @@
         "disable": {
           "description": "When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.",
           "default": false,
+          "type": "boolean"
+        },
+        "enable-grpc": {
+          "description": "Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.",
           "type": "boolean"
         },
         "phonehome": {

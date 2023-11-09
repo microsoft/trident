@@ -18,8 +18,9 @@
 - [2. Property `HostConfiguration > management`](#management)
   - [2.1. Property `HostConfiguration > management > datastore-path`](#management_datastore-path)
   - [2.2. Property `HostConfiguration > management > disable`](#management_disable)
-  - [2.3. Property `HostConfiguration > management > phonehome`](#management_phonehome)
-  - [2.4. Property `HostConfiguration > management > self-upgrade`](#management_self-upgrade)
+  - [2.3. Property `HostConfiguration > management > enable-grpc`](#management_enable-grpc)
+  - [2.4. Property `HostConfiguration > management > phonehome`](#management_phonehome)
+  - [2.5. Property `HostConfiguration > management > self-upgrade`](#management_self-upgrade)
 - [3. Property `HostConfiguration > network`](#network)
 - [4. Property `HostConfiguration > network-provision`](#network-provision)
 - [5. Property `HostConfiguration > osconfig`](#osconfig)
@@ -101,21 +102,22 @@
 
 | Property                                         | Pattern | Type   | Deprecated | Definition | Title/Description                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------------------------------ | ------- | ------ | ---------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| + [imaging](#imaging )                           | No      | object | No         | In         | Filesystem imaging configuration of the host.                                                                                                                                                                                                                                                                                                                                             |
+| - [imaging](#imaging )                           | No      | object | No         | In         | Filesystem imaging configuration of the host.                                                                                                                                                                                                                                                                                                                                             |
 | - [management](#management )                     | No      | object | No         | In         | The Management configuration controls the installation of the Trident agent onto the runtime OS.                                                                                                                                                                                                                                                                                          |
 | - [network](#network )                           | No      | object | No         | -          | Netplan network configuration for the runtime OS.<br /><br />See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.                                                                                                                                                                                                               |
 | - [network-provision](#network-provision )       | No      | object | No         | -          | Netplan network configuration for the provisioning OS _ONLY_.<br /><br />See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.<br /><br />When provided, this configuration will be used to configure the network on the provisioning OS. When not provided, the network configuration from the runtime OS will be used instead. |
 | - [osconfig](#osconfig )                         | No      | object | No         | In         | OS Configuration                                                                                                                                                                                                                                                                                                                                                                          |
 | - [post-install-scripts](#post-install-scripts ) | No      | array  | No         | -          | Scripts to be run after the installation is complete.                                                                                                                                                                                                                                                                                                                                     |
-| + [storage](#storage )                           | No      | object | No         | In         | Describes the storage configuration of the host.                                                                                                                                                                                                                                                                                                                                          |
+| - [storage](#storage )                           | No      | object | No         | In         | Describes the storage configuration of the host.                                                                                                                                                                                                                                                                                                                                          |
 
 ## <a name="imaging"></a>1. Property `HostConfiguration > imaging`
 
 |                           |                                                         |
 | ------------------------- | ------------------------------------------------------- |
 | **Type**                  | `object`                                                |
-| **Required**              | Yes                                                     |
+| **Required**              | No                                                      |
 | **Additional properties** | [[Not allowed]](# "Additional Properties not allowed.") |
+| **Default**               | `{}`                                                    |
 | **Defined in**            |                                                         |
 
 **Description:** Filesystem imaging configuration of the host.
@@ -343,6 +345,7 @@ Supported schemes are: `file`, `http`, `https`.
 | ----------------------------------------------- | ------- | ------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | - [datastore-path](#management_datastore-path ) | No      | string  | No         | -          | Describes where to place the datastore Trident will use to store its state. Defaults to \`/var/lib/trident/datastore.sqlite\`. Needs to end with \`.sqlite\`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.                                                 |
 | - [disable](#management_disable )               | No      | boolean | No         | -          | When set to \`true\`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.                                                                                                                                                                        |
+| - [enable-grpc](#management_enable-grpc )       | No      | boolean | No         | -          | Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to \`false\`.                                                                                                                                                                                 |
 | - [phonehome](#management_phonehome )           | No      | string  | No         | -          | URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.                                                      |
 | - [self-upgrade](#management_self-upgrade )     | No      | boolean | No         | -          | (FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should upgrade itself. If set to \`true\`, Trident will replicate itself into the runtime OS prior to transitioning. This is useful during development to ensure the matching version of Trident is used. Defaults to \`false\`. |
 
@@ -365,7 +368,16 @@ Supported schemes are: `file`, `http`, `https`.
 
 **Description:** When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.
 
-### <a name="management_phonehome"></a>2.3. Property `HostConfiguration > management > phonehome`
+### <a name="management_enable-grpc"></a>2.3. Property `HostConfiguration > management > enable-grpc`
+
+|              |           |
+| ------------ | --------- |
+| **Type**     | `boolean` |
+| **Required** | No        |
+
+**Description:** Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.
+
+### <a name="management_phonehome"></a>2.4. Property `HostConfiguration > management > phonehome`
 
 |              |          |
 | ------------ | -------- |
@@ -374,7 +386,7 @@ Supported schemes are: `file`, `http`, `https`.
 
 **Description:** URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.
 
-### <a name="management_self-upgrade"></a>2.4. Property `HostConfiguration > management > self-upgrade`
+### <a name="management_self-upgrade"></a>2.5. Property `HostConfiguration > management > self-upgrade`
 
 |              |           |
 | ------------ | --------- |
@@ -760,8 +772,9 @@ This includes both stdout and stderr. The path and file will be created if they 
 |                           |                                                         |
 | ------------------------- | ------------------------------------------------------- |
 | **Type**                  | `object`                                                |
-| **Required**              | Yes                                                     |
+| **Required**              | No                                                      |
 | **Additional properties** | [[Not allowed]](# "Additional Properties not allowed.") |
+| **Default**               | `{}`                                                    |
 | **Defined in**            |                                                         |
 
 **Description:** Describes the storage configuration of the host.

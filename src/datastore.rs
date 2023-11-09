@@ -36,6 +36,10 @@ impl DataStore {
         Ok(Self::Persistent { db, host_status })
     }
 
+    pub(crate) fn is_persistent(&self) -> bool {
+        matches!(self, Self::Persistent { .. })
+    }
+
     pub(crate) fn persist(&mut self, path: &Path) -> Result<(), Error> {
         if let Self::InMemory {
             ref mut host_status,

@@ -5,10 +5,7 @@ use std::{fs, path::Path};
 use anyhow::{bail, ensure, Context, Error};
 use log::info;
 use trident_api::{
-    config::{
-        DatastoreConfiguration, HostConfiguration, HostConfigurationSource, LocalConfigFile,
-        TridentConfiguration,
-    },
+    config::{DatastoreConfiguration, HostConfiguration, HostConfigurationSource, LocalConfigFile},
     status::{HostStatus, UpdateKind},
 };
 
@@ -113,14 +110,19 @@ impl Module for ManagementModule {
             .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
 
         let trident_config = LocalConfigFile {
-            trident_config: TridentConfiguration {
-                datastore: Some(DatastoreConfiguration::Load {
-                    load_path: datastore_path.to_path_buf(),
-                }),
-                phonehome: host_config.management.phonehome.clone(),
-                ..Default::default()
+            datastore: Some(DatastoreConfiguration::Load {
+                load_path: datastore_path.to_path_buf(),
+            }),
+            phonehome: host_config.management.phonehome.clone(),
+            grpc: if host_config.management.enable_grpc {
+                Some(Default::default())
+            } else {
+                None
             },
-            host_config_source: HostConfigurationSource::Embedded(Box::new(host_config.clone())),
+            host_config_source: Some(HostConfigurationSource::Embedded(Box::new(
+                host_config.clone(),
+            ))),
+            ..Default::default()
         };
         fs::write(
             TRIDENT_LOCAL_CONFIG_PATH,
