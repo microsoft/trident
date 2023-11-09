@@ -10,6 +10,8 @@ use serde_json::Value;
 
 use trident_api::{config::MountPoint, status::HostStatus};
 
+use crate::modules;
+
 pub(crate) struct TabFile {
     tab_file_contents: String,
 }
@@ -69,7 +71,7 @@ impl TabFile {
                 .arg("--mountpoint")
                 .arg(path),
         )
-        .context(format!("Failed to load {:?}", tab_file_path))?;
+        .context(format!("Failed to find {:?} in {:?}", path, tab_file_path))?;
         let map = parse_findmnt_output(findmnt_output_json.stdout.as_slice())?;
         if map.len() != 1 {
             bail!(
@@ -92,7 +94,7 @@ impl TabFile {
         path_prefix: &Option<&path::Path>,
         extra_options: &Option<Vec<String>>,
     ) -> Result<String, Error> {
-        let mount_device_path = crate::get_block_device(host_status, &mp.target_id)
+        let mount_device_path = modules::get_block_device(host_status, &mp.target_id, false)
             .context(format!(
                 "Failed to find block device with id {}",
                 mp.target_id
@@ -528,11 +530,21 @@ mod tests {
         );
 
         // non-existing mount point
-        assert!(TabFile::get_device_path(tmpfile.path(), Path::new("/foobar")).is_err());
+        assert_eq!(
+            TabFile::get_device_path(tmpfile.path(), Path::new("/foobar"))
+                .err()
+                .unwrap()
+                .to_string(),
+            format!("Failed to find \"/foobar\" in {:?}", tmpfile.path())
+        );
 
         // non-existing input file
-        assert!(
-            TabFile::get_device_path(Path::new("/does-not-exist"), Path::new("/foobar")).is_err()
+        assert_eq!(
+            TabFile::get_device_path(Path::new("/does-not-exist"), Path::new("/foobar"))
+                .err()
+                .unwrap()
+                .to_string(),
+            "Failed to find \"/foobar\" in \"/does-not-exist\""
         );
 
         let mut tmpfile = NamedTempFile::new().unwrap();
@@ -540,7 +552,25 @@ mod tests {
         tmpfile.flush().unwrap();
 
         // malformed input file
-        assert!(TabFile::get_device_path(tmpfile.path(), Path::new("/foobar")).is_err());
+        assert_eq!(
+            TabFile::get_device_path(tmpfile.path(), Path::new("/foobar"))
+                .err()
+                .unwrap()
+                .to_string(),
+            format!("Failed to find \"/foobar\" in {:?}", tmpfile.path())
+        );
+
+        let mut tmpfile = NamedTempFile::new().unwrap();
+        tmpfile
+            .write_all((tab_file_contents + "\n/dev/sdb1q /random ext4 defaults 0 2").as_bytes())
+            .unwrap();
+        tmpfile.flush().unwrap();
+
+        // pick the latter
+        assert_eq!(
+            TabFile::get_device_path(tmpfile.path(), Path::new("/random")).unwrap(),
+            PathBuf::from("/dev/sdb1q")
+        );
     }
 
     #[test]

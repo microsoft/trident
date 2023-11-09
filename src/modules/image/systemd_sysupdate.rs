@@ -23,7 +23,7 @@ use regex::Regex;
 use reqwest::Url;
 use tempfile;
 
-use crate::Path;
+use crate::{modules, Path};
 use trident_api::config::{BlockDeviceId, Image, PartitionType};
 use trident_api::status::{AbVolumeSelection, BlockDeviceInfo, HostStatus};
 
@@ -466,7 +466,7 @@ fn get_partition_path(
     block_device_id: &BlockDeviceId,
 ) -> Result<String, Error> {
     // Fetch BlockDeviceInfo of partition based on its id
-    let part_block_device_info = crate::get_partition(host_status, block_device_id)
+    let part_block_device_info = modules::get_partition(host_status, block_device_id)
         .context(format!("No partition with id '{block_device_id}' found"))?;
     // Fetch partition path and convert to string
     let partition_path = part_block_device_info.path.to_str().context(format!(
@@ -541,7 +541,7 @@ fn get_update_partition_id(
     if let Some(ab_update) = &host_status.imaging.ab_update {
         // Call helper func from lib.rs, which returns AbVolumeSelection to be updated in this A/B
         // update, either VolumeA or VolumeB, depending on which volume is active now
-        let volume_selection: AbVolumeSelection = crate::get_ab_update_volume(host_status)
+        let volume_selection: AbVolumeSelection = modules::get_ab_update_volume(host_status, false)
             .context("Failed to determine which A/B volume is currently inactive")?;
         // Fetch volume pair for the target_id
         if let Some(volume_pair) = ab_update.volume_pairs.get(target_id) {

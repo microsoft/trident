@@ -15,12 +15,12 @@ use std::{
 use trident_api::{
     config::{BlockDeviceId, HostConfiguration, Image, ImageFormat},
     status::{
-        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo,
+        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk,
         HostStatus, Partition, ReconcileState, UpdateKind,
     },
 };
 
-use crate::modules::{storage::tabfile::TabFile, Module};
+use crate::modules::{self, storage::tabfile::TabFile, Module};
 use crate::mount;
 
 mod stream_image;
@@ -69,11 +69,13 @@ fn update_images(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
-    for image in get_images_for_updating(host_status, host_config) {
+    for image in get_undeployed_images(host_status, host_config, false) {
         // Validate that block device exists
-        let block_device = crate::get_block_device(host_status, &image.target_id).context(
-            format!("No block device with id '{}' found", image.target_id),
-        )?;
+        let block_device = modules::get_block_device(host_status, &image.target_id, false)
+            .context(format!(
+                "No block device with id '{}' found",
+                image.target_id
+            ))?;
 
         // TODO: Add more options for download sources
         info!(
@@ -221,7 +223,7 @@ fn direct_deploy(
             .context(format!("Failed to stream image from {}", image.url))?;
 
     // Update HostStatus
-    crate::set_host_status_block_device_contents(
+    set_host_status_block_device_contents(
         host_status,
         &image.target_id,
         BlockDeviceContents::Image {
@@ -245,6 +247,60 @@ fn direct_deploy(
     }
 
     Ok(())
+}
+
+fn get_disk_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut Disk> {
+    host_status.storage.disks.get_mut(block_device_id)
+}
+
+fn get_partition_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut Partition> {
+    host_status
+        .storage
+        .disks
+        .iter_mut()
+        .flat_map(|(_block_device_id, disk)| &mut disk.partitions)
+        .find(|p| p.id == *block_device_id)
+}
+
+fn set_host_status_block_device_contents(
+    host_status: &mut HostStatus,
+    block_device_id: &BlockDeviceId,
+    contents: BlockDeviceContents,
+) -> Result<(), Error> {
+    if let Some(disk) = get_disk_mut(host_status, block_device_id) {
+        disk.contents = contents;
+        return Ok(());
+    }
+
+    if let Some(partition) = get_partition_mut(host_status, block_device_id) {
+        partition.contents = contents;
+        return Ok(());
+    }
+
+    if let Some(ab_update) = &host_status.imaging.ab_update {
+        if let Some(ab_volume_pair) = ab_update.volume_pairs.get(block_device_id) {
+            let target_id = match super::get_ab_update_volume(host_status, false) {
+                Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
+                Some(AbVolumeSelection::VolumeB) => Some(&ab_volume_pair.volume_b_id),
+                None => None,
+            };
+            if let Some(target_id) = target_id {
+                return set_host_status_block_device_contents(
+                    host_status,
+                    &target_id.clone(),
+                    contents,
+                );
+            }
+        }
+    }
+
+    anyhow::bail!("No block device with id '{}' found", block_device_id);
 }
 
 /// Returns directory as PathBuf and filename as String from image URL.
@@ -315,7 +371,7 @@ fn sysupdate_deploy(
     // If A/B update succeeded, update HostStatus
     if image_length > 0 && img_deploy_instance.status == systemd_sysupdate::Status::Succeeded {
         // If sysupdate succeeds, update contents of HostStatus
-        crate::set_host_status_block_device_contents(
+        set_host_status_block_device_contents(
             host_status,
             &image.target_id,
             BlockDeviceContents::Image {
@@ -362,12 +418,12 @@ fn get_ab_volume_partition<'a>(
             .iter()
             .find(|v| v.0 == block_device_id);
         if let Some(v) = ab_volume {
-            return crate::get_ab_update_volume(host_status).and_then(
-                |selection| match selection {
+            return modules::get_ab_update_volume(host_status, false).and_then(|selection| {
+                match selection {
                     AbVolumeSelection::VolumeA => get_partition_ref(host_status, &v.1.volume_a_id),
                     AbVolumeSelection::VolumeB => get_partition_ref(host_status, &v.1.volume_b_id),
-                },
-            );
+                }
+            });
         }
     }
 
@@ -467,17 +523,23 @@ fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfigurat
     });
 }
 
-/// Returns a list of images that need to be updated/provisioned.
-fn get_images_for_updating<'a>(
+/// Returns a list of images that need to be updated/provisioned. This goes
+/// through the list of images in the HostConfiguration and compares them to the
+/// HostStatus. If an image is targetting an AB Volume Pair and
+/// active is true, it compared the image against the active volume, and if
+/// active is false it compares the image against the update volume (i.e. the
+/// one that isn't active).
+fn get_undeployed_images<'a>(
     host_status: &HostStatus,
     host_config: &'a HostConfiguration,
+    active: bool,
 ) -> Vec<&'a Image> {
     host_config
         .imaging
         .images
         .iter()
         .filter(|image| {
-            if let Some(bdi) = crate::get_block_device(host_status, &image.target_id) {
+            if let Some(bdi) = modules::get_block_device(host_status, &image.target_id, active) {
                 if let BlockDeviceContents::Image { sha256, url, .. } = bdi.contents {
                     if url == image.url && (sha256 == image.sha256 || image.sha256 == HASH_IGNORED)
                     {
@@ -516,15 +578,21 @@ impl Module for ImageModule {
             {
                 // and one of the a/b update volumes points to the root volume
                 if let Some(root_device_pair) = ab_update.volume_pairs.get(&root_device_id) {
-                    let volume_a_path =
-                        crate::get_block_device(host_status, &root_device_pair.volume_a_id)
-                            .context("Failed to get block device for volume A")?
-                            .path;
+                    let volume_a_path = modules::get_block_device(
+                        host_status,
+                        &root_device_pair.volume_a_id,
+                        false,
+                    )
+                    .context("Failed to get block device for volume A")?
+                    .path;
 
-                    let volume_b_path =
-                        crate::get_block_device(host_status, &root_device_pair.volume_b_id)
-                            .context("Failed to get block device for volume B")?
-                            .path;
+                    let volume_b_path = modules::get_block_device(
+                        host_status,
+                        &root_device_pair.volume_b_id,
+                        false,
+                    )
+                    .context("Failed to get block device for volume B")?
+                    .path;
 
                     // update the active volume in the a/b scheme based on what
                     // is the current root volume
@@ -562,12 +630,8 @@ impl Module for ImageModule {
         host_status: &HostStatus,
         host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
-        // Don't assume we are in a middle of an update.
-        let mut host_status = host_status.clone();
-        host_status.reconcile_state = ReconcileState::Ready;
-
-        let update_images = get_images_for_updating(&host_status, host_config);
-        if update_images.is_empty() {
+        let undeployed_images = get_undeployed_images(host_status, host_config, true);
+        if undeployed_images.is_empty() {
             None
         } else {
             Some(UpdateKind::AbUpdate)
@@ -586,7 +650,7 @@ impl Module for ImageModule {
             refresh_ab_volumes(host_status, host_config);
         }
 
-        update_images(host_status, host_config)?;
+        update_images(host_status, host_config).context("Failed to update filesystem images")?;
         mount::setup_root_chroot(host_config, host_status, mount_point)?;
 
         Ok(())
@@ -739,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_images_for_updating() {
+    fn test_get_undeployed_images() {
         let host_config_yaml = indoc::indoc! {r#"
             storage:
               disks: []
@@ -809,16 +873,22 @@ mod tests {
         let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
 
         // should be zero, as images are matching and hash is ignored
-        assert_eq!(get_images_for_updating(&host_status, &host_config).len(), 0);
+        assert_eq!(
+            get_undeployed_images(&host_status, &host_config, false).len(),
+            0
+        );
 
         // should be zero, as images and hashes are matching
         host_config.imaging.images[0].sha256 = "foobar".to_string();
-        assert_eq!(get_images_for_updating(&host_status, &host_config).len(), 0);
+        assert_eq!(
+            get_undeployed_images(&host_status, &host_config, false).len(),
+            0
+        );
 
         // should be one, as image hash is different
         host_config.imaging.images[0].sha256 = "barfoo".to_string();
         assert_eq!(
-            get_images_for_updating(&host_status, &host_config),
+            get_undeployed_images(&host_status, &host_config, false),
             vec![&Image {
                 url: "http://example.com/esp.img".to_string(),
                 target_id: "boot".to_string(),
@@ -831,7 +901,7 @@ mod tests {
         host_config.imaging.images[0].sha256 = HASH_IGNORED.to_string();
         host_config.imaging.images[0].url = "http://example.com/image2.img".to_string();
         assert_eq!(
-            get_images_for_updating(&host_status, &host_config),
+            get_undeployed_images(&host_status, &host_config, false),
             vec![&Image {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
@@ -844,7 +914,7 @@ mod tests {
         // same; for now though we reimage to be safe, hence 1
         host_config.imaging.images[0].sha256 = "foobar".to_string();
         assert_eq!(
-            get_images_for_updating(&host_status, &host_config),
+            get_undeployed_images(&host_status, &host_config, false),
             vec![&Image {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
@@ -858,7 +928,7 @@ mod tests {
         host_status.storage.disks.get_mut("foo").unwrap().partitions[1].contents =
             BlockDeviceContents::Unknown;
         assert_eq!(
-            get_images_for_updating(&host_status, &host_config),
+            get_undeployed_images(&host_status, &host_config, false),
             vec![
                 &Image {
                     url: "http://example.com/image2.img".to_string(),
@@ -873,6 +943,142 @@ mod tests {
                     sha256: "ignored".to_string(),
                 }
             ]
+        );
+
+        // root config is not matching root status
+        let host_config_yaml = indoc::indoc! {r#"
+            storage:
+              disks: []
+              mount-points:
+                - path: /boot
+                  target-id: boot
+                  filesystem: fat32
+                  options: []
+                - path: /
+                  target-id: root
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+                - url: http://example.com/esp.img
+                  target-id: boot
+                  format: raw-zstd
+                  sha256: foobar
+                - url: http://example.com/image1.img
+                  target-id: root
+                  format: raw-zstd
+                  sha256: ignored
+              ab-update:
+                volume-pairs:
+                  - id: root
+                    volume-a-id: root-a
+                    volume-b-id: root-b
+            "#};
+        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+
+        let host_status_yaml = indoc::indoc! {r#"
+            storage:
+              disks:
+                foo: 
+                  uuid: 00000000-0000-0000-0000-000000000000
+                  path: /dev/sda
+                  capacity: 10
+                  contents: initialized
+                  partitions:
+                    - uuid: 00000000-0000-0000-0000-000000000001
+                      path: /dev/sda1
+                      id: boot
+                      start: 1
+                      end: 3
+                      type: esp
+                      contents: !image
+                        url: http://example.com/esp.img
+                        sha256: foobar
+                        length: 100
+                    - uuid: 00000000-0000-0000-0000-000000000002
+                      path: /dev/sda2
+                      id: root-b
+                      start: 4
+                      end: 10
+                      type: root
+                      contents: !image
+                        url: http://example.com/image1.img
+                        sha256: foobar
+                        length: 100
+              raid-arrays: {}
+              mount-points:
+                boot:
+                  path: /boot
+                  filesystem: fat32
+                  options: []
+                root:
+                  path: /
+                  filesystem: ext4
+                  options: []
+            reconcile-state: clean-install
+            imaging:
+            "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        assert_eq!(
+            get_undeployed_images(&host_status, &host_config, false),
+            vec![&Image {
+                url: "http://example.com/image1.img".to_string(),
+                target_id: "root".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "ignored".to_string(),
+            }]
+        );
+
+        assert_eq!(
+            get_undeployed_images(&host_status, &host_config, true),
+            // Vec::<&Image>::new()
+            vec![&Image {
+                url: "http://example.com/image1.img".to_string(),
+                target_id: "root".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "ignored".to_string(),
+            }]
+        );
+
+        // with a/b update, we should get ...
+
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        host_status.imaging.ab_update = Some(AbUpdate {
+            active_volume: Some(AbVolumeSelection::VolumeA),
+            volume_pairs: [(
+                "root".to_string(),
+                AbVolumePair {
+                    volume_a_id: "root-a".to_string(),
+                    volume_b_id: "root-b".to_string(),
+                },
+            )]
+            .iter()
+            .map(|p| {
+                (
+                    p.0.clone(),
+                    AbVolumePair {
+                        volume_a_id: p.1.volume_a_id.clone(),
+                        volume_b_id: p.1.volume_b_id.clone(),
+                    },
+                )
+            })
+            .collect(),
+        });
+
+        assert_eq!(
+            get_undeployed_images(&host_status, &host_config, false),
+            Vec::<&Image>::new()
+        );
+
+        assert_eq!(
+            get_undeployed_images(&host_status, &host_config, true),
+            vec![&Image {
+                url: "http://example.com/image1.img".to_string(),
+                target_id: "root".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: "ignored".to_string(),
+            }]
         );
     }
 
@@ -983,6 +1189,275 @@ mod tests {
         assert_eq!(
             get_ab_volume_partition(&host_status, &"nonexistent".to_owned()),
             None
+        );
+    }
+
+    /// Validates logic for setting block device contents
+    #[test]
+    fn test_set_host_status_block_device_contents() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                mount-points:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: rootb
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                    data:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 1000
+                        contents: unknown
+                        partitions: []
+                raid-arrays:
+            imaging:
+                ab-update:
+                    volume-pairs:
+                        osab:
+                            volume-a-id: root
+                            volume-b-id: rootb
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(0)
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(1)
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+
+        // test for disks
+        let contents = BlockDeviceContents::Zeroed;
+        set_host_status_block_device_contents(&mut host_status, &"os".to_owned(), contents.clone())
+            .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        // test for partitions
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"efi".to_owned(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(0)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        // test for ab volumes
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"osab".to_owned(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(1)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"osab".to_owned(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(1)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"osab".to_owned(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(2)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        // test failure when missing id is provided
+        assert_eq!(
+            set_host_status_block_device_contents(
+                &mut host_status,
+                &"foorbar".to_owned(),
+                contents.clone()
+            )
+            .err()
+            .unwrap()
+            .to_string(),
+            "No block device with id 'foorbar' found"
+        );
+    }
+
+    /// Validates logic for querying disks and partitions.
+    #[test]
+    fn test_get_disk_partition_mut() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                mount-points:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: rootb
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                raid-arrays:
+            imaging:
+                ab-update:
+                    volume-pairs:
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        let disk_mut = get_disk_mut(&mut host_status, &"os".to_owned());
+        disk_mut.unwrap().contents = BlockDeviceContents::Zeroed;
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Zeroed
+        );
+
+        let partition_mut = get_partition_mut(&mut host_status, &"efi".to_owned());
+        partition_mut.unwrap().contents = BlockDeviceContents::Initialized;
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(0)
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Initialized
         );
     }
 }

@@ -41,7 +41,7 @@ pub(super) fn stream_zstd_image(
     let mut file = BufWriter::with_capacity(4 << 20, file);
 
     // Mark the block device as having unknown contents in case the write operation is interrupted.
-    crate::set_host_status_block_device_contents(
+    super::set_host_status_block_device_contents(
         host_status,
         block_device_id,
         BlockDeviceContents::Unknown,

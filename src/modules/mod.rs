@@ -8,8 +8,10 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::{HostConfiguration, Operations, TridentConfiguration},
-    status::{HostStatus, ReconcileState, UpdateKind},
+    config::{BlockDeviceId, HostConfiguration, Operations, TridentConfiguration},
+    status::{
+        AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
+    },
 };
 
 use crate::modules::{
@@ -237,7 +239,118 @@ fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
         .mount_points
         .iter()
         .find(|(_, mp)| mp.path == Path::new("/"))
-        .and_then(|(target_id, _)| Some(crate::get_block_device(host_status, target_id)?.path))
+        .and_then(|(target_id, _)| Some(get_block_device(host_status, target_id, false)?.path))
+}
+
+fn get_disk(host_status: &HostStatus, block_device_id: &BlockDeviceId) -> Option<BlockDeviceInfo> {
+    host_status
+        .storage
+        .disks
+        .get(block_device_id)
+        .map(|d| d.to_block_device())
+}
+
+fn get_partition(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<BlockDeviceInfo> {
+    host_status
+        .storage
+        .disks
+        .iter()
+        .flat_map(|(_block_device_id, disk)| &disk.partitions)
+        .find(|p| p.id == *block_device_id)
+        .map(Partition::to_block_device)
+}
+
+fn get_raid_array(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<BlockDeviceInfo> {
+    host_status
+        .storage
+        .raid_arrays
+        .get(block_device_id)
+        .map(|r| r.to_block_device())
+}
+
+/// Returns a block device info for a block device referenced by the
+/// `block_device_id`. If the volume is part of an AB Volume Pair and active is
+/// true it returns the active volume, and if active is false it returns the
+/// update volume (i.e. the one that isn't active).
+fn get_block_device(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+    active: bool,
+) -> Option<BlockDeviceInfo> {
+    get_disk(host_status, block_device_id)
+        .or_else(|| get_partition(host_status, block_device_id))
+        .or_else(|| get_ab_volume(host_status, block_device_id, active))
+        .or_else(|| get_raid_array(host_status, block_device_id))
+}
+
+/// Returns a block device info for a volume from the given AB Volume Pair. If
+/// active is true it returns the active volume, and if active is false it
+/// returns the update volume (i.e. the one that isn't active).
+fn get_ab_volume(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+    active: bool,
+) -> Option<BlockDeviceInfo> {
+    if let Some(ab_update) = &host_status.imaging.ab_update {
+        let ab_volume = ab_update
+            .volume_pairs
+            .iter()
+            .find(|v| v.0 == block_device_id);
+        if let Some(v) = ab_volume {
+            return get_ab_update_volume(host_status, active).and_then(
+                |selection| match selection {
+                    AbVolumeSelection::VolumeA => {
+                        get_block_device(host_status, &v.1.volume_a_id, false)
+                    }
+                    AbVolumeSelection::VolumeB => {
+                        get_block_device(host_status, &v.1.volume_b_id, false)
+                    }
+                },
+            );
+        }
+    }
+
+    None
+}
+
+/// Returns the volume selection for all AB Volume Pairs. This is used to
+/// determine which volumes are currently active and which are meant for
+/// updating. In addition, if active is true and an A/B update is in progress,
+/// the active volume selection will be returned. If active is false, the volume
+/// selection corresponding to the volumes to be updated will be returned.
+fn get_ab_update_volume(host_status: &HostStatus, active: bool) -> Option<AbVolumeSelection> {
+    let active_volume = &host_status.imaging.ab_update.as_ref()?.active_volume;
+    match &host_status.reconcile_state {
+        ReconcileState::UpdateInProgress(UpdateKind::HotPatch)
+        | ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)
+        | ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => *active_volume,
+        ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
+            if active {
+                *active_volume
+            } else {
+                Some(if *active_volume == Some(AbVolumeSelection::VolumeA) {
+                    AbVolumeSelection::VolumeB
+                } else {
+                    AbVolumeSelection::VolumeA
+                })
+            }
+        }
+        ReconcileState::UpdateInProgress(UpdateKind::Incompatible) => None,
+        ReconcileState::Ready => {
+            if active {
+                *active_volume
+            } else {
+                None
+            }
+        }
+        ReconcileState::CleanInstall => Some(AbVolumeSelection::VolumeA),
+    }
 }
 
 fn refresh_host_status(
@@ -323,7 +436,10 @@ fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Er
 
 #[cfg(test)]
 mod test {
+    use trident_api::status::BlockDeviceContents;
+
     use super::*;
+    use indoc::indoc;
 
     #[test]
     fn test_get_root_block_device_path() {
@@ -368,6 +484,331 @@ mod test {
         assert_eq!(
             get_root_block_device_path(&host_status),
             Some(PathBuf::from("/dev/sda2"))
+        );
+    }
+
+    /// Validates that the `get_block_device_for_update` function works as expected for
+    /// disks, partitions and ab volumes.
+    #[test]
+    fn test_get_block_device_for_update() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                mount-points:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: rootb
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                    data:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 1000
+                        contents: unknown
+                        partitions: []
+                raid-arrays:
+            imaging:
+                ab-update:
+                    volume-pairs:
+                        osab:
+                            volume-a-id: root
+                            volume-b-id: rootb
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        assert_eq!(
+            get_block_device(&host_status, &"os".to_owned(), false).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"efi".to_owned(), false).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"root".to_owned(), false).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                size: 900,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"foobar".to_owned(), false),
+            None
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"data".to_owned(), false).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                size: 1000,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+        assert_eq!(
+            get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                size: 900,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+        assert_eq!(
+            super::get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                size: 900,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        assert_eq!(
+            get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                size: 9000,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+
+        assert_eq!(
+            get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                size: 900,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+    }
+
+    /// Validates logic for determining which A/B volume to use
+    fn test_get_ab_update_volume(active: bool) -> HostStatus {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                disks:
+                mount-points:
+                raid-arrays:
+            imaging:
+                ab-update:
+                    volume-pairs:
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        // test that clean-install will always use volume A for updates
+        assert_eq!(
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+
+        assert_eq!(
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+
+        assert_eq!(
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        // test that UpdateInProgress(HostPatch, NormalUpdate, UpdateAndReboot)
+        // will always use the active volume for updates
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::HotPatch);
+        assert_eq!(
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
+        assert_eq!(
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot);
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+        assert_eq!(
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        // test that UpdateInProgress(Incompatible) will return None
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::Incompatible);
+        assert_eq!(get_ab_update_volume(&host_status, active), None);
+
+        host_status
+    }
+
+    /// Validates logic for determining which A/B volume to update
+    #[test]
+    fn test_get_ab_update_volume_update() {
+        let mut host_status = test_get_ab_update_volume(false);
+
+        // test that Ready will return the None
+        host_status.reconcile_state = ReconcileState::Ready;
+        assert_eq!(get_ab_update_volume(&host_status, false), None);
+
+        // test that UpdateInProgress(AbUpdate) will use the opposite volume
+        // for updates
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        assert_eq!(
+            get_ab_update_volume(&host_status, false),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+        assert_eq!(
+            get_ab_update_volume(&host_status, false),
+            Some(AbVolumeSelection::VolumeA)
+        );
+    }
+
+    /// Validates logic for determining which A/B volume is active
+    #[test]
+    fn test_get_ab_update_volume_active() {
+        let mut host_status = test_get_ab_update_volume(true);
+
+        // test that Ready will return the active volume
+        host_status.reconcile_state = ReconcileState::Ready;
+        assert_eq!(
+            get_ab_update_volume(&host_status, true),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        // test that UpdateInProgress(AbUpdate) will use the active volume
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        assert_eq!(
+            get_ab_update_volume(&host_status, true),
+            Some(AbVolumeSelection::VolumeA)
+        );
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+        assert_eq!(
+            get_ab_update_volume(&host_status, true),
+            Some(AbVolumeSelection::VolumeB)
+        );
+    }
+
+    /// Validates logic for querying disks and partitions.
+    #[test]
+    fn test_get_disk_partition() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                mount-points:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: rootb
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                raid-arrays:
+            imaging:
+                ab-update:
+                    volume-pairs:
+            reconcile-state: clean-install
+        "#};
+        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        assert_eq!(
+            get_disk(&host_status, &"os".to_owned()).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+        assert_eq!(get_disk(&host_status, &"efi".to_owned()), None);
+        assert_eq!(get_partition(&host_status, &"os".to_owned()), None);
+        assert_eq!(
+            get_partition(&host_status, &"efi".to_owned()),
+            Some(BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            })
         );
     }
 }
