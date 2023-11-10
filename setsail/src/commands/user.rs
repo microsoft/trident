@@ -18,18 +18,18 @@ pub struct User {
     /// States the password provided is already encrypted.
     #[arg(
         long,
-        group = "password",
+        group = "passwordsource",
         requires = "password",
         default_value_if("plaintext", "false", "true")
     )]
     pub iscrypted: bool,
 
     /// Locks the user account.
-    #[arg(long, group = "password", conflicts_with = "password")]
+    #[arg(long, group = "passwordsource", conflicts_with = "password")]
     pub lock: bool,
 
     /// States the password provided is in plain text. (Default)
-    #[arg(long, group = "password", requires = "password")]
+    #[arg(long, group = "passwordsource", requires = "password")]
     pub plaintext: bool,
 
     /// Name of the new user.
