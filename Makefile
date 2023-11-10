@@ -25,7 +25,7 @@ coverage:
 
 .PHONY: rpm
 rpm:
-	docker build -t trident/trident:latest .
+	docker build --progress plain -t trident/trident:latest .
 	mkdir -p bin/
 	id=$$(docker create trident/trident:latest) && \
 	docker cp $$id:/work/trident.tar.gz bin/ && \
