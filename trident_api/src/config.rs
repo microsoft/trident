@@ -101,6 +101,7 @@ pub enum HostConfigurationSource {
 
 /// GrpcConfiguration is the configuration for the gRPC server.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct GrpcConfiguration {
     /// Port for the gRPC server (defaults to 50051 if not set).
     pub listen_port: Option<u16>,
@@ -743,7 +744,7 @@ mod tests {
     fn test_grpc_and_embedded_host_config() {
         let local_config_yaml = indoc! {r#"
             grpc:
-              listen_port: null
+              listen-port: null
             host-configuration:
               management:
                 disable: true

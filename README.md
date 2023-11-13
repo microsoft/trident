@@ -90,11 +90,13 @@ composed of the following sections:
 - **network-override**: optional network configuration for the bootstrap OS. If
   not specified, the network configuration from Host Configuration (see below)
   will be used otherwise.
-- **grpc**: If present, this indicates that Trident should start a gRPC server
-  to listen for commands. The protocol is described by
+- **grpc**: If present (to make it present, add `listen-port` attribute which
+  can be `null` for the detail port 50051 or the port number to be used for
+  incoming gRPC connections), this indicates that Trident should start a gRPC
+  server to listen for commands. The protocol is described by
   [proto/trident.proto](proto/trident.proto). This only applies to the current
   run of Trident. During provisioning, you can control whether gRPC is enabled
-  on the runtime OS via the `enable_grpc` field within the Management section of
+  on the runtime OS via the `enable-grpc` field within the Management section of
   the Host Configuration. TODO: implement and document authorization for
   accessing the gRPC endpoint.
 
