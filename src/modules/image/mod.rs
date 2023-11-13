@@ -20,8 +20,8 @@ use trident_api::{
     },
 };
 
+use super::mount;
 use crate::modules::{self, storage::tabfile::TabFile, Module};
-use crate::mount;
 
 mod stream_image;
 mod systemd_sysupdate;
@@ -651,7 +651,7 @@ impl Module for ImageModule {
         }
 
         update_images(host_status, host_config).context("Failed to update filesystem images")?;
-        mount::setup_root_chroot(host_config, host_status, mount_point)?;
+        super::setup_root_chroot(host_config, host_status, mount_point)?;
 
         Ok(())
     }

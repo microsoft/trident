@@ -152,7 +152,7 @@ pub struct HostConfiguration {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub post_install_scripts: Vec<Script>,
 
-    /// OS Configuration
+    /// OS Configuration for the runtime OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub osconfig: OsConfig,
 }
@@ -214,12 +214,14 @@ pub struct Management {
     pub phonehome: Option<String>,
 }
 
-/// Storage configuration for a host.
+/// Storage configuration describes the disks of the host that will be used to
+/// store the OS and data. Not all disks of the host need to be captured inside
+/// the Host Configuration, only those that Trident should operate on.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Storage {
-    /// Per disk configuration.
+    /// A list of disks that will be used for the host.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub disks: Vec<Disk>,
 
@@ -232,7 +234,7 @@ pub struct Storage {
     pub mount_points: Vec<MountPoint>,
 }
 
-/// Identifier for a block device.
+/// Identifier for a block device. Needs to be unique across all types of devices.
 pub type BlockDeviceId = String;
 
 /// Per disk configuration.
@@ -242,7 +244,11 @@ pub type BlockDeviceId = String;
 pub struct Disk {
     /// A unique identifier for the disk. This is a user defined string that
     /// allows to link the disk to what is consuming it and also to results in the
-    /// Host Status.
+    /// Host Status. The identifier needs to be unique across all types of
+    /// devices, not just disks.
+    ///
+    /// TBD: At the moment, the partition table is created from scratch. In the
+    /// future, it will be possible to consume an existing partition table.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
@@ -251,7 +257,7 @@ pub struct Disk {
     /// or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).
     pub device: PathBuf,
 
-    /// The partition table type of the disk.
+    /// The partition table type of the disk. Supported values are: `gpt`.
     pub partition_table_type: PartitionTableType,
 
     /// A list of partitions that will be created on the disk.
@@ -277,9 +283,9 @@ pub enum PartitionTableType {
 pub struct Partition {
     /// A unique identifier for the partition.
     ///
-    /// This is a user defined string that
-    /// allows to link the partition to the mount points and also to results in the
-    /// Host Status.
+    /// This is a user defined string that allows to link the partition to the
+    /// mount points and also to results in the Host Status. The identifier
+    /// needs to be unique across all types of devices, not just partitions.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
@@ -414,29 +420,57 @@ pub struct RaidConfig {
     pub software: Vec<SoftwareRaidArray>,
 }
 
-// Software RAID configuration.
+/// Software RAID configuration.
+///
+/// The RAID array will be created using the `mdadm` package. During a clean
+/// install, all the existing RAID arrays that are on disks defined in the host
+/// configuration will be unmounted, and stopped.
+///
+/// The RAID arrays that are defined in the host configuration will be created,
+/// and mounted if specified in `mount-points`.
+///
+/// To learn more about RAID, please refer to the [RAID
+/// wiki](https://wiki.archlinux.org/title/RAID)
+///
+/// To learn more about `mdadm`, please refer to the [mdadm
+/// guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct SoftwareRaidArray {
     /// A unique identifier for the RAID array.
+    ///
+    /// This is a user defined string that allows to link the RAID array to the
+    /// mount points and also to results in the Host Status. The identifier
+    /// needs to be unique across all types of devices, not just RAID arrays.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
-    /// Name of the RAID array. This will be used for creation
+    /// Name of the RAID array.
+    ///
+    /// This is used to reference the RAID array on the system. For example,
+    /// `some-raid` will result in `/dev/md/some-raid` on the system.
     pub name: String,
 
-    /// RAID level. Such as RAID0, RAID1, RAID5, RAID6, RAID10.
+    /// RAID level.
+    ///
+    /// Supported and tested values are `raid0`, `raid1`.
+    /// Other possible values yet to be tested are: `raid5`, `raid6`, `raid10`.
     pub level: RaidLevel,
 
     /// Devices that will be used for the RAID array.
+    ///
+    /// See the reference links for picking the right number of devices. Devices
+    /// are partition ids from the `disks` section.
     #[cfg_attr(
         feature = "schemars",
         schemars(schema_with = "block_device_id_list_schema")
     )]
     pub devices: Vec<BlockDeviceId>,
 
-    /// Superblock version. Such as 0.9, 1.0
+    /// Metadata of the RAID array.
+    ///
+    /// Supported and tested values are `1.0`. Note that this is a string attribute.
     pub metadata_version: String,
 }
 
@@ -465,22 +499,10 @@ pub enum RaidLevel {
     Raid10,
 }
 
-/// Mount point configuration. Carries information necessary to populate
-/// /etc/fstab configuration to mount a filesystem on a block device.
+/// Mount point configuration.
 ///
-/// The resulting `/etc/fstab` is produced as follows:
-///
-/// - For each mount point, a line is added to the `/etc/fstab` file, if the `path`
-///   does not already exist in the `/etc/fstab` supplied in the runtime OS image.
-///   If the `path` already exists in the `/etc/fstab` supplied in the runtime OS,
-///   it will be updated to match the configuration provided in the Host
-///   Configuration mount points.
-/// - If a mount point is not present in the Host Configuration, but present in the
-///   `/etc/fstab`, the line will be preserved as is in the `/etc/fstab`.
-///
-/// Note that you do not need to specify the mounts points, if your runtime OS
-/// `/etc/fstab` carries the correct configuration already. In this case, Trident
-/// will not modify the `/etc/fstab` file nor will it format the partitions.
+/// These are used by Trident to update the `/etc/fstab` in the runtime OS to
+/// correctly mount the volumes.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
@@ -511,7 +533,7 @@ pub struct MountPoint {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Imaging {
-    /// Per image configuration
+    /// A list of images to be written to the host.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<Image>,
 
@@ -534,6 +556,7 @@ pub struct Image {
     ///
     /// This is used to verify the integrity of the image.
     /// The checksum is a 64 character hexadecimal string.
+    /// Temporarily, you can pass `ignored` to skip the checksum verification.
     pub sha256: String,
 
     /// The format of the image.
@@ -584,7 +607,8 @@ pub struct AbVolumePair {
     /// A unique identifier for the volume pair.
     ///
     /// This is a user defined string that allows to link the volume pair
-    /// to the results in the Host Status and to the mount points.
+    /// to the results in the Host Status and to the mount points. The identifier
+    /// needs to be unique across all types of devices, not just AB Volume Pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 

@@ -19,7 +19,6 @@ use trident_api::config::{
 mod datastore;
 mod logstream;
 mod modules;
-mod mount;
 mod multilog;
 mod orchestrate;
 

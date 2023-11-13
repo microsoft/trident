@@ -13,12 +13,12 @@ use trident_api::{
 
 use crate::modules::Module;
 
-use sdrepart::RepartConfiguration;
+use systemd_repart::RepartConfiguration;
 
 use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
 mod raid;
-mod sdrepart;
 mod sfdisk;
+mod systemd_repart;
 pub mod tabfile;
 
 fn create_partitions(

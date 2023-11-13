@@ -39,7 +39,7 @@
       "nullable": true
     },
     "osconfig": {
-      "description": "OS Configuration",
+      "description": "OS Configuration for the runtime OS.",
       "allOf": [
         {
           "$ref": "#/definitions/OsConfig"
@@ -92,7 +92,7 @@
       ],
       "properties": {
         "id": {
-          "description": "A unique identifier for the volume pair.\n\nThis is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points.",
+          "description": "A unique identifier for the volume pair.\n\nThis is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just AB Volume Pairs.",
           "type": "string",
           "format": "Block Device ID"
         },
@@ -124,12 +124,12 @@
           "type": "string"
         },
         "id": {
-          "description": "A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status.",
+          "description": "A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just disks.\n\nTBD: At the moment, the partition table is created from scratch. In the future, it will be possible to consume an existing partition table.",
           "type": "string",
           "format": "Block Device ID"
         },
         "partition-table-type": {
-          "description": "The partition table type of the disk.",
+          "description": "The partition table type of the disk. Supported values are: `gpt`.",
           "allOf": [
             {
               "$ref": "#/definitions/PartitionTableType"
@@ -165,7 +165,7 @@
           ]
         },
         "sha256": {
-          "description": "The SHA256 checksum of the image.\n\nThis is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string.",
+          "description": "The SHA256 checksum of the image.\n\nThis is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string. Temporarily, you can pass `ignored` to skip the checksum verification.",
           "type": "string"
         },
         "target-id": {
@@ -217,7 +217,7 @@
           "nullable": true
         },
         "images": {
-          "description": "Per image configuration",
+          "description": "A list of images to be written to the host.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Image"
@@ -258,7 +258,7 @@
       "additionalProperties": false
     },
     "MountPoint": {
-      "description": "Mount point configuration. Carries information necessary to populate /etc/fstab configuration to mount a filesystem on a block device.\n\nThe resulting `/etc/fstab` is produced as follows:\n\n- For each mount point, a line is added to the `/etc/fstab` file, if the `path` does not already exist in the `/etc/fstab` supplied in the runtime OS image. If the `path` already exists in the `/etc/fstab` supplied in the runtime OS, it will be updated to match the configuration provided in the Host Configuration mount points. - If a mount point is not present in the Host Configuration, but present in the `/etc/fstab`, the line will be preserved as is in the `/etc/fstab`.\n\nNote that you do not need to specify the mounts points, if your runtime OS `/etc/fstab` carries the correct configuration already. In this case, Trident will not modify the `/etc/fstab` file nor will it format the partitions.",
+      "description": "Mount point configuration.\n\nThese are used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount the volumes.",
       "type": "object",
       "required": [
         "filesystem",
@@ -316,7 +316,7 @@
       ],
       "properties": {
         "id": {
-          "description": "A unique identifier for the partition.\n\nThis is a user defined string that allows to link the partition to the mount points and also to results in the Host Status.",
+          "description": "A unique identifier for the partition.\n\nThis is a user defined string that allows to link the partition to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just partitions.",
           "type": "string",
           "format": "Block Device ID"
         },
@@ -567,6 +567,7 @@
       "additionalProperties": false
     },
     "SoftwareRaidArray": {
+      "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and stopped.\n\nThe RAID arrays that are defined in the host configuration will be created, and mounted if specified in `mount-points`.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID)\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)",
       "type": "object",
       "required": [
         "devices",
@@ -577,7 +578,7 @@
       ],
       "properties": {
         "devices": {
-          "description": "Devices that will be used for the RAID array.",
+          "description": "Devices that will be used for the RAID array.\n\nSee the reference links for picking the right number of devices. Devices are partition ids from the `disks` section.",
           "type": "array",
           "items": {
             "type": "string",
@@ -585,12 +586,12 @@
           }
         },
         "id": {
-          "description": "A unique identifier for the RAID array.",
+          "description": "A unique identifier for the RAID array.\n\nThis is a user defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just RAID arrays.",
           "type": "string",
           "format": "Block Device ID"
         },
         "level": {
-          "description": "RAID level. Such as RAID0, RAID1, RAID5, RAID6, RAID10.",
+          "description": "RAID level.\n\nSupported and tested values are `raid0`, `raid1`. Other possible values yet to be tested are: `raid5`, `raid6`, `raid10`.",
           "allOf": [
             {
               "$ref": "#/definitions/RaidLevel"
@@ -598,11 +599,11 @@
           ]
         },
         "metadata-version": {
-          "description": "Superblock version. Such as 0.9, 1.0",
+          "description": "Metadata of the RAID array.\n\nSupported and tested values are `1.0`. Note that this is a string attribute.",
           "type": "string"
         },
         "name": {
-          "description": "Name of the RAID array. This will be used for creation",
+          "description": "Name of the RAID array.\n\nThis is used to reference the RAID array on the system. For example, `some-raid` will result in `/dev/md/some-raid` on the system.",
           "type": "string"
         }
       },
@@ -637,14 +638,14 @@
       ]
     },
     "Storage": {
-      "description": "Storage configuration for a host.",
+      "description": "Storage configuration describes the disks of the host that will be used to store the OS and data. Not all disks of the host need to be captured inside the Host Configuration, only those that Trident should operate on.",
       "type": "object",
       "required": [
         "disks"
       ],
       "properties": {
         "disks": {
-          "description": "Per disk configuration.",
+          "description": "A list of disks that will be used for the host.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Disk"

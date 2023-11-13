@@ -106,7 +106,7 @@
 | - [management](#management )                     | No      | object | No         | In         | The Management configuration controls the installation of the Trident agent onto the runtime OS.                                                                                                                                                                                                                                                                                          |
 | - [network](#network )                           | No      | object | No         | -          | Netplan network configuration for the runtime OS.<br /><br />See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.                                                                                                                                                                                                               |
 | - [network-provision](#network-provision )       | No      | object | No         | -          | Netplan network configuration for the provisioning OS _ONLY_.<br /><br />See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.<br /><br />When provided, this configuration will be used to configure the network on the provisioning OS. When not provided, the network configuration from the runtime OS will be used instead. |
-| - [osconfig](#osconfig )                         | No      | object | No         | In         | OS Configuration                                                                                                                                                                                                                                                                                                                                                                          |
+| - [osconfig](#osconfig )                         | No      | object | No         | In         | OS Configuration for the runtime OS.                                                                                                                                                                                                                                                                                                                                                      |
 | - [post-install-scripts](#post-install-scripts ) | No      | array  | No         | -          | Scripts to be run after the installation is complete.                                                                                                                                                                                                                                                                                                                                     |
 | - [storage](#storage )                           | No      | object | No         | In         | Describes the storage configuration of the host.                                                                                                                                                                                                                                                                                                                                          |
 
@@ -122,10 +122,10 @@
 
 **Description:** Filesystem imaging configuration of the host.
 
-| Property                           | Pattern | Type   | Deprecated | Definition | Title/Description         |
-| ---------------------------------- | ------- | ------ | ---------- | ---------- | ------------------------- |
-| - [ab-update](#imaging_ab-update ) | No      | object | No         | In         | A/B update configuration. |
-| + [images](#imaging_images )       | No      | array  | No         | -          | Per image configuration   |
+| Property                           | Pattern | Type   | Deprecated | Definition | Title/Description                           |
+| ---------------------------------- | ------- | ------ | ---------- | ---------- | ------------------------------------------- |
+| - [ab-update](#imaging_ab-update ) | No      | object | No         | In         | A/B update configuration.                   |
+| + [images](#imaging_images )       | No      | array  | No         | -          | A list of images to be written to the host. |
 
 ### <a name="imaging_ab-update"></a>1.1. Property `HostConfiguration > imaging > ab-update`
 
@@ -178,11 +178,11 @@ You can target the A/B Update volume pair from the `images` and `mount-points` a
 
 **Under development, initial logic for illustration purposes only.**
 
-| Property                                                            | Pattern | Type   | Deprecated | Definition | Title/Description                                                                                                                                                                |
-| ------------------------------------------------------------------- | ------- | ------ | ---------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| + [id](#imaging_ab-update_volume-pairs_items_id )                   | No      | string | No         | -          | A unique identifier for the volume pair.<br /><br />This is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. |
-| + [volume-a-id](#imaging_ab-update_volume-pairs_items_volume-a-id ) | No      | string | No         | -          | The ID of the partition that will be used as the A volume.                                                                                                                       |
-| + [volume-b-id](#imaging_ab-update_volume-pairs_items_volume-b-id ) | No      | string | No         | -          | The ID of the partition that will be used as the B volume.                                                                                                                       |
+| Property                                                            | Pattern | Type   | Deprecated | Definition | Title/Description                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------- | ------- | ------ | ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| + [id](#imaging_ab-update_volume-pairs_items_id )                   | No      | string | No         | -          | A unique identifier for the volume pair.<br /><br />This is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just AB Volume Pairs. |
+| + [volume-a-id](#imaging_ab-update_volume-pairs_items_volume-a-id ) | No      | string | No         | -          | The ID of the partition that will be used as the A volume.                                                                                                                                                                                                                |
+| + [volume-b-id](#imaging_ab-update_volume-pairs_items_volume-b-id ) | No      | string | No         | -          | The ID of the partition that will be used as the B volume.                                                                                                                                                                                                                |
 
 ##### <a name="imaging_ab-update_volume-pairs_items_id"></a>1.1.1.1.1. Property `HostConfiguration > imaging > ab-update > volume-pairs > volume-pairs items > id`
 
@@ -194,7 +194,7 @@ You can target the A/B Update volume pair from the `images` and `mount-points` a
 
 **Description:** A unique identifier for the volume pair.
 
-This is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points.
+This is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just AB Volume Pairs.
 
 ##### <a name="imaging_ab-update_volume-pairs_items_volume-a-id"></a>1.1.1.1.2. Property `HostConfiguration > imaging > ab-update > volume-pairs > volume-pairs items > volume-a-id`
 
@@ -223,7 +223,7 @@ This is a user defined string that allows to link the volume pair to the results
 | **Type**     | `array` |
 | **Required** | Yes     |
 
-**Description:** Per image configuration
+**Description:** A list of images to be written to the host.
 
 |                      | Array restrictions |
 | -------------------- | ------------------ |
@@ -248,12 +248,12 @@ This is a user defined string that allows to link the volume pair to the results
 
 **Description:** Per image configuration.
 
-| Property                                        | Pattern | Type   | Deprecated | Definition | Title/Description                                                                                                                                  |
-| ----------------------------------------------- | ------- | ------ | ---------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| + [format](#imaging_images_items_format )       | No      | object | No         | In         | The format of the image.                                                                                                                           |
-| + [sha256](#imaging_images_items_sha256 )       | No      | string | No         | -          | The SHA256 checksum of the image.<br /><br />This is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string. |
-| + [target-id](#imaging_images_items_target-id ) | No      | string | No         | -          | The ID of the partition that will be used to store the image.                                                                                      |
-| + [url](#imaging_images_items_url )             | No      | string | No         | -          | The URL of the image.<br /><br />Supported schemes are: \`file\`, \`http\`, \`https\`.                                                             |
+| Property                                        | Pattern | Type   | Deprecated | Definition | Title/Description                                                                                                                                                                                                           |
+| ----------------------------------------------- | ------- | ------ | ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| + [format](#imaging_images_items_format )       | No      | object | No         | In         | The format of the image.                                                                                                                                                                                                    |
+| + [sha256](#imaging_images_items_sha256 )       | No      | string | No         | -          | The SHA256 checksum of the image.<br /><br />This is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string. Temporarily, you can pass \`ignored\` to skip the checksum verification. |
+| + [target-id](#imaging_images_items_target-id ) | No      | string | No         | -          | The ID of the partition that will be used to store the image.                                                                                                                                                               |
+| + [url](#imaging_images_items_url )             | No      | string | No         | -          | The URL of the image.<br /><br />Supported schemes are: \`file\`, \`http\`, \`https\`.                                                                                                                                      |
 
 ##### <a name="imaging_images_items_format"></a>1.2.1.1. Property `HostConfiguration > imaging > images > images items > format`
 
@@ -306,7 +306,7 @@ Must be one of:
 
 **Description:** The SHA256 checksum of the image.
 
-This is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string.
+This is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string. Temporarily, you can pass `ignored` to skip the checksum verification.
 
 ##### <a name="imaging_images_items_target-id"></a>1.2.1.3. Property `HostConfiguration > imaging > images > images items > target-id`
 
@@ -433,7 +433,7 @@ When provided, this configuration will be used to configure the network on the p
 | **Additional properties** | [[Not allowed]](# "Additional Properties not allowed.") |
 | **Defined in**            |                                                         |
 
-**Description:** OS Configuration
+**Description:** OS Configuration for the runtime OS.
 
 | Property                    | Pattern | Type   | Deprecated | Definition | Title/Description |
 | --------------------------- | ------- | ------ | ---------- | ---------- | ----------------- |
@@ -779,11 +779,11 @@ This includes both stdout and stderr. The path and file will be created if they 
 
 **Description:** Describes the storage configuration of the host.
 
-| Property                                 | Pattern | Type   | Deprecated | Definition | Title/Description          |
-| ---------------------------------------- | ------- | ------ | ---------- | ---------- | -------------------------- |
-| + [disks](#storage_disks )               | No      | array  | No         | -          | Per disk configuration.    |
-| - [mount-points](#storage_mount-points ) | No      | array  | No         | -          | Mount point configuration. |
-| - [raid](#storage_raid )                 | No      | object | No         | In         | RAID configuration.        |
+| Property                                 | Pattern | Type   | Deprecated | Definition | Title/Description                               |
+| ---------------------------------------- | ------- | ------ | ---------- | ---------- | ----------------------------------------------- |
+| + [disks](#storage_disks )               | No      | array  | No         | -          | A list of disks that will be used for the host. |
+| - [mount-points](#storage_mount-points ) | No      | array  | No         | -          | Mount point configuration.                      |
+| - [raid](#storage_raid )                 | No      | object | No         | In         | RAID configuration.                             |
 
 ### <a name="storage_disks"></a>7.1. Property `HostConfiguration > storage > disks`
 
@@ -792,7 +792,7 @@ This includes both stdout and stderr. The path and file will be created if they 
 | **Type**     | `array` |
 | **Required** | Yes     |
 
-**Description:** Per disk configuration.
+**Description:** A list of disks that will be used for the host.
 
 |                      | Array restrictions |
 | -------------------- | ------------------ |
@@ -817,12 +817,12 @@ This includes both stdout and stderr. The path and file will be created if they 
 
 **Description:** Per disk configuration.
 
-| Property                                                             | Pattern | Type             | Deprecated | Definition | Title/Description                                                                                                                                                                                                  |
-| -------------------------------------------------------------------- | ------- | ---------------- | ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| + [device](#storage_disks_items_device )                             | No      | string           | No         | -          | The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under \`/dev/disk/by-path/\` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name). |
-| + [id](#storage_disks_items_id )                                     | No      | string           | No         | -          | A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status.                                                       |
-| + [partition-table-type](#storage_disks_items_partition-table-type ) | No      | enum (of string) | No         | In         | The partition table type of the disk.                                                                                                                                                                              |
-| + [partitions](#storage_disks_items_partitions )                     | No      | array            | No         | -          | A list of partitions that will be created on the disk.                                                                                                                                                             |
+| Property                                                             | Pattern | Type             | Deprecated | Definition | Title/Description                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------- | ------- | ---------------- | ---------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| + [device](#storage_disks_items_device )                             | No      | string           | No         | -          | The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under \`/dev/disk/by-path/\` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).                                                                                                                                                                                 |
+| + [id](#storage_disks_items_id )                                     | No      | string           | No         | -          | A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just disks.<br /><br />TBD: At the moment, the partition table is created from scratch. In the future, it will be possible to consume an existing partition table. |
+| + [partition-table-type](#storage_disks_items_partition-table-type ) | No      | enum (of string) | No         | In         | The partition table type of the disk. Supported values are: \`gpt\`.                                                                                                                                                                                                                                                                                                                               |
+| + [partitions](#storage_disks_items_partitions )                     | No      | array            | No         | -          | A list of partitions that will be created on the disk.                                                                                                                                                                                                                                                                                                                                             |
 
 ##### <a name="storage_disks_items_device"></a>7.1.1.1. Property `HostConfiguration > storage > disks > disks items > device`
 
@@ -841,7 +841,9 @@ This includes both stdout and stderr. The path and file will be created if they 
 | **Required** | Yes               |
 | **Format**   | `Block Device ID` |
 
-**Description:** A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status.
+**Description:** A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just disks.
+
+TBD: At the moment, the partition table is created from scratch. In the future, it will be possible to consume an existing partition table.
 
 ##### <a name="storage_disks_items_partition-table-type"></a>7.1.1.3. Property `HostConfiguration > storage > disks > disks items > partition-table-type`
 
@@ -851,7 +853,7 @@ This includes both stdout and stderr. The path and file will be created if they 
 | **Required**   | Yes                |
 | **Defined in** |                    |
 
-**Description:** The partition table type of the disk.
+**Description:** The partition table type of the disk. Supported values are: `gpt`.
 
 Must be one of:
 * "gpt"
@@ -890,7 +892,7 @@ Must be one of:
 
 | Property                                              | Pattern | Type   | Deprecated | Definition | Title/Description                                                                                                                                                                                                                                                                                                                                                       |
 | ----------------------------------------------------- | ------- | ------ | ---------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| + [id](#storage_disks_items_partitions_items_id )     | No      | string | No         | -          | A unique identifier for the partition.<br /><br />This is a user defined string that allows to link the partition to the mount points and also to results in the Host Status.                                                                                                                                                                                           |
+| + [id](#storage_disks_items_partitions_items_id )     | No      | string | No         | -          | A unique identifier for the partition.<br /><br />This is a user defined string that allows to link the partition to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just partitions.                                                                                                       |
 | + [size](#storage_disks_items_partitions_items_size ) | No      | string | No         | -          | Size of the partition.<br /><br />Format: String \`<number>[<unit>]\`<br /><br />Accepted values:<br /><br />- \`grow\`: Use all available space.<br /><br />- A number with optional unit suffixes: K, M, G, T (to the base of 1024), bytes by default when no unit is specified.<br /><br />Examples:<br /><br />- \`1G\`<br /><br />- \`200M\`<br /><br />- \`grow\` |
 | + [type](#storage_disks_items_partitions_items_type ) | No      | object | No         | In         | The type of the partition.<br /><br />As defined by the [Discoverable Partitions Specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).                                                                                                                                                                                    |
 
@@ -904,7 +906,7 @@ Must be one of:
 
 **Description:** A unique identifier for the partition.
 
-This is a user defined string that allows to link the partition to the mount points and also to results in the Host Status.
+This is a user defined string that allows to link the partition to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just partitions.
 
 ##### <a name="storage_disks_items_partitions_items_size"></a>7.1.1.4.1.2. Property `HostConfiguration > storage > disks > disks items > partitions > partitions items > size`
 
@@ -1099,9 +1101,9 @@ Must be one of:
 | **Additional items** | False              |
 | **Tuple validation** | See below          |
 
-| Each item of this array must be           | Description                                                                                                                                |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [MountPoint](#storage_mount-points_items) | Mount point configuration. Carries information necessary to populate /etc/fstab configuration to mount a filesystem on a block device. ... |
+| Each item of this array must be           | Description                    |
+| ----------------------------------------- | ------------------------------ |
+| [MountPoint](#storage_mount-points_items) | Mount point configuration. ... |
 
 #### <a name="autogenerated_heading_9"></a>7.2.1. HostConfiguration > storage > mount-points > MountPoint
 
@@ -1112,13 +1114,9 @@ Must be one of:
 | **Additional properties** | [[Not allowed]](# "Additional Properties not allowed.") |
 | **Defined in**            | #/definitions/MountPoint                                |
 
-**Description:** Mount point configuration. Carries information necessary to populate /etc/fstab configuration to mount a filesystem on a block device.
+**Description:** Mount point configuration.
 
-The resulting `/etc/fstab` is produced as follows:
-
-- For each mount point, a line is added to the `/etc/fstab` file, if the `path` does not already exist in the `/etc/fstab` supplied in the runtime OS image. If the `path` already exists in the `/etc/fstab` supplied in the runtime OS, it will be updated to match the configuration provided in the Host Configuration mount points. - If a mount point is not present in the Host Configuration, but present in the `/etc/fstab`, the line will be preserved as is in the `/etc/fstab`.
-
-Note that you do not need to specify the mounts points, if your runtime OS `/etc/fstab` carries the correct configuration already. In this case, Trident will not modify the `/etc/fstab` file nor will it format the partitions.
+These are used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount the volumes.
 
 | Property                                                | Pattern | Type            | Deprecated | Definition | Title/Description                                                                                                                                                  |
 | ------------------------------------------------------- | ------- | --------------- | ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1221,9 +1219,9 @@ This is the path where the volume will be mounted in the runtime OS. For `swap` 
 | **Additional items** | False              |
 | **Tuple validation** | See below          |
 
-| Each item of this array must be                   | Description |
-| ------------------------------------------------- | ----------- |
-| [SoftwareRaidArray](#storage_raid_software_items) | -           |
+| Each item of this array must be                   | Description                      |
+| ------------------------------------------------- | -------------------------------- |
+| [SoftwareRaidArray](#storage_raid_software_items) | Software RAID configuration. ... |
 
 ##### <a name="autogenerated_heading_11"></a>7.3.1.1. HostConfiguration > storage > raid > software > SoftwareRaidArray
 
@@ -1234,13 +1232,23 @@ This is the path where the volume will be mounted in the runtime OS. For `swap` 
 | **Additional properties** | [[Not allowed]](# "Additional Properties not allowed.") |
 | **Defined in**            | #/definitions/SoftwareRaidArray                         |
 
-| Property                                                             | Pattern | Type            | Deprecated | Definition | Title/Description                                       |
-| -------------------------------------------------------------------- | ------- | --------------- | ---------- | ---------- | ------------------------------------------------------- |
-| + [devices](#storage_raid_software_items_devices )                   | No      | array of string | No         | -          | Devices that will be used for the RAID array.           |
-| + [id](#storage_raid_software_items_id )                             | No      | string          | No         | -          | A unique identifier for the RAID array.                 |
-| + [level](#storage_raid_software_items_level )                       | No      | object          | No         | In         | RAID level. Such as RAID0, RAID1, RAID5, RAID6, RAID10. |
-| + [metadata-version](#storage_raid_software_items_metadata-version ) | No      | string          | No         | -          | Superblock version. Such as 0.9, 1.0                    |
-| + [name](#storage_raid_software_items_name )                         | No      | string          | No         | -          | Name of the RAID array. This will be used for creation  |
+**Description:** Software RAID configuration.
+
+The RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and stopped.
+
+The RAID arrays that are defined in the host configuration will be created, and mounted if specified in `mount-points`.
+
+To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID)
+
+To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
+
+| Property                                                             | Pattern | Type            | Deprecated | Definition | Title/Description                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------- | ------- | --------------- | ---------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| + [devices](#storage_raid_software_items_devices )                   | No      | array of string | No         | -          | Devices that will be used for the RAID array.<br /><br />See the reference links for picking the right number of devices. Devices are partition ids from the \`disks\` section.                                                                                      |
+| + [id](#storage_raid_software_items_id )                             | No      | string          | No         | -          | A unique identifier for the RAID array.<br /><br />This is a user defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just RAID arrays. |
+| + [level](#storage_raid_software_items_level )                       | No      | object          | No         | In         | RAID level.<br /><br />Supported and tested values are \`raid0\`, \`raid1\`. Other possible values yet to be tested are: \`raid5\`, \`raid6\`, \`raid10\`.                                                                                                           |
+| + [metadata-version](#storage_raid_software_items_metadata-version ) | No      | string          | No         | -          | Metadata of the RAID array.<br /><br />Supported and tested values are \`1.0\`. Note that this is a string attribute.                                                                                                                                                |
+| + [name](#storage_raid_software_items_name )                         | No      | string          | No         | -          | Name of the RAID array.<br /><br />This is used to reference the RAID array on the system. For example, \`some-raid\` will result in \`/dev/md/some-raid\` on the system.                                                                                            |
 
 ##### <a name="storage_raid_software_items_devices"></a>7.3.1.1.1. Property `HostConfiguration > storage > raid > software > software items > devices`
 
@@ -1250,6 +1258,8 @@ This is the path where the volume will be mounted in the runtime OS. For `swap` 
 | **Required** | Yes               |
 
 **Description:** Devices that will be used for the RAID array.
+
+See the reference links for picking the right number of devices. Devices are partition ids from the `disks` section.
 
 |                      | Array restrictions |
 | -------------------- | ------------------ |
@@ -1281,6 +1291,8 @@ This is the path where the volume will be mounted in the runtime OS. For `swap` 
 
 **Description:** A unique identifier for the RAID array.
 
+This is a user defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just RAID arrays.
+
 ##### <a name="storage_raid_software_items_level"></a>7.3.1.1.3. Property `HostConfiguration > storage > raid > software > software items > level`
 
 |                           |                                                                           |
@@ -1290,7 +1302,9 @@ This is the path where the volume will be mounted in the runtime OS. For `swap` 
 | **Additional properties** | [[Any type: allowed]](# "Additional Properties of any type are allowed.") |
 | **Defined in**            |                                                                           |
 
-**Description:** RAID level. Such as RAID0, RAID1, RAID5, RAID6, RAID10.
+**Description:** RAID level.
+
+Supported and tested values are `raid0`, `raid1`. Other possible values yet to be tested are: `raid5`, `raid6`, `raid10`.
 
 | One of(Option)                                                             |
 | -------------------------------------------------------------------------- |
@@ -1367,7 +1381,9 @@ Must be one of:
 | **Type**     | `string` |
 | **Required** | Yes      |
 
-**Description:** Superblock version. Such as 0.9, 1.0
+**Description:** Metadata of the RAID array.
+
+Supported and tested values are `1.0`. Note that this is a string attribute.
 
 ##### <a name="storage_raid_software_items_name"></a>7.3.1.1.5. Property `HostConfiguration > storage > raid > software > software items > name`
 
@@ -1376,6 +1392,8 @@ Must be one of:
 | **Type**     | `string` |
 | **Required** | Yes      |
 
-**Description:** Name of the RAID array. This will be used for creation
+**Description:** Name of the RAID array.
+
+This is used to reference the RAID array on the system. For example, `some-raid` will result in `/dev/md/some-raid` on the system.
 
 ----------------------------------------------------------------------------------------------------------------------------

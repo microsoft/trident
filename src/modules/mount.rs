@@ -11,20 +11,17 @@ use std::{
 use anyhow::{Context, Error};
 use log::info;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
-use trident_api::{config::HostConfiguration, status::HostStatus};
-
-use crate::modules::storage::tabfile::TabFile;
 
 /// Create a chroot environment.
 ///
 /// Note: Dropping this object does *not* exit the chroot. You must call `exit()` manually.
-pub(crate) struct Chroot {
+pub(super) struct Chroot {
     rootfd: RawFd,
     mounts: Vec<Mount>,
 }
 impl Chroot {
     /// Mount special directories ('/dev', '/proc', and '/sys') and enter chroot.
-    pub(crate) fn enter(path: &Path) -> Result<Self, Error> {
+    fn enter(path: &Path) -> Result<Self, Error> {
         // Mount special dirs.
         info!("Mounting special directories");
         let mounts = vec![
@@ -59,7 +56,7 @@ impl Chroot {
 
     /// Exit the chroot environment and unmount special directories.
     #[allow(unused)]
-    pub(crate) fn exit(self) -> Result<(), Error> {
+    pub(super) fn exit(self) -> Result<(), Error> {
         // Exit the chroot.
         nix::unistd::fchdir(self.rootfd).context("Failed to exit chroot")?;
         unix::fs::chroot(".").context("Failed to set current directory out of chroot")?;
@@ -73,73 +70,11 @@ impl Chroot {
     }
 }
 
-pub(crate) fn setup_root_chroot(
-    host_config: &HostConfiguration,
-    host_status: &HostStatus,
-    root_mount_path: &Path,
-) -> Result<(), Error> {
-    let update_fs_target = Path::new("update-fs.target");
-    let update_fstab_root = tempfile::tempdir().context("Failed to create temporary directory")?;
-    let update_fstab_path = update_fstab_root.path().join(Path::new("fstab"));
-    let systemd_unit_root_path = Path::new("/etc/systemd/system");
-
-    TabFile::from_mount_points(
-        host_status,
-        &host_config.storage.mount_points,
-        Some(root_mount_path),
-        Some(update_fs_target),
-    )
-    .context("Failed to generate bootstrap fstab")?
-    .write(update_fstab_path.as_path())
-    .context("Failed to write bootstrap fstab")?;
-
-    // Create custom target for the filesystems mounted for the update reconciliation.
-    fs::write(
-        systemd_unit_root_path.join(update_fs_target),
-        indoc::indoc! {r#"
-                [Unit]
-                Description=Update File Systems
-                DefaultDependencies=no
-                Conflicts=shutdown.target
-            "#}
-        .as_bytes(),
-    )
-    .context(format!(
-        "Failed to write {}",
-        update_fs_target.to_string_lossy()
-    ))?;
-
-    crate::run_command(
-        Command::new("/usr/lib/systemd/system-generators/systemd-fstab-generator")
-            .arg(systemd_unit_root_path)
-            .arg(systemd_unit_root_path)
-            .arg(systemd_unit_root_path)
-            .env("SYSTEMD_FSTAB", update_fstab_path)
-            .env("SYSTEMD_LOG_TARGET", "console")
-            .env("SYSTEMD_LOG_LEVEL", "debug"),
-    )
-    .context("Failed to reload systemd daemon")?;
-
-    crate::run_command(Command::new("systemctl").arg("daemon-reload"))
-        .context("Failed to reload systemd daemon")?;
-
-    let mount_result =
-        crate::run_command(Command::new("systemctl").arg("start").arg(update_fs_target))
-            .context("Failed to mount target filesystems");
-
-    if let Err(mount_result) = mount_result {
-        unmount_target_volumes(root_mount_path)?;
-        return Err(mount_result);
-    }
-
-    Ok(())
-}
-
-pub(crate) fn enter_chroot(root_mount_path: &Path) -> Result<Chroot, Error> {
+pub(super) fn enter_chroot(root_mount_path: &Path) -> Result<Chroot, Error> {
     Chroot::enter(root_mount_path).context("Failed to enter updated filesystem chroot")
 }
 
-pub(crate) fn unmount_target_volumes(mount_path: &Path) -> Result<(), Error> {
+pub(super) fn unmount_target_volumes(mount_path: &Path) -> Result<(), Error> {
     let mount_unit = String::from_utf8(
         crate::run_command(
             Command::new("systemd-escape")
