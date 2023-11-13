@@ -393,7 +393,7 @@ pub enum PartitionType {
     /// # Server Data partition
     ///
     /// `3b8f8425-20e0-4f3b-907f-1a25a76f98e8`
-    ServerData,
+    Srv,
 }
 
 impl PartitionType {
@@ -412,7 +412,7 @@ impl PartitionType {
             PartitionType::Usr => "usr",
             PartitionType::Tmp => "tmp",
             PartitionType::LinuxGeneric => "linux-generic",
-            PartitionType::ServerData => "srv",
+            PartitionType::Srv => "srv",
         }
     }
 }

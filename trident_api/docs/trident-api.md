@@ -1098,7 +1098,7 @@ Must be one of:
 **Description:** `3b8f8425-20e0-4f3b-907f-1a25a76f98e8`
 
 Must be one of:
-* "server-data"
+* "srv"
 
 ### <a name="storage_mount-points"></a>7.2. Property `HostConfiguration > storage > mount-points`
 
