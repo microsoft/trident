@@ -51,6 +51,7 @@ steps:
     displayName: Copy RPM file to output
 
   - script: |
+      sudo tdnf remove -y PyYAML
       python3 -m pip install json-schema-for-humans
 
       make build-api-docs

@@ -26,6 +26,16 @@ resources:
       name: OneBranch.Pipelines/GovernedTemplates
       ref: refs/heads/main
 
+    - repository: argus-toolkit
+      type: git
+      name: argus-toolkit
+      ref: refs/heads/main
+
+  pipelines:
+  - pipeline: hermes-host-image
+    source: hermes-host-image
+    branch: main
+
 extends:
   template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
   parameters:
@@ -38,6 +48,9 @@ extends:
         break: true # always break the build on policheck issues. You can disable it by setting to 'false'
       # suppression:
       #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
+    featureFlags:
+      runOnHost: true
+      EnableCDPxPAT: false
 
     stages:
     - stage: linux_stage
@@ -59,3 +72,14 @@ extends:
               exclude_commit: true
 
           - template: .pipelines/OneBranch.Common.yml@self
+
+    - template: .pipelines/e2e-template.yml@argus-toolkit
+      parameters:
+        argusDirectory: argus-toolkit
+        tridentRun: false
+        tridentRepo: self
+        tridentArtifact: drop_linux_stage_linux_job
+        provOSStageDependency : linux_stage
+        downloadBuildTypeRuntimeOS: specific
+        hermesImagePipelineID: $(resources.pipeline.hermes-host-image.pipelineId)
+        updateRuntimeOSTrident: true
