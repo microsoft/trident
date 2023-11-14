@@ -269,7 +269,9 @@ impl Module for StorageModule {
         if host_status.reconcile_state != status::ReconcileState::CleanInstall {
             return Ok(());
         }
-        raid::stop_all().context("Failed to stop all existing RAID arrays")?;
+
+        raid::stop_pre_existing_raid_arrays(host_config)
+            .context("Failed to clean up pre-existing RAID arrays")?;
         create_partitions(host_status, host_config).context("Failed to create disk partitions")?;
         raid::create_sw_raid(host_status, host_config).context("Failed to create software RAID")?;
         Ok(())

@@ -1,8 +1,10 @@
 use anyhow::{bail, Context, Error};
 use log::{info, warn};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -34,7 +36,7 @@ pub(super) enum RaidState {
     Inactive,
 }
 
-pub(super) fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Result<Output, Error> {
+pub(super) fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Result<(), Error> {
     let devices = &config.devices;
     let raid_path = PathBuf::from(format!("/dev/md/{}", &config.name));
     let device_paths =
@@ -50,22 +52,12 @@ pub(super) fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Res
         .args(device_paths)
         .arg(format!("--metadata={}", &config.metadata_version));
 
-    let output = mdadm_command
+    mdadm_command
         .output()
-        .context("Failed to run mdadm create")?;
-    output.check().context("mdadm exited with an error")?;
-    Ok(output)
-}
-
-pub(super) fn stop_all() -> Result<Output, Error> {
-    info!("Stopping all RAID arrays");
-
-    let mut mdadm_command = Command::new("mdadm");
-    mdadm_command.arg("--stop").arg("--scan");
-
-    let output = mdadm_command.output().context("Failed to run mdadm stop")?;
-    output.check().context("mdadm exited with an error")?;
-    Ok(output)
+        .context("Failed to run mdadm create")?
+        .check()
+        .context("mdadm exited with an error")?;
+    Ok(())
 }
 
 fn examine() -> Result<Output, Error> {
@@ -77,10 +69,36 @@ fn examine() -> Result<Output, Error> {
     let output = mdadm_command
         .output()
         .context("Failed to run mdadm examine")?;
+    Ok(output)
+}
+
+fn detail() -> Result<Output, Error> {
+    info!("Getting RAID array details");
+
+    let mut mdadm_command = Command::new("mdadm");
+    mdadm_command.arg("--detail").arg("--scan").arg("--verbose");
+
+    let output = mdadm_command
+        .output()
+        .context("Failed to run mdadm detail")?;
     output.check().context("mdadm exited with an error")?;
     Ok(output)
 }
 
+fn stop(raid_array_name: &Path) -> Result<(), Error> {
+    info!("Stopping RAID array: {:?}", raid_array_name);
+
+    let mut mdadm_command = Command::new("mdadm");
+    mdadm_command.arg("--stop").arg(raid_array_name);
+
+    mdadm_command
+        .output()
+        .context("Failed to run mdadm stop")?
+        .check()
+        .context("mdadm exited with an error")?;
+
+    Ok(())
+}
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
@@ -234,11 +252,216 @@ pub(super) fn update_raid_in_host_status(
     Ok(())
 }
 
+fn get_disk_for_partition(partition: &Path) -> Result<PathBuf, Error> {
+    let mut lsblk_command = Command::new("lsblk");
+    lsblk_command
+        .arg("-no")
+        .arg("pkname")
+        .arg("--json")
+        .arg("--path")
+        .arg(partition);
+
+    let output = lsblk_command
+        .output()
+        .context("Failed to run lsblk to list devices")?;
+    output.check().context("lsblk exited with an error")?;
+
+    let data: Value = serde_json::from_slice(&output.stdout)
+        .context("Failed to deserialize output of tab file reader")?;
+
+    let pkname = data["blockdevices"][0]["pkname"]
+        .as_str()
+        .context("Failed to get disk path for partition")?;
+
+    let disk_path = PathBuf::from(pkname);
+
+    Ok(disk_path)
+}
+
+pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> Result<(), Error> {
+    if !mdstat_present(Path::new("/proc/mdstat"))? {
+        // No pre-existing RAID arrays. Nothing to do.
+        return Ok(());
+    }
+
+    // Check if mdadm is present, we need it to stop RAID arrays.
+    check_if_mdadm_present().context(
+        "Failed to clean up pre-existing RAID arrays. Mdadm is required for RAID operations",
+    )?;
+
+    let mdadm_detail_output = detail().context("Failed to get existing RAID details")?;
+
+    let mdadm_detail_output_str = String::from_utf8(mdadm_detail_output.stdout)
+        .context("Failed to convert mdadm output to string")?;
+
+    if mdadm_detail_output_str.is_empty() {
+        return Ok(());
+    }
+
+    let parsed_mdadm_detail =
+        mdadm_detail_to_struct(&mdadm_detail_output_str).context("Failed to parse mdadm detail")?;
+
+    let trident_disks =
+        get_trident_disks(host_config).context("Failed to get disks defined in Trident")?;
+
+    for raid_array in parsed_mdadm_detail {
+        let raid_symlink = raid_array
+            .raid_path
+            .clone()
+            .canonicalize()
+            .context("Failed to get existing RAID symlink")?;
+
+        let mut raid_disks = HashSet::new();
+
+        for device in &raid_array.devices {
+            let disk = get_disk_for_partition(&PathBuf::from(device)).with_context(|| {
+                format!(
+                    "Failed to get disk for partition in an existing RAID: {:?}",
+                    raid_array.raid_path
+                )
+            })?;
+
+            raid_disks.insert(disk);
+        }
+        if can_stop_pre_existing_raid(&raid_array.raid_path, &raid_disks, &trident_disks)? {
+            unmount_and_stop(&raid_symlink)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn get_trident_disks(host_config: &HostConfiguration) -> Result<HashSet<PathBuf>, Error> {
+    host_config
+        .storage
+        .disks
+        .iter()
+        .map(|disk| {
+            disk.device
+                .canonicalize()
+                .with_context(|| format!("failed to get canonicalized path for disk: {}", disk.id))
+        })
+        .collect()
+}
+
+fn can_stop_pre_existing_raid(
+    raid_name: &Path,
+    raid_disks: &HashSet<PathBuf>,
+    trident_disks: &HashSet<PathBuf>,
+) -> Result<bool, Error> {
+    let symmetric_diff: HashSet<_> = raid_disks
+        .symmetric_difference(trident_disks)
+        .cloned()
+        .collect();
+
+    if raid_disks.is_disjoint(trident_disks) {
+        // RAID array does not have any of its underlying disks mentioned in HostConfig, we should not touch it
+        Ok(false)
+    } else if symmetric_diff.is_empty() {
+        // RAID array's underlying disks are all part of HostConfig, we can unmount and stop the RAID
+        return Ok(true);
+    } else {
+        // RAID array has underlying disks that are not part of HostConfig, we cannot touch it, abort
+        bail!(
+            "RAID array '{:?}' has underlying disks that are not part of Trident configuration. RAID disks: {:?}, Trident disks: {:?}",
+            raid_name, raid_disks, trident_disks
+        );
+    }
+}
+
+fn mdstat_present(mdstat_path: &Path) -> Result<bool, Error> {
+    // mdstat file is present only if there is any RAID on the system
+    if !mdstat_path.exists() {
+        return Ok(false);
+    }
+    let mdstat_contents =
+        osutils::files::read_file_trim(&mdstat_path).context("Failed to read mdstat file")?;
+
+    Ok(mdstat_contents.contains("active raid"))
+}
+
+fn check_if_mdadm_present() -> Result<(), Error> {
+    let mut mdadm_command = Command::new("mdadm");
+    mdadm_command.arg("--version");
+
+    mdadm_command
+        .output()
+        .context("Failed to run mdadm command. Mdadm is required for RAID operations")?;
+
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Default)]
+struct MdadmDetail {
+    raid_path: PathBuf,
+    level: String,
+    uuid: String,
+    devices: Vec<PathBuf>,
+}
+
+fn mdadm_detail_to_struct(mdadm_output: &str) -> Result<Vec<MdadmDetail>, Error> {
+    let mut mdadm_details = Vec::new();
+
+    let array_regex = Regex::new(r"ARRAY\s+(/dev/md\S+)").unwrap();
+    let level_regex = Regex::new(r"(?:^|\s)level=(\w+)").unwrap();
+    let uuid_regex = Regex::new(r"(?:^|\s)UUID=([\da-zA-Z:]+)").unwrap();
+    let devices_regex = Regex::new(r"(?:^|\s)devices=([^=]+)").unwrap();
+
+    let mut current_mdadm_detail = MdadmDetail::default();
+
+    for line in mdadm_output.lines() {
+        if let Some(captures) = array_regex.captures(line) {
+            current_mdadm_detail.raid_path = PathBuf::from(captures[1].to_string());
+        }
+        if let Some(captures) = level_regex.captures(line) {
+            current_mdadm_detail.level = captures[1].to_string();
+        }
+        if let Some(captures) = uuid_regex.captures(line) {
+            current_mdadm_detail.uuid = captures[1].to_string();
+        }
+        if let Some(captures) = devices_regex.captures(line) {
+            current_mdadm_detail.devices = captures[1]
+                .to_string()
+                .split(',')
+                .map(PathBuf::from)
+                .collect();
+
+            mdadm_details.push(current_mdadm_detail.clone());
+            current_mdadm_detail = MdadmDetail::default();
+        }
+    }
+
+    Ok(mdadm_details)
+}
+
+fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
+    let mut umount_command = Command::new("umount");
+    umount_command.arg(raid_path);
+
+    let output = umount_command
+        .output()
+        .context("Failed to unmount RAID array")?;
+
+    if !output.stderr.is_empty() {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+        // Error code 32 means there was a mount faliure (device not mounted)
+        if !stderr_str.contains("not mounted") || output.exit_code() != Some(32) {
+            bail!("Failed to unmount: {:?}", raid_path);
+        }
+    }
+    stop(raid_path).context("Failed to stop RAID array")?;
+
+    Ok(())
+}
+
 pub(super) fn create_sw_raid(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     if !host_config.storage.raid.software.is_empty() {
+        check_if_mdadm_present()
+            .context("Failed to create software RAID. Mdadm is required for RAID")?;
         for software_raid_config in &host_config.storage.raid.software {
             create_sw_raid_array(host_status, software_raid_config).context(format!(
                 "RAID creation failed for '{}'",
@@ -351,60 +574,55 @@ fn create_sw_raid_array(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::io::Write;
+
+    use indoc::indoc;
+    use tempfile::tempdir;
 
     use crate::modules::storage;
 
     use super::*;
-    use trident_api::{
-        config::PartitionType,
-        status::{BlockDeviceContents, Disk, Partition, RaidArray, ReconcileState, Storage},
-    };
-    use uuid::Uuid;
+    use trident_api::status::RaidArray;
 
     #[test]
     fn test_get_device_paths() {
-        let mut disks = BTreeMap::new();
-
-        disks.insert(
-            "some_disk".to_string(),
-            Disk {
-                uuid: Uuid::nil(),
-                path: PathBuf::from("/dev/sda"),
-                capacity: 10,
-                partitions: vec![
-                    Partition {
-                        id: "boot".to_string(),
-                        path: PathBuf::from("/dev/sda1"),
-                        start: 1,
-                        end: 3,
-                        ty: PartitionType::Esp,
-                        contents: BlockDeviceContents::Initialized,
-                        uuid: Uuid::nil(),
-                    },
-                    Partition {
-                        id: "root".to_string(),
-                        path: PathBuf::from("/dev/sda2"),
-                        start: 4,
-                        end: 10,
-                        ty: PartitionType::Root,
-                        contents: BlockDeviceContents::Initialized,
-                        uuid: Uuid::nil(),
-                    },
-                ],
-                contents: BlockDeviceContents::Initialized,
-            },
-        );
-
-        let host_status = HostStatus {
-            reconcile_state: ReconcileState::Ready,
-            storage: Storage {
-                disks,
-                raid_arrays: BTreeMap::new(),
-                mount_points: BTreeMap::new(),
-            },
-            ..Default::default()
-        };
+        let host_status_yaml = indoc! {r#"
+            storage:
+                mount-points:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                          - id: boot
+                            path: /dev/sda1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root
+                            path: /dev/sda2
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: home
+                            path: /dev/sda3
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: home
+                            uuid: 00000000-0000-0000-0000-000000000000
+                raid-arrays:
+            imaging:
+            reconcile-state: clean-install
+        "#};
+        let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
+            .expect("Failed to parse host status");
 
         let result: Result<Vec<PathBuf>, Error> =
             get_device_paths(&host_status, &vec!["boot".to_string(), "root".to_string()]);
@@ -497,40 +715,48 @@ mod tests {
 
     #[test]
     fn test_get_partition_from_host_config() {
-        let host_config = HostConfiguration {
-            storage: trident_api::config::Storage {
-                disks: vec![trident_api::config::Disk {
-                    id: "some_disk".to_string(),
-                    partitions: vec![
-                        trident_api::config::Partition {
-                            id: "some_partition".to_string(),
-                            partition_type: trident_api::config::PartitionType::LinuxGeneric,
-                            size: trident_api::config::PartitionSize::Fixed(123),
-                        },
-                        trident_api::config::Partition {
-                            id: "some_partition2".to_string(),
-                            partition_type: trident_api::config::PartitionType::LinuxGeneric,
-                            size: trident_api::config::PartitionSize::Fixed(456),
-                        },
-                    ],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let host_config_yaml = indoc! {r#"
+            storage:
+                disks:
+                  - id: disk1
+                    device: /dev/sda
+                    partition-table-type: gpt
+                    partitions:
+                    - id: disk1-partition1
+                      type: esp
+                      size: 1M
+                    - id: disk1-partition2
+                      type: root
+                      size: 1G
+                  - id: disk2
+                    device: /dev/sdb
+                    partition-table-type: gpt
+                    partitions:
+                      - id: disk2-partition1
+                        type: esp
+                        size: 1M
+            imaging:
+                images:
+                  - target-id: disk1-partition1
+                    url: ""
+                    sha256: ""
+                    format: raw-zstd
+        "#};
 
-        let partition = storage::get_partition_from_host_config(&host_config, "some_partition")
+        let host_config = serde_yaml::from_str::<HostConfiguration>(host_config_yaml)
+            .expect("Failed to parse host config");
+
+        let partition = storage::get_partition_from_host_config(&host_config, "disk1-partition1")
             .expect("Expected to find a partition but not found.");
 
-        assert_eq!(partition.id, "some_partition");
+        assert_eq!(partition.id, "disk1-partition1");
         assert_eq!(
             partition.partition_type,
-            trident_api::config::PartitionType::LinuxGeneric
+            trident_api::config::PartitionType::Esp
         );
         assert_eq!(
             partition.size,
-            trident_api::config::PartitionSize::Fixed(123)
+            trident_api::config::PartitionSize::Fixed(1048576)
         );
 
         let partition =
@@ -540,40 +766,218 @@ mod tests {
 
     #[test]
     fn test_get_raid_array_ids() {
-        let host_config = HostConfiguration {
-            storage: trident_api::config::Storage {
-                disks: vec![trident_api::config::Disk {
-                    id: "some_disk".to_string(),
-                    partitions: vec![
-                        trident_api::config::Partition {
-                            id: "some_partition".to_string(),
-                            partition_type: trident_api::config::PartitionType::LinuxGeneric,
-                            size: trident_api::config::PartitionSize::Fixed(123),
-                        },
-                        trident_api::config::Partition {
-                            id: "some_partition2".to_string(),
-                            partition_type: trident_api::config::PartitionType::LinuxGeneric,
-                            size: trident_api::config::PartitionSize::Fixed(456),
-                        },
-                    ],
-                    ..Default::default()
-                }],
-                raid: trident_api::config::RaidConfig {
-                    software: vec![trident_api::config::SoftwareRaidArray {
-                        id: "some_raid".to_string(),
-                        name: "raid1".to_string(),
-                        level: trident_api::config::RaidLevel::Raid1,
-                        devices: vec!["some_partition".to_string(), "some_partition2".to_string()],
-                        metadata_version: "1.0".to_string(),
-                    }],
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let host_config_yaml = indoc! {r#"
+        storage:
+            disks:
+              - id: some-disk
+                device: /dev/sda
+                partition-table-type: gpt
+                partitions:
+                  - id: esp
+                    type: esp
+                    size: 1G
+                  - id: root-a
+                    type: root
+                    size: 8G
+                  - id: trident
+                    type: linux-generic
+                    size: 1G
+                  - id: raid-a
+                    type: linux-generic
+                    size: 1G
+                  - id: raid-b
+                    type: linux-generic
+                    size: 1G
+                  - id: raid-c
+                    type: linux-generic
+                    size: 50M
+                  - id: raid-d
+                    type: linux-generic
+                    size: 50M
+            raid:
+              software:
+                  - id: some-raid
+                    name: my-raid
+                    level: raid1
+                    devices:
+                        - raid-a
+                        - raid-b
+                    metadata-version: "1.0"
+                  - id: some-raid2
+                    name: my-raid2
+                    level: raid1
+                    devices:
+                        - raid-c
+                        - raid-d
+                    metadata-version: "1.0"
+        imaging:
+            images:
+              - url: ""
+                sha256: ""
+                format: raw-zstd
+                target-id: "esp"
+        "#};
 
+        let host_config = serde_yaml::from_str::<HostConfiguration>(host_config_yaml)
+            .expect("Failed to parse host config");
         let raid_array_ids = storage::get_raid_array_ids(&host_config);
-        assert_eq!(raid_array_ids.len(), 1);
-        assert!(raid_array_ids.contains(&"some_raid".to_string()));
+        assert_eq!(raid_array_ids.len(), 2);
+        assert!(raid_array_ids.contains(&"some-raid".to_string()));
+        assert!(raid_array_ids.contains(&"some-raid2".to_string()));
+    }
+
+    #[test]
+    fn test_mdadm_detail_to_struct() {
+        let mdadm_detail_output = indoc!(
+            r#"
+        ARRAY /dev/md/my-raid2 level=raid1 num-devices=2 metadata=1.0 name=localhost:my-raid2 UUID=6245349d:505a367b:6ceba75f:7f55c158
+            devices=/dev/sda8,/dev/sda9
+        ARRAY /dev/md/my-raid level=raid1 num-devices=2 metadata=1.0 name=localhost:my-raid UUID=ea381b70:20b2ab81:602edecb:cf6f2032
+            devices=/dev/sda6,/dev/sda7
+        "#
+        );
+        let details =
+            mdadm_detail_to_struct(mdadm_detail_output).expect("Failed to parse mdadm detail");
+        let expected_details: Vec<MdadmDetail> = [
+            MdadmDetail {
+                raid_path: PathBuf::from("/dev/md/my-raid2"),
+                level: "raid1".to_string(),
+                uuid: "6245349d:505a367b:6ceba75f:7f55c158".to_string(),
+                devices: ["/dev/sda8".into(), "/dev/sda9".into()].into(),
+            },
+            MdadmDetail {
+                raid_path: PathBuf::from("/dev/md/my-raid"),
+                level: "raid1".to_string(),
+                uuid: "ea381b70:20b2ab81:602edecb:cf6f2032".to_string(),
+                devices: ["/dev/sda6".into(), "/dev/sda7".into()].into(),
+            },
+        ]
+        .to_vec();
+
+        assert_eq!(details, expected_details);
+
+        // different raid name format
+        let mdadm_detail_output = indoc!(
+            r#"
+        ARRAY /dev/md126 level=raid1 num-devices=2 metadata=1.0 name=localhost:my-raid2 UUID=602edecb:505a367b:6ceba75f:602edecb
+            devices=/dev/sda8,/dev/sda9
+        ARRAY /dev/md127 level=raid1 num-devices=2 metadata=1.0 name=localhost:my-raid UUID=as381b70:20b2ab81:602edecb:cf6f20as
+            devices=/dev/sda6,/dev/sda7
+        "#
+        );
+        let details =
+            mdadm_detail_to_struct(mdadm_detail_output).expect("Failed to parse mdadm detail");
+        let expected_details: Vec<MdadmDetail> = [
+            MdadmDetail {
+                raid_path: PathBuf::from("/dev/md126"),
+                level: "raid1".to_string(),
+                uuid: "602edecb:505a367b:6ceba75f:602edecb".to_string(),
+                devices: ["/dev/sda8".into(), "/dev/sda9".into()].into(),
+            },
+            MdadmDetail {
+                raid_path: PathBuf::from("/dev/md127"),
+                level: "raid1".to_string(),
+                uuid: "as381b70:20b2ab81:602edecb:cf6f20as".to_string(),
+                devices: ["/dev/sda6".into(), "/dev/sda7".into()].into(),
+            },
+        ]
+        .to_vec();
+
+        assert_eq!(details, expected_details);
+
+        // empty
+        let mdadm_detail_output = r#""#;
+        let details =
+            mdadm_detail_to_struct(mdadm_detail_output).expect("Failed to parse mdadm detail");
+        let expected_details: Vec<MdadmDetail> = [].to_vec();
+
+        assert_eq!(details, expected_details);
+    }
+
+    #[test]
+    fn test_get_raid_device_name() {
+        let raid_device = Path::new("/dev/md/my-raid");
+
+        let device_name =
+            get_raid_device_name(raid_device).expect("Failed to get RAID device name");
+
+        assert_eq!(device_name, "my-raid");
+
+        let raid_device = Path::new("/dev/md127");
+
+        let device_name =
+            get_raid_device_name(raid_device).expect("Failed to get RAID device name");
+
+        assert_eq!(device_name, "md127");
+    }
+
+    #[test]
+    fn test_can_stpp_pre_existing_raid() -> Result<(), Error> {
+        let raid_name = PathBuf::from("my-raid");
+        let raid_disks: HashSet<PathBuf> =
+            [PathBuf::from("/dev/sda"), PathBuf::from("/dev/sdb")].into();
+
+        let trident_disks: HashSet<PathBuf> =
+            [PathBuf::from("/dev/sda"), PathBuf::from("/dev/sdb")].into();
+
+        let trident_disks2: HashSet<PathBuf> =
+            [PathBuf::from("/dev/sdb"), PathBuf::from("/dev/sdc")].into();
+
+        let trident_disks3: HashSet<PathBuf> =
+            [PathBuf::from("/dev/sdc"), PathBuf::from("/dev/sdd")].into();
+
+        // No overlapping disks, should not touch
+        let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks3)?;
+        assert!(!overlap);
+
+        // Fully overlapping disks, should stop
+        let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks)?;
+        assert!(overlap);
+
+        // Partially overlapping disks, cannot touch, error.
+        let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks2);
+        assert!(overlap.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mdstat_present() {
+        let is_mdstat_present = mdstat_present(Path::new("non-existing-path"))
+            .expect("Failed to check if mdstat is present");
+
+        assert!(!is_mdstat_present);
+
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let mdstat_path = temp_dir.path().join("mdstat");
+
+        let mut mdstat_file =
+            std::fs::File::create(&mdstat_path).expect("Failed to create mdstat file");
+
+        let raid_info = indoc!(
+            r#"
+        Personalities : [raid1] 
+        md126 : active raid1 sda9[1] sda8[0]
+            51136 blocks super 1.0 [2/2] [UU]
+            
+        md127 : active raid1 sda7[1] sda6[0]
+            1048512 blocks super 1.0 [2/2] [UU]
+            
+        unused devices: <none>
+        "#
+        );
+
+        mdstat_file
+            .write_all(raid_info.as_bytes())
+            .expect("Failed to write to mdstat file");
+
+        let is_mdstat_present =
+            mdstat_present(&mdstat_path).expect("Failed to check if mdstat is present");
+        assert!(is_mdstat_present);
+
+        // Clean up the temporary directory
+        temp_dir
+            .close()
+            .expect("Failed to close temporary directory");
     }
 }
