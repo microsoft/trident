@@ -7,7 +7,7 @@ use netplan_types::{
 use trident_api::config::{
     AbUpdate, AbVolumePair, Disk, HostConfiguration, Image, ImageFormat, Imaging, MountPoint,
     OsConfig, Partition, PartitionSize, PartitionTableType, PartitionType, RaidConfig, RaidLevel,
-    SoftwareRaidArray, SshMode, Storage, User,
+    Script, SoftwareRaidArray, SshMode, Storage, User,
 };
 
 fn main() {
@@ -161,6 +161,12 @@ fn build_host_configuration() -> HostConfiguration {
                 },
             )]),
         },
+        post_install_scripts: vec![Script {
+            content: "echo \"my-new-user ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/my-new-user"
+                .into(),
+            interpreter: None,
+            log_file_path: None,
+        }],
         ..Default::default()
     }
 }

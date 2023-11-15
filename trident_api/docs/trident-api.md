@@ -1097,6 +1097,8 @@ Must be one of:
 
 **Description:** `3b8f8425-20e0-4f3b-907f-1a25a76f98e8`
 
+To use this partition type on the disk with the root volume, make sure to not have `/srv` symlink present in your root volume filesystem. If you do, remove it before running Trident (e.g. by using MIC).
+
 Must be one of:
 * "srv"
 

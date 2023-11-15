@@ -89,6 +89,8 @@ network:
       match:
         name: enp*
       dhcp4: true
+post-install-scripts:
+- content: echo "my-new-user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/my-new-user
 osconfig:
   users:
     my-new-user:
