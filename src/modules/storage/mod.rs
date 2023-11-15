@@ -7,8 +7,9 @@ use std::{
     process::Command,
 };
 use trident_api::{
-    config::{BlockDeviceId, HostConfiguration, MountPoint, Partition},
+    config::{HostConfiguration, MountPoint, Partition},
     status::{self, BlockDeviceContents, HostStatus, UpdateKind},
+    BlockDeviceId,
 };
 
 use crate::modules::Module;

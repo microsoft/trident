@@ -9,10 +9,11 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::{BlockDeviceId, HostConfiguration, Operations},
+    config::{HostConfiguration, Operations},
     status::{
         AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
     },
+    BlockDeviceId,
 };
 
 use crate::{datastore::DataStore, protobufs::HostStatusState, TRIDENT_DATASTORE_PATH};

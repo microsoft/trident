@@ -13,11 +13,12 @@ use std::{
 };
 
 use trident_api::{
-    config::{BlockDeviceId, HostConfiguration, Image, ImageFormat},
+    config::{HostConfiguration, Image, ImageFormat},
     status::{
         AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk,
         HostStatus, Partition, ReconcileState, UpdateKind,
     },
+    BlockDeviceId,
 };
 
 use super::mount;

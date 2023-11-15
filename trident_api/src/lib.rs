@@ -1,18 +1,13 @@
 use std::path::PathBuf;
 
-use status::{BlockDeviceContents, BlockDeviceInfo, Disk, Partition, RaidArray};
+use status::{BlockDeviceContents, BlockDeviceInfo, Partition, RaidArray};
 
 pub mod config;
 pub mod constants;
 pub mod status;
 
-pub(crate) mod serde;
-
-impl Disk {
-    pub fn to_block_device(&self) -> BlockDeviceInfo {
-        BlockDeviceInfo::new(self.path.clone(), self.capacity, self.contents.clone())
-    }
-}
+/// Identifier for a block device. Needs to be unique across all types of devices.
+pub type BlockDeviceId = String;
 
 impl Partition {
     pub fn to_block_device(&self) -> BlockDeviceInfo {
@@ -52,18 +47,6 @@ mod schema_helpers {
         gen::SchemaGenerator,
         schema::{ArrayValidation, InstanceType, Schema, SchemaObject, SingleOrVec},
     };
-    use serde_json::{json, Map, Value};
-
-    /// Returns a placeholder schema for a netplan field.
-    pub(crate) fn make_placeholder_netplan_schema(gen: &mut SchemaGenerator) -> Schema {
-        let mut schema = gen
-            .subschema_for::<Option<Map<String, Value>>>()
-            .into_object();
-        schema.format = Some("Netplan YAML".to_owned());
-        schema.object().additional_properties = None;
-        schema.extensions.insert("nullable".to_owned(), json!(true));
-        Schema::Object(schema)
-    }
 
     pub(crate) fn block_device_id_schema(gen: &mut SchemaGenerator) -> Schema {
         let mut schema = gen.subschema_for::<String>().into_object();

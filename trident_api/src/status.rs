@@ -3,7 +3,10 @@ use std::{collections::BTreeMap, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::config::{BlockDeviceId, PartitionType, RaidLevel};
+use crate::{
+    config::{PartitionType, RaidLevel},
+    BlockDeviceId,
+};
 
 /// HostStatus is the status of a host. Reflects the current provisioning state
 /// of the host and any encountered errors.
@@ -81,6 +84,12 @@ pub struct Disk {
     pub capacity: u64,
     pub partitions: Vec<Partition>,
     pub contents: BlockDeviceContents,
+}
+
+impl Disk {
+    pub fn to_block_device(&self) -> BlockDeviceInfo {
+        BlockDeviceInfo::new(self.path.clone(), self.capacity, self.contents.clone())
+    }
 }
 
 /// Per partition status.

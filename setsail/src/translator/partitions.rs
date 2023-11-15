@@ -2,8 +2,8 @@ use std::path::Path;
 use std::{collections::HashMap, path::PathBuf};
 
 use trident_api::config::{
-    Disk, HostConfiguration, Image, MountPoint, Partition, PartitionSize, PartitionTableType,
-    PartitionType,
+    Disk, HostConfiguration, Image, ImageFormat, MountPoint, Partition, PartitionSize,
+    PartitionTableType, PartitionType,
 };
 
 use crate::commands::partition::{FsType, PartitionMount};
@@ -111,7 +111,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             images.push(Image {
                 url: img.clone(),
                 sha256: "ignored".to_string(),
-                format: trident_api::config::ImageFormat::RawZstd,
+                format: ImageFormat::RawZstd,
                 target_id: partition_id.clone(),
             });
         }

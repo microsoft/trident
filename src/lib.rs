@@ -6,15 +6,14 @@ use setsail::KsTranslator;
 use std::fs;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::{self, Sender, UnboundedSender};
+use trident_api::config::HostConfigurationSource;
 
 use std::path::Path;
 use std::process::{Command, Output};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
-use trident_api::config::{
-    DatastoreConfiguration, HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
-};
+use trident_api::config::{DatastoreConfiguration, HostConfiguration, LocalConfigFile, Operations};
 
 mod datastore;
 mod logstream;
@@ -172,7 +171,7 @@ impl Trident {
                     }
                 }
             }
-            HostConfigurationSource::Kickstart(file) => {
+            HostConfigurationSource::KickstartFile(file) => {
                 match KsTranslator::new().run_pre_scripts(true).translate(
                     setsail::load_kickstart_file(
                         file.to_str()
@@ -206,8 +205,9 @@ impl Trident {
         // unless we updated the config file in place. That sounds like a can of worms and we still
         // have the issue about being too early.
         if let Some(
-            HostConfigurationSource::Kickstart(_) | HostConfigurationSource::KickstartEmbedded(_),
-        ) = self.config.host_config_source
+            HostConfigurationSource::KickstartFile(_)
+            | HostConfigurationSource::KickstartEmbedded(_),
+        ) = self.config.get_host_configuration_source()?
         {
             warn!("Cannot set up network early when using kickstart");
             return Ok(());
@@ -215,7 +215,7 @@ impl Trident {
 
         let host_config = self
             .config
-            .host_config_source
+            .get_host_configuration_source()?
             .as_ref()
             .map(Self::load_host_config)
             .transpose()?;
@@ -240,7 +240,7 @@ impl Trident {
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
 
         // If we have a host config source, load it and dispatch it as the first command.
-        if let Some(ref host_config_source) = self.config.host_config_source {
+        if let Some(ref host_config_source) = self.config.get_host_configuration_source()? {
             let host_config = Self::load_host_config(host_config_source)?;
 
             info!("Running");

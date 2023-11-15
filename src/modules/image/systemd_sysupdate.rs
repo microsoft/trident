@@ -24,8 +24,11 @@ use reqwest::Url;
 use tempfile;
 
 use crate::{modules, Path};
-use trident_api::config::{BlockDeviceId, Image, PartitionType};
-use trident_api::status::{AbVolumeSelection, BlockDeviceInfo, HostStatus};
+use trident_api::{
+    config::{Image, PartitionType},
+    status::{AbVolumeSelection, BlockDeviceInfo, HostStatus},
+    BlockDeviceId,
+};
 
 /// This struct describes an A/B update of a SINGLE image via systemd-sysupdate.
 pub(super) struct ImageDeployment {

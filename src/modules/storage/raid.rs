@@ -14,8 +14,9 @@ use std::{
 };
 use strum_macros::{Display, EnumString};
 use trident_api::{
-    config::{BlockDeviceId, HostConfiguration, RaidLevel, SoftwareRaidArray},
+    config::{HostConfiguration, RaidLevel, SoftwareRaidArray},
     status::{self, HostStatus, RaidArrayStatus, RaidType},
+    BlockDeviceId,
 };
 
 use osutils::exe::OutputChecker;

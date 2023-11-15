@@ -8,8 +8,8 @@ use zstd;
 
 use crate::modules::image::HashingReader;
 use trident_api::{
-    config::BlockDeviceId,
     status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
+    BlockDeviceId,
 };
 
 /// This function is called from image/mod.rs, to stream the bytes of an image onto a block device.

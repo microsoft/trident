@@ -1,4 +1,5 @@
 use schemars::gen::SchemaSettings;
+use trident_api::config::HostConfiguration;
 
 fn main() {
     let settings = SchemaSettings::draft07().with(|s| {
@@ -6,7 +7,7 @@ fn main() {
         s.option_add_null_type = false;
     });
     let gen = settings.into_generator();
-    let mut schema = gen.into_root_schema_for::<trident_api::config::HostConfiguration>();
+    let mut schema = gen.into_root_schema_for::<HostConfiguration>();
 
     // Because netplan-types currently does not support schemars, we have to
     // manually provide a placeholder schema for the netplan fields using

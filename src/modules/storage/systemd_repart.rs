@@ -6,7 +6,10 @@ use log::info;
 use serde_json::Value;
 use std::collections::HashMap;
 use tempfile::TempDir;
-use trident_api::config::{BlockDeviceId, Disk, Partition, PartitionSize};
+use trident_api::{
+    config::{Disk, Partition, PartitionSize},
+    BlockDeviceId,
+};
 use uuid::Uuid;
 
 pub(super) struct RepartConfiguration {
