@@ -320,9 +320,9 @@ impl StorageModule {
         detected_ids: &mut HashSet<&'a String>,
         input_ids: &mut dyn Iterator<Item = &'a String>,
     ) -> Result<(), Error> {
-        for name in input_ids {
-            if !detected_ids.insert(name) {
-                bail!("Block device name '{name}' is used more than once");
+        for id in input_ids {
+            if !detected_ids.insert(id) {
+                bail!("Block device id '{id}' is used more than once");
             }
         }
 
