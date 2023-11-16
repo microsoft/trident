@@ -358,7 +358,7 @@ fn can_stop_pre_existing_raid(
     if raid_disks.is_disjoint(trident_disks) {
         // RAID array does not have any of its underlying disks mentioned in HostConfig, we should not touch it
         Ok(false)
-    } else if symmetric_diff.is_empty() {
+    } else if symmetric_diff.is_empty() || raid_disks.is_subset(trident_disks) {
         // RAID array's underlying disks are all part of HostConfig, we can unmount and stop the RAID
         return Ok(true);
     } else {
@@ -915,17 +915,12 @@ mod tests {
     #[test]
     fn test_can_stpp_pre_existing_raid() -> Result<(), Error> {
         let raid_name = PathBuf::from("my-raid");
-        let raid_disks: HashSet<PathBuf> =
-            [PathBuf::from("/dev/sda"), PathBuf::from("/dev/sdb")].into();
-
-        let trident_disks: HashSet<PathBuf> =
-            [PathBuf::from("/dev/sda"), PathBuf::from("/dev/sdb")].into();
-
-        let trident_disks2: HashSet<PathBuf> =
-            [PathBuf::from("/dev/sdb"), PathBuf::from("/dev/sdc")].into();
-
-        let trident_disks3: HashSet<PathBuf> =
-            [PathBuf::from("/dev/sdc"), PathBuf::from("/dev/sdd")].into();
+        let raid_disks: HashSet<PathBuf> = ["/dev/sda".into(), "/dev/sdb".into()].into();
+        let trident_disks: HashSet<PathBuf> = ["/dev/sda".into(), "/dev/sdb".into()].into();
+        let trident_disks2: HashSet<PathBuf> = ["/dev/sdb".into(), "/dev/sdc".into()].into();
+        let trident_disks3: HashSet<PathBuf> = ["/dev/sdc".into(), "/dev/sdd".into()].into();
+        let trident_disks4: HashSet<PathBuf> =
+            ["/dev/sda".into(), "/dev/sdb".into(), "/dev/sdc".into()].into();
 
         // No overlapping disks, should not touch
         let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks3)?;
@@ -938,6 +933,10 @@ mod tests {
         // Partially overlapping disks, cannot touch, error.
         let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks2);
         assert!(overlap.is_err());
+
+        // Trident disks are a superset of RAID disks, we can stop
+        let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks4)?;
+        assert!(overlap);
 
         Ok(())
     }
