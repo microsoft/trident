@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Error, Ok};
-use log::{debug, info, warn};
+use log::{debug, info};
 
 use osutils::scripts::ScriptRunner;
 use trident_api::{
     config::HostConfiguration,
-    status::{HostStatus, ReconcileState},
+    status::{HostStatus, ReconcileState, UpdateKind},
 };
 
 use crate::modules::Module;
@@ -32,9 +32,12 @@ impl Module for PostInstallScriptsModule {
             return Ok(());
         }
 
-        // Limit operation to ReconcileState::CleanInstall
-        if host_status.reconcile_state != ReconcileState::CleanInstall {
-            warn!("Attempted to run post-installation scripts on a host that is not in the CleanInstall state. Skipping.");
+        // Limit operation to ReconcileState::CleanInstall and
+        // ReconcileState::UpdateInProgress(UpdateKind::AbUpdate)
+        if host_status.reconcile_state != ReconcileState::CleanInstall
+            && host_status.reconcile_state != ReconcileState::UpdateInProgress(UpdateKind::AbUpdate)
+        {
+            debug!("Skipping running post-install-scripts outside of CleanInstall and ABUpdate.");
             return Ok(());
         }
 

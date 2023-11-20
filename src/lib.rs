@@ -1,6 +1,8 @@
 use anyhow::{bail, Context, Error};
 use datastore::DataStore;
 use log::{debug, error, info, warn};
+use osutils::overlay::EphemeralOverlayWithSystemD;
+use osutils::{chroot, container};
 use protobufs::*;
 use setsail::KsTranslator;
 use std::fs;
@@ -30,6 +32,7 @@ pub use orchestrate::OrchestratorConnection;
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
 pub const TRIDENT_DATASTORE_PATH: &str = "/var/lib/trident/datastore.sqlite";
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
+const SYSTEMD_UNIT_ROOT_PATH: &str = "/etc/systemd/system";
 
 mod protobufs {
     tonic::include_proto!("trident");
@@ -287,6 +290,20 @@ impl Trident {
             drop(sender);
         }
 
+        // When running inside a container, we want to chroot into the host's
+        // root. To do this, we assume the container is created with a volume/bind
+        // mount of the host's root at /host. We enter this chroot here so that
+        // all subsequent commands are executed in the host's root, and dont
+        // have to be aware of if Trident is running in the context of the
+        // container or not.
+        let chroot = if container::is_running_in_container() {
+            Some(chroot::enter_host_chroot(
+                container::get_host_root_path().context("Failed to get host root mount path which is required when executing inside a container")?.as_path(),
+            ).context("Failed to enter host chroot, which is required when executing inside a container")?)
+        } else {
+            None
+        };
+
         // Process commands. Starting with the initial command indicated in the local config file
         // (if any). Once that has been handled, subsequent commands are received from the gRPC
         // endpoint.
@@ -296,10 +313,17 @@ impl Trident {
                 cmd.host_config.management.phonehome = self.config.phonehome.clone();
             }
 
+            let overlay = EphemeralOverlayWithSystemD::mount(Path::new(SYSTEMD_UNIT_ROOT_PATH));
+            if let Err(e) = &overlay {
+                // we can continue, though if we need to rerun, there will be
+                // subsequent errors
+                error!("Failed to setup systemd configuration overlay: {e:?}");
+            }
+
             let result = if self.datastore.is_persistent() {
-                modules::update(cmd, &mut self.datastore).context("Failed to update host config")
+                modules::update(cmd, &mut self.datastore).context("Failed to update host")
             } else {
-                modules::provision(cmd, &mut self.datastore).context("Failed to provision")
+                modules::provision(cmd, &mut self.datastore).context("Failed to provision host")
             };
 
             if let Err(e) = result {
@@ -307,6 +331,22 @@ impl Trident {
                     orchestrator.report_error(format!("{e:?}"));
                 }
                 error!("{e:?}");
+            }
+
+            if let Ok(overlay) = overlay {
+                if let Err(e) = overlay.unmount().context("Failed to exit overlay") {
+                    error!("{e:?}");
+                }
+            }
+        }
+
+        // Exit the chroot if we were executing in the container.
+        if let Some(chroot) = chroot {
+            if let Err(e) = chroot.exit().context("Failed to exit chroot") {
+                if let Some(ref orchestrator) = orchestrator {
+                    orchestrator.report_error(format!("{e:?}"));
+                }
+                anyhow::bail!(e);
             }
         }
 

@@ -265,10 +265,13 @@ fn configure_user(name: &str, user: User) -> Result<(), Error> {
     let homedir = PathBuf::from("/home").join(name);
 
     // Create the user
-    cmd!("useradd", "-m", "-s", "/bin/bash", "-d", &homedir, name)
-        .run()?
-        .check()
-        .context(format!("Failed to create user {}", name))?;
+    let result = cmd!("useradd", "-m", "-s", "/bin/bash", "-d", &homedir, name).run()?;
+    // Proceed if user is created successfully or if the user already exists
+    if !result.status.success() && result.status.code() != Some(9) {
+        result
+            .check()
+            .context(format!("Failed to create user {}", name))?;
+    }
 
     set_password(name, user.password)?;
 

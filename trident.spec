@@ -16,26 +16,12 @@ Agent for bare metal platform
 %files
 %{_bindir}/%{name}
 %dir /etc/%{name}
-%{_unitdir}/%{name}.service
-
-%post
-%systemd_post %{name}.service
-
-%preun
-%systemd_preun %{name}.service
-
-%postun
-%systemd_postun_with_restart %{name}.service
 
 # ------------------------------------------------------------------------------
 
 %package provisioning
 Summary:        Trident files for the provisioning OS
 Requires:       %{name}
-
-# Only one service package is permitted
-Provides:       %{name}-service
-Conflicts:      %{name}-service
 
 %description provisioning
 Trident files for the provisioning OS
@@ -54,18 +40,24 @@ Trident files for the provisioning OS
 
 # ------------------------------------------------------------------------------
 
-%package runtime
-Summary:        Trident files for the runtime OS
+%package service
+Summary:        Trident files for SystemD service
 Requires:       %{name}
 
-# Only one service package is permitted
-Provides:       %{name}-service
-Conflicts:      %{name}-service
+%description service
+Trident files for SystemD service
 
-%description runtime
-Trident files for the runtime OS
+%files service
+%{_unitdir}/%{name}.service
 
-%files runtime
+%post service
+%systemd_post %{name}.service
+
+%preun service
+%systemd_preun %{name}.service
+
+%postun service
+%systemd_postun_with_restart %{name}.service
 
 # ------------------------------------------------------------------------------
 

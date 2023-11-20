@@ -8,7 +8,10 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.75", features = ["backtrace"] }
 duct = "0.13.6"
+indoc = "2.0.3"
 log = "0.4.20"
+nix = { version = "0.26.2", default-features = false, features = ["fs"] }
+sys-mount = "2.1.0"
 tempfile = "3.8.0"
 which = "4.4.2"
 

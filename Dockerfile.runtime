@@ -1,0 +1,33 @@
+FROM mcr.microsoft.com/cbl-mariner/base/rust:1 as build
+
+RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel
+
+WORKDIR /work
+
+COPY trident.spec .
+COPY systemd ./systemd
+COPY Cargo.toml .
+COPY Cargo.lock .
+COPY proto ./proto
+COPY build.rs .
+COPY src ./src
+COPY trident_api ./trident_api
+COPY setsail ./setsail
+COPY osutils ./osutils
+
+RUN \
+    --mount=type=cache,target=/work/target \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    rpmbuild -bb --build-in-place trident.spec && \
+    mkdir /rpm && \
+    find /usr/src/mariner/RPMS/x86_64 -type f -name "trident-*.rpm" \
+    | grep -v 'service' | grep -v 'provisioning' | xargs -I {} cp {} /rpm/
+
+FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
+
+COPY --from=build /rpm/trident-*.rpm /
+RUN tdnf -y install netplan util-linux mdadm && rpm -i /trident-*.rpm && rm -f /trident-*.rpm && tdnf clean all
+ENV RUST_LOG=debug
+ENV DOCKER_ENVIRONMENT=true
+
+ENTRYPOINT ["/usr/bin/trident"]

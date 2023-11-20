@@ -1,5 +1,5 @@
 .PHONY: all
-all: check build test rpm build-api-docs
+all: check build test rpm build-api-docs docker-build
 
 .PHONY: check
 check:
@@ -25,12 +25,16 @@ coverage:
 
 .PHONY: rpm
 rpm:
-	docker build --progress plain -t trident/trident:latest .
+	docker build --progress plain -t trident/trident-build:latest .
 	mkdir -p bin/
-	id=$$(docker create trident/trident:latest) && \
+	id=$$(docker create trident/trident-build:latest) && \
 	docker cp $$id:/work/trident.tar.gz bin/ && \
 	docker rm -v $$id && \
 	tar xf bin/trident.tar.gz -C bin/
+
+.PHONY: docker-build
+docker-build:
+	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
 .PHONY: clean
 clean:

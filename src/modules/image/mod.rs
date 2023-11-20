@@ -21,9 +21,9 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use super::mount;
 use crate::modules::{self, storage::tabfile::TabFile, Module};
 
+pub mod mount;
 mod stream_image;
 mod systemd_sysupdate;
 
@@ -635,6 +635,7 @@ impl Module for ImageModule {
         if undeployed_images.is_empty() {
             None
         } else {
+            debug!("Found following images to update: {:?}", undeployed_images);
             Some(UpdateKind::AbUpdate)
         }
     }
@@ -652,7 +653,8 @@ impl Module for ImageModule {
         }
 
         update_images(host_status, host_config).context("Failed to update filesystem images")?;
-        super::setup_root_chroot(host_config, host_status, mount_point)?;
+        mount::mount_updated_volumes(host_config, host_status, mount_point)
+            .context("Failed to mount the updated volumes")?;
 
         Ok(())
     }

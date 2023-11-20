@@ -333,6 +333,22 @@ jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: "
 evans --host <target-ip-adddress> --proto path/to/trident/proto/trident.proto cli call --file command.json UpdateHost | jq -r .status
 ```
 
+## Running from container
+
+Trident can be run from a container. To build the container, run:
+
+```bash
+make docker-build
+```
+
+Update `/etc/trident/config.yaml` with the desired configuration.
+
+To run Trident using a docker container, run:
+
+```bash
+docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host --pid host trident/trident run
+```
+
 ## Contributing
 
 Please read our [CONTRIBUTING.md](CONTRIBUTING.md) which outlines all of our

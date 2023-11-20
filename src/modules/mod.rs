@@ -1,7 +1,6 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::Mutex,
 };
 
@@ -16,7 +15,11 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::{datastore::DataStore, protobufs::HostStatusState, TRIDENT_DATASTORE_PATH};
+use osutils::chroot;
+
+use crate::{
+    datastore::DataStore, modules::image::mount, protobufs::HostStatusState, TRIDENT_DATASTORE_PATH,
+};
 use crate::{
     modules::{
         image::ImageModule, management::ManagementModule, network::NetworkModule,
@@ -25,15 +28,14 @@ use crate::{
     HostUpdateCommand,
 };
 
-use self::storage::tabfile::TabFile;
-
 pub mod image;
 pub mod management;
-mod mount;
 pub mod network;
 pub mod osconfig;
 pub mod scripts;
 pub mod storage;
+
+const UPDATE_ROOT_PATH: &str = "/partitionMount";
 
 trait Module: Send {
     fn name(&self) -> &'static str;
@@ -134,10 +136,10 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
     // TODO: We should have a way to indicate which modules setup the root mount point, and which
     // depend on it being in place. Right now we just depend on the "storage" and "image" modules
     // being the first ones to run.
-    let mount_path = Path::new("/partitionMount");
+    let mount_path = Path::new(UPDATE_ROOT_PATH);
     migrate(&mut modules, state, host_config, mount_path)?;
 
-    let chroot = mount::enter_chroot(mount_path)?;
+    let chroot = chroot::enter_update_chroot(mount_path)?;
     state.persist(
         host_config
             .management
@@ -204,7 +206,17 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
 
     let update_kind = modules
         .iter()
-        .filter_map(|m| m.select_update_kind(state.host_status(), host_config))
+        .filter_map(|m| {
+            let update_kind = m.select_update_kind(state.host_status(), host_config);
+            if let Some(update_kind) = update_kind {
+                info!(
+                    "Module '{}' selected update kind: {:?}",
+                    m.name(),
+                    update_kind
+                );
+            }
+            update_kind
+        })
         .max();
     state.try_with_host_status(|s| {
         s.reconcile_state = match update_kind {
@@ -229,11 +241,11 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
     }
 
     let mut chroot = None;
-    let mount_path = Path::new("/partitionMount");
+    let mount_path = Path::new(UPDATE_ROOT_PATH);
 
     if let Some(UpdateKind::AbUpdate) = update_kind {
         migrate(&mut modules, state, host_config, mount_path)?;
-        chroot = Some(mount::enter_chroot(mount_path)?);
+        chroot = Some(chroot::enter_update_chroot(mount_path)?);
     }
 
     reconcile(&mut modules, state, host_config)?;
@@ -482,68 +494,6 @@ fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Er
     //
     // info!("Performing hard reboot");
     // image::reboot().context("Failed to perform hard reboot")
-}
-
-fn setup_root_chroot(
-    host_config: &HostConfiguration,
-    host_status: &HostStatus,
-    root_mount_path: &Path,
-) -> Result<(), Error> {
-    let update_fs_target = Path::new("update-fs.target");
-    let update_fstab_root = tempfile::tempdir().context("Failed to create temporary directory")?;
-    let update_fstab_path = update_fstab_root.path().join(Path::new("fstab"));
-    let systemd_unit_root_path = Path::new("/etc/systemd/system");
-
-    TabFile::from_mount_points(
-        host_status,
-        &host_config.storage.mount_points,
-        Some(root_mount_path),
-        Some(update_fs_target),
-    )
-    .context("Failed to generate bootstrap fstab")?
-    .write(update_fstab_path.as_path())
-    .context("Failed to write bootstrap fstab")?;
-
-    // Create custom target for the filesystems mounted for the update reconciliation.
-    fs::write(
-        systemd_unit_root_path.join(update_fs_target),
-        indoc::indoc! {r#"
-                [Unit]
-                Description=Update File Systems
-                DefaultDependencies=no
-                Conflicts=shutdown.target
-            "#}
-        .as_bytes(),
-    )
-    .context(format!(
-        "Failed to write {}",
-        update_fs_target.to_string_lossy()
-    ))?;
-
-    crate::run_command(
-        Command::new("/usr/lib/systemd/system-generators/systemd-fstab-generator")
-            .arg(systemd_unit_root_path)
-            .arg(systemd_unit_root_path)
-            .arg(systemd_unit_root_path)
-            .env("SYSTEMD_FSTAB", update_fstab_path)
-            .env("SYSTEMD_LOG_TARGET", "console")
-            .env("SYSTEMD_LOG_LEVEL", "debug"),
-    )
-    .context("Failed to reload systemd daemon")?;
-
-    crate::run_command(Command::new("systemctl").arg("daemon-reload"))
-        .context("Failed to reload systemd daemon")?;
-
-    let mount_result =
-        crate::run_command(Command::new("systemctl").arg("start").arg(update_fs_target))
-            .context("Failed to mount target filesystems");
-
-    if let Err(mount_result) = mount_result {
-        mount::unmount_target_volumes(root_mount_path)?;
-        return Err(mount_result);
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
