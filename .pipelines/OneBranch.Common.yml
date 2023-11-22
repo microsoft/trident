@@ -60,7 +60,7 @@ steps:
 
   - task: CopyFiles@2
     inputs:
-      sourceFolder: "$(Build.SourcesDirectory)/trident_api/docs"
+      sourceFolder: "${{ parameters.tridentSourceDirectory }}/trident_api/docs"
       targetFolder: "$(ob_outputDirectory)/trident_api_docs"
       contents: "**"
     displayName: Copy Trident API Docs to output
