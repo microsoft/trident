@@ -164,8 +164,13 @@ where
         ))?
         .try_for_each(|entry| {
             let path = entry.context("Failed to read entry")?.path();
-            std::fs::remove_file(&path)
-                .with_context(|| format!("Failed to remove file: {}", path.display()))
+            if path.is_dir() {
+                std::fs::remove_dir_all(&path)
+                    .with_context(|| format!("Failed to remove directory: {}", path.display()))
+            } else {
+                std::fs::remove_file(&path)
+                    .with_context(|| format!("Failed to remove file: {}", path.display()))
+            }
         })
 }
 
@@ -251,5 +256,75 @@ mod tests {
         "#};
         std::fs::write(&path, contents).unwrap();
         assert_eq!(read_file_trim(&path).unwrap(), "line 1");
+    }
+
+    #[test]
+    fn test_get_owner_uid() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.txt");
+        // Create a file, the owner should be the same as the current process
+        let _ = create_file(&path).unwrap();
+
+        // Yeah, this is silly, but it's the only way to get the current
+        // process' UID without using an external crate
+        assert_eq!(
+            get_owner_uid(path).unwrap(),
+            get_owner_uid("/proc/self").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_get_owner_gid() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.txt");
+        // Create a file, the owner should be the same as the current process
+        let _ = create_file(&path).unwrap();
+
+        // Yeah, this is silly, but it's the only way to get the current
+        // process' GID without using an external crate
+        assert_eq!(
+            get_owner_gid(&path).unwrap(),
+            get_owner_gid("/proc/self").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_clean_directory() {
+        let test_dir = tempdir().unwrap();
+
+        // Create a bunch of files in the tempdir
+        let files = (0..10)
+            .map(|i| test_dir.path().join(format!("test_file_{}", i)))
+            .collect::<Vec<PathBuf>>();
+        files.iter().for_each(|file| {
+            create_file(file).unwrap();
+        });
+
+        // Create a bunch of directories in the tempdir
+        let dirs = (0..10)
+            .map(|i| test_dir.path().join(format!("test_dir_{}", i)))
+            .collect::<Vec<PathBuf>>();
+        dirs.iter().for_each(|dir| {
+            create_dirs(dir).unwrap();
+            create_file(dir.join("test_file")).unwrap();
+        });
+
+        clean_directory(&test_dir).unwrap();
+
+        // Assert that the directory still exists
+        assert!(test_dir.path().exists(), "Directory should still exist");
+
+        // Assert that all files and directories are gone
+        files.iter().for_each(|file| {
+            assert!(!file.exists(), "File should not exist: {}", file.display());
+        });
+
+        dirs.iter().for_each(|dir| {
+            assert!(
+                !dir.exists(),
+                "Directory should not exist: {}",
+                dir.display()
+            );
+        });
     }
 }

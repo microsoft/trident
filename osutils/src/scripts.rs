@@ -52,20 +52,24 @@ impl OutputChecker for ScriptResult {
         "script"
     }
 
-    /// When output is merged, return the merged output
-    /// When output is separate, return stderr
-    /// When output is none, return an empty string
-    fn err_output(&self) -> String {
+    /// Get the error output of the script
+    ///
+    /// - When output is merged, return empty string, since there is no separate stderr.
+    /// - When output is separate, return stderr.
+    /// - When output is none, return an empty string.
+    fn error_output(&self) -> String {
         match self.output {
-            ScriptOutput::Combined(ref s) => s.clone(),
+            ScriptOutput::Combined(_) => "".into(),
             ScriptOutput::Separate { ref stderr, .. } => stderr.clone(),
             ScriptOutput::None => "".into(),
         }
     }
 
-    /// When output is merged, return the merged output
-    /// When output is separate, return stdout
-    /// When output is none, return an empty string
+    /// Get the output of the script
+    ///
+    /// - When output is merged, return the merged output
+    /// - When output is separate, return stdout
+    /// - When output is none, return an empty string
     fn output(&self) -> String {
         match self.output {
             ScriptOutput::Combined(ref s) => s.clone(),
