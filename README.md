@@ -146,6 +146,14 @@ composed of the following sections:
   on the runtime OS via the `enable-grpc` field within the Management section of
   the Host Configuration. TODO: implement and document authorization for
   accessing the gRPC endpoint.
+- **wait-for-provisioning-network**: USE WITH CAUTION!! IT WILL INCREASE BOOT
+  TIMES IF THE NETWORK CONFIGURATION IS NOT PERFECT. (Only affects clean
+  installs) When set to `true`, Trident will start
+  `systemd-networkd-wait-online` to wait for the provisioning network to be up
+  and configured before starting the provisioning flow. To avoid problems, only
+  configure interfaces you know should work and are required for provisioning.
+  Try to match by full name to avoid matching interfaces you don't want to. E.g.
+  `eth0` instead of `eth*` to avoid matching `eth1` and `eth2` as well.
 
 Additionally, to configure the host, the desired host configuration can be
 provided through either one of the following options:

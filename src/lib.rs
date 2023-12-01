@@ -250,8 +250,12 @@ impl Trident {
             .transpose()?;
 
         info!("Starting network");
-        start_provisioning_network(self.config.network_override.clone(), host_config.as_deref())
-            .context("Failed to start provisioning network")?;
+        start_provisioning_network(
+            self.config.network_override.clone(),
+            host_config.as_deref(),
+            self.config.wait_for_provisioning_network,
+        )
+        .context("Failed to start provisioning network")?;
 
         Ok(())
     }

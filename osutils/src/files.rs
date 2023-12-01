@@ -144,6 +144,31 @@ where
         .st_gid())
 }
 
+pub fn clean_directory<S>(path: S) -> Result<(), Error>
+where
+    S: AsRef<Path>,
+{
+    let path = path.as_ref();
+    if !path.exists() {
+        return Ok(());
+    }
+
+    if !path.is_dir() {
+        bail!("Path exists but is not a directory: {}", path.display());
+    }
+
+    std::fs::read_dir(path)
+        .context(format!(
+            "Failed to read contents of directory {}",
+            path.display()
+        ))?
+        .try_for_each(|entry| {
+            let path = entry.context("Failed to read entry")?.path();
+            std::fs::remove_file(&path)
+                .with_context(|| format!("Failed to remove file: {}", path.display()))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

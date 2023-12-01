@@ -4,6 +4,8 @@ use anyhow::{bail, Error};
 use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
 
+use crate::is_default;
+
 use super::host::HostConfiguration;
 
 /// Definition of Trident's full configuration.
@@ -33,6 +35,11 @@ pub struct LocalConfigFile {
     /// will be used otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_override: Option<NetworkConfig>,
+
+    /// Wait for the provisioning OS network to be up before starting the
+    /// clean install process.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub wait_for_provisioning_network: bool,
 
     /// A combination of flags representing allowed operations. This is a
     /// list of operations that Trident is allowed to perform on the host.

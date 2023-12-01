@@ -2,7 +2,7 @@
 Description=Trident Agent
 StartLimitInterval=200
 StartLimitBurst=5
-After=network.target systemd-udev-settle.service
+After=network.target network-online.target systemd-udev-settle.service trident-network.service
 
 [Service]
 Environment=RUST_LOG=info
