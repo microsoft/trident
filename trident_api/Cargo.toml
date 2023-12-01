@@ -20,6 +20,7 @@ indoc = "2.0.4"
 
 [features]
 schema = ["schemars", "serde_json"]
+dangerous-options = []
 
 [[bin]]
 name = "schema"

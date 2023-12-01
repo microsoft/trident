@@ -113,6 +113,7 @@ fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
             match root_user.ssh_mode {
                 SshMode::Block => "no",
                 SshMode::KeyOnly => "prohibit-password",
+                #[cfg(feature = "dangerous-options")]
                 SshMode::DangerousAllowPassword => "yes",
             }
         ));
@@ -138,24 +139,27 @@ fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
         buffer.push("DenyUsers *".to_owned());
     }
 
-    // List of users that are allowed to login through SSH with password
-    let pwd_users = users
-        .iter()
-        .filter_map(|(name, user)| match user.ssh_mode {
-            SshMode::Block | SshMode::KeyOnly => None,
-            SshMode::DangerousAllowPassword => Some(name.as_str()),
-        })
-        .collect::<Vec<_>>();
+    #[cfg(feature = "dangerous-options")]
+    {
+        // List of users that are allowed to login through SSH with password
+        let pwd_users = users
+            .iter()
+            .filter_map(|(name, user)| match user.ssh_mode {
+                SshMode::Block | SshMode::KeyOnly => None,
+                SshMode::DangerousAllowPassword => Some(name.as_str()),
+            })
+            .collect::<Vec<_>>();
 
-    // If there are any users that can login with password, add a config block for them
-    if !pwd_users.is_empty() {
-        buffer.push(format!(
-            r#"Match User {}
+        // If there are any users that can login with password, add a config block for them
+        if !pwd_users.is_empty() {
+            buffer.push(format!(
+                r#"Match User {}
     PasswordAuthentication yes
     KbdInteractiveAuthentication yes
         "#,
-            pwd_users.join(","),
-        ));
+                pwd_users.join(","),
+            ));
+        }
     }
 
     // Add a newline at the end
@@ -173,6 +177,7 @@ fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
 
 fn set_password(name: &str, password: Password) -> Result<(), Error> {
     match password {
+        #[cfg(feature = "dangerous-options")]
         Password::DangerousPlainText(password) => {
             warn!("Using plain text password for user {}", name);
             cmd!("chpasswd")
@@ -181,6 +186,7 @@ fn set_password(name: &str, password: Password) -> Result<(), Error> {
                 .check()
                 .context(format!("Failed to set password for user {}", name))?;
         }
+        #[cfg(feature = "dangerous-options")]
         Password::DangerousHashed(password) => {
             warn!("Using encrypted password for user {}", name);
             cmd!("chpasswd", "--encrypted")

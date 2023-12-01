@@ -452,48 +452,6 @@
             }
           },
           "additionalProperties": false
-        },
-        {
-          "title": "Plaintext Password",
-          "description": "Set the user's password to a plaintext value.",
-          "type": "object",
-          "required": [
-            "mode",
-            "value"
-          ],
-          "properties": {
-            "mode": {
-              "type": "string",
-              "enum": [
-                "dangerous-plain-text"
-              ]
-            },
-            "value": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "title": "Hashed Password",
-          "description": "Set the user's password to a hashed value.",
-          "type": "object",
-          "required": [
-            "mode",
-            "value"
-          ],
-          "properties": {
-            "mode": {
-              "type": "string",
-              "enum": [
-                "dangerous-hashed"
-              ]
-            },
-            "value": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
         }
       ]
     },
@@ -633,14 +591,6 @@
           "type": "string",
           "enum": [
             "key-only"
-          ]
-        },
-        {
-          "title": "Key and Password",
-          "description": "Enable SSH for this entity with KEY and PASSWORD.",
-          "type": "string",
-          "enum": [
-            "dangerous-allow-password"
           ]
         }
       ]

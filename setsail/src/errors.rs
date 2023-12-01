@@ -22,6 +22,7 @@ pub enum SetsailErrorType {
     UnexpectedEndOfFile(String),
     UnknownCommand(String),
     UnsupportedCommand(String),
+    DisallowedCommand(String),
     UnsuportedSection(String),
     UnsuportedFeature(String),
     SemanticError(String),
@@ -108,6 +109,13 @@ impl SetsailError {
         }
     }
 
+    pub fn new_disallowed_command(line: KSLine, command: String) -> Self {
+        Self {
+            line,
+            error: SetsailErrorType::DisallowedCommand(command),
+        }
+    }
+
     pub fn new_unsupported_feature(line: KSLine, feature: String) -> Self {
         Self {
             line,
@@ -184,6 +192,7 @@ impl std::fmt::Display for SetsailError {
             SetsailErrorType::UnexpectedEndOfFile(e) => write!(f, "Unexpected end of file: {e}"),
             SetsailErrorType::UnknownCommand(e) => write!(f, "Unrecognized command: \"{e}\""),
             SetsailErrorType::UnsupportedCommand(e) => write!(f, "Unsupported command: \"{e}\""),
+            SetsailErrorType::DisallowedCommand(e) => write!(f, "Disallowed command: \"{e}\""),
             SetsailErrorType::UnsuportedSection(e) => write!(f, "Unsuported section: \"{e}\""),
             SetsailErrorType::SemanticError(e) => write!(f, "Semantic error: {e}"),
             SetsailErrorType::SemanticWarning(e) => write!(f, "Semantic warning: {e}"),

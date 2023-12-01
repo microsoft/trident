@@ -63,11 +63,13 @@ pub enum Password {
     /// # Plaintext Password
     ///
     /// Set the user's password to a plaintext value.
+    #[cfg(feature = "dangerous-options")]
     DangerousPlainText(String),
 
     /// # Hashed Password
     ///
     /// Set the user's password to a hashed value.
+    #[cfg(feature = "dangerous-options")]
     DangerousHashed(String),
 }
 
@@ -89,5 +91,6 @@ pub enum SshMode {
     /// # Key and Password
     ///
     /// Enable SSH for this entity with KEY and PASSWORD.
+    #[cfg(feature = "dangerous-options")]
     DangerousAllowPassword,
 }
