@@ -7,7 +7,7 @@ use netplan_types::{
 use trident_api::config::{
     AbUpdate, AbVolumePair, Disk, HostConfiguration, Image, ImageFormat, Imaging, MountPoint,
     OsConfig, Partition, PartitionSize, PartitionTableType, PartitionType, RaidConfig, RaidLevel,
-    Script, SoftwareRaidArray, SshMode, Storage, User,
+    Script, Scripts, ServicingType, SoftwareRaidArray, SshMode, Storage, User,
 };
 
 fn main() {
@@ -161,12 +161,26 @@ fn build_host_configuration() -> HostConfiguration {
                 },
             )]),
         },
-        post_install_scripts: vec![Script {
-            content: "echo \"my-new-user ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/my-new-user"
-                .into(),
-            interpreter: None,
-            log_file_path: None,
-        }],
+        scripts: Scripts {
+            post_provision: vec![Script {
+                name: "sample-provision-script".into(),
+                servicing_type: vec![ServicingType::CleanInstall, ServicingType::AbUpdate],
+                content: "echo 'Post provision!'".into(),
+                log_file_path: Some("/var/log/sample-provision-script.log".into()),
+                ..Default::default()
+            }],
+            post_configure: vec![Script {
+                name: "sample-configure-script".into(),
+                servicing_type: vec![ServicingType::All],
+                content: "echo 'Post configuration!'".into(),
+                environment_variables: HashMap::from([(
+                    "SAMPLE_VARIABLE".into(),
+                    "sample-variable-value".into(),
+                )]),
+                log_file_path: Some("/var/log/sample-configure-script.log".into()),
+                ..Default::default()
+            }],
+        },
         ..Default::default()
     }
 }

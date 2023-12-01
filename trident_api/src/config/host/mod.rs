@@ -16,7 +16,7 @@ pub(super) mod storage;
 use imaging::Imaging;
 use management::Management;
 use osconfig::OsConfig;
-use scripts::Script;
+use scripts::Scripts;
 use storage::Storage;
 
 /// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
@@ -61,9 +61,9 @@ pub struct HostConfiguration {
     )]
     pub network: Option<NetworkConfig>,
 
-    /// Scripts to be run after the installation is complete.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub post_install_scripts: Vec<Script>,
+    /// Optional scripts to be run after different Trident stages have completed.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub scripts: Scripts,
 
     /// OS Configuration for the runtime OS.
     #[serde(default, skip_serializing_if = "is_default")]

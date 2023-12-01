@@ -46,12 +46,13 @@
         }
       ]
     },
-    "post-install-scripts": {
-      "description": "Scripts to be run after the installation is complete.",
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/Script"
-      }
+    "scripts": {
+      "description": "Optional scripts to be run after different Trident stages have completed.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Scripts"
+        }
+      ]
     },
     "storage": {
       "description": "Describes the storage configuration of the host.",
@@ -509,18 +510,27 @@
       ]
     },
     "Script": {
-      "description": "A script to be run by Trident at a specific stage.",
+      "description": "A script that can be run on the host during Trident stages.",
       "type": "object",
       "required": [
-        "content"
+        "content",
+        "name",
+        "servicing-type"
       ],
       "properties": {
         "content": {
           "description": "The contents of the script.",
           "type": "string"
         },
+        "environment-variables": {
+          "description": "Environment variables that are needed by the script. These will be set before running the script. UPDATE_KIND and TARGET_ROOT values are set by default to use.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "interpreter": {
-          "description": "Binary to run the script with.",
+          "description": "Binary to run the script with. The default is `/bin/sh`.",
           "type": "string",
           "nullable": true
         },
@@ -528,9 +538,52 @@
           "description": "Path of a file to write the script's output to.\n\nThis includes both stdout and stderr. The path and file will be created if they don't exist. If the file already exists, it will be truncated.",
           "type": "string",
           "nullable": true
+        },
+        "name": {
+          "description": "Name of the script.",
+          "type": "string"
+        },
+        "servicing-type": {
+          "description": "List of servicing_type to run the script with.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ServicingType"
+          }
         }
       },
       "additionalProperties": false
+    },
+    "Scripts": {
+      "description": "Scripts that can be run on the host during Trident stages. These scripts are run in the order they are defined. Ensure that the scripts are idempotent as they may be run multiple times.",
+      "type": "object",
+      "properties": {
+        "post-configure": {
+          "description": "Scripts to be run after Trident configuration stage is complete.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Script"
+          }
+        },
+        "post-provision": {
+          "description": "Scripts to be run after Trident provision stage is complete.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Script"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ServicingType": {
+      "description": "The type of servicing performed by Trident that a script should be run for.",
+      "type": "string",
+      "enum": [
+        "clean-install",
+        "normal-update",
+        "ab-update",
+        "update-and-reboot",
+        "all"
+      ]
     },
     "SoftwareRaidArray": {
       "description": "Software RAID configuration.\n\nThe RAID array will be created using the `mdadm` package. During a clean install, all the existing RAID arrays that are on disks defined in the host configuration will be unmounted, and stopped.\n\nThe RAID arrays that are defined in the host configuration will be created, and mounted if specified in `mount-points`.\n\nTo learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux.org/title/RAID)\n\nTo learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)",

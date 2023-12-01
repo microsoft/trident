@@ -1,4 +1,6 @@
 use std::{
+    collections::HashMap,
+    ffi::OsString,
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -96,13 +98,15 @@ pub enum ScriptOutput {
 /// For simple scripts, use `run_bash_script`.
 pub struct ScriptRunner {
     /// Interpreter to use
-    interpreter: PathBuf,
+    pub interpreter: PathBuf,
     /// The script file. We need to keep this around so that it doesn't get deleted.
-    script: String,
+    pub script: String,
     /// The path to the logfile
-    logfile: Option<PathBuf>,
+    pub logfile: Option<PathBuf>,
     /// Merge stderr into stdout
-    merge_stderr: bool,
+    pub merge_stderr: bool,
+    /// Environment variables to set for the script
+    pub env_vars: HashMap<OsString, OsString>,
 }
 
 impl ScriptRunner {
@@ -113,6 +117,7 @@ impl ScriptRunner {
             script: script.to_string(),
             logfile: None,
             merge_stderr: false,
+            env_vars: HashMap::new(),
         }
     }
 
@@ -140,6 +145,11 @@ impl ScriptRunner {
         self
     }
 
+    pub fn with_env_vars(mut self, env_vars: HashMap<OsString, OsString>) -> Self {
+        self.env_vars = env_vars;
+        self
+    }
+
     /// Merge stderr into stdout
     pub fn merge_stderr(mut self) -> Self {
         self.merge_stderr = true;
@@ -162,6 +172,9 @@ impl ScriptRunner {
         // Create command and set up the script file
         let mut cmd = Command::new(&self.interpreter);
         cmd.arg(script_file.path());
+
+        // Set environment variables
+        cmd.envs(&self.env_vars);
 
         let to_file = self.merge_stderr || self.logfile.is_some();
 
@@ -224,7 +237,7 @@ impl ScriptRunner {
     }
 }
 
-/// Writes a script to a temporary UNAMED file and returns the File.
+/// Writes a script to a temporary UNNAMED file and returns the File.
 fn write_script_to_file(script_body: &str) -> Result<File, Error> {
     let mut script_file =
         tempfile::tempfile().context("Failed to create temporary file for script")?;

@@ -24,17 +24,17 @@ use crate::{
 };
 use crate::{
     modules::{
-        image::ImageModule, management::ManagementModule, network::NetworkModule,
-        osconfig::OsConfigModule, scripts::PostInstallScriptsModule, storage::StorageModule,
+        hooks::HooksModule, image::ImageModule, management::ManagementModule,
+        network::NetworkModule, osconfig::OsConfigModule, storage::StorageModule,
     },
     HostUpdateCommand,
 };
 
+pub mod hooks;
 pub mod image;
 pub mod management;
 pub mod network;
 pub mod osconfig;
-pub mod scripts;
 pub mod storage;
 
 /// The path to the root of the freshly deployed (from provisioning OS) or
@@ -106,7 +106,7 @@ lazy_static::lazy_static! {
         Box::<NetworkModule>::default(),
         Box::<OsConfigModule>::default(),
         Box::<ManagementModule>::default(),
-        Box::<PostInstallScriptsModule>::default(),
+        Box::<HooksModule>::default(),
     ]);
 }
 

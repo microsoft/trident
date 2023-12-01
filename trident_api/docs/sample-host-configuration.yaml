@@ -89,8 +89,22 @@ network:
       match:
         name: enp*
       dhcp4: true
-post-install-scripts:
-- content: echo "my-new-user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/my-new-user
+scripts:
+  post-provision:
+  - name: sample-provision-script
+    servicing-type:
+    - clean-install
+    - ab-update
+    content: echo 'Post provision!'
+    log-file-path: /var/log/sample-provision-script.log
+  post-configure:
+  - name: sample-configure-script
+    servicing-type:
+    - all
+    content: echo 'Post configuration!'
+    log-file-path: /var/log/sample-configure-script.log
+    environment-variables:
+      SAMPLE_VARIABLE: sample-variable-value
 osconfig:
   users:
     my-new-user:
