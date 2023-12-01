@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc::{self, Sender, UnboundedSender};
 use trident_api::config::HostConfigurationSource;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
@@ -29,9 +29,23 @@ pub use logstream::Logstream;
 pub use multilog::MultiLogger;
 pub use orchestrate::OrchestratorConnection;
 
+/// Default Trident configuration file path.
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
+
+/// Path to a generated Trident configuration file. This is useful when
+/// running inside an ephemeral provisioning OS, as the original configuration
+/// file does not point to a Trident datastore, that contains information about
+/// HostStatus. The regenerated configuration file will point to the Trident
+/// datastore that has been generated as part of the initial provisioning process.
+pub const TRIDENT_GENERATED_CONFIG_PATH: &str = "/var/run/trident/config.yaml";
+
+/// Default Trident datastore path. Used from the runtime OS.
 pub const TRIDENT_DATASTORE_PATH: &str = "/var/lib/trident/datastore.sqlite";
+
+/// Trident binary path.
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
+
+/// Systemd unit root path.
 const SYSTEMD_UNIT_ROOT_PATH: &str = "/etc/systemd/system";
 
 mod protobufs {
@@ -91,7 +105,19 @@ pub struct Trident {
     server_runtime: Option<tokio::runtime::Runtime>,
 }
 impl Trident {
-    pub fn new(config_path: &Path, logstream: Logstream) -> Result<Self, Error> {
+    pub fn new(config_path: Option<PathBuf>, logstream: Logstream) -> Result<Self, Error> {
+        let config_path = match config_path {
+            Some(path) => path,
+            None => {
+                if Path::new(TRIDENT_GENERATED_CONFIG_PATH).exists() {
+                    info!("Using generated config file");
+                    PathBuf::from(TRIDENT_GENERATED_CONFIG_PATH)
+                } else {
+                    info!("Using default config file");
+                    PathBuf::from(TRIDENT_LOCAL_CONFIG_PATH)
+                }
+            }
+        };
         // Load the config file
         info!("Loading config from '{}'", config_path.display());
         let config_contents = fs::read_to_string(config_path)
@@ -313,6 +339,7 @@ impl Trident {
                 cmd.host_config.management.phonehome = self.config.phonehome.clone();
             }
 
+            // TODO: mount the overlay only if we actually need to perform an update
             let overlay = EphemeralOverlayWithSystemD::mount(Path::new(SYSTEMD_UNIT_ROOT_PATH));
             if let Err(e) = &overlay {
                 // we can continue, though if we need to rerun, there will be
@@ -353,6 +380,16 @@ impl Trident {
         if let Some(ref orchestrator) = orchestrator {
             orchestrator.report_success()
         }
+
+        Ok(())
+    }
+
+    pub fn print_host_status(&mut self) -> Result<(), Error> {
+        print!(
+            "{}",
+            serde_yaml::to_string(self.datastore.host_status())
+                .context("Failed to serialize HostStatus")?
+        );
 
         Ok(())
     }

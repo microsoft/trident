@@ -4,28 +4,35 @@ use anyhow::{bail, Context, Error};
 use clap::{Parser, Subcommand};
 use log::error;
 
-use trident::{Logstream, MultiLogger, TRIDENT_LOCAL_CONFIG_PATH};
+use trident::{Logstream, MultiLogger};
 
 use setsail::KsTranslator;
 
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
-    #[clap(global = true, short, long, default_value = TRIDENT_LOCAL_CONFIG_PATH)]
-    config: PathBuf,
+    #[clap(global = true, short, long)]
+    config: Option<PathBuf>,
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
 #[derive(Subcommand, Debug)]
 enum SubCommand {
+    /// Apply the HostConfiguration
     Run,
+
+    /// Configure OS networking based on Trident Configuration
     #[clap(name = "start-network")]
     StartNetwork,
+
+    /// Get the HostStatus
+    #[clap(name = "get-host-status")]
+    GetHostStatus,
+
+    /// Validates input KickStart file
     // TODO(5910): Remove this in the future
-    ParseKickstart {
-        file: String,
-    },
+    ParseKickstart { file: String },
 }
 
 fn run_trident(logstream: Logstream) -> Result<(), Error> {
@@ -51,11 +58,16 @@ fn run_trident(logstream: Logstream) -> Result<(), Error> {
         };
     }
 
-    let mut trident = trident::Trident::new(&args.config, logstream)?;
+    let mut trident = trident::Trident::new(args.config, logstream)?;
 
     match args.subcmd {
-        SubCommand::Run => trident.run()?,
-        SubCommand::StartNetwork => trident.start_network()?,
+        SubCommand::Run => trident
+            .run()
+            .context("Failed to execute Trident run command")?,
+        SubCommand::StartNetwork => trident.start_network().context("Failed to start network")?,
+        SubCommand::GetHostStatus => trident
+            .print_host_status()
+            .context("Failed to retrieve Host Status")?,
 
         // TODO(5910): Remove this in the future
         SubCommand::ParseKickstart { .. } => unreachable!(),

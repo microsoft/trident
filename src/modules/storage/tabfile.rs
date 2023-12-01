@@ -8,7 +8,10 @@ use std::{
 use anyhow::{bail, Context, Error};
 use serde_json::Value;
 
-use trident_api::{config::MountPoint, status::HostStatus};
+use trident_api::{
+    config::MountPoint,
+    status::{BlockDeviceContents, HostStatus},
+};
 
 use crate::modules;
 
@@ -18,15 +21,24 @@ pub(crate) struct TabFile {
 
 pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
+#[derive(Default)]
+pub(crate) struct TabFileSettings<'a> {
+    pub(crate) path_prefix: Option<&'a path::Path>,
+    pub(crate) required_by: Option<&'a path::Path>,
+    pub(crate) make_fs: bool,
+    pub(crate) grow_fs: bool,
+    pub(crate) read_only: bool,
+}
+
 impl TabFile {
     pub(crate) fn from_mount_points(
         host_status: &HostStatus,
         mount_points: &Vec<MountPoint>,
-        path_prefix: Option<&path::Path>,
-        required_by: Option<&path::Path>,
+        settings: &TabFileSettings,
     ) -> Result<Self, Error> {
         let mut tab_file_lines = Vec::new();
-        let extra_options = required_by
+        let extra_options = settings
+            .required_by
             .map(|rb| {
                 rb.to_str()
                     .context(format!("Failed to convert path {:?} to string", rb))
@@ -39,12 +51,40 @@ impl TabFile {
                 ]
             });
         for mp in mount_points {
+            // Don't create filesystems for image partitions
+            // TODO account for abvolumepairs
+            let make_fs = settings.make_fs
+                && !host_status.storage.disks.iter().any(|d| {
+                    d.1.partitions.iter().any(|p| {
+                        p.id == mp.target_id
+                            && matches!(p.contents, BlockDeviceContents::Image { .. })
+                    })
+                });
             if mp.path.starts_with("/") {
-                let tab_file_line =
-                    Self::mount_point_to_line(host_status, mp, &path_prefix, &extra_options)?;
-                tab_file_lines.push(tab_file_line);
-            } else if path_prefix.is_none() {
-                tab_file_lines.push(Self::mount_point_to_line(host_status, mp, &None, &None)?);
+                tab_file_lines.push(Self::mount_point_to_line(
+                    host_status,
+                    mp,
+                    &settings.path_prefix,
+                    &extra_options,
+                    make_fs,
+                    settings.grow_fs,
+                    settings.read_only,
+                )?);
+            } else if mp.filesystem == super::SWAP_FILESYSTEM && !settings.read_only {
+                // systemd does not create swap as a dependency of the
+                // update-fs.target during provisioning OS, so ensure that swap
+                // gets eventually initialized by forcing make_fs to true. Since
+                // this case only handles swap which is initialized from
+                // scratch, no need to worry about growing it.
+                tab_file_lines.push(Self::mount_point_to_line(
+                    host_status,
+                    mp,
+                    &None,
+                    &extra_options,
+                    true,
+                    false,
+                    settings.read_only,
+                )?);
             }
         }
         Ok(Self {
@@ -93,6 +133,9 @@ impl TabFile {
         mp: &MountPoint,
         path_prefix: &Option<&path::Path>,
         extra_options: &Option<Vec<String>>,
+        make_fs: bool,
+        grow_fs: bool,
+        read_only: bool,
     ) -> Result<String, Error> {
         let mount_device_path = modules::get_block_device(host_status, &mp.target_id, false)
             .context(format!(
@@ -122,14 +165,15 @@ impl TabFile {
         let mut options = mp.options.clone();
         // add makefs option to make sure filesystem is created if it does not
         // exist
-        // TODO support skipping makefs if we are placing an image onto the
-        // partition anyway
-        if !options.contains(&"x-systemd.makefs".to_owned()) {
+        if make_fs && !options.contains(&"x-systemd.makefs".to_owned()) {
             options.push("x-systemd.makefs".to_owned());
         }
         // TODO extend the fs list
-        if !options.contains(&"x-systemd.growfs".to_owned()) && filesystem == "ext4" {
+        if grow_fs && !options.contains(&"x-systemd.growfs".to_owned()) && filesystem == "ext4" {
             options.push("x-systemd.growfs".to_owned());
+        }
+        if read_only && !options.contains(&"ro".to_owned()) {
+            options.push("ro".to_owned());
         }
         if let Some(extra_options) = extra_options {
             options.extend(extra_options.iter().cloned());
@@ -190,7 +234,7 @@ mod tests {
         status::HostStatus,
     };
 
-    use crate::modules::storage::tabfile::TabFile;
+    use crate::modules::storage::tabfile::{TabFile, TabFileSettings};
 
     /// Validates /etc/fstab line generation logic.
     #[test]
@@ -250,7 +294,10 @@ mod tests {
                     target_id: "efi".to_owned(),
                 },
                 &None,
-                &None
+                &None,
+                true,
+                true,
+                false
             )
             .unwrap(),
             "/dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077,x-systemd.makefs 0 2"
@@ -266,10 +313,13 @@ mod tests {
                     target_id: "root".to_owned(),
                 },
                 &None,
-                &None
+                &None,
+                true,
+                true,
+                true,
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,x-systemd.makefs,x-systemd.growfs 0 1"
+            "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,x-systemd.makefs,x-systemd.growfs,ro 0 1"
         );
 
         assert_eq!(
@@ -282,7 +332,10 @@ mod tests {
                     target_id: "root".to_owned(),
                 },
                 &None,
-                &None
+                &None,
+                true,
+                true,
+                false
             )
             .unwrap(),
             "/dev/disk/by-partlabel/osp2 / vfat errors=remount-ro,x-systemd.makefs 0 1"
@@ -298,10 +351,13 @@ mod tests {
                     target_id: "home".to_owned(),
                 },
                 &None,
-                &None
+                &None,
+                true,
+                false,
+                false
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs,x-systemd.growfs 0 2"
+            "/dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2"
         );
 
         assert!(TabFile::mount_point_to_line(
@@ -313,7 +369,10 @@ mod tests {
                 target_id: "foobar".to_owned(),
             },
             &None,
-            &None
+            &None,
+            true,
+            true,
+            false
         )
         .is_err());
 
@@ -327,7 +386,10 @@ mod tests {
                     target_id: "swap".to_owned(),
                 },
                 &None,
-                &None
+                &None,
+                true,
+                true,
+                false
             )
             .unwrap(),
             "/dev/disk/by-partlabel/swap none swap sw,x-systemd.makefs 0 0"
@@ -342,7 +404,10 @@ mod tests {
                 target_id: "swap".to_owned(),
             },
             &Some(Path::new("/mnt")),
-            &Some(vec!["foobar".to_owned()])
+            &Some(vec!["foobar".to_owned()]),
+            true,
+            true,
+            false
         )
         .is_err());
 
@@ -352,14 +417,17 @@ mod tests {
                 &MountPoint {
                     path: PathBuf::from("/home"),
                     filesystem: "ext4".to_owned(),
-                    options: vec!["defaults".to_owned(), "x-systemd.makefs".to_owned()],
+                    options: vec!["defaults".to_owned()],
                     target_id: "home".to_owned(),
                 },
                 &Some(Path::new("/mnt")),
-                &Some(vec!["foobar".to_owned()])
+                &Some(vec!["foobar".to_owned()]),
+                false,
+                true,
+                false
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.growfs,foobar 0 2"
+            "/dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.growfs,foobar 0 2"
         );
     }
 
@@ -367,14 +435,21 @@ mod tests {
     fn test_from_mount_points() {
         let expected_fstab = indoc! {r#"
             /dev/disk/by-partlabel/osp1 /mnt/boot/efi vfat umask=0077,x-systemd.makefs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
-            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.makefs,x-systemd.growfs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
+            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.growfs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
             /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.growfs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
+            /dev/disk/by-partlabel/swap none swap sw,x-systemd.makefs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 0
+        "#};
+
+        let expected_fstab3 = indoc! {r#"
+            /dev/disk/by-partlabel/osp1 /mnt/boot/efi vfat umask=0077,x-systemd.makefs,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
+            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.growfs,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
+            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.growfs,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
         "#};
 
         let expected_fstab2 = indoc! {r#"
-            /dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077,x-systemd.makefs 0 2
-            /dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,x-systemd.makefs,x-systemd.growfs 0 1
-            /dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs,x-systemd.growfs 0 2
+            /dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2
+            /dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro 0 1
+            /dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2
             /dev/disk/by-partlabel/swap none swap sw,x-systemd.makefs 0 0
         "#};
 
@@ -452,7 +527,10 @@ mod tests {
                             uuid: 00000000-0000-0000-0000-000000000000
                           - id: root
                             path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
+                            contents: !image
+                              sha256: 2cb228bc3bbbc2174585327b255a7196075559ecd0c49bf710dfd5432af8f9ec
+                              length: 738484224
+                              url: file:///root.raw.zst
                             start: 0
                             end: 0
                             type: root
@@ -482,8 +560,13 @@ mod tests {
             TabFile::from_mount_points(
                 &host_status,
                 &host_config.storage.mount_points,
-                Some(Path::new("/mnt")),
-                Some(Path::new("update-fs.target"))
+                &TabFileSettings {
+                    path_prefix: Some(Path::new("/mnt")),
+                    required_by: Some(Path::new("update-fs.target")),
+                    make_fs: true,
+                    grow_fs: true,
+                    ..Default::default()
+                },
             )
             .unwrap()
             .tab_file_contents
@@ -492,9 +575,33 @@ mod tests {
         );
 
         assert_eq!(
-            TabFile::from_mount_points(&host_status, &host_config.storage.mount_points, None, None)
-                .unwrap()
-                .tab_file_contents
+            TabFile::from_mount_points(
+                &host_status,
+                &host_config.storage.mount_points,
+                &TabFileSettings {
+                    path_prefix: Some(Path::new("/mnt")),
+                    required_by: Some(Path::new("update-fs.target")),
+                    make_fs: true,
+                    grow_fs: true,
+                    read_only: true,
+                }
+            )
+            .unwrap()
+            .tab_file_contents
+                + "\n",
+            expected_fstab3
+        );
+
+        assert_eq!(
+            TabFile::from_mount_points(
+                &host_status,
+                &host_config.storage.mount_points,
+                &TabFileSettings {
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+            .tab_file_contents
                 + "\n",
             expected_fstab2
         );

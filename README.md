@@ -13,6 +13,32 @@ Deployment and update Agent for Mariner OS, allowing for inplace image
 deployments and atomic updates. Initial focus is on Bare Metal deployments, but
 can be leveraged outside of that as well.
 
+## Contents
+
+- [Trident](#trident)
+  - [Contents](#contents)
+  - [Docs](#docs)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Building and Validating](#building-and-validating)
+    - [Updating Documentation](#updating-documentation)
+  - [Running Trident](#running-trident)
+  - [Trident Configuration](#trident-configuration)
+  - [Host Configuration](#host-configuration)
+    - [Documentation](#documentation)
+    - [Schema](#schema)
+    - [Sample](#sample)
+  - [A/B Update](#ab-update)
+    - [Getting Started with Systemd-Sysupdate](#getting-started-with-systemd-sysupdate)
+    - [TODO: Next Steps](#todo-next-steps)
+  - [gRPC Interface](#grpc-interface)
+  - [Running from container](#running-from-container)
+  - [Contributing](#contributing)
+  - [Versioning and changelog](#versioning-and-changelog)
+  - [Authors](#authors)
+  - [License](#license)
+  - [Acknowledgments](#acknowledgments)
+
 ## Docs
 
 - [BOM Agnostic Single Node Provisioning
@@ -42,7 +68,7 @@ instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/REA
   make install-json-schema-for-humans
   ```
 
-### Building and validating
+### Building and Validating
 
 Build instructions: `cargo build`.
 
@@ -52,7 +78,7 @@ Code coverage: `make coverage`.
 
 Rebuild trident_api documentation: `make build-api-docs`.
 
-### Updating documentation
+### Updating Documentation
 
 After any change to trident_api, the documentation needs to be regenerated. Run:
 
@@ -60,7 +86,28 @@ After any change to trident_api, the documentation needs to be regenerated. Run:
 make build-api-docs
 ```
 
-## Trident configuration
+## Running Trident
+
+Trident can be automatically started using SystemD (see the [service
+definitions](systemd)) or directly started manually. Trident support the
+following commands (input as a command line parameter):
+
+- `start-network`: Uses the `network` or `network-override` configuration (see below for
+  details, loaded from `/etc/trident/config.yaml`) to configure networking in
+  the currently running OS. This is mainly use to startup network during initial
+  provisioning when default DHCP configuration is not sufficient.
+- `run`: Runs Trident in the current OS. This is the main command to use to
+  start Trident. Trident will load its configuration from
+  `/etc/trident/config.yaml` and start applying the desired HostConfiguration.
+- `get-host-status`: At any point in time, you can request to get the current Host
+  Status using this command. This will print the HostStatus to standard output.
+
+For any of the commands, you can get more context by setting `RUST_LOG=debug`
+environment variable prior to running the command.
+
+Note that you can override the configuration path by setting the `--config` parameter.
+
+## Trident Configuration
 
 This configuration file is used by the Trident agent to configure itself. It is
 composed of the following sections:
@@ -139,13 +186,12 @@ The raw JSON Schema for Host configuration is here: [trident_api/docs/trident-ap
 
 An example Host Configuration YAML file is available here: [trident_api/docs/sample-host-configuration.yaml](trident_api/docs/sample-host-configuration.yaml)
 
-## AB Update
+## A/B Update
 
 Currently, **a basic A/B update flow via systemd-sysupdate** is available with
 Trident. The users are able to update the **root** partition and write to
 **esp** partition that is part of an A/B volume pair. Other types of partitions
 will be eligible for A/B update in a later iteration.
-
 
 ### Getting Started with Systemd-Sysupdate
 
@@ -216,8 +262,8 @@ requirements per the systemd-sysupdate flow:
    version. E.g., a convenient naming scheme could be the following:
    `<partition label/type>_v<version number>.raw.xz` For partition labels, it is
    recommended to use GPT partition type identifiers, as defined in the Type
-   section of systemd repart.d manual:
-   https://www.man7.org/linux/man-pages/man5/repart.d.5.html.
+   section of [systemd repart.d
+   manual](https://www.man7.org/linux/man-pages/man5/repart.d.5.html).
 
    4) The Imaging section in the sample HostConfiguration provided above can be
    set in the following way, to request url-file images for the runtime OS:
@@ -288,6 +334,7 @@ and that the correct block devices have been mounted at the designated
 mountpoints, such as /boot/efi and /.
 
 ### TODO: Next Steps
+
 - After A/B update, Trident will be creating an **overlay** file system for the
 data/state partitions. This is required so that certain folders, as required by
 the user, can be read from and/or written to.
@@ -364,7 +411,7 @@ updated as part of a pull request.
 
 ## Authors
 
-yashpanchal@microsoft.com - RAID support
+[yashpanchal@microsoft.com](mailto:yashpanchal@microsoft.com) - RAID support
 
 ## License
 

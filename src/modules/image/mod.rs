@@ -477,7 +477,7 @@ pub fn kexec(mount_path: &Path, args: &str) -> Result<(), Error> {
     drop(initrd);
     nix::unistd::sync();
 
-    mount::unmount_target_volumes(mount_path)?;
+    mount::unmount_updated_volumes(mount_path)?;
 
     // Kexec into image.
     info!("Rebooting system");
@@ -653,7 +653,7 @@ impl Module for ImageModule {
         }
 
         update_images(host_status, host_config).context("Failed to update filesystem images")?;
-        mount::mount_updated_volumes(host_config, host_status, mount_point)
+        mount::mount_updated_volumes(host_config, host_status, mount_point, false)
             .context("Failed to mount the updated volumes")?;
 
         Ok(())

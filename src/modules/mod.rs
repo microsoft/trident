@@ -1,5 +1,6 @@
 use std::{
     fs,
+    os::unix,
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -18,7 +19,8 @@ use trident_api::{
 use osutils::chroot;
 
 use crate::{
-    datastore::DataStore, modules::image::mount, protobufs::HostStatusState, TRIDENT_DATASTORE_PATH,
+    datastore::DataStore, modules::image::mount, protobufs::HostStatusState,
+    TRIDENT_DATASTORE_PATH, TRIDENT_GENERATED_CONFIG_PATH,
 };
 use crate::{
     modules::{
@@ -35,7 +37,17 @@ pub mod osconfig;
 pub mod scripts;
 pub mod storage;
 
+/// The path to the root of the freshly deployed (from provisioning OS) or
+/// updated OS (from runtime OS).
 const UPDATE_ROOT_PATH: &str = "/partitionMount";
+
+/// The path for mount point of the freshly deployed OS. Used for accessing the
+/// Trident datastore from the provisioning OS.
+const TRIDENT_UPDATED_VOLUME_PATH: &str = "/var/run/trident/root";
+
+/// The path for the Trident datastore on the freshly deployed OS. Used for accessing the
+/// Trident datastore from the provisioning OS.
+const TRIDENT_UPDATED_DATASTORE_PATH: &str = "/var/run/trident/datastore.sqlite";
 
 trait Module: Send {
     fn name(&self) -> &'static str;
@@ -105,6 +117,7 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
         mut sender,
     } = command;
 
+    // TODO: needs to be refactored once we have a way to preserve existing partitions
     // This is a safety check so that nobody accidentally formats their dev machine.
     if !fs::read_to_string("/proc/cmdline")
         .context("Failed to read /proc/cmdline")?
@@ -140,13 +153,13 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
     migrate(&mut modules, state, host_config, mount_path)?;
 
     let chroot = chroot::enter_update_chroot(mount_path)?;
-    state.persist(
-        host_config
-            .management
-            .datastore_path
-            .as_deref()
-            .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH)),
-    )?;
+    let datastore_path = host_config
+        .management
+        .datastore_path
+        .as_deref()
+        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
+    state.persist(datastore_path)?;
+
     reconcile(&mut modules, state, host_config)?;
 
     let root_device_path = get_root_block_device_path(state.host_status())
@@ -167,7 +180,28 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
 
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
-        mount::unmount_target_volumes(mount_path).context("Failed to unmount target volumes")?;
+        mount::unmount_updated_volumes(mount_path).context("Failed to unmount target volumes")?;
+
+        // Store the generated config on the current root partition so that it can
+        // be used later if need be prior to rebooting.
+
+        // To keep access to the datastore, we will mount the updated OS volumes
+        // readonly
+        // TODO unmount if we are rerunning the provisioning
+        let updated_root_path = Path::new(TRIDENT_UPDATED_VOLUME_PATH);
+        mount::mount_updated_volumes(host_config, state.host_status(), updated_root_path, true)
+            .context("Failed to mount target volumes")?;
+        let updated_datastore_path =
+            Path::new(TRIDENT_UPDATED_VOLUME_PATH).join(datastore_path.strip_prefix("/")?);
+        unix::fs::symlink(&updated_datastore_path, TRIDENT_UPDATED_DATASTORE_PATH)
+            .context("Failed to link to persisted datastore")?;
+        // Finally create a trident config pointing to the persisted datastore
+        management::create_trident_config(
+            updated_datastore_path.as_path(),
+            host_config,
+            Path::new(TRIDENT_GENERATED_CONFIG_PATH),
+        )?;
+
         return Ok(());
     }
 
@@ -273,7 +307,7 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
 
             if !allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
-                mount::unmount_target_volumes(mount_path)
+                mount::unmount_updated_volumes(mount_path)
                     .context("Failed to unmount target volumes")?;
                 return Ok(());
             }

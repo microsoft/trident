@@ -17,10 +17,14 @@ use crate::modules::Module;
 use systemd_repart::RepartConfiguration;
 
 use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
+
+use self::tabfile::TabFileSettings;
 mod raid;
 mod sfdisk;
 mod systemd_repart;
 pub mod tabfile;
+
+const SWAP_FILESYSTEM: &str = "swap";
 
 fn create_partitions(
     host_status: &mut HostStatus,
@@ -250,6 +254,13 @@ impl Module for StorageModule {
             }
         }
 
+        // Test for expected mount point configurations
+        for mount_point in &host_config.storage.mount_points {
+            if !mount_point.path.starts_with("/") && mount_point.filesystem != SWAP_FILESYSTEM {
+                bail!("Mount point path must be absolute or the filesystem has to be 'swap'");
+            }
+        }
+
         Ok(())
     }
 
@@ -283,10 +294,16 @@ impl Module for StorageModule {
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        TabFile::from_mount_points(host_status, &host_config.storage.mount_points, None, None)
-            .context("Failed to serialize mount point configuration for the target OS")?
-            .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
-            .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
+        TabFile::from_mount_points(
+            host_status,
+            &host_config.storage.mount_points,
+            &TabFileSettings {
+                ..Default::default()
+            },
+        )
+        .context("Failed to serialize mount point configuration for the target OS")?
+        .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
+        .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
 
         host_status.storage.mount_points = host_config
             .storage

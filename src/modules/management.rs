@@ -109,24 +109,38 @@ impl Module for ManagementModule {
             .as_deref()
             .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
 
-        let trident_config = LocalConfigFile::default()
-            .with_datastore(DatastoreConfiguration::Load {
-                load_path: datastore_path.to_path_buf(),
-            })
-            .with_phonehome(host_config.management.phonehome.clone())
-            .with_grpc(if host_config.management.enable_grpc {
-                Some(Default::default())
-            } else {
-                None
-            })
-            .with_host_configuration(host_config.clone());
-        fs::write(
-            TRIDENT_LOCAL_CONFIG_PATH,
-            serde_yaml::to_string(&trident_config).context("Failed to serialize trident config")?,
-        )
-        .context("Failed to write trident local config")?;
+        create_trident_config(
+            datastore_path,
+            host_config,
+            Path::new(TRIDENT_LOCAL_CONFIG_PATH),
+        )?;
         Ok(())
     }
+}
+
+pub(super) fn create_trident_config(
+    datastore_path: &Path,
+    host_config: &HostConfiguration,
+    trident_config_path: &Path,
+) -> Result<(), Error> {
+    let trident_config = LocalConfigFile::default()
+        .with_datastore(DatastoreConfiguration::Load {
+            load_path: datastore_path.to_path_buf(),
+        })
+        .with_phonehome(host_config.management.phonehome.clone())
+        .with_grpc(if host_config.management.enable_grpc {
+            Some(Default::default())
+        } else {
+            None
+        })
+        .with_host_configuration(host_config.clone());
+    fs::write(
+        trident_config_path,
+        serde_yaml::to_string(&trident_config).context("Failed to serialize trident config")?,
+    )
+    .context("Failed to write trident local config")?;
+
+    Ok(())
 }
 
 fn validate_datastore_location(

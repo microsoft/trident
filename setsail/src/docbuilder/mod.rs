@@ -64,7 +64,7 @@ impl DocBuilder {
         self.tera
             .render(
                 "docs.md.jinja2",
-                &Context::from_serialize(&model).expect("Could not serialize data model"),
+                &Context::from_serialize(model).expect("Could not serialize data model"),
             )
             .expect("Failed to render template")
     }
