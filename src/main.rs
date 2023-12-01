@@ -17,7 +17,7 @@ struct Args {
     subcmd: SubCommand,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, PartialEq, Eq)]
 enum SubCommand {
     /// Apply the HostConfiguration
     Run,
@@ -35,7 +35,7 @@ enum SubCommand {
     ParseKickstart { file: String },
 }
 
-fn run_trident(logstream: Logstream) -> Result<(), Error> {
+fn run_trident(mut logstream: Logstream) -> Result<(), Error> {
     let args = Args::parse();
 
     // TODO(5910): Remove this in the future
@@ -56,6 +56,12 @@ fn run_trident(logstream: Logstream) -> Result<(), Error> {
                 bail!("Failed to translate kickstart");
             }
         };
+    }
+
+    // Lock the logstream if we're starting the network
+    // We have no network yet, so we can't send logs anywhere
+    if args.subcmd == SubCommand::StartNetwork {
+        logstream.disable();
     }
 
     let mut trident = trident::Trident::new(args.config, logstream)?;
