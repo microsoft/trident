@@ -144,6 +144,8 @@ pub struct RaidArray {
     pub path: PathBuf,
     /// System generated symlink path to the raid array. For example, /dev/md0
     pub raid_symlink_path: PathBuf,
+    /// UUID of the RAID device
+    pub uuid: Uuid,
     /// RAID array contents.
     pub contents: BlockDeviceContents,
 }

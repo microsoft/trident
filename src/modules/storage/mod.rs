@@ -7,7 +7,7 @@ use std::{
     process::Command,
 };
 use trident_api::{
-    config::{HostConfiguration, MountPoint, Partition},
+    config::{HostConfiguration, MountPoint, Partition, PartitionSize},
     status::{self, BlockDeviceContents, HostStatus, UpdateKind},
     BlockDeviceId,
 };
@@ -186,13 +186,18 @@ impl Module for StorageModule {
             )?;
         }
 
+        let raid_ids: HashSet<String> = get_raid_array_ids(host_config);
+
         // Ensure valid references.
         if let Some(ab_update) = &host_config.imaging.ab_update {
             for p in &ab_update.volume_pairs {
                 for block_device_id in [&p.volume_a_id, &p.volume_b_id] {
-                    if !partition_ids_set.contains(block_device_id) {
+                    if !partition_ids_set.contains(block_device_id)
+                        && !raid_ids.contains(block_device_id)
+                    {
                         bail!(
-                            "Block device id '{id}' was set as dependency of an A/B update volume '{parent}', but is not defined elsewhere",
+                            "Block device id '{id}' was set as dependency of an A/B update volume '{parent}', 
+                            but is not defined as a partition or a RAID device",
                             id = block_device_id,
                             parent = p.id,
                         );
@@ -200,8 +205,6 @@ impl Module for StorageModule {
                 }
             }
         }
-
-        let raid_ids: HashSet<String> = get_raid_array_ids(host_config);
 
         for image in &host_config.imaging.images {
             if !image_target_ids.contains(&image.target_id) {
@@ -244,12 +247,25 @@ impl Module for StorageModule {
         // Check that devices are valid partitions and only part of a single RAID array
         let mut raid_devices = HashSet::<BlockDeviceId>::new();
         for software_raid_config in &host_config.storage.raid.software {
+            let mut device_sizes = Vec::<PartitionSize>::new();
+
             for device_id in &software_raid_config.devices {
-                if get_partition_from_host_config(host_config, device_id).is_none() {
-                    bail!("Device id '{device_id}' was set as dependency of a RAID array, but is not a valid partition");
-                }
+                let partition = match get_partition_from_host_config(host_config, device_id) {
+                    Some(partition) => partition,
+                    None => bail!("Device id '{device_id}' was set as dependency of a RAID array, but is not a valid partition"),
+                };
+
                 if !raid_devices.insert(device_id.clone()) {
                     bail!("Block device '{device_id}' cannot be part of multiple RAID arrays");
+                }
+
+                device_sizes.push(partition.size.clone());
+
+                if device_sizes.iter().min() != device_sizes.iter().max() {
+                    bail!(
+                        "RAID array {} has underlying devices with different sizes",
+                        software_raid_config.id
+                    );
                 }
             }
         }
@@ -464,6 +480,21 @@ mod tests {
                       - id: part2
                         type: root
                         size: 1G
+                      - id: part3
+                        type: root
+                        size: 1G
+                      - id: part4
+                        type: root
+                        size: 1G
+                raid:
+                  software:
+                    - id: my-raid1
+                      name: my-raid
+                      level: raid1
+                      metadata-version: 1.2
+                      devices:
+                        - part3
+                        - part4
                 mount-points:
                   - filesystem: ext4
                     options: []
@@ -543,6 +574,12 @@ mod tests {
         // fail on bad block device type
         host_config.imaging.images[0].target_id = "disk1".to_owned();
 
+        assert!(storage_module
+            .validate_host_config(&empty_host_status, &host_config)
+            .is_err());
+
+        // fail if devices are not all the same size for a RAID
+        host_config.storage.disks[1].partitions[3].size = PartitionSize::from_str("2G").unwrap();
         assert!(storage_module
             .validate_host_config(&empty_host_status, &host_config)
             .is_err());

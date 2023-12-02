@@ -17,7 +17,7 @@ use trident_api::{
     config::{HostConfiguration, Image, ImageFormat},
     status::{
         AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk,
-        HostStatus, Partition, ReconcileState, UpdateKind,
+        HostStatus, Partition, RaidArray, ReconcileState, UpdateKind,
     },
     BlockDeviceId,
 };
@@ -335,6 +335,13 @@ fn get_partition_mut<'a>(
         .find(|p| p.id == *block_device_id)
 }
 
+fn get_raid_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut RaidArray> {
+    host_status.storage.raid_arrays.get_mut(block_device_id)
+}
+
 fn set_host_status_block_device_contents(
     host_status: &mut HostStatus,
     block_device_id: &BlockDeviceId,
@@ -365,6 +372,11 @@ fn set_host_status_block_device_contents(
                 );
             }
         }
+    }
+
+    if let Some(raid) = get_raid_mut(host_status, block_device_id) {
+        raid.contents = contents;
+        return Ok(());
     }
 
     anyhow::bail!("No block device with id '{}' found", block_device_id);

@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Error};
+use duct::cmd;
 use log::{info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -18,8 +19,10 @@ use trident_api::{
     status::{self, HostStatus, RaidArrayStatus, RaidType},
     BlockDeviceId,
 };
+use uuid::Uuid;
 
 use osutils::exe::OutputChecker;
+
 pub(super) const RAID_SYNC_TIMEOUT_SECS: u64 = 180;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
@@ -127,8 +130,6 @@ pub(super) fn get_raid_details(
     let md_folder = PathBuf::from(format!("/sys/devices/virtual/block/{}/md", device_name));
 
     let array_state = osutils::files::read_file_trim(&md_folder.join("array_state"))?;
-    let component_size =
-        osutils::files::read_file_trim(&md_folder.join("component_size"))?.parse::<u64>()?;
     let raid_disks = osutils::files::read_file_trim(&md_folder.join("raid_disks"))?;
     let raid_uuid = osutils::files::read_file_trim(&md_folder.join("uuid"))?;
     let raid_level = &config.level;
@@ -139,6 +140,11 @@ pub(super) fn get_raid_details(
     let raid_path = PathBuf::from(format!("/dev/md/{}", raid_array_name));
     let device_paths =
         get_device_paths(host_status, devices).context("Failed to get device paths")?;
+
+    let component_size = osutils::files::read_file_trim(&md_folder.join("component_size"))?;
+
+    // TODO(6331): fins a better way to get the size of the RAID array
+    let array_size = component_size.parse::<u64>()? * 1024;
 
     let raid_detail = RaidDetail {
         id: raid_id.clone(),
@@ -151,7 +157,7 @@ pub(super) fn get_raid_details(
         state: RaidState::from_str(&array_state)?,
         num_devices: raid_disks.parse::<u32>()?,
         metadata_version: metadata_version.clone(),
-        size: component_size,
+        size: array_size,
     };
 
     Ok(raid_detail)
@@ -207,6 +213,11 @@ pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> 
                 .context("Failed to create mdadm config file")?;
             fs::write(Path::new(mdadm_config_file_path), output.stdout)
                 .context("Failed to write mdadm config file")?;
+
+            // TODO(6329): Remove this if we can bake the logic to handle RAID withing initrd using MIC
+            cmd!("mkinitrd")
+                .run()
+                .context("Failed to regenerate initrd after creating RAID config")?;
         } else {
             bail!("Failed to create mdadm config file. mdadm --examine failed");
         }
@@ -225,6 +236,7 @@ pub(super) fn add_to_host_status(host_status: &mut HostStatus, raid_details: Rai
         ty: RaidType::Software,
         path: raid_details.path,
         raid_symlink_path: raid_details.symlink_path,
+        uuid: Uuid::parse_str(&raid_details.uuid).unwrap(),
         contents: status::BlockDeviceContents::Unknown,
     };
 
@@ -652,7 +664,7 @@ mod tests {
             path: PathBuf::from("/dev/md/some_raid"),
             symlink_path: PathBuf::from("/dev/md127"),
             devices: vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sdb1")],
-            uuid: "uuid".to_string(),
+            uuid: "00000000-0000-0000-0000-000000000000".to_string(),
             level: RaidLevel::Raid1,
             state: RaidState::Clean,
             num_devices: 2,
@@ -684,6 +696,7 @@ mod tests {
                 ty: RaidType::Software,
                 path: PathBuf::from("/dev/md/some_raid"),
                 raid_symlink_path: PathBuf::from("/dev/md127"),
+                uuid: Uuid::parse_str("5ddca66e-2a11-4b5c-ab97-5c5158ab10b8").unwrap(),
                 contents: status::BlockDeviceContents::Unknown,
             },
         );

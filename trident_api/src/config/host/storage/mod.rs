@@ -115,7 +115,7 @@ pub struct Partition {
 
 /// Partition size enum.
 /// Serialize and Deserialize traits are implemented manually in the crate::serde module.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum PartitionSize {
     /// # Grow
