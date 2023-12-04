@@ -2,7 +2,7 @@ use std::{path::Path, process::Command};
 
 use anyhow::{bail, Context, Error};
 use configparser::ini::Ini;
-use log::info;
+use log::debug;
 use serde_json::Value;
 use std::collections::HashMap;
 use tempfile::TempDir;
@@ -27,7 +27,7 @@ impl RepartConfiguration {
     ) -> Result<Self, Error> {
         let repart_root = tempfile::tempdir()
             .context("Failed to create temporary directory for systemd-repart files")?;
-        info!(
+        debug!(
             "Generating systemd-repart configuration in {}",
             repart_root.path().display()
         );

@@ -1,6 +1,5 @@
 use std::{
     fs,
-    os::unix,
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -16,11 +15,10 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::chroot;
+use osutils::{chroot, files::create_dirs};
 
 use crate::{
-    datastore::DataStore, modules::image::mount, protobufs::HostStatusState,
-    TRIDENT_DATASTORE_PATH, TRIDENT_GENERATED_CONFIG_PATH,
+    datastore::DataStore, modules::image::mount, protobufs::HostStatusState, TRIDENT_DATASTORE_PATH,
 };
 use crate::{
     modules::{
@@ -40,14 +38,6 @@ pub mod storage;
 /// The path to the root of the freshly deployed (from provisioning OS) or
 /// updated OS (from runtime OS).
 const UPDATE_ROOT_PATH: &str = "/partitionMount";
-
-/// The path for mount point of the freshly deployed OS. Used for accessing the
-/// Trident datastore from the provisioning OS.
-const TRIDENT_UPDATED_VOLUME_PATH: &str = "/var/run/trident/root";
-
-/// The path for the Trident datastore on the freshly deployed OS. Used for accessing the
-/// Trident datastore from the provisioning OS.
-const TRIDENT_UPDATED_DATASTORE_PATH: &str = "/var/run/trident/datastore.sqlite";
 
 trait Module: Send {
     fn name(&self) -> &'static str;
@@ -153,11 +143,7 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
     migrate(&mut modules, state, host_config, mount_path)?;
 
     let chroot = chroot::enter_update_chroot(mount_path)?;
-    let datastore_path = host_config
-        .management
-        .datastore_path
-        .as_deref()
-        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
+    let datastore_path = get_datastore_path(host_config);
     state.persist(datastore_path)?;
 
     reconcile(&mut modules, state, host_config)?;
@@ -180,27 +166,31 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
 
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
-        mount::unmount_updated_volumes(mount_path).context("Failed to unmount target volumes")?;
 
         // Store the generated config on the current root partition so that it can
         // be used later if need be prior to rebooting.
+        let datastore_source_path = Path::new(UPDATE_ROOT_PATH).join(
+            datastore_path
+                .strip_prefix("/")
+                .context("Datastore path must be absolute")?,
+        );
 
-        // To keep access to the datastore, we will mount the updated OS volumes
-        // readonly
-        // TODO unmount if we are rerunning the provisioning
-        let updated_root_path = Path::new(TRIDENT_UPDATED_VOLUME_PATH);
-        mount::mount_updated_volumes(host_config, state.host_status(), updated_root_path, true)
-            .context("Failed to mount target volumes")?;
-        let updated_datastore_path =
-            Path::new(TRIDENT_UPDATED_VOLUME_PATH).join(datastore_path.strip_prefix("/")?);
-        unix::fs::symlink(&updated_datastore_path, TRIDENT_UPDATED_DATASTORE_PATH)
-            .context("Failed to link to persisted datastore")?;
-        // Finally create a trident config pointing to the persisted datastore
-        management::create_trident_config(
-            updated_datastore_path.as_path(),
-            host_config,
-            Path::new(TRIDENT_GENERATED_CONFIG_PATH),
-        )?;
+        create_dirs(datastore_path.parent().context(format!(
+            "Cannot get parent directory of datastore path: {}",
+            datastore_path.display()
+        ))?)
+        .context(format!(
+            "Failed to create parent directory for datastore path: {}",
+            datastore_path.display()
+        ))?;
+
+        fs::copy(&datastore_source_path, datastore_path).context(format!(
+            "Failed to copy generated config from {} to {}",
+            datastore_source_path.display(),
+            datastore_path.display()
+        ))?;
+
+        mount::unmount_updated_volumes(mount_path).context("Failed to unmount target volumes")?;
 
         return Ok(());
     }
@@ -210,6 +200,14 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
     transition(mount_path, &root_device_path)?;
 
     Ok(())
+}
+
+pub(super) fn get_datastore_path(host_config: &HostConfiguration) -> &Path {
+    host_config
+        .management
+        .datastore_path
+        .as_deref()
+        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH))
 }
 
 pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Result<(), Error> {
@@ -532,7 +530,7 @@ fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Er
 
 #[cfg(test)]
 mod test {
-    use trident_api::status::BlockDeviceContents;
+    use trident_api::{config::Management, status::BlockDeviceContents};
 
     use super::*;
     use indoc::indoc;
@@ -906,5 +904,34 @@ mod test {
                 contents: BlockDeviceContents::Unknown,
             })
         );
+    }
+
+    #[test]
+    fn test_get_datastore_path() {
+        let host_config = HostConfiguration {
+            ..Default::default()
+        };
+        assert_eq!(
+            get_datastore_path(&host_config),
+            Path::new(TRIDENT_DATASTORE_PATH)
+        );
+
+        let host_config = HostConfiguration {
+            management: Default::default(),
+            ..Default::default()
+        };
+        assert_eq!(
+            get_datastore_path(&host_config),
+            Path::new(TRIDENT_DATASTORE_PATH)
+        );
+
+        let host_config = HostConfiguration {
+            management: Management {
+                datastore_path: Some(PathBuf::from("/foo")),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(get_datastore_path(&host_config), Path::new("/foo"));
     }
 }

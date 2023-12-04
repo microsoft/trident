@@ -15,7 +15,7 @@ use std::process::{Command, Output};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
-use trident_api::config::{DatastoreConfiguration, HostConfiguration, LocalConfigFile, Operations};
+use trident_api::config::{HostConfiguration, LocalConfigFile, Operations};
 
 mod datastore;
 mod logstream;
@@ -31,13 +31,6 @@ pub use orchestrate::OrchestratorConnection;
 
 /// Default Trident configuration file path.
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
-
-/// Path to a generated Trident configuration file. This is useful when
-/// running inside an ephemeral provisioning OS, as the original configuration
-/// file does not point to a Trident datastore, that contains information about
-/// HostStatus. The regenerated configuration file will point to the Trident
-/// datastore that has been generated as part of the initial provisioning process.
-pub const TRIDENT_GENERATED_CONFIG_PATH: &str = "/var/run/trident/config.yaml";
 
 /// Default Trident datastore path. Used from the runtime OS.
 pub const TRIDENT_DATASTORE_PATH: &str = "/var/lib/trident/datastore.sqlite";
@@ -108,15 +101,7 @@ impl Trident {
     pub fn new(config_path: Option<PathBuf>, logstream: Logstream) -> Result<Self, Error> {
         let config_path = match config_path {
             Some(path) => path,
-            None => {
-                if Path::new(TRIDENT_GENERATED_CONFIG_PATH).exists() {
-                    info!("Using generated config file");
-                    PathBuf::from(TRIDENT_GENERATED_CONFIG_PATH)
-                } else {
-                    info!("Using default config file");
-                    PathBuf::from(TRIDENT_LOCAL_CONFIG_PATH)
-                }
-            }
+            None => PathBuf::from(TRIDENT_LOCAL_CONFIG_PATH),
         };
         // Load the config file
         info!("Loading config from '{}'", config_path.display());
@@ -161,11 +146,33 @@ impl Trident {
             serde_yaml::to_string(&config).unwrap_or("Failed to serialize host config".into())
         );
 
-        let datastore = match config.datastore {
-            Some(DatastoreConfiguration::Load { ref load_path }) => {
-                DataStore::open(load_path).context("Failed to load datastore")?
+        let datastore_path = match config.datastore {
+            // Load datastore if instructed so
+            Some(ref load_path) => Some(load_path.clone()),
+            // Otherwise see if the location where we should store the datastore
+            // exists, and if so, use it
+            None => Self::get_host_configuration(&config)?.and_then(|host_config| {
+                let datastore_path = modules::get_datastore_path(&host_config);
+                if datastore_path.exists() {
+                    Some(datastore_path.to_owned())
+                } else {
+                    None
+                }
+            }),
+        };
+
+        let datastore = match datastore_path {
+            Some(datastore_path) => {
+                info!("Loading datastore from {}", datastore_path.display());
+                DataStore::open(datastore_path.as_path()).context(format!(
+                    "Failed to load datastore from {}",
+                    datastore_path.display()
+                ))?
             }
-            _ => DataStore::new(),
+            None => {
+                info!("Creating new datastore at '{}'", TRIDENT_DATASTORE_PATH);
+                DataStore::new()
+            }
         };
 
         Ok(Self {
@@ -173,6 +180,16 @@ impl Trident {
             datastore,
             server_runtime: None,
         })
+    }
+
+    fn get_host_configuration(
+        config: &LocalConfigFile,
+    ) -> Result<Option<Box<HostConfiguration>>, Error> {
+        config
+            .get_host_configuration_source()?
+            .as_ref()
+            .map(Self::load_host_config)
+            .transpose()
     }
 
     fn load_host_config(source: &HostConfigurationSource) -> Result<Box<HostConfiguration>, Error> {
@@ -243,12 +260,7 @@ impl Trident {
             return Ok(());
         }
 
-        let host_config = self
-            .config
-            .get_host_configuration_source()?
-            .as_ref()
-            .map(Self::load_host_config)
-            .transpose()?;
+        let host_config = Self::get_host_configuration(&self.config)?;
 
         info!("Starting network");
         start_provisioning_network(
@@ -273,10 +285,9 @@ impl Trident {
         // config as for processing commands received from the gRPC endpoint.
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
 
-        // If we have a host config source, load it and dispatch it as the first command.
-        if let Some(ref host_config_source) = self.config.get_host_configuration_source()? {
-            let host_config = Self::load_host_config(host_config_source)?;
-
+        // If we have a host config source, load it and dispatch it as the first
+        // command.
+        if let Some(host_config) = Self::get_host_configuration(&self.config)? {
             info!("Running");
             sender
                 .blocking_send(HostUpdateCommand {
@@ -355,7 +366,15 @@ impl Trident {
             let result = if self.datastore.is_persistent() {
                 modules::update(cmd, &mut self.datastore).context("Failed to update host")
             } else {
-                modules::provision(cmd, &mut self.datastore).context("Failed to provision host")
+                let datastore_path = modules::get_datastore_path(&cmd.host_config).to_owned();
+                let res = modules::provision(cmd, &mut self.datastore)
+                    .context("Failed to provision host");
+                // save the datastore if we failed, as we might not have saved
+                // it already
+                if let Err(_e) = &res {
+                    self.datastore.persist(datastore_path.as_path())?;
+                }
+                res
             };
 
             if let Err(e) = result {
@@ -534,5 +553,55 @@ mod tests {
                 contents: BlockDeviceContents::Unknown,
             }
         );
+    }
+
+    #[test]
+    fn test_get_host_configuration() {
+        // missing HC source
+        let trident_config_yaml = indoc! { r#"
+        "#};
+        let trident_config = serde_yaml::from_str::<LocalConfigFile>(trident_config_yaml).unwrap();
+        assert!(Trident::get_host_configuration(&trident_config)
+            .unwrap()
+            .is_none());
+
+        // missing HC file
+        let trident_config_yaml = indoc! { r#"
+            host-configuration-file: /etc/trident/host_config.yaml
+        "#};
+        let trident_config = serde_yaml::from_str::<LocalConfigFile>(trident_config_yaml).unwrap();
+        assert!(Trident::get_host_configuration(&trident_config).is_err());
+
+        // ok
+        let trident_config_yaml = indoc! { r#"
+            host-configuration:
+              storage:
+                disks:
+                mount-points:
+                  - path: /
+                    target-id: sda1
+                    filesystem: ext4
+                    options: []
+              imaging:
+                images:
+            "#};
+        let trident_config = serde_yaml::from_str::<LocalConfigFile>(trident_config_yaml).unwrap();
+        let host_config = Trident::get_host_configuration(&trident_config)
+            .unwrap()
+            .unwrap();
+        let expected_host_config_yaml = indoc! {r#"
+            storage:
+              disks:
+              mount-points:
+                - path: /
+                  target-id: sda1
+                  filesystem: ext4
+                  options: []
+            imaging:
+              images:
+        "#};
+        let expected_host_config =
+            serde_yaml::from_str::<HostConfiguration>(expected_host_config_yaml).unwrap();
+        assert_eq!(*host_config, expected_host_config);
     }
 }

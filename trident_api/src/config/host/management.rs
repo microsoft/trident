@@ -9,7 +9,7 @@ use crate::is_default;
 
 /// The Management configuration controls the installation of the Trident agent onto
 /// the runtime OS.
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Management {

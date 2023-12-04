@@ -102,7 +102,7 @@ pub(super) fn deploy(
 
     // Initialize HashingReader instance on stream
     let stream = HashingReader::new(stream);
-    info!("Calling Stream-Image sub-module to stream image to block device");
+    info!("Writing image to block device");
     // Stream image to block device
     let (computed_sha256, bytes_copied) =
         stream_zstd_image(host_status, stream, block_device, &image.target_id)

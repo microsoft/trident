@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Error};
+use log::info;
 use osutils::udevadm;
 use std::{
     collections::{HashMap, HashSet},
@@ -74,6 +75,8 @@ fn create_partitions(
             "Failed to generate systemd-repart config for disk {}",
             disk.id
         ))?;
+
+        info!("Creating partitions for disk {}", disk.id);
 
         let partitions_status = repart_config
             .create_partitions(&disk_bus_path)

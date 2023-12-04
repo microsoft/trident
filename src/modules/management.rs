@@ -5,7 +5,7 @@ use std::{fs, path::Path};
 use anyhow::{bail, ensure, Context, Error};
 use log::info;
 use trident_api::{
-    config::{DatastoreConfiguration, HostConfiguration, LocalConfigFile},
+    config::{HostConfiguration, LocalConfigFile},
     status::{HostStatus, UpdateKind},
 };
 
@@ -124,9 +124,7 @@ pub(super) fn create_trident_config(
     trident_config_path: &Path,
 ) -> Result<(), Error> {
     let trident_config = LocalConfigFile::default()
-        .with_datastore(DatastoreConfiguration::Load {
-            load_path: datastore_path.to_path_buf(),
-        })
+        .with_datastore(datastore_path.to_path_buf())
         .with_phonehome(host_config.management.phonehome.clone())
         .with_grpc(if host_config.management.enable_grpc {
             Some(Default::default())
@@ -138,7 +136,7 @@ pub(super) fn create_trident_config(
         trident_config_path,
         serde_yaml::to_string(&trident_config).context("Failed to serialize trident config")?,
     )
-    .context("Failed to write trident local config")?;
+    .context("Failed to write Trident Configuration")?;
 
     Ok(())
 }

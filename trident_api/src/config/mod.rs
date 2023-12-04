@@ -13,4 +13,4 @@ pub use host::{
     HostConfiguration,
 };
 
-pub use trident::{DatastoreConfiguration, HostConfigurationSource, LocalConfigFile, Operations};
+pub use trident::{HostConfigurationSource, LocalConfigFile, Operations};

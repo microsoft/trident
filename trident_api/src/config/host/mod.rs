@@ -20,7 +20,7 @@ use scripts::Scripts;
 use storage::Storage;
 
 /// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct HostConfiguration {

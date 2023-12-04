@@ -28,7 +28,7 @@ pub struct LocalConfigFile {
     /// should load its state from. This field should not be included when Trident is
     /// running from the provisioning OS.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub datastore: Option<DatastoreConfiguration>,
+    pub datastore: Option<PathBuf>,
 
     /// Optional netplan network configuration for the bootstrap OS. If
     /// not specified, the network configuration from Host Configuration
@@ -126,7 +126,7 @@ impl LocalConfigFile {
         self
     }
 
-    pub fn with_datastore(mut self, datastore: DatastoreConfiguration) -> Self {
+    pub fn with_datastore(mut self, datastore: PathBuf) -> Self {
         self.datastore = Some(datastore);
         self
     }
@@ -165,20 +165,6 @@ pub enum HostConfigurationSource {
     Embedded(Box<HostConfiguration>),
     KickstartFile(PathBuf),
     KickstartEmbedded(String),
-}
-
-/// Configuration for the datastore.
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-#[serde(untagged)]
-pub enum DatastoreConfiguration {
-    /// Directory in the runtime filesystem where to create the datastore during provisioning.
-    #[serde(rename_all = "kebab-case")]
-    Create { create_path: PathBuf },
-
-    /// Directory in the runtime filesystem where the datastore is already present.
-    #[serde(rename_all = "kebab-case")]
-    Load { load_path: PathBuf },
 }
 
 /// GrpcConfiguration is the configuration for the gRPC server.
