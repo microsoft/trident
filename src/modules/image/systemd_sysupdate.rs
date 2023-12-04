@@ -11,6 +11,7 @@
 
 use std::{
     fs::{self, File},
+    io::Read,
     option::Option,
     path::PathBuf,
     process::Command,
@@ -26,9 +27,11 @@ use tempfile;
 use crate::{modules, Path};
 use trident_api::{
     config::{Image, PartitionType},
-    status::{AbVolumeSelection, BlockDeviceInfo, HostStatus},
+    status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, Partition},
     BlockDeviceId,
 };
+
+use super::HashingReader;
 
 /// This struct describes an A/B update of a SINGLE image via systemd-sysupdate.
 pub(super) struct ImageDeployment {
@@ -714,6 +717,131 @@ fn get_partlabel_from_path(partition_path: &str) -> Result<String, Error> {
     bail!("No PARTLABEL found on block device '{}'", &partition_path)
 }
 
+/// Returns directory as PathBuf and filename as String from image URL.
+pub(super) fn get_local_image(image_url: &Url, image: &Image) -> Result<(PathBuf, String), Error> {
+    // Open local image file and read it into a stream of bytes
+    let stream: Box<dyn Read> =
+        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?);
+    // If SHA256 is ignored, log message and skip hash validation; otherwise, use HashingReader
+    // to compute sha256 hash of stream and ensure it is the same as hash in HostConfig
+    if image.sha256 == super::HASH_IGNORED {
+        info!("Ignoring SHA256 for image from '{}'", image.url);
+    } else {
+        // Initialize HashingReader instance on stream
+        let stream = HashingReader::new(stream);
+        if stream.hash() != image.sha256 {
+            bail!(
+                "SHA256 mismatch for disk image {}: expected {}, got {}",
+                image.url,
+                image.sha256,
+                stream.hash()
+            );
+        }
+    }
+    // Convert image URL to file path
+    let path = image_url
+        .to_file_path()
+        .map_err(|_| anyhow::anyhow!("Failed to convert URL to file path"))?;
+    // Extract directory from URL path
+    let directory = path.parent().context(format!(
+        "Failed to extract local dir from URL path {}",
+        path.display()
+    ))?;
+    // Extract filename as String from URL path
+    let filename = path
+        .file_name()
+        .map(|f| f.to_string_lossy())
+        .context(format!(
+            "Failed to extract filename from URL path {}",
+            path.display()
+        ))?;
+
+    Ok((directory.to_owned(), filename.to_string()))
+}
+
+/// Call into systemd-sysupdate to update the partition with the given image.
+pub(super) fn deploy(
+    image: &Image,
+    host_status: &mut HostStatus,
+    directory: Option<&Path>,
+    filename: Option<&str>,
+) -> Result<(), Error> {
+    debug!("Calling Systemd-Sysupdate sub-module to execute A/B update");
+    // Create ImageDeployment instance
+    let mut img_deploy_instance = ImageDeployment::new(image, host_status, directory, filename)
+        .context(format!(
+            "Failed to create ImageDeployment instance for block device with id '{}'",
+            &image.target_id
+        ))?;
+    // Call run_sysupdate(); save return value as number of bytes written
+    let image_length = img_deploy_instance
+        .run_sysupdate(host_status)
+        .context(format!(
+            "Failed to run systemd-sysupdate: Failed to update partition with id {} to version {}.",
+            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
+        ))?;
+    // If A/B update succeeded, update HostStatus
+    if image_length > 0 && img_deploy_instance.status == Status::Succeeded {
+        // If sysupdate succeeds, update contents of HostStatus
+        super::set_host_status_block_device_contents(
+            host_status,
+            &image.target_id,
+            BlockDeviceContents::Image {
+                sha256: image.sha256.clone(),
+                length: image_length,
+                url: image.url.clone(),
+            },
+        )?;
+        info!(
+            "Systemd-Sysupdate sub-module successfully updated partition with id {} to version {}",
+            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
+        );
+    } else {
+        // If image_length is not 0 or status is Failed, A/B update failed
+        bail!("Update of partition with id {} to version {} failed. Returned image_length: {}; returned status: {:?}.",
+            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version, image_length, &img_deploy_instance.status
+        );
+    }
+    Ok(())
+}
+
+/// Returns a reference to Partition corresponding to block_device_id.
+fn get_partition_ref<'a>(
+    host_status: &'a HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a Partition> {
+    host_status
+        .storage
+        .disks
+        .iter()
+        .flat_map(|(_block_device_id, disk)| &disk.partitions)
+        .find(|p| p.id == *block_device_id)
+}
+
+/// Returns a reference to the Partition object within an AB volume pair that corresponds to the
+/// inactive partition, or the one to be updated.
+pub(super) fn get_ab_volume_partition<'a>(
+    host_status: &'a HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a Partition> {
+    if let Some(ab_update) = &host_status.imaging.ab_update {
+        let ab_volume = ab_update
+            .volume_pairs
+            .iter()
+            .find(|v| v.0 == block_device_id);
+        if let Some(v) = ab_volume {
+            return modules::get_ab_update_volume(host_status, false).and_then(|selection| {
+                match selection {
+                    AbVolumeSelection::VolumeA => get_partition_ref(host_status, &v.1.volume_a_id),
+                    AbVolumeSelection::VolumeB => get_partition_ref(host_status, &v.1.volume_b_id),
+                }
+            });
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     // Import everything from the parent module
@@ -1117,5 +1245,165 @@ mod tests {
         );
         // Case 2: Partition ID is invalid
         assert_eq!(get_parent_disk(&host_status, &"invalid".to_string()), None);
+    }
+
+    /// Validates logic for querying disks and partitions.
+    #[test]
+    fn test_get_partition_ref() {
+        let host_status_yaml = indoc! {r#"
+            storage:
+                mount-points:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                            - id: efi
+                              path: /dev/disk/by-partlabel/osp1
+                              contents: unknown
+                              start: 0
+                              end: 0
+                              type: esp
+                              uuid: 00000000-0000-0000-0000-000000000000
+                            - id: root
+                              path: /dev/disk/by-partlabel/osp2
+                              contents: unknown
+                              start: 100
+                              end: 1000
+                              type: root
+                              uuid: 00000000-0000-0000-0000-000000000000
+                            - id: rootb
+                              path: /dev/disk/by-partlabel/osp3
+                              contents: unknown
+                              start: 1000
+                              end: 10000
+                              type: root
+                              uuid: 00000000-0000-0000-0000-000000000000
+                raid-arrays:
+            imaging:
+                ab-update:
+                    volume-pairs:
+            reconcile-state: clean-install
+        "#};
+        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        // New assertions for get_partition_ref
+        assert_eq!(get_partition_ref(&host_status, &"os".to_owned()), None);
+        assert_eq!(
+            get_partition_ref(&host_status, &"efi".to_owned()).map(|p| &p.path),
+            Some(&PathBuf::from("/dev/disk/by-partlabel/osp1"))
+        );
+    }
+
+    /// Validates that get_ab_volume_partition() correctly returns the id of
+    /// the active partition inside of an ab-volume pair.
+    #[test]
+    fn test_get_ab_volume_partition() {
+        // Setting up the sample host_status
+        let host_status_yaml = indoc! {r#"
+            storage:
+                disks:
+                    os:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 0
+                        contents: unknown
+                        partitions:
+                          - id: efi
+                            path: /dev/disk/by-partlabel/osp1
+                            contents: unknown
+                            start: 0
+                            end: 0
+                            type: esp
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root-a
+                            path: /dev/disk/by-partlabel/osp2
+                            contents: unknown
+                            start: 100
+                            end: 1000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                          - id: root-b
+                            path: /dev/disk/by-partlabel/osp3
+                            contents: unknown
+                            start: 1000
+                            end: 10000
+                            type: root
+                            uuid: 00000000-0000-0000-0000-000000000000
+                    data:
+                        path: /dev/disk/by-bus/foobar
+                        uuid: 00000000-0000-0000-0000-000000000000
+                        capacity: 1000
+                        contents: unknown
+                        partitions: []
+                mount-points:
+                raid-arrays: {}
+            imaging:
+                ab-update:
+                    volume-pairs:
+                        root:
+                            volume-a-id: root-a
+                            volume-b-id: root-b
+            reconcile-state: clean-install
+        "#};
+        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+
+        // 1. Test when the active volume is VolumeA
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+
+        // Declare a new Partition object corresponding to the inactive
+        // partition root-b
+        let partition_root_b = Partition {
+            id: "root-b".to_owned(),
+            path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+            contents: BlockDeviceContents::Unknown,
+            start: 1000,
+            end: 10000,
+            ty: PartitionType::Root,
+            uuid: uuid::Uuid::nil(),
+        };
+
+        assert_eq!(
+            get_ab_volume_partition(&host_status, &"root".to_owned()),
+            Some(&partition_root_b)
+        );
+
+        // 2. Test when the active volume is VolumeB
+        host_status
+            .imaging
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+
+        // Declare a new Partition object
+        let partition_root_a = Partition {
+            id: "root-a".to_owned(),
+            path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+            contents: BlockDeviceContents::Unknown,
+            start: 100,
+            end: 1000,
+            ty: PartitionType::Root,
+            uuid: uuid::Uuid::nil(),
+        };
+
+        assert_eq!(
+            get_ab_volume_partition(&host_status, &"root".to_owned()),
+            Some(&partition_root_a)
+        );
+
+        // 3. Test with an ID that doesn't match any volume pair
+        assert_eq!(
+            get_ab_volume_partition(&host_status, &"nonexistent".to_owned()),
+            None
+        );
     }
 }

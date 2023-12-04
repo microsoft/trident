@@ -60,12 +60,14 @@ fn create_partitions(
         // volume_pair, add each partition_id to the hash map, where value for
         // volume-a-id (active) is "a" and value for volume-b-id (inactive) is
         // "_empty". On next run of sysupdate, "_empty" will be updated.
-        if let Some(ab_update) = &host_config.imaging.ab_update {
-            for volume_pair in &ab_update.volume_pairs {
-                // For volume-a-id
-                partlabels.insert(volume_pair.volume_a_id.clone(), "_empty".to_string());
-                // For volume-b-id
-                partlabels.insert(volume_pair.volume_b_id.clone(), "_empty".to_string());
+        if cfg!(feature = "sysupdate") {
+            if let Some(ab_update) = &host_config.imaging.ab_update {
+                for volume_pair in &ab_update.volume_pairs {
+                    // For volume-a-id
+                    partlabels.insert(volume_pair.volume_a_id.clone(), "_empty".to_string());
+                    // For volume-b-id
+                    partlabels.insert(volume_pair.volume_b_id.clone(), "_empty".to_string());
+                }
             }
         }
 

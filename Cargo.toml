@@ -48,6 +48,7 @@ indoc = "2"
 
 [features]
 dangerous-options = ["trident_api/dangerous-options"]
+sysupdate = []
 
 
 [workspace]

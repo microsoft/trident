@@ -1,23 +1,22 @@
-use anyhow::{anyhow, bail, Context, Error};
-use log::{debug, error, info};
+use anyhow::{bail, Context, Error};
+use log::{debug, info};
 use nix::NixPath;
-use reqwest::{blocking::Response, StatusCode, Url};
+use reqwest::Url;
 use sha2::Digest;
 use std::{
     ffi::CString,
-    fs::{self, File},
+    fs::{self},
     io::{self, Read},
     os::{fd::AsRawFd, unix::prelude::PermissionsExt},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
-    time::Duration,
 };
 
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat},
     status::{
-        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk,
-        HostStatus, Partition, RaidArray, ReconcileState, UpdateKind,
+        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, Disk, HostStatus,
+        Partition, RaidArray, ReconcileState, UpdateKind,
     },
     BlockDeviceId,
 };
@@ -93,16 +92,21 @@ fn update_images(
         let image_url = Url::parse(image.url.as_str())
             .context(format!("Failed to parse image URL '{}'", image.url))?;
 
-        // Determine if target-id corresponds to an A/B volume pair; if helper
-        // func returns None, then set bool to false
-        let targets_ab_volume_pair =
-            get_ab_volume_partition(host_status, &image.target_id).is_some();
-
         if image_url.scheme() == "file" {
             match image.format {
                 // If image is of format RawLzma AND target-id corresponds to an A/B volume pair,
                 // use systemd-sysupdate.rs to write to the partition
                 ImageFormat::RawLzma => {
+                    if !cfg!(feature = "sysupdate") {
+                        bail!("Image format RawLzma is not supported")
+                    }
+
+                    // Determine if target-id corresponds to an A/B volume pair; if helper
+                    // func returns None, then set bool to false
+                    let targets_ab_volume_pair =
+                        systemd_sysupdate::get_ab_volume_partition(host_status, &image.target_id)
+                            .is_some();
+
                     // If image format is raw-lzma but block device is not part of an A/B volume
                     // pair, return error b/c sysupdate requires 2 copies of partitition for an
                     // update
@@ -111,10 +115,11 @@ fn update_images(
                             &image.target_id)
                     }
                     // Fetch directory and filename from image URL
-                    let (directory, filename) = get_local_image(&image_url, image)?;
-                    // Run helper func sysupdate_deploy() to execute A/B update; since image is
+                    let (directory, filename) =
+                        systemd_sysupdate::get_local_image(&image_url, image)?;
+                    // Run helper func systemd_sysupdate::deploy() to execute A/B update; since image is
                     // local, pass directory and file name as arg-s
-                    sysupdate_deploy(
+                    systemd_sysupdate::deploy(
                         image,
                         host_status,
                         Some(directory.as_path()),
@@ -125,14 +130,17 @@ fn update_images(
                         image.url
                     ))?;
                 }
+
                 // If image format is raw-zstd, run helper func direct_deploy() to write image from
                 // local file via stream_image.rs
                 ImageFormat::RawZstd => {
                     // 5th arg is False to communicate that image is a local file, i.e.,  is_local
                     // will be set to True
-                    direct_deploy(image_url, image, host_status, &block_device, true).context(
-                        format!("Failed to deploy image {} via direct streaming", image.url),
-                    )?;
+                    stream_image::deploy(image_url, image, host_status, &block_device, true)
+                        .context(format!(
+                            "Failed to deploy image {} via direct streaming",
+                            image.url
+                        ))?;
                 }
             }
         } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
@@ -145,28 +153,41 @@ fn update_images(
                 // the SHA256SUMS overhead for the user. Related ADO task:
                 // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6175.
                 ImageFormat::RawLzma => {
+                    if !cfg!(feature = "sysupdate") {
+                        bail!("Image format RawLzma is not supported")
+                    }
+
+                    // Determine if target-id corresponds to an A/B volume pair; if helper
+                    // func returns None, then set bool to false
+                    let targets_ab_volume_pair =
+                        systemd_sysupdate::get_ab_volume_partition(host_status, &image.target_id)
+                            .is_some();
+
                     // If image is of format RawLzma but target-id does NOT
                     // correspond to an A/B volume pair, report an error
                     if !targets_ab_volume_pair {
                         bail!("Block device with id {} is not part of an A/B volume pair, so image in raw lzma format cannot be written to it.\nRaw lzma is not supported for block devices that do not correspond to A/B volume pairs",
                             &image.target_id)
                     }
-                    // Run helper func sysupdate_deploy() to execute A/B update; directory and file
+                    // Run helper func systemd_sysupdate::deploy() to execute A/B update; directory and file
                     // name arg-s are None to communicate that update image is published via URL,
                     // not locally
-                    sysupdate_deploy(image, host_status, None, None).context(format!(
+                    systemd_sysupdate::deploy(image, host_status, None, None).context(format!(
                         "Failed to deploy image {} via sysupdate",
                         image.url
                     ))?;
                 }
+
                 // Otherwise, use direct streaming of image bytes onto the block device, by using
                 // stream_image.rs
                 ImageFormat::RawZstd => {
                     // 5th arg is False to communicate that image is not a local file, i.e.,
                     // is_local will be set to False
-                    direct_deploy(image_url, image, host_status, &block_device, false).context(
-                        format!("Failed to deploy image {} via direct streaming", image.url),
-                    )?;
+                    stream_image::deploy(image_url, image, host_status, &block_device, false)
+                        .context(format!(
+                            "Failed to deploy image {} via direct streaming",
+                            image.url
+                        ))?;
                 }
             }
         } else if image_url.scheme() == "oci" {
@@ -186,133 +207,6 @@ fn update_images(
             bail!("Unsupported URL scheme")
         };
     }
-    Ok(())
-}
-
-/// Perform a GET request with retries and exponential backoff.
-///
-/// The function will do a GET request to the given URL and return the response
-/// if the status code is OK.
-///
-/// `max_retries` is the number of *additional* attempts to make after the first.
-/// Passing 0 will make a single attempt, passing 1 will make at most two attempts, etc.
-///
-/// The backoff is exponential, starting at 500ms and doubling each time, up to a maximum of 64s.
-fn exponential_backoff_get(url: &Url, max_retries: u8) -> Result<Box<Response>, Error> {
-    let mut counter = 0u8;
-    let client = reqwest::blocking::ClientBuilder::new()
-        .timeout(None)
-        .build()
-        .context("Failed to create HTTP client")?;
-    loop {
-        // Try to execute the GET request, if it works and we get a 200 OK,
-        // return the response immediately. Otherwise, store the error and
-        // continue the loop.
-        let err: Error = match client.get(url.clone()).send().context("Failed to GET") {
-            Ok(response) if matches!(response.status(), StatusCode::OK) => {
-                // On success, exit exponential_backoff_get() by returning the response
-                return Ok(Box::new(response));
-            }
-            // Otherwise store the error to report it later and continue the loop
-            Ok(response) => anyhow!("Failed to GET with status {}", response.status()),
-            Err(e) => e,
-        };
-
-        // Check if we reached the limit
-        if counter >= max_retries {
-            return Err(err).context(format!(
-                "Failed to GET from {url} after {} attempts.",
-                (counter as u16) + 1, // change to u16 to avoid overflow
-            ));
-        }
-
-        counter += 1;
-
-        // Calculate exponential backoff.
-        // After 64 seconds it becomes a bit ridiculous so we cap it there.
-        // Because it's just a couple values it's easier to just hardcode it
-        // than spending the extra ticks to calculate a power of 2.
-        //
-        // backoff = min( (0.5 * 2^(counter - 1)), 64) seconds
-        // 0.5, 1, 2, 4, 8, 16, 32, 64, 64, 64, ...
-        let backoff = Duration::from_millis(match counter {
-            1 => 500,
-            2 => 1000,
-            3 => 2000,
-            4 => 4000,
-            5 => 8000,
-            6 => 16000,
-            7 => 32000,
-            _ => 64000,
-        });
-
-        // Log the error and backoff
-        error!(
-            "Failed to GET from {}: {}. Retrying in {:4.1} seconds.",
-            url,
-            err,
-            backoff.as_secs_f32()
-        );
-        std::thread::sleep(backoff);
-    }
-}
-
-/// Directly deploys images via stream_image.rs; returns error if image cannot be downloaded or
-/// installed correctly. Takes in 5 arg-s:
-/// 1. image_url: &Url, which is the URL of the image to be downloaded,
-/// 2. image: &Image, which is the Image object from HostConfig,
-/// 3. host_status: &mut HostStatus, which is the HostStatus object,
-/// 4. block_device: &BlockDeviceInfo, which is the BlockDeviceInfo object,
-/// 5. is_local: bool, which is a boolean indicating whether the image is a local file or not.
-fn direct_deploy(
-    image_url: Url,
-    image: &Image,
-    host_status: &mut HostStatus,
-    block_device: &BlockDeviceInfo,
-    is_local: bool,
-) -> Result<(), Error> {
-    // Check whether image_url is local; depending on result, create a boxed trait object for the
-    // read stream
-    let stream: Box<dyn Read> = if is_local {
-        // For local files, open the file at the given path
-        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?)
-    } else {
-        // For remote files, perform a blocking GET request
-        exponential_backoff_get(&image_url, 5)?
-    };
-
-    // Initialize HashingReader instance on stream
-    let stream = HashingReader::new(stream);
-    info!("Calling Stream-Image sub-module to stream image to block device");
-    // Stream image to block device
-    let (computed_sha256, bytes_copied) =
-        stream_image::stream_zstd_image(host_status, stream, block_device, &image.target_id)
-            .context(format!("Failed to stream image from {}", image.url))?;
-
-    // Update HostStatus
-    set_host_status_block_device_contents(
-        host_status,
-        &image.target_id,
-        BlockDeviceContents::Image {
-            sha256: computed_sha256.clone(),
-            length: bytes_copied,
-            url: image.url.clone(),
-        },
-    )?;
-
-    // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
-    // SHA256 matches SHA256 in HostConfig
-    if image.sha256 == HASH_IGNORED {
-        info!("Ignoring SHA256 for image from '{}'", image.url);
-    } else if computed_sha256 != image.sha256 {
-        bail!(
-            "SHA256 mismatch for disk image {}: expected {}, got {}",
-            image.url,
-            image.sha256,
-            computed_sha256
-        );
-    }
-
     Ok(())
 }
 
@@ -380,133 +274,6 @@ fn set_host_status_block_device_contents(
     }
 
     anyhow::bail!("No block device with id '{}' found", block_device_id);
-}
-
-/// Returns directory as PathBuf and filename as String from image URL.
-fn get_local_image(image_url: &Url, image: &Image) -> Result<(PathBuf, String), Error> {
-    // Open local image file and read it into a stream of bytes
-    let stream: Box<dyn Read> =
-        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?);
-    // If SHA256 is ignored, log message and skip hash validation; otherwise, use HashingReader
-    // to compute sha256 hash of stream and ensure it is the same as hash in HostConfig
-    if image.sha256 == HASH_IGNORED {
-        info!("Ignoring SHA256 for image from '{}'", image.url);
-    } else {
-        // Initialize HashingReader instance on stream
-        let stream = HashingReader::new(stream);
-        if stream.hash() != image.sha256 {
-            bail!(
-                "SHA256 mismatch for disk image {}: expected {}, got {}",
-                image.url,
-                image.sha256,
-                stream.hash()
-            );
-        }
-    }
-    // Convert image URL to file path
-    let path = image_url
-        .to_file_path()
-        .map_err(|_| anyhow::anyhow!("Failed to convert URL to file path"))?;
-    // Extract directory from URL path
-    let directory = path.parent().context(format!(
-        "Failed to extract local dir from URL path {}",
-        path.display()
-    ))?;
-    // Extract filename as String from URL path
-    let filename = path
-        .file_name()
-        .map(|f| f.to_string_lossy())
-        .context(format!(
-            "Failed to extract filename from URL path {}",
-            path.display()
-        ))?;
-
-    Ok((directory.to_owned(), filename.to_string()))
-}
-
-/// Delegates image deployment to Systemd-Sysupdate sub-module.
-fn sysupdate_deploy(
-    image: &Image,
-    host_status: &mut HostStatus,
-    directory: Option<&Path>,
-    filename: Option<&str>,
-) -> Result<(), Error> {
-    debug!("Calling Systemd-Sysupdate sub-module to execute A/B update");
-    // Create ImageDeployment instance
-    let mut img_deploy_instance =
-        systemd_sysupdate::ImageDeployment::new(image, host_status, directory, filename).context(
-            format!(
-                "Failed to create ImageDeployment instance for block device with id '{}'",
-                &image.target_id
-            ),
-        )?;
-    // Call run_sysupdate(); save return value as number of bytes written
-    let image_length = img_deploy_instance
-        .run_sysupdate(host_status)
-        .context(format!(
-            "Failed to run systemd-sysupdate: Failed to update partition with id {} to version {}.",
-            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
-        ))?;
-    // If A/B update succeeded, update HostStatus
-    if image_length > 0 && img_deploy_instance.status == systemd_sysupdate::Status::Succeeded {
-        // If sysupdate succeeds, update contents of HostStatus
-        set_host_status_block_device_contents(
-            host_status,
-            &image.target_id,
-            BlockDeviceContents::Image {
-                sha256: image.sha256.clone(),
-                length: image_length,
-                url: image.url.clone(),
-            },
-        )?;
-        info!(
-            "Systemd-Sysupdate sub-module successfully updated partition with id {} to version {}",
-            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
-        );
-    } else {
-        // If image_length is not 0 or status is Failed, A/B update failed
-        bail!("Update of partition with id {} to version {} failed. Returned image_length: {}; returned status: {:?}.",
-            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version, image_length, &img_deploy_instance.status
-        );
-    }
-    Ok(())
-}
-
-/// Returns a reference to Partition corresponding to block_device_id.
-fn get_partition_ref<'a>(
-    host_status: &'a HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<&'a Partition> {
-    host_status
-        .storage
-        .disks
-        .iter()
-        .flat_map(|(_block_device_id, disk)| &disk.partitions)
-        .find(|p| p.id == *block_device_id)
-}
-
-/// Returns a reference to the Partition object within an AB volume pair that corresponds to the
-/// inactive partition, or the one to be updated.
-fn get_ab_volume_partition<'a>(
-    host_status: &'a HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<&'a Partition> {
-    if let Some(ab_update) = &host_status.imaging.ab_update {
-        let ab_volume = ab_update
-            .volume_pairs
-            .iter()
-            .find(|v| v.0 == block_device_id);
-        if let Some(v) = ab_volume {
-            return modules::get_ab_update_volume(host_status, false).and_then(|selection| {
-                match selection {
-                    AbVolumeSelection::VolumeA => get_partition_ref(host_status, &v.1.volume_a_id),
-                    AbVolumeSelection::VolumeB => get_partition_ref(host_status, &v.1.volume_b_id),
-                }
-            });
-        }
-    }
-
-    None
 }
 
 pub fn kexec(mount_path: &Path, args: &str) -> Result<(), Error> {
@@ -788,58 +555,7 @@ impl Module for ImageModule {
 mod tests {
     use super::*;
     use indoc::indoc;
-    use std::{io::Cursor, time::Instant};
-    use trident_api::config::PartitionType;
-
-    /// Validates logic for querying disks and partitions.
-    #[test]
-    fn test_get_partition_ref() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                mount-points:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                            - id: efi
-                              path: /dev/disk/by-partlabel/osp1
-                              contents: unknown
-                              start: 0
-                              end: 0
-                              type: esp
-                              uuid: 00000000-0000-0000-0000-000000000000
-                            - id: root
-                              path: /dev/disk/by-partlabel/osp2
-                              contents: unknown
-                              start: 100
-                              end: 1000
-                              type: root
-                              uuid: 00000000-0000-0000-0000-000000000000
-                            - id: rootb
-                              path: /dev/disk/by-partlabel/osp3
-                              contents: unknown
-                              start: 1000
-                              end: 10000
-                              type: root
-                              uuid: 00000000-0000-0000-0000-000000000000
-                raid-arrays:
-            imaging:
-                ab-update:
-                    volume-pairs:
-            reconcile-state: clean-install
-        "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
-
-        // New assertions for get_partition_ref
-        assert_eq!(get_partition_ref(&host_status, &"os".to_owned()), None);
-        assert_eq!(
-            get_partition_ref(&host_status, &"efi".to_owned()).map(|p| &p.path),
-            Some(&PathBuf::from("/dev/disk/by-partlabel/osp1"))
-        );
-    }
+    use std::io::Cursor;
 
     #[test]
     fn test_hashing_reader() {
@@ -1163,116 +879,6 @@ mod tests {
         );
     }
 
-    /// Validates that get_ab_volume_partition() correctly returns the id of
-    /// the active partition inside of an ab-volume pair.
-    #[test]
-    fn test_get_ab_volume_partition() {
-        // Setting up the sample host_status
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root-a
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 100
-                            end: 1000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root-b
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 1000
-                            end: 10000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                    data:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 1000
-                        contents: unknown
-                        partitions: []
-                mount-points:
-                raid-arrays: {}
-            imaging:
-                ab-update:
-                    volume-pairs:
-                        root:
-                            volume-a-id: root-a
-                            volume-b-id: root-b
-            reconcile-state: clean-install
-        "#};
-        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
-
-        // 1. Test when the active volume is VolumeA
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
-        host_status
-            .imaging
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeA);
-
-        // Declare a new Partition object corresponding to the inactive
-        // partition root-b
-        let partition_root_b = Partition {
-            id: "root-b".to_owned(),
-            path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-            contents: BlockDeviceContents::Unknown,
-            start: 1000,
-            end: 10000,
-            ty: PartitionType::Root,
-            uuid: uuid::Uuid::nil(),
-        };
-
-        assert_eq!(
-            get_ab_volume_partition(&host_status, &"root".to_owned()),
-            Some(&partition_root_b)
-        );
-
-        // 2. Test when the active volume is VolumeB
-        host_status
-            .imaging
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
-
-        // Declare a new Partition object
-        let partition_root_a = Partition {
-            id: "root-a".to_owned(),
-            path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-            contents: BlockDeviceContents::Unknown,
-            start: 100,
-            end: 1000,
-            ty: PartitionType::Root,
-            uuid: uuid::Uuid::nil(),
-        };
-
-        assert_eq!(
-            get_ab_volume_partition(&host_status, &"root".to_owned()),
-            Some(&partition_root_a)
-        );
-
-        // 3. Test with an ID that doesn't match any volume pair
-        assert_eq!(
-            get_ab_volume_partition(&host_status, &"nonexistent".to_owned()),
-            None
-        );
-    }
-
     /// Validates logic for setting block device contents
     #[test]
     fn test_set_host_status_block_device_contents() {
@@ -1539,34 +1145,6 @@ mod tests {
                 .unwrap()
                 .contents,
             BlockDeviceContents::Initialized
-        );
-    }
-
-    #[test]
-    fn test_exponential_backoff() {
-        let fake_url = Url::try_from("http://127.0.0.1:3030").unwrap();
-        let start = Instant::now();
-        let result = exponential_backoff_get(&fake_url, 2);
-        let duration = start.elapsed();
-
-        // 2 retries means 3 attempts:
-        //(attempt) + 0.5s delay + (attempt) + 1s delay + (attempt)
-        //
-        // Because these are blocking calls the total duration should be at
-        // least 1.5s
-        assert!(
-            duration >= Duration::from_millis(1500),
-            "Duration was {:?}",
-            duration
-        );
-
-        assert!(result.is_err(), "Expected error, got {:?}", result);
-
-        let error = result.unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            format!("Failed to GET from {} after {} attempts.", fake_url, 3),
-            "Error doesn't match expected"
         );
     }
 }
