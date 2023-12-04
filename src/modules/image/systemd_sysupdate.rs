@@ -20,6 +20,7 @@ use std::{
 use anyhow::{bail, Context, Error};
 use configparser::ini::Ini;
 use log::{debug, info};
+use osutils::udevadm;
 use regex::Regex;
 use reqwest::Url;
 use tempfile;
@@ -321,7 +322,7 @@ impl ImageDeployment {
             Ok(image_length) => {
                 // Double check that update succeeded by verifying that
                 // PARTLABEL of updated partition is now the requested version
-                crate::run_command(Command::new("udevadm").arg("settle"))?;
+                udevadm::settle()?;
                 let actual_partlabel =
                     get_partlabel_from_path(&partition_path).context(format!(
                         "Failed to verify PARTLABEL for updated partition with id '{}'",

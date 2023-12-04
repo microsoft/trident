@@ -399,7 +399,7 @@ impl Trident {
                     .context(format!("Failed to write Host Status to {:?}", path))?;
             }
             None => {
-                println!("{}", host_status_yaml);
+                println!("{host_status_yaml}");
             }
         }
 

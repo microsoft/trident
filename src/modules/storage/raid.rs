@@ -21,7 +21,7 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use osutils::exe::OutputChecker;
+use osutils::{exe::OutputChecker, udevadm};
 
 pub(super) const RAID_SYNC_TIMEOUT_SECS: u64 = 180;
 
@@ -482,7 +482,7 @@ pub(super) fn create_sw_raid(
             ))?;
         }
         wait_for_raid_resync(&host_status.storage.raid_arrays)?;
-        super::udevadm_trigger().context("Udev failed while scanning for new devices")?;
+        udevadm::trigger().context("Udev failed while scanning for new devices")?;
 
         for software_raid_config in &host_config.storage.raid.software {
             update_raid_in_host_status(

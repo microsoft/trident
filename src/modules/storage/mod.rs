@@ -1,11 +1,9 @@
 use anyhow::{bail, Context, Error};
-use log::info;
-use osutils::exe::RunAndCheck;
+use osutils::udevadm;
 use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 use trident_api::{
     config::{HostConfiguration, MountPoint, Partition, PartitionSize},
@@ -102,7 +100,7 @@ fn create_partitions(
             .context(format!("Failed to find disk {} in host status", disk.id))?;
 
         // ensure all /dev/disk/* symlinks are created
-        Command::new("udevadm").arg("settle").run_and_check()?;
+        udevadm::settle()?;
 
         for (index, partition) in disk.partitions.iter().enumerate() {
             let partition_uuid = partitions_status[index].uuid;
@@ -383,20 +381,6 @@ pub fn get_partition_from_host_config<'a>(
         .iter()
         .flat_map(|disk| disk.partitions.iter())
         .find(|partition| partition.id == partition_id)
-}
-
-fn udevadm_trigger() -> Result<(), Error> {
-    info!("Triggering udevadm to rescan devices...");
-
-    let trigger_output = Command::new("udevadm").arg("trigger").output()?;
-
-    if !trigger_output.status.success() {
-        bail!(
-            "Udevadm trigger failed:\n{:?}",
-            String::from_utf8(trigger_output.stderr)
-        );
-    }
-    Ok(())
 }
 
 fn get_raid_array_ids(host_config: &HostConfiguration) -> HashSet<String> {
