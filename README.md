@@ -184,7 +184,12 @@ The full schema is available here:
 
 An HTML version is available in `trident_api/docs/html/trident-api.html`
 
-(`make view-docs` may help open your browser automatically!)
+If you have GUI session on Linux, `make view-docs` may help open your browser
+automatically. Otherwise you can open the docs
+[directly](trident_api/docs/html/trident-api.html). Note that the HTML version
+only works when directly opened using your browser, it will not work when opened
+using the ADO repo browser or directly in VSCode. We are working on uploading
+the docs to the engineering docs site.
 
 ### Schema
 
