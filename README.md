@@ -19,9 +19,6 @@ can be leveraged outside of that as well.
   - [Contents](#contents)
   - [Docs](#docs)
   - [Getting Started](#getting-started)
-    - [Prerequisites](#prerequisites)
-    - [Building and Validating](#building-and-validating)
-    - [Updating Documentation](#updating-documentation)
   - [Running Trident](#running-trident)
   - [Trident Configuration](#trident-configuration)
   - [Host Configuration](#host-configuration)
@@ -33,6 +30,10 @@ can be leveraged outside of that as well.
     - [TODO: Next Steps](#todo-next-steps)
   - [gRPC Interface](#grpc-interface)
   - [Running from container](#running-from-container)
+  - [Development](#development)
+    - [Prerequisites](#prerequisites)
+    - [Building and Validating](#building-and-validating)
+    - [Updating Documentation](#updating-documentation)
   - [Contributing](#contributing)
   - [Versioning and changelog](#versioning-and-changelog)
   - [Authors](#authors)
@@ -50,41 +51,6 @@ Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shar
 
 [Deployment
 instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/README.md&_a=preview).
-
-### Prerequisites
-
-- Install [git](https://git-scm.com/downloads). E.g. `sudo apt install git`.
-- Install Rust and Cargo: `curl https://sh.rustup.rs -sSf | sh`.
-- Install `build-essential`, `pkg-config`, `libssl-dev`, `libclang-dev`, and
-  `protobuf-compiler`. E.g. `sudo apt install build-essential pkg-config
-  libssl-dev libclang-dev protobuf-compiler`.
-- Clone the [Trident
-  repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident):
-  `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
-- Change directory to the Trident repository: `cd trident`.
-- (Only for changes to `trident_api`) Download documentation dependencies:
-  
-  ```bash
-  make install-json-schema-for-humans
-  ```
-
-### Building and Validating
-
-Build instructions: `cargo build`.
-
-Build, check and and run UTs: `make`.
-
-Code coverage: `make coverage`.
-
-Rebuild trident_api documentation: `make build-api-docs`.
-
-### Updating Documentation
-
-After any change to trident_api, the documentation needs to be regenerated. Run:
-
-```bash
-make build-api-docs
-```
 
 ## Running Trident
 
@@ -412,6 +378,43 @@ To run Trident using a docker container, run:
 
 ```bash
 docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host --pid host trident/trident run
+```
+
+## Development
+
+### Prerequisites
+
+- Install [git](https://git-scm.com/downloads). E.g. `sudo apt install git`.
+- Install Rust and Cargo: `curl https://sh.rustup.rs -sSf | sh`.
+- Install `build-essential`, `pkg-config`, `libssl-dev`, `libclang-dev`, and
+  `protobuf-compiler`. E.g. `sudo apt install build-essential pkg-config
+  libssl-dev libclang-dev protobuf-compiler`.
+- Clone the [Trident
+  repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident):
+  `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
+- Change directory to the Trident repository: `cd trident`.
+- (Only for changes to `trident_api`) Download documentation dependencies:
+  
+  ```bash
+  make install-json-schema-for-humans
+  ```
+
+### Building and Validating
+
+Build instructions: `cargo build`.
+
+Build, check and and run UTs: `make`.
+
+Code coverage: `make coverage`.
+
+Rebuild trident_api documentation: `make build-api-docs`.
+
+### Updating Documentation
+
+After any change to trident_api, the documentation needs to be regenerated. Run:
+
+```bash
+make build-api-docs
 ```
 
 ## Contributing
