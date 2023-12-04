@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Error};
 use log::info;
+use osutils::exe::RunAndCheck;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -99,11 +100,18 @@ fn create_partitions(
             .context(format!("Failed to find disk {} in host status", disk.id))?;
 
         // ensure all /dev/disk/* symlinks are created
-        crate::run_command(Command::new("udevadm").arg("settle"))?;
+        Command::new("udevadm").arg("settle").run_and_check()?;
 
         for (index, partition) in disk.partitions.iter().enumerate() {
             let partition_uuid = partitions_status[index].uuid;
             let part_path = Path::new("/dev/disk/by-partuuid").join(partition_uuid.to_string());
+            if !part_path.exists() {
+                bail!(
+                    "Partition {} partuuid symlink {} does not exist",
+                    partition.id,
+                    part_path.display()
+                );
+            }
 
             let start = partitions_status[index].start;
             let size = partitions_status[index].size;
