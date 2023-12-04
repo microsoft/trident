@@ -5,8 +5,7 @@ StartLimitBurst=5
 After=network.target network-online.target systemd-udev-settle.service trident-network.service
 
 [Service]
-Environment=RUST_LOG=info
-ExecStart=/usr/bin/trident run
+ExecStart=/usr/bin/trident run --verbosity INFO
 Restart=on-failure
 RestartSec=5s
 

@@ -120,9 +120,10 @@ impl Trident {
         };
         // Load the config file
         info!("Loading config from '{}'", config_path.display());
-        let config_contents = fs::read_to_string(config_path)
-            .map_err(|e| warn!("Failed to read config file: {e}"))
-            .unwrap_or_default();
+        let config_contents = fs::read_to_string(&config_path).context(format!(
+            "Failed to read configuration from {:?}",
+            config_path
+        ))?;
 
         // Parse the config file
         let config: LocalConfigFile = match serde_yaml::from_str(&config_contents)
@@ -388,12 +389,19 @@ impl Trident {
         Ok(())
     }
 
-    pub fn print_host_status(&mut self) -> Result<(), Error> {
-        print!(
-            "{}",
-            serde_yaml::to_string(self.datastore.host_status())
-                .context("Failed to serialize HostStatus")?
-        );
+    pub fn retrieve_host_status(&mut self, output_path: &Option<PathBuf>) -> Result<(), Error> {
+        let host_status_yaml = serde_yaml::to_string(&self.datastore.host_status())
+            .context("Failed to serialize Host Status")?;
+        match output_path {
+            Some(path) => {
+                info!("Writing Host Status to {:?}", &path);
+                fs::write(path, host_status_yaml)
+                    .context(format!("Failed to write Host Status to {:?}", path))?;
+            }
+            None => {
+                println!("{}", host_status_yaml);
+            }
+        }
 
         Ok(())
     }

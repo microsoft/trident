@@ -5,8 +5,7 @@ StartLimitInterval=200
 StartLimitBurst=5
 
 [Service]
-Environment=RUST_LOG=info
-ExecStart=/usr/bin/trident start-network
+ExecStart=/usr/bin/trident start-network --verbosity INFO
 Type=oneshot
 Restart=on-failure
 RestartSec=5s

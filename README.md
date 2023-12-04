@@ -99,11 +99,16 @@ following commands (input as a command line parameter):
 - `run`: Runs Trident in the current OS. This is the main command to use to
   start Trident. Trident will load its configuration from
   `/etc/trident/config.yaml` and start applying the desired HostConfiguration.
-- `get-host-status`: At any point in time, you can request to get the current Host
+  If you in addition pass `--status <path-to-output-file>`, Trident will write
+  the resulting Host Status to the specified file.
+- `get`: At any point in time, you can request to get the current Host
   Status using this command. This will print the HostStatus to standard output.
+  If you in addition pass `--status <path-to-output-file>`, Trident will write
+  the Host Status into the specified file instead.
 
-For any of the commands, you can get more context by setting `RUST_LOG=debug`
-environment variable prior to running the command.
+For any of the commands, you can change logging verbosity from the default
+`WARN` by passing `--verbosity` and appending one of the following values:
+`OFF`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`. E.g. `--verbosity DEBUG`.
 
 Note that you can override the configuration path by setting the `--config` parameter.
 

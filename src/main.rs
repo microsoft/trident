@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Error};
-use clap::{Parser, Subcommand};
-use log::error;
+use clap::{Args, Parser, Subcommand};
+use log::{error, LevelFilter};
 
 use trident::{Logstream, MultiLogger};
 
@@ -10,36 +10,47 @@ use setsail::KsTranslator;
 
 #[derive(Parser, Debug)]
 #[command(version)]
-struct Args {
+struct Cli {
+    /// Path to the Trident Configuration file
     #[clap(global = true, short, long)]
     config: Option<PathBuf>,
+
+    /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+    #[arg(global = true, short, long, default_value_t = LevelFilter::Warn)]
+    verbosity: LevelFilter,
+
     #[clap(subcommand)]
-    subcmd: SubCommand,
+    command: Commands,
 }
 
-#[derive(Subcommand, Debug, PartialEq, Eq)]
-enum SubCommand {
+#[derive(Args, Debug)]
+struct GetArgs {
+    /// Path to save the resulting HostStatus
+    #[clap(short, long)]
+    status: Option<PathBuf>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
     /// Apply the HostConfiguration
-    Run,
+    Run(GetArgs),
 
     /// Configure OS networking based on Trident Configuration
     #[clap(name = "start-network")]
     StartNetwork,
 
     /// Get the HostStatus
-    #[clap(name = "get-host-status")]
-    GetHostStatus,
+    #[clap(name = "get")]
+    GetHostStatus(GetArgs),
 
     /// Validates input KickStart file
     // TODO(5910): Remove this in the future
     ParseKickstart { file: String },
 }
 
-fn run_trident(mut logstream: Logstream) -> Result<(), Error> {
-    let args = Args::parse();
-
+fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
     // TODO(5910): Remove this in the future
-    if let SubCommand::ParseKickstart { ref file } = args.subcmd {
+    if let Commands::ParseKickstart { ref file } = args.command {
         let translator = KsTranslator::new().include_fail_is_error(false);
         match translator.translate(
             setsail::load_kickstart_file(file).context(format!("Failed to read {file}"))?,
@@ -60,45 +71,75 @@ fn run_trident(mut logstream: Logstream) -> Result<(), Error> {
 
     // Lock the logstream if we're starting the network
     // We have no network yet, so we can't send logs anywhere
-    if args.subcmd == SubCommand::StartNetwork {
+    if let Commands::StartNetwork = args.command {
         logstream.disable();
     }
 
-    let mut trident = trident::Trident::new(args.config, logstream)?;
+    let mut trident = trident::Trident::new(args.config.clone(), logstream)?;
 
-    match args.subcmd {
-        SubCommand::Run => trident
-            .run()
-            .context("Failed to execute Trident run command")?,
-        SubCommand::StartNetwork => trident.start_network().context("Failed to start network")?,
-        SubCommand::GetHostStatus => trident
-            .print_host_status()
+    match &args.command {
+        Commands::Run(args) => {
+            let res = trident
+                .run()
+                .context("Failed to execute Trident run command");
+
+            // return HostStatus if requested
+            if args.status.is_some() {
+                if let Err(e) = trident
+                    .retrieve_host_status(&args.status)
+                    .context("Failed to retrieve Host Status")
+                {
+                    error!("{e}");
+                }
+            }
+
+            res?;
+        }
+        Commands::StartNetwork => trident.start_network().context("Failed to start network")?,
+        Commands::GetHostStatus(args) => trident
+            .retrieve_host_status(&args.status)
             .context("Failed to retrieve Host Status")?,
 
         // TODO(5910): Remove this in the future
-        SubCommand::ParseKickstart { .. } => unreachable!(),
+        Commands::ParseKickstart { .. } => unreachable!(),
     }
 
     Ok(())
 }
 
-fn main() {
-    // Initialize the loggers
-
-    // Create the logstream
+fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
     let logstream = Logstream::create();
 
     // Set up the multilogger
     MultiLogger::new()
+        .with_max_level(args.verbosity)
         .with_logger(Box::new(
-            env_logger::builder().format_timestamp(None).build(),
+            env_logger::builder()
+                .format_timestamp(None)
+                .filter_level(args.verbosity)
+                .build(),
         ))
         .with_logger(logstream.make_logger())
         .init()
         .expect("Logger already registered");
 
-    if let Err(e) = run_trident(logstream) {
-        error!("Trident failed: {e:?}");
+    Ok(logstream)
+}
+
+fn main() {
+    // Parse args
+    let args = Cli::parse();
+
+    // Initialize the loggers
+    let logstream = setup_logging(&args);
+    if let Err(e) = logstream {
+        error!("Failed to initialize logging: {e:?}");
         std::process::exit(1);
+    }
+
+    // Invoke Trident
+    if let Err(e) = run_trident(logstream.unwrap(), &args) {
+        error!("Trident failed: {e:?}");
+        std::process::exit(2);
     }
 }
