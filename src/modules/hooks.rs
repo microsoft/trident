@@ -152,26 +152,29 @@ mod tests {
 
     #[test]
     fn test_run_script_success() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_dir = temp_dir.path().join("test-directory");
+
         let host_status_yaml = indoc! {r#"
             reconcile-state: clean-install
             imaging:
               root-device-path: /dev/sda
         "#};
         let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
-        let mut test_env_vars = HashMap::new();
-        test_env_vars.insert("TEST_DIR_NAME".into(), "test-directory".into());
+        let mut environment_variables = HashMap::new();
+        environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
             name: "test-script".into(),
             servicing_type: vec![ServicingType::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: "mkdir $TEST_DIR_NAME".into(),
-            environment_variables: test_env_vars,
+            content: "mkdir $TEST_DIR".into(),
+            environment_variables,
             log_file_path: None,
         };
         run_script(&script, &host_status).unwrap();
-        assert!(PathBuf::from("test-directory").exists());
+        assert!(test_dir.exists());
         // Cleanup
-        std::fs::remove_dir("test-directory").unwrap();
+        temp_dir.close().unwrap();
     }
 
     #[test]
@@ -214,22 +217,29 @@ mod tests {
 
     #[test]
     fn test_run_script_that_always_skips() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_dir = temp_dir.path().join("test-directory");
+
         let host_status_yaml = indoc! {r#"
             reconcile-state: clean-install
             imaging:
               root-device-path: /dev/sda
         "#};
         let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let mut environment_variables = HashMap::new();
+        environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
             name: "test-script".into(),
             servicing_type: vec![ServicingType::NormalUpdate],
             interpreter: Some("/bin/bash".into()),
-            content: "mkdir test-directory".into(),
-            environment_variables: HashMap::new(),
+            content: "mkdir $TEST_DIR_NAME".into(),
+            environment_variables,
             log_file_path: None,
         };
         // Check that the test-directory does not exist since the script should not be run
-        assert!(!PathBuf::from("test-directory").exists());
         assert!(run_script(&script, &host_status).is_ok());
+        assert!(!test_dir.exists());
+        // Cleanup
+        temp_dir.close().unwrap();
     }
 }
