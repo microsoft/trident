@@ -397,19 +397,24 @@ fn get_ab_volume(
             .iter()
             .find(|v| v.0 == block_device_id);
         if let Some(v) = ab_volume {
-            return get_ab_update_volume(host_status, active).and_then(
-                |selection| match selection {
-                    AbVolumeSelection::VolumeA => {
-                        get_block_device(host_status, &v.1.volume_a_id, false)
+            // temporary hack to have one esp partition (esp-a)
+            // task https://dev.azure.com/mariner-org/ECF/_workitems/edit/6289
+            if v.0 == "esp" {
+                return get_block_device(host_status, &v.1.volume_a_id, false);
+            } else {
+                return get_ab_update_volume(host_status, active).and_then(|selection| {
+                    match selection {
+                        AbVolumeSelection::VolumeA => {
+                            get_block_device(host_status, &v.1.volume_a_id, false)
+                        }
+                        AbVolumeSelection::VolumeB => {
+                            get_block_device(host_status, &v.1.volume_b_id, false)
+                        }
                     }
-                    AbVolumeSelection::VolumeB => {
-                        get_block_device(host_status, &v.1.volume_b_id, false)
-                    }
-                },
-            );
+                });
+            }
         }
     }
-
     None
 }
 

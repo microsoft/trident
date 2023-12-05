@@ -22,10 +22,11 @@ use trident_api::{
 };
 
 use crate::modules::{self, storage::tabfile::TabFile, Module};
-
+use osutils::udevadm;
 pub mod mount;
 mod stream_image;
 mod systemd_sysupdate;
+mod update_grub;
 
 const HASH_IGNORED: &str = "ignored";
 
@@ -506,7 +507,7 @@ impl Module for ImageModule {
 
     fn reconcile(
         &mut self,
-        _host_status: &mut HostStatus,
+        host_status: &mut HostStatus,
         _host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         // Patch /var in case it was injected as a volume
@@ -546,6 +547,41 @@ impl Module for ImageModule {
         }
 
         // End of patch block
+
+        // Fetch the root partition ID from HostStatus; it corresponds to the
+        // "/", root fs, mountpoint
+        let root_id = host_status
+            .storage
+            .mount_points
+            .iter()
+            .find(|(_, mp)| mp.path == Path::new("/"))
+            .map(|(id, _)| id.clone())
+            .context("Failed to find root partition")?;
+
+        // Fetch the Partition object corresponding to root_id
+        let root_part = systemd_sysupdate::get_ab_volume_partition(host_status, &root_id)
+            .context("No root partition found in A/B update")?;
+        udevadm::settle()?;
+        let root_uuid = update_grub::get_uuid_from_path(&root_part.path)?;
+
+        // Call update_grub() to update the UUID of root FS and if needed,
+        // PARTUUID of root partition inside GRUB config files
+        update_grub::update_grub_rootfs(
+            update_grub::GRUB_BOOT_CONFIG_PATH,
+            &root_uuid,
+            Some(&root_part.uuid.to_string()),
+        )
+        .context(format!(
+            "Failed to update GRUB config at path '{}'",
+            &update_grub::GRUB_BOOT_CONFIG_PATH
+        ))?;
+
+        // For GRUB_EFI_CONFIG_PATH, no need to update the PARTUUID of root FS inside GRUB
+        update_grub::update_grub_rootfs(update_grub::GRUB_EFI_CONFIG_PATH, &root_uuid, None)
+            .context(format!(
+                "Failed to update GRUB config at path '{}'",
+                &update_grub::GRUB_EFI_CONFIG_PATH
+            ))?;
 
         Ok(())
     }
