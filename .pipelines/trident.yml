@@ -30,11 +30,10 @@ resources:
       type: git
       name: argus-toolkit
       ref: refs/heads/main
-
-  pipelines:
-  - pipeline: hermes-host-image
-    source: hermes-host-image
-    branch: main
+      
+    - repository: test-images
+      type: git
+      name: test-images
 
 extends:
   template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
@@ -79,7 +78,4 @@ extends:
         tridentRun: false
         tridentRepo: self
         tridentArtifact: drop_linux_stage_linux_job
-        provOSStageDependency : linux_stage
-        downloadBuildTypeRuntimeOS: specific
-        hermesImagePipelineID: $(resources.pipeline.hermes-host-image.pipelineId)
-        updateRuntimeOSTrident: true
+        tridentStage: linux_stage
