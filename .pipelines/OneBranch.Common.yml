@@ -21,9 +21,13 @@ steps:
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Validate Trident API Schema
 
-  - script: cargo build --locked 2>&1
+  - script: cargo check --locked 2>&1
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Build Debug
+    displayName: Check Debug
+
+  - script: cargo check --locked --all-features 2>&1
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    displayName: Check with all features
 
   - script: cargo test --locked --all 2>&1
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
