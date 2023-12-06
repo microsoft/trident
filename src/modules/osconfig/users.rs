@@ -185,6 +185,9 @@ fn set_password(name: &str, password: Password) -> Result<(), Error> {
                 .run()?
                 .check()
                 .context(format!("Failed to set password for user {}", name))?;
+            // Run mkinitrd to successfully set the password
+            // Not doing this does not reflect the password successfully to login
+            Command::new("mkinitrd").run_and_check()?;
         }
         #[cfg(feature = "dangerous-options")]
         Password::DangerousHashed(password) => {

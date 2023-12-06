@@ -97,7 +97,7 @@ pub(super) fn deploy(
         Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?)
     } else {
         // For remote files, perform a blocking GET request
-        exponential_backoff_get(&image_url, 5)?
+        exponential_backoff_get(&image_url, 25, Duration::from_secs(600))?
     };
 
     // Initialize HashingReader instance on stream
@@ -143,11 +143,17 @@ pub(super) fn deploy(
 /// `max_retries` is the number of *additional* attempts to make after the first.
 /// Passing 0 will make a single attempt, passing 1 will make at most two attempts, etc.
 ///
-/// The backoff is exponential, starting at 500ms and doubling each time, up to a maximum of 64s.
-fn exponential_backoff_get(url: &Url, max_retries: u8) -> Result<Box<Response>, Error> {
+/// `timeout` is the timeout for the blocking get request.
+///
+/// The backoff is exponential, starting at 500ms and doubling each time, up to a maximum of 16s.
+fn exponential_backoff_get(
+    url: &Url,
+    max_retries: u8,
+    timeout: Duration,
+) -> Result<Box<Response>, Error> {
     let mut counter = 0u8;
     let client = reqwest::blocking::ClientBuilder::new()
-        .timeout(None)
+        .timeout(timeout)
         .build()
         .context("Failed to create HTTP client")?;
     loop {
@@ -175,12 +181,13 @@ fn exponential_backoff_get(url: &Url, max_retries: u8) -> Result<Box<Response>, 
         counter += 1;
 
         // Calculate exponential backoff.
-        // After 64 seconds it becomes a bit ridiculous so we cap it there.
+        // After 16 seconds we cap the backoff and retry until we reach the limit
+        // of retries.
         // Because it's just a couple values it's easier to just hardcode it
         // than spending the extra ticks to calculate a power of 2.
         //
-        // backoff = min( (0.5 * 2^(counter - 1)), 64) seconds
-        // 0.5, 1, 2, 4, 8, 16, 32, 64, 64, 64, ...
+        // backoff = 0.5 * 2^(counter - 1) until 6 retries. Post that it is a constant 16 seconds.
+        // 0.5, 1, 2, 4, 8, 16, 16, 16, 16, 16, ...
         let backoff = Duration::from_millis(match counter {
             1 => 500,
             2 => 1000,
@@ -188,8 +195,7 @@ fn exponential_backoff_get(url: &Url, max_retries: u8) -> Result<Box<Response>, 
             4 => 4000,
             5 => 8000,
             6 => 16000,
-            7 => 32000,
-            _ => 64000,
+            _ => 16000,
         });
 
         // Log the error and backoff
@@ -213,7 +219,7 @@ mod tests {
     fn test_exponential_backoff() {
         let fake_url = Url::try_from("http://127.0.0.1:3030").unwrap();
         let start = Instant::now();
-        let result = exponential_backoff_get(&fake_url, 2);
+        let result = exponential_backoff_get(&fake_url, 2, Duration::from_secs(1));
         let duration = start.elapsed();
 
         // 2 retries means 3 attempts:
