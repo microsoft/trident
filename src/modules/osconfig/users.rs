@@ -187,7 +187,7 @@ fn set_password(name: &str, password: Password) -> Result<(), Error> {
                 .context(format!("Failed to set password for user {}", name))?;
             // Run mkinitrd to successfully set the password
             // Not doing this does not reflect the password successfully to login
-            Command::new("mkinitrd").run_and_check()?;
+            osutils::exe::RunAndCheck::run_and_check(&mut std::process::Command::new("mkinitrd"))?;
         }
         #[cfg(feature = "dangerous-options")]
         Password::DangerousHashed(password) => {
