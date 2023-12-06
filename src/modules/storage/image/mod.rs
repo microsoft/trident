@@ -16,12 +16,12 @@ use trident_api::{
     config::{HostConfiguration, Image, ImageFormat},
     status::{
         AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, Disk, HostStatus,
-        Partition, RaidArray, ReconcileState, UpdateKind,
+        Partition, RaidArray, ReconcileState,
     },
     BlockDeviceId,
 };
 
-use crate::modules::{self, storage::tabfile::TabFile, Module};
+use crate::modules::{self, storage::tabfile::TabFile};
 use osutils::udevadm;
 pub mod mount;
 mod stream_image;
@@ -254,7 +254,7 @@ fn set_host_status_block_device_contents(
 
     if let Some(ab_update) = &host_status.imaging.ab_update {
         if let Some(ab_volume_pair) = ab_update.volume_pairs.get(block_device_id) {
-            let target_id = match super::get_ab_update_volume(host_status, false) {
+            let target_id = match modules::get_ab_update_volume(host_status, false) {
                 Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
                 Some(AbVolumeSelection::VolumeB) => Some(&ab_volume_pair.volume_b_id),
                 None => None,
@@ -399,192 +399,163 @@ fn get_undeployed_images<'a>(
         .collect()
 }
 
-#[derive(Default, Debug)]
-pub struct ImageModule;
-impl Module for ImageModule {
-    fn name(&self) -> &'static str {
-        "image"
-    }
+pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Error> {
+    // update root_device_path of the active root volume
+    host_status.imaging.root_device_path = Some(
+        TabFile::get_device_path(Path::new("/proc/mounts"), Path::new("/"))
+            .context("Failed find root mount point")?,
+    );
 
-    fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
-        // update root_device_path of the active root volume
-        host_status.imaging.root_device_path = Some(
-            TabFile::get_device_path(Path::new("/proc/mounts"), Path::new("/"))
-                .context("Failed find root mount point")?,
-        );
-
-        // if a/b update is enabled
-        if let Some(ab_update) = &host_status.imaging.ab_update {
-            // and mount points have a reference to root volume
-            if let Some(root_device_id) = host_status
-                .storage
-                .mount_points
-                .iter()
-                .find(|(_id, mp)| mp.path == Path::new("/"))
-                .map(|(id, _mp)| id.clone())
-            {
-                // and one of the a/b update volumes points to the root volume
-                if let Some(root_device_pair) = ab_update.volume_pairs.get(&root_device_id) {
-                    let volume_a_path = modules::get_block_device(
-                        host_status,
-                        &root_device_pair.volume_a_id,
-                        false,
-                    )
-                    .context("Failed to get block device for volume A")?
-                    .path;
-
-                    let volume_b_path = modules::get_block_device(
-                        host_status,
-                        &root_device_pair.volume_b_id,
-                        false,
-                    )
-                    .context("Failed to get block device for volume B")?
-                    .path;
-
-                    // update the active volume in the a/b scheme based on what
-                    // is the current root volume
-                    if let Some(root_device_path) = &host_status.imaging.root_device_path {
-                        host_status
-                            .imaging
-                            .ab_update
-                            .as_mut()
-                            .unwrap()
-                            .active_volume = if &volume_a_path.canonicalize()? == root_device_path {
-                            Some(AbVolumeSelection::VolumeA)
-                        } else if &volume_b_path.canonicalize()? == root_device_path {
-                            Some(AbVolumeSelection::VolumeB)
-                        } else {
-                            None
-                        };
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn validate_host_config(
-        &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn select_update_kind(
-        &self,
-        host_status: &HostStatus,
-        host_config: &HostConfiguration,
-    ) -> Option<UpdateKind> {
-        let undeployed_images = get_undeployed_images(host_status, host_config, true);
-        if undeployed_images.is_empty() {
-            None
-        } else {
-            debug!("Found following images to update: {:?}", undeployed_images);
-            Some(UpdateKind::AbUpdate)
-        }
-    }
-
-    fn migrate(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        mount_point: &Path,
-    ) -> Result<(), Error> {
-        // Only call refresh_ab_volumes() and set active_volume to None if
-        // the reconcile_state is CleanInstall
-        if host_status.reconcile_state == ReconcileState::CleanInstall {
-            refresh_ab_volumes(host_status, host_config);
-        }
-
-        update_images(host_status, host_config).context("Failed to update filesystem images")?;
-        mount::mount_updated_volumes(host_config, host_status, mount_point, false)
-            .context("Failed to mount the updated volumes")?;
-
-        Ok(())
-    }
-
-    fn reconcile(
-        &mut self,
-        host_status: &mut HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Result<(), Error> {
-        // Patch /var in case it was injected as a volume
-
-        // TODO - this is a temporary fix for the issue where /var is mounted as
-        // a volume, longer term, we should either require user to provide /var
-        // partition image or allow to copy contents of /var from the root fs
-        // image, similar to what MIC will do
-
-        // if we let users mount over /var, some services will fail to start, so
-        // we need to recreate missing directories first
-        let var_log_path = Path::new("/var/log");
-        if !var_log_path.exists() {
-            fs::create_dir(var_log_path)?;
-            fs::set_permissions(var_log_path, fs::Permissions::from_mode(0o755))?;
-        }
-
-        // auditd requires /var/log/audit to be present, and auditd is a
-        // required component for Mariner images
-        let var_log_audit_path = var_log_path.join("audit");
-        if !var_log_audit_path.exists() {
-            fs::create_dir(&var_log_audit_path)?;
-            fs::set_permissions(var_log_audit_path, fs::Permissions::from_mode(0o700))?;
-        }
-
-        // sshd requires /var/lib/sshd to be present, and sshd is a
-        // required component for Mariner images
-        let var_lib_path = Path::new("/var/lib");
-        if !var_lib_path.exists() {
-            fs::create_dir(var_lib_path)?;
-            fs::set_permissions(var_lib_path, fs::Permissions::from_mode(0o755))?;
-        }
-        let var_lib_sshd_path = var_lib_path.join("sshd");
-        if !var_lib_sshd_path.exists() {
-            fs::create_dir(&var_lib_sshd_path)?;
-            fs::set_permissions(var_lib_sshd_path, fs::Permissions::from_mode(0o700))?;
-        }
-
-        // End of patch block
-
-        // Fetch the root partition ID from HostStatus; it corresponds to the
-        // "/", root fs, mountpoint
-        let root_id = host_status
+    // if a/b update is enabled
+    if let Some(ab_update) = &host_status.imaging.ab_update {
+        // and mount points have a reference to root volume
+        if let Some(root_device_id) = host_status
             .storage
             .mount_points
             .iter()
-            .find(|(_, mp)| mp.path == Path::new("/"))
-            .map(|(id, _)| id.clone())
-            .context("Failed to find root partition")?;
+            .find(|(_id, mp)| mp.path == Path::new("/"))
+            .map(|(id, _mp)| id.clone())
+        {
+            // and one of the a/b update volumes points to the root volume
+            if let Some(root_device_pair) = ab_update.volume_pairs.get(&root_device_id) {
+                let volume_a_path =
+                    modules::get_block_device(host_status, &root_device_pair.volume_a_id, false)
+                        .context("Failed to get block device for volume A")?
+                        .path;
 
-        // Fetch the Partition object corresponding to root_id
-        let root_part = systemd_sysupdate::get_ab_volume_partition(host_status, &root_id)
-            .context("No root partition found in A/B update")?;
-        udevadm::settle()?;
-        let root_uuid = update_grub::get_uuid_from_path(&root_part.path)?;
+                let volume_b_path =
+                    modules::get_block_device(host_status, &root_device_pair.volume_b_id, false)
+                        .context("Failed to get block device for volume B")?
+                        .path;
 
-        // Call update_grub() to update the UUID of root FS and if needed,
-        // PARTUUID of root partition inside GRUB config files
-        update_grub::update_grub_rootfs(
-            update_grub::GRUB_BOOT_CONFIG_PATH,
-            &root_uuid,
-            Some(&root_part.uuid.to_string()),
-        )
-        .context(format!(
-            "Failed to update GRUB config at path '{}'",
-            &update_grub::GRUB_BOOT_CONFIG_PATH
-        ))?;
-
-        // For GRUB_EFI_CONFIG_PATH, no need to update the PARTUUID of root FS inside GRUB
-        update_grub::update_grub_rootfs(update_grub::GRUB_EFI_CONFIG_PATH, &root_uuid, None)
-            .context(format!(
-                "Failed to update GRUB config at path '{}'",
-                &update_grub::GRUB_EFI_CONFIG_PATH
-            ))?;
-
-        Ok(())
+                // update the active volume in the a/b scheme based on what
+                // is the current root volume
+                if let Some(root_device_path) = &host_status.imaging.root_device_path {
+                    host_status
+                        .imaging
+                        .ab_update
+                        .as_mut()
+                        .unwrap()
+                        .active_volume = if &volume_a_path.canonicalize()? == root_device_path {
+                        Some(AbVolumeSelection::VolumeA)
+                    } else if &volume_b_path.canonicalize()? == root_device_path {
+                        Some(AbVolumeSelection::VolumeB)
+                    } else {
+                        None
+                    };
+                }
+            }
+        }
     }
+
+    Ok(())
+}
+
+pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfiguration) -> bool {
+    let undeployed_images = get_undeployed_images(host_status, host_config, true);
+    if !undeployed_images.is_empty() {
+        debug!("Found following images to update: {:?}", undeployed_images);
+    }
+    !undeployed_images.is_empty()
+}
+
+pub(super) fn migrate(
+    host_status: &mut HostStatus,
+    host_config: &HostConfiguration,
+    mount_point: &Path,
+) -> Result<(), Error> {
+    // Only call refresh_ab_volumes() and set active_volume to None if
+    // the reconcile_state is CleanInstall
+    if host_status.reconcile_state == ReconcileState::CleanInstall {
+        refresh_ab_volumes(host_status, host_config);
+    }
+
+    update_images(host_status, host_config).context("Failed to update filesystem images")?;
+    mount::mount_updated_volumes(host_config, host_status, mount_point, false)
+        .context("Failed to mount the updated volumes")?;
+
+    Ok(())
+}
+
+pub(super) fn reconcile(
+    host_status: &mut HostStatus,
+    _host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    // Patch /var in case it was injected as a volume
+
+    // TODO - this is a temporary fix for the issue where /var is mounted as
+    // a volume, longer term, we should either require user to provide /var
+    // partition image or allow to copy contents of /var from the root fs
+    // image, similar to what MIC will do
+
+    // if we let users mount over /var, some services will fail to start, so
+    // we need to recreate missing directories first
+    let var_log_path = Path::new("/var/log");
+    if !var_log_path.exists() {
+        fs::create_dir(var_log_path)?;
+        fs::set_permissions(var_log_path, fs::Permissions::from_mode(0o755))?;
+    }
+
+    // auditd requires /var/log/audit to be present, and auditd is a
+    // required component for Mariner images
+    let var_log_audit_path = var_log_path.join("audit");
+    if !var_log_audit_path.exists() {
+        fs::create_dir(&var_log_audit_path)?;
+        fs::set_permissions(var_log_audit_path, fs::Permissions::from_mode(0o700))?;
+    }
+
+    // sshd requires /var/lib/sshd to be present, and sshd is a
+    // required component for Mariner images
+    let var_lib_path = Path::new("/var/lib");
+    if !var_lib_path.exists() {
+        fs::create_dir(var_lib_path)?;
+        fs::set_permissions(var_lib_path, fs::Permissions::from_mode(0o755))?;
+    }
+    let var_lib_sshd_path = var_lib_path.join("sshd");
+    if !var_lib_sshd_path.exists() {
+        fs::create_dir(&var_lib_sshd_path)?;
+        fs::set_permissions(var_lib_sshd_path, fs::Permissions::from_mode(0o700))?;
+    }
+
+    // End of patch block
+
+    // Fetch the root partition ID from HostStatus; it corresponds to the
+    // "/", root fs, mountpoint
+    let root_id = host_status
+        .storage
+        .mount_points
+        .iter()
+        .find(|(_, mp)| mp.path == Path::new("/"))
+        .map(|(id, _)| id.clone())
+        .context("Failed to find root partition")?;
+
+    // Fetch the Partition object corresponding to root_id
+    let root_part = systemd_sysupdate::get_ab_volume_partition(host_status, &root_id)
+        .context("No root partition found in A/B update")?;
+    udevadm::settle()?;
+    let root_uuid = update_grub::get_uuid_from_path(&root_part.path)?;
+
+    // Call update_grub() to update the UUID of root FS and if needed,
+    // PARTUUID of root partition inside GRUB config files
+    update_grub::update_grub_rootfs(
+        update_grub::GRUB_BOOT_CONFIG_PATH,
+        &root_uuid,
+        Some(&root_part.uuid.to_string()),
+    )
+    .context(format!(
+        "Failed to update GRUB config at path '{}'",
+        &update_grub::GRUB_BOOT_CONFIG_PATH
+    ))?;
+
+    // For GRUB_EFI_CONFIG_PATH, no need to update the PARTUUID of root FS inside GRUB
+    update_grub::update_grub_rootfs(update_grub::GRUB_EFI_CONFIG_PATH, &root_uuid, None).context(
+        format!(
+            "Failed to update GRUB config at path '{}'",
+            &update_grub::GRUB_EFI_CONFIG_PATH
+        ),
+    )?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -592,6 +563,7 @@ mod tests {
     use super::*;
     use indoc::indoc;
     use std::io::Cursor;
+    use trident_api::status::UpdateKind;
 
     #[test]
     fn test_hashing_reader() {

@@ -18,18 +18,18 @@ use trident_api::{
 use osutils::{chroot, files::create_dirs};
 
 use crate::{
-    datastore::DataStore, modules::image::mount, protobufs::HostStatusState, TRIDENT_DATASTORE_PATH,
+    datastore::DataStore, modules::storage::image::mount, protobufs::HostStatusState,
+    TRIDENT_DATASTORE_PATH,
 };
 use crate::{
     modules::{
-        hooks::HooksModule, image::ImageModule, management::ManagementModule,
-        network::NetworkModule, osconfig::OsConfigModule, storage::StorageModule,
+        hooks::HooksModule, management::ManagementModule, network::NetworkModule,
+        osconfig::OsConfigModule, storage::StorageModule,
     },
     HostUpdateCommand,
 };
 
 pub mod hooks;
-pub mod image;
 pub mod management;
 pub mod network;
 pub mod osconfig;
@@ -92,7 +92,6 @@ trait Module: Send {
 lazy_static::lazy_static! {
     static ref MODULES: Mutex<Vec<Box<dyn Module>>> = Mutex::new(vec![
         Box::<StorageModule>::default(),
-        Box::<ImageModule>::default(),
         Box::<NetworkModule>::default(),
         Box::<OsConfigModule>::default(),
         Box::<ManagementModule>::default(),
@@ -519,7 +518,7 @@ fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Er
     ))?;
 
     info!("Performing soft reboot");
-    image::kexec(
+    storage::image::kexec(
         mount_path,
         &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
     )

@@ -8,7 +8,7 @@ use std::{
 };
 use zstd;
 
-use crate::modules::image::HashingReader;
+use super::HashingReader;
 use trident_api::{
     config::Image,
     status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},

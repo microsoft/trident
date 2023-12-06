@@ -8,7 +8,7 @@ use std::{
 };
 use trident_api::{
     config::{HostConfiguration, MountPoint, Partition, PartitionSize},
-    status::{self, BlockDeviceContents, HostStatus, UpdateKind},
+    status::{self, BlockDeviceContents, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
 
@@ -19,6 +19,7 @@ use systemd_repart::RepartConfiguration;
 use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
 
 use self::tabfile::TabFileSettings;
+pub mod image;
 mod raid;
 mod sfdisk;
 mod systemd_repart;
@@ -147,6 +148,9 @@ impl Module for StorageModule {
             .storage
             .disks
             .retain(|_id, disk| disk.path.exists());
+
+        image::refresh_host_status(host_status)
+            .context("Image submodule failed during refresh_host_status")?;
 
         Ok(())
     }
@@ -293,9 +297,13 @@ impl Module for StorageModule {
 
     fn select_update_kind(
         &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
+        host_status: &HostStatus,
+        host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
+        if image::needs_ab_update(host_status, host_config) {
+            return Some(UpdateKind::AbUpdate);
+        }
+
         None
     }
 
@@ -303,16 +311,20 @@ impl Module for StorageModule {
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
-        _mount_path: &Path,
+        mount_point: &Path,
     ) -> Result<(), Error> {
-        if host_status.reconcile_state != status::ReconcileState::CleanInstall {
-            return Ok(());
+        if host_status.reconcile_state == ReconcileState::CleanInstall {
+            raid::stop_pre_existing_raid_arrays(host_config)
+                .context("Failed to clean up pre-existing RAID arrays")?;
+            create_partitions(host_status, host_config)
+                .context("Failed to create disk partitions")?;
+            raid::create_sw_raid(host_status, host_config)
+                .context("Failed to create software RAID")?;
         }
 
-        raid::stop_pre_existing_raid_arrays(host_config)
-            .context("Failed to clean up pre-existing RAID arrays")?;
-        create_partitions(host_status, host_config).context("Failed to create disk partitions")?;
-        raid::create_sw_raid(host_status, host_config).context("Failed to create software RAID")?;
+        image::migrate(host_status, host_config, mount_point)
+            .context("Image submodule failed during migrate")?;
+
         Ok(())
     }
 
@@ -354,6 +366,9 @@ impl Module for StorageModule {
         // persist on reboots
         raid::create_raid_config(host_status)
             .context("Failed to create mdadm.conf file after RAID creation")?;
+
+        image::reconcile(host_status, host_config)
+            .context("Image submodule failed during reconcile")?;
 
         Ok(())
     }
