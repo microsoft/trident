@@ -292,6 +292,25 @@ impl Module for StorageModule {
             }
         }
 
+        // Ensure any two disks point to different devices
+        let mut device_paths = HashMap::<PathBuf, BlockDeviceId>::new();
+        for disk in &host_config.storage.disks {
+            let device_path = disk
+                .device
+                .canonicalize()
+                .context(format!("Failed to canonicalize path of disk {}", disk.id))?;
+            if let Some(existing_disk_id) =
+                device_paths.insert(device_path.clone(), disk.id.clone())
+            {
+                bail!(
+                    "Disks {} and {} point to the same device {}",
+                    disk.id,
+                    existing_disk_id,
+                    device_path.display()
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -479,11 +498,11 @@ mod tests {
             storage:
                 disks:
                   - id: disk1
-                    device: /dev/sda
+                    device: /
                     partition-table-type: gpt
                     partitions:
                   - id: disk2
-                    device: /dev/sdb
+                    device: /tmp
                     partition-table-type: gpt
                     partitions:
                       - id: part1
@@ -532,6 +551,15 @@ mod tests {
             .is_ok());
 
         let host_config_golden = host_config.clone();
+
+        // fail on duplicate disk path
+        host_config.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
+
+        assert!(storage_module
+            .validate_host_config(&empty_host_status, &host_config)
+            .is_err());
+
+        host_config = host_config_golden.clone();
 
         // fail on duplicate id
         host_config.storage.disks.get_mut(0).unwrap().partitions = vec![Partition {
