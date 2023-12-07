@@ -349,63 +349,72 @@ impl Trident {
         // Process commands. Starting with the initial command indicated in the local config file
         // (if any). Once that has been handled, subsequent commands are received from the gRPC
         // endpoint.
-        while let Some(mut cmd) = receiver.blocking_recv() {
-            if self.config.phonehome.is_some() && cmd.host_config.management.phonehome.is_none() {
-                info!("Injecting phonehome into host configuration");
-                cmd.host_config.management.phonehome = self.config.phonehome.clone();
-            }
+        while let Some(cmd) = receiver.blocking_recv() {
+            let has_sender = cmd.sender.is_some();
 
-            // TODO: mount the overlay only if we actually need to perform an update
-            let overlay = EphemeralOverlayWithSystemD::mount(Path::new(SYSTEMD_UNIT_ROOT_PATH));
-            if let Err(e) = &overlay {
-                // we can continue, though if we need to rerun, there will be
-                // subsequent errors
-                error!("Failed to setup systemd configuration overlay: {e:?}");
-            }
-
-            let result = if self.datastore.is_persistent() {
-                modules::update(cmd, &mut self.datastore).context("Failed to update host")
-            } else {
-                let datastore_path = modules::get_datastore_path(&cmd.host_config).to_owned();
-                let res = modules::provision(cmd, &mut self.datastore)
-                    .context("Failed to provision host");
-                // save the datastore if we failed, as we might not have saved
-                // it already
-                if let Err(_e) = &res {
-                    self.datastore.persist(datastore_path.as_path())?;
-                }
-                res
-            };
-
-            if let Err(e) = result {
+            if let Err(e) = self.handle_command(cmd) {
                 if let Some(ref orchestrator) = orchestrator {
                     orchestrator.report_error(format!("{e:?}"));
                 }
-                error!("{e:?}");
-            }
-
-            if let Ok(overlay) = overlay {
-                if let Err(e) = overlay.unmount().context("Failed to exit overlay") {
-                    error!("{e:?}");
+                if has_sender {
+                    // TODO: report the error back to the sender and then
+                    // possibly restart Trident
+                    error!("Failed to handle command: {e:?}");
+                } else {
+                    return match exit_chroot(chroot, &orchestrator) {
+                        Ok(_) => Err(e),
+                        Err(e2) => Err(e.context(e2)),
+                    };
                 }
             }
         }
 
         // Exit the chroot if we were executing in the container.
-        if let Some(chroot) = chroot {
-            if let Err(e) = chroot.exit().context("Failed to exit chroot") {
-                if let Some(ref orchestrator) = orchestrator {
-                    orchestrator.report_error(format!("{e:?}"));
-                }
-                anyhow::bail!(e);
-            }
-        }
+        exit_chroot(chroot, &orchestrator)?;
 
         if let Some(ref orchestrator) = orchestrator {
             orchestrator.report_success()
         }
 
         Ok(())
+    }
+
+    fn handle_command(&mut self, mut cmd: HostUpdateCommand) -> Result<(), Error> {
+        if self.config.phonehome.is_some() && cmd.host_config.management.phonehome.is_none() {
+            info!("Injecting phonehome into host configuration");
+            cmd.host_config.management.phonehome = self.config.phonehome.clone();
+        }
+
+        // Use overlay for holding any changes to the host filesystem that
+        // should not be persisted.
+        // TODO: mount the overlay only if we actually need to perform an update
+        let overlay = EphemeralOverlayWithSystemD::mount(Path::new(SYSTEMD_UNIT_ROOT_PATH))?;
+
+        let result = if self.datastore.is_persistent() {
+            modules::update(cmd, &mut self.datastore).context("Failed to update host")
+        } else {
+            let datastore_path = modules::get_datastore_path(&cmd.host_config).to_owned();
+            // Save the datastore if we failed, as we might not have saved
+            // it already
+            match modules::provision(cmd, &mut self.datastore).context("Failed to provision host") {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    match self.datastore.persist(datastore_path.as_path()) {
+                        Ok(_) => Err(e),
+                        // If we failed to persist, capture that error as well
+                        Err(e2) => Err(e.context(e2)),
+                    }
+                }
+            }
+        };
+
+        match overlay.unmount().context("Failed to exit overlay") {
+            Ok(_) => result,
+            Err(e2) => match result {
+                Ok(_) => Err(e2),
+                Err(e) => Err(e.context(e2)),
+            },
+        }
     }
 
     pub fn retrieve_host_status(&mut self, output_path: &Option<PathBuf>) -> Result<(), Error> {
@@ -424,6 +433,22 @@ impl Trident {
 
         Ok(())
     }
+}
+
+fn exit_chroot(
+    chroot: Option<chroot::Chroot>,
+    orchestrator: &Option<OrchestratorConnection>,
+) -> Result<(), Error> {
+    if let Some(chroot) = chroot {
+        if let Err(e) = chroot.exit().context("Failed to exit chroot") {
+            if let Some(ref orchestrator) = *orchestrator {
+                orchestrator.report_error(format!("{e:?}"));
+            }
+            anyhow::bail!(e);
+        }
+    }
+
+    Ok(())
 }
 
 fn run_command(command: &mut Command) -> Result<Output, Error> {
