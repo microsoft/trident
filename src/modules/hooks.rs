@@ -23,14 +23,6 @@ impl Module for HooksModule {
         Ok(())
     }
 
-    fn validate_host_config(
-        &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-
     fn migrate(
         &mut self,
         host_status: &mut HostStatus,

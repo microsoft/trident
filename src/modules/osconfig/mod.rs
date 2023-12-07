@@ -20,14 +20,6 @@ impl Module for OsConfigModule {
         Ok(())
     }
 
-    fn validate_host_config(
-        &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-
     fn select_update_kind(
         &self,
         _host_status: &HostStatus,
