@@ -43,6 +43,11 @@ impl Chroot {
                     .flags(MountFlags::RDONLY)
                     .mount("sysfs", path.join("sys"))
                     .context("Failed to mount '/sys' for chroot")?,
+                Mount::builder()
+                    .fstype("tmpfs")
+                    .flags(MountFlags::empty())
+                    .mount("tmpfs", path.join("tmp"))
+                    .context("Failed to mount '/tmp' for chroot")?,
             ]
         } else {
             Vec::new()
