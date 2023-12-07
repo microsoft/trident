@@ -326,7 +326,7 @@ impl Module for StorageModule {
         None
     }
 
-    fn migrate(
+    fn provision(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
@@ -341,13 +341,13 @@ impl Module for StorageModule {
                 .context("Failed to create software RAID")?;
         }
 
-        image::migrate(host_status, host_config, mount_point)
-            .context("Image submodule failed during migrate")?;
+        image::provision(host_status, host_config, mount_point)
+            .context("Image submodule failed during provision")?;
 
         Ok(())
     }
 
-    fn reconcile(
+    fn configure(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
@@ -386,8 +386,8 @@ impl Module for StorageModule {
         raid::create_raid_config(host_status)
             .context("Failed to create mdadm.conf file after RAID creation")?;
 
-        image::reconcile(host_status, host_config)
-            .context("Image submodule failed during reconcile")?;
+        image::configure(host_status, host_config)
+            .context("Image submodule failed during configure")?;
 
         Ok(())
     }

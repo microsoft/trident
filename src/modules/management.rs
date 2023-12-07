@@ -60,7 +60,7 @@ impl Module for ManagementModule {
         None
     }
 
-    fn migrate(
+    fn provision(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
@@ -91,7 +91,7 @@ impl Module for ManagementModule {
         Ok(())
     }
 
-    fn reconcile(
+    fn configure(
         &mut self,
         _host_status: &mut HostStatus,
         host_config: &HostConfiguration,

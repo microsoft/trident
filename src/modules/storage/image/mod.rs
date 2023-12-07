@@ -65,7 +65,7 @@ impl<R: Read> Read for HashingReader<R> {
 /// Trident will download the image from Azure container registry and pass it to
 /// systemd-sysupdate.rs. ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
 ///
-/// This function is called by the migrate() function in the Image module and
+/// This function is called by the provision() function in the image submodule and
 /// returns an error if the image cannot be downloaded or installed correctly.
 fn update_images(
     host_status: &mut HostStatus,
@@ -459,7 +459,7 @@ pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfig
     !undeployed_images.is_empty()
 }
 
-pub(super) fn migrate(
+pub(super) fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
     mount_point: &Path,
@@ -477,7 +477,7 @@ pub(super) fn migrate(
     Ok(())
 }
 
-pub(super) fn reconcile(
+pub(super) fn configure(
     host_status: &mut HostStatus,
     _host_config: &HostConfiguration,
 ) -> Result<(), Error> {

@@ -71,7 +71,7 @@ trait Module: Send {
     ///
     /// This method is called before the chroot is entered, and is used to perform any
     /// provisioning operations that need to be done before the chroot is entered.
-    fn migrate(
+    fn provision(
         &mut self,
         _host_status: &mut HostStatus,
         _host_config: &HostConfiguration,
@@ -80,9 +80,9 @@ trait Module: Send {
         Ok(())
     }
 
-    /// Reconcile the state of the system with the host config, and update the host status
+    /// Configure the system as specified by the host configuration, and update the host status
     /// accordingly.
-    fn reconcile(
+    fn configure(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
@@ -99,7 +99,10 @@ lazy_static::lazy_static! {
     ]);
 }
 
-pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Result<(), Error> {
+pub(super) fn provision_host(
+    command: HostUpdateCommand,
+    state: &mut DataStore,
+) -> Result<(), Error> {
     let HostUpdateCommand {
         ref host_config,
         allowed_operations,
@@ -131,7 +134,7 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
     }
 
     if !allowed_operations.contains(Operations::Update) {
-        info!("Update not requested, skipping reconcile");
+        info!("Update not requested, skipping");
         return Ok(());
     }
 
@@ -139,13 +142,13 @@ pub(super) fn provision(command: HostUpdateCommand, state: &mut DataStore) -> Re
     // depend on it being in place. Right now we just depend on the "storage" and "image" modules
     // being the first ones to run.
     let mount_path = Path::new(UPDATE_ROOT_PATH);
-    migrate(&mut modules, state, host_config, mount_path)?;
+    provision(&mut modules, state, host_config, mount_path)?;
 
     let chroot = chroot::enter_update_chroot(mount_path)?;
     let datastore_path = get_datastore_path(host_config);
     state.persist(datastore_path)?;
 
-    reconcile(&mut modules, state, host_config)?;
+    configure(&mut modules, state, host_config)?;
 
     let root_device_path = get_root_block_device_path(state.host_status())
         .context("Failed to get root block device")?;
@@ -231,7 +234,7 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
     }
 
     if !allowed_operations.contains(Operations::Update) {
-        info!("Update not requested, skipping reconcile");
+        info!("Update not requested, skipping");
         return Ok(());
     }
 
@@ -275,11 +278,11 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
     let mount_path = Path::new(UPDATE_ROOT_PATH);
 
     if let Some(UpdateKind::AbUpdate) = update_kind {
-        migrate(&mut modules, state, host_config, mount_path)?;
+        provision(&mut modules, state, host_config, mount_path)?;
         chroot = Some(chroot::enter_update_chroot(mount_path)?);
     }
 
-    reconcile(&mut modules, state, host_config)?;
+    configure(&mut modules, state, host_config)?;
 
     if let Some(chroot) = chroot {
         chroot.exit().context("Failed to exit chroot")?;
@@ -482,7 +485,7 @@ fn validate_host_config(
     Ok(())
 }
 
-fn migrate(
+fn provision(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
@@ -490,22 +493,22 @@ fn migrate(
 ) -> Result<(), Error> {
     for m in modules {
         state.try_with_host_status(|s| {
-            m.migrate(s, host_config, mount_point)
-                .context(format!("Module '{}' failed to migrate", m.name()))
+            m.provision(s, host_config, mount_point)
+                .context(format!("Module '{}' failed to provision", m.name()))
         })?;
     }
     Ok(())
 }
 
-fn reconcile(
+fn configure(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     for m in modules {
         state.try_with_host_status(|s| {
-            m.reconcile(s, host_config)
-                .context(format!("Module '{}' failed during reconcile", m.name()))
+            m.configure(s, host_config)
+                .context(format!("Module '{}' failed during configure", m.name()))
         })?;
     }
     Ok(())

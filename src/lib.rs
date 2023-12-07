@@ -396,7 +396,9 @@ impl Trident {
             let datastore_path = modules::get_datastore_path(&cmd.host_config).to_owned();
             // Save the datastore if we failed, as we might not have saved
             // it already
-            match modules::provision(cmd, &mut self.datastore).context("Failed to provision host") {
+            match modules::provision_host(cmd, &mut self.datastore)
+                .context("Failed to provision host")
+            {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     match self.datastore.persist(datastore_path.as_path()) {

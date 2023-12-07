@@ -28,7 +28,7 @@ impl Module for OsConfigModule {
         None
     }
 
-    fn reconcile(
+    fn configure(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,

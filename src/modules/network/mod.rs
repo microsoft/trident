@@ -30,7 +30,7 @@ impl Module for NetworkModule {
         None
     }
 
-    fn reconcile(
+    fn configure(
         &mut self,
         _host_status: &mut HostStatus,
         host_config: &HostConfiguration,

@@ -23,7 +23,7 @@ impl Module for HooksModule {
         Ok(())
     }
 
-    fn migrate(
+    fn provision(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
@@ -42,7 +42,7 @@ impl Module for HooksModule {
         Ok(())
     }
 
-    fn reconcile(
+    fn configure(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
