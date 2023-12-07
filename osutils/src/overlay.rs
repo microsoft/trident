@@ -1,17 +1,15 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use anyhow::{Context, Error};
 
-use duct::cmd;
 use log::error;
 use tempfile::TempDir;
 
-use crate::{files, systemd};
-
-use super::exe::OutputChecker;
+use crate::{exe::RunAndCheck, files, systemd};
 
 /// Mounts an overlayfs on top of the provided path. The overlay is removed when
 /// exit() is called. The overlay temporary files are stored in a temporary
@@ -31,13 +29,12 @@ impl EphemeralOverlay {
         let overlay_upper_path = dir.path().join("upper");
         files::create_dirs(&overlay_work_path).context("Failed to create overlay work dir")?;
         files::create_dirs(&overlay_upper_path).context("Failed to create overlay upper dir")?;
-        cmd!(
-            "mount",
-            "-t",
-            "overlay",
-            "overlay",
-            "-o",
-            format!(
+        Command::new("mount")
+            .arg("-t")
+            .arg("overlay")
+            .arg("overlay")
+            .arg("-o")
+            .arg(format!(
                 "lowerdir={},upperdir={},workdir={}",
                 target_path
                     .to_str()
@@ -50,13 +47,10 @@ impl EphemeralOverlay {
                     "Failed to decode '{}'",
                     overlay_work_path.display()
                 ))?,
-            ),
-            target_path
-        )
-        .run()
-        .context("Failed to execute overlay mount command")?
-        .check()
-        .context("Overlay mount command failed")?;
+            ))
+            .arg(target_path)
+            .run_and_check()
+            .context("Overlay mount command failed")?;
 
         Ok(Self {
             dir,
@@ -66,10 +60,9 @@ impl EphemeralOverlay {
 
     /// Unmounts the overlay and removes the temporary files.
     pub fn unmount(self) -> Result<(), Error> {
-        cmd!("umount", self.target_path)
-            .run()
-            .context("Failed to run overlay unmount command")?
-            .check()
+        Command::new("umount")
+            .arg(self.target_path)
+            .run_and_check()
             .context("Overlay unmount command failed")?;
         self.dir
             .close()
@@ -142,12 +135,17 @@ impl EphemeralOverlayWithSystemD {
 
         if let Err(e1) = this.apply().context("Failed to mount overlay") {
             error!("Failed to apply overlay: {}", e1);
-            match cmd!("systemctl", "status", overlay_mount_unit_name).read() {
+            match Command::new("systemctl")
+                .arg("status")
+                .arg(overlay_mount_unit_name)
+                .output_and_check()
+            {
                 Ok(output) => {
                     error!("Report from systemctl status: {}", output);
                 }
                 Err(e2) => {
                     error!("Failed to read systemctl status for mount unit: {}", e2);
+                    error!("If running from a container, ensure to have access to the host's PID namespace.")
                 }
             }
             if let Err(e3) = fs::remove_file(overlay_mount_unit_path) {
@@ -160,20 +158,17 @@ impl EphemeralOverlayWithSystemD {
     }
 
     fn apply(&self) -> Result<(), Error> {
-        cmd!("systemctl", "daemon-reload")
-            .run()
-            .context(
-                "Failed to execute systemctl daemon-reload after creating the overlay mount unit",
-            )?
-            .check()
+        Command::new("systemctl")
+            .arg("daemon-reload")
+            .run_and_check()
             .context(
                 "SystemD failed to reload configuration files including the overlay mount unit",
             )?;
 
-        cmd!("systemctl", "start", &self.unit_name)
-            .run()
-            .context("Failed to execute systemctl start for the overlay mount unit")?
-            .check()
+        Command::new("systemctl")
+            .arg("start")
+            .arg(&self.unit_name)
+            .run_and_check()
             .context("Failed to mount the overlay")?;
 
         Ok(())
@@ -181,10 +176,10 @@ impl EphemeralOverlayWithSystemD {
 
     /// Unmounts the overlay and removes the temporary files.
     pub fn unmount(self) -> Result<(), Error> {
-        cmd!("systemctl", "stop", &self.unit_name)
-            .run()
-            .context("Failed to execute systemctl stop for the overlay mount unit")?
-            .check()
+        Command::new("systemctl")
+            .arg("stop")
+            .arg(&self.unit_name)
+            .run_and_check()
             .context("Failed to unmount the overlay")?;
         fs::remove_file(Path::new(Self::SYSTEMD_UNIT_ROOT_PATH).join(self.unit_name))
             .context("Failed to clean up the overlay mount unit")?;
