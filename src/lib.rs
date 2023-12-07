@@ -402,7 +402,7 @@ impl Trident {
                     match self.datastore.persist(datastore_path.as_path()) {
                         Ok(_) => Err(e),
                         // If we failed to persist, capture that error as well
-                        Err(e2) => Err(e.context(e2)),
+                        Err(e2) => Err(add_secondary_error_context(e, e2)),
                     }
                 }
             }
@@ -412,7 +412,7 @@ impl Trident {
             Ok(_) => result,
             Err(e2) => match result {
                 Ok(_) => Err(e2),
-                Err(e) => Err(e.context(e2)),
+                Err(e) => Err(add_secondary_error_context(e, e2)),
             },
         }
     }
@@ -433,6 +433,16 @@ impl Trident {
 
         Ok(())
     }
+}
+
+fn add_secondary_error_context(
+    primary: Error,
+    secondary: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+) -> Error {
+    primary.context(format!(
+        "While handling the error, an additional error was caught: \n\n{:?}\n\nThe earlier error:",
+        secondary.into()
+    ))
 }
 
 fn exit_chroot(
