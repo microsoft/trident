@@ -6,14 +6,12 @@ use schemars::JsonSchema;
 
 use crate::is_default;
 
-pub(super) mod imaging;
 pub(super) mod management;
 pub(super) mod network;
 pub(super) mod osconfig;
 pub(super) mod scripts;
 pub(super) mod storage;
 
-use imaging::Imaging;
 use management::Management;
 use osconfig::OsConfig;
 use scripts::Scripts;
@@ -32,10 +30,6 @@ pub struct HostConfiguration {
     /// Describes the storage configuration of the host.
     #[serde(default)]
     pub storage: Storage,
-
-    /// Filesystem imaging configuration of the host.
-    #[serde(default)]
-    pub imaging: Imaging,
 
     /// Netplan network configuration for the provisioning OS _ONLY_.
     ///

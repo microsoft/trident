@@ -252,7 +252,7 @@ fn set_host_status_block_device_contents(
         return Ok(());
     }
 
-    if let Some(ab_update) = &host_status.imaging.ab_update {
+    if let Some(ab_update) = &host_status.storage.ab_update {
         if let Some(ab_volume_pair) = ab_update.volume_pairs.get(block_device_id) {
             let target_id = match modules::get_ab_update_volume(host_status, false) {
                 Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
@@ -348,7 +348,7 @@ pub fn reboot() -> Result<(), Error> {
 }
 
 fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfiguration) {
-    host_status.imaging.ab_update = host_config.imaging.ab_update.as_ref().map(|ab_update| {
+    host_status.storage.ab_update = host_config.storage.ab_update.as_ref().map(|ab_update| {
         let ab_volume_pairs = ab_update
             .volume_pairs
             .iter()
@@ -382,7 +382,7 @@ fn get_undeployed_images<'a>(
     active: bool,
 ) -> Vec<&'a Image> {
     host_config
-        .imaging
+        .storage
         .images
         .iter()
         .filter(|image| {
@@ -401,13 +401,13 @@ fn get_undeployed_images<'a>(
 
 pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Error> {
     // update root_device_path of the active root volume
-    host_status.imaging.root_device_path = Some(
+    host_status.storage.root_device_path = Some(
         TabFile::get_device_path(Path::new("/proc/mounts"), Path::new("/"))
             .context("Failed find root mount point")?,
     );
 
     // if a/b update is enabled
-    if let Some(ab_update) = &host_status.imaging.ab_update {
+    if let Some(ab_update) = &host_status.storage.ab_update {
         // and mount points have a reference to root volume
         if let Some(root_device_id) = host_status
             .storage
@@ -430,9 +430,9 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
 
                 // update the active volume in the a/b scheme based on what
                 // is the current root volume
-                if let Some(root_device_path) = &host_status.imaging.root_device_path {
+                if let Some(root_device_path) = &host_status.storage.root_device_path {
                     host_status
-                        .imaging
+                        .storage
                         .ab_update
                         .as_mut()
                         .unwrap()
@@ -583,9 +583,6 @@ mod tests {
     fn test_refresh_ab_volumes_yaml() {
         let host_config_yaml = indoc! {r#"
             storage:
-                disks:
-            imaging:
-                images:
                 ab-update:
                     volume-pairs:
                       - id: ab
@@ -596,9 +593,9 @@ mod tests {
         let mut host_status = HostStatus::default();
 
         refresh_ab_volumes(&mut host_status, &host_config);
-        assert!(host_status.imaging.ab_update.is_some());
+        assert!(host_status.storage.ab_update.is_some());
         assert!(host_status
-            .imaging
+            .storage
             .ab_update
             .as_ref()
             .unwrap()
@@ -620,7 +617,6 @@ mod tests {
                   target-id: root
                   filesystem: ext4
                   options: []
-            imaging:
               images:
                 - url: http://example.com/esp.img
                   target-id: boot
@@ -635,7 +631,7 @@ mod tests {
         let host_status_yaml = indoc::indoc! {r#"
             storage:
               disks:
-                foo: 
+                foo:
                   uuid: 00000000-0000-0000-0000-000000000000
                   path: /dev/sda
                   capacity: 10
@@ -672,7 +668,6 @@ mod tests {
                   filesystem: ext4
                   options: []
             reconcile-state: clean-install
-            imaging:
             "#};
         let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
 
@@ -683,14 +678,14 @@ mod tests {
         );
 
         // should be zero, as images and hashes are matching
-        host_config.imaging.images[0].sha256 = "foobar".to_string();
+        host_config.storage.images[0].sha256 = "foobar".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false).len(),
             0
         );
 
         // should be one, as image hash is different
-        host_config.imaging.images[0].sha256 = "barfoo".to_string();
+        host_config.storage.images[0].sha256 = "barfoo".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false),
             vec![&Image {
@@ -702,8 +697,8 @@ mod tests {
         );
 
         // should be one, as image url is different
-        host_config.imaging.images[0].sha256 = HASH_IGNORED.to_string();
-        host_config.imaging.images[0].url = "http://example.com/image2.img".to_string();
+        host_config.storage.images[0].sha256 = HASH_IGNORED.to_string();
+        host_config.storage.images[0].url = "http://example.com/image2.img".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false),
             vec![&Image {
@@ -716,7 +711,7 @@ mod tests {
 
         // could be zero, as despite the url being different, the hash is the
         // same; for now though we reimage to be safe, hence 1
-        host_config.imaging.images[0].sha256 = "foobar".to_string();
+        host_config.storage.images[0].sha256 = "foobar".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false),
             vec![&Image {
@@ -762,7 +757,6 @@ mod tests {
                   target-id: root
                   filesystem: ext4
                   options: []
-            imaging:
               images:
                 - url: http://example.com/esp.img
                   target-id: boot
@@ -783,7 +777,7 @@ mod tests {
         let host_status_yaml = indoc::indoc! {r#"
             storage:
               disks:
-                foo: 
+                foo:
                   uuid: 00000000-0000-0000-0000-000000000000
                   path: /dev/sda
                   capacity: 10
@@ -820,7 +814,6 @@ mod tests {
                   filesystem: ext4
                   options: []
             reconcile-state: clean-install
-            imaging:
             "#};
         let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
 
@@ -848,7 +841,7 @@ mod tests {
         // with a/b update, we should get ...
 
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
-        host_status.imaging.ab_update = Some(AbUpdate {
+        host_status.storage.ab_update = Some(AbUpdate {
             active_volume: Some(AbVolumeSelection::VolumeA),
             volume_pairs: [(
                 "root".to_string(),
@@ -891,7 +884,6 @@ mod tests {
     fn test_set_host_status_block_device_contents() {
         let host_status_yaml = indoc! {r#"
             storage:
-                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -926,8 +918,6 @@ mod tests {
                         capacity: 1000
                         contents: unknown
                         partitions: []
-                raid-arrays:
-            imaging:
                 ab-update:
                     volume-pairs:
                         osab:
@@ -1046,7 +1036,7 @@ mod tests {
         );
 
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -1090,7 +1080,6 @@ mod tests {
     fn test_get_disk_partition_mut() {
         let host_status_yaml = indoc! {r#"
             storage:
-                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -1119,8 +1108,6 @@ mod tests {
                             end: 10000
                             type: root
                             uuid: 00000000-0000-0000-0000-000000000000
-                raid-arrays:
-            imaging:
                 ab-update:
                     volume-pairs:
             reconcile-state: clean-install

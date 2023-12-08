@@ -542,10 +542,10 @@ fn get_update_partition_id(
     host_status: &HostStatus,
     target_id: &BlockDeviceId,
 ) -> Result<BlockDeviceId, Error> {
-    // Iterate through imaging.ab-update.volume-pairs and return the correct volume-id, i.e. id of
+    // Iterate through storage.ab-update.volume-pairs and return the correct volume-id, i.e. id of
     // partition to be updated; when UpdateKind is AbUpdate, get_ab_update_volume() already returns
     // the inactive AbVolumeSelection, i.e. the one to be updated
-    if let Some(ab_update) = &host_status.imaging.ab_update {
+    if let Some(ab_update) = &host_status.storage.ab_update {
         // Call helper func from lib.rs, which returns AbVolumeSelection to be updated in this A/B
         // update, either VolumeA or VolumeB, depending on which volume is active now
         let volume_selection: AbVolumeSelection = modules::get_ab_update_volume(host_status, false)
@@ -825,7 +825,7 @@ pub(super) fn get_ab_volume_partition<'a>(
     host_status: &'a HostStatus,
     block_device_id: &BlockDeviceId,
 ) -> Option<&'a Partition> {
-    if let Some(ab_update) = &host_status.imaging.ab_update {
+    if let Some(ab_update) = &host_status.storage.ab_update {
         let ab_volume = ab_update
             .volume_pairs
             .iter()
@@ -1000,9 +1000,6 @@ mod tests {
                         capacity: 1000
                         contents: unknown
                         partitions: []
-                mount-points:
-                raid-arrays: {}
-            imaging:
                 ab-update:
                     volume-pairs:
                         osab:
@@ -1015,7 +1012,7 @@ mod tests {
         let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -1037,7 +1034,7 @@ mod tests {
         // Scenario 3: Switch active-volume to VolumeB and verify
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -1076,8 +1073,6 @@ mod tests {
                         capacity: 1000
                         contents: unknown
                         partitions: []
-                mount-points:
-                raid-arrays: {}
             reconcile-state: clean-install
         "#};
         let host_status2: HostStatus = serde_yaml::from_str(host_status_yaml2).unwrap();
@@ -1130,9 +1125,6 @@ mod tests {
                         capacity: 1000
                         contents: unknown
                         partitions: []
-                mount-points:
-                raid-arrays: {}
-            imaging:
                 ab-update:
                     volume-pairs:
                         osab:
@@ -1175,7 +1167,6 @@ mod tests {
                         partitions: []
                 mount-points:
                 raid-arrays: {}
-            imaging:
             reconcile-state: clean-install
         "#};
         let host_status2: HostStatus = serde_yaml::from_str(host_status_yaml2).unwrap();
@@ -1222,9 +1213,6 @@ mod tests {
                         capacity: 1000
                         contents: unknown
                         partitions: []
-                mount-points:
-                raid-arrays: {}
-            imaging:
                 ab-update:
                     volume-pairs:
                         osab:
@@ -1253,7 +1241,6 @@ mod tests {
     fn test_get_partition_ref() {
         let host_status_yaml = indoc! {r#"
             storage:
-                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -1282,8 +1269,6 @@ mod tests {
                               end: 10000
                               type: root
                               uuid: 00000000-0000-0000-0000-000000000000
-                raid-arrays:
-            imaging:
                 ab-update:
                     volume-pairs:
             reconcile-state: clean-install
@@ -1339,9 +1324,6 @@ mod tests {
                         capacity: 1000
                         contents: unknown
                         partitions: []
-                mount-points:
-                raid-arrays: {}
-            imaging:
                 ab-update:
                     volume-pairs:
                         root:
@@ -1354,7 +1336,7 @@ mod tests {
         // 1. Test when the active volume is VolumeA
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -1379,7 +1361,7 @@ mod tests {
 
         // 2. Test when the active volume is VolumeB
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()

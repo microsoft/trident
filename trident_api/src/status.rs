@@ -21,9 +21,6 @@ pub struct HostStatus {
 
     #[serde(default)]
     pub storage: Storage,
-
-    #[serde(default)]
-    pub imaging: Imaging,
 }
 
 /// ReconcileState is the state of the host's reconciliation process. Through
@@ -69,9 +66,22 @@ pub struct Management {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 pub struct Storage {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub disks: BTreeMap<BlockDeviceId, Disk>,
+
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub raid_arrays: BTreeMap<BlockDeviceId, RaidArray>,
+
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mount_points: BTreeMap<BlockDeviceId, MountPoint>,
+
+    /// A/B update status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ab_update: Option<AbUpdate>,
+
+    /// Path to the root block device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_device_path: Option<PathBuf>,
 }
 
 /// Per disk status.
@@ -177,17 +187,6 @@ pub struct MountPoint {
     pub options: Vec<String>,
 }
 
-/// Imaging status of a host.
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
-pub struct Imaging {
-    /// A/B update status.
-    pub ab_update: Option<AbUpdate>,
-    /// Path to the root block device.
-    pub root_device_path: Option<PathBuf>,
-}
-
 /// A/B update status. Carries information about the A/B update volume pairs and
 /// the currently active volume. Note that all pairs will have at any point in
 /// time the same volume (A or B) active. The volume to update is determined by
@@ -222,7 +221,7 @@ pub struct AbVolumePair {
 }
 
 /// Block device information. Carries information about the block device path
-/// and size, used for imaging. Abstracts the difference between specific block
+/// and size, used for storage. Abstracts the difference between specific block
 /// device types.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "kebab-case")]

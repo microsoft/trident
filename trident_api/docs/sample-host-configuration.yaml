@@ -67,7 +67,11 @@ storage:
     options:
     - defaults
     target-id: some_raid
-imaging:
+  ab-update:
+    volume-pairs:
+    - id: root
+      volume-a-id: root-a
+      volume-b-id: root-b
   images:
   - url: file:///boot.raw.zst
     sha256: cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8
@@ -77,11 +81,6 @@ imaging:
     sha256: fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d
     format: raw-zstd
     target-id: root
-  ab-update:
-    volume-pairs:
-    - id: root
-      volume-a-id: root-a
-      volume-b-id: root-b
 network:
   version: 2
   ethernets:

@@ -56,12 +56,12 @@ fn create_partitions(
         // PARTLABELs, if required by the users. Related ADO task:
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6125.
 
-        // Iterate through host_status.imaging.ab_update.volume_pairs. For each
+        // Iterate through host_status.storage.ab_update.volume_pairs. For each
         // volume_pair, add each partition_id to the hash map, where value for
         // volume-a-id (active) is "a" and value for volume-b-id (inactive) is
         // "_empty". On next run of sysupdate, "_empty" will be updated.
         if cfg!(feature = "sysupdate") {
-            if let Some(ab_update) = &host_config.imaging.ab_update {
+            if let Some(ab_update) = &host_config.storage.ab_update {
                 for volume_pair in &ab_update.volume_pairs {
                     // For volume-a-id
                     partlabels.insert(volume_pair.volume_a_id.clone(), "_empty".to_string());
@@ -191,7 +191,7 @@ impl Module for StorageModule {
             &mut host_config.storage.raid.software.iter().map(|r| &r.id),
         )?;
 
-        if let Some(ab_update) = &host_config.imaging.ab_update {
+        if let Some(ab_update) = &host_config.storage.ab_update {
             let ab_volume_ids: Vec<&String> =
                 ab_update.volume_pairs.iter().map(|v| &v.id).collect();
             image_target_ids.extend(ab_volume_ids.clone());
@@ -204,14 +204,14 @@ impl Module for StorageModule {
         let raid_ids: HashSet<String> = get_raid_array_ids(host_config);
 
         // Ensure valid references.
-        if let Some(ab_update) = &host_config.imaging.ab_update {
+        if let Some(ab_update) = &host_config.storage.ab_update {
             for p in &ab_update.volume_pairs {
                 for block_device_id in [&p.volume_a_id, &p.volume_b_id] {
                     if !partition_ids_set.contains(block_device_id)
                         && !raid_ids.contains(block_device_id)
                     {
                         bail!(
-                            "Block device id '{id}' was set as dependency of an A/B update volume '{parent}', 
+                            "Block device id '{id}' was set as dependency of an A/B update volume '{parent}',
                             but is not defined as a partition or a RAID device",
                             id = block_device_id,
                             parent = p.id,
@@ -221,7 +221,7 @@ impl Module for StorageModule {
             }
         }
 
-        for image in &host_config.imaging.images {
+        for image in &host_config.storage.images {
             if !image_target_ids.contains(&image.target_id) {
                 bail!(
                     "Block device id '{id}' was set as dependency of an image, but is not defined elsewhere",
@@ -248,7 +248,7 @@ impl Module for StorageModule {
         }
 
         // Ensure mutual exclusivity
-        if let Some(ab_update) = &host_config.imaging.ab_update {
+        if let Some(ab_update) = &host_config.storage.ab_update {
             for p in &ab_update.volume_pairs {
                 if p.volume_a_id == p.volume_b_id {
                     bail!(
@@ -471,7 +471,6 @@ mod tests {
         let empty_host_config_yaml = indoc! {r#"
             storage:
                 disks:
-            imaging:
                 images:
         "#};
         let empty_host_config = serde_yaml::from_str::<HostConfiguration>(empty_host_config_yaml)
@@ -479,11 +478,6 @@ mod tests {
 
         let empty_host_status_yaml = indoc! {r#"
             reconcile-state: clean-install
-            storage:
-                disks:
-                mount-points:
-                raid-arrays:
-            imaging:
         "#};
         let empty_host_status = serde_yaml::from_str(empty_host_status_yaml)
             .expect("Failed to parse empty host status");
@@ -531,7 +525,6 @@ mod tests {
                     options: []
                     target-id: part1
                     path: /
-            imaging:
                 images:
                   - target-id: part1
                     url: ""
@@ -575,7 +568,7 @@ mod tests {
         host_config = host_config_golden.clone();
 
         // fail on duplicate id
-        host_config.imaging.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
+        host_config.storage.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
 
         assert!(storage_module
             .validate_host_config(&empty_host_status, &host_config)
@@ -584,7 +577,7 @@ mod tests {
         host_config = host_config_golden.clone();
 
         // fail on missing reference (disk4 does not exist)
-        host_config.imaging.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id =
+        host_config.storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id =
             "disk4".to_owned();
 
         assert!(storage_module
@@ -594,7 +587,7 @@ mod tests {
         host_config = host_config_golden.clone();
 
         // fail on missing reference (disk4 does not exist)
-        host_config.imaging.images[0].target_id = "disk4".to_owned();
+        host_config.storage.images[0].target_id = "disk4".to_owned();
 
         assert!(storage_module
             .validate_host_config(&empty_host_status, &host_config)
@@ -612,7 +605,7 @@ mod tests {
         host_config = host_config_golden.clone();
 
         // fail on bad block device type
-        host_config.imaging.images[0].target_id = "disk1".to_owned();
+        host_config.storage.images[0].target_id = "disk1".to_owned();
 
         assert!(storage_module
             .validate_host_config(&empty_host_status, &host_config)

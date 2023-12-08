@@ -111,7 +111,7 @@ fn set_env_vars(
     script_runner.env_vars.insert(
         "TARGET_ROOT".into(),
         host_status
-            .imaging
+            .storage
             .root_device_path
             .clone()
             .context("Host Status has no root device path")
@@ -149,7 +149,7 @@ mod tests {
 
         let host_status_yaml = indoc! {r#"
             reconcile-state: clean-install
-            imaging:
+            storage:
               root-device-path: /dev/sda
         "#};
         let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
@@ -173,7 +173,7 @@ mod tests {
     fn test_run_script_that_always_fails() {
         let host_status_yaml = indoc! {r#"
             reconcile-state: clean-install
-            imaging:
+            storage:
               root-device-path: /dev/sda
         "#};
         let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
@@ -192,7 +192,7 @@ mod tests {
     fn test_run_script_with_non_existing_interpreter() {
         let host_status_yaml = indoc! {r#"
             reconcile-state: clean-install
-            imaging:
+            storage:
               root-device-path: /dev/sda
         "#};
         let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
@@ -214,7 +214,7 @@ mod tests {
 
         let host_status_yaml = indoc! {r#"
             reconcile-state: clean-install
-            imaging:
+            storage:
               root-device-path: /dev/sda
         "#};
         let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();

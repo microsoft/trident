@@ -5,9 +5,9 @@ use netplan_types::{
     NetworkConfig,
 };
 use trident_api::config::{
-    AbUpdate, AbVolumePair, Disk, HostConfiguration, Image, ImageFormat, Imaging, MountPoint,
-    OsConfig, Partition, PartitionSize, PartitionTableType, PartitionType, RaidConfig, RaidLevel,
-    Script, Scripts, ServicingType, SoftwareRaidArray, SshMode, Storage, User,
+    AbUpdate, AbVolumePair, Disk, HostConfiguration, Image, ImageFormat, MountPoint, OsConfig,
+    Partition, PartitionSize, PartitionTableType, PartitionType, RaidConfig, RaidLevel, Script,
+    Scripts, ServicingType, SoftwareRaidArray, SshMode, Storage, User,
 };
 
 fn main() {
@@ -104,8 +104,6 @@ fn build_host_configuration() -> HostConfiguration {
                     options: vec!["defaults".into()],
                 },
             ],
-        },
-        imaging: Imaging {
             images: vec![
                 Image {
                     url: "file:///boot.raw.zst".into(),
@@ -197,8 +195,8 @@ mod tests {
         assert_eq!(host_configuration.storage.disks.len(), 1);
         assert_eq!(host_configuration.storage.raid.software.len(), 1);
         assert_eq!(host_configuration.storage.mount_points.len(), 5);
-        assert_eq!(host_configuration.imaging.images.len(), 2);
-        assert!(host_configuration.imaging.ab_update.is_some());
+        assert_eq!(host_configuration.storage.images.len(), 2);
+        assert!(host_configuration.storage.ab_update.is_some());
         assert!(host_configuration.network.is_some());
         assert_eq!(host_configuration.osconfig.users.len(), 1);
     }

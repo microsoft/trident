@@ -2,10 +2,10 @@ mod host;
 mod trident;
 
 pub use host::{
-    imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, Imaging},
     management::Management,
     osconfig::{OsConfig, Password, SshMode, User},
     scripts::{Script, Scripts, ServicingType},
+    storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat},
     storage::{
         Disk, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType, RaidConfig,
         RaidLevel, SoftwareRaidArray, Storage,

@@ -601,7 +601,6 @@ mod tests {
     fn test_get_device_paths() {
         let host_status_yaml = indoc! {r#"
             storage:
-                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -631,7 +630,6 @@ mod tests {
                             type: home
                             uuid: 00000000-0000-0000-0000-000000000000
                 raid-arrays:
-            imaging:
             reconcile-state: clean-install
         "#};
         let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
@@ -749,7 +747,6 @@ mod tests {
                       - id: disk2-partition1
                         type: esp
                         size: 1M
-            imaging:
                 images:
                   - target-id: disk1-partition1
                     url: ""
@@ -824,7 +821,6 @@ mod tests {
                         - raid-c
                         - raid-d
                     metadata-version: "1.0"
-        imaging:
             images:
               - url: ""
                 sha256: ""

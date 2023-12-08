@@ -604,7 +604,6 @@ mod tests {
                     target-id: sda1
                     filesystem: ext4
                     options: []
-              imaging:
                 images:
             "#};
         let trident_config = serde_yaml::from_str::<LocalConfigFile>(trident_config_yaml).unwrap();
@@ -619,7 +618,6 @@ mod tests {
                   target-id: sda1
                   filesystem: ext4
                   options: []
-            imaging:
               images:
         "#};
         let expected_host_config =

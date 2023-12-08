@@ -241,7 +241,6 @@ mod tests {
     fn test_mount_point_to_line() {
         let host_status_yaml = indoc! {r#"
             storage:
-                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -278,7 +277,6 @@ mod tests {
                             type: swap
                             uuid: 00000000-0000-0000-0000-000000000000
                 raid-arrays:
-            imaging:
             reconcile-state: clean-install
         "#};
         let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
@@ -454,7 +452,7 @@ mod tests {
         "#};
 
         let host_config_yaml = indoc! {r#"
-            imaging:
+            storage:
                 images:
                   - url: file:///path/to/efi-image
                     sha256: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
@@ -464,7 +462,6 @@ mod tests {
                     sha256: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
                     format: raw-zstd
                     target-id: root
-            storage:
                 disks:
                   - id: os
                     device: /dev/disk/by-bus/foobar
@@ -510,7 +507,6 @@ mod tests {
 
         let host_status_yaml = indoc! {r#"
             storage:
-                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -550,7 +546,6 @@ mod tests {
                             type: swap
                             uuid: 00000000-0000-0000-0000-000000000000
                 raid-arrays:
-            imaging:
             reconcile-state: clean-install
         "#};
         let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)

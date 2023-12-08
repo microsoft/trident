@@ -8,20 +8,6 @@ use crate::BlockDeviceId;
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::block_device_id_schema;
 
-/// Imaging configuration for a host.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct Imaging {
-    /// A list of images to be written to the host.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub images: Vec<Image>,
-
-    /// A/B update configuration.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ab_update: Option<AbUpdate>,
-}
-
 /// Per image configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

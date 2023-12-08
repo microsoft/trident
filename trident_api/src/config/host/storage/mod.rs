@@ -3,14 +3,17 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
+use crate::{is_default, BlockDeviceId};
+
+use imaging::{AbUpdate, Image};
+
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
-
-use crate::{is_default, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::{block_device_id_list_schema, block_device_id_schema};
 
+pub mod imaging;
 mod serde_size;
 
 /// Storage configuration describes the disks of the host that will be used to
@@ -21,7 +24,7 @@ mod serde_size;
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Storage {
     /// A list of disks that will be used for the host.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disks: Vec<Disk>,
 
     /// RAID configuration.
@@ -31,6 +34,14 @@ pub struct Storage {
     /// Mount point configuration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mount_points: Vec<MountPoint>,
+
+    /// A/B update configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ab_update: Option<AbUpdate>,
+
+    /// A list of images to be written to the host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
 }
 
 /// Per disk configuration.

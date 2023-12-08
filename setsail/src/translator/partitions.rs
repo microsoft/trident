@@ -119,7 +119,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
 
     hc.storage.disks = disks.into_values().collect();
     hc.storage.mount_points = mount_points;
-    hc.imaging.images = images;
+    hc.storage.images = images;
 }
 
 fn path_to_partition_type(value: &Path) -> PartitionType {

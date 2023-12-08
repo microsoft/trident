@@ -187,7 +187,7 @@ image can be published in the following two ways:
 referenced from the initial HostConfiguration as follows:
 
    ```yaml
-     imaging:
+     storage:
        images:
          - url: file:///boot.raw.xz
            sha256:    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -249,11 +249,12 @@ requirements per the systemd-sysupdate flow:
    section of [systemd repart.d
    manual](https://www.man7.org/linux/man-pages/man5/repart.d.5.html).
 
-   4) The Imaging section in the sample HostConfiguration provided above can be
-   set in the following way, to request url-file images for the runtime OS:
+   4) The storage.images section in the sample HostConfiguration provided above
+   can be set in the following way, to request url-file images for the runtime
+   OS:
 
       ```yaml
-      imaging:
+      storage:
         images:
           - url: <URL to the boot image>
             sha256: <sha256 hash>
@@ -265,17 +266,17 @@ requirements per the systemd-sysupdate flow:
             target-id: root
       ```
 
-When the installation of the initial runtime OS is completed, the user will
-be able to log into the baremetal host, or the VM simulating a BM host. The
-user can now request an A/B update by applying an edited Trident HostConfig. To
-do so, the user needs to replace the data inside of the Imaging section, to
+When the installation of the initial runtime OS is completed, the user will be
+able to log into the baremetal host, or the VM simulating a BM host. The user
+can now request an A/B update by applying an edited Trident HostConfig. To do
+so, the user needs to replace the data inside of the storage.images section, to
 request to update **root** and write a new image to **esp**, via format
 **raw-lzma**, from a new URL, with the sha256 hash taken from SHA256SUMS
-published in the first step. For instance, the Imaging section of the new
+published in the first step. For instance, the storage.images section of the new
 HostConfig shown above can be changed in the following way:
 
 ```yaml
-imaging:
+storage:
   images:
     - url: <URL to the updated version of the image>
       sha256: <sha256 hash>

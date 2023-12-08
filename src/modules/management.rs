@@ -158,7 +158,7 @@ fn validate_datastore_location(
         .context("Failed to find mount point for datastore")?;
 
     if host_config
-        .imaging
+        .storage
         .ab_update
         .as_ref()
         .and_then(|ab_update| {
@@ -183,14 +183,11 @@ mod tests {
     fn test_validate_datastore_location() {
         let host_config_yaml = indoc! {r#"
             storage:
-              disks:
               mount-points:
                 - path: /
                   target-id: sda1
                   filesystem: ext4
                   options: []
-            imaging:
-              images:
         "#};
         let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
 
@@ -204,7 +201,6 @@ mod tests {
 
         let host_config_yaml = indoc! {r#"
             storage:
-              disks:
               mount-points:
                 - path: /
                   target-id: sda1
@@ -214,8 +210,6 @@ mod tests {
                   target-id: sda2
                   filesystem: ext4
                   options: []
-            imaging:
-              images:
         "#};
         let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
 
@@ -223,7 +217,6 @@ mod tests {
 
         let host_config_yaml = indoc! {r#"
             storage:
-              disks:
               mount-points:
                 - path: /
                   target-id: sda1
@@ -233,8 +226,6 @@ mod tests {
                   target-id: sda2
                   filesystem: ext4
                   options: []
-            imaging:
-              images:
               ab-update:
                 volume-pairs:
                     - id: sda2
@@ -250,7 +241,6 @@ mod tests {
 
         let host_config_yaml = indoc! {r#"
             storage:
-              disks:
               mount-points:
                 - path: /
                   target-id: sda1
@@ -260,8 +250,6 @@ mod tests {
                   target-id: sda2
                   filesystem: ext4
                   options: []
-            imaging:
-              images:
               ab-update:
                 volume-pairs:
                     - id: sda1
@@ -277,7 +265,6 @@ mod tests {
 
         let host_config_yaml = indoc! {r#"
             storage:
-              disks:
               mount-points:
                 - path: /
                   target-id: sda1
@@ -287,8 +274,6 @@ mod tests {
                   target-id: sda2
                   filesystem: ext4
                   options: []
-            imaging:
-              images:
               ab-update:
                 volume-pairs:
                     - id: sda1

@@ -400,7 +400,7 @@ fn get_ab_volume(
     block_device_id: &BlockDeviceId,
     active: bool,
 ) -> Option<BlockDeviceInfo> {
-    if let Some(ab_update) = &host_status.imaging.ab_update {
+    if let Some(ab_update) = &host_status.storage.ab_update {
         let ab_volume = ab_update
             .volume_pairs
             .iter()
@@ -433,7 +433,7 @@ fn get_ab_volume(
 /// the active volume selection will be returned. If active is false, the volume
 /// selection corresponding to the volumes to be updated will be returned.
 fn get_ab_update_volume(host_status: &HostStatus, active: bool) -> Option<AbVolumeSelection> {
-    let active_volume = &host_status.imaging.ab_update.as_ref()?.active_volume;
+    let active_volume = &host_status.storage.ab_update.as_ref()?.active_volume;
     match &host_status.reconcile_state {
         ReconcileState::UpdateInProgress(UpdateKind::HotPatch)
         | ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)
@@ -554,7 +554,7 @@ mod test {
         let host_status_yaml = indoc::indoc! {r#"
             storage:
               disks:
-                foo: 
+                foo:
                   uuid: 00000000-0000-0000-0000-000000000000
                   path: /dev/sda
                   capacity: 10
@@ -574,7 +574,6 @@ mod test {
                       end: 10
                       type: root
                       contents: initialized
-              raid-arrays: {}
               mount-points:
                 boot:
                   path: /boot
@@ -585,7 +584,6 @@ mod test {
                   filesystem: ext4
                   options: []
             reconcile-state: clean-install
-            imaging:
             "#};
         let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
 
@@ -601,7 +599,6 @@ mod test {
     fn test_get_block_device_for_update() {
         let host_status_yaml = indoc! {r#"
             storage:
-                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -636,8 +633,6 @@ mod test {
                         capacity: 1000
                         contents: unknown
                         partitions: []
-                raid-arrays:
-            imaging:
                 ab-update:
                     volume-pairs:
                         osab:
@@ -692,7 +687,7 @@ mod test {
             }
         );
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -729,10 +724,6 @@ mod test {
     fn test_get_ab_update_volume(active: bool) -> HostStatus {
         let host_status_yaml = indoc! {r#"
             storage:
-                disks:
-                mount-points:
-                raid-arrays:
-            imaging:
                 ab-update:
                     volume-pairs:
             reconcile-state: clean-install
@@ -746,7 +737,7 @@ mod test {
         );
 
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -758,7 +749,7 @@ mod test {
         );
 
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -783,7 +774,7 @@ mod test {
         );
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot);
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -817,7 +808,7 @@ mod test {
             Some(AbVolumeSelection::VolumeB)
         );
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -847,7 +838,7 @@ mod test {
             Some(AbVolumeSelection::VolumeA)
         );
         host_status
-            .imaging
+            .storage
             .ab_update
             .as_mut()
             .unwrap()
@@ -863,7 +854,6 @@ mod test {
     fn test_get_disk_partition() {
         let host_status_yaml = indoc! {r#"
             storage:
-                mount-points:
                 disks:
                     os:
                         path: /dev/disk/by-bus/foobar
@@ -892,8 +882,6 @@ mod test {
                             end: 10000
                             type: root
                             uuid: 00000000-0000-0000-0000-000000000000
-                raid-arrays:
-            imaging:
                 ab-update:
                     volume-pairs:
             reconcile-state: clean-install
