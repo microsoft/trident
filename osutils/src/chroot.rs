@@ -11,6 +11,8 @@ use anyhow::{Context, Error};
 use log::info;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
 
+use crate::errors::add_secondary_error_context;
+
 // TODO: Implement drop for Chroot that panics if the chroot has not been
 // exited. Tracked by: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6265
 
@@ -65,9 +67,26 @@ impl Chroot {
         Ok(Self { rootfd, mounts })
     }
 
+    pub fn execute_and_exit<F, T>(self, f: F) -> Result<T, Error>
+    where
+        F: FnOnce() -> Result<T, Error>,
+    {
+        // Execute the function.
+        let result = f();
+
+        // Exit the chroot and return any errors from the fucntion, the exit
+        // call, or both.
+        match self.exit() {
+            Ok(_) => result,
+            Err(e2) => match result {
+                Ok(_) => Err(e2),
+                Err(e) => Err(add_secondary_error_context(e, e2)),
+            },
+        }
+    }
+
     /// Exit the chroot environment and unmount special directories.
-    #[allow(unused)]
-    pub fn exit(self) -> Result<(), Error> {
+    fn exit(self) -> Result<(), Error> {
         // Exit the chroot.
         nix::unistd::fchdir(self.rootfd).context("Failed to exit chroot")?;
         unix::fs::chroot(".").context("Failed to set current directory out of chroot")?;

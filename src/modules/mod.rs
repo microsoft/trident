@@ -146,25 +146,35 @@ pub(super) fn provision_host(
 
     let chroot = chroot::enter_update_chroot(mount_path)?;
     let datastore_path = get_datastore_path(host_config);
-    state.persist(datastore_path)?;
+    let mut root_device_path = None;
+    chroot
+        .execute_and_exit(|| {
+            state.persist(datastore_path)?;
 
-    configure(&mut modules, state, host_config)?;
+            configure(&mut modules, state, host_config)?;
 
-    let root_device_path = get_root_block_device_path(state.host_status())
-        .context("Failed to get root block device")?;
+            root_device_path = Some(
+                get_root_block_device_path(state.host_status())
+                    .context("Failed to get root block device")?,
+            );
 
-    if let Some(sender) = sender {
-        sender
-            .send(Ok(HostStatusState {
-                status: serde_yaml::to_string(state.host_status())
-                    .context("Failed to serialize host status")?,
-            }))
-            .context("Failed to send host status")?;
-        drop(sender);
-    }
+            if let Some(sender) = sender {
+                sender
+                    .send(Ok(HostStatusState {
+                        status: serde_yaml::to_string(state.host_status())
+                            .context("Failed to serialize host status")?,
+                    }))
+                    .context("Failed to send host status")?;
+                drop(sender);
+            }
 
-    state.close();
-    chroot.exit().context("Failed to exit chroot")?;
+            state.close();
+
+            Ok(())
+        })
+        .context("Failed to execute in chroot")?;
+
+    let root_device_path = root_device_path.context("Failed to get root block device")?;
 
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
@@ -274,18 +284,15 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
         }
     }
 
-    let mut chroot = None;
     let mount_path = Path::new(UPDATE_ROOT_PATH);
 
     if let Some(UpdateKind::AbUpdate) = update_kind {
         provision(&mut modules, state, host_config, mount_path)?;
-        chroot = Some(chroot::enter_update_chroot(mount_path)?);
-    }
-
-    configure(&mut modules, state, host_config)?;
-
-    if let Some(chroot) = chroot {
-        chroot.exit().context("Failed to exit chroot")?;
+        chroot::enter_update_chroot(mount_path)?
+            .execute_and_exit(|| configure(&mut modules, state, host_config))
+            .context("Failed to execute in chroot")?;
+    } else {
+        configure(&mut modules, state, host_config)?;
     }
 
     if let Some(sender) = sender {

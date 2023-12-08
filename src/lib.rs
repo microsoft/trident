@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Error};
 use datastore::DataStore;
 use log::{debug, error, info, warn};
+use osutils::errors::add_secondary_error_context;
 use osutils::overlay::EphemeralOverlayWithSystemD;
 use osutils::{chroot, container};
 use protobufs::*;
@@ -283,7 +284,7 @@ impl Trident {
         // This creates a channel to send commands to the main trident thread. It lets us use the
         // same logic for processing an initial provision command contained within the trident local
         // config as for processing commands received from the gRPC endpoint.
-        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
 
         // If we have a host config source, load it and dispatch it as the first
         // command.
@@ -338,14 +339,35 @@ impl Trident {
         // all subsequent commands are executed in the host's root, and dont
         // have to be aware of if Trident is running in the context of the
         // container or not.
-        let chroot = if container::is_running_in_container() {
-            Some(chroot::enter_host_chroot(
-                container::get_host_root_path().context("Failed to get host root mount path which is required when executing inside a container")?.as_path(),
-            ).context("Failed to enter host chroot, which is required when executing inside a container")?)
+        if container::is_running_in_container() {
+            if let Err(e) = chroot::enter_host_chroot(
+                container::get_host_root_path()
+                    .context("Failed to get host root mount path which is required when executing inside a container")?
+                    .as_path(),
+            )
+            .context("Failed to enter host chroot, which is required when executing inside a container")?
+            .execute_and_exit(|| self.handle_commands(receiver, &orchestrator)).context("Failed to execute in chroot") {
+                if let Some(ref orchestrator) = orchestrator {
+                    orchestrator.report_error(format!("{e:?}"));
+                }
+                anyhow::bail!(e);
+            }
         } else {
-            None
+            self.handle_commands(receiver, &orchestrator)?;
         };
 
+        if let Some(ref orchestrator) = orchestrator {
+            orchestrator.report_success()
+        }
+
+        Ok(())
+    }
+
+    fn handle_commands(
+        &mut self,
+        mut receiver: mpsc::Receiver<HostUpdateCommand>,
+        orchestrator: &Option<OrchestratorConnection>,
+    ) -> Result<(), Error> {
         // Process commands. Starting with the initial command indicated in the local config file
         // (if any). Once that has been handled, subsequent commands are received from the gRPC
         // endpoint.
@@ -353,7 +375,7 @@ impl Trident {
             let has_sender = cmd.sender.is_some();
 
             if let Err(e) = self.handle_command(cmd) {
-                if let Some(ref orchestrator) = orchestrator {
+                if let Some(ref orchestrator) = *orchestrator {
                     orchestrator.report_error(format!("{e:?}"));
                 }
                 if has_sender {
@@ -361,21 +383,10 @@ impl Trident {
                     // possibly restart Trident
                     error!("Failed to handle command: {e:?}");
                 } else {
-                    return match exit_chroot(chroot, &orchestrator) {
-                        Ok(_) => Err(e),
-                        Err(e2) => Err(e.context(e2)),
-                    };
+                    return Err(e);
                 }
             }
         }
-
-        // Exit the chroot if we were executing in the container.
-        exit_chroot(chroot, &orchestrator)?;
-
-        if let Some(ref orchestrator) = orchestrator {
-            orchestrator.report_success()
-        }
-
         Ok(())
     }
 
@@ -435,32 +446,6 @@ impl Trident {
 
         Ok(())
     }
-}
-
-fn add_secondary_error_context(
-    primary: Error,
-    secondary: impl Into<Box<dyn std::error::Error + Send + Sync>>,
-) -> Error {
-    primary.context(format!(
-        "While handling the error, an additional error was caught: \n\n{:?}\n\nThe earlier error:",
-        secondary.into()
-    ))
-}
-
-fn exit_chroot(
-    chroot: Option<chroot::Chroot>,
-    orchestrator: &Option<OrchestratorConnection>,
-) -> Result<(), Error> {
-    if let Some(chroot) = chroot {
-        if let Err(e) = chroot.exit().context("Failed to exit chroot") {
-            if let Some(ref orchestrator) = *orchestrator {
-                orchestrator.report_error(format!("{e:?}"));
-            }
-            anyhow::bail!(e);
-        }
-    }
-
-    Ok(())
 }
 
 fn run_command(command: &mut Command) -> Result<Output, Error> {
