@@ -9,7 +9,7 @@ use trident::{Logstream, MultiLogger};
 use setsail::KsTranslator;
 
 #[derive(Parser, Debug)]
-#[command(version)]
+#[clap(version = option_env!("TRIDENT_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")))]
 struct Cli {
     /// Path to the Trident Configuration file
     #[clap(global = true, short, long)]

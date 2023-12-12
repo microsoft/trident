@@ -62,14 +62,6 @@ extends:
           ob_outputDirectory: '$(Build.SourcesDirectory)/out' # this directory is uploaded to pipeline artifacts, reddog and cloudvault. More info at https://aka.ms/obpipelines/artifacts
 
         steps: # These steps will be run in unrestricted container's network
-          - task: onebranch.pipeline.version@1
-            displayName: 'Setup BuildNumber'
-            inputs:
-              system: 'RevisionCounter'
-              major: '0'
-              minor: '1'
-              exclude_commit: true
-
           - template: .pipelines/OneBranch.Common.yml@self
 
     - template: .pipelines/e2e-template.yml@argus-toolkit
