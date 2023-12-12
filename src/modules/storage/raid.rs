@@ -592,48 +592,71 @@ mod tests {
     use indoc::indoc;
     use tempfile::tempdir;
 
+    use trident_api::{
+        config::{
+            Disk, Image, ImageFormat, Partition, PartitionSize, PartitionTableType, PartitionType,
+            RaidConfig, Storage,
+        },
+        status::{
+            BlockDeviceContents, Disk as DiskStatus, Partition as PartitionStatus, RaidArray,
+            ReconcileState, Storage as StorageStatus,
+        },
+    };
+
     use crate::modules::storage;
 
     use super::*;
-    use trident_api::status::RaidArray;
 
     #[test]
     fn test_get_device_paths() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: boot
-                            path: /dev/sda1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/sda2
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: home
-                            path: /dev/sda3
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: home
-                            uuid: 00000000-0000-0000-0000-000000000000
-                raid-arrays:
-            reconcile-state: clean-install
-        "#};
-        let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
-            .expect("Failed to parse host status");
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: StorageStatus {
+                disks: BTreeMap::from([(
+                    "os".into(),
+                    DiskStatus {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            PartitionStatus {
+                                id: "boot".to_string(),
+                                path: PathBuf::from("/dev/sda1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            PartitionStatus {
+                                id: "root".to_string(),
+                                path: PathBuf::from("/dev/sda2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            PartitionStatus {
+                                id: "home".to_string(),
+                                path: PathBuf::from("/dev/sda3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::LinuxGeneric,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                )]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         let result: Result<Vec<PathBuf>, Error> =
             get_device_paths(&host_status, &vec!["boot".to_string(), "root".to_string()]);
@@ -727,35 +750,43 @@ mod tests {
 
     #[test]
     fn test_get_partition_from_host_config() {
-        let host_config_yaml = indoc! {r#"
-            storage:
-                disks:
-                  - id: disk1
-                    device: /dev/sda
-                    partition-table-type: gpt
-                    partitions:
-                    - id: disk1-partition1
-                      type: esp
-                      size: 1M
-                    - id: disk1-partition2
-                      type: root
-                      size: 1G
-                  - id: disk2
-                    device: /dev/sdb
-                    partition-table-type: gpt
-                    partitions:
-                      - id: disk2-partition1
-                        type: esp
-                        size: 1M
-                images:
-                  - target-id: disk1-partition1
-                    url: ""
-                    sha256: ""
-                    format: raw-zstd
-        "#};
-
-        let host_config = serde_yaml::from_str::<HostConfiguration>(host_config_yaml)
-            .expect("Failed to parse host config");
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "disk1".to_string(),
+                        device: PathBuf::from("/dev/sda"),
+                        partition_table_type: PartitionTableType::Gpt,
+                        partitions: vec![
+                            Partition {
+                                id: "disk1-partition1".to_string(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("1M").unwrap(),
+                            },
+                            Partition {
+                                id: "disk1-partition2".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    Disk {
+                        id: "disk2".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
+                        partition_table_type: PartitionTableType::Gpt,
+                        partitions: vec![Partition {
+                            id: "disk2-partition1".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::from_str("1M").unwrap(),
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         let partition = storage::get_partition_from_host_config(&host_config, "disk1-partition1")
             .expect("Expected to find a partition but not found.");
@@ -777,59 +808,79 @@ mod tests {
 
     #[test]
     fn test_get_raid_array_ids() {
-        let host_config_yaml = indoc! {r#"
-        storage:
-            disks:
-              - id: some-disk
-                device: /dev/sda
-                partition-table-type: gpt
-                partitions:
-                  - id: esp
-                    type: esp
-                    size: 1G
-                  - id: root-a
-                    type: root
-                    size: 8G
-                  - id: trident
-                    type: linux-generic
-                    size: 1G
-                  - id: raid-a
-                    type: linux-generic
-                    size: 1G
-                  - id: raid-b
-                    type: linux-generic
-                    size: 1G
-                  - id: raid-c
-                    type: linux-generic
-                    size: 50M
-                  - id: raid-d
-                    type: linux-generic
-                    size: 50M
-            raid:
-              software:
-                  - id: some-raid
-                    name: my-raid
-                    level: raid1
-                    devices:
-                        - raid-a
-                        - raid-b
-                    metadata-version: "1.0"
-                  - id: some-raid2
-                    name: my-raid2
-                    level: raid1
-                    devices:
-                        - raid-c
-                        - raid-d
-                    metadata-version: "1.0"
-            images:
-              - url: ""
-                sha256: ""
-                format: raw-zstd
-                target-id: "esp"
-        "#};
-
-        let host_config = serde_yaml::from_str::<HostConfiguration>(host_config_yaml)
-            .expect("Failed to parse host config");
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "some-disk".to_string(),
+                    device: PathBuf::from("/dev/sda"),
+                    partition_table_type: PartitionTableType::Gpt,
+                    partitions: vec![
+                        Partition {
+                            id: "esp".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "root-a".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("8G").unwrap(),
+                        },
+                        Partition {
+                            id: "trident".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "raid-a".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "raid-b".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "raid-c".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("50M").unwrap(),
+                        },
+                        Partition {
+                            id: "raid-d".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("50M").unwrap(),
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                raid: RaidConfig {
+                    software: vec![
+                        SoftwareRaidArray {
+                            id: "some-raid".to_string(),
+                            name: "my-raid".to_string(),
+                            level: RaidLevel::Raid1,
+                            devices: vec!["raid-a".to_string(), "raid-b".to_string()],
+                            metadata_version: "1.0".to_string(),
+                        },
+                        SoftwareRaidArray {
+                            id: "some-raid2".to_string(),
+                            name: "my-raid2".to_string(),
+                            level: RaidLevel::Raid1,
+                            devices: vec!["raid-c".to_string(), "raid-d".to_string()],
+                            metadata_version: "1.0".to_string(),
+                        },
+                    ],
+                },
+                images: vec![Image {
+                    url: "".to_string(),
+                    sha256: "".to_string(),
+                    format: ImageFormat::RawZstd,
+                    target_id: "esp".to_string(),
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let raid_array_ids = storage::get_raid_array_ids(&host_config);
         assert_eq!(raid_array_ids.len(), 2);
         assert!(raid_array_ids.contains(&"some-raid".to_string()));

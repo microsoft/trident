@@ -223,15 +223,23 @@ fn parse_findmnt_entry(entry: &Value) -> Result<(PathBuf, PathBuf), Error> {
 mod tests {
     use indoc::indoc;
     use std::{
-        collections::HashMap,
+        collections::{BTreeMap, HashMap},
         io::Write,
         path::{Path, PathBuf},
+        str::FromStr,
     };
     use tempfile::NamedTempFile;
+    use uuid::Uuid;
 
     use trident_api::{
-        config::{HostConfiguration, MountPoint},
-        status::HostStatus,
+        config::{
+            Disk, HostConfiguration, Image, ImageFormat, MountPoint, Partition, PartitionSize,
+            PartitionTableType, PartitionType, Storage,
+        },
+        status::{
+            BlockDeviceContents, Disk as DiskStatus, HostStatus, Partition as PartitionStatus,
+            ReconcileState, Storage as StorageStatus,
+        },
     };
 
     use crate::modules::storage::tabfile::{TabFile, TabFileSettings};
@@ -239,48 +247,64 @@ mod tests {
     /// Validates /etc/fstab line generation logic.
     #[test]
     fn test_mount_point_to_line() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: home
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: home
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: swap
-                            path: /dev/disk/by-partlabel/swap
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: swap
-                            uuid: 00000000-0000-0000-0000-000000000000
-                raid-arrays:
-            reconcile-state: clean-install
-        "#};
-        let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
-            .expect("Failed to parse host status");
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: StorageStatus {
+                disks: BTreeMap::from([(
+                    "os".into(),
+                    DiskStatus {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            PartitionStatus {
+                                id: "efi".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: trident_api::status::BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                                ty: PartitionType::Esp,
+                            },
+                            PartitionStatus {
+                                id: "root".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: trident_api::status::BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                                ty: PartitionType::Root,
+                            },
+                            PartitionStatus {
+                                id: "home".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: trident_api::status::BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                                ty: PartitionType::Home,
+                            },
+                            PartitionStatus {
+                                id: "swap".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/swap"),
+                                contents: trident_api::status::BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                                ty: PartitionType::Swap,
+                            },
+                        ],
+                    },
+                )]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         assert_eq!(
             TabFile::mount_point_to_line(
@@ -451,105 +475,145 @@ mod tests {
             /dev/disk/by-partlabel/swap none swap sw,x-systemd.makefs 0 0
         "#};
 
-        let host_config_yaml = indoc! {r#"
-            storage:
-                images:
-                  - url: file:///path/to/efi-image
-                    sha256: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-                    format: raw-zstd
-                    target-id: efi
-                  - url: file:///path/to/root-image
-                    sha256: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-                    format: raw-zstd
-                    target-id: root
-                disks:
-                  - id: os
-                    device: /dev/disk/by-bus/foobar
-                    partition-table-type: gpt
-                    partitions:
-                      - id: efi
-                        type: esp
-                        size: 100M
-                      - id: root
-                        type: root
-                        size: 1G
-                      - id: home
-                        type: home
-                        size: 10G
-                      - id: swap
-                        type: swap
-                        size: 1G
-                mount-points:
-                  - path: /boot/efi
-                    filesystem: vfat
-                    options:
-                      - umask=0077
-                    target-id: efi
-                  - path: /
-                    filesystem: ext4
-                    options:
-                      - errors=remount-ro
-                    target-id: root
-                  - path: /home
-                    filesystem: ext4
-                    options:
-                      - defaults
-                      - x-systemd.makefs
-                    target-id: home
-                  - path: none
-                    filesystem: swap
-                    options:
-                      - sw
-                    target-id: swap
-        "#};
-        let host_config: HostConfiguration =
-            serde_yaml::from_str(host_config_yaml).expect("Failed to parse host config");
+        let host_config = HostConfiguration {
+            storage: Storage {
+                images: vec![
+                    Image {
+                        url: "file:///path/to/efi-image".to_owned(),
+                        sha256: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                            .to_owned(),
+                        format: ImageFormat::RawZstd,
+                        target_id: "efi".into(),
+                    },
+                    Image {
+                        url: "file:///path/to/root-image".to_owned(),
+                        sha256: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                            .to_owned(),
+                        format: ImageFormat::RawZstd,
+                        target_id: "root".to_owned(),
+                    },
+                ],
+                disks: vec![Disk {
+                    id: "os".to_owned(),
+                    device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                    partition_table_type: PartitionTableType::Gpt,
+                    partitions: vec![
+                        Partition {
+                            id: "efi".to_owned(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::from_str("100M").unwrap(),
+                        },
+                        Partition {
+                            id: "root".to_owned(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "home".to_owned(),
+                            partition_type: PartitionType::Home,
+                            size: PartitionSize::from_str("10G").unwrap(),
+                        },
+                        Partition {
+                            id: "swap".to_owned(),
+                            partition_type: PartitionType::Swap,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                    ],
+                }],
+                mount_points: vec![
+                    MountPoint {
+                        path: PathBuf::from("/boot/efi"),
+                        filesystem: "vfat".to_owned(),
+                        options: vec!["umask=0077".to_owned()],
+                        target_id: "efi".to_owned(),
+                    },
+                    MountPoint {
+                        path: PathBuf::from("/"),
+                        filesystem: "ext4".to_owned(),
+                        options: vec!["errors=remount-ro".to_owned()],
+                        target_id: "root".to_owned(),
+                    },
+                    MountPoint {
+                        path: PathBuf::from("/home"),
+                        filesystem: "ext4".to_owned(),
+                        options: vec!["defaults".to_owned(), "x-systemd.makefs".to_owned()],
+                        target_id: "home".to_owned(),
+                    },
+                    MountPoint {
+                        path: PathBuf::from("none"),
+                        filesystem: "swap".to_owned(),
+                        options: vec!["sw".to_owned()],
+                        target_id: "swap".to_owned(),
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: !image
-                              sha256: 2cb228bc3bbbc2174585327b255a7196075559ecd0c49bf710dfd5432af8f9ec
-                              length: 738484224
-                              url: file:///root.raw.zst
-                            start: 0
-                            end: 0
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: home
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: home
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: swap
-                            path: /dev/disk/by-partlabel/swap
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: swap
-                            uuid: 00000000-0000-0000-0000-000000000000
-                raid-arrays:
-            reconcile-state: clean-install
-        "#};
-        let host_status = serde_yaml::from_str::<HostStatus>(host_status_yaml)
-            .expect("Failed to parse host status");
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: StorageStatus {
+                disks: BTreeMap::from([(
+                    "os".into(),
+                    DiskStatus {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            PartitionStatus {
+                                id: "efi".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                                ty: PartitionType::Esp,
+                            },
+                            PartitionStatus {
+                                id: "root".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Image {
+                                    sha256: "2cb228bc3bbbc2174585327b255a7196075559ecd0c49bf710dfd5432af8f9ec"
+                                        .to_owned(),
+                                    length: 738484224,
+                                    url: "file:///root.raw.zst".to_owned(),
+                                },
+                                start: 0,
+                                end: 0,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                                ty: PartitionType::Root,
+                            },
+                            PartitionStatus {
+                                id: "home".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                                ty: PartitionType::Home,
+                            },
+                            PartitionStatus {
+                                id: "swap".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/swap"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Swap,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                )]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         assert_eq!(
             TabFile::from_mount_points(

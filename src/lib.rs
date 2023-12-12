@@ -486,20 +486,15 @@ fn open_firewall_for_grpc() -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
-    use indoc::indoc;
     use trident_api::{
-        config::PartitionType,
-        status::{
-            AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk, Partition,
-            ReconcileState, UpdateKind,
-        },
+        config::{MountPoint, PartitionType, Storage},
+        status::{BlockDeviceContents, BlockDeviceInfo, Disk, Partition},
     };
 
     use super::*;
-    use anyhow::anyhow;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn test_run_command() {
@@ -580,48 +575,35 @@ mod tests {
     #[test]
     fn test_get_host_configuration() {
         // missing HC source
-        let trident_config_yaml = indoc! { r#"
-        "#};
-        let trident_config = serde_yaml::from_str::<LocalConfigFile>(trident_config_yaml).unwrap();
+        let trident_config = LocalConfigFile::new_empty();
         assert!(Trident::get_host_configuration(&trident_config)
             .unwrap()
             .is_none());
 
         // missing HC file
-        let trident_config_yaml = indoc! { r#"
-            host-configuration-file: /etc/trident/host_config.yaml
-        "#};
-        let trident_config = serde_yaml::from_str::<LocalConfigFile>(trident_config_yaml).unwrap();
+        let trident_config = LocalConfigFile::new_empty().with_host_configuration_source(
+            HostConfigurationSource::File(PathBuf::from("/does/not/exist")),
+        );
         assert!(Trident::get_host_configuration(&trident_config).is_err());
 
         // ok
-        let trident_config_yaml = indoc! { r#"
-            host-configuration:
-              storage:
-                disks:
-                mount-points:
-                  - path: /
-                    target-id: sda1
-                    filesystem: ext4
-                    options: []
-                images:
-            "#};
-        let trident_config = serde_yaml::from_str::<LocalConfigFile>(trident_config_yaml).unwrap();
+        let host_config_original = HostConfiguration {
+            storage: Storage {
+                mount_points: vec![MountPoint {
+                    path: PathBuf::from("/"),
+                    target_id: "sda1".to_string(),
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let trident_config =
+            LocalConfigFile::new_empty().with_host_configuration(host_config_original.clone());
         let host_config = Trident::get_host_configuration(&trident_config)
             .unwrap()
             .unwrap();
-        let expected_host_config_yaml = indoc! {r#"
-            storage:
-              disks:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-              images:
-        "#};
-        let expected_host_config =
-            serde_yaml::from_str::<HostConfiguration>(expected_host_config_yaml).unwrap();
-        assert_eq!(*host_config, expected_host_config);
+        assert_eq!(*host_config, host_config_original);
     }
 }

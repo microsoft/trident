@@ -560,9 +560,15 @@ pub(super) fn configure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indoc::indoc;
-    use std::io::Cursor;
-    use trident_api::status::UpdateKind;
+    use std::{collections::BTreeMap, io::Cursor, path::PathBuf};
+    use trident_api::{
+        config::{
+            AbUpdate as AbUpdateConfig, AbVolumePair as AbVolumePairConfig, MountPoint,
+            PartitionType, Storage as StorageConfig,
+        },
+        status::{MountPoint as MountPointStatus, Storage, UpdateKind},
+    };
+    use uuid::Uuid;
 
     #[test]
     fn test_hashing_reader() {
@@ -581,15 +587,19 @@ mod tests {
     /// Validates that refresh_ab_volumes initializes HostStatus correctly.
     #[test]
     fn test_refresh_ab_volumes_yaml() {
-        let host_config_yaml = indoc! {r#"
-            storage:
-                ab-update:
-                    volume-pairs:
-                      - id: ab
-                        volume-a-id: a
-                        volume-b-id: b
-        "#};
-        let host_config = serde_yaml::from_str::<HostConfiguration>(host_config_yaml).unwrap();
+        let host_config = HostConfiguration {
+            storage: StorageConfig {
+                ab_update: Some(AbUpdateConfig {
+                    volume_pairs: vec![AbVolumePairConfig {
+                        id: "ab".into(),
+                        volume_a_id: "a".to_string(),
+                        volume_b_id: "b".to_string(),
+                    }],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let mut host_status = HostStatus::default();
 
         refresh_ab_volumes(&mut host_status, &host_config);
@@ -605,71 +615,105 @@ mod tests {
 
     #[test]
     fn test_get_undeployed_images() {
-        let host_config_yaml = indoc::indoc! {r#"
-            storage:
-              disks: []
-              mount-points:
-                - path: /boot
-                  target-id: boot
-                  filesystem: fat32
-                  options: []
-                - path: /
-                  target-id: root
-                  filesystem: ext4
-                  options: []
-              images:
-                - url: http://example.com/esp.img
-                  target-id: boot
-                  format: raw-zstd
-                  sha256: foobar
-                - url: http://example.com/image1.img
-                  target-id: root
-                  format: raw-zstd
-                  sha256: ignored
-            "#};
-        let mut host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
-        let host_status_yaml = indoc::indoc! {r#"
-            storage:
-              disks:
-                foo:
-                  uuid: 00000000-0000-0000-0000-000000000000
-                  path: /dev/sda
-                  capacity: 10
-                  contents: initialized
-                  partitions:
-                    - uuid: 00000000-0000-0000-0000-000000000001
-                      path: /dev/sda1
-                      id: boot
-                      start: 1
-                      end: 3
-                      type: esp
-                      contents: !image
-                        url: http://example.com/esp.img
-                        sha256: foobar
-                        length: 100
-                    - uuid: 00000000-0000-0000-0000-000000000002
-                      path: /dev/sda2
-                      id: root
-                      start: 4
-                      end: 10
-                      type: root
-                      contents: !image
-                        url: http://example.com/image1.img
-                        sha256: foobar
-                        length: 100
-              raid-arrays: {}
-              mount-points:
-                boot:
-                  path: /boot
-                  filesystem: fat32
-                  options: []
-                root:
-                  path: /
-                  filesystem: ext4
-                  options: []
-            reconcile-state: clean-install
-            "#};
-        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let mut host_config = HostConfiguration {
+            storage: StorageConfig {
+                mount_points: vec![
+                    MountPoint {
+                        path: PathBuf::from("/boot"),
+                        target_id: "boot".to_string(),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: PathBuf::from("/"),
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                ],
+                images: vec![
+                    Image {
+                        url: "http://example.com/esp.img".to_string(),
+                        target_id: "boot".to_string(),
+                        format: ImageFormat::RawZstd,
+                        sha256: "foobar".to_string(),
+                    },
+                    Image {
+                        url: "http://example.com/image1.img".to_string(),
+                        target_id: "root".to_string(),
+                        format: ImageFormat::RawZstd,
+                        sha256: HASH_IGNORED.to_string(),
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: BTreeMap::from([(
+                    "foo".to_string(),
+                    Disk {
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        path: PathBuf::from("/dev/sda"),
+                        capacity: 10,
+                        contents: BlockDeviceContents::Initialized,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000001")
+                                    .unwrap(),
+                                path: PathBuf::from("/dev/sda1"),
+                                id: "boot".to_string(),
+                                start: 1,
+                                end: 3,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/esp.img".to_string(),
+                                    sha256: "foobar".to_string(),
+                                    length: 100,
+                                },
+                            },
+                            Partition {
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000002")
+                                    .unwrap(),
+                                path: PathBuf::from("/dev/sda2"),
+                                id: "root".to_string(),
+                                start: 4,
+                                end: 10,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/image1.img".to_string(),
+                                    sha256: "foobar".to_string(),
+                                    length: 100,
+                                },
+                            },
+                        ],
+                    },
+                )]),
+                mount_points: BTreeMap::from([
+                    (
+                        "boot".to_string(),
+                        MountPointStatus {
+                            path: PathBuf::from("/boot"),
+                            filesystem: "fat32".to_string(),
+                            options: vec![],
+                        },
+                    ),
+                    (
+                        "root".to_string(),
+                        MountPointStatus {
+                            path: PathBuf::from("/"),
+                            filesystem: "ext4".to_string(),
+                            options: vec![],
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         // should be zero, as images are matching and hash is ignored
         assert_eq!(
@@ -745,77 +789,112 @@ mod tests {
         );
 
         // root config is not matching root status
-        let host_config_yaml = indoc::indoc! {r#"
-            storage:
-              disks: []
-              mount-points:
-                - path: /boot
-                  target-id: boot
-                  filesystem: fat32
-                  options: []
-                - path: /
-                  target-id: root
-                  filesystem: ext4
-                  options: []
-              images:
-                - url: http://example.com/esp.img
-                  target-id: boot
-                  format: raw-zstd
-                  sha256: foobar
-                - url: http://example.com/image1.img
-                  target-id: root
-                  format: raw-zstd
-                  sha256: ignored
-              ab-update:
-                volume-pairs:
-                  - id: root
-                    volume-a-id: root-a
-                    volume-b-id: root-b
-            "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+        let host_config = HostConfiguration {
+            storage: StorageConfig {
+                mount_points: vec![
+                    MountPoint {
+                        path: PathBuf::from("/boot"),
+                        target_id: "boot".to_string(),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: PathBuf::from("/"),
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                ],
+                images: vec![
+                    Image {
+                        url: "http://example.com/esp.img".to_string(),
+                        target_id: "boot".to_string(),
+                        format: ImageFormat::RawZstd,
+                        sha256: "foobar".to_string(),
+                    },
+                    Image {
+                        url: "http://example.com/image1.img".to_string(),
+                        target_id: "root".to_string(),
+                        format: ImageFormat::RawZstd,
+                        sha256: HASH_IGNORED.to_string(),
+                    },
+                ],
+                ab_update: Some(AbUpdateConfig {
+                    volume_pairs: vec![AbVolumePairConfig {
+                        id: "root".into(),
+                        volume_a_id: "root-a".to_string(),
+                        volume_b_id: "root-b".to_string(),
+                    }],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        let host_status_yaml = indoc::indoc! {r#"
-            storage:
-              disks:
-                foo:
-                  uuid: 00000000-0000-0000-0000-000000000000
-                  path: /dev/sda
-                  capacity: 10
-                  contents: initialized
-                  partitions:
-                    - uuid: 00000000-0000-0000-0000-000000000001
-                      path: /dev/sda1
-                      id: boot
-                      start: 1
-                      end: 3
-                      type: esp
-                      contents: !image
-                        url: http://example.com/esp.img
-                        sha256: foobar
-                        length: 100
-                    - uuid: 00000000-0000-0000-0000-000000000002
-                      path: /dev/sda2
-                      id: root-b
-                      start: 4
-                      end: 10
-                      type: root
-                      contents: !image
-                        url: http://example.com/image1.img
-                        sha256: foobar
-                        length: 100
-              raid-arrays: {}
-              mount-points:
-                boot:
-                  path: /boot
-                  filesystem: fat32
-                  options: []
-                root:
-                  path: /
-                  filesystem: ext4
-                  options: []
-            reconcile-state: clean-install
-            "#};
-        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: BTreeMap::from([(
+                    "foo".into(),
+                    Disk {
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        path: PathBuf::from("/dev/sda"),
+                        capacity: 10,
+                        contents: BlockDeviceContents::Initialized,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000001")
+                                    .unwrap(),
+                                path: PathBuf::from("/dev/sda1"),
+                                id: "boot".to_string(),
+                                start: 1,
+                                end: 3,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/esp.img".to_string(),
+                                    sha256: "foobar".to_string(),
+                                    length: 100,
+                                },
+                            },
+                            Partition {
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000002")
+                                    .unwrap(),
+                                path: PathBuf::from("/dev/sda2"),
+                                id: "root-b".to_string(),
+                                start: 4,
+                                end: 10,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/image1.img".to_string(),
+                                    sha256: "foobar".to_string(),
+                                    length: 100,
+                                },
+                            },
+                        ],
+                    },
+                )]),
+                mount_points: BTreeMap::from([
+                    (
+                        "boot".to_string(),
+                        MountPointStatus {
+                            path: PathBuf::from("/boot"),
+                            filesystem: "fat32".to_string(),
+                            options: vec![],
+                        },
+                    ),
+                    (
+                        "root".to_string(),
+                        MountPointStatus {
+                            path: PathBuf::from("/"),
+                            filesystem: "ext4".to_string(),
+                            options: vec![],
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false),
@@ -882,50 +961,76 @@ mod tests {
     /// Validates logic for setting block device contents
     #[test]
     fn test_set_host_status_block_device_contents() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 100
-                            end: 1000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: rootb
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 1000
-                            end: 10000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                    data:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 1000
-                        contents: unknown
-                        partitions: []
-                ab-update:
-                    volume-pairs:
-                        osab:
-                            volume-a-id: root
-                            volume-b-id: rootb
-            reconcile-state: clean-install
-        "#};
-        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: BTreeMap::from([
+                    (
+                        "os".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                            capacity: 0,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![
+                                Partition {
+                                    id: "efi".to_owned(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 0,
+                                    end: 0,
+                                    ty: PartitionType::Esp,
+                                    uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                        .unwrap(),
+                                },
+                                Partition {
+                                    id: "root".to_owned(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 100,
+                                    end: 1000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                        .unwrap(),
+                                },
+                                Partition {
+                                    id: "rootb".to_owned(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 1000,
+                                    end: 10000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                        .unwrap(),
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        "data".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                            capacity: 1000,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![],
+                        },
+                    ),
+                ]),
+                ab_update: Some(AbUpdate {
+                    active_volume: None,
+                    volume_pairs: BTreeMap::from([(
+                        "osab".to_owned(),
+                        AbVolumePair {
+                            volume_a_id: "root".to_owned(),
+                            volume_b_id: "rootb".to_owned(),
+                        },
+                    )]),
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         assert_eq!(
             host_status
                 .storage
@@ -1078,41 +1183,54 @@ mod tests {
     /// Validates logic for querying disks and partitions.
     #[test]
     fn test_get_disk_partition_mut() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 100
-                            end: 1000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: rootb
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 1000
-                            end: 10000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                ab-update:
-                    volume-pairs:
-            reconcile-state: clean-install
-        "#};
-        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: BTreeMap::from([(
+                    "os".into(),
+                    Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "rootb".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                )]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         let disk_mut = get_disk_mut(&mut host_status, &"os".to_owned());
         disk_mut.unwrap().contents = BlockDeviceContents::Zeroed;

@@ -845,10 +845,12 @@ pub(super) fn get_ab_volume_partition<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     // Import everything from the parent module
     use super::*;
-    use indoc::indoc;
-    use trident_api::status::{ReconcileState, UpdateKind};
+    use trident_api::status::{AbUpdate, AbVolumePair, Disk, ReconcileState, Storage, UpdateKind};
+    use uuid::Uuid;
 
     /// Validates that filename_dir_from_url() parses image URL correctly.
     #[test]
@@ -964,52 +966,74 @@ mod tests {
     /// Validates that get_update_partition_id() correctly returns the id of the partition that is
     /// inactive, or to be updated, based on target_id of the Image object.
     fn test_get_update_partition_id() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 100
-                            end: 1000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: rootb
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 1000
-                            end: 10000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                    data:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 1000
-                        contents: unknown
-                        partitions: []
-                ab-update:
-                    volume-pairs:
-                        osab:
-                            volume-a-id: root
-                            volume-b-id: rootb
-                    active-volume: volume-a
-            reconcile-state: clean-install
-        "#};
+        let mut host_status = HostStatus {
+            storage: Storage {
+                disks: BTreeMap::from([
+                    (
+                        "os".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 0,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![
+                                Partition {
+                                    id: "efi".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 0,
+                                    end: 0,
+                                    ty: PartitionType::Esp,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "root".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 100,
+                                    end: 1000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "rootb".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 1000,
+                                    end: 10000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        "data".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 1000,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![],
+                        },
+                    ),
+                ]),
+                ab_update: Some(AbUpdate {
+                    volume_pairs: BTreeMap::from([(
+                        "osab".to_string(),
+                        AbVolumePair {
+                            volume_a_id: "root".to_string(),
+                            volume_b_id: "rootb".to_string(),
+                        },
+                    )]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            reconcile_state: ReconcileState::CleanInstall,
+            ..Default::default()
+        };
 
-        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status
             .storage
@@ -1044,38 +1068,54 @@ mod tests {
             Err(e) => panic!("Unexpected error: {}", e),
         }
 
-        let host_status_yaml2 = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 100
-                            end: 1000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                    data:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 1000
-                        contents: unknown
-                        partitions: []
-            reconcile-state: clean-install
-        "#};
-        let host_status2: HostStatus = serde_yaml::from_str(host_status_yaml2).unwrap();
+        let host_status2 = HostStatus {
+            storage: Storage {
+                disks: BTreeMap::from([
+                    (
+                        "os".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 0,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![
+                                Partition {
+                                    id: "efi".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 0,
+                                    end: 0,
+                                    ty: PartitionType::Esp,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "root".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 100,
+                                    end: 1000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        "data".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 1000,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![],
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+            reconcile_state: ReconcileState::CleanInstall,
+            ..Default::default()
+        };
 
         // Scenario 4: Set ab-update to None; this means that we are using systemd-sysupdate to
         // write to a partition in clean-install, so should return target-id itself
@@ -1089,51 +1129,72 @@ mod tests {
     /// HostStatus, based on its id.
     #[test]
     fn test_get_partition_type() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 100
-                            end: 1000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: rootb
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 1000
-                            end: 10000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                    data:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 1000
-                        contents: unknown
-                        partitions: []
-                ab-update:
-                    volume-pairs:
-                        osab:
-                            volume-a-id: root
-                            volume-b-id: rootb
-                    active-volume: volume-a
-            reconcile-state: clean-install
-        "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let host_status = HostStatus {
+            storage: Storage {
+                disks: BTreeMap::from([
+                    (
+                        "os".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 0,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![
+                                Partition {
+                                    id: "efi".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 0,
+                                    end: 0,
+                                    ty: PartitionType::Esp,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "root".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 100,
+                                    end: 1000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "rootb".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 1000,
+                                    end: 10000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        "data".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 1000,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![],
+                        },
+                    ),
+                ]),
+                ab_update: Some(AbUpdate {
+                    volume_pairs: BTreeMap::from([(
+                        "osab".to_string(),
+                        AbVolumePair {
+                            volume_a_id: "root".to_string(),
+                            volume_b_id: "rootb".to_string(),
+                        },
+                    )]),
+                    active_volume: Some(AbVolumeSelection::VolumeA),
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         // Scenario 1: Successfully get partition type for a given id
         match get_partition_type(&host_status, "efi") {
@@ -1150,26 +1211,35 @@ mod tests {
         assert!(get_partition_type(&host_status, "invalid_id").is_err());
 
         // Scenario 3: No partitions available
-        let host_status_yaml2 = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions: []
-                    data:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 1000
-                        contents: unknown
-                        partitions: []
-                mount-points:
-                raid-arrays: {}
-            reconcile-state: clean-install
-        "#};
-        let host_status2: HostStatus = serde_yaml::from_str(host_status_yaml2).unwrap();
+        let host_status2 = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: BTreeMap::from([
+                    (
+                        "os".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 0,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![],
+                        },
+                    ),
+                    (
+                        "data".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 1000,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![],
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         assert!(get_partition_type(&host_status2, "root").is_err());
     }
 
@@ -1177,50 +1247,73 @@ mod tests {
     /// that it is valid.
     #[test]
     fn test_get_parent_disk() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 100
-                            end: 1000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: rootb
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 1000
-                            end: 10000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                    data:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 1000
-                        contents: unknown
-                        partitions: []
-                ab-update:
-                    volume-pairs:
-                        osab:
-                            volume-a-id: root
-                            volume-b-id: rootb
-            reconcile-state: clean-install
-        "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: BTreeMap::from([
+                    (
+                        "os".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 0,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![
+                                Partition {
+                                    id: "efi".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 0,
+                                    end: 0,
+                                    ty: PartitionType::Esp,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "root".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 100,
+                                    end: 1000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "rootb".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 1000,
+                                    end: 10000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        "data".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 1000,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![],
+                        },
+                    ),
+                ]),
+                ab_update: Some(AbUpdate {
+                    volume_pairs: BTreeMap::from([(
+                        "osab".to_string(),
+                        AbVolumePair {
+                            volume_a_id: "root".to_string(),
+                            volume_b_id: "rootb".to_string(),
+                        },
+                    )]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         // Case 1: Partition ID is valid
         assert_eq!(
@@ -1239,41 +1332,51 @@ mod tests {
     /// Validates logic for querying disks and partitions.
     #[test]
     fn test_get_partition_ref() {
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                            - id: efi
-                              path: /dev/disk/by-partlabel/osp1
-                              contents: unknown
-                              start: 0
-                              end: 0
-                              type: esp
-                              uuid: 00000000-0000-0000-0000-000000000000
-                            - id: root
-                              path: /dev/disk/by-partlabel/osp2
-                              contents: unknown
-                              start: 100
-                              end: 1000
-                              type: root
-                              uuid: 00000000-0000-0000-0000-000000000000
-                            - id: rootb
-                              path: /dev/disk/by-partlabel/osp3
-                              contents: unknown
-                              start: 1000
-                              end: 10000
-                              type: root
-                              uuid: 00000000-0000-0000-0000-000000000000
-                ab-update:
-                    volume-pairs:
-            reconcile-state: clean-install
-        "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let host_status = HostStatus {
+            storage: Storage {
+                disks: BTreeMap::from([(
+                    "os".into(),
+                    Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::nil(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_string(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "root".to_string(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "rootb".to_string(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+                        ],
+                    },
+                )]),
+                ..Default::default()
+            },
+            reconcile_state: ReconcileState::CleanInstall,
+            ..Default::default()
+        };
 
         // New assertions for get_partition_ref
         assert_eq!(get_partition_ref(&host_status, &"os".to_owned()), None);
@@ -1288,50 +1391,73 @@ mod tests {
     #[test]
     fn test_get_ab_volume_partition() {
         // Setting up the sample host_status
-        let host_status_yaml = indoc! {r#"
-            storage:
-                disks:
-                    os:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 0
-                        contents: unknown
-                        partitions:
-                          - id: efi
-                            path: /dev/disk/by-partlabel/osp1
-                            contents: unknown
-                            start: 0
-                            end: 0
-                            type: esp
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root-a
-                            path: /dev/disk/by-partlabel/osp2
-                            contents: unknown
-                            start: 100
-                            end: 1000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                          - id: root-b
-                            path: /dev/disk/by-partlabel/osp3
-                            contents: unknown
-                            start: 1000
-                            end: 10000
-                            type: root
-                            uuid: 00000000-0000-0000-0000-000000000000
-                    data:
-                        path: /dev/disk/by-bus/foobar
-                        uuid: 00000000-0000-0000-0000-000000000000
-                        capacity: 1000
-                        contents: unknown
-                        partitions: []
-                ab-update:
-                    volume-pairs:
-                        root:
-                            volume-a-id: root-a
-                            volume-b-id: root-b
-            reconcile-state: clean-install
-        "#};
-        let mut host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: BTreeMap::from([
+                    (
+                        "os".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 0,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![
+                                Partition {
+                                    id: "efi".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 0,
+                                    end: 0,
+                                    ty: PartitionType::Esp,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "root-a".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 100,
+                                    end: 1000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                                Partition {
+                                    id: "root-b".to_string(),
+                                    path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                    contents: BlockDeviceContents::Unknown,
+                                    start: 1000,
+                                    end: 10000,
+                                    ty: PartitionType::Root,
+                                    uuid: Uuid::nil(),
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        "data".into(),
+                        Disk {
+                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            uuid: Uuid::nil(),
+                            capacity: 1000,
+                            contents: BlockDeviceContents::Unknown,
+                            partitions: vec![],
+                        },
+                    ),
+                ]),
+                ab_update: Some(AbUpdate {
+                    volume_pairs: BTreeMap::from([(
+                        "root".to_string(),
+                        AbVolumePair {
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        },
+                    )]),
+                    active_volume: Some(AbVolumeSelection::VolumeA),
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         // 1. Test when the active volume is VolumeA
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);

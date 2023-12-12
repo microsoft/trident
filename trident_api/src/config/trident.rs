@@ -90,6 +90,10 @@ pub struct LocalConfigFile {
 }
 
 impl LocalConfigFile {
+    pub fn new_empty() -> Self {
+        Self::default()
+    }
+
     /// Returns the host configuration source, if any.
     pub fn get_host_configuration_source(&self) -> Result<Option<HostConfigurationSource>, Error> {
         let config_sources = [
@@ -123,6 +127,24 @@ impl LocalConfigFile {
 
     pub fn with_host_configuration(mut self, host_configuration: HostConfiguration) -> Self {
         self.host_configuration = Some(Box::new(host_configuration));
+        self
+    }
+
+    pub fn with_host_configuration_source(mut self, src: HostConfigurationSource) -> Self {
+        match src {
+            HostConfigurationSource::Embedded(host_configuration) => {
+                self.host_configuration = Some(host_configuration);
+            }
+            HostConfigurationSource::File(host_configuration_file) => {
+                self.host_configuration_file = Some(host_configuration_file);
+            }
+            HostConfigurationSource::KickstartEmbedded(kickstart) => {
+                self.kickstart = Some(kickstart);
+            }
+            HostConfigurationSource::KickstartFile(kickstart_file) => {
+                self.kickstart_file = Some(kickstart_file);
+            }
+        }
         self
     }
 

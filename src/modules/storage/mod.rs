@@ -460,27 +460,22 @@ fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, E
 mod tests {
     use std::str::FromStr;
 
-    use indoc::indoc;
-    use trident_api::config::{HostConfiguration, Partition, PartitionSize, PartitionType};
+    use trident_api::config::{
+        Disk, HostConfiguration, Image, ImageFormat, Partition, PartitionSize, PartitionType,
+        RaidConfig, RaidLevel, SoftwareRaidArray, Storage,
+    };
 
     use super::*;
 
     /// Validates Storage module HostConfiguration validation logic.
     #[test]
     fn test_validate_host_config() {
-        let empty_host_config_yaml = indoc! {r#"
-            storage:
-                disks:
-                images:
-        "#};
-        let empty_host_config = serde_yaml::from_str::<HostConfiguration>(empty_host_config_yaml)
-            .expect("Failed to parse empty host config");
+        let empty_host_config = HostConfiguration::default();
 
-        let empty_host_status_yaml = indoc! {r#"
-            reconcile-state: clean-install
-        "#};
-        let empty_host_status = serde_yaml::from_str(empty_host_status_yaml)
-            .expect("Failed to parse empty host status");
+        let empty_host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            ..Default::default()
+        };
 
         let storage_module = StorageModule {};
 
@@ -488,56 +483,73 @@ mod tests {
             .validate_host_config(&empty_host_status, &empty_host_config)
             .unwrap();
 
-        let host_config_yaml = indoc! {r#"
-            storage:
-                disks:
-                  - id: disk1
-                    device: /
-                    partition-table-type: gpt
-                    partitions:
-                  - id: disk2
-                    device: /tmp
-                    partition-table-type: gpt
-                    partitions:
-                      - id: part1
-                        type: esp
-                        size: 1M
-                      - id: part2
-                        type: root
-                        size: 1G
-                      - id: part3
-                        type: root
-                        size: 1G
-                      - id: part4
-                        type: root
-                        size: 1G
-                raid:
-                  software:
-                    - id: my-raid1
-                      name: my-raid
-                      level: raid1
-                      metadata-version: 1.2
-                      devices:
-                        - part3
-                        - part4
-                mount-points:
-                  - filesystem: ext4
-                    options: []
-                    target-id: part1
-                    path: /
-                images:
-                  - target-id: part1
-                    url: ""
-                    sha256: ""
-                    format: raw-zstd
-                ab-update:
-                    volume-pairs:
-                      - id: ab1
-                        volume-a-id: part1
-                        volume-b-id: part2
-        "#};
-        let mut host_config = serde_yaml::from_str::<HostConfiguration>(host_config_yaml)
-            .expect("Failed to parse host config");
+        let mut host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "disk1".to_owned(),
+                        device: "/".into(),
+                        ..Default::default()
+                    },
+                    Disk {
+                        id: "disk2".to_owned(),
+                        device: "/tmp".into(),
+                        partitions: vec![
+                            Partition {
+                                id: "part1".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("1M").unwrap(),
+                            },
+                            Partition {
+                                id: "part2".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "part3".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "part4".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                ],
+                raid: RaidConfig {
+                    software: vec![SoftwareRaidArray {
+                        id: "my-raid1".to_owned(),
+                        name: "my-raid".to_owned(),
+                        level: RaidLevel::Raid1,
+                        metadata_version: "1.2".to_owned(),
+                        devices: vec!["part3".to_owned(), "part4".to_owned()],
+                    }],
+                },
+                mount_points: vec![MountPoint {
+                    filesystem: "ext4".to_owned(),
+                    options: vec![],
+                    target_id: "part1".to_owned(),
+                    path: PathBuf::from("/"),
+                }],
+                images: vec![Image {
+                    target_id: "part1".to_owned(),
+                    url: "".to_owned(),
+                    sha256: "".to_owned(),
+                    format: ImageFormat::RawZstd,
+                }],
+                ab_update: Some(trident_api::config::AbUpdate {
+                    volume_pairs: vec![trident_api::config::AbVolumePair {
+                        id: "ab1".to_owned(),
+                        volume_a_id: "part1".to_owned(),
+                        volume_b_id: "part2".to_owned(),
+                    }],
+                }),
+            },
+            ..Default::default()
+        };
 
         assert!(storage_module
             .validate_host_config(&empty_host_status, &host_config)

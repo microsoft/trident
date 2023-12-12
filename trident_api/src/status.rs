@@ -191,7 +191,7 @@ pub struct MountPoint {
 /// the currently active volume. Note that all pairs will have at any point in
 /// time the same volume (A or B) active. The volume to update is determined by
 /// the ReconcileState and active_volume.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct AbUpdate {

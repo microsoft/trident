@@ -139,20 +139,22 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use indoc::indoc;
-    use trident_api::config::ServicingType;
+    use trident_api::{config::ServicingType, status::Storage};
 
     #[test]
     fn test_run_script_success() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_dir = temp_dir.path().join("test-directory");
 
-        let host_status_yaml = indoc! {r#"
-            reconcile-state: clean-install
-            storage:
-              root-device-path: /dev/sda
-        "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                root_device_path: Some("/dev/sda".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
         let mut environment_variables = HashMap::new();
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
@@ -171,12 +173,15 @@ mod tests {
 
     #[test]
     fn test_run_script_that_always_fails() {
-        let host_status_yaml = indoc! {r#"
-            reconcile-state: clean-install
-            storage:
-              root-device-path: /dev/sda
-        "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                root_device_path: Some("/dev/sda".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
         let script = Script {
             name: "test-script".into(),
             servicing_type: vec![ServicingType::CleanInstall],
@@ -190,12 +195,15 @@ mod tests {
 
     #[test]
     fn test_run_script_with_non_existing_interpreter() {
-        let host_status_yaml = indoc! {r#"
-            reconcile-state: clean-install
-            storage:
-              root-device-path: /dev/sda
-        "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                root_device_path: Some("/dev/sda".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
         let script = Script {
             name: "test-script".into(),
             servicing_type: vec![ServicingType::CleanInstall],
@@ -212,12 +220,15 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_dir = temp_dir.path().join("test-directory");
 
-        let host_status_yaml = indoc! {r#"
-            reconcile-state: clean-install
-            storage:
-              root-device-path: /dev/sda
-        "#};
-        let host_status: HostStatus = serde_yaml::from_str(host_status_yaml).unwrap();
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                root_device_path: Some("/dev/sda".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
         let mut environment_variables = HashMap::new();
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {

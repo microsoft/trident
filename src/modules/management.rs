@@ -176,20 +176,24 @@ fn validate_datastore_location(
 
 #[cfg(test)]
 mod tests {
+    use trident_api::config::{AbUpdate, MountPoint, Storage};
+
     use super::*;
-    use indoc::indoc;
 
     #[test]
     fn test_validate_datastore_location() {
-        let host_config_yaml = indoc! {r#"
-            storage:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+        let host_config = HostConfiguration {
+            storage: Storage {
+                mount_points: vec![MountPoint {
+                    path: "/".into(),
+                    target_id: "sda1".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         validate_datastore_location(Path::new("/trident.sqlite"), &host_config).unwrap();
         validate_datastore_location(Path::new("/foo/trident.sqlite"), &host_config).unwrap();
@@ -199,91 +203,137 @@ mod tests {
         // expect failure as the datastore path needs to end with .sqlite
         assert!(validate_datastore_location(Path::new("/trident"), &host_config).is_err());
 
-        let host_config_yaml = indoc! {r#"
-            storage:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-                - path: /bar
-                  target-id: sda2
-                  filesystem: ext4
-                  options: []
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+        let host_config = HostConfiguration {
+            storage: Storage {
+                mount_points: vec![
+                    MountPoint {
+                        path: "/".into(),
+                        target_id: "sda1".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: "/bar".into(),
+                        target_id: "sda2".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         validate_datastore_location(Path::new("/foo/bar/trident.sqlite"), &host_config).unwrap();
 
-        let host_config_yaml = indoc! {r#"
-            storage:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-                - path: /bar
-                  target-id: sda2
-                  filesystem: ext4
-                  options: []
-              ab-update:
-                volume-pairs:
-                    - id: sda2
-                      volume-a-id: sda1
-                      volume-b-id: sda2
-                    - id: sda2
-                      volume-a-id: sda2
-                      volume-b-id: sda1
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+        let host_config = HostConfiguration {
+            storage: Storage {
+                mount_points: vec![
+                    MountPoint {
+                        path: "/".into(),
+                        target_id: "sda1".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: "/bar".into(),
+                        target_id: "sda2".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![
+                        trident_api::config::AbVolumePair {
+                            id: "sda2".into(),
+                            volume_a_id: "sda1".into(),
+                            volume_b_id: "sda2".into(),
+                        },
+                        trident_api::config::AbVolumePair {
+                            id: "sda2".into(),
+                            volume_a_id: "sda2".into(),
+                            volume_b_id: "sda1".into(),
+                        },
+                    ],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         validate_datastore_location(Path::new("/foo/bar/trident.sqlite"), &host_config).unwrap();
 
-        let host_config_yaml = indoc! {r#"
-            storage:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-                - path: /bar
-                  target-id: sda2
-                  filesystem: ext4
-                  options: []
-              ab-update:
-                volume-pairs:
-                    - id: sda1
-                      volume-a-id: sda1
-                      volume-b-id: sda2
-                    - id: sda1
-                      volume-a-id: sda2
-                      volume-b-id: sda1
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+        let host_config = HostConfiguration {
+            storage: Storage {
+                mount_points: vec![
+                    MountPoint {
+                        path: "/".into(),
+                        target_id: "sda1".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: "/bar".into(),
+                        target_id: "sda2".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![
+                        trident_api::config::AbVolumePair {
+                            id: "sda1".into(),
+                            volume_a_id: "sda1".into(),
+                            volume_b_id: "sda2".into(),
+                        },
+                        trident_api::config::AbVolumePair {
+                            id: "sda1".into(),
+                            volume_a_id: "sda2".into(),
+                            volume_b_id: "sda1".into(),
+                        },
+                    ],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         validate_datastore_location(Path::new("/bar/foo/trident.sqlite"), &host_config).unwrap();
 
-        let host_config_yaml = indoc! {r#"
-            storage:
-              mount-points:
-                - path: /
-                  target-id: sda1
-                  filesystem: ext4
-                  options: []
-                - path: /bar
-                  target-id: sda2
-                  filesystem: ext4
-                  options: []
-              ab-update:
-                volume-pairs:
-                    - id: sda1
-                      volume-a-id: sda1
-                      volume-b-id: sda2
-                    - id: sda2
-                      volume-a-id: sda2
-                      volume-b-id: sda1
-        "#};
-        let host_config: HostConfiguration = serde_yaml::from_str(host_config_yaml).unwrap();
+        let host_config = HostConfiguration {
+            storage: Storage {
+                mount_points: vec![
+                    MountPoint {
+                        path: "/".into(),
+                        target_id: "sda1".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: "/bar".into(),
+                        target_id: "sda2".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![
+                        trident_api::config::AbVolumePair {
+                            id: "sda1".into(),
+                            volume_a_id: "sda1".into(),
+                            volume_b_id: "sda2".into(),
+                        },
+                        trident_api::config::AbVolumePair {
+                            id: "sda2".into(),
+                            volume_a_id: "sda2".into(),
+                            volume_b_id: "sda1".into(),
+                        },
+                    ],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         // expect failure, as we cannot land on A/B volume
         assert!(validate_datastore_location(Path::new("/"), &host_config).is_err());
