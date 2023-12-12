@@ -590,6 +590,7 @@ mod tests {
     use std::io::Write;
 
     use indoc::indoc;
+    use maplit::btreemap;
     use tempfile::tempdir;
 
     use trident_api::{
@@ -612,9 +613,8 @@ mod tests {
         let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             storage: StorageStatus {
-                disks: BTreeMap::from([(
-                    "os".into(),
-                    DiskStatus {
+                disks: btreemap! {
+                    "os".into() => DiskStatus {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
                         capacity: 0,
@@ -652,7 +652,7 @@ mod tests {
                             },
                         ],
                     },
-                )]),
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -769,7 +769,6 @@ mod tests {
                                 size: PartitionSize::from_str("1G").unwrap(),
                             },
                         ],
-                        ..Default::default()
                     },
                     Disk {
                         id: "disk2".to_string(),
@@ -780,7 +779,6 @@ mod tests {
                             partition_type: PartitionType::Esp,
                             size: PartitionSize::from_str("1M").unwrap(),
                         }],
-                        ..Default::default()
                     },
                 ],
                 ..Default::default()
@@ -851,7 +849,6 @@ mod tests {
                             size: PartitionSize::from_str("50M").unwrap(),
                         },
                     ],
-                    ..Default::default()
                 }],
                 raid: RaidConfig {
                     software: vec![

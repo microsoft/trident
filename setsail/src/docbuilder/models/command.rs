@@ -41,8 +41,8 @@ impl CommandModel {
                 .get_visible_aliases()
                 .map(|v| Some(v.to_string()))
                 .collect(),
-            about: cmd.get_about().and_then(|s| Some(s.to_string())),
-            usage: usage,
+            about: cmd.get_about().map(|s| s.to_string()),
+            usage,
             args: cmd
                 .get_arguments()
                 .map(|arg| {
@@ -82,8 +82,7 @@ impl<'a> GroupInfo<'a> {
         // Make a map of Ids -> Vec<ArgGroup>
         let groups: HashMap<&clap::Id, Vec<&clap::ArgGroup>> = cmd
             .get_groups()
-            .map(|g| g.get_args().map(move |a| (a, g)))
-            .flatten()
+            .flat_map(|g| g.get_args().map(move |a| (a, g)))
             .into_group_map();
 
         Self { groups, args }

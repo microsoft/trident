@@ -559,8 +559,11 @@ pub(super) fn configure(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::{collections::BTreeMap, io::Cursor, path::PathBuf};
+    use std::{io::Cursor, path::PathBuf};
+
+    use maplit::btreemap;
+    use uuid::Uuid;
+
     use trident_api::{
         config::{
             AbUpdate as AbUpdateConfig, AbVolumePair as AbVolumePairConfig, MountPoint,
@@ -568,7 +571,8 @@ mod tests {
         },
         status::{MountPoint as MountPointStatus, Storage, UpdateKind},
     };
-    use uuid::Uuid;
+
+    use super::*;
 
     #[test]
     fn test_hashing_reader() {
@@ -653,9 +657,8 @@ mod tests {
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
-                disks: BTreeMap::from([(
-                    "foo".to_string(),
-                    Disk {
+                disks: btreemap! {
+                    "foo".to_string() => Disk {
                         uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
                         path: PathBuf::from("/dev/sda"),
                         capacity: 10,
@@ -691,25 +694,19 @@ mod tests {
                             },
                         ],
                     },
-                )]),
-                mount_points: BTreeMap::from([
-                    (
-                        "boot".to_string(),
-                        MountPointStatus {
-                            path: PathBuf::from("/boot"),
-                            filesystem: "fat32".to_string(),
-                            options: vec![],
-                        },
-                    ),
-                    (
-                        "root".to_string(),
-                        MountPointStatus {
-                            path: PathBuf::from("/"),
-                            filesystem: "ext4".to_string(),
-                            options: vec![],
-                        },
-                    ),
-                ]),
+                },
+                mount_points: btreemap! {
+                    "boot".to_string() => MountPointStatus {
+                        path: PathBuf::from("/boot"),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    "root".to_string() => MountPointStatus {
+                        path: PathBuf::from("/"),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -834,9 +831,8 @@ mod tests {
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
-                disks: BTreeMap::from([(
-                    "foo".into(),
-                    Disk {
+                disks: btreemap! {
+                    "foo".into() => Disk {
                         uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
                         path: PathBuf::from("/dev/sda"),
                         capacity: 10,
@@ -872,25 +868,19 @@ mod tests {
                             },
                         ],
                     },
-                )]),
-                mount_points: BTreeMap::from([
-                    (
-                        "boot".to_string(),
-                        MountPointStatus {
-                            path: PathBuf::from("/boot"),
-                            filesystem: "fat32".to_string(),
-                            options: vec![],
-                        },
-                    ),
-                    (
-                        "root".to_string(),
-                        MountPointStatus {
-                            path: PathBuf::from("/"),
-                            filesystem: "ext4".to_string(),
-                            options: vec![],
-                        },
-                    ),
-                ]),
+                },
+                mount_points: btreemap! {
+                    "boot".to_string() => MountPointStatus {
+                        path: PathBuf::from("/boot"),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    "root".to_string() => MountPointStatus {
+                        path: PathBuf::from("/"),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -964,68 +954,61 @@ mod tests {
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
-                disks: BTreeMap::from([
-                    (
-                        "os".into(),
-                        Disk {
-                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                            uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                            capacity: 0,
-                            contents: BlockDeviceContents::Unknown,
-                            partitions: vec![
-                                Partition {
-                                    id: "efi".to_owned(),
-                                    path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                    contents: BlockDeviceContents::Unknown,
-                                    start: 0,
-                                    end: 0,
-                                    ty: PartitionType::Esp,
-                                    uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                        .unwrap(),
-                                },
-                                Partition {
-                                    id: "root".to_owned(),
-                                    path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                    contents: BlockDeviceContents::Unknown,
-                                    start: 100,
-                                    end: 1000,
-                                    ty: PartitionType::Root,
-                                    uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                        .unwrap(),
-                                },
-                                Partition {
-                                    id: "rootb".to_owned(),
-                                    path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                    contents: BlockDeviceContents::Unknown,
-                                    start: 1000,
-                                    end: 10000,
-                                    ty: PartitionType::Root,
-                                    uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                        .unwrap(),
-                                },
-                            ],
-                        },
-                    ),
-                    (
-                        "data".into(),
-                        Disk {
-                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                            uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                            capacity: 1000,
-                            contents: BlockDeviceContents::Unknown,
-                            partitions: vec![],
-                        },
-                    ),
-                ]),
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "rootb".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                    "data".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 1000,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![],
+                    },
+                },
                 ab_update: Some(AbUpdate {
                     active_volume: None,
-                    volume_pairs: BTreeMap::from([(
-                        "osab".to_owned(),
-                        AbVolumePair {
+                    volume_pairs: btreemap! {
+                        "osab".to_owned() => AbVolumePair {
                             volume_a_id: "root".to_owned(),
                             volume_b_id: "rootb".to_owned(),
                         },
-                    )]),
+                    },
                 }),
                 ..Default::default()
             },
@@ -1186,9 +1169,8 @@ mod tests {
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
-                disks: BTreeMap::from([(
-                    "os".into(),
-                    Disk {
+                disks: btreemap! {
+                    "os".into() => Disk {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
                         capacity: 0,
@@ -1226,7 +1208,7 @@ mod tests {
                             },
                         ],
                     },
-                )]),
+                },
                 ..Default::default()
             },
             ..Default::default()

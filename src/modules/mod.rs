@@ -546,11 +546,13 @@ fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Er
 mod test {
     use std::collections::BTreeMap;
 
+    use maplit::btreemap;
+    use uuid::Uuid;
+
     use trident_api::{
         config::{Management, PartitionType},
-        status::{AbUpdate, BlockDeviceContents, Storage},
+        status::{AbUpdate, AbVolumePair, BlockDeviceContents, Disk, MountPoint, Storage},
     };
-    use uuid::Uuid;
 
     use super::*;
 
@@ -558,9 +560,8 @@ mod test {
     fn test_get_root_block_device_path() {
         let host_status = HostStatus {
             storage: Storage {
-                disks: BTreeMap::from([(
-                    "foo".to_owned(),
-                    trident_api::status::Disk {
+                disks: btreemap! {
+                    "foo".into() => Disk {
                         uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
                         path: PathBuf::from("/dev/sda"),
                         capacity: 10,
@@ -586,25 +587,19 @@ mod test {
                             },
                         ],
                     },
-                )]),
-                mount_points: BTreeMap::from([
-                    (
-                        "boot".to_owned(),
-                        trident_api::status::MountPoint {
-                            path: PathBuf::from("/boot"),
-                            filesystem: "fat32".to_owned(),
-                            options: vec![],
-                        },
-                    ),
-                    (
-                        "root".to_owned(),
-                        trident_api::status::MountPoint {
-                            path: PathBuf::from("/"),
-                            filesystem: "ext4".to_owned(),
-                            options: vec![],
-                        },
-                    ),
-                ]),
+                },
+                mount_points: btreemap! {
+                    "boot".to_owned() => MountPoint {
+                        path: PathBuf::from("/boot"),
+                        filesystem: "fat32".to_owned(),
+                        options: vec![],
+                    },
+                    "root".to_owned() => MountPoint {
+                        path: PathBuf::from("/"),
+                        filesystem: "ext4".to_owned(),
+                        options: vec![],
+                    },
+                },
                 ..Default::default()
             },
             reconcile_state: ReconcileState::CleanInstall,
@@ -623,70 +618,63 @@ mod test {
     fn test_get_block_device_for_update() {
         let mut host_status = HostStatus {
             storage: Storage {
-                disks: BTreeMap::from([
-                    (
-                        "os".to_owned(),
-                        trident_api::status::Disk {
-                            uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                            capacity: 0,
-                            contents: BlockDeviceContents::Unknown,
-                            partitions: vec![
-                                Partition {
-                                    uuid: Uuid::from_u128(
-                                        0x00000000_0000_0000_0000_000000000001u128,
-                                    ),
-                                    path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                    id: "efi".into(),
-                                    start: 0,
-                                    end: 0,
-                                    ty: PartitionType::Esp,
-                                    contents: BlockDeviceContents::Unknown,
-                                },
-                                Partition {
-                                    uuid: Uuid::from_u128(
-                                        0x00000000_0000_0000_0000_000000000002u128,
-                                    ),
-                                    path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                    id: "root".into(),
-                                    start: 100,
-                                    end: 1000,
-                                    ty: PartitionType::Root,
-                                    contents: BlockDeviceContents::Unknown,
-                                },
-                                Partition {
-                                    uuid: Uuid::from_u128(
-                                        0x00000000_0000_0000_0000_000000000003u128,
-                                    ),
-                                    path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                    id: "rootb".into(),
-                                    start: 1000,
-                                    end: 10000,
-                                    ty: PartitionType::Root,
-                                    contents: BlockDeviceContents::Unknown,
-                                },
-                            ],
-                        },
-                    ),
-                    (
-                        "data".into(),
-                        trident_api::status::Disk {
-                            uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
-                            path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                            capacity: 1000,
-                            contents: BlockDeviceContents::Unknown,
-                            partitions: vec![],
-                        },
-                    ),
-                ]),
+                disks: btreemap! {
+                    "os".to_owned() => Disk {
+                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::from_u128(
+                                    0x00000000_0000_0000_0000_000000000001u128,
+                                ),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                id: "efi".into(),
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Unknown,
+                            },
+                            Partition {
+                                uuid: Uuid::from_u128(
+                                    0x00000000_0000_0000_0000_000000000002u128,
+                                ),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                id: "root".into(),
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Unknown,
+                            },
+                            Partition {
+                                uuid: Uuid::from_u128(
+                                    0x00000000_0000_0000_0000_000000000003u128,
+                                ),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                id: "rootb".into(),
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Unknown,
+                            },
+                        ],
+                    },
+                    "data".into() => Disk {
+                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        capacity: 1000,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![],
+                    },
+                },
                 ab_update: Some(AbUpdate {
-                    volume_pairs: BTreeMap::from([(
-                        "osab".to_owned(),
-                        trident_api::status::AbVolumePair {
+                    volume_pairs: btreemap! {
+                        "osab".to_owned() => AbVolumePair {
                             volume_a_id: "root".to_owned(),
                             volume_b_id: "rootb".to_owned(),
                         },
-                    )]),
+                    },
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -911,9 +899,8 @@ mod test {
     fn test_get_disk_partition() {
         let host_status = HostStatus {
             storage: Storage {
-                disks: BTreeMap::from([(
-                    "os".to_owned(),
-                    trident_api::status::Disk {
+                disks: btreemap! {
+                    "os".to_owned() => Disk {
                         uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         capacity: 0,
@@ -948,7 +935,7 @@ mod test {
                             },
                         ],
                     },
-                )]),
+                },
                 ..Default::default()
             },
             ..Default::default()

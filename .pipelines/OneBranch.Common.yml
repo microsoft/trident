@@ -3,14 +3,14 @@ parameters:
   - name: tridentSourceDirectory
     type: string
     default: "$(Build.SourcesDirectory)"
-  
+
   - name: publishUniversalFeed
     type: boolean
     default: false
 
   - name: trident_version
     type: string
-    default: ''
+    default: ""
 
 steps:
   - script: |
@@ -25,9 +25,9 @@ steps:
     displayName: "Setting trident version"
 
   - task: onebranch.pipeline.version@1
-    displayName: 'Set build number'
+    displayName: "Set build number"
     inputs:
-      system: 'Custom'
+      system: "Custom"
       customVersion: $(trident_version)
 
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
@@ -37,7 +37,11 @@ steps:
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Check formatting
 
-  - script: cargo clippy --locked -- -D warnings 2>&1
+  - script: |
+      set -ex
+      cargo clippy --locked --all -- -D warnings 2>&1
+      cargo clippy --locked --all --all-features -- -D warnings 2>&1
+      cargo clippy --locked --all --tests -- -D warnings 2>&1
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Clippy (Linting)
 

@@ -44,6 +44,7 @@ tonic-build = "0.9.2"
 
 [dev-dependencies]
 indoc = "2"
+maplit = "1.0.2"
 
 
 [features]

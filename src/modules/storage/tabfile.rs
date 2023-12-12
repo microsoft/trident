@@ -221,13 +221,15 @@ fn parse_findmnt_entry(entry: &Value) -> Result<(PathBuf, PathBuf), Error> {
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
     use std::{
-        collections::{BTreeMap, HashMap},
+        collections::HashMap,
         io::Write,
         path::{Path, PathBuf},
         str::FromStr,
     };
+
+    use indoc::indoc;
+    use maplit::btreemap;
     use tempfile::NamedTempFile;
     use uuid::Uuid;
 
@@ -250,9 +252,8 @@ mod tests {
         let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             storage: StorageStatus {
-                disks: BTreeMap::from([(
-                    "os".into(),
-                    DiskStatus {
+                disks: btreemap! {
+                    "os".into() => DiskStatus {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
                         capacity: 0,
@@ -300,7 +301,7 @@ mod tests {
                             },
                         ],
                     },
-                )]),
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -554,9 +555,8 @@ mod tests {
         let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             storage: StorageStatus {
-                disks: BTreeMap::from([(
-                    "os".into(),
-                    DiskStatus {
+                disks: btreemap! {
+                    "os".into() => DiskStatus {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
                         capacity: 0,
@@ -609,7 +609,7 @@ mod tests {
                             },
                         ],
                     },
-                )]),
+                },
                 ..Default::default()
             },
             ..Default::default()

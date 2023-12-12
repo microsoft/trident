@@ -575,13 +575,13 @@ mod tests {
     #[test]
     fn test_get_host_configuration() {
         // missing HC source
-        let trident_config = LocalConfigFile::new_empty();
+        let trident_config = LocalConfigFile::default();
         assert!(Trident::get_host_configuration(&trident_config)
             .unwrap()
             .is_none());
 
         // missing HC file
-        let trident_config = LocalConfigFile::new_empty().with_host_configuration_source(
+        let trident_config = LocalConfigFile::default().with_host_configuration_source(
             HostConfigurationSource::File(PathBuf::from("/does/not/exist")),
         );
         assert!(Trident::get_host_configuration(&trident_config).is_err());
@@ -600,7 +600,7 @@ mod tests {
             ..Default::default()
         };
         let trident_config =
-            LocalConfigFile::new_empty().with_host_configuration(host_config_original.clone());
+            LocalConfigFile::default().with_host_configuration(host_config_original.clone());
         let host_config = Trident::get_host_configuration(&trident_config)
             .unwrap()
             .unwrap();

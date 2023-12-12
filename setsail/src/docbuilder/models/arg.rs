@@ -80,20 +80,18 @@ impl From<&clap::Arg> for ArgModel {
                         .map(|v| v.get(0).map(|v| v.to_string()).unwrap())
                         .unwrap_or(arg.get_id().to_string())
                 )
+            } else if let Some(value_names) = arg.get_value_names() {
+                format!(
+                    "--{} <{}>",
+                    arg.get_id(),
+                    value_names
+                        .iter()
+                        .map(|v| v.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
             } else {
-                if let Some(value_names) = arg.get_value_names() {
-                    format!(
-                        "--{} <{}>",
-                        arg.get_id(),
-                        value_names
-                            .iter()
-                            .map(|v| v.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    )
-                } else {
-                    format!("--{}", arg.get_id())
-                }
+                format!("--{}", arg.get_id())
             },
             aliases: arg
                 .get_visible_aliases()
@@ -109,13 +107,13 @@ impl From<&clap::Arg> for ArgModel {
                 .collect(),
             value_names: arg
                 .get_value_names()
-                .and_then(|v| Some(v.iter().map(|s| s.to_string()).collect()))
+                .map(|v| v.iter().map(|s| s.to_string()).collect())
                 .unwrap_or_default(),
             required: arg.is_required_set(),
             positional: arg.is_positional(),
             takes_values: arg
                 .get_num_args()
-                .and_then(|v| Some(v.takes_values()))
+                .map(|v| v.takes_values())
                 .unwrap_or_default(),
             possible_values: arg
                 .get_possible_values()

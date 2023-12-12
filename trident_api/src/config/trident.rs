@@ -90,10 +90,6 @@ pub struct LocalConfigFile {
 }
 
 impl LocalConfigFile {
-    pub fn new_empty() -> Self {
-        Self::default()
-    }
-
     /// Returns the host configuration source, if any.
     pub fn get_host_configuration_source(&self) -> Result<Option<HostConfigurationSource>, Error> {
         let config_sources = [

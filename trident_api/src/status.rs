@@ -11,8 +11,7 @@ use crate::{
 /// HostStatus is the status of a host. Reflects the current provisioning state
 /// of the host and any encountered errors.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct HostStatus {
     pub reconcile_state: ReconcileState,
 
@@ -26,8 +25,7 @@ pub struct HostStatus {
 /// ReconcileState is the state of the host's reconciliation process. Through
 /// the ReconcileState, the Trident agent communicates what operations are in progress.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ReconcileState {
     /// A clean install is in progress.
     CleanInstall,
@@ -40,8 +38,7 @@ pub enum ReconcileState {
 
 /// UpdateKind is the kind of update that is in progress.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum UpdateKind {
     /// Update that can be applied without pausing the workload.
     HotPatch = 0,
@@ -63,8 +60,7 @@ pub struct Management {
 
 /// Storage status of a host.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Storage {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub disks: BTreeMap<BlockDeviceId, Disk>,
@@ -86,8 +82,7 @@ pub struct Storage {
 
 /// Per disk status.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Disk {
     pub uuid: Uuid,
     pub path: PathBuf,
@@ -104,8 +99,7 @@ impl Disk {
 
 /// Per partition status.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Partition {
     pub id: BlockDeviceId,
 
@@ -120,8 +114,7 @@ pub struct Partition {
 
 /// Status of contents of a block device.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum BlockDeviceContents {
     #[default]
     Unknown,
@@ -172,16 +165,14 @@ pub struct RaidArray {
 
 /// Type of RAID array (software, hardware). Only software for now.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum RaidType {
     Software,
 }
 
 /// Status of a RAID array in Trident host status.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum RaidArrayStatus {
     Created,
     Ready,
@@ -189,8 +180,7 @@ pub enum RaidArrayStatus {
 }
 /// Mount point status.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct MountPoint {
     pub path: PathBuf,
     pub filesystem: String,
@@ -202,8 +192,7 @@ pub struct MountPoint {
 /// time the same volume (A or B) active. The volume to update is determined by
 /// the ReconcileState and active_volume.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct AbUpdate {
     /// Map from AB volume pair block device id to the AB volume pair.
     pub volume_pairs: BTreeMap<BlockDeviceId, AbVolumePair>,
@@ -214,8 +203,7 @@ pub struct AbUpdate {
 /// A/B volume selection. Determines which set of volumes are currently
 /// active/used by the OS.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum AbVolumeSelection {
     VolumeA,
     VolumeB,
@@ -223,8 +211,7 @@ pub enum AbVolumeSelection {
 
 /// Per A/B update volume pair status.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct AbVolumePair {
     pub volume_a_id: BlockDeviceId,
     pub volume_b_id: BlockDeviceId,
@@ -234,8 +221,7 @@ pub struct AbVolumePair {
 /// and size, used for storage. Abstracts the difference between specific block
 /// device types.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BlockDeviceInfo {
     pub path: PathBuf,
     pub size: u64,
