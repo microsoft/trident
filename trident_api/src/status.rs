@@ -140,22 +140,32 @@ pub enum BlockDeviceContents {
 pub struct RaidArray {
     /// Unique identifier of the raid array.
     pub name: String,
+
     /// List of paths of devices (partitions) that take part in the RAID.
     pub device_paths: Vec<PathBuf>,
+
     /// RAID level.
     pub level: RaidLevel,
+
     /// RAID status (created, ready, failed).
     pub status: RaidArrayStatus,
+
     /// RAID array size.
     pub array_size: u64,
+
     /// RAID array type.
+    #[serde(rename = "type")]
     pub ty: RaidType,
+
     /// Path to the raid array. For example, /dev/md/{name}
     pub path: PathBuf,
+
     /// System generated symlink path to the raid array. For example, /dev/md0
     pub raid_symlink_path: PathBuf,
+
     /// UUID of the RAID device
     pub uuid: Uuid,
+
     /// RAID array contents.
     pub contents: BlockDeviceContents,
 }
