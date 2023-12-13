@@ -1,3 +1,4 @@
+use anyhow::Error;
 use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
 
@@ -62,4 +63,11 @@ pub struct HostConfiguration {
     /// OS Configuration for the runtime OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub osconfig: OsConfig,
+}
+
+impl HostConfiguration {
+    pub fn validate(&self) -> Result<(), Error> {
+        self.storage.validate()?;
+        Ok(())
+    }
 }

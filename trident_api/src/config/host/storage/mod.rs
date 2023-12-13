@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
+use anyhow::{bail, ensure, Context, Error};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
-use crate::{is_default, BlockDeviceId};
+use crate::{constants::SWAP_FILESYSTEM, is_default, BlockDeviceId};
 
 use imaging::{AbUpdate, Image};
 
@@ -345,8 +346,155 @@ pub struct MountPoint {
     pub target_id: BlockDeviceId,
 }
 
+impl Storage {
+    pub fn get_partition(&self, id: &BlockDeviceId) -> Option<&Partition> {
+        self.disks
+            .iter()
+            .flat_map(|d| d.partitions.iter())
+            .find(|p| &p.id == id)
+    }
+
+    pub fn validate(&self) -> Result<(), Error> {
+        let mut block_device_ids = Vec::new();
+        let mut partitions = HashSet::new();
+        let mut raid_arrays = HashSet::new();
+        let mut volume_pairs = HashSet::new();
+
+        // Collect lists of all block device ids
+        for disk in &self.disks {
+            block_device_ids.push(disk.id.clone());
+            for partition in &disk.partitions {
+                block_device_ids.push(partition.id.clone());
+                partitions.insert(partition.id.clone());
+            }
+        }
+        for raid in &self.raid.software {
+            block_device_ids.push(raid.id.clone());
+            raid_arrays.insert(raid.id.clone());
+        }
+        if let Some(ab_update) = &self.ab_update {
+            for pair in &ab_update.volume_pairs {
+                block_device_ids.push(pair.id.clone());
+                volume_pairs.insert(pair.id.clone());
+            }
+        }
+
+        // Check for duplicates
+        let mut block_device_ids_set = HashSet::new();
+        for id in &block_device_ids {
+            if !block_device_ids_set.insert(id.clone()) {
+                bail!("Block device ID {id} is used more than once");
+            }
+        }
+
+        // Check that all references are valid
+        if let Some(ab_update) = &self.ab_update {
+            for pair in &ab_update.volume_pairs {
+                for volume in [&pair.volume_a_id, &pair.volume_b_id] {
+                    ensure!(
+                        block_device_ids_set.contains(volume),
+                        "Block device ID {id} is used in the A/B update configuration but is not defined",
+                        id = volume
+                    );
+                    ensure!(
+                        partitions.contains(volume) || raid_arrays.contains(volume),
+                        "Block device ID {id} is used in the A/B update configuration but is not a partition or raid array",
+                        id = volume
+                    );
+                }
+            }
+        }
+        for image in &self.images {
+            ensure!(
+                block_device_ids_set.contains(&image.target_id),
+                "Block device ID {id} is used in the image configuration but is not defined in the Storage configuration",
+                id = image.target_id
+            );
+            ensure!(
+                !raid_arrays.contains(&image.target_id),
+                "Image targets a RAID array '{id}', which is not supported",
+                id = image.target_id,
+            );
+            ensure!(
+                partitions.contains(&image.target_id) || volume_pairs.contains(&image.target_id),
+                "Block device ID {id} is used in the image configuration but is not a partition or A/B update volume pair",
+                id = image.target_id
+            );
+        }
+        for mount_point in &self.mount_points {
+            ensure!(
+                block_device_ids_set.contains(&mount_point.target_id),
+                "Block device ID {id} is used in the mount point configuration but is not defined in the Storage configuration",
+                id = mount_point.target_id
+            );
+            ensure!(
+                partitions.contains(&mount_point.target_id) || raid_arrays.contains(&mount_point.target_id),
+                "Block device ID {id} is used in the mount point configuration but is not a partition or raid array",
+                id = mount_point.target_id
+            );
+        }
+        for raid in &self.raid.software {
+            for device in &raid.devices {
+                ensure!(
+                    block_device_ids_set.contains(device),
+                    "Block device ID {device} is used in the RAID configuration but is not defined in the Storage configuration",
+                );
+                ensure!(
+                    partitions.contains(device),
+                    "Block device ID {device} is used in the RAID configuration but is not a partition",
+                );
+            }
+        }
+
+        // Ensure mutual exclusivity
+        if let Some(ab_update) = &self.ab_update {
+            for pair in &ab_update.volume_pairs {
+                ensure!(
+                    pair.volume_a_id != pair.volume_b_id,
+                    "A/B update volume pair {id} has the same volume ID for both volumes",
+                    id = pair.id
+                );
+            }
+        }
+
+        // Check that devices are valid partitions and only part of a single RAID array
+        let mut raid_devices = HashSet::new();
+        for software_raid_config in &self.raid.software {
+            let mut device_sizes = Vec::<PartitionSize>::new();
+            for device_id in &software_raid_config.devices {
+                if !raid_devices.insert(device_id.clone()) {
+                    bail!("Block device '{device_id}' cannot be part of multiple RAID arrays");
+                }
+
+                let partition = self.get_partition(device_id)
+                    .context(format!("Device id '{device_id}' was set as dependency of a RAID array, but is not a valid partition"))?;
+                device_sizes.push(partition.size.clone());
+            }
+            ensure!(
+                device_sizes.iter().min() == device_sizes.iter().max(),
+                "RAID array {} has underlying devices with different sizes",
+                software_raid_config.id
+            );
+        }
+
+        // Test for expected mount point configurations
+        for mount_point in &self.mount_points {
+            ensure!(
+                mount_point.path.starts_with("/") || mount_point.filesystem == SWAP_FILESYSTEM,
+                "Mount point path must be absolute or the filesystem has to be 'swap'"
+            );
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use imaging::{AbVolumePair, ImageFormat};
+
     use super::*;
 
     /// Test that validates that to_sdrepart_part_type() returns the correct string for each
@@ -368,5 +516,242 @@ mod tests {
         assert_eq!(PartitionType::Tmp.to_sdrepart_part_type(), "tmp");
         assert_eq!(PartitionType::Usr.to_sdrepart_part_type(), "usr");
         assert_eq!(PartitionType::Var.to_sdrepart_part_type(), "var");
+    }
+
+    #[test]
+    fn test_get_partition() {
+        let storage = Storage {
+            disks: vec![
+                Disk {
+                    id: "disk1".to_string(),
+                    device: PathBuf::from("/dev/sda"),
+                    partition_table_type: PartitionTableType::Gpt,
+                    partitions: vec![
+                        Partition {
+                            id: "disk1-partition1".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::from_str("1M").unwrap(),
+                        },
+                        Partition {
+                            id: "disk1-partition2".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                    ],
+                },
+                Disk {
+                    id: "disk2".to_string(),
+                    device: PathBuf::from("/dev/sdb"),
+                    partition_table_type: PartitionTableType::Gpt,
+                    partitions: vec![Partition {
+                        id: "disk2-partition1".to_string(),
+                        partition_type: PartitionType::Esp,
+                        size: PartitionSize::from_str("1M").unwrap(),
+                    }],
+                },
+            ],
+            ..Default::default()
+        };
+
+        let partition = storage
+            .get_partition(&"disk1-partition1".to_string())
+            .expect("Expected to find a partition but not found.");
+
+        assert_eq!(partition.id, "disk1-partition1");
+        assert_eq!(partition.partition_type, crate::config::PartitionType::Esp);
+        assert_eq!(partition.size, crate::config::PartitionSize::Fixed(1048576));
+
+        let partition = storage.get_partition(&"non_existing_partition".to_string());
+        assert_eq!(partition, None);
+    }
+
+    #[test]
+    fn test_validate() {
+        let storage = Storage {
+            disks: vec![
+                Disk {
+                    id: "disk1".to_string(),
+                    device: PathBuf::from("/dev/sda"),
+                    partition_table_type: PartitionTableType::Gpt,
+                    partitions: vec![
+                        Partition {
+                            id: "disk1-partition1".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::from_str("1M").unwrap(),
+                        },
+                        Partition {
+                            id: "disk1-partition2".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                    ],
+                },
+                Disk {
+                    id: "disk2".to_string(),
+                    device: PathBuf::from("/dev/sdb"),
+                    partition_table_type: PartitionTableType::Gpt,
+                    partitions: vec![
+                        Partition {
+                            id: "disk2-partition1".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::from_str("1M").unwrap(),
+                        },
+                        Partition {
+                            id: "disk2-partition2".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                    ],
+                },
+            ],
+            ..Default::default()
+        };
+        storage.validate().unwrap();
+
+        let bad_volume_pair = Storage {
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![imaging::AbVolumePair {
+                    id: "ab-update-volume-pair".to_string(),
+                    volume_a_id: "disk1-partition1".to_string(),
+                    volume_b_id: "disk1-partition1".to_string(),
+                }],
+            }),
+            ..storage.clone()
+        };
+        assert!(bad_volume_pair.validate().is_err());
+
+        let bad_volume_pair_id = Storage {
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![imaging::AbVolumePair {
+                    id: "disk1".to_string(),
+                    volume_a_id: "disk1-partition2".to_string(),
+                    volume_b_id: "disk2-partition2".to_string(),
+                }],
+            }),
+            ..storage.clone()
+        };
+        assert!(bad_volume_pair_id.validate().is_err());
+
+        let bad_image_target = Storage {
+            images: vec![Image {
+                format: imaging::ImageFormat::RawZstd,
+                target_id: "disk99".to_string(),
+                url: "http://example.com/image".to_string(),
+                sha256: "ignored".to_string(),
+            }],
+            ..storage.clone()
+        };
+        assert!(bad_image_target.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate2() {
+        Storage::default().validate().unwrap();
+
+        let mut storage = Storage {
+            disks: vec![
+                Disk {
+                    id: "disk1".to_owned(),
+                    device: "/".into(),
+                    ..Default::default()
+                },
+                Disk {
+                    id: "disk2".to_owned(),
+                    device: "/tmp".into(),
+                    partitions: vec![
+                        Partition {
+                            id: "part1".to_owned(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::from_str("1M").unwrap(),
+                        },
+                        Partition {
+                            id: "part2".to_owned(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "part3".to_owned(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "part4".to_owned(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                    ],
+                    ..Default::default()
+                },
+            ],
+            raid: RaidConfig {
+                software: vec![SoftwareRaidArray {
+                    id: "my-raid1".to_owned(),
+                    name: "my-raid".to_owned(),
+                    level: RaidLevel::Raid1,
+                    metadata_version: "1.2".to_owned(),
+                    devices: vec!["part3".to_owned(), "part4".to_owned()],
+                }],
+            },
+            mount_points: vec![MountPoint {
+                filesystem: "ext4".to_owned(),
+                options: vec![],
+                target_id: "part1".to_owned(),
+                path: PathBuf::from("/"),
+            }],
+            images: vec![Image {
+                target_id: "part1".to_owned(),
+                url: "".to_owned(),
+                sha256: "".to_owned(),
+                format: ImageFormat::RawZstd,
+            }],
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![AbVolumePair {
+                    id: "ab1".to_owned(),
+                    volume_a_id: "part1".to_owned(),
+                    volume_b_id: "part2".to_owned(),
+                }],
+            }),
+        };
+        storage.validate().unwrap();
+
+        let storage_golden = storage.clone();
+
+        // fail on duplicate id
+        storage = storage_golden.clone();
+        storage.disks.get_mut(0).unwrap().partitions = vec![Partition {
+            id: "part1".to_owned(),
+            partition_type: PartitionType::Esp,
+            size: PartitionSize::from_str("1M").unwrap(),
+        }];
+        assert!(storage.validate().is_err());
+
+        // fail on duplicate id
+        storage = storage_golden.clone();
+        storage.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
+        assert!(storage.validate().is_err());
+
+        // fail on missing reference (disk4 does not exist)
+        storage = storage_golden.clone();
+        storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "disk4".to_owned();
+        assert!(storage.validate().is_err());
+
+        // fail on missing reference (disk4 does not exist)
+        storage = storage_golden.clone();
+        storage.images[0].target_id = "disk4".to_owned();
+        assert!(storage.validate().is_err());
+
+        // fail on missing reference (disk4 does not exist)
+        storage = storage_golden.clone();
+        storage.mount_points[0].target_id = "disk4".to_owned();
+        assert!(storage.validate().is_err());
+
+        // fail on bad block device type
+        storage = storage_golden.clone();
+        storage.images[0].target_id = "disk1".to_owned();
+        assert!(storage.validate().is_err());
+
+        // fail if devices are not all the same size for a RAID
+        storage.disks[1].partitions[3].size = PartitionSize::from_str("2G").unwrap();
+        assert!(storage.validate().is_err());
     }
 }

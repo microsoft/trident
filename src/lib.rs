@@ -396,6 +396,10 @@ impl Trident {
             cmd.host_config.management.phonehome = self.config.phonehome.clone();
         }
 
+        cmd.host_config
+            .validate()
+            .context("Failed to validate host configuration")?;
+
         // Use overlay for holding any changes to the host filesystem that
         // should not be persisted.
         // TODO: mount the overlay only if we actually need to perform an update

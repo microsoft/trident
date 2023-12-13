@@ -1,31 +1,28 @@
-use anyhow::{bail, Context, Error};
-use log::info;
-use osutils::udevadm;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
+
+use anyhow::{bail, Context, Error};
+use log::info;
+use osutils::udevadm;
 use trident_api::{
-    config::{HostConfiguration, MountPoint, Partition, PartitionSize},
+    config::{HostConfiguration, MountPoint},
     status::{self, BlockDeviceContents, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
 
 use crate::modules::Module;
-
 use systemd_repart::RepartConfiguration;
-
+use tabfile::TabFileSettings;
 use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
 
-use self::tabfile::TabFileSettings;
 pub mod image;
 mod raid;
 mod sfdisk;
 mod systemd_repart;
 pub mod tabfile;
-
-const SWAP_FILESYSTEM: &str = "swap";
 
 fn create_partitions(
     host_status: &mut HostStatus,
@@ -160,139 +157,8 @@ impl Module for StorageModule {
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        // TODO: reject any partition changes if we're not doing a clean install.
-
-        // Ensure block device naming is unique across all supported block
-        // device types.
-        let mut block_device_ids = std::collections::HashSet::new();
-
-        StorageModule::check_multiple_instances(
-            &mut block_device_ids,
-            &mut host_config.storage.disks.iter().map(|d| &d.id),
-        )?;
-
-        let partition_ids: Vec<&String> = host_config
-            .storage
-            .disks
-            .iter()
-            .flat_map(|d| &d.partitions)
-            .map(|p| &p.id)
-            .collect();
-        let partition_ids_set: HashSet<&String> = partition_ids.iter().cloned().collect();
-        let mut image_target_ids: HashSet<&String> = partition_ids_set.clone();
-
-        StorageModule::check_multiple_instances(
-            &mut block_device_ids,
-            &mut partition_ids.clone().into_iter(),
-        )?;
-
-        StorageModule::check_multiple_instances(
-            &mut block_device_ids,
-            &mut host_config.storage.raid.software.iter().map(|r| &r.id),
-        )?;
-
-        if let Some(ab_update) = &host_config.storage.ab_update {
-            let ab_volume_ids: Vec<&String> =
-                ab_update.volume_pairs.iter().map(|v| &v.id).collect();
-            image_target_ids.extend(ab_volume_ids.clone());
-            StorageModule::check_multiple_instances(
-                &mut block_device_ids,
-                &mut ab_volume_ids.into_iter(),
-            )?;
-        }
-
-        let raid_ids: HashSet<String> = get_raid_array_ids(host_config);
-
-        // Ensure valid references.
-        if let Some(ab_update) = &host_config.storage.ab_update {
-            for p in &ab_update.volume_pairs {
-                for block_device_id in [&p.volume_a_id, &p.volume_b_id] {
-                    if !partition_ids_set.contains(block_device_id)
-                        && !raid_ids.contains(block_device_id)
-                    {
-                        bail!(
-                            "Block device id '{id}' was set as dependency of an A/B update volume '{parent}',
-                            but is not defined as a partition or a RAID device",
-                            id = block_device_id,
-                            parent = p.id,
-                        );
-                    }
-                }
-            }
-        }
-
-        for image in &host_config.storage.images {
-            if !image_target_ids.contains(&image.target_id) {
-                bail!(
-                    "Block device id '{id}' was set as dependency of an image, but is not defined elsewhere",
-                    id = image.target_id,
-                );
-            }
-            if raid_ids.contains(&image.target_id) {
-                bail!(
-                    "Image id '{}' targets a RAID array, which is not supported",
-                    image.target_id,
-                );
-            }
-        }
-
-        for mount_point in &host_config.storage.mount_points {
-            if !image_target_ids.contains(&mount_point.target_id)
-                && !raid_ids.contains(&mount_point.target_id)
-            {
-                bail!(
-                    "Block device id '{id}' was set as dependency of a mount point, but is not defined as an id of a partition or a raid array",
-                    id = mount_point.target_id,
-                );
-            }
-        }
-
-        // Ensure mutual exclusivity
-        if let Some(ab_update) = &host_config.storage.ab_update {
-            for p in &ab_update.volume_pairs {
-                if p.volume_a_id == p.volume_b_id {
-                    bail!(
-                        "A/B update volume id '{id}' has the same target_id both both volumes",
-                        id = p.id,
-                    );
-                }
-            }
-        }
-
-        // Check that devices are valid partitions and only part of a single RAID array
-        let mut raid_devices = HashSet::<BlockDeviceId>::new();
-        for software_raid_config in &host_config.storage.raid.software {
-            let mut device_sizes = Vec::<PartitionSize>::new();
-
-            for device_id in &software_raid_config.devices {
-                let partition = match get_partition_from_host_config(host_config, device_id) {
-                    Some(partition) => partition,
-                    None => bail!("Device id '{device_id}' was set as dependency of a RAID array, but is not a valid partition"),
-                };
-
-                if !raid_devices.insert(device_id.clone()) {
-                    bail!("Block device '{device_id}' cannot be part of multiple RAID arrays");
-                }
-
-                device_sizes.push(partition.size.clone());
-
-                if device_sizes.iter().min() != device_sizes.iter().max() {
-                    bail!(
-                        "RAID array {} has underlying devices with different sizes",
-                        software_raid_config.id
-                    );
-                }
-            }
-        }
-
-        // Test for expected mount point configurations
-        for mount_point in &host_config.storage.mount_points {
-            if !mount_point.path.starts_with("/") && mount_point.filesystem != SWAP_FILESYSTEM {
-                bail!("Mount point path must be absolute or the filesystem has to be 'swap'");
-            }
-        }
-
-        // Ensure any two disks point to different devices
+        // Ensure any two disks point to different devices. This requires canonicalizing the device
+        // paths, which can only be done on the target system.
         let mut device_paths = HashMap::<PathBuf, BlockDeviceId>::new();
         for disk in &host_config.storage.disks {
             let device_path = disk
@@ -393,43 +259,6 @@ impl Module for StorageModule {
     }
 }
 
-impl StorageModule {
-    fn check_multiple_instances<'a>(
-        detected_ids: &mut HashSet<&'a String>,
-        input_ids: &mut dyn Iterator<Item = &'a String>,
-    ) -> Result<(), Error> {
-        for id in input_ids {
-            if !detected_ids.insert(id) {
-                bail!("Block device id '{id}' is used more than once");
-            }
-        }
-
-        Ok(())
-    }
-}
-
-pub fn get_partition_from_host_config<'a>(
-    host_config: &'a HostConfiguration,
-    partition_id: &'a str,
-) -> Option<&'a Partition> {
-    host_config
-        .storage
-        .disks
-        .iter()
-        .flat_map(|disk| disk.partitions.iter())
-        .find(|partition| partition.id == partition_id)
-}
-
-fn get_raid_array_ids(host_config: &HostConfiguration) -> HashSet<String> {
-    host_config
-        .storage
-        .raid
-        .software
-        .iter()
-        .map(|config| config.id.clone())
-        .collect()
-}
-
 pub(super) fn path_to_mount_point<'a>(
     host_config: &'a HostConfiguration,
     path: &Path,
@@ -470,18 +299,10 @@ mod tests {
     /// Validates Storage module HostConfiguration validation logic.
     #[test]
     fn test_validate_host_config() {
-        let empty_host_config = HostConfiguration::default();
-
         let empty_host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             ..Default::default()
         };
-
-        let storage_module = StorageModule {};
-
-        storage_module
-            .validate_host_config(&empty_host_status, &empty_host_config)
-            .unwrap();
 
         let mut host_config = HostConfiguration {
             storage: Storage {
@@ -551,81 +372,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(storage_module
-            .validate_host_config(&empty_host_status, &host_config)
-            .is_ok());
-
-        let host_config_golden = host_config.clone();
-
         // fail on duplicate disk path
         host_config.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
 
-        assert!(storage_module
-            .validate_host_config(&empty_host_status, &host_config)
-            .is_err());
-
-        host_config = host_config_golden.clone();
-
-        // fail on duplicate id
-        host_config.storage.disks.get_mut(0).unwrap().partitions = vec![Partition {
-            id: "part1".to_owned(),
-            partition_type: PartitionType::Esp,
-            size: PartitionSize::from_str("1M").unwrap(),
-        }];
-
-        assert!(storage_module
-            .validate_host_config(&empty_host_status, &host_config)
-            .is_err());
-
-        host_config = host_config_golden.clone();
-
-        // fail on duplicate id
-        host_config.storage.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
-
-        assert!(storage_module
-            .validate_host_config(&empty_host_status, &host_config)
-            .is_err());
-
-        host_config = host_config_golden.clone();
-
-        // fail on missing reference (disk4 does not exist)
-        host_config.storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id =
-            "disk4".to_owned();
-
-        assert!(storage_module
-            .validate_host_config(&empty_host_status, &host_config)
-            .is_err());
-
-        host_config = host_config_golden.clone();
-
-        // fail on missing reference (disk4 does not exist)
-        host_config.storage.images[0].target_id = "disk4".to_owned();
-
-        assert!(storage_module
-            .validate_host_config(&empty_host_status, &host_config)
-            .is_err());
-
-        host_config = host_config_golden.clone();
-
-        // fail on missing reference (disk4 does not exist)
-        host_config.storage.mount_points[0].target_id = "disk4".to_owned();
-
-        assert!(storage_module
-            .validate_host_config(&empty_host_status, &host_config)
-            .is_err());
-
-        host_config = host_config_golden.clone();
-
-        // fail on bad block device type
-        host_config.storage.images[0].target_id = "disk1".to_owned();
-
-        assert!(storage_module
-            .validate_host_config(&empty_host_status, &host_config)
-            .is_err());
-
-        // fail if devices are not all the same size for a RAID
-        host_config.storage.disks[1].partitions[3].size = PartitionSize::from_str("2G").unwrap();
-        assert!(storage_module
+        assert!(StorageModule
             .validate_host_config(&empty_host_status, &host_config)
             .is_err());
     }

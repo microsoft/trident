@@ -594,17 +594,12 @@ mod tests {
     use tempfile::tempdir;
 
     use trident_api::{
-        config::{
-            Disk, Image, ImageFormat, Partition, PartitionSize, PartitionTableType, PartitionType,
-            RaidConfig, Storage,
-        },
+        config::PartitionType,
         status::{
             BlockDeviceContents, Disk as DiskStatus, Partition as PartitionStatus, RaidArray,
             ReconcileState, Storage as StorageStatus,
         },
     };
-
-    use crate::modules::storage;
 
     use super::*;
 
@@ -746,142 +741,6 @@ mod tests {
                 .contents,
             status::BlockDeviceContents::Initialized
         );
-    }
-
-    #[test]
-    fn test_get_partition_from_host_config() {
-        let host_config = HostConfiguration {
-            storage: Storage {
-                disks: vec![
-                    Disk {
-                        id: "disk1".to_string(),
-                        device: PathBuf::from("/dev/sda"),
-                        partition_table_type: PartitionTableType::Gpt,
-                        partitions: vec![
-                            Partition {
-                                id: "disk1-partition1".to_string(),
-                                partition_type: PartitionType::Esp,
-                                size: PartitionSize::from_str("1M").unwrap(),
-                            },
-                            Partition {
-                                id: "disk1-partition2".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                        ],
-                    },
-                    Disk {
-                        id: "disk2".to_string(),
-                        device: PathBuf::from("/dev/sdb"),
-                        partition_table_type: PartitionTableType::Gpt,
-                        partitions: vec![Partition {
-                            id: "disk2-partition1".to_string(),
-                            partition_type: PartitionType::Esp,
-                            size: PartitionSize::from_str("1M").unwrap(),
-                        }],
-                    },
-                ],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let partition = storage::get_partition_from_host_config(&host_config, "disk1-partition1")
-            .expect("Expected to find a partition but not found.");
-
-        assert_eq!(partition.id, "disk1-partition1");
-        assert_eq!(
-            partition.partition_type,
-            trident_api::config::PartitionType::Esp
-        );
-        assert_eq!(
-            partition.size,
-            trident_api::config::PartitionSize::Fixed(1048576)
-        );
-
-        let partition =
-            storage::get_partition_from_host_config(&host_config, "non_existing_partition");
-        assert_eq!(partition, None);
-    }
-
-    #[test]
-    fn test_get_raid_array_ids() {
-        let host_config = HostConfiguration {
-            storage: Storage {
-                disks: vec![Disk {
-                    id: "some-disk".to_string(),
-                    device: PathBuf::from("/dev/sda"),
-                    partition_table_type: PartitionTableType::Gpt,
-                    partitions: vec![
-                        Partition {
-                            id: "esp".to_string(),
-                            partition_type: PartitionType::Esp,
-                            size: PartitionSize::from_str("1G").unwrap(),
-                        },
-                        Partition {
-                            id: "root-a".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: PartitionSize::from_str("8G").unwrap(),
-                        },
-                        Partition {
-                            id: "trident".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::from_str("1G").unwrap(),
-                        },
-                        Partition {
-                            id: "raid-a".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::from_str("1G").unwrap(),
-                        },
-                        Partition {
-                            id: "raid-b".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::from_str("1G").unwrap(),
-                        },
-                        Partition {
-                            id: "raid-c".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::from_str("50M").unwrap(),
-                        },
-                        Partition {
-                            id: "raid-d".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::from_str("50M").unwrap(),
-                        },
-                    ],
-                }],
-                raid: RaidConfig {
-                    software: vec![
-                        SoftwareRaidArray {
-                            id: "some-raid".to_string(),
-                            name: "my-raid".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["raid-a".to_string(), "raid-b".to_string()],
-                            metadata_version: "1.0".to_string(),
-                        },
-                        SoftwareRaidArray {
-                            id: "some-raid2".to_string(),
-                            name: "my-raid2".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["raid-c".to_string(), "raid-d".to_string()],
-                            metadata_version: "1.0".to_string(),
-                        },
-                    ],
-                },
-                images: vec![Image {
-                    url: "".to_string(),
-                    sha256: "".to_string(),
-                    format: ImageFormat::RawZstd,
-                    target_id: "esp".to_string(),
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let raid_array_ids = storage::get_raid_array_ids(&host_config);
-        assert_eq!(raid_array_ids.len(), 2);
-        assert!(raid_array_ids.contains(&"some-raid".to_string()));
-        assert!(raid_array_ids.contains(&"some-raid2".to_string()));
     }
 
     #[test]

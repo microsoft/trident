@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use trident_api::{
     config::MountPoint,
+    constants::SWAP_FILESYSTEM,
     status::{BlockDeviceContents, HostStatus},
 };
 
@@ -70,7 +71,7 @@ impl TabFile {
                     settings.grow_fs,
                     settings.read_only,
                 )?);
-            } else if mp.filesystem == super::SWAP_FILESYSTEM && !settings.read_only {
+            } else if mp.filesystem == SWAP_FILESYSTEM && !settings.read_only {
                 // systemd does not create swap as a dependency of the
                 // update-fs.target during provisioning OS, so ensure that swap
                 // gets eventually initialized by forcing make_fs to true. Since
