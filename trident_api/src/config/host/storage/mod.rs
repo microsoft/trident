@@ -428,8 +428,8 @@ impl Storage {
                 id = mount_point.target_id
             );
             ensure!(
-                partitions.contains(&mount_point.target_id) || raid_arrays.contains(&mount_point.target_id),
-                "Block device ID {id} is used in the mount point configuration but is not a partition or raid array",
+                partitions.contains(&mount_point.target_id) || raid_arrays.contains(&mount_point.target_id) || volume_pairs.contains(&mount_point.target_id),
+                "Block device ID {id} is used in the mount point configuration but is not a partition, raid array, or volume pair",
                 id = mount_point.target_id
             );
         }
@@ -607,6 +607,24 @@ mod tests {
             ..Default::default()
         };
         storage.validate().unwrap();
+
+        let mount_volume_pair = Storage {
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![imaging::AbVolumePair {
+                    id: "ab-update-volume-pair".to_string(),
+                    volume_a_id: "disk1-partition2".to_string(),
+                    volume_b_id: "disk2-partition2".to_string(),
+                }],
+            }),
+            mount_points: vec![MountPoint {
+                filesystem: "ext4".to_string(),
+                options: vec![],
+                target_id: "ab-update-volume-pair".to_string(),
+                path: PathBuf::from("/"),
+            }],
+            ..storage.clone()
+        };
+        mount_volume_pair.validate().unwrap();
 
         let bad_volume_pair = Storage {
             ab_update: Some(AbUpdate {
