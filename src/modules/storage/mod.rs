@@ -156,6 +156,7 @@ impl Module for StorageModule {
         &self,
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
+        _planned_update: ReconcileState,
     ) -> Result<(), Error> {
         // Ensure any two disks point to different devices. This requires canonicalizing the device
         // paths, which can only be done on the target system.
@@ -376,7 +377,11 @@ mod tests {
         host_config.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
 
         assert!(StorageModule
-            .validate_host_config(&empty_host_status, &host_config)
+            .validate_host_config(
+                &empty_host_status,
+                &host_config,
+                ReconcileState::CleanInstall
+            )
             .is_err());
     }
 }

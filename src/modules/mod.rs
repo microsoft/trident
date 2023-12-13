@@ -48,15 +48,6 @@ trait Module: Send {
     /// Refresh the host status.
     fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error>;
 
-    /// Validate the host config.
-    fn validate_host_config(
-        &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-
     /// Select the update kind based on the host status and host config.
     fn select_update_kind(
         &self,
@@ -64,6 +55,25 @@ trait Module: Send {
         _host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
         None
+    }
+
+    /// Validate the host config.
+    fn validate_host_config(
+        &self,
+        _host_status: &HostStatus,
+        _host_config: &HostConfiguration,
+        _planned_update: ReconcileState,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// Perform non-destructive preparations for an update.
+    fn prepare(
+        &mut self,
+        _host_status: &mut HostStatus,
+        _host_config: &HostConfiguration,
+    ) -> Result<(), Error> {
+        Ok(())
     }
 
     /// Initialize state on the Runtime OS from the Provisioning OS, or migrate state from
@@ -122,7 +132,7 @@ pub(super) fn provision_host(
     state.with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)?;
 
     refresh_host_status(&mut modules, state)?;
-    validate_host_config(&modules, state, host_config)?;
+    validate_host_config(&modules, state, host_config, ReconcileState::CleanInstall)?;
 
     if let Some(ref mut sender) = sender {
         sender
@@ -137,6 +147,8 @@ pub(super) fn provision_host(
         info!("Update not requested, skipping");
         return Ok(());
     }
+
+    prepare(&mut modules, state, host_config)?;
 
     // TODO: We should have a way to indicate which modules setup the root mount point, and which
     // depend on it being in place. Right now we just depend on the "storage" and "image" modules
@@ -232,8 +244,6 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
     let mut modules = MODULES.lock().unwrap();
 
     refresh_host_status(&mut modules, state)?;
-    validate_host_config(&modules, state, host_config)?;
-
     if let Some(ref mut sender) = sender {
         sender
             .send(Ok(HostStatusState {
@@ -241,11 +251,6 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
                     .context("Failed to serialize host status")?,
             }))
             .context("Failed to send host status")?;
-    }
-
-    if !allowed_operations.contains(Operations::Update) {
-        info!("Update not requested, skipping");
-        return Ok(());
     }
 
     let update_kind = modules
@@ -262,31 +267,40 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
             update_kind
         })
         .max();
-    state.try_with_host_status(|s| {
-        s.reconcile_state = match update_kind {
-            Some(k) => ReconcileState::UpdateInProgress(k),
-            None => ReconcileState::Ready,
-        };
-        Ok(())
-    })?;
+    let Some(update_kind) = update_kind else {
+        info!("No updates required");
+        return Ok(());
+    };
+
+    validate_host_config(
+        &modules,
+        state,
+        host_config,
+        ReconcileState::UpdateInProgress(update_kind),
+    )?;
+
+    if !allowed_operations.contains(Operations::Update) {
+        info!("Update not requested, skipping");
+        return Ok(());
+    }
 
     match update_kind {
-        None => {
-            info!("No updates required");
-            return Ok(());
-        }
-        Some(UpdateKind::HotPatch) => info!("Performing hot patch update"),
-        Some(UpdateKind::NormalUpdate) => info!("Performing normal update"),
-        Some(UpdateKind::UpdateAndReboot) => info!("Performing update and reboot"),
-        Some(UpdateKind::AbUpdate) => info!("Performing A/B update"),
-        Some(UpdateKind::Incompatible) => {
+        UpdateKind::HotPatch => info!("Performing hot patch update"),
+        UpdateKind::NormalUpdate => info!("Performing normal update"),
+        UpdateKind::UpdateAndReboot => info!("Performing update and reboot"),
+        UpdateKind::AbUpdate => info!("Performing A/B update"),
+        UpdateKind::Incompatible => {
             bail!("Requested host config is not compatible with current install")
         }
     }
+    state
+        .with_host_status(|s| s.reconcile_state = ReconcileState::UpdateInProgress(update_kind))?;
+
+    prepare(&mut modules, state, host_config)?;
 
     let mount_path = Path::new(UPDATE_ROOT_PATH);
 
-    if let Some(UpdateKind::AbUpdate) = update_kind {
+    if let UpdateKind::AbUpdate = update_kind {
         provision(&mut modules, state, host_config, mount_path)?;
         chroot::enter_update_chroot(mount_path)?
             .execute_and_exit(|| configure(&mut modules, state, host_config))
@@ -306,7 +320,7 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
     }
 
     match update_kind {
-        Some(UpdateKind::UpdateAndReboot) | Some(UpdateKind::AbUpdate) => {
+        UpdateKind::UpdateAndReboot | UpdateKind::AbUpdate => {
             let root_block_device_path = get_root_block_device_path(state.host_status())
                 .context("Failed to get root block device")?;
 
@@ -324,12 +338,12 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
             transition(mount_path, &root_block_device_path)?;
             Ok(())
         }
-        Some(UpdateKind::NormalUpdate) | Some(UpdateKind::HotPatch) => {
+        UpdateKind::NormalUpdate | UpdateKind::HotPatch => {
             state.with_host_status(|s| s.reconcile_state = ReconcileState::Ready)?;
             info!("Update complete");
             Ok(())
         }
-        None | Some(UpdateKind::Incompatible) => {
+        UpdateKind::Incompatible => {
             unreachable!()
         }
     }
@@ -480,15 +494,30 @@ fn validate_host_config(
     modules: &[Box<dyn Module>],
     state: &DataStore,
     host_config: &HostConfiguration,
+    planned_update: ReconcileState,
 ) -> Result<(), Error> {
     for m in modules {
-        m.validate_host_config(state.host_status(), host_config)
+        m.validate_host_config(state.host_status(), host_config, planned_update)
             .context(format!(
                 "Module '{}' failed to validate host config",
                 m.name()
             ))?;
     }
     info!("Host config validated");
+    Ok(())
+}
+
+fn prepare(
+    modules: &mut [Box<dyn Module>],
+    state: &mut DataStore,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    for m in modules {
+        state.try_with_host_status(|s| {
+            m.prepare(s, host_config)
+                .context(format!("Module '{}' failed to prepare", m.name()))
+        })?;
+    }
     Ok(())
 }
 

@@ -24,7 +24,7 @@ pub struct HostStatus {
 
 /// ReconcileState is the state of the host's reconciliation process. Through
 /// the ReconcileState, the Trident agent communicates what operations are in progress.
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ReconcileState {
     /// A clean install is in progress.

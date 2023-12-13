@@ -6,7 +6,7 @@ use anyhow::{bail, ensure, Context, Error};
 use log::info;
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile},
-    status::{HostStatus, UpdateKind},
+    status::{HostStatus, ReconcileState, UpdateKind},
 };
 
 use crate::{
@@ -30,6 +30,7 @@ impl Module for ManagementModule {
         &self,
         host_status: &HostStatus,
         host_config: &HostConfiguration,
+        _planned_update: ReconcileState,
     ) -> Result<(), Error> {
         if host_config.management.disable {
             return Ok(());
