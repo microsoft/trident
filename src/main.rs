@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
@@ -126,7 +126,7 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
     Ok(logstream)
 }
 
-fn main() {
+fn main() -> ExitCode {
     // Parse args
     let args = Cli::parse();
 
@@ -134,12 +134,14 @@ fn main() {
     let logstream = setup_logging(&args);
     if let Err(e) = logstream {
         error!("Failed to initialize logging: {e:?}");
-        std::process::exit(1);
+        return ExitCode::from(1);
     }
 
     // Invoke Trident
     if let Err(e) = run_trident(logstream.unwrap(), &args) {
         error!("Trident failed: {e:?}");
-        std::process::exit(2);
+        return ExitCode::from(2);
     }
+
+    ExitCode::SUCCESS
 }
