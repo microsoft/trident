@@ -74,7 +74,7 @@ impl Chroot {
         // Execute the function.
         let result = f();
 
-        // Exit the chroot and return any errors from the fucntion, the exit
+        // Exit the chroot and return any errors from the function, the exit
         // call, or both.
         match self.exit() {
             Ok(_) => result,

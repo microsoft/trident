@@ -3,7 +3,6 @@ use duct::cmd;
 use log::{info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
@@ -21,7 +20,7 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use osutils::{exe::OutputChecker, udevadm};
+use osutils::{exe::OutputChecker, lsblk, udevadm};
 
 pub(super) const RAID_SYNC_TIMEOUT_SECS: u64 = 180;
 
@@ -266,29 +265,24 @@ pub(super) fn update_raid_in_host_status(
 }
 
 fn get_disk_for_partition(partition: &Path) -> Result<PathBuf, Error> {
-    let mut lsblk_command = Command::new("lsblk");
-    lsblk_command
-        .arg("-no")
-        .arg("pkname")
-        .arg("--json")
-        .arg("--path")
-        .arg(partition);
+    let partition_block_device_list =
+        lsblk::run(partition).context("Failed to get partition metadata")?;
+    if partition_block_device_list.len() != 1 {
+        bail!(
+            "Failed to get disk for partition: {:?}, unexpected number of results returned",
+            partition
+        );
+    }
 
-    let output = lsblk_command
-        .output()
-        .context("Failed to run lsblk to list devices")?;
-    output.check().context("lsblk exited with an error")?;
+    let parent_kernel_name = &partition_block_device_list[0]
+        .parent_kernel_name
+        .as_ref()
+        .context(format!(
+            "Failed to get disk for partition: {:?}, pk_name not found",
+            partition
+        ))?;
 
-    let data: Value = serde_json::from_slice(&output.stdout)
-        .context("Failed to deserialize output of tab file reader")?;
-
-    let pkname = data["blockdevices"][0]["pkname"]
-        .as_str()
-        .context("Failed to get disk path for partition")?;
-
-    let disk_path = PathBuf::from(pkname);
-
-    Ok(disk_path)
+    Ok(PathBuf::from(parent_kernel_name))
 }
 
 pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> Result<(), Error> {

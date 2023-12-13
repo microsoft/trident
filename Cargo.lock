@@ -1217,8 +1217,11 @@ dependencies = [
  "indoc",
  "log",
  "nix",
+ "serde",
+ "serde_json",
  "sys-mount",
  "tempfile",
+ "uuid",
  "which",
 ]
 
