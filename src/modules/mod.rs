@@ -391,6 +391,17 @@ fn get_raid_array(
         .map(|r| r.to_block_device())
 }
 
+fn get_encrypted_volume(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<BlockDeviceInfo> {
+    host_status
+        .storage
+        .encrypted_volumes
+        .get(block_device_id)
+        .map(|e| e.to_block_device())
+}
+
 /// Returns a block device info for a block device referenced by the
 /// `block_device_id`. If the volume is part of an AB Volume Pair and active is
 /// true it returns the active volume, and if active is false it returns the
@@ -404,6 +415,7 @@ fn get_block_device(
         .or_else(|| get_partition(host_status, block_device_id))
         .or_else(|| get_ab_volume(host_status, block_device_id, active))
         .or_else(|| get_raid_array(host_status, block_device_id))
+        .or_else(|| get_encrypted_volume(host_status, block_device_id))
 }
 
 /// Returns a block device info for a volume from the given AB Volume Pair. If

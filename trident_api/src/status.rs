@@ -69,6 +69,9 @@ pub struct Storage {
     pub raid_arrays: BTreeMap<BlockDeviceId, RaidArray>,
 
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub encrypted_volumes: BTreeMap<BlockDeviceId, EncryptedVolume>,
+
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mount_points: BTreeMap<BlockDeviceId, MountPoint>,
 
     /// A/B update status.
@@ -125,6 +128,23 @@ pub enum BlockDeviceContents {
         url: String,
     },
     Initialized,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EncryptedVolume {
+    /// The path of the device created under `/dev/mapper` when opening
+    /// the volume.
+    pub path: PathBuf,
+
+    /// The path of the disk partition or software raid array encrypted.
+    pub target_path: PathBuf,
+
+    /// The size of the encrypted volume.
+    pub size: u64,
+
+    /// The contents of the encrypted volume.
+    pub contents: BlockDeviceContents,
 }
 
 // Status of a raid array.
