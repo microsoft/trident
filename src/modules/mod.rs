@@ -269,6 +269,7 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
         .max();
     let Some(update_kind) = update_kind else {
         info!("No updates required");
+        state.with_host_status(|s| s.reconcile_state = ReconcileState::Ready)?;
         return Ok(());
     };
 
