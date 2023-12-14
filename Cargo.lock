@@ -1213,12 +1213,15 @@ name = "osutils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "configparser",
  "duct",
  "indoc",
  "log",
  "nix",
  "serde",
  "serde_json",
+ "strum",
+ "strum_macros",
  "sys-mount",
  "tempfile",
  "uuid",

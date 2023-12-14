@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = { version = "1.0.75", features = ["backtrace"] }
+configparser = { version = "3.0.2", features = ["indexmap"] }
 duct = "0.13.6"
 indoc = "2.0.3"
 log = "0.4.20"
@@ -20,6 +21,8 @@ which = "4.4.2"
 
 [dev-dependencies]
 indoc = "2"
+strum = "0.25.0"
+strum_macros = "0.25.0"
 
 [features]
 functional-tests = []

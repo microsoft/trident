@@ -5,7 +5,10 @@ pub mod exe;
 pub mod files;
 pub mod lsblk;
 pub mod overlay;
+pub mod partition_types;
+pub mod repart;
 pub mod scripts;
+pub mod sfdisk;
 pub mod systemd;
 pub mod udevadm;
 
