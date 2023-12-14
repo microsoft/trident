@@ -58,7 +58,7 @@ Trident can be automatically started using SystemD (see the [service
 definitions](systemd)) or directly started manually. Trident support the
 following commands (input as a command line parameter):
 
-- `start-network`: Uses the `network` or `network-override` configuration (see below for
+- `start-network`: Uses the `network` or `networkOverride` configuration (see below for
   details, loaded from `/etc/trident/config.yaml`) to configure networking in
   the currently running OS. This is mainly use to startup network during initial
   provisioning when default DHCP configuration is not sufficient.
@@ -108,13 +108,13 @@ composed of the following sections:
 - **networkOverride**: optional network configuration for the bootstrap OS. If
   not specified, the network configuration from Host Configuration (see below)
   will be used otherwise.
-- **grpc**: If present (to make it present, add `listen-port` attribute which
-  can be `null` for the detail port 50051 or the port number to be used for
+- **grpc**: If present (to make it present, add `listenPort` attribute which
+  can be `null` for the default port 50051 or the port number to be used for
   incoming gRPC connections), this indicates that Trident should start a gRPC
   server to listen for commands. The protocol is described by
   [proto/trident.proto](proto/trident.proto). This only applies to the current
   run of Trident. During provisioning, you can control whether gRPC is enabled
-  on the runtime OS via the `enable-grpc` field within the Management section of
+  on the runtime OS via the `enableGrpc` field within the Management section of
   the Host Configuration. TODO: implement and document authorization for
   accessing the gRPC endpoint.
 - **waitForProvisioningNetwork**: USE WITH CAUTION!! IT WILL INCREASE BOOT
@@ -134,7 +134,7 @@ provided through either one of the following options:
   format. See below details.
 - **hostConfiguration**: describes the host configuration. This is the
   configuration that Trident will apply to the host (same payload as
-  `host-configuration-file`, but directly embedded in the Trident
+  `hostConfigurationFile`, but directly embedded in the Trident
   configuration). See below details.
 - **kickstartFile**: path to the kickstart file. This is a kickstart file that
   describes the host configuration in the kickstart format. WIP, early preview
