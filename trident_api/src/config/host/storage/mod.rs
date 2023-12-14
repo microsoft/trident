@@ -428,7 +428,7 @@ impl Storage {
         let mut block_device_ids = Vec::new();
         let mut partitions = HashSet::new();
         let mut raid_arrays = HashSet::new();
-        let mut volume_pairs = HashSet::new();
+        let mut ab_volume_pairs = HashSet::new();
 
         // Collect lists of all block device ids
         for disk in &self.disks {
@@ -445,7 +445,7 @@ impl Storage {
         if let Some(ab_update) = &self.ab_update {
             for pair in &ab_update.volume_pairs {
                 block_device_ids.push(pair.id.clone());
-                volume_pairs.insert(pair.id.clone());
+                ab_volume_pairs.insert(pair.id.clone());
             }
         }
 
@@ -486,7 +486,7 @@ impl Storage {
                 id = image.target_id,
             );
             ensure!(
-                partitions.contains(&image.target_id) || volume_pairs.contains(&image.target_id),
+                partitions.contains(&image.target_id) || ab_volume_pairs.contains(&image.target_id),
                 "Block device ID {id} is used in the image configuration but is not a partition or A/B update volume pair",
                 id = image.target_id
             );
@@ -498,7 +498,7 @@ impl Storage {
                 id = mount_point.target_id
             );
             ensure!(
-                partitions.contains(&mount_point.target_id) || raid_arrays.contains(&mount_point.target_id) || volume_pairs.contains(&mount_point.target_id),
+                partitions.contains(&mount_point.target_id) || raid_arrays.contains(&mount_point.target_id) || ab_volume_pairs.contains(&mount_point.target_id),
                 "Block device ID {id} is used in the mount point configuration but is not a partition, raid array, or volume pair",
                 id = mount_point.target_id
             );
