@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
+use anyhow::{bail, Error};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
@@ -9,21 +10,24 @@ use crate::is_default;
 
 /// Configuration for the host OS.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct OsConfig {
     /// # Users
     ///
     /// Map of users to configure on the host. The key is the username.
     #[serde(default)]
-    pub users: HashMap<String, User>,
+    pub users: Vec<User>,
 }
 
 /// Configuration for a specific user.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct User {
+    /// Username
+    pub name: String,
+
     /// Password configuration.
     #[serde(default, skip_serializing_if = "is_default")]
     pub password: Password,
@@ -93,4 +97,42 @@ pub enum SshMode {
     /// Enable SSH for this entity with KEY and PASSWORD.
     #[cfg(feature = "dangerous-options")]
     DangerousAllowPassword,
+}
+
+impl OsConfig {
+    pub fn validate(&self) -> Result<(), Error> {
+        let mut usernames = HashSet::new();
+        for user in &self.users {
+            if !usernames.insert(&user.name) {
+                bail!("Duplicate user name: {}", user.name);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate() {
+        let mut config = OsConfig::default();
+        assert!(config.validate().is_ok());
+
+        config.users.push(User {
+            name: "test".to_string(),
+            password: Password::Locked,
+            ..Default::default()
+        });
+        assert!(config.validate().is_ok());
+
+        config.users.push(User {
+            name: "test".to_string(),
+            password: Password::Locked,
+            ..Default::default()
+        });
+        assert!(config.validate().is_err());
+    }
 }

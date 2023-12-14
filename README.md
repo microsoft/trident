@@ -83,7 +83,7 @@ Note that you can override the configuration path by setting the `--config` para
 This configuration file is used by the Trident agent to configure itself. It is
 composed of the following sections:
 
-- **allowed-operations**: a combination of flags representing allowed
+- **allowedOperations**: a combination of flags representing allowed
   operations. This is a list of operations that Trident is allowed to perform on
   the host. Supported flags are:
   - **Update**: Trident will update the host based on the host configuration,
@@ -105,7 +105,7 @@ composed of the following sections:
   can be monitored, once gRPC support is implemented. TODO: document the
   interface, for reference in the meantime
   [src/orchestrate.rs](src/orchestrate.rs).
-- **network-override**: optional network configuration for the bootstrap OS. If
+- **networkOverride**: optional network configuration for the bootstrap OS. If
   not specified, the network configuration from Host Configuration (see below)
   will be used otherwise.
 - **grpc**: If present (to make it present, add `listen-port` attribute which
@@ -117,7 +117,7 @@ composed of the following sections:
   on the runtime OS via the `enable-grpc` field within the Management section of
   the Host Configuration. TODO: implement and document authorization for
   accessing the gRPC endpoint.
-- **wait-for-provisioning-network**: USE WITH CAUTION!! IT WILL INCREASE BOOT
+- **waitForProvisioningNetwork**: USE WITH CAUTION!! IT WILL INCREASE BOOT
   TIMES IF THE NETWORK CONFIGURATION IS NOT PERFECT. (Only affects clean
   installs) When set to `true`, Trident will start
   `systemd-networkd-wait-online` to wait for the provisioning network to be up
@@ -129,19 +129,19 @@ composed of the following sections:
 Additionally, to configure the host, the desired host configuration can be
 provided through either one of the following options:
 
-- **host-configuration-file**: path to the host configuration file. This is a
+- **hostConfigurationFile**: path to the host configuration file. This is a
   YAML file that describes the host configuration in the Host Configuration
   format. See below details.
-- **host-configuration**: describes the host configuration. This is the
+- **hostConfiguration**: describes the host configuration. This is the
   configuration that Trident will apply to the host (same payload as
   `host-configuration-file`, but directly embedded in the Trident
   configuration). See below details.
-- **kickstart-file**: path to the kickstart file. This is a kickstart file that
+- **kickstartFile**: path to the kickstart file. This is a kickstart file that
   describes the host configuration in the kickstart format. WIP, early preview
   only. TODO: document what is supported.
 - **kickstart**: describes the host configuration in the kickstart format. This
   is the configuration that Trident will apply to the host (same payload as
-  `kickstart-file`, but directly embedded in the Trident configuration). WIP,
+  `kickstartFile`, but directly embedded in the Trident configuration). WIP,
   early preview only.
 
 ## Host Configuration
@@ -192,19 +192,19 @@ referenced from the initial HostConfiguration as follows:
          - url: file:///boot.raw.xz
            sha256:    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
            format: raw-lzma
-           target-id: esp
+           targetId: esp
          - url: file:///root.raw.xz
            sha256:    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
            format: raw-lzma
-           target-id: root
-       ab-update:
-         volume-pairs:
+           targetId: root
+       abUpdate:
+         volumePairs:
            - id: root
-             volume-a-id: root-a
-             volume-b-id: root-b
+             volumeAId: root-a
+             volumeBId: root-b
            - id: esp
-             volume-a-id: esp-a
-             volume-b-id: esp-b
+             volumeAId: esp-a
+             volumeBId: esp-b
    ```
 
    In the sample HostConfiguration above, we're requesting Trident to create
@@ -259,11 +259,11 @@ requirements per the systemd-sysupdate flow:
           - url: <URL to the boot image>
             sha256: <sha256 hash>
             format: raw-lzma
-            target-id: esp
+            targetId: esp
           - url: <URL to the root image>
             sha256: <sha256 hash>
             format: raw-lzma
-            target-id: root
+            targetId: root
       ```
 
 When the installation of the initial runtime OS is completed, the user will be
@@ -281,11 +281,11 @@ storage:
     - url: <URL to the updated version of the image>
       sha256: <sha256 hash>
       format: raw-lzma
-      target-id: esp
+      targetId: esp
     - url: <URL to the updated version of the image>
       sha256: <sha256 hash>
       format: raw-lzma
-      target-id: root
+      targetId: root
 ```
 
 - To overwrite the Trident HostConfig, the user can use the following command:

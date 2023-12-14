@@ -170,14 +170,12 @@ fn build_host_configuration() -> HostConfiguration {
             ..Default::default()
         }),
         osconfig: OsConfig {
-            users: HashMap::from([(
-                "my-new-user".into(),
-                User {
-                    ssh_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
-                    ssh_mode: SshMode::KeyOnly,
-                    ..Default::default()
-                },
-            )]),
+            users: vec![User {
+                name: "my-custom-user".into(),
+                ssh_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
+                ssh_mode: SshMode::KeyOnly,
+                ..Default::default()
+            }],
         },
         scripts: Scripts {
             post_provision: vec![Script {

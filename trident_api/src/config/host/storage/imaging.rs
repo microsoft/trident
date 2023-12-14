@@ -10,7 +10,7 @@ use crate::schema_helpers::block_device_id_schema;
 
 /// Per image configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Image {
     /// The URL of the image.
@@ -51,7 +51,7 @@ pub enum ImageFormat {
 /// A/B update configuration. Carries information about the A/B update volume
 /// pairs that are used to perform A/B updates.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct AbUpdate {
     /// A list of volume pairs that will be used for A/B Update.
@@ -67,7 +67,7 @@ pub struct AbUpdate {
 ///
 /// **Under development, initial logic for illustration purposes only.**
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct AbVolumePair {
     /// A unique identifier for the volume pair.

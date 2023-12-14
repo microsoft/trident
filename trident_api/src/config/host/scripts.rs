@@ -11,7 +11,7 @@ use crate::status::{ReconcileState, UpdateKind};
 /// These scripts are run in the order they are defined.
 /// Ensure that the scripts are idempotent as they may be run multiple times.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Scripts {
     /// Scripts to be run after Trident provision stage is complete.
@@ -27,7 +27,7 @@ pub struct Scripts {
 
 /// A script that can be run on the host during Trident stages.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Script {
     /// Name of the script.

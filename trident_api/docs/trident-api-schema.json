@@ -3,13 +3,16 @@
   "title": "HostConfiguration",
   "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
   "type": "object",
+  "required": [
+    "networkProvision"
+  ],
   "properties": {
     "management": {
       "description": "The Management configuration controls the installation of the Trident agent onto the runtime OS.",
       "default": {
         "disable": false,
         "phonehome": null,
-        "self-upgrade": false
+        "selfUpgrade": false
       },
       "allOf": [
         {
@@ -23,7 +26,7 @@
       "format": "Netplan YAML",
       "nullable": true
     },
-    "network-provision": {
+    "networkProvision": {
       "description": "Netplan network configuration for the provisioning OS _ONLY_.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.\n\nWhen provided, this configuration will be used to configure the network on the provisioning OS. When not provided, the network configuration from the runtime OS will be used instead.",
       "type": "object",
       "format": "Netplan YAML",
@@ -61,10 +64,10 @@
       "description": "A/B update configuration. Carries information about the A/B update volume pairs that are used to perform A/B updates.",
       "type": "object",
       "required": [
-        "volume-pairs"
+        "volumePairs"
       ],
       "properties": {
-        "volume-pairs": {
+        "volumePairs": {
           "description": "A list of volume pairs that will be used for A/B Update.\n\nYou can target the A/B Update volume pair from the `images` and `mount-points` and Trident will pick the right volume to use based on the A/B Update state of the host.",
           "type": "array",
           "items": {
@@ -79,8 +82,8 @@
       "type": "object",
       "required": [
         "id",
-        "volume-a-id",
-        "volume-b-id"
+        "volumeAId",
+        "volumeBId"
       ],
       "properties": {
         "id": {
@@ -88,12 +91,12 @@
           "type": "string",
           "format": "Block Device ID"
         },
-        "volume-a-id": {
+        "volumeAId": {
           "description": "The ID of the partition that will be used as the A volume.",
           "type": "string",
           "format": "Block Device ID"
         },
-        "volume-b-id": {
+        "volumeBId": {
           "description": "The ID of the partition that will be used as the B volume.",
           "type": "string",
           "format": "Block Device ID"
@@ -107,7 +110,7 @@
       "required": [
         "device",
         "id",
-        "partition-table-type",
+        "partitionTableType",
         "partitions"
       ],
       "properties": {
@@ -120,7 +123,7 @@
           "type": "string",
           "format": "Block Device ID"
         },
-        "partition-table-type": {
+        "partitionTableType": {
           "description": "The partition table type of the disk. Supported values are: `gpt`.",
           "allOf": [
             {
@@ -142,12 +145,12 @@
       "description": "A LUKS2-encrypted volume configuration.",
       "type": "object",
       "required": [
-        "device-name",
+        "deviceName",
         "id",
-        "target-id"
+        "targetId"
       ],
       "properties": {
-        "device-name": {
+        "deviceName": {
           "description": "The name of the device to create under `/dev/mapper` when opening the volume.\n\nThis parameter is required. It must be a valid file name and unique among the list of encrypted volumes.",
           "type": "string"
         },
@@ -156,7 +159,7 @@
           "type": "string",
           "format": "Block Device ID"
         },
-        "target-id": {
+        "targetId": {
           "description": "The id of the disk partition or software raid array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but `root` and `efi`.\n\nIf it refers to a software raid array, the first disk partition of the software raid array must be of a supported type.",
           "type": "string",
           "format": "Block Device ID"
@@ -171,7 +174,7 @@
         "volumes"
       ],
       "properties": {
-        "recovery-key-url": {
+        "recoveryKeyUrl": {
           "description": "A URL to the file containing the recovery key to use for encryption.\n\nThis parameter is optional but highly encouraged. If not specified, only the TPM2 device will be enrolled.\n\n`file` is the only currently supported URL scheme. The contents of the key serve as the key. It must be in plain text and not encoded.",
           "type": "string",
           "nullable": true
@@ -192,7 +195,7 @@
       "required": [
         "format",
         "sha256",
-        "target-id",
+        "targetId",
         "url"
       ],
       "properties": {
@@ -208,7 +211,7 @@
           "description": "The SHA256 checksum of the image.\n\nThis is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string. Temporarily, you can pass `ignored` to skip the checksum verification.",
           "type": "string"
         },
-        "target-id": {
+        "targetId": {
           "description": "The ID of the partition that will be used to store the image.",
           "type": "string",
           "format": "Block Device ID"
@@ -244,7 +247,7 @@
       "description": "The Management configuration controls the installation of the Trident agent onto the runtime OS.",
       "type": "object",
       "properties": {
-        "datastore-path": {
+        "datastorePath": {
           "description": "Describes where to place the datastore Trident will use to store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.",
           "type": "string",
           "nullable": true
@@ -254,7 +257,7 @@
           "default": false,
           "type": "boolean"
         },
-        "enable-grpc": {
+        "enableGrpc": {
           "description": "Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.",
           "type": "boolean"
         },
@@ -263,7 +266,7 @@
           "type": "string",
           "nullable": true
         },
-        "self-upgrade": {
+        "selfUpgrade": {
           "description": "(FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should upgrade itself. If set to `true`, Trident will replicate itself into the runtime OS prior to transitioning. This is useful during development to ensure the matching version of Trident is used. Defaults to `false`.",
           "default": false,
           "type": "boolean"
@@ -278,7 +281,7 @@
         "filesystem",
         "options",
         "path",
-        "target-id"
+        "targetId"
       ],
       "properties": {
         "filesystem": {
@@ -296,7 +299,7 @@
           "description": "The path of the mount point.\n\nThis is the path where the volume will be mounted in the runtime OS. For `swap` partitions, the path should be `none`.",
           "type": "string"
         },
-        "target-id": {
+        "targetId": {
           "description": "The id of the block device that will be mounted at this mount point.\n\nThis parameter is required. It must be the ID of a disk partition, encrypted volume, software raid array, or a/b update volume pair.",
           "type": "string",
           "format": "Block Device ID"
@@ -311,9 +314,9 @@
         "users": {
           "title": "Users",
           "description": "Map of users to configure on the host. The key is the username.",
-          "default": {},
-          "type": "object",
-          "additionalProperties": {
+          "default": [],
+          "type": "array",
+          "items": {
             "$ref": "#/definitions/User"
           }
         }
@@ -528,14 +531,14 @@
       "required": [
         "content",
         "name",
-        "servicing-type"
+        "servicingType"
       ],
       "properties": {
         "content": {
           "description": "The contents of the script.",
           "type": "string"
         },
-        "environment-variables": {
+        "environmentVariables": {
           "description": "Environment variables that are needed by the script. These will be set before running the script. UPDATE_KIND and TARGET_ROOT values are set by default to use.",
           "type": "object",
           "additionalProperties": {
@@ -547,7 +550,7 @@
           "type": "string",
           "nullable": true
         },
-        "log-file-path": {
+        "logFilePath": {
           "description": "Path of a file to write the script's output to.\n\nThis includes both stdout and stderr. The path and file will be created if they don't exist. If the file already exists, it will be truncated.",
           "type": "string",
           "nullable": true
@@ -556,7 +559,7 @@
           "description": "Name of the script.",
           "type": "string"
         },
-        "servicing-type": {
+        "servicingType": {
           "description": "List of servicing_type to run the script with.",
           "type": "array",
           "items": {
@@ -570,14 +573,14 @@
       "description": "Scripts that can be run on the host during Trident stages. These scripts are run in the order they are defined. Ensure that the scripts are idempotent as they may be run multiple times.",
       "type": "object",
       "properties": {
-        "post-configure": {
+        "postConfigure": {
           "description": "Scripts to be run after Trident configuration stage is complete.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Script"
           }
         },
-        "post-provision": {
+        "postProvision": {
           "description": "Scripts to be run after Trident provision stage is complete.",
           "type": "array",
           "items": {
@@ -605,7 +608,7 @@
         "devices",
         "id",
         "level",
-        "metadata-version",
+        "metadataVersion",
         "name"
       ],
       "properties": {
@@ -630,7 +633,7 @@
             }
           ]
         },
-        "metadata-version": {
+        "metadataVersion": {
           "description": "Metadata of the RAID array.\n\nSupported and tested values are `1.0`. Note that this is a string attribute.",
           "type": "string"
         },
@@ -665,7 +668,7 @@
       "description": "Storage configuration describes the disks of the host that will be used to store the OS and data. Not all disks of the host need to be captured inside the Host Configuration, only those that Trident should operate on.",
       "type": "object",
       "properties": {
-        "ab-update": {
+        "abUpdate": {
           "description": "A/B update configuration.",
           "allOf": [
             {
@@ -697,7 +700,7 @@
             "$ref": "#/definitions/Image"
           }
         },
-        "mount-points": {
+        "mountPoints": {
           "description": "Mount point configuration.",
           "type": "array",
           "items": {
@@ -718,6 +721,9 @@
     "User": {
       "description": "Configuration for a specific user.",
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "groups": {
           "description": "List of groups to add the user to. **(IN DEVELOPMENT)**",
@@ -725,6 +731,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "name": {
+          "description": "Username",
+          "type": "string"
         },
         "password": {
           "description": "Password configuration.",
@@ -734,14 +744,14 @@
             }
           ]
         },
-        "ssh-keys": {
+        "sshKeys": {
           "description": "List of SSH keys to add to the user's authorized keys. **(IN DEVELOPMENT)**",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
-        "ssh-mode": {
+        "sshMode": {
           "description": "SSH configuration for the user. **(IN DEVELOPMENT)**",
           "allOf": [
             {

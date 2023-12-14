@@ -21,7 +21,7 @@ mod serde_size;
 /// store the OS and data. Not all disks of the host need to be captured inside
 /// the Host Configuration, only those that Trident should operate on.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Storage {
     /// A list of disks that will be used for the host.
@@ -51,7 +51,7 @@ pub struct Storage {
 
 /// Per disk configuration.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Disk {
     /// A unique identifier for the disk. This is a user defined string that
@@ -90,7 +90,7 @@ pub enum PartitionTableType {
 
 /// Per partition configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Partition {
     /// A unique identifier for the partition.
@@ -235,7 +235,7 @@ impl PartitionType {
 /// Configure encrypted volumes of underlying disk partitions or software
 /// raid arrays.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Encryption {
     /// A URL to the file containing the recovery key to use for
@@ -261,7 +261,7 @@ pub struct Encryption {
 
 /// A LUKS2-encrypted volume configuration.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct EncryptedVolume {
     /// The id of the LUKS-encrypted volumes to create.
@@ -296,7 +296,7 @@ pub struct EncryptedVolume {
 
 /// RAID configuration for a host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct RaidConfig {
     /// Individual software raid configurations.
@@ -319,7 +319,7 @@ pub struct RaidConfig {
 /// To learn more about `mdadm`, please refer to the [mdadm
 /// guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct SoftwareRaidArray {
     /// A unique identifier for the RAID array.
@@ -388,7 +388,7 @@ pub enum RaidLevel {
 /// These are used by Trident to update the `/etc/fstab` in the runtime OS to
 /// correctly mount the volumes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct MountPoint {
     /// The path of the mount point.

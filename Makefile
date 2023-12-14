@@ -13,7 +13,7 @@ build:
 
 .PHONY: test
 test:
-	cargo test --all
+	cargo test --all --no-fail-fast 
 
 .PHONY: coverage
 coverage:

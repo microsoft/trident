@@ -3,13 +3,13 @@
 
 management:
   disable: false
-  self-upgrade: false
+  selfUpgrade: false
   phonehome: null
 storage:
   disks:
   - id: os
     device: /dev/disk/by-path/pci-0000:00:1f.2-ata-1.0
-    partition-table-type: gpt
+    partitionTableType: gpt
     partitions:
     - id: esp
       type: esp
@@ -36,11 +36,11 @@ storage:
       type: linux-generic
       size: 1G
   encryption:
-    recovery-key-url: file:///recovery.key
+    recoveryKeyUrl: file:///recovery.key
     volumes:
     - id: srv
-      device-name: luks-srv
-      target-id: enc-srv
+      deviceName: luks-srv
+      targetId: enc-srv
   raid:
     software:
     - id: some_raid
@@ -49,52 +49,52 @@ storage:
       devices:
       - raid-a
       - raid-b
-      metadata-version: '1.0'
-  mount-points:
+      metadataVersion: '1.0'
+  mountPoints:
   - path: /boot/efi
     filesystem: vfat
     options:
     - umask=0077
-    target-id: esp
+    targetId: esp
   - path: /
     filesystem: ext4
     options:
     - defaults
-    target-id: root
+    targetId: root
   - path: /var/lib/trident
     filesystem: ext4
     options:
     - defaults
-    target-id: trident
+    targetId: trident
   - path: none
     filesystem: swap
     options:
     - sw
-    target-id: swap
+    targetId: swap
   - path: /srv
     filesystem: ext4
     options:
     - defaults
-    target-id: srv
+    targetId: srv
   - path: /mnt/raid
     filesystem: ext4
     options:
     - defaults
-    target-id: some_raid
-  ab-update:
-    volume-pairs:
+    targetId: some_raid
+  abUpdate:
+    volumePairs:
     - id: root
-      volume-a-id: root-a
-      volume-b-id: root-b
+      volumeAId: root-a
+      volumeBId: root-b
   images:
   - url: file:///boot.raw.zst
     sha256: cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8
     format: raw-zstd
-    target-id: esp
+    targetId: esp
   - url: file:///root.raw.zst
     sha256: fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d
     format: raw-zstd
-    target-id: root
+    targetId: root
 network:
   version: 2
   ethernets:
@@ -103,25 +103,25 @@ network:
         name: enp*
       dhcp4: true
 scripts:
-  post-provision:
+  postProvision:
   - name: sample-provision-script
-    servicing-type:
+    servicingType:
     - clean-install
     - ab-update
     content: echo 'Post provision!'
-    log-file-path: /var/log/sample-provision-script.log
-  post-configure:
+    logFilePath: /var/log/sample-provision-script.log
+  postConfigure:
   - name: sample-configure-script
-    servicing-type:
+    servicingType:
     - all
     content: echo 'Post configuration!'
-    log-file-path: /var/log/sample-configure-script.log
-    environment-variables:
+    logFilePath: /var/log/sample-configure-script.log
+    environmentVariables:
       SAMPLE_VARIABLE: sample-variable-value
 osconfig:
   users:
-    my-new-user:
-      ssh-keys:
-      - <MY_PUBLIC_SSH_KEY>
-      ssh-mode: key-only
+  - name: my-custom-user
+    sshKeys:
+    - <MY_PUBLIC_SSH_KEY>
+    sshMode: key-only
 

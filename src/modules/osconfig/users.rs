@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -14,7 +13,7 @@ use trident_api::config::{Password, SshMode, User};
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";
 const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
 
-pub(super) fn set_up_users(mut users: HashMap<String, User>) -> Result<(), Error> {
+pub(super) fn set_up_users(mut users: Vec<User>) -> Result<(), Error> {
     if Path::new(SSHD_CONFIG_FILE).exists() {
         debug!("Setting up sshd config...");
 
@@ -48,9 +47,9 @@ pub(super) fn set_up_users(mut users: HashMap<String, User>) -> Result<(), Error
         // Make a list of users that have non-default ssh modes
         let users_with_ssh = users
             .iter()
-            .filter_map(|(name, data)| {
-                if data.ssh_mode != SshMode::Block {
-                    Some(name.as_str())
+            .filter_map(|user| {
+                if user.ssh_mode != SshMode::Block {
+                    Some(user.name.as_str())
                 } else {
                     None
                 }
@@ -67,9 +66,9 @@ pub(super) fn set_up_users(mut users: HashMap<String, User>) -> Result<(), Error
         // Maybe that's intentional. Maybe they are using them for something else?
         let users_with_ssh_keys = users
             .iter()
-            .filter_map(|(name, data)| {
-                if !data.ssh_keys.is_empty() {
-                    Some(name.as_str())
+            .filter_map(|user| {
+                if !user.ssh_keys.is_empty() {
+                    Some(user.name.as_str())
                 } else {
                     None
                 }
@@ -89,17 +88,18 @@ pub(super) fn set_up_users(mut users: HashMap<String, User>) -> Result<(), Error
     debug!("Setting up users...");
 
     // Take care of root separately
-    if let Some(root_user) = users.remove("root") {
+    if let Some(index) = users.iter().position(|user| user.name == "root") {
+        let root_user = users.swap_remove(index);
         configure_root_user(root_user).context("Failed to set up root user")?;
     }
 
     // Set up all other users
-    users.into_iter().try_for_each(|(name, user)| {
-        configure_user(&name, user).context(format!("Failed to set up user {}", name))
+    users.into_iter().try_for_each(|user| {
+        configure_user(&user).context(format!("Failed to set up user {}", user.name))
     })
 }
 
-fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
+fn ssh_global_config(users: &[User]) -> Result<(), Error> {
     let mut buffer = Vec::new();
 
     // Globally block passwords
@@ -107,7 +107,7 @@ fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
     buffer.push("KbdInteractiveAuthentication no".to_owned());
 
     // Set root login mode
-    if let Some(root_user) = users.get("root") {
+    if let Some(root_user) = users.iter().find(|u| u.name == "root") {
         buffer.push(format!(
             "PermitRootLogin {}",
             match root_user.ssh_mode {
@@ -122,11 +122,11 @@ fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
     // List of users that are allowed to login through SSH
     let allowusers = users
         .iter()
-        .filter_map(|(name, user)| {
+        .filter_map(|user| {
             if user.ssh_mode == SshMode::Block {
                 None
             } else {
-                Some(name.as_str())
+                Some(user.name.as_str())
             }
         })
         .collect::<Vec<_>>();
@@ -144,9 +144,9 @@ fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
         // List of users that are allowed to login through SSH with password
         let pwd_users = users
             .iter()
-            .filter_map(|(name, user)| match user.ssh_mode {
+            .filter_map(|user| match user.ssh_mode {
                 SshMode::Block | SshMode::KeyOnly => None,
-                SshMode::DangerousAllowPassword => Some(name.as_str()),
+                SshMode::DangerousAllowPassword => Some(user.name.as_str()),
             })
             .collect::<Vec<_>>();
 
@@ -175,7 +175,7 @@ fn ssh_global_config(users: &HashMap<String, User>) -> Result<(), Error> {
     Ok(())
 }
 
-fn set_password(name: &str, password: Password) -> Result<(), Error> {
+fn set_password(name: &str, password: &Password) -> Result<(), Error> {
     match password {
         #[cfg(feature = "dangerous-options")]
         Password::DangerousPlainText(password) => {
@@ -210,7 +210,7 @@ fn set_password(name: &str, password: Password) -> Result<(), Error> {
     Ok(())
 }
 
-fn set_ssh_keys<P>(home: P, name: &str, keys: Vec<String>) -> Result<(), Error>
+fn set_ssh_keys<P>(home: P, name: &str, keys: &Vec<String>) -> Result<(), Error>
 where
     P: AsRef<Path>,
 {
@@ -260,41 +260,51 @@ where
 }
 
 fn configure_root_user(root_metadata: User) -> Result<(), Error> {
-    set_password("root", root_metadata.password)?;
-    set_ssh_keys("/root", "root", root_metadata.ssh_keys)
+    set_password("root", &root_metadata.password)?;
+    set_ssh_keys("/root", "root", &root_metadata.ssh_keys)
         .context("Failed to set ssh keys for user root")?;
 
     Ok(())
 }
 
-fn configure_user(name: &str, user: User) -> Result<(), Error> {
-    warn!("Configuring user {name}");
+fn configure_user(user: &User) -> Result<(), Error> {
+    warn!("Configuring user {}", user.name);
 
     // Set homedir to be /home/<username>
-    let homedir = PathBuf::from("/home").join(name);
+    let homedir = PathBuf::from("/home").join(&user.name);
 
     // Create the user
-    let result = cmd!("useradd", "-m", "-s", "/bin/bash", "-d", &homedir, name).run()?;
+    let result = cmd!(
+        "useradd",
+        "-m",
+        "-s",
+        "/bin/bash",
+        "-d",
+        &homedir,
+        &user.name
+    )
+    .run()?;
+
     // Proceed if user is created successfully or if the user already exists
     if !result.status.success() && result.status.code() != Some(9) {
         result
             .check()
-            .context(format!("Failed to create user {}", name))?;
+            .context(format!("Failed to create user {}", user.name))?;
     }
 
-    set_password(name, user.password)?;
+    set_password(&user.name, &user.password)?;
 
     // Add the user to the groups
-    for group in user.groups {
-        let args = vec!["-a", "-G", &group, name];
-        duct::cmd("usermod", args)
-            .run()?
-            .check()
-            .context(format!("Failed to add user {} to group {}", name, group))?;
+    for group in user.groups.as_slice() {
+        let args = vec!["-a", "-G", group, &user.name];
+        duct::cmd("usermod", args).run()?.check().context(format!(
+            "Failed to add user {} to group {}",
+            user.name, group
+        ))?;
     }
 
-    set_ssh_keys(&homedir, name, user.ssh_keys)
-        .context(format!("Failed to set ssh keys for user {}", name))?;
+    set_ssh_keys(&homedir, &user.name, &user.ssh_keys)
+        .context(format!("Failed to set ssh keys for user {}", user.name))?;
 
     Ok(())
 }

@@ -10,7 +10,7 @@ use super::host::HostConfiguration;
 
 /// Definition of Trident's full configuration.
 #[derive(Serialize, Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LocalConfigFile {
     /// Optional URL to reach out to when networking is up, so Trident
     /// can report its status. This is useful for debugging and monitoring purposes,
@@ -187,7 +187,7 @@ pub enum HostConfigurationSource {
 
 /// GrpcConfiguration is the configuration for the gRPC server.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GrpcConfiguration {
     /// Port for the gRPC server (defaults to 50051 if not set).
     pub listen_port: Option<u16>,
@@ -195,7 +195,7 @@ pub struct GrpcConfiguration {
 
 bitflags::bitflags! {
     #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-    #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Operations: u32 {
         /// Trident will update the host based on the host configuration,
         /// but it will not transition the host to the new configuration. This is useful
@@ -222,8 +222,8 @@ mod tests {
     fn test_grpc_and_embedded_host_config() {
         let local_config_yaml = indoc! {r#"
             grpc:
-              listen-port: null
-            host-configuration:
+              listenPort: null
+            hostConfiguration:
               management:
                 disable: true
         "#};
@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn test_host_config_source() {
         let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
-            host-configuration:
+            hostConfiguration:
               management:
                 disable: true
         "#})
@@ -257,7 +257,7 @@ mod tests {
         ));
 
         let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
-            host-configuration-file: /tmp/foo.yaml
+            hostConfigurationFile: /tmp/foo.yaml
         "#})
         .unwrap();
 
@@ -288,7 +288,7 @@ mod tests {
         ));
 
         let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
-            kickstart-file: /tmp/foo.yaml
+            kickstartFile: /tmp/foo.yaml
         "#})
         .unwrap();
 
@@ -306,10 +306,10 @@ mod tests {
     #[test]
     fn test_single_host_config_source() {
         let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
-            host-configuration:
+            hostConfiguration:
               management:
                 disable: true
-            host-configuration-file: /tmp/foo.yaml
+            hostConfigurationFile: /tmp/foo.yaml
         "#})
         .unwrap();
 
