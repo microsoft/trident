@@ -28,6 +28,10 @@ pub struct Storage {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disks: Vec<Disk>,
 
+    /// Encryption configuration.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub encryption: Option<Encryption>,
+
     /// RAID configuration.
     #[serde(default, skip_serializing_if = "is_default")]
     pub raid: RaidConfig,
@@ -228,6 +232,68 @@ impl PartitionType {
     }
 }
 
+/// Configure encrypted volumes of underlying disk partitions or software
+/// raid arrays.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub struct Encryption {
+    /// A URL to the file containing the recovery key to use for
+    /// encryption.
+    ///
+    /// This parameter is optional but highly encouraged. If not
+    /// specified, only the TPM2 device will be enrolled.
+    ///
+    /// `file` is the only currently supported URL scheme. The contents of
+    /// the key serve as the key. It must be in plain text and not
+    /// encoded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_key_url: Option<String>,
+
+    /// The list of LUKS2-encrypted volumes to create.
+    ///
+    /// This parameter is required and must not be empty. Each item is an
+    /// object that will contain the configuration for a given partition
+    /// or RAID array.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub volumes: Vec<EncryptedVolume>,
+}
+
+/// A LUKS2-encrypted volume configuration.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub struct EncryptedVolume {
+    /// The id of the LUKS-encrypted volumes to create.
+    ///
+    /// This parameter is required. It must be non-empty and unique among
+    /// the ids of all block devices in the host configuration. This
+    /// includes the ids of all disk partitions, encrypted volumes,
+    /// software raid arrays, and a/b upgrade volume pairs.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
+    pub id: BlockDeviceId,
+
+    /// The name of the device to create under `/dev/mapper` when opening
+    /// the volume.
+    ///
+    /// This parameter is required. It must be a valid file name and
+    /// unique among the list of encrypted volumes.
+    pub device_name: String,
+
+    /// The id of the disk partition or software raid array to encrypt.
+    ///
+    /// This parameter is required. It must be unique among the list of
+    /// encrypted volumes.
+    ///
+    /// If it refers to a disk partition, it must be of a supported type.
+    /// Supported types are all but `root` and `efi`.
+    ///
+    /// If it refers to a software raid array, the first disk partition of
+    /// the software raid array must be of a supported type.
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
+    pub target_id: BlockDeviceId,
+}
+
 /// RAID configuration for a host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -341,7 +407,11 @@ pub struct MountPoint {
     /// These will be passed as is to the `/etc/fstab` file.
     pub options: Vec<String>,
 
-    /// The ID of the partition that will be mounted at this mount point.
+    /// The id of the block device that will be mounted at this mount
+    /// point.
+    ///
+    /// This parameter is required. It must be the ID of a disk partition,
+    /// encrypted volume, software raid array, or a/b update volume pair.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub target_id: BlockDeviceId,
 }
@@ -729,6 +799,7 @@ mod tests {
                     volume_b_id: "part2".to_owned(),
                 }],
             }),
+            encryption: None,
         };
         storage.validate().unwrap();
 

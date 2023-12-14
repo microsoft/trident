@@ -7,8 +7,8 @@ pub use host::{
     scripts::{Script, Scripts, ServicingType},
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat},
     storage::{
-        Disk, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType, RaidConfig,
-        RaidLevel, SoftwareRaidArray, Storage,
+        Disk, EncryptedVolume, Encryption, MountPoint, Partition, PartitionSize,
+        PartitionTableType, PartitionType, RaidConfig, RaidLevel, SoftwareRaidArray, Storage,
     },
     HostConfiguration,
 };

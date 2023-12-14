@@ -369,6 +369,7 @@ mod tests {
                         volume_b_id: "part2".to_owned(),
                     }],
                 }),
+                encryption: None,
             },
             ..Default::default()
         };

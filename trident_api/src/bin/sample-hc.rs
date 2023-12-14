@@ -5,9 +5,10 @@ use netplan_types::{
     NetworkConfig,
 };
 use trident_api::config::{
-    AbUpdate, AbVolumePair, Disk, HostConfiguration, Image, ImageFormat, MountPoint, OsConfig,
-    Partition, PartitionSize, PartitionTableType, PartitionType, RaidConfig, RaidLevel, Script,
-    Scripts, ServicingType, SoftwareRaidArray, SshMode, Storage, User,
+    AbUpdate, AbVolumePair, Disk, EncryptedVolume, Encryption, HostConfiguration, Image,
+    ImageFormat, MountPoint, OsConfig, Partition, PartitionSize, PartitionTableType, PartitionType,
+    RaidConfig, RaidLevel, Script, Scripts, ServicingType, SoftwareRaidArray, SshMode, Storage,
+    User,
 };
 
 fn main() {
@@ -52,6 +53,11 @@ fn build_host_configuration() -> HostConfiguration {
                         size: PartitionSize::Fixed(0x40000000), // 1GiB
                     },
                     Partition {
+                        id: "enc-srv".to_string(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: PartitionSize::Fixed(0x40000000), // 1GiB
+                    },
+                    Partition {
                         id: "raid-a".to_string(),
                         partition_type: PartitionType::LinuxGeneric,
                         size: PartitionSize::Fixed(0x40000000), // 1GiB
@@ -63,6 +69,14 @@ fn build_host_configuration() -> HostConfiguration {
                     },
                 ],
             }],
+            encryption: Some(Encryption {
+                recovery_key_url: Some("file:///recovery.key".into()),
+                volumes: vec![EncryptedVolume {
+                    id: "srv".to_string(),
+                    device_name: "luks-srv".to_string(),
+                    target_id: "enc-srv".to_string(),
+                }],
+            }),
             raid: RaidConfig {
                 software: vec![SoftwareRaidArray {
                     id: "some_raid".to_string(),
@@ -96,6 +110,12 @@ fn build_host_configuration() -> HostConfiguration {
                     target_id: "swap".into(),
                     filesystem: "swap".into(),
                     options: vec!["sw".into()],
+                },
+                MountPoint {
+                    path: "/srv".into(),
+                    target_id: "srv".into(),
+                    filesystem: "ext4".into(),
+                    options: vec!["defaults".into()],
                 },
                 MountPoint {
                     path: "/mnt/raid".into(),
@@ -193,8 +213,14 @@ mod tests {
     fn test_build_host_configuration() {
         let host_configuration = build_host_configuration();
         assert_eq!(host_configuration.storage.disks.len(), 1);
+
+        assert!(host_configuration.storage.encryption.is_some());
+        if let Some(encryption) = &host_configuration.storage.encryption {
+            assert_eq!(encryption.volumes.len(), 1);
+        }
+
         assert_eq!(host_configuration.storage.raid.software.len(), 1);
-        assert_eq!(host_configuration.storage.mount_points.len(), 5);
+        assert_eq!(host_configuration.storage.mount_points.len(), 6);
         assert_eq!(host_configuration.storage.images.len(), 2);
         assert!(host_configuration.storage.ab_update.is_some());
         assert!(host_configuration.network.is_some());

@@ -138,6 +138,54 @@
       },
       "additionalProperties": false
     },
+    "EncryptedVolume": {
+      "description": "A LUKS2-encrypted volume configuration.",
+      "type": "object",
+      "required": [
+        "device-name",
+        "id",
+        "target-id"
+      ],
+      "properties": {
+        "device-name": {
+          "description": "The name of the device to create under `/dev/mapper` when opening the volume.\n\nThis parameter is required. It must be a valid file name and unique among the list of encrypted volumes.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The id of the LUKS-encrypted volumes to create.\n\nThis parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software raid arrays, and a/b upgrade volume pairs.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "target-id": {
+          "description": "The id of the disk partition or software raid array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but `root` and `efi`.\n\nIf it refers to a software raid array, the first disk partition of the software raid array must be of a supported type.",
+          "type": "string",
+          "format": "Block Device ID"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Encryption": {
+      "description": "Configure encrypted volumes of underlying disk partitions or software raid arrays.",
+      "type": "object",
+      "required": [
+        "volumes"
+      ],
+      "properties": {
+        "recovery-key-url": {
+          "description": "A URL to the file containing the recovery key to use for encryption.\n\nThis parameter is optional but highly encouraged. If not specified, only the TPM2 device will be enrolled.\n\n`file` is the only currently supported URL scheme. The contents of the key serve as the key. It must be in plain text and not encoded.",
+          "type": "string",
+          "nullable": true
+        },
+        "volumes": {
+          "description": "The list of LUKS2-encrypted volumes to create.\n\nThis parameter is required and must not be empty. Each item is an object that will contain the configuration for a given partition or RAID array.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EncryptedVolume"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "Image": {
       "description": "Per image configuration.",
       "type": "object",
@@ -249,7 +297,7 @@
           "type": "string"
         },
         "target-id": {
-          "description": "The ID of the partition that will be mounted at this mount point.",
+          "description": "The id of the block device that will be mounted at this mount point.\n\nThis parameter is required. It must be the ID of a disk partition, encrypted volume, software raid array, or a/b update volume pair.",
           "type": "string",
           "format": "Block Device ID"
         }
@@ -632,6 +680,15 @@
           "items": {
             "$ref": "#/definitions/Disk"
           }
+        },
+        "encryption": {
+          "description": "Encryption configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Encryption"
+            }
+          ],
+          "nullable": true
         },
         "images": {
           "description": "A list of images to be written to the host.",

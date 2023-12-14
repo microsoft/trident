@@ -26,12 +26,21 @@ storage:
     - id: trident
       type: linux-generic
       size: 1G
+    - id: enc-srv
+      type: linux-generic
+      size: 1G
     - id: raid-a
       type: linux-generic
       size: 1G
     - id: raid-b
       type: linux-generic
       size: 1G
+  encryption:
+    recovery-key-url: file:///recovery.key
+    volumes:
+    - id: srv
+      device-name: luks-srv
+      target-id: enc-srv
   raid:
     software:
     - id: some_raid
@@ -62,6 +71,11 @@ storage:
     options:
     - sw
     target-id: swap
+  - path: /srv
+    filesystem: ext4
+    options:
+    - defaults
+    target-id: srv
   - path: /mnt/raid
     filesystem: ext4
     options:
