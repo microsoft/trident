@@ -58,9 +58,17 @@ steps:
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Check with all features
 
-  - script: cargo test --locked --all 2>&1
+  - script: |
+      set -eux
+      cargo install cargo-nextest --locked
+      cargo nextest run --all --profile ci
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Test Debug
+
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: "JUnit"
+      testResultsFiles: "${{ parameters.tridentSourceDirectory }}/target/nextest/ci/junit.xml"
 
   - script: |
       export TRIDENT_VERSION=$(trident_version)
