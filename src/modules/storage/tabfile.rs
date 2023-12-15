@@ -236,8 +236,8 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, HostConfiguration, Image, ImageFormat, MountPoint, Partition, PartitionSize,
-            PartitionTableType, PartitionType, Storage,
+            Disk, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, Partition,
+            PartitionSize, PartitionTableType, PartitionType, Storage,
         },
         status::{
             BlockDeviceContents, Disk as DiskStatus, HostStatus, Partition as PartitionStatus,
@@ -482,15 +482,19 @@ mod tests {
                 images: vec![
                     Image {
                         url: "file:///path/to/efi-image".to_owned(),
-                        sha256: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-                            .to_owned(),
+                        sha256: ImageSha256::Checksum(
+                            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                                .to_owned(),
+                        ),
                         format: ImageFormat::RawZstd,
                         target_id: "efi".into(),
                     },
                     Image {
                         url: "file:///path/to/root-image".to_owned(),
-                        sha256: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-                            .to_owned(),
+                        sha256: ImageSha256::Checksum(
+                            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                                .to_owned(),
+                        ),
                         format: ImageFormat::RawZstd,
                         target_id: "root".to_owned(),
                     },

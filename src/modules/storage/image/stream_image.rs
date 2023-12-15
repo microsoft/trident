@@ -10,7 +10,7 @@ use zstd;
 
 use super::HashingReader;
 use trident_api::{
-    config::Image,
+    config::{Image, ImageSha256},
     status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
@@ -121,15 +121,20 @@ pub(super) fn deploy(
 
     // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
     // SHA256 matches SHA256 in HostConfig
-    if image.sha256 == super::HASH_IGNORED {
-        info!("Ignoring SHA256 for image from '{}'", image.url);
-    } else if computed_sha256 != image.sha256 {
-        bail!(
-            "SHA256 mismatch for disk image {}: expected {}, got {}",
-            image.url,
-            image.sha256,
-            computed_sha256
-        );
+    match image.sha256 {
+        ImageSha256::Ignored => {
+            info!("Ignoring SHA256 for image from '{}'", image.url);
+        }
+        ImageSha256::Checksum(ref expected_sha256) => {
+            if computed_sha256 != *expected_sha256 {
+                bail!(
+                    "SHA256 mismatch for disk image {}: expected {}, got {}",
+                    image.url,
+                    expected_sha256,
+                    computed_sha256
+                );
+            }
+        }
     }
 
     Ok(())

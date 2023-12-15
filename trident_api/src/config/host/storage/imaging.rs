@@ -21,9 +21,14 @@ pub struct Image {
     /// The SHA256 checksum of the image.
     ///
     /// This is used to verify the integrity of the image.
-    /// The checksum is a 64 character hexadecimal string.
-    /// Temporarily, you can pass `ignored` to skip the checksum verification.
-    pub sha256: String,
+    ///
+    /// Accepted values:
+    ///
+    /// - 64-character hexadecimal string (case insensitive)
+    ///
+    /// - `ignored` to skip the checksum verification
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    pub sha256: ImageSha256,
 
     /// The format of the image.
     pub format: ImageFormat,
@@ -31,6 +36,20 @@ pub struct Image {
     /// The ID of the partition that will be used to store the image.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub target_id: BlockDeviceId,
+}
+
+/// Image SHA256 checksum.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum ImageSha256 {
+    /// The SHA256 checksum of the image.
+    ///
+    /// This is used to verify the integrity of the image.
+    /// The checksum is a 64 character hexadecimal string.
+    Checksum(String),
+
+    /// You can pass `ignored` to skip the checksum verification.
+    Ignored,
 }
 
 /// Image format.

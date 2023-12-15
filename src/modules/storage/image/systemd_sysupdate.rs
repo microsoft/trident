@@ -27,7 +27,7 @@ use tempfile;
 
 use crate::{modules, Path};
 use trident_api::{
-    config::{Image, PartitionType},
+    config::{Image, ImageSha256, PartitionType},
     status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, Partition},
     BlockDeviceId,
 };
@@ -718,36 +718,54 @@ fn get_partlabel_from_path(partition_path: &str) -> Result<String, Error> {
     bail!("No PARTLABEL found on block device '{}'", &partition_path)
 }
 
-/// Returns directory as PathBuf and filename as String from image URL.
-pub(super) fn get_local_image(image_url: &Url, image: &Image) -> Result<(PathBuf, String), Error> {
+/// Open & process a local image file
+///
+/// Takes in a URL to a local image, and an Image struct. Attempts to open the
+/// image, checks its sha256 checksum.
+///
+/// Returns a tuple of (directory, filename, computed sha256), where directory
+/// is a PathBuf, filename is a String, and sha256 is a String.
+pub(super) fn get_local_image(
+    image_url: &Url,
+    image: &Image,
+) -> Result<(PathBuf, String, String), Error> {
     // Open local image file and read it into a stream of bytes
     let stream: Box<dyn Read> =
         Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?);
-    // If SHA256 is ignored, log message and skip hash validation; otherwise, use HashingReader
-    // to compute sha256 hash of stream and ensure it is the same as hash in HostConfig
-    if image.sha256 == super::HASH_IGNORED {
-        info!("Ignoring SHA256 for image from '{}'", image.url);
-    } else {
-        // Initialize HashingReader instance on stream
-        let stream = HashingReader::new(stream);
-        if stream.hash() != image.sha256 {
-            bail!(
-                "SHA256 mismatch for disk image {}: expected {}, got {}",
-                image.url,
-                image.sha256,
-                stream.hash()
-            );
+
+    // Use HashingReader to compute sha256 hash of stream
+    let stream = HashingReader::new(stream);
+    let computed_sha256 = stream.hash();
+
+    // If SHA256 is ignored, log message and skip hash validation; otherwise,
+    // ensure it is the same as hash in HostConfig
+    match image.sha256 {
+        ImageSha256::Ignored => {
+            info!("Ignoring SHA256 for image from '{}'", image.url);
+        }
+        ImageSha256::Checksum(ref expected_sha256) => {
+            if computed_sha256 != *expected_sha256 {
+                bail!(
+                    "SHA256 mismatch for disk image {}: expected {}, got {}",
+                    image.url,
+                    image.sha256,
+                    stream.hash()
+                );
+            }
         }
     }
+
     // Convert image URL to file path
     let path = image_url
         .to_file_path()
         .map_err(|_| anyhow::anyhow!("Failed to convert URL to file path"))?;
+
     // Extract directory from URL path
     let directory = path.parent().context(format!(
         "Failed to extract local dir from URL path {}",
         path.display()
     ))?;
+
     // Extract filename as String from URL path
     let filename = path
         .file_name()
@@ -757,7 +775,7 @@ pub(super) fn get_local_image(image_url: &Url, image: &Image) -> Result<(PathBuf
             path.display()
         ))?;
 
-    Ok((directory.to_owned(), filename.to_string()))
+    Ok((directory.to_owned(), filename.to_string(), computed_sha256))
 }
 
 /// Call into systemd-sysupdate to update the partition with the given image.
@@ -766,6 +784,7 @@ pub(super) fn deploy(
     host_status: &mut HostStatus,
     directory: Option<&Path>,
     filename: Option<&str>,
+    sha256: Option<&str>,
 ) -> Result<(), Error> {
     debug!("Calling Systemd-Sysupdate sub-module to execute A/B update");
     // Create ImageDeployment instance
@@ -788,7 +807,10 @@ pub(super) fn deploy(
             host_status,
             &image.target_id,
             BlockDeviceContents::Image {
-                sha256: image.sha256.clone(),
+                // When available, use computed hash, otherwise do a best effort and use hash from HostConfig
+                sha256: sha256
+                    .map(|s| s.to_string())
+                    .unwrap_or(image.sha256.to_string()),
                 length: image_length,
                 url: image.url.clone(),
             },

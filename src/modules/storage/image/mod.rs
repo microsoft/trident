@@ -13,7 +13,7 @@ use std::{
 };
 
 use trident_api::{
-    config::{HostConfiguration, Image, ImageFormat},
+    config::{HostConfiguration, Image, ImageFormat, ImageSha256},
     status::{
         AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, Disk, HostStatus,
         Partition, RaidArray, ReconcileState,
@@ -27,8 +27,6 @@ pub mod mount;
 mod stream_image;
 mod systemd_sysupdate;
 mod update_grub;
-
-const HASH_IGNORED: &str = "ignored";
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
 struct HashingReader<R: Read>(R, sha2::Sha256);
@@ -116,7 +114,7 @@ fn update_images(
                             &image.target_id)
                     }
                     // Fetch directory and filename from image URL
-                    let (directory, filename) =
+                    let (directory, filename, computed_sha256) =
                         systemd_sysupdate::get_local_image(&image_url, image)?;
                     // Run helper func systemd_sysupdate::deploy() to execute A/B update; since image is
                     // local, pass directory and file name as arg-s
@@ -125,6 +123,7 @@ fn update_images(
                         host_status,
                         Some(directory.as_path()),
                         Some(filename.as_str()),
+                        Some(&computed_sha256),
                     )
                     .context(format!(
                         "Failed to deploy image {} via sysupdate",
@@ -173,10 +172,9 @@ fn update_images(
                     // Run helper func systemd_sysupdate::deploy() to execute A/B update; directory and file
                     // name arg-s are None to communicate that update image is published via URL,
                     // not locally
-                    systemd_sysupdate::deploy(image, host_status, None, None).context(format!(
-                        "Failed to deploy image {} via sysupdate",
-                        image.url
-                    ))?;
+                    systemd_sysupdate::deploy(image, host_status, None, None, None).context(
+                        format!("Failed to deploy image {} via sysupdate", image.url),
+                    )?;
                 }
 
                 // Otherwise, use direct streaming of image bytes onto the block device, by using
@@ -370,9 +368,10 @@ fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfigurat
     });
 }
 
-/// Returns a list of images that need to be updated/provisioned. This goes
-/// through the list of images in the HostConfiguration and compares them to the
-/// HostStatus. If an image is targetting an AB Volume Pair and
+/// Returns a list of images that need to be updated/provisioned.
+///
+/// This goes through the list of images in the HostConfiguration and compares
+/// them to the HostStatus. If an image is targeting an AB Volume Pair and
 /// active is true, it compared the image against the active volume, and if
 /// active is false it compares the image against the update volume (i.e. the
 /// one that isn't active).
@@ -388,7 +387,11 @@ fn get_undeployed_images<'a>(
         .filter(|image| {
             if let Some(bdi) = modules::get_block_device(host_status, &image.target_id, active) {
                 if let BlockDeviceContents::Image { sha256, url, .. } = bdi.contents {
-                    if url == image.url && (sha256 == image.sha256 || image.sha256 == HASH_IGNORED)
+                    if url == image.url
+                        && match image.sha256 {
+                            ImageSha256::Checksum(ref sha256sum) => *sha256sum == sha256,
+                            ImageSha256::Ignored => true,
+                        }
                     {
                         return false;
                     }
@@ -566,8 +569,8 @@ mod tests {
 
     use trident_api::{
         config::{
-            AbUpdate as AbUpdateConfig, AbVolumePair as AbVolumePairConfig, MountPoint,
-            PartitionType, Storage as StorageConfig,
+            AbUpdate as AbUpdateConfig, AbVolumePair as AbVolumePairConfig, ImageSha256,
+            MountPoint, PartitionType, Storage as StorageConfig,
         },
         status::{MountPoint as MountPointStatus, Storage, UpdateKind},
     };
@@ -640,13 +643,13 @@ mod tests {
                         url: "http://example.com/esp.img".to_string(),
                         target_id: "boot".to_string(),
                         format: ImageFormat::RawZstd,
-                        sha256: "foobar".to_string(),
+                        sha256: ImageSha256::Checksum("foobar".to_string()),
                     },
                     Image {
                         url: "http://example.com/image1.img".to_string(),
                         target_id: "root".to_string(),
                         format: ImageFormat::RawZstd,
-                        sha256: HASH_IGNORED.to_string(),
+                        sha256: ImageSha256::Ignored,
                     },
                 ],
                 ..Default::default()
@@ -719,26 +722,26 @@ mod tests {
         );
 
         // should be zero, as images and hashes are matching
-        host_config.storage.images[0].sha256 = "foobar".to_string();
+        host_config.storage.images[0].sha256 = ImageSha256::Checksum("foobar".to_string());
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false).len(),
             0
         );
 
         // should be one, as image hash is different
-        host_config.storage.images[0].sha256 = "barfoo".to_string();
+        host_config.storage.images[0].sha256 = ImageSha256::Checksum("barfoo".to_string());
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false),
             vec![&Image {
                 url: "http://example.com/esp.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZstd,
-                sha256: "barfoo".to_string(),
+                sha256: ImageSha256::Checksum("barfoo".to_string()),
             }]
         );
 
         // should be one, as image url is different
-        host_config.storage.images[0].sha256 = HASH_IGNORED.to_string();
+        host_config.storage.images[0].sha256 = ImageSha256::Ignored;
         host_config.storage.images[0].url = "http://example.com/image2.img".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false),
@@ -746,20 +749,20 @@ mod tests {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZstd,
-                sha256: "ignored".to_string(),
+                sha256: ImageSha256::Ignored,
             }]
         );
 
         // could be zero, as despite the url being different, the hash is the
         // same; for now though we reimage to be safe, hence 1
-        host_config.storage.images[0].sha256 = "foobar".to_string();
+        host_config.storage.images[0].sha256 = ImageSha256::Checksum("foobar".to_string());
         assert_eq!(
             get_undeployed_images(&host_status, &host_config, false),
             vec![&Image {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZstd,
-                sha256: "foobar".to_string(),
+                sha256: ImageSha256::Checksum("foobar".to_string()),
             }]
         );
 
@@ -774,13 +777,13 @@ mod tests {
                     url: "http://example.com/image2.img".to_string(),
                     target_id: "boot".to_string(),
                     format: ImageFormat::RawZstd,
-                    sha256: "foobar".to_string(),
+                    sha256: ImageSha256::Checksum("foobar".to_string()),
                 },
                 &Image {
                     url: "http://example.com/image1.img".to_string(),
                     target_id: "root".to_string(),
                     format: ImageFormat::RawZstd,
-                    sha256: "ignored".to_string(),
+                    sha256: ImageSha256::Ignored,
                 }
             ]
         );
@@ -807,13 +810,13 @@ mod tests {
                         url: "http://example.com/esp.img".to_string(),
                         target_id: "boot".to_string(),
                         format: ImageFormat::RawZstd,
-                        sha256: "foobar".to_string(),
+                        sha256: ImageSha256::Checksum("foobar".to_string()),
                     },
                     Image {
                         url: "http://example.com/image1.img".to_string(),
                         target_id: "root".to_string(),
                         format: ImageFormat::RawZstd,
-                        sha256: HASH_IGNORED.to_string(),
+                        sha256: ImageSha256::Ignored,
                     },
                 ],
                 ab_update: Some(AbUpdateConfig {
@@ -892,7 +895,7 @@ mod tests {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZstd,
-                sha256: "ignored".to_string(),
+                sha256: ImageSha256::Ignored,
             }]
         );
 
@@ -903,7 +906,7 @@ mod tests {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZstd,
-                sha256: "ignored".to_string(),
+                sha256: ImageSha256::Ignored,
             }]
         );
 
@@ -943,7 +946,7 @@ mod tests {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZstd,
-                sha256: "ignored".to_string(),
+                sha256: ImageSha256::Ignored,
             }]
         );
     }

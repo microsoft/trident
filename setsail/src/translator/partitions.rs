@@ -2,7 +2,7 @@ use std::path::Path;
 use std::{collections::HashMap, path::PathBuf};
 
 use trident_api::config::{
-    Disk, HostConfiguration, Image, ImageFormat, MountPoint, Partition, PartitionSize,
+    Disk, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, Partition, PartitionSize,
     PartitionTableType, PartitionType,
 };
 
@@ -110,7 +110,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
         if let Some(img) = part.image.as_ref() {
             images.push(Image {
                 url: img.clone(),
-                sha256: "ignored".to_string(),
+                sha256: ImageSha256::Ignored,
                 format: ImageFormat::RawZstd,
                 target_id: partition_id.clone(),
             });

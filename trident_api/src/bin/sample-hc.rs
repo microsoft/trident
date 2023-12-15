@@ -6,9 +6,9 @@ use netplan_types::{
 };
 use trident_api::config::{
     AbUpdate, AbVolumePair, Disk, EncryptedVolume, Encryption, HostConfiguration, Image,
-    ImageFormat, MountPoint, OsConfig, Partition, PartitionSize, PartitionTableType, PartitionType,
-    RaidConfig, RaidLevel, Script, Scripts, ServicingType, SoftwareRaidArray, SshMode, Storage,
-    User,
+    ImageFormat, ImageSha256, MountPoint, OsConfig, Partition, PartitionSize, PartitionTableType,
+    PartitionType, RaidConfig, RaidLevel, Script, Scripts, ServicingType, SoftwareRaidArray,
+    SshMode, Storage, User,
 };
 
 fn main() {
@@ -127,15 +127,17 @@ fn build_host_configuration() -> HostConfiguration {
             images: vec![
                 Image {
                     url: "file:///boot.raw.zst".into(),
-                    sha256: "cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8"
-                        .into(),
+                    sha256: ImageSha256::Checksum(
+                        "cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8".into(),
+                    ),
                     format: ImageFormat::RawZstd,
                     target_id: "esp".into(),
                 },
                 Image {
                     url: "file:///root.raw.zst".into(),
-                    sha256: "fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d"
-                        .into(),
+                    sha256: ImageSha256::Checksum(
+                        "fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d".into(),
+                    ),
                     format: ImageFormat::RawZstd,
                     target_id: "root".into(),
                 },

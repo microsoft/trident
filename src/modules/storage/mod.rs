@@ -291,8 +291,8 @@ mod tests {
     use std::str::FromStr;
 
     use trident_api::config::{
-        Disk, HostConfiguration, Image, ImageFormat, Partition, PartitionSize, PartitionType,
-        RaidConfig, RaidLevel, SoftwareRaidArray, Storage,
+        Disk, HostConfiguration, Image, ImageFormat, ImageSha256, Partition, PartitionSize,
+        PartitionType, RaidConfig, RaidLevel, SoftwareRaidArray, Storage,
     };
 
     use super::*;
@@ -359,7 +359,7 @@ mod tests {
                 images: vec![Image {
                     target_id: "part1".to_owned(),
                     url: "".to_owned(),
-                    sha256: "".to_owned(),
+                    sha256: ImageSha256::Ignored,
                     format: ImageFormat::RawZstd,
                 }],
                 ab_update: Some(trident_api::config::AbUpdate {

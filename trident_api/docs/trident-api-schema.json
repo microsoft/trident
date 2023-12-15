@@ -208,7 +208,7 @@
           ]
         },
         "sha256": {
-          "description": "The SHA256 checksum of the image.\n\nThis is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string. Temporarily, you can pass `ignored` to skip the checksum verification.",
+          "description": "The SHA256 checksum of the image.\n\nThis is used to verify the integrity of the image.\n\nAccepted values:\n\n- 64-character hexadecimal string (case insensitive)\n\n- `ignored` to skip the checksum verification",
           "type": "string"
         },
         "targetId": {

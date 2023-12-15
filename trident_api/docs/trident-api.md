@@ -1156,12 +1156,12 @@ If it refers to a software raid array, the first disk partition of the software 
 
 **Description:** Per image configuration.
 
-| Property                                      | Pattern | Type   | Deprecated | Definition | Title/Description                                                                                                                                                                                                           |
-| --------------------------------------------- | ------- | ------ | ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| + [format](#storage_images_items_format )     | No      | object | No         | In         | The format of the image.                                                                                                                                                                                                    |
-| + [sha256](#storage_images_items_sha256 )     | No      | string | No         | -          | The SHA256 checksum of the image.<br /><br />This is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string. Temporarily, you can pass \`ignored\` to skip the checksum verification. |
-| + [targetId](#storage_images_items_targetId ) | No      | string | No         | -          | The ID of the partition that will be used to store the image.                                                                                                                                                               |
-| + [url](#storage_images_items_url )           | No      | string | No         | -          | The URL of the image.<br /><br />Supported schemes are: \`file\`, \`http\`, \`https\`.                                                                                                                                      |
+| Property                                      | Pattern | Type   | Deprecated | Definition | Title/Description                                                                                                                                                                                                                                      |
+| --------------------------------------------- | ------- | ------ | ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| + [format](#storage_images_items_format )     | No      | object | No         | In         | The format of the image.                                                                                                                                                                                                                               |
+| + [sha256](#storage_images_items_sha256 )     | No      | string | No         | -          | The SHA256 checksum of the image.<br /><br />This is used to verify the integrity of the image.<br /><br />Accepted values:<br /><br />- 64-character hexadecimal string (case insensitive)<br /><br />- \`ignored\` to skip the checksum verification |
+| + [targetId](#storage_images_items_targetId ) | No      | string | No         | -          | The ID of the partition that will be used to store the image.                                                                                                                                                                                          |
+| + [url](#storage_images_items_url )           | No      | string | No         | -          | The URL of the image.<br /><br />Supported schemes are: \`file\`, \`http\`, \`https\`.                                                                                                                                                                 |
 
 ##### <a name="storage_images_items_format"></a>6.4.1.1. Property `HostConfiguration > storage > images > images items > format`
 
@@ -1214,7 +1214,13 @@ Must be one of:
 
 **Description:** The SHA256 checksum of the image.
 
-This is used to verify the integrity of the image. The checksum is a 64 character hexadecimal string. Temporarily, you can pass `ignored` to skip the checksum verification.
+This is used to verify the integrity of the image.
+
+Accepted values:
+
+- 64-character hexadecimal string (case insensitive)
+
+- `ignored` to skip the checksum verification
 
 ##### <a name="storage_images_items_targetId"></a>6.4.1.3. Property `HostConfiguration > storage > images > images items > targetId`
 

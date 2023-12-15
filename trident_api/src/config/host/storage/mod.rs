@@ -15,6 +15,7 @@ use schemars::JsonSchema;
 use crate::schema_helpers::{block_device_id_list_schema, block_device_id_schema};
 
 pub mod imaging;
+mod serde_hash;
 mod serde_size;
 
 /// Storage configuration describes the disks of the host that will be used to
@@ -132,7 +133,6 @@ pub struct Partition {
 /// Partition size enum.
 /// Serialize and Deserialize traits are implemented manually in the crate::serde module.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum PartitionSize {
     /// # Grow
     ///
@@ -574,7 +574,7 @@ impl Storage {
 mod tests {
     use std::str::FromStr;
 
-    use imaging::{AbVolumePair, ImageFormat};
+    use imaging::{AbVolumePair, ImageFormat, ImageSha256};
 
     use super::*;
 
@@ -682,13 +682,13 @@ mod tests {
                     Image {
                         target_id: "esp".to_owned(),
                         url: "file:///esp.raw.zst".to_owned(),
-                        sha256: "ignored".to_owned(),
+                        sha256: ImageSha256::Ignored,
                         format: ImageFormat::RawZstd,
                     },
                     Image {
                         target_id: "root".to_owned(),
                         url: "file:///root.raw.zst".to_owned(),
-                        sha256: "ignored".to_owned(),
+                        sha256: ImageSha256::Ignored,
                         format: ImageFormat::RawZstd,
                     },
                 ],
@@ -861,7 +861,7 @@ mod tests {
                 format: imaging::ImageFormat::RawZstd,
                 target_id: "disk99".to_string(),
                 url: "http://example.com/image".to_string(),
-                sha256: "ignored".to_string(),
+                sha256: imaging::ImageSha256::Ignored,
             }],
             ..storage.clone()
         };
@@ -925,7 +925,7 @@ mod tests {
             images: vec![Image {
                 target_id: "part1".to_owned(),
                 url: "".to_owned(),
-                sha256: "".to_owned(),
+                sha256: imaging::ImageSha256::Checksum("".into()),
                 format: ImageFormat::RawZstd,
             }],
             ab_update: Some(AbUpdate {
