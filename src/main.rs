@@ -2,14 +2,20 @@ use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
-use log::{error, LevelFilter};
+use log::{error, info, LevelFilter};
 
 use trident::{Logstream, MultiLogger};
 
 use setsail::KsTranslator;
 
+/// Trident version as provided by environment variables at build time
+pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 #[derive(Parser, Debug)]
-#[clap(version = option_env!("TRIDENT_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")))]
+#[clap(version = TRIDENT_VERSION)]
 struct Cli {
     /// Path to the Trident Configuration file
     #[clap(global = true, short, long)]
@@ -49,6 +55,9 @@ enum Commands {
 }
 
 fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
+    // Log version ASAP
+    info!("Trident version: {}", TRIDENT_VERSION);
+
     // TODO(5910): Remove this in the future
     if let Commands::ParseKickstart { ref file } = args.command {
         let translator = KsTranslator::new().include_fail_is_error(false);
@@ -79,6 +88,8 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
 
     match &args.command {
         Commands::Run(args) => {
+            // Log version again so we can see it in the logstream
+            info!("Running Trident version: {}", TRIDENT_VERSION);
             let res = trident
                 .run()
                 .context("Failed to execute Trident run command");
