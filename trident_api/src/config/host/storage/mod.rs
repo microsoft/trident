@@ -468,6 +468,20 @@ impl Storage {
             }
         }
 
+        if let Some(encryption) = &self.encryption {
+            let mut encryption_target_ids_set: HashSet<&BlockDeviceId> = HashSet::new();
+
+            for volume in &encryption.volumes {
+                // Encrypted volume target IDs must be unique
+                if !encryption_target_ids_set.insert(&volume.target_id) {
+                    bail!(
+                        "Target ID '{tid}' is used by multiple encrypted volumes",
+                        tid = volume.target_id
+                    );
+                }
+            }
+        }
+
         // Check that all references are valid
         if let Some(ab_update) = &self.ab_update {
             for pair in &ab_update.volume_pairs {
@@ -985,6 +999,7 @@ mod tests {
         let storage: Storage = TEST_STORAGE!();
         storage.validate().unwrap();
     }
+
     // Encrypted volumes and disks must not share the same id
     #[test]
     fn test_validate_encryption_disks_share_id_fail() {
@@ -1051,6 +1066,32 @@ mod tests {
         assert_eq!(
             storage.validate().unwrap_err().to_string(),
             "ID 'srv' is used by multiple encrypted volumes"
+        );
+    }
+
+    // Encrypted volume target IDs must be unique
+    #[test]
+    fn test_validate_encryption_target_id_duplicate_fail() {
+        let mut storage: Storage = TEST_STORAGE!();
+        storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .volumes
+            .push(EncryptedVolume {
+                id: "alt".to_owned(),
+                device_name: "luks-alt".to_owned(),
+                target_id: "srv-enc".to_owned(),
+            });
+        storage.mount_points.push(MountPoint {
+            path: PathBuf::from("/alt"),
+            filesystem: "ext4".to_owned(),
+            options: Vec::new(),
+            target_id: "alt".to_owned(),
+        });
+        assert_eq!(
+            storage.validate().unwrap_err().to_string(),
+            "Target ID 'srv-enc' is used by multiple encrypted volumes"
         );
     }
 }
