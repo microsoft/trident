@@ -487,6 +487,19 @@ impl Storage {
                     "Encrypted volume device name '{name}' is used more than once",
                     name = volume.device_name
                 );
+
+                // Encrypted volumes cannot target the same block device
+                // id as a mount point
+                for mount_point in &self.mount_points {
+                    ensure!(
+                        volume.target_id != mount_point.target_id,
+                        "Target ID '{tid}' of encrypted volume '{vid}' is already used by mount point '{mp}' ('{fs}')",
+                        tid = volume.target_id,
+                        vid = volume.id,
+                        mp = mount_point.path.display(),
+                        fs = mount_point.filesystem
+                    );
+                }
             }
         }
 
@@ -1131,6 +1144,18 @@ mod tests {
         assert_eq!(
             storage.validate().unwrap_err().to_string(),
             "Target ID 'srv-enc' is used by multiple encrypted volumes"
+        );
+    }
+
+    // Encrypted volumes cannot target the same partition as a mount point
+    #[test]
+    fn test_validate_encryption_mount_point_target_part_id_equal_fail() {
+        let mut storage: Storage = TEST_STORAGE!();
+        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
+        storage.mount_points[2].target_id = "mnt-raid-1".to_owned();
+        assert_eq!(
+            storage.validate().unwrap_err().to_string(),
+            "Target ID 'mnt-raid-1' of encrypted volume 'srv' is already used by mount point '/mnt' ('ext4')"
         );
     }
 }
