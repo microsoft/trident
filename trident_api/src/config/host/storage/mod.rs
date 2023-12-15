@@ -470,6 +470,7 @@ impl Storage {
 
         if let Some(encryption) = &self.encryption {
             let mut encryption_target_ids_set: HashSet<&BlockDeviceId> = HashSet::new();
+            let mut encryption_device_names_set: HashSet<&String> = HashSet::new();
 
             for volume in &encryption.volumes {
                 // Encrypted volume target IDs must be unique
@@ -479,6 +480,13 @@ impl Storage {
                         tid = volume.target_id
                     );
                 }
+
+                // Encrypted volume device names must be unique
+                ensure!(
+                    encryption_device_names_set.insert(&volume.device_name),
+                    "Encrypted volume device name '{name}' is used more than once",
+                    name = volume.device_name
+                );
             }
         }
 
@@ -1066,6 +1074,37 @@ mod tests {
         assert_eq!(
             storage.validate().unwrap_err().to_string(),
             "ID 'srv' is used by multiple encrypted volumes"
+        );
+    }
+
+    // Encrypted volume device names must be unique
+    #[test]
+    fn test_validate_encryption_device_names_duplicate_fail() {
+        let mut storage: Storage = TEST_STORAGE!();
+        storage.disks[0].partitions.push(Partition {
+            id: "alt-enc".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .volumes
+            .push(EncryptedVolume {
+                id: "alt".to_owned(),
+                device_name: "luks-srv".to_owned(),
+                target_id: "alt-enc".to_owned(),
+            });
+        storage.mount_points.push(MountPoint {
+            path: PathBuf::from("/alt"),
+            filesystem: "ext4".to_owned(),
+            options: Vec::new(),
+            target_id: "alt".to_owned(),
+        });
+        assert_eq!(
+            storage.validate().unwrap_err().to_string(),
+            "Encrypted volume device name 'luks-srv' is used more than once"
         );
     }
 
