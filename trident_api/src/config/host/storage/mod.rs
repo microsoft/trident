@@ -500,6 +500,20 @@ impl Storage {
                         fs = mount_point.filesystem
                     );
                 }
+
+                // Encrypted volumes cannot target the same block device
+                // id as a software RAID array
+                for array in &self.raid.software {
+                    for device in &array.devices {
+                        ensure!(
+                            volume.target_id != *device,
+                            "Target ID '{tid}' of encrypted volume '{vid}' is already used by software RAID array '{aid}'",
+                            tid = volume.target_id,
+                            vid = volume.id,
+                            aid = array.id
+                        );
+                    }
+                }
             }
         }
 
@@ -1156,6 +1170,17 @@ mod tests {
         assert_eq!(
             storage.validate().unwrap_err().to_string(),
             "Target ID 'mnt-raid-1' of encrypted volume 'srv' is already used by mount point '/mnt' ('ext4')"
+        );
+    }
+
+    // Encrypted volumes cannot target the same partition as a software RAID array
+    #[test]
+    fn test_validate_encryption_software_raid_target_part_id_equal_fail() {
+        let mut storage: Storage = TEST_STORAGE!();
+        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
+        assert_eq!(
+            storage.validate().unwrap_err().to_string(),
+            "Target ID 'mnt-raid-1' of encrypted volume 'srv' is already used by software RAID array 'mnt'"
         );
     }
 }
