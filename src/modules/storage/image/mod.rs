@@ -15,8 +15,8 @@ use std::{
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256},
     status::{
-        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, Disk, HostStatus,
-        Partition, RaidArray, ReconcileState,
+        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, Disk, EncryptedVolume,
+        HostStatus, Partition, RaidArray, ReconcileState,
     },
     BlockDeviceId,
 };
@@ -235,6 +235,16 @@ fn get_raid_mut<'a>(
     host_status.storage.raid_arrays.get_mut(block_device_id)
 }
 
+fn get_encrypted_volume_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut EncryptedVolume> {
+    host_status
+        .storage
+        .encrypted_volumes
+        .get_mut(block_device_id)
+}
+
 fn set_host_status_block_device_contents(
     host_status: &mut HostStatus,
     block_device_id: &BlockDeviceId,
@@ -269,6 +279,11 @@ fn set_host_status_block_device_contents(
 
     if let Some(raid) = get_raid_mut(host_status, block_device_id) {
         raid.contents = contents;
+        return Ok(());
+    }
+
+    if let Some(encrypted_volume) = get_encrypted_volume_mut(host_status, block_device_id) {
+        encrypted_volume.contents = contents;
         return Ok(());
     }
 
