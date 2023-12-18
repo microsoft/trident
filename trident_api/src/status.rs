@@ -133,9 +133,9 @@ pub enum BlockDeviceContents {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct EncryptedVolume {
-    /// The path of the device created under `/dev/mapper` when opening
+    /// The name of the device created under `/dev/mapper` when opening
     /// the volume.
-    pub path: PathBuf,
+    pub device_name: String,
 
     /// The path of the disk partition or software raid array encrypted.
     pub target_path: PathBuf,

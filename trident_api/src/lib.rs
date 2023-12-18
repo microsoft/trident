@@ -21,7 +21,11 @@ impl Partition {
 
 impl EncryptedVolume {
     pub fn to_block_device(&self) -> BlockDeviceInfo {
-        BlockDeviceInfo::new(self.path.clone(), self.size, self.contents.clone())
+        BlockDeviceInfo::new(
+            format!("/dev/mapper/{}", self.device_name).into(),
+            self.size,
+            self.contents.clone(),
+        )
     }
 }
 
