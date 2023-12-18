@@ -48,7 +48,11 @@ pub(super) fn stream_zstd_image(
         host_status,
         block_device_id,
         BlockDeviceContents::Unknown,
-    )?;
+    )
+    .context(format!(
+        "Failed to set block device contents for '{}'",
+        block_device_id
+    ))?;
 
     // Decompress the image and write it to the block device, making sure not to write past the end.
     let bytes_copied = io::copy(&mut (&mut decoder).take(block_device.size), &mut file)
