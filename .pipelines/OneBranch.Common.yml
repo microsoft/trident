@@ -86,7 +86,19 @@ steps:
       contents: "*"
     displayName: Copy files to output
 
-  - script: rpmbuild -bb --build-in-place trident.spec
+  - script: |
+      set -eux
+      full_version=$(trident_version)
+
+      # Separate into version and prerelease identifier
+      # for the RPM build.
+      version=$(echo $full_version | cut -d'-' -f1)
+      prerelease=$(echo $full_version | cut -d'-' -f2-)
+
+      rpmbuild -bb --build-in-place trident.spec \
+        --define="trident_version $full_version" \
+        --define="rpm_ver $version" \
+        --define="rpm_rel $prerelease"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Build RPM
 

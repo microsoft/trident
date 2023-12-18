@@ -1,7 +1,7 @@
 Summary:        Agent for bare metal platform
 Name:           trident
-Version:        0.1.0
-Release:        1%{?dist}
+Version:        %{rpm_ver}
+Release:        %{rpm_rel}%{?dist}
 Vendor:         Microsoft Corporation
 License:        Proprietary
 BuildRequires:  openssl-devel
@@ -62,7 +62,11 @@ Trident files for SystemD service
 # ------------------------------------------------------------------------------
 
 %build
+export TRIDENT_VERSION="%{trident_version}"
 cargo build --release
+
+%check
+test "$(./target/release/trident --version)" = "trident %{trident_version}"
 
 %install
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}

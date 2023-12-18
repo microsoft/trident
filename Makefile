@@ -25,7 +25,13 @@ coverage:
 
 .PHONY: rpm
 rpm:
-	docker build --progress plain -t trident/trident-build:latest .
+	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
+	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD))
+	docker build --progress plain -t trident/trident-build:latest \
+		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev-$(GIT_COMMIT)" \
+		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)"\
+		--build-arg RPM_REL="dev-$(GIT_COMMIT)"\
+		.
 	mkdir -p bin/
 	id=$$(docker create trident/trident-build:latest) && \
 	docker cp $$id:/work/trident.tar.gz bin/ && \
