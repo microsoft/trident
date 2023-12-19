@@ -403,8 +403,10 @@ docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/li
   repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident):
   `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
 - For functional test execution, clone the [k8s-tests
-  repository](https://dev.azure.com/mariner-org/ECF/_git/k8s-tests) side by side
-  with the Trident repository: `git clone https://dev.azure.com/mariner-org/ECF/_git/k8s-tests`.
+  repository](https://dev.azure.com/mariner-org/ECF/_git/k8s-tests) and
+  [argus-toolkit repository](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit) side by side
+  with the Trident repository: `git clone
+  https://dev.azure.com/mariner-org/ECF/_git/k8s-tests && git clone https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit`.
 - Change directory to the Trident repository: `cd trident`.
 - (Only for changes to `trident_api`) Download documentation dependencies:
 
@@ -467,6 +469,7 @@ Unit tests should:
 - Take advantage of mocking of external resources if possible, to allow testing as much
 of the code on the development machine as possible.
 - Run in parallel and in a random order.
+- Should be the first line of defense for against any regressions.
 
 #### Functional Tests
 
@@ -550,7 +553,9 @@ There are three ways to build and execute functional tests using `Makefile` targ
   profile (using internal `build-functional-test-cc` target), a new `virt-deploy` VM will be created and deployed using
   `netlaunch`. Afterwards, tests will be uploaded into the VM, executed and
   code coverage will be downloaded for later viewing. To note, this will also
-  execute all UTs.
+  execute all UTs. If you want to iterate on the tests without recreating the
+  VM, but do want to redeploy the OS, you can: `make functional-test
+  EXTRA_PARAMS="--reuse-environment --redeploy"`.
 
 - `make patch-functional-test`: This will build the tests locally with code
   coverage profile (using internal `build-functional-test-cc` target), upload the
@@ -571,9 +576,11 @@ aggregated with the locally produced coverage results.
 
 ##### Additional Notes
 
-`functional-test` target depends on `k8s-tests` repo to be checked out side by
-side with the `trident` repo. This is because `k8s-tests` repo contains the
-common logic to execute test logic over SSH connection.
+`functional-test` target depends on `k8s-tests` and `argus-toolkit` repos to be
+checked out side by side with the `trident` repo. This is because `k8s-tests`
+repo contains the common logic to execute test logic over SSH connection and
+`argus-toolkit` repo contains the `netlaunch` and `virt-deploy` binaries, along
+with logic to generate the OS deployment ISO.
 
 Both `functional-test` and `patch-functional-test` targets leverage `pytest`. To
 get more detailed logs or do any changes to the `pytest` logic, you can modify
@@ -589,7 +596,8 @@ command line options of `conftest.py` to see what is configurable.
 
 The functional test binaries are produced in a fashion that `cargo test` would
 use. That means we can leverage all the feature of `cargo test``, such as
-randomizing test order or running tests in parallel without additional custom code.
+randomizing test order or running tests in parallel without additional custom
+code.
 
 #### E2E Tests
 

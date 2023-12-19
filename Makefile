@@ -1,19 +1,11 @@
 .PHONY: all
-all: check build test rpm build-api-docs docker-build
+all: check test rpm build-api-docs docker-build build-functional-test
 
 .PHONY: check
 check:
 	cargo check
 	cargo clippy -- -D warnings
 	cargo fmt -- --check
-
-.PHONY: build
-build:
-	cargo build
-
-.PHONY: build-release
-build-release:
-	cargo build --release
 
 .PHONY: test
 test:
@@ -120,6 +112,7 @@ build-functional-test:
 	cargo build --tests --features functional-tests
 
 FUNCTIONAL_TEST_DIR := /tmp/trident-test
+FUNCTIONAL_TEST_JUNIT_XML := target/trident_functional_tests.xml
 TRIDENT_COVERAGE_TARGET := target/coverage
 BUILD_OUTPUT := $(shell mktemp)
 
@@ -143,8 +136,8 @@ build-functional-test-cc:
 functional-test: build-functional-test-cc
 	cp ../k8s-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
 	cp ../k8s-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
-	python3 -u -m pytest functional_tests/ --setup-show --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload -vv # -k test_osutils -s
+	python3 -u -m pytest functional_tests/ --setup-show -vv --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${EXTRA_PARAMS}--keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload # -k test_osutils -s
 
 .PHONY: patch-functional-test
 patch-functional-test: build-functional-test-cc
-	python3 -u -m pytest functional_tests/ --setup-show --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment -vv # -k test_osutils -s
+	python3 -u -m pytest functional_tests/ --setup-show -vv --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${EXTRA_PARAMS}--keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment # -k test_osutils -s
