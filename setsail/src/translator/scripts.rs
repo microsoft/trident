@@ -14,9 +14,10 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration) {
             name: format!("kickstart-script-{}", index),
             servicing_type: vec![ServicingType::CleanInstall],
             interpreter: Some(script.interpreter.clone()),
-            content: script.body.clone(),
+            content: Some(script.body.clone()),
             log_file_path: script.log.clone(),
             environment_variables: HashMap::new(),
+            path: None,
         })
         .collect();
 }

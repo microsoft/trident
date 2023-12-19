@@ -96,11 +96,11 @@ pub enum ScriptOutput {
 ///
 /// Use this for more complex scripts that require a specific interpreter and/or collecting output.
 /// For simple scripts, use `run_bash_script`.
-pub struct ScriptRunner {
+pub struct ScriptRunner<'a> {
     /// Interpreter to use
     pub interpreter: PathBuf,
     /// The script file. We need to keep this around so that it doesn't get deleted.
-    pub script: String,
+    pub script: &'a [u8],
     /// The path to the logfile
     pub logfile: Option<PathBuf>,
     /// Merge stderr into stdout
@@ -109,12 +109,12 @@ pub struct ScriptRunner {
     pub env_vars: HashMap<OsString, OsString>,
 }
 
-impl ScriptRunner {
+impl<'a> ScriptRunner<'a> {
     /// Internal builder
-    fn new<I: AsRef<Path>>(interpreter: I, script: &str) -> Self {
+    fn new<I: AsRef<Path>>(interpreter: I, script: &'a [u8]) -> Self {
         Self {
             interpreter: interpreter.as_ref().to_path_buf(),
-            script: script.to_string(),
+            script,
             logfile: None,
             merge_stderr: false,
             env_vars: HashMap::new(),
@@ -122,17 +122,17 @@ impl ScriptRunner {
     }
 
     /// Build a new bash script runner
-    pub fn new_bash(script: &str) -> Self {
+    pub fn new_bash(script: &'a [u8]) -> Self {
         Self::new("/bin/bash", script)
     }
 
     /// Build a new python script runner
-    pub fn new_python3(script: &str) -> Self {
+    pub fn new_python3(script: &'a [u8]) -> Self {
         Self::new("/usr/bin/python3", script)
     }
 
     /// Build a new script runner with the given interpreter
-    pub fn new_interpreter<I: AsRef<Path>>(interpreter: I, script: &str) -> Self {
+    pub fn new_interpreter<I: AsRef<Path>>(interpreter: I, script: &'a [u8]) -> Self {
         Self::new(interpreter, script)
     }
 
@@ -167,7 +167,7 @@ impl ScriptRunner {
 
         // Write the script to a file
         let script_file =
-            write_script_to_named_file(&self.script).context("Failed to write script to file")?;
+            write_script_to_named_file(self.script).context("Failed to write script to file")?;
 
         // Create command and set up the script file
         let mut cmd = Command::new(&self.interpreter);
@@ -252,11 +252,11 @@ fn write_script_to_file(script_body: &str) -> Result<File, Error> {
 }
 
 /// Writes a script to a temporary NAMED file and returns the NamedTempFile.
-fn write_script_to_named_file(script_body: &str) -> Result<NamedTempFile, Error> {
+fn write_script_to_named_file(script_body: &[u8]) -> Result<NamedTempFile, Error> {
     let mut script_file =
         tempfile::NamedTempFile::new().context("Failed to create temporary file for script")?;
     script_file
-        .write_all(script_body.as_bytes())
+        .write_all(script_body)
         .context("Failed to write script to temporary file")?;
 
     Ok(script_file)

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use anyhow::{bail, Error};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
@@ -42,9 +43,15 @@ pub struct Script {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interpreter: Option<PathBuf>,
 
-    /// The contents of the script.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub content: String,
+    /// The contents of the script. Conflicts with path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+
+    /// Path to the script file. Conflicts with content.
+    ///
+    /// The file must be located in the host's filesystem.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
 
     /// Path of a file to write the script's output to.
     ///
@@ -98,6 +105,36 @@ pub enum ServicingType {
     All,
 }
 
+impl Scripts {
+    pub(crate) fn validate(&self) -> Result<(), Error> {
+        for script in &self.post_provision {
+            script.validate()?;
+        }
+        for script in &self.post_configure {
+            script.validate()?;
+        }
+        Ok(())
+    }
+}
+
+impl Script {
+    pub(crate) fn validate(&self) -> Result<(), Error> {
+        if self.content.is_none() && self.path.is_none() {
+            bail!(
+                "Script '{}': either content or path must be specified",
+                self.name
+            );
+        }
+        if self.content.is_some() && self.path.is_some() {
+            bail!(
+                "Script '{}': Only one of content or path must be specified",
+                self.name
+            );
+        }
+        Ok(())
+    }
+}
+
 /// Unit Test for should_run
 #[cfg(test)]
 mod tests {
@@ -109,9 +146,10 @@ mod tests {
             name: "test-script".into(),
             servicing_type: vec![ServicingType::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: "echo test".into(),
+            content: Some("echo test".into()),
             environment_variables: HashMap::new(),
             log_file_path: None,
+            path: None,
         };
         assert!(script.should_run(&ReconcileState::CleanInstall));
     }
@@ -122,9 +160,10 @@ mod tests {
             name: "test-script".into(),
             servicing_type: vec![ServicingType::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: "echo test".into(),
+            content: Some("echo test".into()),
             environment_variables: HashMap::new(),
             log_file_path: None,
+            path: None,
         };
         assert!(!script.should_run(&ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)));
     }
@@ -135,9 +174,10 @@ mod tests {
             name: "test-script".into(),
             servicing_type: vec![ServicingType::All],
             interpreter: Some("/bin/bash".into()),
-            content: "echo test".into(),
+            content: Some("echo test".into()),
             environment_variables: HashMap::new(),
             log_file_path: None,
+            path: None,
         };
         assert!(script.should_run(&ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)));
     }

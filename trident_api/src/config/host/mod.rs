@@ -69,6 +69,7 @@ impl HostConfiguration {
     pub fn validate(&self) -> Result<(), Error> {
         self.storage.validate()?;
         self.osconfig.validate()?;
+        self.scripts.validate()?;
         Ok(())
     }
 }

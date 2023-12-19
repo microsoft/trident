@@ -529,14 +529,14 @@
       "description": "A script that can be run on the host during Trident stages.",
       "type": "object",
       "required": [
-        "content",
         "name",
         "servicingType"
       ],
       "properties": {
         "content": {
-          "description": "The contents of the script.",
-          "type": "string"
+          "description": "The contents of the script. Conflicts with path.",
+          "type": "string",
+          "nullable": true
         },
         "environmentVariables": {
           "description": "Environment variables that are needed by the script. These will be set before running the script. UPDATE_KIND and TARGET_ROOT values are set by default to use.",
@@ -558,6 +558,11 @@
         "name": {
           "description": "Name of the script.",
           "type": "string"
+        },
+        "path": {
+          "description": "Path to the script file. Conflicts with content.\n\nThe file must be located in the host's filesystem.",
+          "type": "string",
+          "nullable": true
         },
         "servicingType": {
           "description": "List of servicing_type to run the script with.",

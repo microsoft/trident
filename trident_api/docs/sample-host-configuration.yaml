@@ -114,7 +114,7 @@ scripts:
   - name: sample-configure-script
     servicingType:
     - all
-    content: echo 'Post configuration!'
+    content: /var/config-script.sh
     logFilePath: /var/log/sample-configure-script.log
     environmentVariables:
       SAMPLE_VARIABLE: sample-variable-value

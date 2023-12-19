@@ -51,7 +51,7 @@ impl Script {
     }
 
     pub fn run(&self) -> Result<(), SetsailError> {
-        ScriptRunner::new_interpreter(&self.interpreter, &self.body)
+        ScriptRunner::new_interpreter(&self.interpreter, self.body.as_bytes())
             .with_logfile(self.log.as_ref())
             .run_check()
             .context(format!("{} script failed", self.script_type))

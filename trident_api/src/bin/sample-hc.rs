@@ -183,14 +183,14 @@ fn build_host_configuration() -> HostConfiguration {
             post_provision: vec![Script {
                 name: "sample-provision-script".into(),
                 servicing_type: vec![ServicingType::CleanInstall, ServicingType::AbUpdate],
-                content: "echo 'Post provision!'".into(),
+                content: Some("echo 'Post provision!'".into()),
                 log_file_path: Some("/var/log/sample-provision-script.log".into()),
                 ..Default::default()
             }],
             post_configure: vec![Script {
                 name: "sample-configure-script".into(),
                 servicing_type: vec![ServicingType::All],
-                content: "echo 'Post configuration!'".into(),
+                content: Some("/var/config-script.sh".into()),
                 environment_variables: HashMap::from([(
                     "SAMPLE_VARIABLE".into(),
                     "sample-variable-value".into(),
