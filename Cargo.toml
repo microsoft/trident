@@ -50,6 +50,7 @@ maplit = "1.0.2"
 [features]
 dangerous-options = ["trident_api/dangerous-options"]
 sysupdate = []
+functional-tests = ["osutils/functional-tests"]
 
 
 [workspace]

@@ -226,14 +226,6 @@ pub(super) fn provision_host(
     Ok(())
 }
 
-pub(super) fn get_datastore_path(host_config: &HostConfiguration) -> &Path {
-    host_config
-        .management
-        .datastore_path
-        .as_deref()
-        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH))
-}
-
 pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Result<(), Error> {
     let HostUpdateCommand {
         ref host_config,
@@ -348,6 +340,14 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
             unreachable!()
         }
     }
+}
+
+pub(super) fn get_datastore_path(host_config: &HostConfiguration) -> &Path {
+    host_config
+        .management
+        .datastore_path
+        .as_deref()
+        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH))
 }
 
 /// Using the / mount point, figure out what should be used as a root block device.

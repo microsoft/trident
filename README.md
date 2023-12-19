@@ -34,6 +34,15 @@ can be leveraged outside of that as well.
     - [Prerequisites](#prerequisites)
     - [Building and Validating](#building-and-validating)
     - [Updating Documentation](#updating-documentation)
+    - [Testing hierarchy](#testing-hierarchy)
+      - [Unit Tests](#unit-tests)
+      - [Functional Tests](#functional-tests)
+        - [Functional Test Structure](#functional-test-structure)
+        - [Functional Test Environment](#functional-test-environment)
+        - [Functional Test Building and Execution](#functional-test-building-and-execution)
+        - [Functional Test Code Coverage](#functional-test-code-coverage)
+        - [Additional Notes](#additional-notes)
+      - [E2E Tests](#e2e-tests)
   - [Contributing](#contributing)
   - [Versioning and changelog](#versioning-and-changelog)
   - [Authors](#authors)
@@ -92,7 +101,7 @@ composed of the following sections:
   - **Transition**: Trident will transition the host to the new configuration,
     which can include rebooting the host. This will only happen if `Update` is
     also specified.
-  
+
   You can pass multiple flags, separated by `|`. Example: `Update | Transition`.
   You can pass `''` to disable all operations, which would result in getting
   refreshed Host Status, but no operations performed on the host.
@@ -328,7 +337,7 @@ other backends. In the next iteration, Trident will support downloading OS
 image payloads published as **OCI artifacts** on Azure Container Registry.
 Moreover, based on the users' needs, other image formats might be supported in
 the future, beyond raw Zstd and raw Lzma.
-- To support downloading OCI artifacts and potentially, other backends, 
+- To support downloading OCI artifacts and potentially, other backends,
 **a hybrid A/B update** will be implemented: when the user provides a URL link
 that systemd-sysupdate cannot correctly download from, Trident will
 independently download the payload, decompress it, verify its hash, and point
@@ -393,9 +402,12 @@ docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/li
 - Clone the [Trident
   repository](https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident):
   `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
+- For functional test execution, clone the [k8s-tests
+  repository](https://dev.azure.com/mariner-org/ECF/_git/k8s-tests) side by side
+  with the Trident repository: `git clone https://dev.azure.com/mariner-org/ECF/_git/k8s-tests`.
 - Change directory to the Trident repository: `cd trident`.
 - (Only for changes to `trident_api`) Download documentation dependencies:
-  
+
   ```bash
   make install-json-schema-for-humans
   ```
@@ -404,9 +416,19 @@ docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/li
 
 Build instructions: `cargo build`.
 
-Build, check and and run UTs: `make`.
+Run UTs: `make test`. Run UTs with code coverage: `make ut-coverage`.
 
-Code coverage: `make coverage`.
+Collect code coverage report: `make coverage-report`. You can also run `make
+coverage' to execute UTs and collect code coverage report.
+
+Run functional tests: `make functional-test`. Rerun tests: `make
+patch-functional-test`. More details can be found in the [Functional Tests
+section](#functional-tests). If you want to validate the functional test
+building, run `make build-functional-test`. `functional-test` and
+`patch-functional-test` will automatically ather code coverage data, which can
+be viewed using `make coverage-report`.
+
+Validate many steps done by pipelines: `make`.
 
 Rebuild trident_api documentation: `make build-api-docs`.
 
@@ -417,6 +439,171 @@ After any change to trident_api, the documentation needs to be regenerated. Run:
 ```bash
 make build-api-docs
 ```
+
+### Testing hierarchy
+
+Developers are expected to accompany any features with unit tests, functional
+tests for white box testing, and end to end tests for black box testing. See more
+details in the following sections.
+
+#### Unit Tests
+
+Unit tests are meant to test the functionality of a single function in isolation
+from everything else. Each module should have a corresponding unit test module
+called `tests` annotated with `#[cfg(test)]`. Each test function should be named
+`test_*` to indicate which function it is testing and annotated with `#[test]`.
+
+Unit tests can be invoked by `make test` or if code coverage is desired, `make ut-coverage`.
+
+Unit tests should:
+
+- Not be disruptive to the execution environment, so they can
+  run on development machines.
+- Execute quickly.
+- Be deterministic.
+- Be independent of each other.
+- Not leave any state behind them.
+- Not depend on any external resources, that might not be available on the development machine.
+- Take advantage of mocking of external resources if possible, to allow testing as much
+of the code on the development machine as possible.
+- Run in parallel and in a random order.
+
+#### Functional Tests
+
+Functional tests are meant to test the functionality of a module or a set of
+functions in a real environment. Each module should have a corresponding functional test module
+called `functional_tests` annotated with `#[cfg(all(test, feature =
+"functional-tests"))]`. Naming of test function is up to the developer, but
+should be indicative of what is being tested. Each test function is annotated with `#[test]`.
+
+Functional tests can be invoked by `make functional-test` and this will
+automatically gather code coverage data as well. This `Makefile` target will
+automatically deploy a virtual machine and execute the tests inside it. If a
+failure is encountered that can be remedied by fixing either the test code or
+feature code the test code calls into, you can run `make patch-functional-test`
+to update the test binaries and re-run the tests. More details below.
+
+Functional tests should:
+
+- Test the functionality of a module that cannot be easily unit tested in isolation.
+- Assume they will not run in parallel to other functions.
+- Allow rerunning on the same environment.
+- Run as fast as possible.
+- Handle validation of external events to the execution environment.
+- Aim to target 100% code coverage of the module they are testing (along with
+  with the unit tests).
+
+##### Functional Test Structure
+
+Functional tests are structured as follows:
+
+- `tests/functional_tests`: Contains the functional test code, leveraging
+  `pytest` and common SSH interface from `k8s-tests` repo. `pytest` creates the
+  test VM using is Fixtures concept and while currently only a single VM is
+  created to run all the tests, this could be easily extended to support
+  seperate VMs for different tests. Most of the time, no changes will be
+  required to this layer while developing functional tests.
+- Per module `functional_tests` submodule: Contains the actual test
+  implementation written in `rust`, leveraging other code already present in
+  Trident. The benefit of this approach is that we can leverage common logic and
+  test code is authored side by side with the feature code in a consistent
+  manner. This also allows us to easily shift logic between unit and functional
+  tests.
+
+Note that additional testing logic can be added as part of
+`tests/functional_tests` as well. At the moment, there are two `pytest` modules
+present:
+
+- `test_trident_e2e.py`: Very basic of validation of the main Trident commands:
+  `run`, `get` and `start-network`. As you can see in this module, the `pytest`
+  logic is used to validate the output of the `get` command using checked in
+  `HostStatus`.
+- `test_trident_mods.py`: This module invokes the per module functional tests.
+  Tests of the following crates are present: `osutils`, `setsail`, `trident` and
+  `trident_api`.
+
+The `pytest` logic can be further used to affect the execution environment from
+the outside, such as unplugging a disk or rebooting the VM while the tests are
+running.
+
+##### Functional Test Environment
+
+The functional test environment is a virtual machine that is deployed by the
+`virt-deploy` module. At the moment, only a single VM is created, however the
+`pytest` Fixture logic is flexible enough to support multiple VMs when needed.
+
+The VM is created using `virt-deploy` and the initial OS provisioning is done
+using `netlaunch` and `Trident`. `Trident` will use the checked in
+`functional_tests/trident-setup.yaml` `HostConfiguration` for the initial host
+deployment. The tests are started on the deployed OS through SSH connection.
+
+##### Functional Test Building and Execution
+
+There are three ways to build and execute functional tests using `Makefile` targets:
+
+- `make build-functional-test`: This will just build the tests locally and not
+  perform any execution. This is useful to ensure the tests are building. The
+  output of this step are set of test binaries, one per crate, which is what
+  `cargo test` would normally produce and invoke.
+
+- `make functional-test`: This will build the tests locally with code coverage
+  profile (using internal `build-functional-test-cc` target), a new `virt-deploy` VM will be created and deployed using
+  `netlaunch`. Afterwards, tests will be uploaded into the VM, executed and
+  code coverage will be downloaded for later viewing. To note, this will also
+  execute all UTs.
+
+- `make patch-functional-test`: This will build the tests locally with code
+  coverage profile (using internal `build-functional-test-cc` target), upload the
+  tests into the existing `virt-deploy` VM, execute the tests and download code
+  coverage for later viewing. This is useful when you want to iterate on the
+  tests and don't want to wait for the VM to be deployed again. It is important
+  to note that only tests that have changed will be re-uploaded. This is
+  determined based on `cargo build` output. To note, this will also
+  execute all UTs.
+
+##### Functional Test Code Coverage
+
+All functional tests are built with code coverage profile. This means that every
+execution will output the profiling data (`*.profraw`), that are needed to
+generate the code coverage report. Once the test execution completes, the code
+coverage files are downloaded back into the development machine so they can be
+aggregated with the locally produced coverage results.
+
+##### Additional Notes
+
+`functional-test` target depends on `k8s-tests` repo to be checked out side by
+side with the `trident` repo. This is because `k8s-tests` repo contains the
+common logic to execute test logic over SSH connection.
+
+Both `functional-test` and `patch-functional-test` targets leverage `pytest`. To
+get more detailed logs or do any changes to the `pytest` logic, you can modify
+the command line of the `Makefile` targets (e.g. using `-k`  to select a specific
+test case to execute), or you can update `functional_tests/pytest.ini`.
+
+Both `functional-test` and `patch-functional-test` targets leverage
+`functional_tests/conftest.py` to setup the initial VM, upload the tests and
+download the code coverage. Since the setup VM can be leveraged across multiple
+runs of `patch-functional-test`, the VM metadata is stored in a test
+directory passed from the `Makefile`: `/tmp/trident-test`. You can inspect the
+command line options of `conftest.py` to see what is configurable.
+
+The functional test binaries are produced in a fashion that `cargo test` would
+use. That means we can leverage all the feature of `cargo test``, such as
+randomizing test order or running tests in parallel without additional custom code.
+
+#### E2E Tests
+
+End to end tests are meant to test the end to end functionality of Trident in a
+real environment. E2E tests are using only public Trident interfaces, by
+providing `HostConfiguration` and comparing the status of the host to
+`HostStatus`. E2E tests currently live in the `argus-toolkit` repo. Each Trident
+feature should be accompanied by one or more E2E tests.
+
+End to end tests should:
+
+- Leverage only the user facing interfaces of Trident.
+- Assume they will not run in parallel to other functions.
+- Handle validation of external events to the execution environment.
 
 ## Contributing
 

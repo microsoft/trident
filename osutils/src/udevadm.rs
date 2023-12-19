@@ -17,3 +17,14 @@ pub fn trigger() -> Result<(), Error> {
         .run_and_check()
         .context("Failed trigger udev")
 }
+
+#[cfg(all(test, feature = "functional-tests"))]
+mod functional_tests {
+    use super::*;
+
+    #[test]
+    fn test() {
+        settle().unwrap();
+        trigger().unwrap();
+    }
+}

@@ -3,6 +3,7 @@ use std::{path::Path, process::Command};
 use anyhow::{bail, Context, Error};
 use configparser::ini::Ini;
 use log::debug;
+use osutils::exe::RunAndCheck;
 use serde_json::Value;
 use std::collections::HashMap;
 use tempfile::TempDir;
@@ -88,18 +89,17 @@ impl RepartConfiguration {
         &self,
         disk_bus_path: &Path,
     ) -> Result<Vec<RepartPartition>, Error> {
-        let repart_output_json = crate::run_command(
-            Command::new("systemd-repart")
-                .arg(disk_bus_path.as_os_str())
-                .arg("--dry-run=no")
-                .arg("--empty=force")
-                .arg("--seed=random")
-                .arg("--json=short")
-                .arg("--definitions")
-                .arg(self.repart_root.path()),
-        )
-        .context("Failed to initialize disk")?;
-        let partitions_status: Value = serde_json::from_slice(&repart_output_json.stdout)
+        let repart_output_json = Command::new("systemd-repart")
+            .arg(disk_bus_path.as_os_str())
+            .arg("--dry-run=no")
+            .arg("--empty=force")
+            .arg("--seed=random")
+            .arg("--json=short")
+            .arg("--definitions")
+            .arg(self.repart_root.path())
+            .output_and_check()
+            .context("Failed to initialize disk")?;
+        let partitions_status: Value = serde_json::from_str(repart_output_json.as_str())
             .context("Failed to deserialize output of disk initialization command")?;
 
         parse_partitions(&partitions_status)
@@ -344,5 +344,114 @@ mod tests {
         );
         assert_eq!(repart_config.get("Partition", "SizeMinBytes"), None);
         assert_eq!(repart_config.get("Partition", "SizeMaxBytes"), None);
+    }
+}
+
+// assumes at least 2 sata connected 16 GB disk setup (and specifically the
+// second disk needs to be 16 GiB in size)
+#[cfg(all(test, feature = "functional-tests"))]
+mod functional_tests {
+    use super::*;
+
+    use osutils::lsblk::{self, BlockDevice};
+    use osutils::udevadm;
+    use std::path::PathBuf;
+    use trident_api::config::PartitionType;
+
+    #[test]
+    fn test() {
+        let unchanged_disk_bus_path = PathBuf::from("/dev/sda");
+        let unchanged_block_device_list = lsblk::run(&unchanged_disk_bus_path).unwrap();
+
+        let disk_bus_path = PathBuf::from("/dev/sdb");
+
+        let disk_size: u64 = 17179869184; // 16 GiB
+        let part1_size = 50 * 1024 * 1024;
+
+        let golden_disk = Disk {
+            id: "disk0".to_owned(),
+            device: disk_bus_path.clone(),
+            partition_table_type: trident_api::config::PartitionTableType::Gpt,
+            partitions: vec![
+                Partition {
+                    id: "part1".to_owned(),
+                    partition_type: PartitionType::Esp,
+                    size: PartitionSize::Fixed(part1_size),
+                },
+                Partition {
+                    id: "part2".to_owned(),
+                    partition_type: PartitionType::LinuxGeneric,
+                    size: PartitionSize::Grow,
+                },
+            ],
+        };
+        let mut disk = golden_disk.clone();
+
+        let partlabels = HashMap::new();
+
+        let repart_config = RepartConfiguration::new(&disk, &partlabels).unwrap();
+
+        let partitions = repart_config.create_partitions(&disk_bus_path).unwrap();
+
+        assert_eq!(partitions.len(), 2);
+
+        let part1 = &partitions[0];
+        let part1_start = 1024 * 1024;
+        assert_eq!(part1.start, part1_start);
+        assert_eq!(part1.size, part1_size);
+
+        let part2 = &partitions[1];
+        assert_eq!(part2.start, part1_start + part1_size);
+        assert_eq!(
+            part2.size,
+            16 * 1024 * 1024 * 1024 - part1_start - part1_size - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
+        );
+
+        udevadm::settle().unwrap();
+
+        let unchanged_block_device_list_after = lsblk::run(&unchanged_disk_bus_path).unwrap();
+        assert_eq!(
+            unchanged_block_device_list,
+            unchanged_block_device_list_after
+        );
+
+        let expected_block_device_list = vec![BlockDevice {
+            name: "/dev/sdb".into(),
+            part_uuid: None,
+            size: disk_size,
+            parent_kernel_name: None,
+            children: Some(vec![
+                BlockDevice {
+                    name: "/dev/sdb1".into(),
+                    part_uuid: Some(part1.uuid),
+                    size: part1.size,
+                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    children: None,
+                },
+                BlockDevice {
+                    name: "/dev/sdb2".into(),
+                    part_uuid: Some(part2.uuid),
+                    size: part2.size,
+                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    children: None,
+                },
+            ]),
+        }];
+
+        let block_device_list = lsblk::run(&disk_bus_path).unwrap();
+        assert_eq!(expected_block_device_list, block_device_list);
+
+        disk.device = PathBuf::from("/dev/null");
+        let repart_config = RepartConfiguration::new(&disk, &partlabels).unwrap();
+        assert_eq!(repart_config.create_partitions(&disk.device).err().unwrap().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/null: Block device required\n\n");
+
+        disk.device = PathBuf::from("/dev/does-not-exist");
+        let repart_config = RepartConfiguration::new(&disk, &partlabels).unwrap();
+        assert_eq!(repart_config.create_partitions(&disk.device).err().unwrap().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/does-not-exist: No such file or directory\n\n");
+
+        let mut disk = golden_disk.clone();
+        disk.partitions[1].size = PartitionSize::Fixed(disk_size);
+        let repart_config = RepartConfiguration::new(&disk, &partlabels).unwrap();
+        assert_eq!(repart_config.create_partitions(&disk.device).err().unwrap().root_cause().to_string(), "Process output:\nstderr:\nCan't fit requested partitions into available free space (15.9G), refusing.\nAutomatically determined minimal disk image size as 16.0G, current image size is 16.0G.\n\n");
     }
 }

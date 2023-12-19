@@ -275,15 +275,18 @@ pub(super) fn path_to_mount_point<'a>(
 /// Returns the path of the first symlink in directory whose canonical path is target.
 /// Requires that target is already a canonical path.
 fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, Error> {
-    for f in fs::read_dir(directory)?.flatten() {
-        if let Ok(target_path) = f.path().canonicalize() {
-            if target_path == target {
-                return Ok(f.path());
+    fs::read_dir(directory)?
+        .flatten()
+        .filter_map(|f| {
+            if let Ok(target_path) = f.path().canonicalize() {
+                if target_path == target {
+                    return Some(f.path());
+                }
             }
-        }
-    }
-
-    bail!("Failed to find symlink for '{}'", target.display())
+            None
+        })
+        .min()
+        .context(format!("Failed to find symlink for '{}'", target.display()))
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use osutils::exe::RunAndCheck;
 use serde_json::Value;
 
 use trident_api::{
@@ -102,18 +103,17 @@ impl TabFile {
 
     /// Based on the given tab file, get the device path for the partition with mount point `path`.
     pub(crate) fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Error> {
-        let findmnt_output_json = crate::run_command(
-            Command::new("findmnt")
-                .arg("--tab-file")
-                .arg(tab_file_path)
-                .arg("--json")
-                .arg("--output")
-                .arg("source,target,fstype,vfs-options,fs-options,freq,passno")
-                .arg("--mountpoint")
-                .arg(path),
-        )
-        .context(format!("Failed to find {:?} in {:?}", path, tab_file_path))?;
-        let map = parse_findmnt_output(findmnt_output_json.stdout.as_slice())?;
+        let findmnt_output_json = Command::new("findmnt")
+            .arg("--tab-file")
+            .arg(tab_file_path)
+            .arg("--json")
+            .arg("--output")
+            .arg("source,target,fstype,vfs-options,fs-options,freq,passno")
+            .arg("--mountpoint")
+            .arg(path)
+            .output_and_check()
+            .context(format!("Failed to find {:?} in {:?}", path, tab_file_path))?;
+        let map = parse_findmnt_output(findmnt_output_json.as_str())?;
         if map.len() != 1 {
             bail!(
                 "Unexpected number of entries in the tab file matching the mount point '{}'",
@@ -193,8 +193,8 @@ impl TabFile {
     }
 }
 
-fn parse_findmnt_output(findmnt_output: &[u8]) -> Result<HashMap<PathBuf, PathBuf>, Error> {
-    let payload: Value = serde_json::from_slice(findmnt_output)
+fn parse_findmnt_output(findmnt_output: &str) -> Result<HashMap<PathBuf, PathBuf>, Error> {
+    let payload: Value = serde_json::from_str(findmnt_output)
         .context("Failed to deserialize output of tab file reader")?;
 
     let filesystems = payload["filesystems"].as_array().context(format!(
@@ -777,44 +777,36 @@ mod tests {
             .iter()
             .cloned()
             .collect();
-        assert_eq!(
-            super::parse_findmnt_output(input.as_bytes()).unwrap(),
-            output
-        );
+        assert_eq!(super::parse_findmnt_output(input).unwrap(), output);
 
         // missing target
         let input = r#"{"filesystems": [{"source":"foo"}]}"#;
-        assert!(super::parse_findmnt_output(input.as_bytes()).is_err());
+        assert!(super::parse_findmnt_output(input).is_err());
 
         // missing source
         let input = r#"{"filesystems": [{"target":"foo"}]}"#;
-        assert!(super::parse_findmnt_output(input.as_bytes()).is_err());
+        assert!(super::parse_findmnt_output(input).is_err());
 
         // missing target and source
         let input = r#"{"filesystems": [{"foo":"foo"}]}"#;
-        assert!(super::parse_findmnt_output(input.as_bytes()).is_err());
+        assert!(super::parse_findmnt_output(input).is_err());
 
         let input = r#"{"filesystems": []}"#;
-        assert!(super::parse_findmnt_output(input.as_bytes())
-            .unwrap()
-            .is_empty());
+        assert!(super::parse_findmnt_output(input).unwrap().is_empty());
 
         let input = r#"{"filesystems": [{"source":"foo","target":"bar"},{"source":"foo2","target":"bar2"}]}"#;
-        assert_eq!(
-            super::parse_findmnt_output(input.as_bytes()).unwrap().len(),
-            2
-        );
+        assert_eq!(super::parse_findmnt_output(input).unwrap().len(), 2);
 
         // no filesystems
         let input = r#"{"foo": []}"#;
-        assert!(super::parse_findmnt_output(input.as_bytes()).is_err());
+        assert!(super::parse_findmnt_output(input).is_err());
 
         // filesystems is not an array
         let input = r#"{"filesystems": {"foo": "bar"}}"#;
-        assert!(super::parse_findmnt_output(input.as_bytes()).is_err());
+        assert!(super::parse_findmnt_output(input).is_err());
 
         // one entry is malformed
         let input = r#"{"filesystems": [{"source":"foo","target":"bar"},{"sourcssse":"foo2","target":"bar"},{"source":"foo2","target":"bar"}]}"#;
-        assert!(super::parse_findmnt_output(input.as_bytes()).is_err());
+        assert!(super::parse_findmnt_output(input).is_err());
     }
 }

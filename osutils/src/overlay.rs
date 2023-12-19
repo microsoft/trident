@@ -190,12 +190,14 @@ impl EphemeralOverlayWithSystemD {
     }
 }
 
-#[cfg(all(test, feature = "integration-test"))]
-mod test {
+#[cfg(all(test, feature = "functional-tests"))]
+mod functional_tests {
+    use std::os::unix::fs::symlink;
+
     use super::*;
 
     #[test]
-    fn test_ephemeral_overlay() {
+    fn test() {
         let dir = tempfile::tempdir().unwrap();
         let overlay = EphemeralOverlay::mount(dir.path()).unwrap();
         // create a file on top of the overlay
@@ -207,5 +209,50 @@ mod test {
         overlay.unmount().unwrap();
         // check that the file does not exist in the target
         assert!(!test_file.exists());
+
+        // fail if target is missing
+        let does_not_exist = Path::new("/does-not-exist");
+        if does_not_exist.exists() {
+            std::fs::remove_dir(does_not_exist).unwrap();
+        }
+
+        assert_eq!(
+            EphemeralOverlay::mount(Path::new("/does-not-exist"))
+                .err()
+                .unwrap()
+                .root_cause()
+                .to_string(),
+            "Process output:\nstderr:\nmount: /does-not-exist: mount point does not exist.\n\n"
+        );
+    }
+
+    #[test]
+    pub fn test_systemd() {
+        let dir = tempfile::tempdir().unwrap();
+        let overlay = EphemeralOverlayWithSystemD::mount(dir.path()).unwrap();
+        // create a file on top of the overlay
+        let test_file = dir.path().join("test");
+        std::fs::write(&test_file, "test").unwrap();
+        // check that the file exists in the overlay
+        assert!(test_file.exists());
+
+        overlay.unmount().unwrap();
+        // check that the file does not exist in the target
+        assert!(!test_file.exists());
+
+        // fail to mount on top of a symlink
+        let symlink_path = Path::new("/tmp2");
+        if symlink_path.exists() {
+            std::fs::remove_file(symlink_path).unwrap();
+        }
+        symlink(Path::new("/tmp"), symlink_path).unwrap();
+        assert_eq!(
+            EphemeralOverlayWithSystemD::mount(symlink_path)
+                .err()
+                .unwrap()
+                .root_cause()
+                .to_string(),
+            "Process output:\nstderr:\nJob failed. See \"journalctl -xe\" for details.\n\n"
+        );
     }
 }

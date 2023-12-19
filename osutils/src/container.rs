@@ -71,3 +71,31 @@ mod test {
         super::get_host_root_path_impl(Path::new(".")).unwrap_err();
     }
 }
+
+#[cfg(all(test, feature = "functional-tests"))]
+mod functional_tests {
+    use super::*;
+
+    #[test]
+    fn test() {
+        env::remove_var(DOCKER_ENVIRONMENT);
+        assert_eq!(
+            get_host_root_path().unwrap_err().root_cause().to_string(),
+            "Not running in a container"
+        );
+        env::set_var(DOCKER_ENVIRONMENT, "true");
+
+        let test_dir = Path::new(HOST_ROOT_PATH);
+        if test_dir.exists() {
+            std::fs::remove_dir(test_dir).unwrap();
+        }
+
+        assert_eq!(
+            get_host_root_path().unwrap_err().root_cause().to_string(),
+            "Running from docker container, but /host is not mounted"
+        );
+
+        std::fs::create_dir(test_dir).unwrap();
+        assert_eq!(get_host_root_path().unwrap(), Path::new(HOST_ROOT_PATH));
+    }
+}

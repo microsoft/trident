@@ -346,7 +346,7 @@ impl Trident {
                     .as_path(),
             )
             .context("Failed to enter host chroot, which is required when executing inside a container")?
-            .execute_and_exit(|| self.handle_commands(receiver, &orchestrator)).context("Failed to execute in chroot") {
+            .execute_and_exit(|| self.handle_commands(receiver, &orchestrator)).context("Failed to execute in the host chroot") {
                 if let Some(ref orchestrator) = orchestrator {
                     orchestrator.report_error(format!("{e:?}"));
                 }

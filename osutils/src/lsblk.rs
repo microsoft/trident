@@ -288,12 +288,13 @@ mod tests {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-pub mod functional_tests {
+#[cfg(all(test, feature = "functional-tests"))]
+mod functional_tests {
     use super::*;
 
-    pub fn test() -> Result<(), Error> {
-        let block_device_list = super::run(Path::new("/dev/sda"))?;
+    #[test]
+    fn test() {
+        let block_device_list = super::run(Path::new("/dev/sda")).unwrap();
 
         assert_eq!(block_device_list.len(), 1);
         assert_eq!(block_device_list[0].name, "/dev/sda");
@@ -302,7 +303,5 @@ pub mod functional_tests {
         assert_eq!(super::run(Path::new("/dev/null")).unwrap_err().root_cause().to_string(), "Process output:\nstdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/null: not a block device\n\n");
 
         assert_eq!(super::run(Path::new("/dev/does-not-exist")).unwrap_err().root_cause().to_string(), "Process output:\nstdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/does-not-exist: not a block device\n\n");
-
-        Ok(())
     }
 }

@@ -9,19 +9,29 @@ check:
 
 .PHONY: build
 build:
+	cargo build
+
+.PHONY: build-release
+build-release:
 	cargo build --release
 
 .PHONY: test
 test:
-	cargo test --all --no-fail-fast 
+	cargo test --all --no-fail-fast
+
+.PHONY: ut-coverage
+ut-coverage:
+	mkdir -p target/coverage/profraw
+	CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' cargo test --target-dir target/coverage --all --no-fail-fast
+
+.PHONY: coverage-report
+coverage-report:
+	# cargo install grcov
+	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,lcov,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o target/coverage
+	jq .coveragePercent target/coverage/covdir
 
 .PHONY: coverage
-coverage:
-	CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw' cargo test --all
-	# cargo install grcov
-	mkdir -p target/coverage
-	grcov . --binary-path ./target/debug/deps/ -s . -t html,lcov,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o target/coverage
-	jq .coveragePercent target/coverage/covdir
+coverage: ut-coverage coverage-report
 
 .PHONY: rpm
 rpm:
@@ -104,3 +114,37 @@ validate-api-schema: build-api-schema
 .PHONY: view-docs
 view-docs:
 	xdg-open trident_api/docs/html/trident-api.html > /dev/null 2>&1 &
+
+.PHONY: build-functional-tests
+build-functional-test:
+	cargo build --tests --features functional-tests
+
+FUNCTIONAL_TEST_DIR := /tmp/trident-test
+TRIDENT_COVERAGE_TARGET := target/coverage
+BUILD_OUTPUT := $(shell mktemp)
+
+.PHONY: build-functional-tests-cc
+build-functional-test-cc:
+	# Redirect output to get to the test binaries; needs to be in sync with below
+	-@OPENSSL_STATIC=1 OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
+		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
+		CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' \
+		LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' \
+		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-tests --all --message-format=json > $(BUILD_OUTPUT)
+
+	# Output this in case there were build failures
+	@OPENSSL_STATIC=1 OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
+		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
+		CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' \
+		LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' \
+		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-tests --all
+
+.PHONY: functional-test
+functional-test: build-functional-test-cc
+	cp ../k8s-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
+	cp ../k8s-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+	python3 -u -m pytest functional_tests/ --setup-show --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload -vv # -k test_osutils -s
+
+.PHONY: patch-functional-test
+patch-functional-test: build-functional-test-cc
+	python3 -u -m pytest functional_tests/ --setup-show --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment -vv # -k test_osutils -s
