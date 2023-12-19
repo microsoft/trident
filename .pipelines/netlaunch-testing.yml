@@ -1,0 +1,181 @@
+parameters:
+- name: argusDirectory
+  type: string
+  default: self
+
+- name: installerISOPipeline
+  type: string
+  default: ''
+
+- name: downloadBuildType
+  type: string
+  default: current
+
+- name: updateRuntimeOSTrident
+  type: boolean
+  default: false
+
+stages:
+- stage: DeploymentTesting
+  displayName: Deployment Testing
+  dependsOn: InstallerISO
+
+  jobs:
+  - job: DefineTests
+    displayName: Define Tests
+    timeoutInMinutes: 5
+    pool:
+      type: linux
+
+    variables:
+      ob_outputDirectory: $(Build.SourcesDirectory)/build
+      argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+
+    steps:
+    - checkout: ${{ parameters.argusDirectory }}
+
+    - bash: |
+        set -eux
+        tests=""
+        for dir in */; do
+          dir=${dir%*/}
+          tests+=", \"$dir\" : {\"test\": \"$dir\"}"
+        done
+        tests="{${tests:2}}"
+        echo "##vso[task.setvariable variable=listOfTests;isOutput=true]$tests"
+      workingDirectory: $(argusToolkitSourceDirectory)/tests/trident_configurations
+      name: setTests
+      displayName: Set concurrent tests
+
+  - job: Testing
+    dependsOn: DefineTests
+    timeoutInMinutes: 15
+    pool:
+      type: linux
+      name: CAPKV_Pool
+      hostArchitecture: amd64
+
+    strategy:
+      matrix:
+        $[ dependencies.DefineTests.outputs['setTests.listOfTests'] ]
+
+    variables:
+      argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+
+      tridentConfigPath: $(argusToolkitSourceDirectory)/tests/trident_configurations/$(test)
+      ob_outputDirectory: $(argusToolkitSourceDirectory)/deployment_logs
+      ob_artifactBaseName: $(test)_deployment_log_$(System.JobAttempt)
+
+    steps:
+    - checkout: ${{ parameters.argusDirectory }}
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: ${{ parameters.downloadBuildType}}
+        project: ECF
+        definition: ${{ parameters.installerISOPipeline }}
+        buildVersionToDownload: 'latest'
+        artifactName: 'installer-iso'
+        patterns: '*/installer.iso'
+        targetPath: '$(System.ArtifactsDirectory)/installer-iso'
+
+    - bash: |
+        set -eux
+        sudo snap install yq
+        sudo yq eval '.host-configuration.management.self-upgrade = true' trident-config.yaml -i
+      condition: eq(${{ parameters.updateRuntimeOSTrident }}, true)
+      workingDirectory: $(tridentConfigPath)
+      displayName: "Update trident in Runtime OS"
+
+    - bash: |
+        set -eux
+
+        # Print OS version:
+        cat /etc/os-release
+
+        # Install swtpm:
+        if grep UBUNTU_CODENAME=focal /etc/os-release -q; then
+            sudo add-apt-repository ppa:stefanberger/swtpm-focal -y
+            sudo apt-get update
+        fi
+
+        sudo apt-get install -y swtpm swtpm-tools
+
+        curl -fsSL https://get.docker.com | sudo bash
+        sudo NEEDRESTART_MODE=a apt-get install -y virt-manager qemu-efi python3-libvirt ovmf openssl python3-netifaces python3-docker python3-bcrypt python3-jinja2
+
+        sudo usermod -aG docker $USER
+        sudo usermod -a -G libvirt $USER
+
+        mkdir -p ~/.config/libvirt
+        cat << EOF > ~/.config/libvirt/libvirt.conf
+        uri_default = "qemu:///system"
+        EOF
+      workingDirectory: $(argusToolkitSourceDirectory)
+      displayName: "Configure virt-deploy"
+
+    - bash: |
+        set -eux
+        sg libvirt "./virt-deploy create"
+        sg libvirt "./virt-deploy run"
+      workingDirectory: $(argusToolkitSourceDirectory)
+      displayName: "Running sushy tools for testing deployment with BMC"
+
+    - bash: |
+        set -eux
+        make build/netlaunch
+        echo "Netlaunch output:" >> ./deployment.log
+        $(argusToolkitSourceDirectory)/build/netlaunch \
+            -i $(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso \
+            -c $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
+            -t $(tridentConfigPath)/trident-config.yaml \
+            --logstream \
+        2>&1 | tee -a ./deployment.log
+        ./tests/check_netlaunch.py ./deployment.log
+      timeoutInMinutes: 5
+      workingDirectory: $(argusToolkitSourceDirectory)
+      displayName: "Run netlaunch for testing"
+
+    - bash: |
+        set -eux
+        echo -e '\n\n\n' >> ./deployment.log
+        printf '%.0s-' {1..90} >> ./deployment.log
+        echo -e '\n\n\n' >> ./deployment.log
+
+        vm_name="$(jq .virtualmachines[0].name ./virt-deploy-metadata.json)"
+        log=$(eval echo /tmp/"$vm_name"-serial0.log)
+
+        until [ -f "$log" ]
+        do
+            sleep 0.1
+        done
+
+        echo "$log": | tee -a ./deployment.log
+        sudo tail -f -n +1 "$log" | tee -a ./deployment.log &
+        PID=$!
+
+        if [ "$(Agent.JobStatus)" != "Canceled" ]; then
+          while true
+          do
+            if tail ./deployment.log | grep -v "localhost login:" | grep -P -m 1 "^[a-zA-Z0-9_-]+ login:"
+            then
+                kill $PID
+                break
+            else
+                sleep 0.5
+            fi
+          done
+          echo "Successful Runtime OS deployment"
+        fi
+      timeoutInMinutes: 5
+      condition: succeededOrFailed()
+      workingDirectory: $(argusToolkitSourceDirectory)
+      displayName: "Check Runtime OS deployment"
+
+    - bash: |
+        set -eux
+        mkdir -p deployment_logs
+        sudo cp $(argusToolkitSourceDirectory)/deployment.log \
+                    $(ob_outputDirectory)/deployment.log
+      workingDirectory: $(argusToolkitSourceDirectory)
+      displayName: "Publish deployment.log"

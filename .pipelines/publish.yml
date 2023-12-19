@@ -1,0 +1,55 @@
+stages:
+  - stage: Publishing
+    dependsOn: DeploymentTesting
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
+
+    jobs:
+    - job: Publishing
+      displayName: Publish Trident RPMs and Provisioning OS Template ISO to Universal Packages
+      pool:
+        type: linux
+
+      variables:
+        ob_outputDirectory: $(Build.SourcesDirectory)/build
+
+      steps:
+      - script: echo $(Build.BuildNumber)
+        displayName: "Print Trident Version"
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          patterns: |
+            *.iso
+          targetPath: $(Pipeline.Workspace)/provision-template-iso
+          artifactName: provisioning-os-template
+        displayName: "Download Provision Template ISO"
+
+      - task: UniversalPackages@0
+        displayName: "Publish provision-template-iso Universal Package"
+        inputs:
+          command: publish
+          vstsFeedPublish: ECF/Trident
+          vstsFeedPackagePublish: provision-template-iso
+          publishDirectory: "$(Pipeline.Workspace)/provision-template-iso"
+          versionPublish: $(Build.BuildNumber)
+          versionOption: custom
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          patterns: |
+            *.rpm
+          targetPath: $(Pipeline.Workspace)/rpms
+          artifactName: drop_Trident_BuildTrident
+        displayName: "Download Trident RPMs"
+
+      - task: UniversalPackages@0
+        displayName: "Publish rpms Universal Package"
+        inputs:
+          command: publish
+          vstsFeedPublish: ECF/Trident
+          vstsFeedPackagePublish: rpms
+          publishDirectory: "$(Pipeline.Workspace)/rpms"
+          versionPublish: $(Build.BuildNumber)
+          versionOption: custom

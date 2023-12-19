@@ -1,0 +1,49 @@
+parameters:
+- name: tridentRepo
+  type: string
+  default: trident
+
+- name: tridentArtifactSource
+  type: string
+  default: current # If specific, trident won't build and instead the artifact will be downloaded in other stage.
+
+- name: publishUniversalFeed
+  type: boolean
+  default: false
+
+stages:
+- stage: Trident
+
+  jobs:
+  - job: BuildTrident
+    displayName: Check, Build and Unit Test
+    condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
+    pool:
+      type: linux
+
+    variables:
+      ob_outputDirectory: '$(Build.SourcesDirectory)/trident/out'
+
+    steps:
+    - checkout: ${{ parameters.tridentRepo }}
+
+    - template: common.yml@${{ parameters.tridentRepo }}
+      parameters:
+         tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+         publishUniversalFeed: ${{ parameters.publishUniversalFeed }}
+
+  - job: Coverage
+    displayName: Evaluate Unit Test Code Coverage
+    condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
+    pool:
+      type: linux
+
+    variables:
+      ob_outputDirectory: '$(Build.SourcesDirectory)/trident/out'
+
+    steps:
+    - checkout: ${{ parameters.tridentRepo }}
+
+    - template: coverage.yml@${{ parameters.tridentRepo }}
+      parameters:
+         tridentSourceDirectory: $(Build.SourcesDirectory)/trident

@@ -1,0 +1,55 @@
+# Core build logic that is common to all OneBranch builds.
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)"
+
+steps:
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel bc
+    displayName: Install native dependencies
+
+  - task: RustInstaller@1
+    inputs:
+      # Can be any "MSRustup" version, such as ms-stable, ms-1.54 or ms-stable-20210513.5 - for more details see https://mscodehub.visualstudio.com/Rust/_git/rust.msrustup
+      # For supported versions see https://mscodehub.visualstudio.com/Rust/_packaging?_a=package&feed=Rust&view=versions&package=rust.tools-x86_64-pc-windows-msvc&protocolType=NuGet
+      rustVersion: ms-1.73
+      # Space separated list of additional targets: only the host target is supported with the toolchain by default.
+      #additionalTargets: $(additionalRustTargets)
+      # URL of an Azure Artifacts feed configured with a crates.io upstream. Must be within the current ADO collection.
+      # NOTE: Azure Artifacts support for Rust is not yet public, but it is enabled for internal ADO organizations.
+      # https://learn.microsoft.com/en-us/azure/devops/artifacts/how-to/set-up-upstream-sources?view=azure-devops
+      cratesIoFeedOverride: sparse+https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/crates.io/Cargo/index/
+      # URL of an Azure Artifacts NuGet feed configured with the mscodehub Rust feed as an upstream.
+      # * The feed must be within the current ADO collection.
+      # * The CI account, usually "Project Collection Build Service (org-name)", must have at least "Collaborator" permission.
+      # When setting up the upstream NuGet feed, use following Azure Artifacts feed locator:
+      #   azure-feed://mscodehub/Rust/Rust@Release
+      toolchainFeed: https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/Rust/nuget/v3/index.json
+
+  - script: cargo install grcov
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    displayName: Install grcov
+
+  - script: make coverage
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    displayName: Collect code coverage
+
+  - task: PublishCodeCoverageResults@1
+    inputs:
+      codeCoverageTool: "Cobertura"
+      summaryFileLocation: ${{ parameters.tridentSourceDirectory }}/target/coverage/cobertura.xml
+      #pathToSources: # string. Path to Source files.
+      #reportDirectory: # string. Report directory.
+      #additionalCodeCoverageFiles: # string. Additional files.
+      #failIfCoverageEmpty: false # boolean. Fail when code coverage results are missing. Default: false.
+
+  - script: |
+      set -eux
+      COVERAGE=`jq .coveragePercent target/coverage/covdir`
+      BASELINE=61
+      if (( $(echo "$COVERAGE < $BASELINE" | bc -l) )); then
+        echo "Coverage is $COVERAGE, which is less than $BASELINE% set as the baseline"
+        exit 1
+      fi
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    displayName: Assert coverage is above baseline

@@ -1,0 +1,67 @@
+parameters:
+- name: tridentStage
+  type: string
+  default: ''
+
+- name: testImagesRepo
+  type: string
+  default: test-images
+
+- name: runtimeOSArtifactSource
+  type: string
+  default: current # If specific, job won't run and instead the artifact will be downloaded in other stage.
+
+- name: tridentPipeline
+  type: string
+  default: ''
+
+- name: downloadBuildType
+  type: string
+  default: current
+
+- name: artifactName
+  type: string
+  default: drop_Trident_BuildTrident
+
+stages:
+- stage: TridentTestImg
+  displayName: Runtime OS Partition Images
+  dependsOn: ${{ parameters.tridentStage }}
+
+  jobs:
+  - job: BuildTridentTestImg
+    displayName: Build
+    timeoutInMinutes: 15
+    condition: eq('${{ parameters.runtimeOSArtifactSource }}', 'current')
+    pool:
+      type: linux
+
+    variables:
+      ob_outputDirectory: $(Build.SourcesDirectory)/test-images/output
+      ob_artifactBaseName: trident-testimg
+      mic_package: DEFAULT
+      mic_version: DEFAULT
+      baseimg_package: DEFAULT
+      baseimg_version: DEFAULT
+
+    steps:
+    - checkout: ${{ parameters.testImagesRepo }}
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: ${{ parameters.downloadBuildType }}
+        project: ECF
+        definition: ${{ parameters.tridentPipeline }}
+        buildVersionToDownload: 'latest'
+        allowFailedBuilds: true
+        artifactName: ${{ parameters.artifactName }}
+        targetPath: '$(Build.SourcesDirectory)/test-images/base/trident'
+
+    - template: .pipelines/templates/trident-testimg-template.yml@${{ parameters.testImagesRepo }}
+      parameters:
+        tridentImgSourceDirectory: $(Build.SourcesDirectory)/test-images
+        outputDirectory: ${{ variables.ob_outputDirectory }}
+        mic_package: $(mic_package)
+        mic_version: $(mic_version)
+        baseimg_package: $(baseimg_package)
+        baseimg_version: $(baseimg_version)

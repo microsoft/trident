@@ -1,0 +1,110 @@
+parameters:
+- name: argusDirectory
+  type: string
+  default: self
+
+- name: runtimeImagePipeline
+  type: string
+  default: ''
+
+- name: downloadBuildTypeRuntimeOS
+  type: string
+  default: current
+
+- name: provOSPipeline
+  type: string
+  default: ''
+
+- name: downloadBuildTypeProvOS
+  type: string
+  default: current
+
+- name: isogenPipeline
+  type: string
+  default: ''
+
+- name: downloadBuildTypeIsogen
+  type: string
+  default: current
+
+- name: installerISOArtifactSource
+  type: string
+  default: current # If specific, job won't run and instead the artifact will be downloaded in other stage.
+
+stages:
+- stage: InstallerISO
+  displayName: Provisioning OS Installer ISO
+  dependsOn:
+    - BuildingTools
+    - ProvisioningOSTemplate
+    - TridentTestImg
+
+  jobs:
+  - job: BuildInstallerISO
+    displayName: Build
+    condition: eq('${{ parameters.installerISOArtifactSource }}', 'current')
+    timeoutInMinutes: 15
+    pool:
+      type: linux
+
+    variables:
+      argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+
+      ob_outputDirectory: $(argusToolkitSourceDirectory)/build
+      ob_artifactBaseName: installer-iso
+
+    steps:
+    - checkout: ${{ parameters.argusDirectory }}
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: ${{ parameters.downloadBuildTypeRuntimeOS}}
+        project: ECF
+        definition: ${{ parameters.runtimeImagePipeline }}
+        buildVersionToDownload: 'latest'
+        artifactName: 'trident-testimg'
+        targetPath: '$(System.ArtifactsDirectory)/runtime-image'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: ${{ parameters.downloadBuildTypeProvOS }}
+        project: ECF
+        definition: ${{ parameters.provOSPipeline }}
+        buildVersionToDownload: 'latest'
+        artifactName: 'provisioning-os-template'
+        patterns: '*.iso'
+        targetPath: '$(System.ArtifactsDirectory)/provision-template'
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: ${{ parameters.downloadBuildTypeIsogen }}
+        project: ECF
+        definition: ${{ parameters.isogenPipeline }}
+        buildVersionToDownload: 'latest'
+        artifactName: 'isogen'
+        patterns: 'isogen'
+        targetPath: '$(System.ArtifactsDirectory)/isogen'
+
+    - bash: |
+        set -eux
+        mkdir -p $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image
+        mkdir -p $(argusToolkitSourceDirectory)/build/installer-iso
+        mv $(System.ArtifactsDirectory)/runtime-image/boot*.raw.zst \
+          $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/boot.rawzst
+        mv $(System.ArtifactsDirectory)/runtime-image/root*.raw.zst \
+          $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/root.rawzst
+        cp  $(System.ArtifactsDirectory)/{provision-template,isogen}/* \
+            $(argusToolkitSourceDirectory)/build/installer-iso-components/
+      workingDirectory: $(argusToolkitSourceDirectory)
+      displayName: "Setting build materials"
+
+    - bash: |
+        set -eux
+        chmod +x $(argusToolkitSourceDirectory)/build/installer-iso-components/isogen
+        $(argusToolkitSourceDirectory)/build/installer-iso-components/isogen \
+            -i "$(argusToolkitSourceDirectory)/build/installer-iso-components/provision-template.iso" \
+            -a "$(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image" \
+            -o "$(argusToolkitSourceDirectory)/build/installer-iso/installer.iso" \
+            -m "$(argusToolkitSourceDirectory)/build/installer-iso/added_files.json"
+      workingDirectory: $(argusToolkitSourceDirectory)
+      displayName: "Build Installer ISO for testing components"
