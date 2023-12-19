@@ -76,22 +76,43 @@ impl EphemeralOverlay {
 /// directory. Uses SystemD mount unit to mount overlays, so does work from
 /// isolated environments like containers if needed to be visible from other
 /// processes running on the host.
-pub struct EphemeralOverlayWithSystemD {
-    dir: TempDir,
+pub struct SystemDFilesystemOverlay {
+    dir: Option<TempDir>,
     unit_name: PathBuf,
 }
 
-impl EphemeralOverlayWithSystemD {
+impl SystemDFilesystemOverlay {
     const SYSTEMD_UNIT_ROOT_PATH: &'static str = "/etc/systemd/system";
 
     /// Creates the new overlay and mounts it on top of the provided path.
-    pub fn mount(target_path: &Path) -> Result<Self, Error> {
+    /// Overlay files are stored in a temporary directory that is deleted upon unmount.
+    pub fn mount_temporary(target_path: &Path, options: &[&str]) -> Result<Self, Error> {
         let dir = tempfile::tempdir().context("Failed to create temporary directory")?;
         let overlay_work_path = dir.path().join("work");
         let overlay_upper_path = dir.path().join("upper");
         files::create_dirs(&overlay_work_path).context("Failed to create overlay work dir")?;
         files::create_dirs(&overlay_upper_path).context("Failed to create overlay upper dir")?;
 
+        let mut this = Self::mount(
+            target_path,
+            &overlay_upper_path,
+            &overlay_work_path,
+            target_path,
+            options,
+        )?;
+        this.dir = Some(dir);
+        Ok(this)
+    }
+
+    /// Creates the new overlay and mounts it on top of the provided path.
+    /// Overlay files are stored in the supplied directories.
+    pub fn mount(
+        target_path: &Path,
+        upper_path: &Path,
+        work_path: &Path,
+        lower_path: &Path,
+        options: &[&str],
+    ) -> Result<Self, Error> {
         // Create .mount systemd unit for mounting the overlay, so it works from
         // a container as well
         let systemd_unit_root_path = Path::new(Self::SYSTEMD_UNIT_ROOT_PATH);
@@ -112,24 +133,30 @@ impl EphemeralOverlayWithSystemD {
                     What=overlay
                     Where={target_path}
                     Type=overlay
-                    Options=lowerdir={target_path},upperdir={upperdir},workdir={workdir}
+                    Options=lowerdir={lowerdir},upperdir={upperdir},workdir={workdir}{extra_options}
                 "#},
+                extra_options = if options.is_empty() {
+                    "".to_owned()
+                } else {
+                    ",".to_owned() + &options.join(",")
+                },
                 target_path = target_path
                     .to_str()
                     .context(format!("Failed to decode '{}'", target_path.display()))?,
-                upperdir = overlay_upper_path.to_str().context(format!(
-                    "Failed to decode '{}'",
-                    overlay_upper_path.display()
-                ))?,
-                workdir = overlay_work_path.to_str().context(format!(
-                    "Failed to decode '{}'",
-                    overlay_work_path.display()
-                ))?,
+                upperdir = upper_path
+                    .to_str()
+                    .context(format!("Failed to decode '{}'", upper_path.display()))?,
+                workdir = work_path
+                    .to_str()
+                    .context(format!("Failed to decode '{}'", work_path.display()))?,
+                lowerdir = lower_path
+                    .to_str()
+                    .context(format!("Failed to decode '{}'", lower_path.display()))?,
             ),
         )?;
 
         let this = Self {
-            dir,
+            dir: None,
             unit_name: overlay_mount_unit_name.clone(),
         };
 
@@ -183,9 +210,10 @@ impl EphemeralOverlayWithSystemD {
             .context("Failed to unmount the overlay")?;
         fs::remove_file(Path::new(Self::SYSTEMD_UNIT_ROOT_PATH).join(self.unit_name))
             .context("Failed to clean up the overlay mount unit")?;
-        self.dir
-            .close()
-            .context("Failed to cleanup the overlay temporary working directory")?;
+        if let Some(dir) = self.dir {
+            dir.close()
+                .context("Failed to cleanup the overlay temporary working directory")?;
+        }
         Ok(())
     }
 }
@@ -229,7 +257,7 @@ mod functional_tests {
     #[test]
     pub fn test_systemd() {
         let dir = tempfile::tempdir().unwrap();
-        let overlay = EphemeralOverlayWithSystemD::mount(dir.path()).unwrap();
+        let overlay = SystemDFilesystemOverlay::mount_temporary(dir.path(), &[]).unwrap();
         // create a file on top of the overlay
         let test_file = dir.path().join("test");
         std::fs::write(&test_file, "test").unwrap();
@@ -240,6 +268,16 @@ mod functional_tests {
         // check that the file does not exist in the target
         assert!(!test_file.exists());
 
+        // fail to write file for read-only overlay
+        let overlay = SystemDFilesystemOverlay::mount_temporary(dir.path(), &["ro"]).unwrap();
+        // create a file on top of the overlay
+        let test_file = dir.path().join("test");
+        assert_eq!(
+            std::fs::write(test_file, "test").unwrap_err().to_string(),
+            "Read-only file system (os error 30)"
+        );
+        overlay.unmount().unwrap();
+
         // fail to mount on top of a symlink
         let symlink_path = Path::new("/tmp2");
         if symlink_path.exists() {
@@ -247,12 +285,47 @@ mod functional_tests {
         }
         symlink(Path::new("/tmp"), symlink_path).unwrap();
         assert_eq!(
-            EphemeralOverlayWithSystemD::mount(symlink_path)
+            SystemDFilesystemOverlay::mount_temporary(symlink_path, &[])
                 .err()
                 .unwrap()
                 .root_cause()
                 .to_string(),
             "Process output:\nstderr:\nJob failed. See \"journalctl -xe\" for details.\n\n"
         );
+
+        // test persistent mount
+        let dir_base = tempfile::tempdir()
+            .context("Failed to create temporary directory")
+            .unwrap();
+        let overlay_work_path = dir_base.path().join("work");
+        let overlay_upper_path = dir_base.path().join("upper");
+        files::create_dirs(&overlay_work_path)
+            .context("Failed to create overlay work dir")
+            .unwrap();
+        files::create_dirs(&overlay_upper_path)
+            .context("Failed to create overlay upper dir")
+            .unwrap();
+
+        let overlay = SystemDFilesystemOverlay::mount(
+            dir.path(),
+            &overlay_upper_path,
+            &overlay_work_path,
+            Path::new("/etc"),
+            &[],
+        )
+        .unwrap();
+        // create a file on top of the overlay
+        let test_file = dir.path().join("test");
+        std::fs::write(&test_file, "test").unwrap();
+        // check that the file exists in the overlay
+        assert!(test_file.exists());
+
+        overlay.unmount().unwrap();
+        // check that the file does not exist in the target
+        assert!(!test_file.exists());
+
+        // check it exists in the upper directory
+        let test_file = overlay_upper_path.join("test");
+        assert!(test_file.exists());
     }
 }

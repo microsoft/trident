@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Error};
 use datastore::DataStore;
 use log::{debug, error, info, warn};
 use osutils::errors::add_secondary_error_context;
-use osutils::overlay::EphemeralOverlayWithSystemD;
+use osutils::overlay::SystemDFilesystemOverlay;
 use osutils::{chroot, container};
 use protobufs::*;
 use setsail::KsTranslator;
@@ -403,7 +403,8 @@ impl Trident {
         // Use overlay for holding any changes to the host filesystem that
         // should not be persisted.
         // TODO: mount the overlay only if we actually need to perform an update
-        let overlay = EphemeralOverlayWithSystemD::mount(Path::new(SYSTEMD_UNIT_ROOT_PATH))?;
+        let overlay =
+            SystemDFilesystemOverlay::mount_temporary(Path::new(SYSTEMD_UNIT_ROOT_PATH), &[])?;
 
         let result = if self.datastore.is_persistent() {
             modules::update(cmd, &mut self.datastore).context("Failed to update host")
