@@ -46,7 +46,7 @@ steps:
   - script: |
       set -eux
       COVERAGE=`jq .coveragePercent target/coverage/covdir`
-      BASELINE=61
+      BASELINE=62
       if (( $(echo "$COVERAGE < $BASELINE" | bc -l) )); then
         echo "Coverage is $COVERAGE, which is less than $BASELINE% set as the baseline"
         exit 1
