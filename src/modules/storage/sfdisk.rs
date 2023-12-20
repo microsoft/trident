@@ -1,6 +1,7 @@
 use std::{path::Path, process::Command};
 
 use anyhow::{bail, Context, Error};
+use osutils::exe::RunAndCheck;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -11,18 +12,17 @@ pub(super) struct SfDisk {
 }
 
 pub(super) fn get_disk_information(disk_bus_path: &Path) -> Result<SfDisk, Error> {
-    let sfdisk_output_json = crate::run_command(
-        Command::new("sfdisk")
-            .arg("-J")
-            .arg(disk_bus_path.as_os_str()),
-    )
-    .context("Failed to fetch disk information")?;
+    let sfdisk_output_json = Command::new("sfdisk")
+        .arg("-J")
+        .arg(disk_bus_path.as_os_str())
+        .output_and_check()
+        .context("Failed to fetch disk information")?;
 
-    parse_disk(sfdisk_output_json.stdout.as_slice()).context("Failed to extract disk information")
+    parse_disk(&sfdisk_output_json).context("Failed to extract disk information")
 }
 
-fn parse_disk(sfdisk_output_json: &[u8]) -> Result<SfDisk, Error> {
-    let disk_status: Value = serde_json::from_slice(sfdisk_output_json)
+fn parse_disk(sfdisk_output_json: &str) -> Result<SfDisk, Error> {
+    let disk_status: Value = serde_json::from_str(sfdisk_output_json)
         .context("Failed to deserialize output of disk status querying command")?;
 
     let disk_uuid_str = disk_status["partitiontable"]["id"]
@@ -68,7 +68,7 @@ mod tests {
                 "unit": "sectors"
             }
         }"#;
-        let disk_uuid = parse_disk(sfdisk_output_json.as_bytes()).unwrap();
+        let disk_uuid = parse_disk(sfdisk_output_json).unwrap();
         assert_eq!(
             disk_uuid,
             SfDisk {
@@ -88,7 +88,7 @@ mod tests {
             }
         }"#;
 
-        assert!(parse_disk(sfdisk_output_json.as_bytes()).is_err());
+        assert!(parse_disk(sfdisk_output_json).is_err());
 
         // missing firstlba
         let sfdisk_output_json = r#"{
@@ -100,7 +100,7 @@ mod tests {
             }
         }"#;
 
-        assert!(parse_disk(sfdisk_output_json.as_bytes()).is_err());
+        assert!(parse_disk(sfdisk_output_json).is_err());
 
         // missing lastlba
         let sfdisk_output_json = r#"{
@@ -112,7 +112,7 @@ mod tests {
             }
         }"#;
 
-        assert!(parse_disk(sfdisk_output_json.as_bytes()).is_err());
+        assert!(parse_disk(sfdisk_output_json).is_err());
 
         // missing sector size
         let sfdisk_output_json = r#"{
@@ -124,7 +124,7 @@ mod tests {
             }
         }"#;
 
-        assert!(parse_disk(sfdisk_output_json.as_bytes()).is_err());
+        assert!(parse_disk(sfdisk_output_json).is_err());
 
         // missing unit
         let sfdisk_output_json = r#"{
@@ -136,7 +136,7 @@ mod tests {
             }
         }"#;
 
-        assert!(parse_disk(sfdisk_output_json.as_bytes()).is_err());
+        assert!(parse_disk(sfdisk_output_json).is_err());
 
         // unsuported unit
         let sfdisk_output_json = r#"{
@@ -149,6 +149,6 @@ mod tests {
             }
         }"#;
 
-        assert!(parse_disk(sfdisk_output_json.as_bytes()).is_err());
+        assert!(parse_disk(sfdisk_output_json).is_err());
     }
 }

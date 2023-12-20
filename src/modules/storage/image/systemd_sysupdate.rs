@@ -20,7 +20,10 @@ use std::{
 use anyhow::{bail, Context, Error};
 use configparser::ini::Ini;
 use log::{debug, info};
-use osutils::udevadm;
+use osutils::{
+    exe::{OutputChecker, RunAndCheck},
+    udevadm,
+};
 use regex::Regex;
 use reqwest::Url;
 use tempfile;
@@ -369,35 +372,24 @@ impl ImageDeployment {
         // where transfer config file is located
         info!("Running systemd-sysupdate...");
 
-        let output = crate::run_command(
-            Command::new("/lib/systemd/systemd-sysupdate")
-                .arg("update")
-                .arg(&self.version)
-                .arg("--definitions")
-                .arg(self.transfer_config_dir.path()),
-        )
-        .context(format!(
-            "Failed to run systemd-sysupdate to version {}, with config definition files in directory {}",
-            self.version,
-            self.transfer_config_dir.path().display()
-        ))?;
+        let res = Command::new("/lib/systemd/systemd-sysupdate")
+            .arg("update")
+            .arg(&self.version)
+            .arg("--definitions")
+            .arg(self.transfer_config_dir.path())
+            .raw_output_and_check()
+            .context(format!(
+                "Failed to run systemd-sysupdate to version {}, with config definition files in directory {}",
+                self.version,
+                self.transfer_config_dir.path().display()
+            )
+        )?;
 
-        let stderr_str = String::from_utf8(output.stderr)
-            .context("Failed to convert systemd-sysupdate error output to UTF-8 string")?;
+        // Get stderr output of sysupdate
+        let stderr_str = res.error_output();
 
         // TODO: Implement live-streaming of systemd-sysupdate logs to the orchestrator in Trident.
         // Related ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6177.
-        info!(
-            "Output of systemd-sysupdate:\n{}.\nExit status of systemd-sysupdate:\n{}.",
-            &stderr_str, &output.status
-        );
-
-        if !output.status.success() {
-            bail!("systemd-sysupdate failed with status: {:?}", output.status);
-        }
-        if !stderr_str.contains("Successfully installed update") {
-            bail!("Update to '{}' with systemd-sysupdate failed", self.version);
-        }
 
         info!("Systemd-Sysupdate succeeded");
 
@@ -695,25 +687,22 @@ fn get_partlabel_from_path(partition_path: &str) -> Result<String, Error> {
     let canonical_path = fs::canonicalize(partition_path)
         .with_context(|| format!("Failed to canonicalize the path '{partition_path}'"))?;
     // Run the blkid command to fetch block devices
-    let output = crate::run_command(
-        Command::new("blkid")
-            .arg("-o")
-            .arg("value") // Entire file name is [VERSION] option
-            .arg("-s")
-            .arg("PARTLABEL")
-            .arg(&canonical_path),
-    )
-    .context(format!(
-        "Failed to fetch PARTLABEL for partition with path '{partition_path}'"
-    ))?;
+    let output = Command::new("blkid")
+        .arg("-o")
+        .arg("value") // Entire file name is [VERSION] option
+        .arg("-s")
+        .arg("PARTLABEL")
+        .arg(&canonical_path)
+        .output_and_check()
+        .context(format!(
+            "Failed to fetch PARTLABEL for partition with path '{partition_path}'"
+        ))?;
 
-    // Parse blkid output to see if update was successful
-    let stdout_str = String::from_utf8(output.stdout)
-        .context("Failed to convert blkid stdout output to UTF-8 string")?;
     // Trim the output and return
-    if !stdout_str.trim().is_empty() {
-        return Ok(stdout_str.trim().to_string());
+    if !output.trim().is_empty() {
+        return Ok(output.trim().to_string());
     }
+
     // Return an Error otherwise
     bail!("No PARTLABEL found on block device '{}'", &partition_path)
 }

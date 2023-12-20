@@ -22,7 +22,7 @@ use trident_api::{
 };
 
 use crate::modules::{self, storage::tabfile::TabFile};
-use osutils::udevadm;
+use osutils::{exe::RunAndCheck, udevadm};
 pub mod mount;
 mod stream_image;
 mod systemd_sysupdate;
@@ -354,7 +354,9 @@ pub fn reboot() -> Result<(), Error> {
     nix::unistd::sync();
 
     info!("Rebooting system");
-    crate::run_command(Command::new("systemctl").arg("reboot"))
+    Command::new("systemctl")
+        .arg("reboot")
+        .run_and_check()
         .context("Failed to reboot the host")?;
 
     unreachable!()

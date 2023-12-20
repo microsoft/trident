@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Error};
 use datastore::DataStore;
 use log::{debug, error, info, warn};
 use osutils::errors::add_secondary_error_context;
+use osutils::exe::RunAndCheck;
 use osutils::overlay::SystemDFilesystemOverlay;
 use osutils::{chroot, container};
 use protobufs::*;
@@ -12,7 +13,7 @@ use tokio::sync::mpsc::{self, Sender, UnboundedSender};
 use trident_api::config::HostConfigurationSource;
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Command;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -422,42 +423,18 @@ impl Trident {
     }
 }
 
-fn run_command(command: &mut Command) -> Result<Output, Error> {
-    let output = command.output()?;
-    if !output.status.success() {
-        match output.status.code() {
-            Some(exit_code) => bail!(
-                "Command failed: {:?} with exit code: {}\n\nstdout:\n{}\n\nstderr:\n{}",
-                command,
-                exit_code,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            ),
-            None => bail!(
-                "Command failed: {:?}\n\nstdout:\n{}\n\nstderr:\n{}",
-                command,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        }
-    }
-    Ok(output)
-}
-
 fn open_firewall_for_grpc() -> Result<(), Error> {
-    run_command(
-        Command::new("iptables")
-            .arg("-A")
-            .arg("INPUT")
-            .arg("-p")
-            .arg("tcp")
-            .arg("--dport")
-            .arg("50051") // TODO
-            .arg("-j")
-            .arg("ACCEPT"),
-    )
-    .context("Failed to open firewall for gRPC")?;
-    Ok(())
+    Command::new("iptables")
+        .arg("-A")
+        .arg("INPUT")
+        .arg("-p")
+        .arg("tcp")
+        .arg("--dport")
+        .arg("50051") // TODO
+        .arg("-j")
+        .arg("ACCEPT")
+        .run_and_check()
+        .context("Failed to open firewall for gRPC")
 }
 
 #[cfg(test)]
@@ -469,19 +446,6 @@ mod tests {
 
     use super::*;
     use std::path::PathBuf;
-
-    #[test]
-    fn test_run_command() {
-        let result = run_command(Command::new("bash").arg("-c").arg("echo foobar"));
-        assert_eq!(
-            String::from_utf8_lossy(&result.as_ref().unwrap().stderr),
-            ""
-        );
-        assert_eq!(String::from_utf8_lossy(&result.unwrap().stdout), "foobar\n");
-
-        let result = run_command(Command::new("bash").arg("-c").arg("this-should-not-exist"));
-        assert_eq!(result.err().unwrap().to_string(), "Command failed: \"bash\" \"-c\" \"this-should-not-exist\" with exit code: 127\n\nstdout:\n\n\nstderr:\nbash: line 1: this-should-not-exist: command not found\n");
-    }
 
     /// Validates that the `to_block_device` function works as expected for
     /// disks and partitions.

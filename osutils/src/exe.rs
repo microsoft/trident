@@ -103,7 +103,7 @@ impl OutputChecker for Output {
         self.status.end_signal()
     }
 
-    /// Get stderr if it's not empty, otherwise get stdout
+    /// Get stderr
     fn error_output(&self) -> String {
         String::from_utf8_lossy(&self.stderr).into()
     }
@@ -192,6 +192,7 @@ impl OutputChecker for Result<Output, std::io::Error> {
 pub trait RunAndCheck: Sealed {
     fn run_and_check(&mut self) -> Result<(), Error>;
     fn output_and_check(&mut self) -> Result<String, Error>;
+    fn raw_output_and_check(&mut self) -> Result<Output, Error>;
     fn render_command(&self) -> String;
 }
 
@@ -205,7 +206,24 @@ impl RunAndCheck for Command {
     }
 
     fn output_and_check(&mut self) -> Result<String, Error> {
-        self.output().check_output()
+        self.output()
+            .check_output()
+            .with_context(|| format!("Error when running: {}", self.render_command()))
+    }
+
+    fn raw_output_and_check(&mut self) -> Result<Output, Error> {
+        // Run the process and store the result.
+        let res = self.output();
+
+        // Check the result to be sure it's Ok(output) and that the subprocess
+        // exited successfully.
+        res.check()
+            .with_context(|| format!("Error when running: {}", self.render_command()))?;
+
+        // We already checked the result, so we know it's an Ok(output) and
+        // output.is_success() == true. We need to return the output, so we
+        // unwrap() it out of the result.
+        Ok(res.unwrap())
     }
 
     fn render_command(&self) -> String {
@@ -331,5 +349,53 @@ mod test {
         let mut cmd = Command::new("cat");
         cmd.arg("/nonexistent_file_1234");
         cmd.run_and_check().unwrap_err();
+    }
+
+    #[test]
+    fn test_render_command() {
+        let mut cmd = Command::new("echo");
+        cmd.arg("something");
+        assert_eq!(cmd.render_command(), "echo something");
+
+        let mut cmd = Command::new("echo");
+        cmd.arg("something with spaces");
+        assert_eq!(cmd.render_command(), "echo 'something with spaces'");
+
+        let mut cmd = Command::new("echo");
+        cmd.arg("something");
+        cmd.arg("with");
+        cmd.arg("multiple");
+        cmd.arg("arguments");
+        assert_eq!(
+            cmd.render_command(),
+            "echo something with multiple arguments"
+        );
+    }
+
+    #[test]
+    fn test_raw_output_and_check() {
+        let mut cmd = Command::new("echo");
+        cmd.arg("something");
+        let output = cmd.raw_output_and_check().unwrap();
+        assert_eq!(
+            output.stdout, b"something\n",
+            "Output does not match expected",
+        );
+        assert!(output.is_success(), "Expected success, got {:?}", output);
+
+        // This command doesnt exist
+        let mut cmd = Command::new("nonexistent_command_1234");
+        cmd.arg("/nonexistent");
+        cmd.raw_output_and_check().unwrap_err();
+
+        // This command should fail
+        let mut cmd = Command::new("false");
+        cmd.arg("something");
+        cmd.raw_output_and_check().unwrap_err();
+
+        // This command should fail
+        let mut cmd = Command::new("cat");
+        cmd.arg("/nonexistent_file_1234");
+        cmd.raw_output_and_check().unwrap_err();
     }
 }

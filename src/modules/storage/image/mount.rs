@@ -2,16 +2,18 @@ use std::{fs, path::Path, process::Command};
 
 use anyhow::{Context, Error};
 use log::error;
-use osutils::systemd;
+use osutils::{exe::RunAndCheck, systemd};
 use trident_api::{config::HostConfiguration, status::HostStatus};
 
 use crate::modules::storage::tabfile::{TabFile, TabFileSettings};
 
 pub(crate) fn unmount_updated_volumes(mount_path: &Path) -> Result<(), Error> {
     let mount_unit_name = systemd::escape_mount_unit_name(&mount_path, systemd::MOUNT_UNIT_SUFFIX)?;
-    crate::run_command(Command::new("systemctl").arg("stop").arg(mount_unit_name))
-        .context("Failed to safely unmount target root partition.")?;
-    Ok(())
+    Command::new("systemctl")
+        .arg("stop")
+        .arg(mount_unit_name)
+        .run_and_check()
+        .context("Failed to safely unmount target root partition.")
 }
 
 pub(crate) fn mount_updated_volumes(
@@ -66,38 +68,37 @@ pub(crate) fn mount_updated_volumes(
         update_fs_target.to_string_lossy()
     ))?;
 
-    crate::run_command(
-        Command::new("/usr/lib/systemd/system-generators/systemd-fstab-generator")
-            .arg(systemd_unit_root_path)
-            .arg(systemd_unit_root_path)
-            .arg(systemd_unit_root_path)
-            .env("SYSTEMD_FSTAB", update_fstab_path)
-            .env("SYSTEMD_LOG_TARGET", "console")
-            .env("SYSTEMD_LOG_LEVEL", "debug"),
-    )
-    .context("Failed to generate systemd units for the updated fstab")?;
+    Command::new("/usr/lib/systemd/system-generators/systemd-fstab-generator")
+        .arg(systemd_unit_root_path)
+        .arg(systemd_unit_root_path)
+        .arg(systemd_unit_root_path)
+        .env("SYSTEMD_FSTAB", update_fstab_path)
+        .env("SYSTEMD_LOG_TARGET", "console")
+        .env("SYSTEMD_LOG_LEVEL", "debug")
+        .run_and_check()
+        .context("Failed to generate systemd units for the updated fstab")?;
 
-    crate::run_command(Command::new("systemctl").arg("daemon-reload"))
+    Command::new("systemctl")
+        .arg("daemon-reload")
+        .run_and_check()
         .context("Failed to reload systemd daemon")?;
 
-    let mount_result =
-        crate::run_command(Command::new("systemctl").arg("start").arg(update_fs_target)).context(
+    let mount_result = Command::new("systemctl")
+        .arg("start")
+        .run_and_check()
+        .context(
             "Failed to mount target filesystems".to_owned()
                 + (if read_only { " (read-only)" } else { "" }),
         );
 
     if let Err(e) = mount_result {
         error!("{e:?}");
-        let dep_output = crate::run_command(
-            Command::new("systemctl")
-                .arg("list-dependencies")
-                .arg(update_fs_target),
-        )
-        .context("Failed to list dependencies of the mount target")?;
-        error!(
-            "Dependencies of the mount target:\n{}",
-            String::from_utf8_lossy(&dep_output.stdout)
-        );
+        let dep_output = Command::new("systemctl")
+            .arg("list-dependencies")
+            .arg(update_fs_target)
+            .output_and_check()
+            .context("Failed to list dependencies of the mount target")?;
+        error!("Dependencies of the mount target:\n{dep_output}");
         unmount_updated_volumes(root_mount_path)?;
         return Err(e);
     }
