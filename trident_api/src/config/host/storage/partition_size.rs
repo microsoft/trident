@@ -2,7 +2,30 @@ use std::{fmt::Display, num::ParseIntError, str::FromStr};
 
 use crate::constants::PARTITION_SIZE_GROW;
 
-use super::PartitionSize;
+#[cfg(feature = "schemars")]
+use schemars::JsonSchema;
+
+/// Partition size enum.
+/// Serialize and Deserialize traits are implemented manually in the crate::serde module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum PartitionSize {
+    /// # Grow
+    ///
+    /// Grow a partition to use all available space.
+    ///
+    /// String equivalent is defined in constants::PARTITION_SIZE_GROW
+    Grow,
+
+    /// # Fixed
+    ///
+    /// Fixed size in bytes.
+    Fixed(u64),
+    // Not implemented yet but left as a reference for the future.
+    // Min(u64),
+    // Max(u64),
+    // MinMax(u64, u64),
+}
 
 impl FromStr for PartitionSize {
     type Err = ParseIntError;
@@ -14,6 +37,12 @@ impl FromStr for PartitionSize {
         } else {
             PartitionSize::Fixed(from_human_readable(s)?)
         })
+    }
+}
+
+impl From<u64> for PartitionSize {
+    fn from(n: u64) -> Self {
+        PartitionSize::Fixed(n)
     }
 }
 
@@ -58,10 +87,22 @@ impl<'de> serde::Deserialize<'de> for PartitionSize {
     where
         D: serde::Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
+        // Size may be provided as a string (e.g. "1K") or as a pure number
+        // (e.g. 1024). Serde forces a number when only digits are provided, so
+        // we need to deserialize as a generic value and then check the type.
+        let value = serde_yaml::Value::deserialize(deserializer)?;
 
-        PartitionSize::from_str(s.as_str())
-            .map_err(|e| serde::de::Error::custom(format!("invalid partition size: {e}")))
+        match value {
+            serde_yaml::Value::String(s) => PartitionSize::from_str(s.as_str())
+                .map_err(|e| serde::de::Error::custom(format!("invalid partition size: {e}"))),
+            serde_yaml::Value::Number(n) => {
+                let n = n.as_u64().ok_or_else(|| {
+                    serde::de::Error::custom("invalid partition size, expected unsigned integer")
+                })?;
+                Ok(PartitionSize::Fixed(n))
+            }
+            _ => Err(serde::de::Error::custom("invalid partition size")),
+        }
     }
 }
 
@@ -177,6 +218,7 @@ mod tests {
             "1099511627777"
         );
     }
+
     #[test]
     fn test_roundtrip() {
         let test = |s: &str| {
@@ -195,5 +237,59 @@ mod tests {
         test("1025K");
         test("1G");
         test("1T");
+    }
+
+    #[test]
+    fn test_serialization_roundtrip() {
+        #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+        struct TestStruct {
+            size: PartitionSize,
+        }
+
+        impl TestStruct {
+            fn fixed(v: u64) -> Self {
+                Self { size: v.into() }
+            }
+
+            fn grow() -> Self {
+                Self {
+                    size: PartitionSize::Grow,
+                }
+            }
+        }
+
+        // Define test cases
+        let test_cases = [
+            ("size: grow", TestStruct::grow(), "size: grow"),
+            ("size: 1", TestStruct::fixed(1), "size: '1'"),
+            ("size: 512", TestStruct::fixed(512), "size: '512'"),
+            ("size: 1K", TestStruct::fixed(1024), "size: 1K"),
+            ("size: 1024", TestStruct::fixed(1024), "size: 1K"),
+            ("size: 1M", TestStruct::fixed(1048576), "size: 1M"),
+            ("size: 1048576", TestStruct::fixed(1048576), "size: 1M"),
+            ("size: 1G", TestStruct::fixed(1073741824), "size: 1G"),
+            (
+                "size: 1073741824",
+                TestStruct::fixed(1073741824),
+                "size: 1G",
+            ),
+            ("size: 1024M", TestStruct::fixed(1073741824), "size: 1G"),
+        ];
+
+        // Test (de)serialization
+        for (input_yaml, expected_struct, expected_yaml) in test_cases.iter() {
+            let actual: TestStruct = serde_yaml::from_str(input_yaml).unwrap();
+            assert_eq!(
+                actual, *expected_struct,
+                "failed to deserialize '{input_yaml}'"
+            );
+
+            let actual = serde_yaml::to_string(&actual).unwrap();
+            assert_eq!(
+                actual.trim(),
+                *expected_yaml,
+                "failed to serialize '{expected_struct:?}'"
+            );
+        }
     }
 }

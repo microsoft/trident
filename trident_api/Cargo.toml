@@ -12,12 +12,14 @@ serde_yaml = "0.9.25"
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 strum = "0.25.0"
 strum_macros = "0.25.0"
+url = { version = "2.5.0", features = ["serde"] }
 
 # Optional dependencies
 schemars = { version = "0.8.15", optional = true }
 serde_json = { version = "1.0.107", optional = true }
+
+[dev-dependencies]
 indoc = "2.0.4"
-url = { version = "2.5.0", features = ["serde"]}
 
 [features]
 schema = ["schemars", "serde_json"]

@@ -16,8 +16,10 @@ use schemars::JsonSchema;
 use crate::schema_helpers::{block_device_id_list_schema, block_device_id_schema};
 
 pub mod imaging;
+pub(crate) mod partition_size;
 mod serde_hash;
-mod serde_size;
+
+use partition_size::PartitionSize;
 
 /// Storage configuration describes the disks of the host that will be used to
 /// store the OS and data. Not all disks of the host need to be captured inside
@@ -129,27 +131,6 @@ pub struct Partition {
     /// - `grow`
     #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub size: PartitionSize,
-}
-
-/// Partition size enum.
-/// Serialize and Deserialize traits are implemented manually in the crate::serde module.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum PartitionSize {
-    /// # Grow
-    ///
-    /// Grow a partition to use all available space.
-    ///
-    /// String equivalent is defined in constants::PARTITION_SIZE_GROW
-    Grow,
-
-    /// # Fixed
-    ///
-    /// Fixed size in bytes.
-    Fixed(u64),
-    // Not implemented yet but left as a reference for the future.
-    // Min(u64),
-    // Max(u64),
-    // MinMax(u64, u64),
 }
 
 /// Partition types as defined by The Discoverable Partitions Specification (https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
@@ -701,16 +682,31 @@ impl Storage {
         // Check that devices are valid partitions and only part of a single RAID array
         let mut raid_devices = HashSet::new();
         for software_raid_config in &self.raid.software {
-            let mut device_sizes = Vec::<PartitionSize>::new();
             for device_id in &software_raid_config.devices {
                 if !raid_devices.insert(device_id.clone()) {
                     bail!("Block device '{device_id}' cannot be part of multiple RAID arrays");
                 }
-
-                let partition = self.get_partition(device_id)
-                    .context(format!("Device id '{device_id}' was set as dependency of a RAID array, but is not a valid partition"))?;
-                device_sizes.push(partition.size.clone());
             }
+
+            // Get sizes of all devices in the RAID array:
+            // 1. Check that all devices are partitions
+            // 2. Check that all partitions have fixed sizes
+            // 3. Collect results
+            let device_sizes: Vec<u64> = software_raid_config
+                .devices
+                .iter()
+                .map(|device_id| {
+                    let partition = self.get_partition(device_id)
+                        .context(format!("Device id '{device_id}' was set as dependency of a RAID array, but is not a valid partition"))?;
+                    if let PartitionSize::Fixed(size) = partition.size {
+                        Ok(size)
+                    } else {
+                        bail!("RAID array references partition '{device_id}' with a non-fixed size")
+                    }
+                })
+                .collect::<Result<Vec<u64>, Error>>()
+                .context(format!("RAID array '{}' has invalid members", software_raid_config.id))?;
+
             ensure!(
                 device_sizes.iter().min() == device_sizes.iter().max(),
                 "RAID array {} has underlying devices with different sizes",
