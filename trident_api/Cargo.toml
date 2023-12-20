@@ -17,6 +17,7 @@ strum_macros = "0.25.0"
 schemars = { version = "0.8.15", optional = true }
 serde_json = { version = "1.0.107", optional = true }
 indoc = "2.0.4"
+url = { version = "2.5.0", features = ["serde"]}
 
 [features]
 schema = ["schemars", "serde_json"]
