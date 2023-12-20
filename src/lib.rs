@@ -36,6 +36,9 @@ pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
 /// Default Trident datastore path. Used from the runtime OS.
 pub const TRIDENT_DATASTORE_PATH: &str = "/var/lib/trident/datastore.sqlite";
 
+/// Location to store the Trident datastore on the provisioning OS.
+pub const TRIDENT_TEMPORARY_DATASTORE_PATH: &str = "/var/lib/trident/tmp-datastore.sqlite";
+
 /// Trident binary path.
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 
@@ -147,33 +150,13 @@ impl Trident {
             serde_yaml::to_string(&config).unwrap_or("Failed to serialize host config".into())
         );
 
-        let datastore_path = match config.datastore {
-            // Load datastore if instructed so
-            Some(ref load_path) => Some(load_path.clone()),
-            // Otherwise see if the location where we should store the datastore
-            // exists, and if so, use it
-            None => Self::get_host_configuration(&config)?.and_then(|host_config| {
-                let datastore_path = modules::get_datastore_path(&host_config);
-                if datastore_path.exists() {
-                    Some(datastore_path.to_owned())
-                } else {
-                    None
-                }
-            }),
-        };
-
-        let datastore = match datastore_path {
-            Some(datastore_path) => {
-                info!("Loading datastore from {}", datastore_path.display());
-                DataStore::open(datastore_path.as_path()).context(format!(
-                    "Failed to load datastore from {}",
-                    datastore_path.display()
-                ))?
-            }
-            None => {
-                info!("Creating new datastore at '{}'", TRIDENT_DATASTORE_PATH);
-                DataStore::new()
-            }
+        let datastore = if let Some(ref datastore_path) = config.datastore {
+            DataStore::open(datastore_path.as_path()).context(format!(
+                "Failed to load datastore from {}",
+                datastore_path.display()
+            ))?
+        } else {
+            DataStore::open_temporary().context("Failed opening temporary datastore")?
         };
 
         Ok(Self {
@@ -409,21 +392,7 @@ impl Trident {
         let result = if self.datastore.is_persistent() {
             modules::update(cmd, &mut self.datastore).context("Failed to update host")
         } else {
-            let datastore_path = modules::get_datastore_path(&cmd.host_config).to_owned();
-            // Save the datastore if we failed, as we might not have saved
-            // it already
-            match modules::provision_host(cmd, &mut self.datastore)
-                .context("Failed to provision host")
-            {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    match self.datastore.persist(datastore_path.as_path()) {
-                        Ok(_) => Err(e),
-                        // If we failed to persist, capture that error as well
-                        Err(e2) => Err(add_secondary_error_context(e, e2)),
-                    }
-                }
-            }
+            modules::provision_host(cmd, &mut self.datastore).context("Failed to provision host")
         };
 
         match overlay.unmount().context("Failed to exit overlay") {

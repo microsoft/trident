@@ -180,8 +180,6 @@ pub(super) fn provision_host(
                 drop(sender);
             }
 
-            state.close();
-
             Ok(())
         })
         .context("Failed to execute in chroot")?;
@@ -221,6 +219,7 @@ pub(super) fn provision_host(
 
     info!("Root device path: {:#?}", root_device_path);
 
+    state.close();
     transition(mount_path, &root_device_path)?;
 
     Ok(())
@@ -317,8 +316,6 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
             let root_block_device_path = get_root_block_device_path(state.host_status())
                 .context("Failed to get root block device")?;
 
-            state.close();
-
             if !allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
                 mount::unmount_updated_volumes(mount_path)
@@ -328,6 +325,7 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
 
             info!("Root device path: {:#?}", root_block_device_path);
 
+            state.close();
             transition(mount_path, &root_block_device_path)?;
             Ok(())
         }
