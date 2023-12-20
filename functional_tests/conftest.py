@@ -76,13 +76,13 @@ def disable_phonehome(ssh_node: SshNode):
     ssh_node.execute("sudo sed -i 's/phonehome: .*//' /etc/trident/config.yaml")
 
 
-def deploy_os(test_dir_path: Path, host_config_path: Path, remote_addr_path: Path):
+def deploy_os(host_config_path: Path, remote_addr_path: Path, installer_iso_path: Path):
     """Deploys the OS to the VM using netlaunch."""
     argus_runcmd(
         [
             ARGUS_REPO_DIR_PATH / "build" / "netlaunch",
             "-i",
-            "build/installer-dev.iso",
+            installer_iso_path,
             "-c",
             "vm-netlaunch.yaml",
             "-t",
@@ -151,16 +151,22 @@ def inject_ssh_key(remote_addr_path: Path, known_hosts_path: Path):
 
 
 def deploy_vm(
-    test_dir_path: Path, ssh_key_path: Path, known_hosts_path: Path, create_params=[]
+    test_dir_path: Path,
+    ssh_key_path: Path,
+    known_hosts_path: Path,
+    installer_iso_path: Path,
 ):
     """# Provision a VM with the given parameters, using virt-deploy to create the VM
     and netlaunch to deploy the OS.
     """
-    argus_runcmd(["make", "build/installer-dev.iso"])
+    if not installer_iso_path:
+        argus_runcmd(["make", "build/installer-dev.iso"])
+        installer_iso_path = ARGUS_REPO_DIR_PATH / "build/installer-dev.iso"
+
     host_config_path = prepare_hostconfig(test_dir_path, ssh_key_path)
 
     remote_addr_path = test_dir_path / REMOTE_ADDR_FILENAME
-    deploy_os(test_dir_path, host_config_path, remote_addr_path)
+    deploy_os(host_config_path, remote_addr_path, installer_iso_path)
 
     # Add the VMs SSH key to known_hosts. TODO use a predictable key instead
     inject_ssh_key(remote_addr_path, known_hosts_path)
@@ -244,6 +250,10 @@ def vm(request):
     force_upload = request.config.getoption("--force-upload")
     redeploy = request.config.getoption("--redeploy")
 
+    installer_iso_path = None
+    if os.environ.get("INSTALLER_ISO_PATH"):
+        installer_iso_path = os.path.abspath(os.environ["INSTALLER_ISO_PATH"])
+
     if (
         not ARGUS_REPO_DIR_PATH.is_dir()
         or not (ARGUS_REPO_DIR_PATH / "virt-deploy").is_file()
@@ -284,7 +294,12 @@ def vm(request):
 
     if not reuse_environment or redeploy:
         # Deploy OS to VM.
-        ssh_node = deploy_vm(test_dir_path, ssh_key_path, known_hosts_path)
+        ssh_node = deploy_vm(
+            test_dir_path,
+            ssh_key_path,
+            known_hosts_path,
+            installer_iso_path,
+        )
 
     if build_output:
         upload_test_binaries(build_output, force_upload, ssh_node)

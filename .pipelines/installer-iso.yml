@@ -1,7 +1,7 @@
 parameters:
-- name: argusDirectory
+- name: argusRepo
   type: string
-  default: self
+  default: argus-toolkit
 
 - name: runtimeImagePipeline
   type: string
@@ -54,7 +54,7 @@ stages:
       ob_artifactBaseName: installer-iso
 
     steps:
-    - checkout: ${{ parameters.argusDirectory }}
+    - checkout: ${{ parameters.argusRepo }}
 
     - task: DownloadPipelineArtifact@2
       inputs:

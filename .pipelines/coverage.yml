@@ -4,9 +4,22 @@ parameters:
     type: string
     default: "$(Build.SourcesDirectory)"
 
+  - name: executeUnitTests
+    type: boolean
+    default: true
+
+  - name: codeCoverageBaseline
+    type: number
+    default: 62
+
+  - name: installNativeDependencies
+    type: boolean
+    default: true
+
 steps:
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel bc
     displayName: Install native dependencies
+    condition: eq(${{ parameters.installNativeDependencies }}, true)
 
   - task: RustInstaller@1
     inputs:
@@ -30,9 +43,14 @@ steps:
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Install grcov
 
-  - script: make coverage
+  - script: make ut-coverage
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Collect code coverage
+    condition: eq(${{ parameters.executeUnitTests }}, true)
+
+  - script: make coverage-report
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    displayName: Generate code coverage report
 
   - task: PublishCodeCoverageResults@1
     inputs:
@@ -46,7 +64,7 @@ steps:
   - script: |
       set -eux
       COVERAGE=`jq .coveragePercent target/coverage/covdir`
-      BASELINE=62
+      BASELINE=${{ parameters.codeCoverageBaseline }}
       if (( $(echo "$COVERAGE < $BASELINE" | bc -l) )); then
         echo "Coverage is $COVERAGE, which is less than $BASELINE% set as the baseline"
         exit 1

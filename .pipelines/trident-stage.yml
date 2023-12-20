@@ -47,3 +47,4 @@ stages:
     - template: coverage.yml@${{ parameters.tridentRepo }}
       parameters:
          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+         codeCoverageBaseline: 62 # Unit tests

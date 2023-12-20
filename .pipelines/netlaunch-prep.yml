@@ -1,0 +1,53 @@
+# Core build logic that is common to all OneBranch builds.
+parameters:
+- name: downloadBuildType
+  type: string
+  default: current
+
+- name: installerISOPipeline
+  type: string
+  default: ''
+
+steps:
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: ${{ parameters.downloadBuildType}}
+      project: ECF
+      definition: ${{ parameters.installerISOPipeline }}
+      buildVersionToDownload: 'latest'
+      artifactName: 'installer-iso'
+      patterns: '*/installer.iso'
+      targetPath: '$(System.ArtifactsDirectory)/installer-iso'
+
+  - bash: |
+      set -eux
+
+      # Print OS version:
+      cat /etc/os-release
+
+      # Install swtpm:
+      if grep UBUNTU_CODENAME=focal /etc/os-release -q; then
+          sudo add-apt-repository ppa:stefanberger/swtpm-focal -y
+          sudo apt-get update
+      fi
+
+      sudo apt-get install -y swtpm swtpm-tools
+
+      curl -fsSL https://get.docker.com | sudo bash
+      sudo NEEDRESTART_MODE=a apt-get install -y virt-manager qemu-efi python3-libvirt ovmf openssl python3-netifaces python3-docker python3-bcrypt python3-jinja2
+
+      sudo usermod -aG docker $USER
+      sudo usermod -a -G libvirt $USER
+
+      mkdir -p ~/.config/libvirt
+      cat << EOF > ~/.config/libvirt/libvirt.conf
+      uri_default = "qemu:///system"
+      EOF
+    workingDirectory: $(argusToolkitSourceDirectory)
+    displayName: "Configure virt-deploy"
+
+  - bash: |
+      set -eux
+      make build/netlaunch
+    displayName: "Build netlaunch"
+    workingDirectory: $(argusToolkitSourceDirectory)

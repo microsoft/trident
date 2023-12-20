@@ -1,5 +1,9 @@
 parameters:
-- name: argusDirectory
+- name: argusRepo
+  type: string
+  default: argus-toolkit
+
+- name: tridentRepo
   type: string
   default: self
 
@@ -32,7 +36,7 @@ stages:
       argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
 
     steps:
-    - checkout: ${{ parameters.argusDirectory }}
+    - checkout: ${{ parameters.argusRepo }}
 
     - bash: |
         set -eux
@@ -67,17 +71,12 @@ stages:
       ob_artifactBaseName: $(test)_deployment_log_$(System.JobAttempt)
 
     steps:
-    - checkout: ${{ parameters.argusDirectory }}
+    - checkout: ${{ parameters.argusRepo }}
 
-    - task: DownloadPipelineArtifact@2
-      inputs:
-        buildType: ${{ parameters.downloadBuildType}}
-        project: ECF
-        definition: ${{ parameters.installerISOPipeline }}
-        buildVersionToDownload: 'latest'
-        artifactName: 'installer-iso'
-        patterns: '*/installer.iso'
-        targetPath: '$(System.ArtifactsDirectory)/installer-iso'
+    - template: netlaunch-prep.yml
+      parameters:
+         downloadBuildType: ${{ parameters.downloadBuildType}}
+         installerISOPipeline: ${{ parameters.installerISOPipeline }}
 
     - bash: |
         set -eux
@@ -89,33 +88,6 @@ stages:
 
     - bash: |
         set -eux
-
-        # Print OS version:
-        cat /etc/os-release
-
-        # Install swtpm:
-        if grep UBUNTU_CODENAME=focal /etc/os-release -q; then
-            sudo add-apt-repository ppa:stefanberger/swtpm-focal -y
-            sudo apt-get update
-        fi
-
-        sudo apt-get install -y swtpm swtpm-tools
-
-        curl -fsSL https://get.docker.com | sudo bash
-        sudo NEEDRESTART_MODE=a apt-get install -y virt-manager qemu-efi python3-libvirt ovmf openssl python3-netifaces python3-docker python3-bcrypt python3-jinja2
-
-        sudo usermod -aG docker $USER
-        sudo usermod -a -G libvirt $USER
-
-        mkdir -p ~/.config/libvirt
-        cat << EOF > ~/.config/libvirt/libvirt.conf
-        uri_default = "qemu:///system"
-        EOF
-      workingDirectory: $(argusToolkitSourceDirectory)
-      displayName: "Configure virt-deploy"
-
-    - bash: |
-        set -eux
         sg libvirt "./virt-deploy create"
         sg libvirt "./virt-deploy run"
       workingDirectory: $(argusToolkitSourceDirectory)
@@ -123,7 +95,7 @@ stages:
 
     - bash: |
         set -eux
-        make build/netlaunch
+
         echo "Netlaunch output:" >> ./deployment.log
         $(argusToolkitSourceDirectory)/build/netlaunch \
             -i $(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso \
@@ -179,3 +151,55 @@ stages:
                     $(ob_outputDirectory)/deployment.log
       workingDirectory: $(argusToolkitSourceDirectory)
       displayName: "Publish deployment.log"
+
+  - job: FunctionalTests
+    displayName: Functional Tests
+    timeoutInMinutes: 15
+    pool:
+      type: linux
+      name: CAPKV_Pool
+      hostArchitecture: amd64
+
+    variables:
+      ob_outputDirectory: $(Build.SourcesDirectory)/build
+      argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+      tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+
+    steps:
+    - checkout: ${{ parameters.tridentRepo }}
+    - checkout: ${{ parameters.argusRepo }}
+    - checkout: k8s-tests
+
+    - template: netlaunch-prep.yml
+      parameters:
+         downloadBuildType: ${{ parameters.downloadBuildType}}
+         installerISOPipeline: ${{ parameters.installerISOPipeline }}
+
+    - bash: |
+        set -eux
+
+        sudo apt install -y protobuf-compiler clang-7 bc
+        sudo apt remove python3-openssl
+        pip install pytest assertpy paramiko pyopenssl
+        ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
+      displayName: Install dependencies
+
+    - bash: |
+        set -eux
+
+        sg libvirt "make functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso"
+      workingDirectory: $(tridentSourceDirectory)
+      displayName: Execute Functional Tests
+
+    - template: coverage.yml@${{ parameters.tridentRepo }}
+      parameters:
+         tridentSourceDirectory: $(tridentSourceDirectory)
+         codeCoverageBaseline: 63 # Unit + functional tests
+         executeUnitTests: false
+         installNativeDependencies: false
+
+    - task: PublishTestResults@2
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: "JUnit"
+        testResultsFiles: "$(tridentSourceDirectory)/target/trident_functional_tests.xml"

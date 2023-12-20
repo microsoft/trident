@@ -1,5 +1,5 @@
 parameters:
-- name: argusDirectory
+- name: argusRepo
   type: string
   default: argus-toolkit
 
@@ -78,7 +78,7 @@ stages:
   parameters:
     provOSArtifactSource: ${{ parameters.downloadBuildTypeProvOS }}
     tridentStage : ${{ parameters.tridentStage }}
-    argusDirectory: ${{ parameters.argusDirectory }}
+    argusRepo: ${{ parameters.argusRepo }}
     downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
     tridentPipeline: ${{ parameters.tridentPipelineID }}
     artifactName: ${{ parameters.tridentArtifact }}
@@ -94,13 +94,13 @@ stages:
 
 - template: building-tools.yml
   parameters:
-    argusDirectory: ${{ parameters.argusDirectory }}
+    argusRepo: ${{ parameters.argusRepo }}
     isogenArtifactSource: ${{ parameters.downloadBuildTypeIsogen }}
 
 - template: installer-iso.yml
   parameters:
     installerISOArtifactSource: ${{ parameters.downloadBuildTypeInstallerISO }}
-    argusDirectory: ${{ parameters.argusDirectory }}
+    argusRepo: ${{ parameters.argusRepo }}
     downloadBuildTypeRuntimeOS: ${{ parameters.downloadBuildTypeRuntimeOS }}
     runtimeImagePipeline: ${{ parameters.runtimeImagePipelineID }}
     downloadBuildTypeProvOS: ${{ parameters.downloadBuildTypeProvOS }}
@@ -110,7 +110,7 @@ stages:
 
 - template: netlaunch-testing.yml
   parameters:
-    argusDirectory: ${{ parameters.argusDirectory }}
+    argusRepo: ${{ parameters.argusRepo }}
     downloadBuildType: ${{ parameters.downloadBuildTypeInstallerISO }}
     installerISOPipeline: ${{ parameters.installerISOPipelineID }}
     updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}

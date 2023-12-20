@@ -1,7 +1,7 @@
 parameters:
-- name: argusDirectory
+- name: argusRepo
   type: string
-  default: self
+  default: argus-toolkit
 
 - name: isogenArtifactSource
   type: string
@@ -28,7 +28,7 @@ stages:
       ob_artifactBaseName: isogen
 
     steps:
-    - checkout: ${{ parameters.argusDirectory }}
+    - checkout: ${{ parameters.argusRepo }}
 
     - bash: |
         set -eux

@@ -3,9 +3,9 @@ parameters:
   type: string
   default: ''
 
-- name: argusDirectory
+- name: argusRepo
   type: string
-  default: self
+  default: argus-toolkit
 
 - name: tridentPipeline
   type: string
@@ -45,7 +45,7 @@ stages:
       ob_artifactBaseName: provisioning-os-template
 
     steps:
-    - checkout: ${{ parameters.argusDirectory }}
+    - checkout: ${{ parameters.argusRepo }}
 
     - task: DownloadPipelineArtifact@2
       inputs:
