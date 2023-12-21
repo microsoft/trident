@@ -33,10 +33,10 @@ stages:
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/build
-      argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+      tridentSourceDirectory: $(Build.SourcesDirectory)/trident
 
     steps:
-    - checkout: ${{ parameters.argusRepo }}
+    - checkout: ${{ parameters.tridentRepo }}
 
     - bash: |
         set -eux
@@ -47,7 +47,7 @@ stages:
         done
         tests="{${tests:2}}"
         echo "##vso[task.setvariable variable=listOfTests;isOutput=true]$tests"
-      workingDirectory: $(argusToolkitSourceDirectory)/tests/trident_configurations
+      workingDirectory: $(tridentSourceDirectory)/e2e_tests/trident_configurations
       name: setTests
       displayName: Set concurrent tests
 
@@ -64,13 +64,15 @@ stages:
         $[ dependencies.DefineTests.outputs['setTests.listOfTests'] ]
 
     variables:
+      tridentSourceDirectory: $(Build.SourcesDirectory)/trident
       argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
 
-      tridentConfigPath: $(argusToolkitSourceDirectory)/tests/trident_configurations/$(test)
-      ob_outputDirectory: $(argusToolkitSourceDirectory)/deployment_logs
+      tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(test)
+      ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
       ob_artifactBaseName: $(test)_deployment_log_$(System.JobAttempt)
 
     steps:
+    - checkout: ${{ parameters.tridentRepo }}
     - checkout: ${{ parameters.argusRepo }}
 
     - template: netlaunch-prep.yml
@@ -149,7 +151,7 @@ stages:
         mkdir -p deployment_logs
         sudo cp $(argusToolkitSourceDirectory)/deployment.log \
                     $(ob_outputDirectory)/deployment.log
-      workingDirectory: $(argusToolkitSourceDirectory)
+      workingDirectory: $(tridentSourceDirectory)
       displayName: "Publish deployment.log"
 
   - job: FunctionalTests

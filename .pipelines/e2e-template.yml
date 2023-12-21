@@ -73,6 +73,7 @@ stages:
     tridentRepo: ${{ parameters.tridentRepo }}
     tridentArtifactSource: ${{ parameters.downloadBuildTypeTrident }}
     publishUniversalFeed: ${{ parameters.publishUniversalFeed }}
+    codeCoverage: false
 
 - template: prov-os.yml
   parameters:

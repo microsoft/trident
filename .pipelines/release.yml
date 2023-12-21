@@ -33,44 +33,6 @@ steps:
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
     displayName: Install native dependencies
 
-  - script: cargo fmt -- --check 2>&1
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Check formatting
-
-  - script: |
-      set -ex
-      cargo clippy --locked --all -- -D warnings 2>&1
-      cargo clippy --locked --all --all-features -- -D warnings 2>&1
-      cargo clippy --locked --all --tests -- -D warnings 2>&1
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Clippy (Linting)
-
-  - script: |
-      make validate-api-schema
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Validate Trident API Schema
-
-  - script: cargo check --locked 2>&1
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Check Debug
-
-  - script: cargo check --locked --all-features 2>&1
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Check with all features
-
-  - script: |
-      set -eux
-      cargo install cargo-nextest --locked
-      cargo nextest run --all --profile ci
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Test Debug
-
-  - task: PublishTestResults@2
-    condition: succeededOrFailed()
-    inputs:
-      testResultsFormat: "JUnit"
-      testResultsFiles: "${{ parameters.tridentSourceDirectory }}/target/nextest/ci/trident_unit_tests.xml"
-
   - script: |
       export TRIDENT_VERSION=$(trident_version)
       cargo build --locked --release 2>&1

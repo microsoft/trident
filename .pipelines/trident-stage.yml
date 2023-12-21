@@ -1,7 +1,7 @@
 parameters:
 - name: tridentRepo
   type: string
-  default: trident
+  default: self
 
 - name: tridentArtifactSource
   type: string
@@ -11,12 +11,17 @@ parameters:
   type: boolean
   default: false
 
+- name: codeCoverage
+  type: boolean
+  default: true
+
 stages:
 - stage: Trident
+  displayName: Trident RPMs
 
   jobs:
-  - job: BuildTrident
-    displayName: Check, Build and Unit Test
+  - job: TestTrident
+    displayName: Check and Unit Test
     condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
     pool:
       type: linux
@@ -27,14 +32,13 @@ stages:
     steps:
     - checkout: ${{ parameters.tridentRepo }}
 
-    - template: common.yml@${{ parameters.tridentRepo }}
+    - template: test-build.yml@${{ parameters.tridentRepo }}
       parameters:
          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
-         publishUniversalFeed: ${{ parameters.publishUniversalFeed }}
 
   - job: Coverage
     displayName: Evaluate Unit Test Code Coverage
-    condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
+    condition: and(eq('${{ parameters.tridentArtifactSource }}', 'current'),eq(${{ parameters.codeCoverage }}, true))
     pool:
       type: linux
 
@@ -48,3 +52,20 @@ stages:
       parameters:
          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
          codeCoverageBaseline: 62 # Unit tests
+
+  - job: BuildTrident
+    displayName: Build Release Artifacts
+    condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
+    pool:
+      type: linux
+
+    variables:
+      ob_outputDirectory: '$(Build.SourcesDirectory)/trident/out'
+
+    steps:
+    - checkout: ${{ parameters.tridentRepo }}
+
+    - template: release.yml@${{ parameters.tridentRepo }}
+      parameters:
+         tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+         publishUniversalFeed: ${{ parameters.publishUniversalFeed }}

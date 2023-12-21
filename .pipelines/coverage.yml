@@ -10,7 +10,7 @@ parameters:
 
   - name: codeCoverageBaseline
     type: number
-    default: 62
+    default: 80
 
   - name: installNativeDependencies
     type: boolean

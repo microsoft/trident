@@ -1,0 +1,69 @@
+hostConfiguration:
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+        partitionTableType: gpt
+        partitions:
+          - id: esp
+            type: esp
+            size: 1G
+          - id: root-a
+            type: root
+            size: 8G
+          - id: root-b
+            type: root
+            size: 8G
+          - id: swap
+            type: swap
+            size: 2G
+          - id: home
+            type: home
+            size: 1G
+          - id: trident
+            type: linux-generic
+            size: 1G
+    mountPoints:
+      - path: /boot/efi
+        targetId: esp
+        filesystem: vfat
+        options: ["umask=0077"]
+      - path: /
+        targetId: root
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /home
+        targetId: home
+        filesystem: ext4
+        options: ["defaults"]
+      - path: none
+        targetId: swap
+        filesystem: swap
+        options: ["sw"]
+      - path: /var/lib/trident
+        targetId: trident
+        filesystem: ext4
+        options: ["defaults"]
+    images:
+      - url: file:///trident_cdrom/data/boot.rawzst
+        sha256: ignored
+        format: raw-zstd
+        targetId: esp
+      - url: file:///trident_cdrom/data/root.rawzst
+        sha256: ignored
+        format: raw-zstd
+        targetId: root
+    abUpdate:
+      volumePairs:
+        - id: root
+          volumeAId: root-a
+          volumeBId: root-b
+  network:
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+    version: 2
+  management:
+    selfUpgrade: false

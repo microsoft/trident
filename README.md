@@ -500,7 +500,7 @@ Functional tests should:
 
 Functional tests are structured as follows:
 
-- `tests/functional_tests`: Contains the functional test code, leveraging
+- `/functional_tests`: Contains the functional test code, leveraging
   `pytest` and common SSH interface from `k8s-tests` repo. `pytest` creates the
   test VM using is Fixtures concept and while currently only a single VM is
   created to run all the tests, this could be easily extended to support
@@ -514,7 +514,7 @@ Functional tests are structured as follows:
   tests.
 
 Note that additional testing logic can be added as part of
-`tests/functional_tests` as well. At the moment, there are two `pytest` modules
+`/functional_tests` as well. At the moment, there are two `pytest` modules
 present:
 
 - `test_trident_e2e.py`: Very basic of validation of the main Trident commands:
@@ -566,6 +566,19 @@ There are three ways to build and execute functional tests using `Makefile` targ
   determined based on `cargo build` output. To note, this will also
   execute all UTs.
 
+To execute the functional tests, ensure that `k8s-tests` and `argus-toolkit` of
+recent version are checked out side by side with the `trident` repo.
+Additionally, the following dependencies are required for the Ubuntu based
+pipelines, so you might need to install them on your development machine as
+well:
+
+```bash
+sudo apt install -y protobuf-compiler clang-7 bc
+sudo apt remove python3-openssl
+pip install pytest assertpy paramiko pyopenssl
+ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
+```
+
 ##### Functional Test Code Coverage
 
 All functional tests are built with code coverage profile. This means that every
@@ -604,7 +617,8 @@ code.
 End to end tests are meant to test the end to end functionality of Trident in a
 real environment. E2E tests are using only public Trident interfaces, by
 providing `HostConfiguration` and comparing the status of the host to
-`HostStatus`. E2E tests currently live in the `argus-toolkit` repo. Each Trident
+`HostStatus`. E2E tests are defined under `/e2e_tests` and are currently only
+invoked through the e2e validation pipelines. Each Trident
 feature should be accompanied by one or more E2E tests.
 
 End to end tests should:

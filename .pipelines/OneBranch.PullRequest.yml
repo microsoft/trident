@@ -36,27 +36,4 @@ extends:
       #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
 
     stages:
-    - stage: linux_stage
-      displayName: Trident
-      jobs:
-      - job: Linux
-        displayName: Check, Build and Unit Test
-        pool:
-          type: linux
-
-        variables: # More settings at https://aka.ms/obpipelines/yaml/jobs
-          ob_outputDirectory: '$(Build.SourcesDirectory)/out' # this directory is uploaded to pipeline artifacts, reddog and cloudvault. More info at https://aka.ms/obpipelines/artifacts
-
-        steps: # These steps will be run in unrestricted container's network
-        - template: .pipelines/common.yml@self
-
-      - job: Coverage
-        displayName: Evaluate Unit Test Code Coverage
-        pool:
-          type: linux
-
-        variables: # More settings at https://aka.ms/obpipelines/yaml/jobs
-          ob_outputDirectory: '$(Build.SourcesDirectory)/out' # this directory is uploaded to pipeline artifacts, reddog and cloudvault. More info at https://aka.ms/obpipelines/artifacts
-
-        steps: # These steps will be run in unrestricted container's network
-        - template: .pipelines/coverage.yml@self
+    - template: trident-stage.yml
