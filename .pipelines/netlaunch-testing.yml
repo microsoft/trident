@@ -72,6 +72,7 @@ stages:
       ob_artifactBaseName: $(test)_deployment_log_$(System.JobAttempt)
 
     steps:
+    - checkout: self
     - checkout: ${{ parameters.tridentRepo }}
     - checkout: ${{ parameters.argusRepo }}
 
@@ -105,7 +106,7 @@ stages:
             -t $(tridentConfigPath)/trident-config.yaml \
             --logstream \
         2>&1 | tee -a ./deployment.log
-        ./tests/check_netlaunch.py ./deployment.log
+        $(tridentSourceDirectory)/e2e_tests/check_netlaunch.py ./deployment.log
       timeoutInMinutes: 5
       workingDirectory: $(argusToolkitSourceDirectory)
       displayName: "Run netlaunch for testing"
@@ -168,6 +169,7 @@ stages:
       tridentSourceDirectory: $(Build.SourcesDirectory)/trident
 
     steps:
+    - checkout: self
     - checkout: ${{ parameters.tridentRepo }}
     - checkout: ${{ parameters.argusRepo }}
     - checkout: k8s-tests

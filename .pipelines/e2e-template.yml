@@ -112,6 +112,7 @@ stages:
 - template: netlaunch-testing.yml
   parameters:
     argusRepo: ${{ parameters.argusRepo }}
+    tridentRepo: ${{ parameters.tridentRepo }}
     downloadBuildType: ${{ parameters.downloadBuildTypeInstallerISO }}
     installerISOPipeline: ${{ parameters.installerISOPipelineID }}
     updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
