@@ -42,7 +42,13 @@ rpm:
 
 .PHONY: docker-build
 docker-build:
-	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
+	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
+	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
+	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest \
+		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
+		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+		.
 
 .PHONY: clean
 clean:
