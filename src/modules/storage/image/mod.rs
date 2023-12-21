@@ -93,26 +93,12 @@ fn update_images(
 
         if image_url.scheme() == "file" {
             match image.format {
-                // If image is of format RawLzma AND target-id corresponds to an A/B volume pair,
-                // use systemd-sysupdate.rs to write to the partition
+                // If image is of format RawLzma, the target-id must be an A/B volume pair.
                 ImageFormat::RawLzma => {
                     if !cfg!(feature = "sysupdate") {
                         bail!("Image format RawLzma is not supported")
                     }
 
-                    // Determine if target-id corresponds to an A/B volume pair; if helper
-                    // func returns None, then set bool to false
-                    let targets_ab_volume_pair =
-                        systemd_sysupdate::get_ab_volume_partition(host_status, &image.target_id)
-                            .is_some();
-
-                    // If image format is raw-lzma but block device is not part of an A/B volume
-                    // pair, return error b/c sysupdate requires 2 copies of partitition for an
-                    // update
-                    if !targets_ab_volume_pair {
-                        bail!("Block device with id {} is not part of an A/B volume pair, so image in raw lzma format cannot be written to it.",
-                            &image.target_id)
-                    }
                     // Fetch directory and filename from image URL
                     let (directory, filename, computed_sha256) =
                         systemd_sysupdate::get_local_image(&image_url, image)?;

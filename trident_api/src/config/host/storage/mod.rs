@@ -7,7 +7,7 @@ use url::Url;
 
 use crate::{constants::SWAP_FILESYSTEM, is_default, BlockDeviceId};
 
-use imaging::{AbUpdate, Image};
+use imaging::{AbUpdate, Image, ImageFormat};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
@@ -654,6 +654,14 @@ impl Storage {
                 "Block device ID '{id}' is used in the image configuration but is not a partition, encrypted volume, or A/B update volume pair",
                 id = image.target_id
             );
+
+            if image.format == ImageFormat::RawLzma && !ab_volume_pairs.contains(&image.target_id) {
+                bail!(
+                    "Image '{url}' is raw-lzma but block device ID '{tid}' is not an A/B update volume pair",
+                    url = image.url,
+                    tid = image.target_id
+                );
+            }
         }
         for mount_point in &self.mount_points {
             ensure!(
@@ -1590,6 +1598,25 @@ mod tests {
         assert_eq!(
             storage.validate().unwrap_err().to_string(),
             "Target ID 'srv-enc' of encrypted volume 'srv' is already used by image 'file:///esp.raw.zst'"
+        );
+    }
+
+    // Image must be an A/B update volume pair if format is raw-lzma
+    #[test]
+    fn test_validate_image_raw_lzma_ab_update_volume_pair_pass() {
+        let mut storage: Storage = TEST_STORAGE!();
+        storage.images[1].format = ImageFormat::RawLzma;
+        storage.validate().unwrap();
+    }
+
+    // Image must not be a partition if format is ram-lzma
+    #[test]
+    fn test_validate_image_raw_lzma_partition_fail() {
+        let mut storage: Storage = TEST_STORAGE!();
+        storage.images[0].format = ImageFormat::RawLzma;
+        assert_eq!(
+            storage.validate().unwrap_err().to_string(),
+            "Image 'file:///esp.raw.zst' is raw-lzma but block device ID 'esp' is not an A/B update volume pair"
         );
     }
 
