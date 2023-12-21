@@ -17,7 +17,7 @@ fn main() {
     // manually edit the schema to remove these two fields from the required
     // list.
     schema.schema.object().required.remove("network");
-    schema.schema.object().required.remove("network-provision");
+    schema.schema.object().required.remove("networkProvision");
 
     println!("{}", serde_json::to_string_pretty(&schema).unwrap());
 }
