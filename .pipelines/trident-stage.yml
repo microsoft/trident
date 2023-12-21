@@ -32,7 +32,7 @@ stages:
     steps:
     - checkout: ${{ parameters.tridentRepo }}
 
-    - template: test-build.yml@${{ parameters.tridentRepo }}
+    - template: test-build.yml
       parameters:
          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
 
@@ -48,7 +48,7 @@ stages:
     steps:
     - checkout: ${{ parameters.tridentRepo }}
 
-    - template: coverage.yml@${{ parameters.tridentRepo }}
+    - template: coverage.yml
       parameters:
          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
          codeCoverageBaseline: 62 # Unit tests
@@ -65,7 +65,7 @@ stages:
     steps:
     - checkout: ${{ parameters.tridentRepo }}
 
-    - template: release.yml@${{ parameters.tridentRepo }}
+    - template: release.yml
       parameters:
          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
          publishUniversalFeed: ${{ parameters.publishUniversalFeed }}

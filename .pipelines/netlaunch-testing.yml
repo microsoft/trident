@@ -193,7 +193,7 @@ stages:
       workingDirectory: $(tridentSourceDirectory)
       displayName: Execute Functional Tests
 
-    - template: coverage.yml@${{ parameters.tridentRepo }}
+    - template: coverage.yml
       parameters:
          tridentSourceDirectory: $(tridentSourceDirectory)
          codeCoverageBaseline: 63 # Unit + functional tests
