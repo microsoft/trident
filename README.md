@@ -171,6 +171,13 @@ only works when directly opened using your browser, it will not work when opened
 using the ADO repo browser or directly in VSCode. We are working on uploading
 the docs to the engineering docs site.
 
+You can use the `Live Server` VSCode extension to view the docs in VSCode. After
+installing the extension, you can right click on the HTML file and select `Open
+with Live Server`. This will open the docs in your default browser.
+Alternatively, if you did not want to install the 3rd party extension, you could
+just start your own local web server and open the HTML file in your browser,
+e.g.: `python3 -m http.server --directory trident_api/docs/html/`.
+
 ### Schema
 
 The raw JSON Schema for Host configuration is here: [trident_api/docs/trident-api-schema.json](trident_api/docs/trident-api-schema.json)
