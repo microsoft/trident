@@ -85,6 +85,7 @@ pub(crate) fn mount_updated_volumes(
 
     let mount_result = Command::new("systemctl")
         .arg("start")
+        .arg(update_fs_target)
         .run_and_check()
         .context(
             "Failed to mount target filesystems".to_owned()
