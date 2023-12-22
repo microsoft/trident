@@ -12,7 +12,6 @@ class TridentTool:
     def run(
         self,
     ) -> None:
-
         cmd = f"sudo trident run --verbosity DEBUG"
 
         result = self.node.execute(cmd)
@@ -21,7 +20,6 @@ class TridentTool:
     def get(
         self,
     ) -> None:
-
         cmd = f"trident get --verbosity DEBUG"
 
         result = self.node.execute(cmd)
@@ -31,9 +29,7 @@ class TridentTool:
     def start_network(
         self,
     ) -> None:
-
         cmd = f"sudo trident start-network --verbosity DEBUG"
 
         result = self.node.execute(cmd)
         assert_that(result.exit_code).is_equal_to(0)
-

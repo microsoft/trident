@@ -8,9 +8,21 @@ steps:
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
     displayName: Install native dependencies
 
+  - script: |
+      set -eux
+      python3 --version
+      python3 -m pip install black
+      python3 -m black --version
+    displayName: Install Python Black
+
   - script: cargo fmt -- --check 2>&1
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Check formatting
+    displayName: Check Rust Formatting
+
+  - script: |
+      set -eux
+      python3 -m black -v --check ${{ parameters.tridentSourceDirectory }}
+    displayName: Check Python Formatting
 
   - script: |
       set -ex

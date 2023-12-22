@@ -21,7 +21,7 @@ template = r"""
 
 successful_output = re.compile(template, re.MULTILINE | re.VERBOSE)
 
-with open(sys.argv[1], 'r') as netlaunch_output:
+with open(sys.argv[1], "r") as netlaunch_output:
     output = netlaunch_output.read()
     match = successful_output.match(output)
     if match is not None:
