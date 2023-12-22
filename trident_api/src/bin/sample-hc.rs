@@ -1,14 +1,15 @@
 use std::collections::HashMap;
+use uuid::Uuid;
 
 use netplan_types::{
     CommonPropertiesAllDevices, CommonPropertiesPhysicalDeviceType, EthernetConfig, MatchConfig,
     NetworkConfig,
 };
 use trident_api::config::{
-    AbUpdate, AbVolumePair, Disk, EncryptedVolume, Encryption, HostConfiguration, Image,
-    ImageFormat, ImageSha256, MountPoint, OsConfig, Partition, PartitionSize, PartitionTableType,
-    PartitionType, RaidConfig, RaidLevel, Script, Scripts, ServicingType, SoftwareRaidArray,
-    SshMode, Storage, User,
+    AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption, HostConfiguration,
+    Image, ImageFormat, ImageSha256, MountPoint, OsConfig, Partition, PartitionSize,
+    PartitionTableType, PartitionType, RaidConfig, RaidLevel, Script, Scripts, ServicingType,
+    SoftwareRaidArray, SshMode, Storage, User,
 };
 
 fn main() {
@@ -68,6 +69,11 @@ fn build_host_configuration() -> HostConfiguration {
                         size: PartitionSize::Fixed(0x40000000), // 1GiB
                     },
                 ],
+                adopted_partitions: vec![AdoptedPartition {
+                    id: "root-a".to_string(),
+                    uuid: Some(Uuid::parse_str("a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0").unwrap()),
+                    ..Default::default()
+                }],
             }],
             encryption: Some(Encryption {
                 recovery_key_url: Some("file:///recovery.key".into()),

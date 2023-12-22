@@ -101,16 +101,74 @@
       },
       "additionalProperties": false
     },
+    "AdoptedPartition": {
+      "description": "Settings to adopt a pre-existing partition.",
+      "type": "object",
+      "required": [
+        "id",
+        "size"
+      ],
+      "properties": {
+        "continue_if_no_match": {
+          "description": "Set to true to continue if a match could not be made, otherwise produce an error and stop installation if no match was found.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "A unique identifier for the partition.\n\nThis is a user defined string that allows to link the partition to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just partitions.",
+          "type": "string",
+          "format": "Block Device ID"
+        },
+        "name": {
+          "description": "Match a specific partition by its name.\n\nLook for a partition with the given name and adopt it.",
+          "type": "string",
+          "nullable": true
+        },
+        "next_of_type": {
+          "description": "Match the first partition with the given type.\n\n**Use as a last resort.**",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PartitionType"
+            }
+          ],
+          "nullable": true
+        },
+        "position": {
+          "description": "Match a specific partition by its current position on the partition table.\n\nLook for a partition at the given position in the partition table and adopt it. The position is 0-based.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0,
+          "nullable": true
+        },
+        "size": {
+          "description": "Optionally resize the partition.\n\nNote: Only expanding is supported for adoption. Trying to shrink a partition will result in an error.\n\nFormat: String `<number>[<unit>]`\n\nAccepted values:\n\n- `grow`: Use all available space. It is recommended to ONLY use this for the last partition on the disk.\n\n- A number with optional unit suffixes: K, M, G, T (to the base of 1024), bytes by default when no unit is specified. For new partitions, it will attempt to create a partition of this size. If a partition is being adopted, size MUST NOT be less than the size of the partition being adopted. Only expanding is supported for adoption.\n\nExamples:\n\n- `1G`\n\n- `200M`\n\n- `grow`",
+          "type": "string"
+        },
+        "uuid": {
+          "description": "Match a specific partition by its UUID.\n\nLook for a partition with the given UUID and adopt it.\n\n**This is the best option, use whenever possible.**",
+          "type": "string",
+          "format": "uuid",
+          "nullable": true
+        }
+      }
+    },
     "Disk": {
       "description": "Per disk configuration.",
       "type": "object",
       "required": [
+        "adoptedPartitions",
         "device",
         "id",
         "partitionTableType",
         "partitions"
       ],
       "properties": {
+        "adoptedPartitions": {
+          "description": "A list of pre-existing partitions that will be adopted from the disk.\n\nSeveral options are available to match a partition to adopt. If more than one option is specified, ALL the provided criteria will be used to match the partition.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AdoptedPartition"
+          }
+        },
         "device": {
           "description": "The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).",
           "type": "string"

@@ -384,6 +384,7 @@ mod functional_tests {
                     size: PartitionSize::Grow,
                 },
             ],
+            ..Default::default()
         };
         let mut disk = golden_disk.clone();
 

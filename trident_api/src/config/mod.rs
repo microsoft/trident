@@ -7,8 +7,9 @@ pub use host::{
     scripts::{Script, Scripts, ServicingType},
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},
     storage::{
-        partition_size::PartitionSize, Disk, EncryptedVolume, Encryption, MountPoint, Partition,
-        PartitionTableType, PartitionType, RaidConfig, RaidLevel, SoftwareRaidArray, Storage,
+        partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
+        Disk, EncryptedVolume, Encryption, MountPoint, PartitionTableType, RaidConfig, RaidLevel,
+        SoftwareRaidArray, Storage,
     },
     HostConfiguration,
 };

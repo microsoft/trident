@@ -35,6 +35,10 @@ storage:
     - id: raid-b
       type: linux-generic
       size: 1G
+    adoptedPartitions:
+    - id: root-a
+      size: null
+      uuid: a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0
   encryption:
     recoveryKeyUrl: file:///recovery.key
     volumes:

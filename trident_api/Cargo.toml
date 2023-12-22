@@ -15,7 +15,7 @@ strum_macros = "0.25.0"
 url = { version = "2.5.0", features = ["serde"] }
 
 # Optional dependencies
-schemars = { version = "0.8.15", optional = true }
+schemars = { version = "0.8.15", optional = true, features = ["uuid1"]}
 serde_json = { version = "1.0.107", optional = true }
 
 [dev-dependencies]

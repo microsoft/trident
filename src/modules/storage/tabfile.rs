@@ -525,6 +525,7 @@ mod tests {
                             size: PartitionSize::from_str("1G").unwrap(),
                         },
                     ],
+                    ..Default::default()
                 }],
                 mount_points: vec![
                     MountPoint {

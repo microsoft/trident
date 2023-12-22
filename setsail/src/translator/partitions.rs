@@ -48,6 +48,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             partition_table_type: PartitionTableType::Gpt,
             // No partitions yet
             partitions: Vec::new(),
+            ..Default::default()
         });
 
         // Generate a new ID for this partition of the form <disk_id>-<partition_count>
