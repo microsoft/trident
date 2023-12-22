@@ -8,6 +8,7 @@ import yaml
 import tempfile
 import fnmatch
 import json
+import time
 
 from pathlib import Path
 
@@ -146,8 +147,13 @@ def inject_ssh_key(remote_addr_path: Path, known_hosts_path: Path):
     """
     with open(remote_addr_path, "r") as file:
         remote_addr = file.read().strip()
-    with open(known_hosts_path, "w") as file:
-        subprocess.run(["ssh-keyscan", remote_addr], stdout=file, check=True)
+    for i in range(10):
+        try:
+            with open(known_hosts_path, "w") as file:
+                subprocess.run(["ssh-keyscan", remote_addr], stdout=file, check=True)
+            break
+        except:
+            time.sleep(1)
 
 
 def deploy_vm(
@@ -285,6 +291,10 @@ def vm(request):
     known_hosts_path = test_dir_path / KNOWN_HOSTS_FILENAME
 
     if reuse_environment:
+        if not known_hosts_path.is_file():
+            raise Exception(
+                "No known hosts file found in test directory. You might need to recreate the test environment using make functional-test"
+            )
         # Create SSH Node for the existing VM.
         ssh_node = create_ssh_node(
             test_dir_path / REMOTE_ADDR_FILENAME, ssh_key_path, known_hosts_path

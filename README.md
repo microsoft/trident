@@ -618,6 +618,8 @@ pip install pytest assertpy paramiko pyopenssl
 ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
 ```
 
+Paramiko 2.6.0 and 3.x are known to work, .2.6.0 is known to misbehave.
+
 ##### Functional Test Code Coverage
 
 All functional tests are built with code coverage profile. This means that every
