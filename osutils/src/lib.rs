@@ -4,6 +4,7 @@ pub mod errors;
 pub mod exe;
 pub mod files;
 pub mod lsblk;
+pub mod lsof;
 pub mod overlay;
 pub mod partition_types;
 pub mod repart;

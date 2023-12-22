@@ -2,18 +2,30 @@ use std::{fs, path::Path, process::Command};
 
 use anyhow::{Context, Error};
 use log::error;
-use osutils::{exe::RunAndCheck, systemd};
+use osutils::{exe::RunAndCheck, lsof, systemd};
 use trident_api::{config::HostConfiguration, status::HostStatus};
 
 use crate::modules::storage::tabfile::{TabFile, TabFileSettings};
 
 pub(crate) fn unmount_updated_volumes(mount_path: &Path) -> Result<(), Error> {
     let mount_unit_name = systemd::escape_mount_unit_name(&mount_path, systemd::MOUNT_UNIT_SUFFIX)?;
-    Command::new("systemctl")
+
+    let res = Command::new("systemctl")
         .arg("stop")
-        .arg(mount_unit_name)
+        .arg(&mount_unit_name)
         .run_and_check()
-        .context("Failed to safely unmount target root partition.")
+        .context("Failed to safely unmount target root partition.");
+    if res.is_ok() {
+        return Ok(());
+    }
+
+    let opened_process_files = lsof::run(mount_path);
+    // best effort, ignore failures here (such as missing external dependency)
+    if let Ok(opened_process_files) = opened_process_files {
+        error!("Open files: {:?}", opened_process_files);
+    }
+
+    res
 }
 
 pub(crate) fn mount_updated_volumes(

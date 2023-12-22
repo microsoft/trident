@@ -9,7 +9,7 @@ use anyhow::{Context, Error};
 use log::error;
 use tempfile::TempDir;
 
-use crate::{exe::RunAndCheck, files, systemd};
+use crate::{exe::RunAndCheck, files, lsof, systemd};
 
 /// Mounts an overlayfs on top of the provided path. The overlay is removed when
 /// exit() is called. The overlay temporary files are stored in a temporary
@@ -79,6 +79,7 @@ impl EphemeralOverlay {
 pub struct SystemDFilesystemOverlay {
     dir: Option<TempDir>,
     unit_name: PathBuf,
+    target_path: PathBuf,
 }
 
 impl SystemDFilesystemOverlay {
@@ -158,6 +159,7 @@ impl SystemDFilesystemOverlay {
         let this = Self {
             dir: None,
             unit_name: overlay_mount_unit_name.clone(),
+            target_path: target_path.to_owned(),
         };
 
         if let Err(e1) = this.apply().context("Failed to mount overlay") {
@@ -203,11 +205,20 @@ impl SystemDFilesystemOverlay {
 
     /// Unmounts the overlay and removes the temporary files.
     pub fn unmount(self) -> Result<(), Error> {
-        Command::new("systemctl")
+        let res = Command::new("systemctl")
             .arg("stop")
             .arg(&self.unit_name)
             .run_and_check()
-            .context("Failed to unmount the overlay")?;
+            .context("Failed to unmount the overlay");
+        if res.is_err() {
+            let opened_process_files = lsof::run(&self.target_path);
+            // best effort, ignore failures here (such as missing external dependency)
+            if let Ok(opened_process_files) = opened_process_files {
+                error!("Open files: {:?}", opened_process_files);
+            }
+
+            res?
+        }
         fs::remove_file(Path::new(Self::SYSTEMD_UNIT_ROOT_PATH).join(self.unit_name))
             .context("Failed to clean up the overlay mount unit")?;
         if let Some(dir) = self.dir {
