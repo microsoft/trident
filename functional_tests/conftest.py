@@ -187,12 +187,17 @@ def create_ssh_node(remote_addr_path: Path, ssh_key_path: Path, known_hosts_path
     """Creates an SSH node that can be used to interact with the VM."""
     with open(remote_addr_path, "r") as file:
         remote_addr = file.read().strip()
+
+    # Remove the .pub suffix from the key path.
+    priv_key = ssh_key_path.with_suffix("")
+    logging.info(f"Using SSH key {priv_key}")
+
     return SshNode(
         ".",
         "log",
         remote_addr,
         username=TEST_USER,
-        key_path=ssh_key_path,
+        key_path=priv_key,
         known_hosts_path=known_hosts_path,
     )
 
@@ -300,7 +305,8 @@ def vm(request):
             test_dir_path / REMOTE_ADDR_FILENAME, ssh_key_path, known_hosts_path
         )
     else:
-        create_vm(["-d", "16,16"])
+        # Create one VM with default flags, cpus, memory, but with two 16GiB disks.
+        create_vm([":::16,16"])
 
     if not reuse_environment or redeploy:
         # Deploy OS to VM.
