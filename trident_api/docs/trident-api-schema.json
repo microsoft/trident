@@ -155,7 +155,6 @@
       "description": "Per disk configuration.",
       "type": "object",
       "required": [
-        "adoptedPartitions",
         "device",
         "id",
         "partitionTableType",
@@ -164,6 +163,7 @@
       "properties": {
         "adoptedPartitions": {
           "description": "A list of pre-existing partitions that will be adopted from the disk.\n\nSeveral options are available to match a partition to adopt. If more than one option is specified, ALL the provided criteria will be used to match the partition.",
+          "default": [],
           "type": "array",
           "items": {
             "$ref": "#/definitions/AdoptedPartition"

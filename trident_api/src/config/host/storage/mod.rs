@@ -84,6 +84,7 @@ pub struct Disk {
     /// Several options are available to match a partition to adopt. If more
     /// than one option is specified, ALL the provided criteria will be used to
     /// match the partition.
+    #[serde(default)]
     pub adopted_partitions: Vec<AdoptedPartition>,
 }
 
