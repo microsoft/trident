@@ -7,6 +7,11 @@ check:
 	cargo clippy -- -D warnings
 	cargo fmt -- --check
 
+.PHONY: format
+format:
+	cargo fmt
+	python3 -m black .
+
 .PHONY: test
 test:
 	cargo test --all --no-fail-fast

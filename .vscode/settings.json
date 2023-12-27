@@ -1,5 +1,9 @@
 {
     "editor.formatOnSave": true,
     "rust-analyzer.checkOnSave.command": "clippy",
-    "rust-analyzer.cargo.features": "all"
+    "rust-analyzer.cargo.features": "all",
+    "black-formatter.args": [],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+    },
 }
