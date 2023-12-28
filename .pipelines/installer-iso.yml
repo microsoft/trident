@@ -89,9 +89,9 @@ stages:
         set -eux
         mkdir -p $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image
         mkdir -p $(argusToolkitSourceDirectory)/build/installer-iso
-        mv $(System.ArtifactsDirectory)/runtime-image/esp*.raw.zst \
+        mv $(System.ArtifactsDirectory)/runtime-image/esp.raw.zst \
           $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/esp.rawzst
-        mv $(System.ArtifactsDirectory)/runtime-image/root*.raw.zst \
+        mv $(System.ArtifactsDirectory)/runtime-image/root.raw.zst \
           $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/root.rawzst
         cp  $(System.ArtifactsDirectory)/{provision-template,isogen}/* \
             $(argusToolkitSourceDirectory)/build/installer-iso-components/
