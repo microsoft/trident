@@ -45,7 +45,7 @@ hostConfiguration:
         filesystem: ext4
         options: ["defaults"]
     images:
-      - url: file:///trident_cdrom/data/boot.rawzst
+      - url: file:///trident_cdrom/data/esp.rawzst
         sha256: ignored
         format: raw-zstd
         targetId: esp

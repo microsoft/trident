@@ -31,7 +31,7 @@ hostConfiguration:
     - format: raw-zstd
       sha256: ignored
       targetId: esp
-      url: file:///trident_cdrom/data/boot.rawzst
+      url: file:///trident_cdrom/data/esp.rawzst
     - format: raw-zstd
       sha256: ignored
       targetId: root
