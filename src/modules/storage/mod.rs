@@ -6,23 +6,27 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::info;
-use osutils::udevadm;
+
+use osutils::{
+    partition_types::DiscoverablePartitionType,
+    repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
+    sfdisk::SfDisk,
+    udevadm,
+};
 use trident_api::{
-    config::{HostConfiguration, MountPoint},
+    config::{HostConfiguration, MountPoint, PartitionSize, PartitionType},
     status::{self, BlockDeviceContents, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
 
 use crate::modules::Module;
-use systemd_repart::RepartConfiguration;
-use tabfile::TabFileSettings;
-use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
 
 pub mod image;
 mod raid;
-mod sfdisk;
-mod systemd_repart;
 pub mod tabfile;
+
+use tabfile::TabFileSettings;
+use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
 
 fn create_partitions(
     host_status: &mut HostStatus,
@@ -68,25 +72,38 @@ fn create_partitions(
             }
         }
 
-        // Pass hash map as second arg into new()
-        let repart_config = RepartConfiguration::new(disk, &partlabels).context(format!(
-            "Failed to generate systemd-repart config for disk {}",
-            disk.id
-        ))?;
+        let mut repart = SystemdRepartInvoker::new(disk_path, RepartMode::Force);
+
+        for partition in &disk.partitions {
+            let partlabel = partlabels.get(&partition.id).unwrap_or(&partition.id);
+            let size = match partition.size {
+                PartitionSize::Grow => None,
+                PartitionSize::Fixed(s) => Some(s),
+            };
+
+            repart.push_partition_entry(RepartPartitionEntry {
+                partition_type: config_part_type_into_discoverable(partition.partition_type),
+                label: Some(partlabel.clone()),
+                size_max_bytes: size,
+                size_min_bytes: size,
+            })
+        }
 
         info!("Creating partitions for disk {}", disk.id);
 
-        let partitions_status = repart_config
-            .create_partitions(&disk_bus_path)
-            .context(format!("Failed to initialize disk {}", disk.id))?;
+        let created_partitions = repart
+            .execute()
+            .context(format!("Failed to create partitions for disk {}", disk.id))?;
 
-        let disk_information = sfdisk::get_disk_information(&disk_bus_path)
-            .context(format!("Failed to retrieve GPT UUID for disk {}", disk.id))?;
+        let disk_information = SfDisk::get_info(&disk_bus_path).context(format!(
+            "Failed to retrieve information for disk {}",
+            disk.id
+        ))?;
 
         host_status.storage.disks.insert(
             disk.id.clone(),
             status::Disk {
-                uuid: disk_information.uuid,
+                uuid: disk_information.id,
                 path: disk_bus_path.clone(),
                 partitions: Vec::new(),
                 capacity: disk_information.capacity,
@@ -104,7 +121,7 @@ fn create_partitions(
         udevadm::settle()?;
 
         for (index, partition) in disk.partitions.iter().enumerate() {
-            let partition_uuid = partitions_status[index].uuid;
+            let partition_uuid = created_partitions[index].uuid;
             let part_path = Path::new("/dev/disk/by-partuuid").join(partition_uuid.to_string());
             if !part_path.exists() {
                 bail!(
@@ -114,8 +131,8 @@ fn create_partitions(
                 );
             }
 
-            let start = partitions_status[index].start;
-            let size = partitions_status[index].size;
+            let start = created_partitions[index].start;
+            let size = created_partitions[index].size;
             disk_status.partitions.push(status::Partition {
                 id: partition.id.clone(),
                 path: part_path,
@@ -130,6 +147,21 @@ fn create_partitions(
         disk_status.contents = status::BlockDeviceContents::Initialized;
     }
     Ok(())
+}
+
+fn config_part_type_into_discoverable(part_type: PartitionType) -> DiscoverablePartitionType {
+    match part_type {
+        PartitionType::Esp => DiscoverablePartitionType::Esp,
+        PartitionType::Home => DiscoverablePartitionType::Home,
+        PartitionType::LinuxGeneric => DiscoverablePartitionType::LinuxGeneric,
+        PartitionType::Root => DiscoverablePartitionType::Root,
+        PartitionType::RootVerity => DiscoverablePartitionType::RootVerity,
+        PartitionType::Srv => DiscoverablePartitionType::Srv,
+        PartitionType::Swap => DiscoverablePartitionType::Swap,
+        PartitionType::Tmp => DiscoverablePartitionType::Tmp,
+        PartitionType::Usr => DiscoverablePartitionType::Usr,
+        PartitionType::Var => DiscoverablePartitionType::Var,
+    }
 }
 
 #[derive(Default, Debug)]

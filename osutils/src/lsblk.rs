@@ -26,11 +26,11 @@ pub struct BlockDevice {
     pub children: Option<Vec<BlockDevice>>,
 }
 
-pub fn run(device_path: &Path) -> Result<Vec<BlockDevice>, Error> {
+pub fn run(device_path: impl AsRef<Path>) -> Result<Vec<BlockDevice>, Error> {
     let result = Command::new("lsblk")
         .arg("--json")
         .arg("--path")
-        .arg(device_path)
+        .arg(device_path.as_ref())
         .arg("--output-all")
         .arg("--bytes")
         .output_and_check()

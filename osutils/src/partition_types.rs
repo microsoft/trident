@@ -359,4 +359,18 @@ mod test {
             "Expected to fail to convert UUID 00000000-0000-0000-0000-000000000000 to partition type",
         );
     }
+
+    #[test]
+    fn test_name_roundtrip() {
+        for partition_type in DiscoverablePartitionType::iter() {
+            let name = partition_type.to_str();
+            let partition_type_from_name = DiscoverablePartitionType::try_from_str(name).unwrap();
+            assert_eq!(
+                partition_type, // We need to resolve aliases
+                partition_type_from_name,
+                "Round-trip failed for partition type {}",
+                partition_type.to_str()
+            );
+        }
+    }
 }

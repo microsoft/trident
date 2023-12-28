@@ -46,7 +46,12 @@ impl RepartPartitionEntry {
             Some(self.partition_type.to_str().into()),
         );
 
-        repart_config.set(repart_partition_section, "Label", self.label.clone());
+        // While set() accepts an Option<String>, we don't want to pass it on directly, because when
+        // the value is None, Ini serializes the key without a `=` and no value, which systemd-repart
+        // doesn't like. Instead, we only set the value if it's Some.
+        if self.label.is_some() {
+            repart_config.set(repart_partition_section, "Label", self.label.clone());
+        }
 
         if let Some(size_min_bytes) = self.size_min_bytes {
             repart_config.set(
@@ -354,6 +359,12 @@ mod tests {
                 size_min_bytes: Some(10737418240), // 10 GiB
                 size_max_bytes: Some(10737418240),
             },
+            RepartPartitionEntry {
+                partition_type: DiscoverablePartitionType::LinuxGeneric,
+                label: Some("testpart".into()),
+                size_min_bytes: None,
+                size_max_bytes: None,
+            },
         ];
 
         let repart_root = tempfile::tempdir()
@@ -370,7 +381,8 @@ mod tests {
                 let entry = entry.expect("Failed to read systemd-repart config directory entry");
                 let mut ini = Ini::new_cs();
                 ini.load(entry.path()).expect("Failed to load ini file");
-                (entry.file_name(), ini)
+                let contents = std::fs::read_to_string(entry.path()).expect("Failed to read file");
+                (entry.file_name(), ini, contents)
             })
             .collect::<Vec<_>>();
 
@@ -385,7 +397,8 @@ mod tests {
         );
 
         partitions.iter().zip(ini_files).enumerate().for_each(
-            |(index, (partition, (filename, ini)))| {
+            |(index, (partition, (filename, ini, contents)))| {
+                println!("{}:\n{}", filename.to_str().unwrap(), contents);
                 assert_eq!(
                     filename.to_str().unwrap(),
                     format!("{:03}.conf", index),
@@ -406,6 +419,15 @@ mod tests {
                     filename.to_string_lossy()
                 );
 
+                // Assert that the Label field is not present if the label is None
+                if partition.label.is_none() {
+                    assert!(
+                        !contents.contains("\nLabel"),
+                        "Label field found in {}",
+                        filename.to_string_lossy()
+                    );
+                }
+
                 assert_eq!(
                     ini.get("Partition", "SizeMinBytes"),
                     partition.size_min_bytes.map(|v| v.to_string()),
@@ -413,13 +435,168 @@ mod tests {
                     filename.to_string_lossy()
                 );
 
+                // Assert that the SizeMinBytes field is not present if the label is None
+                if partition.size_min_bytes.is_none() {
+                    assert!(
+                        !contents.contains("\nSizeMinBytes"),
+                        "Label field found in {}",
+                        filename.to_string_lossy()
+                    );
+                }
+
                 assert_eq!(
                     ini.get("Partition", "SizeMaxBytes"),
                     partition.size_max_bytes.map(|v| v.to_string()),
                     "SizeMaxBytes mismatch in {}",
                     filename.to_string_lossy()
                 );
+
+                // Assert that the SizeMaxBytes field is not present if the label is None
+                if partition.size_max_bytes.is_none() {
+                    assert!(
+                        !contents.contains("\nSizeMaxBytes"),
+                        "Label field found in {}",
+                        filename.to_string_lossy()
+                    );
+                }
             },
         );
+    }
+
+    #[test]
+    fn test_partition_limit() {
+        let mut partitions = Vec::new();
+        for _ in 0..1001 {
+            partitions.push(RepartPartitionEntry {
+                partition_type: DiscoverablePartitionType::Esp,
+                label: None,
+                size_min_bytes: Some(8388608), // 8 MiB
+                size_max_bytes: Some(8388608),
+            });
+        }
+
+        let repart_root = tempfile::tempdir()
+            .expect("Failed to create temporary directory for systemd-repart files");
+
+        let result = SystemdRepartInvoker::new("/dev/null", RepartMode::Force)
+            .with_partition_entries(partitions)
+            .generate_config(repart_root.path());
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Too many partitions (1001), this library only supports up to 1000 partitions"
+        );
+    }
+}
+
+// assumes at least 2 sata connected 16 GB disk setup (and specifically the
+// second disk needs to be 16 GiB in size)
+#[cfg(all(test, feature = "functional-tests"))]
+mod functional_tests {
+    use std::path::PathBuf;
+
+    use crate::lsblk::{self, BlockDevice};
+    use crate::udevadm;
+
+    use super::*;
+
+    #[test]
+    fn test() {
+        let unchanged_disk_bus_path = PathBuf::from("/dev/sda");
+        let unchanged_block_device_list = lsblk::run(&unchanged_disk_bus_path).unwrap();
+
+        let disk_bus_path = PathBuf::from("/dev/sdb");
+
+        let disk_size: u64 = 17179869184; // 16 GiB
+        let part1_size = 50 * 1024 * 1024;
+
+        let partition_definition = vec![
+            RepartPartitionEntry {
+                partition_type: DiscoverablePartitionType::Esp,
+                label: None,
+                size_min_bytes: Some(part1_size),
+                size_max_bytes: Some(part1_size),
+            },
+            RepartPartitionEntry {
+                partition_type: DiscoverablePartitionType::LinuxGeneric,
+                label: None,
+                // When min==max==None, it's a grow partition
+                size_min_bytes: None,
+                size_max_bytes: None,
+            },
+        ];
+
+        let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartMode::Force)
+            .with_partition_entries(partition_definition.clone());
+
+        let partitions = repart.execute().unwrap();
+
+        assert_eq!(partitions.len(), 2);
+
+        let part1 = &partitions[0];
+        let part1_start = 1024 * 1024;
+        assert_eq!(part1.start, part1_start);
+        assert_eq!(part1.size, part1_size);
+
+        let part2 = &partitions[1];
+        assert_eq!(part2.start, part1_start + part1_size);
+        assert_eq!(
+            part2.size,
+            16 * 1024 * 1024 * 1024 - part1_start - part1_size - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
+        );
+
+        udevadm::settle().unwrap();
+
+        let unchanged_block_device_list_after = lsblk::run(&unchanged_disk_bus_path).unwrap();
+        assert_eq!(
+            unchanged_block_device_list,
+            unchanged_block_device_list_after
+        );
+
+        let expected_block_device_list = vec![BlockDevice {
+            name: "/dev/sdb".into(),
+            part_uuid: None,
+            size: disk_size,
+            parent_kernel_name: None,
+            children: Some(vec![
+                BlockDevice {
+                    name: "/dev/sdb1".into(),
+                    part_uuid: Some(part1.uuid),
+                    size: part1.size,
+                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    children: None,
+                },
+                BlockDevice {
+                    name: "/dev/sdb2".into(),
+                    part_uuid: Some(part2.uuid),
+                    size: part2.size,
+                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    children: None,
+                },
+            ]),
+        }];
+
+        let block_device_list = lsblk::run(&disk_bus_path).unwrap();
+        assert_eq!(expected_block_device_list, block_device_list);
+
+        // Test that we can repartition /dev/null
+        let repart = SystemdRepartInvoker::new("/dev/null", RepartMode::Force)
+            .with_partition_entries(partition_definition.clone());
+        assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/null: Block device required\n\n");
+
+        // Test that we can repartition a non-existing device
+        let repart = SystemdRepartInvoker::new("/dev/does-not-exist", RepartMode::Force)
+            .with_partition_entries(partition_definition.clone());
+        assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/does-not-exist: No such file or directory\n\n");
+
+        // Test that asking for too much space fails
+        let mut partition_definition = partition_definition.clone();
+        // Make the second partition too big
+        partition_definition[1].size_min_bytes = Some(disk_size);
+        partition_definition[1].size_max_bytes = Some(disk_size);
+        let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartMode::Force)
+            .with_partition_entries(partition_definition);
+        assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nCan't fit requested partitions into available free space (15.9G), refusing.\nAutomatically determined minimal disk image size as 16.0G, current image size is 16.0G.\n\n");
     }
 }
