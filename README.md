@@ -620,6 +620,21 @@ ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
 
 Paramiko 2.6.0 and 3.x are known to work, .2.6.0 is known to misbehave.
 
+Finally, ensure that you have locally built or populated the provisioning ISO
+template and runtime images. You can populate them from the latest pipeline runs
+from the `argus-toolkit` repo as follows:
+
+```bash
+az login
+make download-provision-template-iso
+make download-runtime-partition-images
+```
+
+If you hit errors and there is no obvious test case failure, it is possible the
+error happened during test setup. Unfortunately, the actionable test setup error
+log is not at the end, but higher up in the log, much closer to the beginning.
+Scroll up until you see a failure by virt-deploy, netlaunch or trident.
+
 ##### Functional Test Code Coverage
 
 All functional tests are built with code coverage profile. This means that every
