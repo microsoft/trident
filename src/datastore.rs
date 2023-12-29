@@ -144,7 +144,7 @@ impl DataStore {
 
 #[cfg(all(test, feature = "functional-tests"))]
 mod functional_tests {
-    use anyhow::{anyhow, bail};
+    use anyhow::bail;
     use tempfile::TempDir;
     use trident_api::status::ReconcileState;
 

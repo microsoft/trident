@@ -3,8 +3,8 @@ all: check test rpm build-api-docs docker-build build-functional-test
 
 .PHONY: check
 check:
-	cargo check
-	cargo clippy -- -D warnings
+	cargo check --all-features --tests
+	cargo clippy --all-features --tests -- -D warnings
 	cargo fmt -- --check
 
 .PHONY: format
