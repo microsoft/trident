@@ -4,9 +4,12 @@ from .tools.trident import TridentTool
 from .conftest import TRIDENT_REPO_DIR_PATH
 
 
-class SafeLoaderIgnoreUnknown(yaml.SafeLoader):
-    def ignore_unknown(self, node):
-        return None
+class HostStatusSafeLoader(yaml.SafeLoader):
+    def accept_image(self, node):
+        return self.construct_mapping(node)
+
+
+HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
 
 
 def test_trident_run(vm):
@@ -21,12 +24,8 @@ def test_trident_get(vm):
     """Basic trident get validation."""
     trident = TridentTool(vm)
 
-    SafeLoaderIgnoreUnknown.add_constructor(
-        None, SafeLoaderIgnoreUnknown.ignore_unknown
-    )
-
     host_status = trident.get()
-    host_status = yaml.load(host_status, Loader=SafeLoaderIgnoreUnknown)
+    host_status = yaml.load(host_status, Loader=HostStatusSafeLoader)
     # TODO remove the placeholder logic by patching the template with the actual
     # values, which we can fetch using lsblk, sfdisk and information about the
     # images we put into the HostConfiguraion.
@@ -44,7 +43,7 @@ def test_trident_get(vm):
     with open(
         TRIDENT_REPO_DIR_PATH / "functional_tests/host-status-template.yaml", "r"
     ) as file:
-        host_status_expected = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
+        host_status_expected = yaml.load(file, Loader=HostStatusSafeLoader)
     assert host_status == host_status_expected
 
     pass
