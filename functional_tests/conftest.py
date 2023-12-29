@@ -166,6 +166,7 @@ def deploy_vm(
     and netlaunch to deploy the OS.
     """
     if not installer_iso_path:
+        argus_runcmd(["make", "build/netlaunch"])
         argus_runcmd(["make", "build/installer-dev.iso"])
         installer_iso_path = ARGUS_REPO_DIR_PATH / "build/installer-dev.iso"
 
