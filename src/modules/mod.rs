@@ -8,14 +8,18 @@ use anyhow::{bail, Context, Error};
 use log::info;
 
 use trident_api::{
-    config::{HostConfiguration, Operations},
+    config::{HostConfiguration, Operations, PartitionType},
     status::{
         AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
     },
     BlockDeviceId,
 };
 
-use osutils::{chroot, files::create_dirs};
+use osutils::{
+    chroot,
+    efibootmgr::{self, EfiBootManagerOutput},
+    files::create_dirs,
+};
 
 use crate::{
     datastore::DataStore, modules::storage::image::mount, protobufs::HostStatusState,
@@ -23,7 +27,7 @@ use crate::{
 };
 use crate::{
     modules::{
-        hooks::HooksModule, management::ManagementModule, network::NetworkModule,
+        self, hooks::HooksModule, management::ManagementModule, network::NetworkModule,
         osconfig::OsConfigModule, storage::StorageModule,
     },
     HostUpdateCommand,
@@ -38,7 +42,10 @@ pub mod storage;
 /// The path to the root of the freshly deployed (from provisioning OS) or
 /// updated OS (from runtime OS).
 const UPDATE_ROOT_PATH: &str = "/partitionMount";
-
+/// Bootentry name for A images
+const BOOT_ENTRY_A: &str = "azlinuxA";
+/// Bootentry name for B images
+const BOOT_ENTRY_B: &str = "azlinuxB";
 trait Module: Send {
     fn name(&self) -> &'static str;
 
@@ -218,9 +225,8 @@ pub(super) fn provision_host(
     }
 
     info!("Root device path: {:#?}", root_device_path);
-
     state.close();
-    transition(mount_path, &root_device_path)?;
+    transition(mount_path, &root_device_path, state.host_status())?;
 
     Ok(())
 }
@@ -324,9 +330,9 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
             }
 
             info!("Root device path: {:#?}", root_block_device_path);
-
             state.close();
-            transition(mount_path, &root_block_device_path)?;
+            transition(mount_path, &root_block_device_path, state.host_status())?;
+
             Ok(())
         }
         UpdateKind::NormalUpdate | UpdateKind::HotPatch => {
@@ -561,12 +567,18 @@ fn configure(
     Ok(())
 }
 
-fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Error> {
+fn transition(
+    mount_path: &Path,
+    root_block_device_path: &Path,
+    host_status: &HostStatus,
+) -> Result<(), Error> {
     let root_block_device_path = root_block_device_path.to_str().context(format!(
         "Failed to convert root device path {:?} to string",
         root_block_device_path
     ))?;
+    info!("Setting boot entries");
 
+    set_boot_entries(host_status).context("Failed to set boot entries")?;
     info!("Performing soft reboot");
     storage::image::kexec(
         mount_path,
@@ -577,9 +589,56 @@ fn transition(mount_path: &Path, root_block_device_path: &Path) -> Result<(), Er
     // TODO: Solve hard reboot(), so that the firmware chooses the correct boot
     // partition to boot from, after each A/B update. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6169.
-    //
-    // info!("Performing hard reboot");
-    // image::reboot().context("Failed to perform hard reboot")
+    //info!("Performing hard reboot");
+    //storage::image::reboot().context("Failed to perform hard reboot")
+}
+
+/// Creates a boot entry for the updated AB partition and sets the `BootNext` variable to boot from the updated partition on next boot.
+fn set_boot_entries(host_status: &HostStatus) -> Result<(), Error> {
+    //TODO- temporary https://dev.azure.com/mariner-org/ECF/_workitems/edit/6383/
+
+    let bootloader_path = Path::new(r"/EFI/BOOT/bootx64.efi");
+    let (entry_label_new, bootloader_path_new) =
+        match modules::get_ab_update_volume(host_status, false) {
+            Some(AbVolumeSelection::VolumeA) => (BOOT_ENTRY_A, bootloader_path),
+            Some(AbVolumeSelection::VolumeB) => (BOOT_ENTRY_B, bootloader_path),
+            None => bail!("Unsupported AB volume selection"),
+        };
+
+    let output = efibootmgr::list_bootmgr_entries()?;
+    let bootmgr_output = EfiBootManagerOutput::parse_efibootmgr_output(&output)?;
+
+    if !bootmgr_output.boot_entry_exists(entry_label_new)? {
+        let disk_path = get_first_partition_of_type(host_status, PartitionType::Esp)
+            .context("Failed to fetch esp disk path ")?;
+        efibootmgr::create_boot_entry(entry_label_new, disk_path, bootloader_path_new)
+            .context("Failed to add boot entry")?;
+    }
+    let output = efibootmgr::list_bootmgr_entries()?;
+    let bootmgr_output = EfiBootManagerOutput::parse_efibootmgr_output(&output)?;
+
+    let added_entry_number = bootmgr_output
+        .get_boot_entry_number(entry_label_new)
+        .context("Failed to get boot entry number")?;
+    efibootmgr::set_bootnext(&added_entry_number).context("Failed to get set `BootNext`")
+}
+
+/// Returns disk path based on partitionType
+fn get_first_partition_of_type(
+    host_status: &HostStatus,
+    partition_ty: PartitionType,
+) -> Result<PathBuf, Error> {
+    return host_status
+        .storage
+        .disks
+        .values()
+        .find_map(|disk| {
+            disk.partitions
+                .iter()
+                .find(|partition| partition.ty == partition_ty)
+                .map(|_| disk.to_block_device().path.clone())
+        })
+        .context("Failed to find disk path");
 }
 
 #[cfg(test)]
@@ -1028,5 +1087,165 @@ mod test {
             ..Default::default()
         };
         assert_eq!(get_datastore_path(&host_config), Path::new("/foo"));
+    }
+
+    #[test]
+    fn test_get_first_partition_of_type() {
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/sda"),
+                        uuid: Uuid::nil(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_string(),
+                                path: PathBuf::from("/dev/sda1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "root-a".to_string(),
+                                path: PathBuf::from("/dev/sda2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "root-b".to_string(),
+                                path: PathBuf::from("/dev/sda3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            }
+
+                        ],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let result = get_first_partition_of_type(&host_status, PartitionType::Esp);
+        assert_eq!(result.unwrap(), PathBuf::from("/dev/sda"));
+
+        let result = get_first_partition_of_type(&host_status, PartitionType::Root);
+        assert_eq!(result.unwrap(), PathBuf::from("/dev/sda"));
+        let result = get_first_partition_of_type(&host_status, PartitionType::Var);
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(all(test, feature = "functional-tests"))]
+mod functional_tests {
+
+    use maplit::btreemap;
+    use osutils::efibootmgr;
+    use trident_api::status::{AbUpdate, AbVolumePair, BlockDeviceContents, Disk, Storage};
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn test_helper_set_bootentries(entry_label: &str, host_status: &HostStatus) {
+        let output1 = efibootmgr::list_bootmgr_entries().unwrap();
+        let bootmgr_output1: EfiBootManagerOutput =
+            EfiBootManagerOutput::parse_efibootmgr_output(&output1).unwrap();
+        if bootmgr_output1.boot_entry_exists(entry_label).unwrap() {
+            let boot_entry_num1 = bootmgr_output1.get_boot_entry_number(entry_label).unwrap();
+            efibootmgr::delete_boot_entry(&boot_entry_num1).unwrap();
+        }
+        set_boot_entries(host_status).unwrap();
+        let output2 = efibootmgr::list_bootmgr_entries().unwrap();
+        let bootmgr_output2: EfiBootManagerOutput =
+            EfiBootManagerOutput::parse_efibootmgr_output(&output2).unwrap();
+        let boot_entry_num2 = bootmgr_output2.get_boot_entry_number(entry_label).unwrap();
+        assert_eq!(bootmgr_output2.boot_next, boot_entry_num2);
+        efibootmgr::delete_boot_entry(&boot_entry_num2).unwrap();
+    }
+
+    #[test]
+    fn test_set_bootentries() {
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/sda"),
+                        uuid: Uuid::nil(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_string(),
+                                path: PathBuf::from("/dev/sda1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "root-a".to_string(),
+                                path: PathBuf::from("/dev/sda2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "root-b".to_string(),
+                                path: PathBuf::from("/dev/sda3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+
+                        ],
+                    },
+
+                },
+                ab_update: Some(AbUpdate {
+                    volume_pairs: btreemap! {
+                        "root".to_string() => AbVolumePair {
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        },
+                    },
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        //for cleanInstall add A partition entry
+        test_helper_set_bootentries(BOOT_ENTRY_A, &host_status);
+
+        host_status
+            .storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+
+        test_helper_set_bootentries(BOOT_ENTRY_A, &host_status);
+
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
+
+        test_helper_set_bootentries(BOOT_ENTRY_B, &host_status);
     }
 }
