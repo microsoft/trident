@@ -116,6 +116,24 @@ where
     Ok(())
 }
 
+/// Writes to a file
+pub fn write_file<S>(path: S, mode: u32, contents: &[u8]) -> Result<(), Error>
+where
+    S: AsRef<Path>,
+{
+    let mut file = create_file_mode(path.as_ref(), mode).context(format!(
+        "Could not create file: {}",
+        path.as_ref().display()
+    ))?;
+
+    file.write_all(contents).context(format!(
+        "Could not write to file: {}",
+        path.as_ref().display()
+    ))?;
+
+    Ok(())
+}
+
 pub fn get_owner_uid<S>(path: S) -> Result<u32, Error>
 where
     S: AsRef<Path>,

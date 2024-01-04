@@ -21,6 +21,7 @@ use trident_api::{
 
 use crate::modules::Module;
 
+mod encryption;
 pub mod image;
 mod raid;
 pub mod tabfile;
@@ -238,6 +239,8 @@ impl Module for StorageModule {
                 .context("Failed to create disk partitions")?;
             raid::create_sw_raid(host_status, host_config)
                 .context("Failed to create software RAID")?;
+            encryption::provision(host_status, host_config)
+                .context("Encryption submodule failed during provision")?;
         }
 
         image::provision(host_status, host_config, mount_point)
@@ -280,6 +283,9 @@ impl Module for StorageModule {
 
         // TODO: update /etc/repart.d directly for the matching disk, derive
         // from where is the root located
+
+        encryption::configure(host_status)
+            .context("Encryption submodule failed during configure")?;
 
         // persist on reboots
         raid::create_raid_config(host_status)

@@ -2283,6 +2283,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "trident_api",
+ "url",
  "uuid",
  "zstd",
 ]
