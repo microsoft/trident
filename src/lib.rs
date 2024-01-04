@@ -204,12 +204,10 @@ impl Trident {
                 }
             }
             HostConfigurationSource::KickstartFile(file) => {
-                match KsTranslator::new().run_pre_scripts(true).translate(
-                    setsail::load_kickstart_file(
-                        file.to_str()
-                            .context(format!("Failed to resolve path {}", file.display()))?,
-                    )?,
-                ) {
+                match KsTranslator::new()
+                    .run_pre_scripts(true)
+                    .translate(setsail::load_kickstart_file(file)?)
+                {
                     Ok(hc) => Box::new(hc),
                     Err(e) => {
                         bail!(

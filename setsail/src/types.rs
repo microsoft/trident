@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use serde::Serialize;
 
 /// Represents a line in a kickstart file
@@ -21,11 +23,10 @@ impl KSLine {
     }
 
     pub fn get_id(&self) -> String {
-        format!(
-            "{}/{}",
-            self.source.get_filename().unwrap_or("unknown"),
-            self.lineno
-        )
+        match self.source.get_filename() {
+            Some(filename) => format!("{}:{}", filename.display(), self.lineno),
+            None => format!("unknown:{}", self.lineno),
+        }
     }
 }
 
@@ -41,21 +42,21 @@ pub enum KSLineSource {
     #[default]
     Unknown,
     InputString,
-    File(String),
-    KsAppend(String, Box<KSLine>),
-    Include(String, Box<KSLine>),
+    File(PathBuf),
+    KsAppend(PathBuf, Box<KSLine>),
+    Include(PathBuf, Box<KSLine>),
 }
 
 impl KSLineSource {
-    pub fn new_ksappend(file: String, line: &KSLine) -> Self {
+    pub fn new_ksappend(file: PathBuf, line: &KSLine) -> Self {
         Self::KsAppend(file, Box::new(line.clone()))
     }
 
-    pub fn new_include(file: String, line: &KSLine) -> Self {
+    pub fn new_include(file: PathBuf, line: &KSLine) -> Self {
         Self::Include(file, Box::new(line.clone()))
     }
 
-    pub fn get_filename(&self) -> Option<&str> {
+    pub fn get_filename(&self) -> Option<&Path> {
         match self {
             KSLineSource::File(filename) => Some(filename),
             KSLineSource::KsAppend(file, _) => Some(file),
@@ -70,12 +71,24 @@ impl std::fmt::Display for KSLineSource {
         match self {
             KSLineSource::Unknown => write!(f, "Unknown"),
             KSLineSource::InputString => write!(f, "InputString"),
-            KSLineSource::File(filename) => write!(f, "{}", filename),
+            KSLineSource::File(filename) => write!(f, "{}", filename.display()),
             KSLineSource::KsAppend(file, line) => {
-                write!(f, "{}:{}>ksappend({})", line.source, line.lineno, file)
+                write!(
+                    f,
+                    "{}:{}>ksappend({})",
+                    line.source,
+                    line.lineno,
+                    file.display()
+                )
             }
             KSLineSource::Include(file, line) => {
-                write!(f, "{}:{}>include({})", line.source, line.lineno, file)
+                write!(
+                    f,
+                    "{}:{}>include({})",
+                    line.source,
+                    line.lineno,
+                    file.display()
+                )
             }
         }
     }

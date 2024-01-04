@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use log::debug;
 
 use super::errors::SetsailError;
@@ -62,8 +64,8 @@ pub(crate) fn preprocess(
 
                 debug!("Processing &ksappend: {}", path);
                 match load::load_to_kslines(
-                    path,
-                    KSLineSource::new_ksappend(path.to_string(), &line),
+                    Path::new(path),
+                    KSLineSource::new_ksappend(PathBuf::from(path), &line),
                 ) {
                     Ok(kslines) => {
                         debug!("Loaded {} lines from {}", kslines.len(), path);

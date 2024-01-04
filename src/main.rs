@@ -1,4 +1,7 @@
-use std::{path::PathBuf, process::ExitCode};
+use std::{
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
@@ -62,7 +65,8 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
     if let Commands::ParseKickstart { ref file } = args.command {
         let translator = KsTranslator::new().include_fail_is_error(false);
         match translator.translate(
-            setsail::load_kickstart_file(file).context(format!("Failed to read {file}"))?,
+            setsail::load_kickstart_file(Path::new(file))
+                .context(format!("Failed to read {file}"))?,
         ) {
             Ok(hc) => {
                 println!("{}", serde_yaml::to_string(&hc)?);

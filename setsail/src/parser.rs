@@ -207,22 +207,7 @@ impl Parser {
             return;
         }
 
-        // Path unfortunately doesn't convert safely to a string, so we have to do this
-        let path_str = match path.to_str() {
-            Some(path_str) => path_str,
-            None => {
-                self.push_error(SetsailError::new_include(
-                    line,
-                    "Failed to convert path to string".into(),
-                ));
-                return;
-            }
-        };
-
-        match load::load_to_kslines(
-            path_str,
-            KSLineSource::new_include(path_str.to_string(), &line),
-        ) {
+        match load::load_to_kslines(&path, KSLineSource::new_include(path.clone(), &line)) {
             // We couldn't load the file :(
             Err(e) => {
                 if matches!(e.kind(), std::io::ErrorKind::NotFound)
