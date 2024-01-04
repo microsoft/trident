@@ -88,6 +88,14 @@ For any of the commands, you can change logging verbosity from the default
 
 Note that you can override the configuration path by setting the `--config` parameter.
 
+### Safety check
+
+Trident may destroy user data if run from dev machine or other system that is
+not intended to be provisioned. To hopefully avoid this, Trident runs a safety
+check before provisioning. The check ensures Linux has been booted from a
+ramdisk, and terminates the provisioning process if not. It can be disabled by
+creating a file named `override-trident-safety-check` in the root directory.
+
 ## Trident Configuration
 
 This configuration file is used by the Trident agent to configure itself. It is

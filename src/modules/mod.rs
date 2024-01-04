@@ -131,6 +131,7 @@ pub(super) fn provision_host(
     if !fs::read_to_string("/proc/cmdline")
         .context("Failed to read /proc/cmdline")?
         .contains("root=/dev/ram0")
+        && !Path::new("/override-trident-safety-check").exists()
     {
         bail!("Safety check failed! Requested clean install but not booted from ramdisk");
     }
