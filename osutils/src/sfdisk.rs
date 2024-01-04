@@ -398,15 +398,15 @@ mod functional_tests {
             SfPartition {
                 node: PathBuf::from("/dev/sda2"),
                 start: 104448,
-                size_sectors: 6291456,
-                size: 3221225472,
+                size_sectors: 10485760,
+                size: 5368709120,
                 partition_type: DiscoverablePartitionType::Root.resolve(),
                 id: Uuid::nil(),
                 name: Some("root-a".to_string()),
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda3"),
-                start: 6395904,
+                start: 10590208,
                 size_sectors: 4194304,
                 size: 2147483648,
                 partition_type: DiscoverablePartitionType::Root.resolve(),
@@ -415,7 +415,7 @@ mod functional_tests {
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda4"),
-                start: 10590208,
+                start: 14784512,
                 size_sectors: 4194304,
                 size: 2147483648,
                 partition_type: DiscoverablePartitionType::Swap.resolve(),
@@ -424,7 +424,7 @@ mod functional_tests {
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda5"),
-                start: 14784512,
+                start: 18978816,
                 size_sectors: 204800,
                 size: 104857600,
                 partition_type: DiscoverablePartitionType::LinuxGeneric.resolve(),

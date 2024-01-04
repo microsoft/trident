@@ -21,7 +21,7 @@ storage:
       - id: root-a
         path: placeholder
         start: 53477376
-        end: 3274702848
+        end: 5422186496
         type: root
         contents: !image
           sha256: placeholder
@@ -30,22 +30,22 @@ storage:
         uuid: placeholder
       - id: root-b
         path: placeholder
-        start: 3274702848
-        end: 5422186496
+        start: 5422186496
+        end: 7569670144
         type: root
         contents: initialized
         uuid: placeholder
       - id: swap
         path: placeholder
-        start: 5422186496
-        end: 7569670144
+        start: 7569670144
+        end: 9717153792
         type: swap
         contents: initialized
         uuid: placeholder
       - id: trident
         path: placeholder
-        start: 7569670144
-        end: 7674527744
+        start: 9717153792
+        end: 9822011392
         type: linux-generic
         contents: initialized
         uuid: placeholder

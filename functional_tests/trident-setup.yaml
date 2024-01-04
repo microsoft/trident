@@ -45,7 +45,7 @@ hostConfiguration:
         size: 50M
         type: esp
       - id: root-a
-        size: 3G
+        size: 5G
         type: root
       - id: root-b
         size: 2G
