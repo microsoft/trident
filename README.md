@@ -20,6 +20,7 @@ can be leveraged outside of that as well.
   - [Docs](#docs)
   - [Getting Started](#getting-started)
   - [Running Trident](#running-trident)
+    - [Safety check](#safety-check)
   - [Trident Configuration](#trident-configuration)
   - [Host Configuration](#host-configuration)
     - [Documentation](#documentation)
@@ -462,24 +463,24 @@ functional-test` or `make patch-functional-test`. This will produce
 
 To view the code coverage report, run `make coverage-report`. This will look for
 all `*.profraw` files and produce several coverage reports under
-`target/coverage`. It will also print out the overall code coverage from the
-available `*.profraw` files. We are currently producing the following reports: `html`,
-`lcov`, `covdir`, `cobertura`:
+`target/coverage`. It will also print out to standard output the overall code
+coverage from the available `*.profraw` files. We are currently producing the
+following reports: `html`, `lcov`, `covdir`, `cobertura`:
 
 - The `html` report is the easiest to view:
-[target/coverage/html/index.html](target/coverage/html/index.html). You can look
-at [Documentation](#documentation) section for more details on viewing the
-`html` remotely through VSCode.
-- The
-`lcov` is used by `Coverage Gutters` VSCode extension to show code coverage
-directly over the code in the VSCode editor, which helps to see which lines are
-covered and which not.
-- The `covdir` report is in the JSON format, so
-easy for automated processing. The `coverage-report` target actually prints the
-overall coverage as extracted from the `covdir` report.
-- The `cobertura` report
-is something that ADO understands and is published during pipeline run to ADO,
-so that we can see code coverage as part of pipeline run results.
+  [target/coverage/html/index.html](target/coverage/html/index.html) (note that
+  this file is not checked in, only generated on demand by running `make
+  coverage-report`). You can look at [Documentation](#documentation) section for
+  more details on viewing the `html` remotely through VSCode.
+- The `lcov` is used by `Coverage Gutters` VSCode extension to show code
+  coverage directly over the code in the VSCode editor, which helps to see which
+  lines are covered and which not.
+- The `covdir` report is in the JSON format, so easy for automated processing.
+  The `coverage-report` target actually prints the overall coverage as extracted
+  from the `covdir` report.
+- The `cobertura` report is something that ADO understands and is published
+  during pipeline run to ADO, so that we can see code coverage as part of
+  pipeline run results.
 
 ### Updating Documentation
 
@@ -617,7 +618,10 @@ To execute the functional tests, ensure that `k8s-tests` and `argus-toolkit` of
 recent version are checked out side by side with the `trident` repo.
 Additionally, the following dependencies are required for the Ubuntu based
 pipelines, so you might need to install them on your development machine as
-well:
+well (note that this set is different per Ubuntu version and is provided just as
+an illustration of what works for [pipelines](.pipelines/netlaunch-testing.yml),
+so if you are on 22.04 or newer, you might not need to for example reinstall
+`python3-openssl`):
 
 ```bash
 sudo apt install -y protobuf-compiler clang-7 bc
@@ -626,7 +630,7 @@ pip install pytest assertpy paramiko pyopenssl
 ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
 ```
 
-Paramiko 2.6.0 and 3.x are known to work, .2.6.0 is known to misbehave.
+Paramiko 2.11.0 and 3.x are known to work, 2.6.0 is known to misbehave.
 
 Finally, ensure that you have locally built or populated the provisioning ISO
 template and runtime images. You can populate them from the latest pipeline runs
