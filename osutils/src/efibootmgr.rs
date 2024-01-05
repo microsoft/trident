@@ -1,9 +1,9 @@
 use std::{ffi::OsStr, path::Path, process::Command};
 
 use anyhow::{bail, Context, Error};
+use regex::Regex;
 
 use crate::exe::RunAndCheck;
-
 /// Represents an entry in the EFI Boot Manager.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct EfiBootEntry {
@@ -58,18 +58,27 @@ impl EfiBootManagerOutput {
                     }
                 }
             } else if line.starts_with("Boot") {
-                let parts: Vec<&str> = line.trim().splitn(2, '*').collect();
-                if parts.len() != 2 {
-                    bail!("Error splitting efibootmgr output line '{line}'");
-                } else {
-                    let key = parts[0].trim().to_string();
-                    let value = parts[1].trim().to_string();
-
+                let re = Regex::new(r"^Boot(\d{4})(\*?) (.+)$").unwrap();
+                let captures = re.captures(line.trim());
+                if let Some(captures) = captures {
+                    let key = captures
+                        .get(1)
+                        .context("failed to parse boot entry number")?
+                        .as_str()
+                        .to_string();
+                    let value = captures
+                        .get(3)
+                        .context("failed to parse boot entry name")?
+                        .as_str()
+                        .trim()
+                        .to_string();
                     let entry = EfiBootEntry {
-                        id: key.replace("Boot", ""),
+                        id: key,
                         label: value,
                     };
                     boot_manager_output.boot_entries.push(entry);
+                } else {
+                    bail!("Error splitting efibootmgr output line '{line}'");
                 }
             }
         }
@@ -171,7 +180,7 @@ mod tests {
         BootCurrent: 0001
         Timeout: 0 seconds
         BootOrder: 0001,0000,0002
-        Boot0000* Windows Boot Manager
+        Boot0000  Windows Boot Manager
         Boot0001* ubuntu
         Boot0002* UEFI: Built-in EFI Shell
     "};
@@ -262,5 +271,11 @@ mod functional_tests {
         let bootmgr_output3 = EfiBootManagerOutput::parse_efibootmgr_output(&output3).unwrap();
 
         assert!(bootmgr_output3.boot_order.join(",") == new_bootorder_str);
+        delete_boot_entry(&bootmgr_output3.boot_next).unwrap();
+
+        let output4 = list_bootmgr_entries().unwrap();
+        let bootmgr_output4 = EfiBootManagerOutput::parse_efibootmgr_output(&output4).unwrap();
+        let bootentry_exists = bootmgr_output4.boot_entry_exists(entry_label).unwrap();
+        assert!(!bootentry_exists);
     }
 }
