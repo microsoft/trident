@@ -24,7 +24,7 @@ ut-coverage:
 .PHONY: coverage-report
 coverage-report:
 	# cargo install grcov
-	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,lcov,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o target/coverage
+	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,lcov,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
 .PHONY: coverage
@@ -61,62 +61,66 @@ clean:
 	rm -rf bin/
 	find . -name "*.profraw" -type f -delete
 
+# Locally we generally want to compile in debugging mode to reuse local artifacs.
+# On pipelines, though, we compile in release mode. This variable allows us to
+# pass `--release` to cargo build when needed.
+DOCS_RELEASE_BUILD ?= n
+
+ifeq ($(DOCS_RELEASE_BUILD),y)
+	DOCS_BIN_DIR := target/release
+	DOCS_CARGO_ARGS := --release
+else
+	DOCS_BIN_DIR := target/debug
+	DOCS_CARGO_ARGS :=
+endif
+
+.PHONY: docbuilder
+docbuilder:
+	cargo build --package docbuilder $(DOCS_CARGO_ARGS)
+	$(eval DOCBUILDER_BIN := $(DOCS_BIN_DIR)/docbuilder)
+
+
 .PHONY: setsail-docs
-setsail-docs:
-	cargo build --release --package setsail --bin docbuilder --features tera,itertools
+setsail-docs: docbuilder
 	mkdir -p target/setsail-docs
-	target/release/docbuilder -o target/setsail-docs
+	$(DOCBUILDER_BIN) setsail -o target/setsail-docs
 	@echo Wrote docs to target/setsail-docs
 
 
-JSON_SCHEMA_FOR_HUMANS_VER := 0.46
-TRIDENT_API_SCHEMA_GENERATED := target/trident-api-docs/schema.json
-TRIDENT_API_SCHEMA_CHECKED_IN := trident_api/docs/trident-api-schema.json
+TRIDENT_API_HC_SCHEMA_GENERATED  := target/trident-api-docs/host-config-schema.json
+TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
 
-.PHONY: install-json-schema-for-humans
-install-json-schema-for-humans:
-	python3 -m pip install json-schema-for-humans==$(JSON_SCHEMA_FOR_HUMANS_VER)
+TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
+TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/sample-host-configuration.md
 
 target/trident-api-docs:
 	mkdir -p target/trident-api-docs
 
 .PHONY: build-api-schema
-build-api-schema: target/trident-api-docs
-	cargo build --release --bin schema --bin sample-hc --package trident_api --features=schema
-	target/release/schema > $(TRIDENT_API_SCHEMA_GENERATED)
+build-api-schema: target/trident-api-docs docbuilder
+	$(DOCBUILDER_BIN) host-config schema -o "$(TRIDENT_API_HC_SCHEMA_GENERATED)"
 
 .PHONY: build-api-docs
-build-api-docs: build-api-schema
-	@if ! which generate-schema-doc; then \
-		echo 'generate-schema-doc could not be found in $$PATH. Try: "make install-json-schema-for-humans"'; \
-		exit 1; \
-	fi
+build-api-docs: build-api-schema docbuilder
+	$(DOCBUILDER_BIN) host-config sample -m -o $(TRIDENT_API_HC_EXAMPLE_FILE)
+	@echo Updated sample Host Configuration in $(TRIDENT_API_HC_EXAMPLE_FILE)
 
-	target/release/sample-hc > trident_api/docs/sample-host-configuration.yaml
-	@echo Updated sample Host Configuration in trident_api/docs/sample-host-configuration.yaml
+	cp $(TRIDENT_API_HC_SCHEMA_GENERATED) $(TRIDENT_API_HC_SCHEMA_CHECKED_IN)
+	@echo Updated $(TRIDENT_API_HC_SCHEMA_CHECKED_IN)
 
-	cp $(TRIDENT_API_SCHEMA_GENERATED) $(TRIDENT_API_SCHEMA_CHECKED_IN)
-	@echo Updated $(TRIDENT_API_SCHEMA_CHECKED_IN)
-
-	generate-schema-doc $(TRIDENT_API_SCHEMA_GENERATED) trident_api/docs/trident-api.md --config template_name=md --config with_footer=false
-	@echo Wrote Markdown docs to trident_api/docs/trident-api.md
-
-	generate-schema-doc $(TRIDENT_API_SCHEMA_GENERATED) trident_api/docs/html/trident-api.html --config with_footer=false
-	@echo Wrote HTML docs to trident_api/docs/html/trident-api.html
+	$(DOCBUILDER_BIN) host-config markdown $(TRIDENT_API_HC_MARKDOWN_DIR) --devops-wiki
+	@echo Wrote Markdown docs to $(TRIDENT_API_HC_MARKDOWN_DIR)
 
 .PHONY: validate-api-schema
-validate-api-schema: build-api-schema
+validate-api-schema: build-api-schema docbuilder
 	@echo ""
 	@echo "Validating Trident API schema..."
-	@diff $(TRIDENT_API_SCHEMA_CHECKED_IN) $(TRIDENT_API_SCHEMA_GENERATED) || { \
+	@diff $(TRIDENT_API_HC_SCHEMA_CHECKED_IN) $(TRIDENT_API_HC_SCHEMA_GENERATED) || { \
 		echo "ERROR: Trident API schema is not up to date. Please run 'make build-api-docs' and commit the changes."; \
 		exit 1; \
 	}
 	@echo "Trident API Schema is OK!"
 
-.PHONY: view-docs
-view-docs:
-	xdg-open trident_api/docs/html/trident-api.html > /dev/null 2>&1 &
 
 .PHONY: build-functional-tests
 build-functional-test:

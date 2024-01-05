@@ -51,12 +51,33 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
     *t == Default::default()
 }
 
+/// The samples module contains sample data for the API.
+///
+/// The samples are only used in the documentation. Therefore it is gated by a
+/// feature flag.
+#[cfg(feature = "samples")]
+pub mod samples;
+
+/// Re export dependency so docbuilder can use the exact same version without
+/// having to manage a separate dependency in docbuilder's Cargo.toml.
+#[cfg(feature = "schemars")]
+pub use schemars;
+
 #[cfg(feature = "schemars")]
 mod schema_helpers {
     use schemars::{
-        gen::SchemaGenerator,
+        gen::{SchemaGenerator, SchemaSettings},
         schema::{ArrayValidation, InstanceType, Schema, SchemaObject, SingleOrVec},
     };
+
+    pub(crate) fn schema_generator() -> SchemaGenerator {
+        SchemaSettings::draft07()
+            .with(|s| {
+                s.option_nullable = true;
+                s.option_add_null_type = false;
+            })
+            .into_generator()
+    }
 
     pub(crate) fn block_device_id_schema(gen: &mut SchemaGenerator) -> Schema {
         let mut schema = gen.subschema_for::<String>().into_object();

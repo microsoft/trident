@@ -426,6 +426,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "docbuilder"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "indoc",
+ "itertools 0.11.0",
+ "log",
+ "maplit",
+ "osutils",
+ "pretty_env_logger",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "setsail",
+ "tera",
+ "trident_api",
+]
+
+[[package]]
 name = "duct"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1387,6 +1408,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 
 [[package]]
+name = "pretty_env_logger"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "865724d4dbe39d9f3dd3b52b88d859d66bcb2d6a0acfd5ea68a65fb66d4bdc1c"
+dependencies = [
+ "env_logger",
+ "log",
+]
+
+[[package]]
 name = "prettyplease"
 version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1764,7 +1795,6 @@ dependencies = [
  "anyhow",
  "clap",
  "indoc",
- "itertools 0.11.0",
  "log",
  "netplan-types",
  "osutils",
@@ -1772,7 +1802,6 @@ dependencies = [
  "serde_json",
  "shellwords",
  "tempfile",
- "tera",
  "trident_api",
 ]
 

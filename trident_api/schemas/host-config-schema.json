@@ -652,13 +652,47 @@
     },
     "ServicingType": {
       "description": "The type of servicing performed by Trident that a script should be run for.",
-      "type": "string",
-      "enum": [
-        "clean-install",
-        "normal-update",
-        "ab-update",
-        "update-and-reboot",
-        "all"
+      "oneOf": [
+        {
+          "title": "Clean Install",
+          "description": "This is the first time Trident is installed on the host.",
+          "type": "string",
+          "enum": [
+            "clean-install"
+          ]
+        },
+        {
+          "title": "Normal Update",
+          "description": "This is a normal update that is not an AB update.",
+          "type": "string",
+          "enum": [
+            "normal-update"
+          ]
+        },
+        {
+          "title": "AB Update",
+          "description": "This is an AB update.",
+          "type": "string",
+          "enum": [
+            "ab-update"
+          ]
+        },
+        {
+          "title": "Update and Reboot",
+          "description": "This is an update that requires a reboot.",
+          "type": "string",
+          "enum": [
+            "update-and-reboot"
+          ]
+        },
+        {
+          "title": "All",
+          "description": "This includes all servicing types.",
+          "type": "string",
+          "enum": [
+            "all"
+          ]
+        }
       ]
     },
     "SoftwareRaidArray": {

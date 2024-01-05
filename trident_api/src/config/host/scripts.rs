@@ -98,10 +98,29 @@ impl Script {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum ServicingType {
+    /// # Clean Install
+    ///
+    /// This is the first time Trident is installed on the host.
     CleanInstall,
+
+    /// # Normal Update
+    ///
+    /// This is a normal update that is not an AB update.
     NormalUpdate,
+
+    /// # AB Update
+    ///
+    /// This is an AB update.
     AbUpdate,
+
+    /// # Update and Reboot
+    ///
+    /// This is an update that requires a reboot.
     UpdateAndReboot,
+
+    /// # All
+    ///
+    /// This includes all servicing types.
     All,
 }
 

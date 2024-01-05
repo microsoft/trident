@@ -72,4 +72,22 @@ impl HostConfiguration {
         self.scripts.validate()?;
         Ok(())
     }
+
+    #[cfg(feature = "schemars")]
+    pub fn generate_schema() -> schemars::schema::RootSchema {
+        let mut schema =
+            crate::schema_helpers::schema_generator().into_root_schema_for::<HostConfiguration>();
+
+        // Because netplan-types currently does not support schemars, we have to
+        // manually provide a placeholder schema for the netplan fields using
+        // `schemars(with = "...")`. These are Option<> fields, but overriding
+        // schematization using `with` removes this behavior. (is_option is a
+        // "private" function in the JsonSchema trait) This means we have to
+        // manually edit the schema to remove these two fields from the required
+        // list.
+        schema.schema.object().required.remove("network");
+        schema.schema.object().required.remove("networkProvision");
+
+        schema
+    }
 }

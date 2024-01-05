@@ -1,0 +1,6 @@
+{% include "partials/section.md.jinja2" %}
+{{ level | header_level }} Properties
+
+{% for property in properties -%}
+{{ property }}
+{% endfor -%}

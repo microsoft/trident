@@ -5,9 +5,7 @@ use tera::{Context, Tera};
 
 use setsail::{sections::SectionHandler, sections::SectionManager};
 
-mod models;
-
-use models::{command::CommandModel, section::SectionModel, DocModel};
+use super::models::{command::CommandModel, section::SectionModel, DocModel};
 
 #[derive(Debug, Default)]
 pub struct DocBuilder {

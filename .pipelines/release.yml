@@ -69,28 +69,3 @@ steps:
       sourceFolder: "/usr/src/mariner/RPMS/x86_64"
       targetFolder: "$(ob_outputDirectory)"
     displayName: Copy RPM file to output
-
-  - script: |
-      sudo tdnf remove -y PyYAML
-      python3 -m pip install json-schema-for-humans
-
-      make build-api-docs
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Build Trident API Docs
-
-  - task: CopyFiles@2
-    inputs:
-      sourceFolder: "${{ parameters.tridentSourceDirectory }}/trident_api/docs"
-      targetFolder: "$(ob_outputDirectory)/trident_api_docs"
-      contents: "**"
-    displayName: Copy Trident API Docs to output
-
-  - script: make setsail-docs
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: Build Setsail Docs
-
-  - task: CopyFiles@2
-    inputs:
-      sourceFolder: "${{ parameters.tridentSourceDirectory }}/target/setsail-docs"
-      targetFolder: "$(ob_outputDirectory)"
-    displayName: Copy Setsail Docs to output

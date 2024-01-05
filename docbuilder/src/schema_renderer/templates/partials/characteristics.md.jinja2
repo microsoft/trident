@@ -1,0 +1,7 @@
+{% if characteristics -%}
+| Characteristic | Value |
+| -------------- | ----- |
+{% for characteristic  in characteristics -%}
+{{ characteristic | render_characteristic}}
+{% endfor -%}
+{% endif -%}

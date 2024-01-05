@@ -55,4 +55,4 @@ functional-tests = ["osutils/functional-tests"]
 
 
 [workspace]
-members = ["trident_api", "setsail", "osutils"]
+members = ["trident_api", "setsail", "osutils", "docbuilder"]
