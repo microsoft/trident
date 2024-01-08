@@ -67,3 +67,14 @@ hostConfiguration:
     version: 2
   management:
     selfUpgrade: false
+  osconfig:
+    users:
+    - name: testing-user
+      sshKeys: []
+      sshMode: key-only
+  scripts:
+    postConfigure:
+    - name: testing-privilege
+      servicingType:
+      - clean-install
+      content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'

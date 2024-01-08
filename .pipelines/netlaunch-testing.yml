@@ -84,6 +84,11 @@ stages:
     - bash: |
         set -eux
         sudo snap install yq
+      workingDirectory: $(tridentSourceDirectory)
+      displayName: "Installing dependencies"
+
+    - bash: |
+        set -eux
         sudo yq eval '.host-configuration.management.self-upgrade = true' trident-config.yaml -i
       condition: eq(${{ parameters.updateRuntimeOSTrident }}, true)
       workingDirectory: $(tridentConfigPath)
@@ -98,12 +103,23 @@ stages:
 
     - bash: |
         set -eux
+        sudo python3 $(tridentSourceDirectory)/e2e_tests/tests/helpers/add_key.py \
+            --keypath $(tridentSourceDirectory)/e2e_tests/tests/helpers/key \
+            --tridentconfig $(tridentConfigPath)/trident-config.yaml
+        sudo openssl rsa -in $(tridentSourceDirectory)/e2e_tests/tests/helpers/key \
+            -out $(tridentSourceDirectory)/e2e_tests/tests/helpers/key
+        sudo chmod 600 $(tridentSourceDirectory)/e2e_tests/tests/helpers/key
+      workingDirectory: $(tridentSourceDirectory)
+      displayName: "Setting keys to ssh for testing"
+
+    - bash: |
+        set -eux
 
         echo "Netlaunch output:" >> ./deployment.log
         $(argusToolkitSourceDirectory)/build/netlaunch \
-            -i $(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso \
-            -c $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
-            -t $(tridentConfigPath)/trident-config.yaml \
+            --iso $(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso \
+            --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
+            --trident $(tridentConfigPath)/trident-config.yaml \
             --logstream \
         2>&1 | tee -a ./deployment.log
         $(tridentSourceDirectory)/e2e_tests/check_netlaunch.py ./deployment.log
@@ -154,6 +170,33 @@ stages:
                     $(ob_outputDirectory)/deployment.log
       workingDirectory: $(tridentSourceDirectory)
       displayName: "Publish deployment.log"
+
+    - bash: |
+        set -eux
+        sudo pip3 install pytest
+        sudo pip3 install fabric
+      workingDirectory: $(tridentSourceDirectory)
+      displayName: "Installing dependencies for E2E tests"
+
+    - bash: |
+        set -eux
+        host_ip="$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)"
+        sudo python3 -u -m pytest \
+            --capture=no \
+            --junit-xml=$(test)_trident_e2e_tests_$(System.JobAttempt).junit.xml \
+            --host $host_ip \
+            --tridentconfig $(tridentConfigPath)/trident-config.yaml
+      workingDirectory: $(tridentSourceDirectory)/e2e_tests/tests
+      displayName: "Trident E2E tests"
+      
+    - task: PublishTestResults@2
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: $(tridentSourceDirectory)/e2e_tests/tests/$(test)_trident_e2e_tests_$(System.JobAttempt).junit.xml
+        testRunTitle: trident_e2e_tests
+      displayName: Publish test results
+
 
   - job: FunctionalTests
     displayName: Functional Tests
