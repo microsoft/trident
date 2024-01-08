@@ -4,6 +4,7 @@ use status::{BlockDeviceContents, BlockDeviceInfo, EncryptedVolume, Partition, R
 
 pub mod config;
 pub mod constants;
+pub mod error;
 pub mod status;
 
 /// Identifier for a block device. Needs to be unique across all types of devices.

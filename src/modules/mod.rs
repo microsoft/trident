@@ -9,6 +9,7 @@ use log::info;
 
 use trident_api::{
     config::{HostConfiguration, Operations, PartitionType},
+    error::{InitializationError, InternalError, ReportError, TridentResultExt},
     status::{
         AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
     },
@@ -133,7 +134,7 @@ pub(super) fn provision_host(
         .contains("root=/dev/ram0")
         && !Path::new("/override-trident-safety-check").exists()
     {
-        bail!("Safety check failed! Requested clean install but not booted from ramdisk");
+        return Err(InitializationError::SafetyCheck.into());
     }
 
     let mut modules = MODULES.lock().unwrap();
@@ -164,33 +165,36 @@ pub(super) fn provision_host(
     let mount_path = Path::new(UPDATE_ROOT_PATH);
     provision(&mut modules, state, host_config, mount_path)?;
 
-    let chroot = chroot::enter_update_chroot(mount_path)?;
+    let chroot = chroot::enter_update_chroot(mount_path).unstructured("Failed to enter chroot")?;
     let datastore_path = get_datastore_path(host_config);
     let mut root_device_path = None;
     chroot
         .execute_and_exit(|| {
-            state.persist(datastore_path)?;
+            state
+                .persist(datastore_path)
+                .structured(InternalError::Todo("Failed to persist datastore"))?;
 
-            configure(&mut modules, state, host_config)?;
+            configure(&mut modules, state, host_config)
+                .structured(InternalError::Todo("Failed to configure"))?;
 
             root_device_path = Some(
                 get_root_block_device_path(state.host_status())
-                    .context("Failed to get root block device")?,
+                    .structured(InternalError::Todo("Failed to get root block device"))?,
             );
 
             if let Some(sender) = sender {
                 sender
                     .send(Ok(HostStatusState {
                         status: serde_yaml::to_string(state.host_status())
-                            .context("Failed to serialize host status")?,
+                            .structured(InternalError::Todo("Failed to serialize host status"))?,
                     }))
-                    .context("Failed to send host status")?;
+                    .structured(InternalError::Todo("Failed to send host status"))?;
                 drop(sender);
             }
 
             Ok(())
         })
-        .context("Failed to execute in chroot")?;
+        .unstructured("Failed to execute in chroot")?;
 
     let root_device_path = root_device_path.context("Failed to get root block device")?;
 
@@ -301,9 +305,13 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
 
     if let UpdateKind::AbUpdate = update_kind {
         provision(&mut modules, state, host_config, mount_path)?;
-        chroot::enter_update_chroot(mount_path)?
-            .execute_and_exit(|| configure(&mut modules, state, host_config))
-            .context("Failed to execute in chroot")?;
+        chroot::enter_update_chroot(mount_path)
+            .unstructured("Failed to enter chroot")?
+            .execute_and_exit(|| {
+                configure(&mut modules, state, host_config)
+                    .structured(InternalError::Todo("Failed to configure"))
+            })
+            .unstructured("Failed to execute in chroot")?;
     } else {
         configure(&mut modules, state, host_config)?;
     }

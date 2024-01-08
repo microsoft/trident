@@ -1,23 +1,28 @@
-use anyhow::{bail, Context, Error};
-use datastore::DataStore;
-use log::{debug, error, info, warn};
-use osutils::errors::add_secondary_error_context;
-use osutils::exe::RunAndCheck;
-use osutils::overlay::SystemDFilesystemOverlay;
-use osutils::{chroot, container};
-use protobufs::*;
-use setsail::KsTranslator;
 use std::fs;
 use std::net::SocketAddr;
-use tokio::sync::mpsc::{self, Sender, UnboundedSender};
-use trident_api::config::HostConfigurationSource;
-
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use anyhow::{Context, Error};
+use log::{debug, error, info, warn};
+use osutils::exe::RunAndCheck;
+use protobufs::*;
+use tokio::sync::mpsc::{self, Sender, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+
+use osutils::overlay::SystemDFilesystemOverlay;
+use osutils::{chroot, container};
+use setsail::KsTranslator;
+use trident_api::config::HostConfigurationSource;
 use trident_api::config::{HostConfiguration, LocalConfigFile, Operations};
+use trident_api::error::{
+    InitializationError, InternalError, InvalidInputError, ManagementError, ReportError,
+    TridentError, TridentResultExt,
+};
+
+use crate::datastore::DataStore;
 
 mod datastore;
 mod logstream;
@@ -25,9 +30,8 @@ mod modules;
 mod multilog;
 mod orchestrate;
 
-pub use modules::network::provisioning::start as start_provisioning_network;
-
 pub use logstream::Logstream;
+pub use modules::network::provisioning::start as start_provisioning_network;
 pub use multilog::MultiLogger;
 pub use orchestrate::OrchestratorConnection;
 
@@ -103,21 +107,19 @@ pub struct Trident {
     server_runtime: Option<tokio::runtime::Runtime>,
 }
 impl Trident {
-    pub fn new(config_path: Option<PathBuf>, logstream: Logstream) -> Result<Self, Error> {
+    pub fn new(config_path: Option<PathBuf>, logstream: Logstream) -> Result<Self, TridentError> {
         let config_path = match config_path {
             Some(path) => path,
             None => PathBuf::from(TRIDENT_LOCAL_CONFIG_PATH),
         };
         // Load the config file
         info!("Loading config from '{}'", config_path.display());
-        let config_contents = fs::read_to_string(&config_path).context(format!(
-            "Failed to read configuration from {:?}",
-            config_path
-        ))?;
+        let config_contents =
+            fs::read_to_string(&config_path).structured(InitializationError::LoadLocalConfig)?;
 
         // Parse the config file
         let config: LocalConfigFile = match serde_yaml::from_str(&config_contents)
-            .context("Failed to parse Trident configuration")
+            .structured(InitializationError::ParseLocalConfig)
         {
             Ok(config) => config,
             Err(e) => {
@@ -143,7 +145,7 @@ impl Trident {
         if let Some(url) = config.logstream.as_ref() {
             logstream
                 .set_server(url.to_string())
-                .context("Failed to set logstream URL")?;
+                .structured(InitializationError::StartLogstream)?;
         }
 
         debug!(
@@ -152,12 +154,13 @@ impl Trident {
         );
 
         let datastore = if let Some(ref datastore_path) = config.datastore {
-            DataStore::open(datastore_path.as_path()).context(format!(
-                "Failed to load datastore from {}",
-                datastore_path.display()
-            ))?
+            DataStore::open(datastore_path.as_path()).structured(
+                InitializationError::DatastoreLoad {
+                    path: datastore_path.display().to_string(),
+                },
+            )?
         } else {
-            DataStore::open_temporary().context("Failed opening temporary datastore")?
+            DataStore::open_temporary().structured(InitializationError::DatastoreOpen)?
         };
 
         Ok(Self {
@@ -169,55 +172,46 @@ impl Trident {
 
     fn get_host_configuration(
         config: &LocalConfigFile,
-    ) -> Result<Option<Box<HostConfiguration>>, Error> {
+    ) -> Result<Option<Box<HostConfiguration>>, TridentError> {
         config
-            .get_host_configuration_source()?
+            .get_host_configuration_source()
+            .structured(InvalidInputError::InvalidHostConfiguration)?
             .as_ref()
             .map(Self::load_host_config)
             .transpose()
     }
 
-    fn load_host_config(source: &HostConfigurationSource) -> Result<Box<HostConfiguration>, Error> {
+    fn load_host_config(
+        source: &HostConfigurationSource,
+    ) -> Result<Box<HostConfiguration>, TridentError> {
         let host_config = match source {
             HostConfigurationSource::File(path) => {
                 info!("Loading host config from '{}'", path.display());
 
-                serde_yaml::from_str(
-                    &fs::read_to_string(path).context("Failed to read host config file")?,
-                )
-                .context("Failed to parse host config file")?
+                serde_yaml::from_str(&fs::read_to_string(path).structured(
+                    InvalidInputError::LoadHostConfiguration {
+                        path: path.display().to_string(),
+                    },
+                )?)
+                .structured(InvalidInputError::ParseHostConfiguration)?
             }
             HostConfigurationSource::Embedded(contents) => contents.clone(),
-            HostConfigurationSource::KickstartEmbedded(contents) => {
-                match KsTranslator::new()
+            HostConfigurationSource::KickstartEmbedded(contents) => Box::new(
+                KsTranslator::new()
                     .run_pre_scripts(true)
                     .translate(setsail::load_kickstart_string(contents))
-                {
-                    Ok(hc) => Box::new(hc),
-                    Err(e) => {
-                        // TODO: handle & report kickstart errors
-                        bail!(
-                            "Failed to translate kickstart:\n{}",
-                            serde_json::to_string_pretty(&e)?
-                        );
-                    }
-                }
-            }
-            HostConfigurationSource::KickstartFile(file) => {
-                match KsTranslator::new()
+                    .structured(InvalidInputError::KickstartTranslation)?,
+            ),
+            HostConfigurationSource::KickstartFile(ref file) => Box::new(
+                KsTranslator::new()
                     .run_pre_scripts(true)
-                    .translate(setsail::load_kickstart_file(file)?)
-                {
-                    Ok(hc) => Box::new(hc),
-                    Err(e) => {
-                        bail!(
-                            // TODO: handle & report kickstart errors
-                            "Failed to translate kickstart:\n{}",
-                            serde_json::to_string_pretty(&e)?
-                        );
-                    }
-                }
-            }
+                    .translate(setsail::load_kickstart_file(file).structured(
+                        InvalidInputError::LoadKickstart {
+                            path: file.display().to_string(),
+                        },
+                    )?)
+                    .structured(InvalidInputError::KickstartTranslation)?,
+            ),
         };
 
         debug!(
@@ -228,7 +222,7 @@ impl Trident {
         Ok(host_config)
     }
 
-    pub fn start_network(&mut self) -> Result<(), Error> {
+    pub fn start_network(&mut self) -> Result<(), TridentError> {
         // If we have kickstart it means we don't have networking config readily available. We
         // _could_ try parsing now, but we are in an early stage of boot and we want to parse on a
         // later stage so %pre scripts can run and do their thing. It would also mean parsing twice,
@@ -237,7 +231,10 @@ impl Trident {
         if let Some(
             HostConfigurationSource::KickstartFile(_)
             | HostConfigurationSource::KickstartEmbedded(_),
-        ) = self.config.get_host_configuration_source()?
+        ) = self
+            .config
+            .get_host_configuration_source()
+            .structured(InvalidInputError::InvalidHostConfiguration)?
         {
             warn!("Cannot set up network early when using kickstart");
             return Ok(());
@@ -251,12 +248,12 @@ impl Trident {
             host_config.as_deref(),
             self.config.wait_for_provisioning_network,
         )
-        .context("Failed to start provisioning network")?;
+        .structured(ManagementError::StartNetwork)?;
 
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), Error> {
+    pub fn run(&mut self) -> Result<(), TridentError> {
         let orchestrator = self
             .config
             .phonehome
@@ -278,21 +275,24 @@ impl Trident {
                     host_config: *host_config,
                     sender: None,
                 })
-                .context("Failed to enqueue provision command")?;
+                .structured(InternalError::Internal(
+                    "Failed to enqueue provision command",
+                ))?;
         }
 
         // If gRPC connection details were provided, start the gRPC server to accept commands.
         if let Some(ref grpc) = self.config.grpc {
             // TODO: make firewall this configurable
             info!("Opening firewall");
-            let _ = open_firewall_for_grpc().context("Failed to open firewall for gRPC");
+            let _ = open_firewall_for_grpc().structured(ManagementError::OpenFirewall);
 
             let addr = "0.0.0.0".parse().unwrap();
             let port = grpc.listen_port.unwrap_or(50051);
 
             info!("Preparing to listen for gRPC requests");
 
-            let rt = tokio::runtime::Runtime::new().context("Failed to start tokio runtime")?;
+            let rt = tokio::runtime::Runtime::new()
+                .structured(InternalError::Internal("Failed to start tokio runtime"))?;
             rt.spawn(async move {
                 Server::builder()
                     .add_service(host_management_server::HostManagementServer::new(
@@ -324,15 +324,19 @@ impl Trident {
         if container::is_running_in_container() {
             if let Err(e) = chroot::enter_host_chroot(
                 container::get_host_root_path()
-                    .context("Failed to get host root mount path which is required when executing inside a container")?
+                    .structured(InitializationError::GetHostRootPath)?
                     .as_path(),
             )
-            .context("Failed to enter host chroot, which is required when executing inside a container")?
-            .execute_and_exit(|| self.handle_commands(receiver, &orchestrator)).context("Failed to execute in the host chroot") {
+            .message(
+                "Failed to enter host chroot, which is required when executing inside a container",
+            )?
+            .execute_and_exit(|| self.handle_commands(receiver, &orchestrator))
+            .message("Failed to execute in the host chroot")
+            {
                 if let Some(ref orchestrator) = orchestrator {
                     orchestrator.report_error(format!("{e:?}"));
                 }
-                anyhow::bail!(e);
+                return Err(e);
             }
         } else {
             self.handle_commands(receiver, &orchestrator)?;
@@ -349,7 +353,7 @@ impl Trident {
         &mut self,
         mut receiver: mpsc::Receiver<HostUpdateCommand>,
         orchestrator: &Option<OrchestratorConnection>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), TridentError> {
         // Process commands. Starting with the initial command indicated in the local config file
         // (if any). Once that has been handled, subsequent commands are received from the gRPC
         // endpoint.
@@ -372,7 +376,7 @@ impl Trident {
         Ok(())
     }
 
-    fn handle_command(&mut self, mut cmd: HostUpdateCommand) -> Result<(), Error> {
+    fn handle_command(&mut self, mut cmd: HostUpdateCommand) -> Result<(), TridentError> {
         if self.config.phonehome.is_some() && cmd.host_config.management.phonehome.is_none() {
             info!("Injecting phonehome into host configuration");
             cmd.host_config.management.phonehome = self.config.phonehome.clone();
@@ -380,25 +384,30 @@ impl Trident {
 
         cmd.host_config
             .validate()
-            .context("Failed to validate host configuration")?;
+            .structured(InvalidInputError::InvalidHostConfiguration)?;
 
         // Use overlay for holding any changes to the host filesystem that
         // should not be persisted.
         // TODO: mount the overlay only if we actually need to perform an update
         let overlay =
-            SystemDFilesystemOverlay::mount_temporary(Path::new(SYSTEMD_UNIT_ROOT_PATH), &[])?;
+            SystemDFilesystemOverlay::mount_temporary(Path::new(SYSTEMD_UNIT_ROOT_PATH), &[])
+                .structured(ManagementError::MountOverlay)?;
 
         let result = if self.datastore.is_persistent() {
-            modules::update(cmd, &mut self.datastore).context("Failed to update host")
+            modules::update(cmd, &mut self.datastore).structured(ManagementError::UpdateHost)
         } else {
-            modules::provision_host(cmd, &mut self.datastore).context("Failed to provision host")
+            modules::provision_host(cmd, &mut self.datastore)
+                .structured(ManagementError::ProvisionHost)
         };
 
-        match overlay.unmount().context("Failed to exit overlay") {
+        match overlay
+            .unmount()
+            .structured(ManagementError::UnmountOverlay)
+        {
             Ok(_) => result,
             Err(e2) => match result {
                 Ok(_) => Err(e2),
-                Err(e) => Err(add_secondary_error_context(e, e2)),
+                Err(e) => Err(e.secondary_error_context(e2)),
             },
         }
     }

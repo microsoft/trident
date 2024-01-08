@@ -10,7 +10,7 @@ mod translator;
 mod types;
 
 // Republish
-pub use errors::{SetsailError, SetsailErrorType};
+pub use errors::{SetsailError, SetsailErrorList, SetsailErrorType};
 pub use load::{load_kickstart_file, load_kickstart_string};
 
 use log::{debug, info};
@@ -71,7 +71,7 @@ impl KsTranslator {
         self
     }
 
-    pub fn translate(self, raw_lines: Vec<KSLine>) -> Result<HostConfiguration, Vec<SetsailError>> {
+    pub fn translate(self, raw_lines: Vec<KSLine>) -> Result<HostConfiguration, SetsailErrorList> {
         // * * * * * * PARSING * * * * * *
 
         // Run preprocess, update lines and errors
@@ -124,12 +124,12 @@ impl KsTranslator {
                 if errors.is_empty() {
                     Ok(hc)
                 } else {
-                    Err(errors)
+                    Err(SetsailErrorList(errors))
                 }
             }
             Err(e) => {
                 errors.extend(e);
-                Err(errors)
+                Err(SetsailErrorList(errors))
             }
         }
     }

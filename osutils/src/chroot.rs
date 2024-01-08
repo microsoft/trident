@@ -7,11 +7,9 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Context, Error};
 use log::info;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
-
-use crate::errors::add_secondary_error_context;
+use trident_api::error::{ManagementError, ReportError, TridentError, TridentResultExt};
 
 // TODO: Implement drop for Chroot that panics if the chroot has not been
 // exited. Tracked by: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6265
@@ -25,7 +23,7 @@ pub struct Chroot {
 }
 impl Chroot {
     /// Mount special directories ('/dev', '/proc', and '/sys') and enter chroot.
-    fn enter(path: &Path, mount_special_dirs: bool) -> Result<Self, Error> {
+    fn enter(path: &Path, mount_special_dirs: bool) -> Result<Self, TridentError> {
         // Mount special dirs.
         let mounts = if mount_special_dirs {
             info!("Mounting special directories");
@@ -34,22 +32,22 @@ impl Chroot {
                     .fstype("devtmpfs")
                     .flags(MountFlags::RDONLY)
                     .mount("devtmpfs", path.join("dev"))
-                    .context("Failed to mount '/dev' for chroot")?,
+                    .structured(ManagementError::ChrootMountSpecial { dir: "/dev" })?,
                 Mount::builder()
                     .fstype("proc")
                     .flags(MountFlags::RDONLY)
                     .mount("proc", path.join("proc"))
-                    .context("Failed to mount '/proc' for chroot")?,
+                    .structured(ManagementError::ChrootMountSpecial { dir: "/proc" })?,
                 Mount::builder()
                     .fstype("sysfs")
                     .flags(MountFlags::RDONLY)
                     .mount("sysfs", path.join("sys"))
-                    .context("Failed to mount '/sys' for chroot")?,
+                    .structured(ManagementError::ChrootMountSpecial { dir: "/sys" })?,
                 Mount::builder()
                     .fstype("tmpfs")
                     .flags(MountFlags::empty())
                     .mount("tmpfs", path.join("tmp"))
-                    .context("Failed to mount '/tmp' for chroot")?,
+                    .structured(ManagementError::ChrootMountSpecial { dir: "/tmp" })?,
             ]
         } else {
             Vec::new()
@@ -58,18 +56,17 @@ impl Chroot {
         // Enter the chroot.
         info!("Entering chroot");
         let rootfd = fs::File::open("/")
-            .context("Failed to open '/'")?
+            .structured(ManagementError::ChrootEnter)?
             .into_raw_fd();
-        unix::fs::chroot(path).context("Failed to enter chroot")?;
-        std::env::set_current_dir("/")
-            .context("Failed to set current directory to be inside chroot")?;
+        unix::fs::chroot(path).structured(ManagementError::ChrootEnter)?;
+        std::env::set_current_dir("/").structured(ManagementError::ChrootEnter)?;
 
         Ok(Self { rootfd, mounts })
     }
 
-    pub fn execute_and_exit<F, T>(self, f: F) -> Result<T, Error>
+    pub fn execute_and_exit<F, T>(self, f: F) -> Result<T, TridentError>
     where
-        F: FnOnce() -> Result<T, Error>,
+        F: FnOnce() -> Result<T, TridentError>,
     {
         // Execute the function.
         let result = f();
@@ -80,30 +77,32 @@ impl Chroot {
             Ok(_) => result,
             Err(e2) => match result {
                 Ok(_) => Err(e2),
-                Err(e) => Err(add_secondary_error_context(e, e2)),
+                Err(e) => Err(e.secondary_error_context(e2)),
             },
         }
     }
 
     /// Exit the chroot environment and unmount special directories.
-    fn exit(self) -> Result<(), Error> {
+    fn exit(self) -> Result<(), TridentError> {
         // Exit the chroot.
-        nix::unistd::fchdir(self.rootfd).context("Failed to exit chroot")?;
-        unix::fs::chroot(".").context("Failed to set current directory out of chroot")?;
+        nix::unistd::fchdir(self.rootfd).structured(ManagementError::ChrootExit)?;
+        unix::fs::chroot(".").structured(ManagementError::ChrootExit)?;
         info!("Exited chroot");
 
         info!("Unmounting special directories");
         for mount in self.mounts {
-            mount.unmount(UnmountFlags::empty())?;
+            mount
+                .unmount(UnmountFlags::empty())
+                .structured(ManagementError::ChrootUnmountSpecial)?;
         }
         Ok(())
     }
 }
 
-pub fn enter_update_chroot(root_mount_path: &Path) -> Result<Chroot, Error> {
-    Chroot::enter(root_mount_path, true).context("Failed to enter updated OS chroot")
+pub fn enter_update_chroot(root_mount_path: &Path) -> Result<Chroot, TridentError> {
+    Chroot::enter(root_mount_path, true).message("Failed to enter updated OS chroot")
 }
 
-pub fn enter_host_chroot(root_mount_path: &Path) -> Result<Chroot, Error> {
-    Chroot::enter(root_mount_path, false).context("Failed to enter host chroot")
+pub fn enter_host_chroot(root_mount_path: &Path) -> Result<Chroot, TridentError> {
+    Chroot::enter(root_mount_path, false).message("Failed to enter host chroot")
 }

@@ -10,6 +10,7 @@ use log::{error, info, LevelFilter};
 use trident::{Logstream, MultiLogger};
 
 use setsail::KsTranslator;
+use trident_api::error::TridentResultExt;
 
 /// Trident version as provided by environment variables at build time
 pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
@@ -75,7 +76,7 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
             Err(e) => {
                 error!(
                     "Failed to translate kickstart:\n{}",
-                    serde_json::to_string_pretty(&e)?
+                    serde_json::to_string_pretty(&e.0)?
                 );
                 bail!("Failed to translate kickstart");
             }
@@ -88,7 +89,8 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
         logstream.disable();
     }
 
-    let mut trident = trident::Trident::new(args.config.clone(), logstream)?;
+    let mut trident = trident::Trident::new(args.config.clone(), logstream)
+        .unstructured("Failed to initialize trident")?;
 
     match &args.command {
         Commands::Run(args) => {
@@ -96,7 +98,7 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
             info!("Running Trident version: {}", TRIDENT_VERSION);
             let res = trident
                 .run()
-                .context("Failed to execute Trident run command");
+                .unstructured("Failed to execute Trident run command");
 
             // return HostStatus if requested
             if args.status.is_some() {
@@ -110,7 +112,9 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
 
             res?;
         }
-        Commands::StartNetwork => trident.start_network().context("Failed to start network")?,
+        Commands::StartNetwork => trident
+            .start_network()
+            .unstructured("Failed to start network")?,
         Commands::GetHostStatus(args) => trident
             .retrieve_host_status(&args.status)
             .context("Failed to retrieve Host Status")?,

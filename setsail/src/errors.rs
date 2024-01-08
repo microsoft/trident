@@ -224,3 +224,15 @@ impl<T> ToResultSetsailError<T> for Result<T, shellwords::MismatchedQuotes> {
         self.map_err(|_| SetsailError::new_mismatched_quotes(line.clone()))
     }
 }
+
+#[derive(Debug)]
+pub struct SetsailErrorList(pub Vec<SetsailError>);
+impl std::error::Error for SetsailErrorList {}
+impl std::fmt::Display for SetsailErrorList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for error in &self.0 {
+            writeln!(f, "{error}")?;
+        }
+        Ok(())
+    }
+}

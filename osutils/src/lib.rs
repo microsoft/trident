@@ -1,7 +1,6 @@
 pub mod chroot;
 pub mod container;
 pub mod efibootmgr;
-pub mod errors;
 pub mod exe;
 pub mod files;
 pub mod lsblk;
