@@ -4,9 +4,9 @@
 
 Per image configuration.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -14,10 +14,10 @@ Per image configuration.
 
 The format of the image.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `ImageFormat` |
-| Link | [ImageFormat](./ImageFormat.md) |
+| Characteristic | Value                           |
+| -------------- | ------------------------------- |
+| Type           | `ImageFormat`                   |
+| Link           | [ImageFormat](./ImageFormat.md) |
 
 ### `sha256` **<span style="color:orange;">(required)</span>**
 
@@ -31,18 +31,18 @@ Accepted values:
 
 - `ignored` to skip the checksum verification
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `targetId` **<span style="color:orange;">(required)</span>**
 
 The ID of the partition that will be used to store the image.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Format | `Block Device ID` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 
 ### `url` **<span style="color:orange;">(required)</span>**
 
@@ -50,7 +50,7 @@ The URL of the image.
 
 Supported schemes are: `file`, `http`, `https`.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 

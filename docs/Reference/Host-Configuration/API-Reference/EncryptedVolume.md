@@ -4,9 +4,9 @@
 
 A LUKS2-encrypted volume configuration.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -16,9 +16,9 @@ The name of the device to create under `/dev/mapper` when opening the volume.
 
 This parameter is required. It must be a valid file name and unique among the list of encrypted volumes.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `id` **<span style="color:orange;">(required)</span>**
 
@@ -26,10 +26,10 @@ The id of the LUKS-encrypted volumes to create.
 
 This parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software raid arrays, and a/b upgrade volume pairs.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Format | `Block Device ID` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 
 ### `targetId` **<span style="color:orange;">(required)</span>**
 
@@ -41,8 +41,8 @@ If it refers to a disk partition, it must be of a supported type. Supported type
 
 If it refers to a software raid array, the first disk partition of the software raid array must be of a supported type.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Format | `Block Device ID` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 

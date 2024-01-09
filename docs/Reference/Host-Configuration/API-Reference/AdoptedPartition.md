@@ -4,9 +4,9 @@
 
 Settings to adopt a pre-existing partition.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -16,10 +16,10 @@ A unique identifier for the partition.
 
 This is a user defined string that allows to link the partition to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just partitions.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Format | `Block Device ID` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 
 ### `size` **<span style="color:orange;">(required)</span>**
 
@@ -43,17 +43,17 @@ Examples:
 
 - `grow`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `continue_if_no_match` (optional)
 
 Set to true to continue if a match could not be made, otherwise produce an error and stop installation if no match was found.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `boolean` |
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `boolean` |
 
 ### `name` (optional)
 
@@ -61,9 +61,9 @@ Match a specific partition by its name.
 
 Look for a partition with the given name and adopt it.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `next_of_type` (optional)
 
@@ -71,10 +71,10 @@ Match the first partition with the given type.
 
 **Use as a last resort.**
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `PartitionType` |
-| Link | [PartitionType](./PartitionType.md) |
+| Characteristic | Value                               |
+| -------------- | ----------------------------------- |
+| Type           | `PartitionType`                     |
+| Link           | [PartitionType](./PartitionType.md) |
 
 ### `position` (optional)
 
@@ -82,10 +82,10 @@ Match a specific partition by its current position on the partition table.
 
 Look for a partition at the given position in the partition table and adopt it. The position is 0-based.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `integer` |
-| Format | `uint64` |
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `integer` |
+| Format         | `uint64`  |
 
 ### `uuid` (optional)
 
@@ -95,8 +95,8 @@ Look for a partition with the given UUID and adopt it.
 
 **This is the best option, use whenever possible.**
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Format | `uuid` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Format         | `uuid`   |
 

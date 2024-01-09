@@ -4,9 +4,9 @@
 
 Per partition configuration.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -16,10 +16,10 @@ A unique identifier for the partition.
 
 This is a user defined string that allows to link the partition to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just partitions.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Format | `Block Device ID` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 
 ### `size` **<span style="color:orange;">(required)</span>**
 
@@ -41,9 +41,9 @@ Examples:
 
 - `grow`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `type` **<span style="color:orange;">(required)</span>**
 
@@ -51,8 +51,8 @@ The type of the partition.
 
 As defined by the [Discoverable Partitions Specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `PartitionType` |
-| Link | [PartitionType](./PartitionType.md) |
+| Characteristic | Value                               |
+| -------------- | ----------------------------------- |
+| Type           | `PartitionType`                     |
+| Link           | [PartitionType](./PartitionType.md) |
 

@@ -4,9 +4,9 @@
 
 Scripts that can be run on the host during Trident stages. These scripts are run in the order they are defined. Ensure that the scripts are idempotent as they may be run multiple times.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -14,29 +14,29 @@ Scripts that can be run on the host during Trident stages. These scripts are run
 
 Scripts to be run after Trident configuration stage is complete.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `Script` |
-   | Link | [Script](./Script.md) |
+   | Characteristic | Value                 |
+   | -------------- | --------------------- |
+   | Type           | `Script`              |
+   | Link           | [Script](./Script.md) |
 
 ### `postProvision` (optional)
 
 Scripts to be run after Trident provision stage is complete.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `Script` |
-   | Link | [Script](./Script.md) |
+   | Characteristic | Value                 |
+   | -------------- | --------------------- |
+   | Type           | `Script`              |
+   | Link           | [Script](./Script.md) |
 

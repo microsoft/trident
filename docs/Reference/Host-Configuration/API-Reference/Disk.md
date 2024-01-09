@@ -4,9 +4,9 @@
 
 Per disk configuration.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -14,9 +14,9 @@ Per disk configuration.
 
 The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `id` **<span style="color:orange;">(required)</span>**
 
@@ -24,34 +24,34 @@ A unique identifier for the disk. This is a user defined string that allows to l
 
 TBD: At the moment, the partition table is created from scratch. In the future, it will be possible to consume an existing partition table.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Format | `Block Device ID` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 
 ### `partitionTableType` **<span style="color:orange;">(required)</span>**
 
 The partition table type of the disk. Supported values are: `gpt`.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `PartitionTableType` |
-| Link | [PartitionTableType](./PartitionTableType.md) |
+| Characteristic | Value                                         |
+| -------------- | --------------------------------------------- |
+| Type           | `PartitionTableType`                          |
+| Link           | [PartitionTableType](./PartitionTableType.md) |
 
 ### `partitions` **<span style="color:orange;">(required)</span>**
 
 A list of partitions that will be created on the disk.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `Partition` |
-   | Link | [Partition](./Partition.md) |
+   | Characteristic | Value                       |
+   | -------------- | --------------------------- |
+   | Type           | `Partition`                 |
+   | Link           | [Partition](./Partition.md) |
 
 ### `adoptedPartitions` (optional)
 
@@ -59,15 +59,15 @@ A list of pre-existing partitions that will be adopted from the disk.
 
 Several options are available to match a partition to adopt. If more than one option is specified, ALL the provided criteria will be used to match the partition.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
-| Default | `[]` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+| Default        | `[]`    |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `AdoptedPartition` |
-   | Link | [AdoptedPartition](./AdoptedPartition.md) |
+   | Characteristic | Value                                     |
+   | -------------- | ----------------------------------------- |
+   | Type           | `AdoptedPartition`                        |
+   | Link           | [AdoptedPartition](./AdoptedPartition.md) |
 

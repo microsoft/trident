@@ -4,9 +4,9 @@
 
 Configure encrypted volumes of underlying disk partitions or software raid arrays.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -16,16 +16,16 @@ The list of LUKS2-encrypted volumes to create.
 
 This parameter is required and must not be empty. Each item is an object that will contain the configuration for a given partition or RAID array.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `EncryptedVolume` |
-   | Link | [EncryptedVolume](./EncryptedVolume.md) |
+   | Characteristic | Value                                   |
+   | -------------- | --------------------------------------- |
+   | Type           | `EncryptedVolume`                       |
+   | Link           | [EncryptedVolume](./EncryptedVolume.md) |
 
 ### `recoveryKeyUrl` (optional)
 
@@ -35,7 +35,7 @@ This parameter is optional but highly encouraged. If not specified, only the TPM
 
 `file` is the only currently supported URL scheme. The contents of the key serve as the key. It must be in plain text and not encoded.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 

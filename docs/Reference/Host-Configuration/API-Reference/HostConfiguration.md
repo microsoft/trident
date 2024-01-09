@@ -4,9 +4,9 @@
 
 HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -14,11 +14,11 @@ HostConfiguration is the configuration for a host. Trident agent will use this t
 
 The Management configuration controls the installation of the Trident agent onto the runtime OS.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `Management` |
-| Default | `{"disable":false,"phonehome":null,"selfUpgrade":false}` |
-| Link | [Management](./Management.md) |
+| Characteristic | Value                                                    |
+| -------------- | -------------------------------------------------------- |
+| Type           | `Management`                                             |
+| Default        | `{"disable":false,"phonehome":null,"selfUpgrade":false}` |
+| Link           | [Management](./Management.md)                            |
 
 ### `networkProvision` (optional)
 
@@ -28,10 +28,10 @@ See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netpla
 
 When provided, this configuration will be used to configure the network on the provisioning OS. When not provided, the network configuration from the runtime OS will be used instead.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
-| Format | `Netplan YAML` |
+| Characteristic | Value          |
+| -------------- | -------------- |
+| Type           | `object`       |
+| Format         | `Netplan YAML` |
 
 ### `network` (optional)
 
@@ -39,36 +39,36 @@ Netplan network configuration for the runtime OS.
 
 See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
-| Format | `Netplan YAML` |
+| Characteristic | Value          |
+| -------------- | -------------- |
+| Type           | `object`       |
+| Format         | `Netplan YAML` |
 
 ### `osconfig` (optional)
 
 OS Configuration for the runtime OS.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `OsConfig` |
-| Link | [OsConfig](./OsConfig.md) |
+| Characteristic | Value                     |
+| -------------- | ------------------------- |
+| Type           | `OsConfig`                |
+| Link           | [OsConfig](./OsConfig.md) |
 
 ### `scripts` (optional)
 
 Optional scripts to be run after different Trident stages have completed.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `Scripts` |
-| Link | [Scripts](./Scripts.md) |
+| Characteristic | Value                   |
+| -------------- | ----------------------- |
+| Type           | `Scripts`               |
+| Link           | [Scripts](./Scripts.md) |
 
 ### `storage` (optional)
 
 Describes the storage configuration of the host.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `Storage` |
-| Default | `{}` |
-| Link | [Storage](./Storage.md) |
+| Characteristic | Value                   |
+| -------------- | ----------------------- |
+| Type           | `Storage`               |
+| Default        | `{}`                    |
+| Link           | [Storage](./Storage.md) |
 

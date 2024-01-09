@@ -4,9 +4,9 @@
 
 A/B update configuration. Carries information about the A/B update volume pairs that are used to perform A/B updates.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -16,14 +16,14 @@ A list of volume pairs that will be used for A/B Update.
 
 You can target the A/B Update volume pair from the `images` and `mount-points` and Trident will pick the right volume to use based on the A/B Update state of the host.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `AbVolumePair` |
-   | Link | [AbVolumePair](./AbVolumePair.md) |
+   | Characteristic | Value                             |
+   | -------------- | --------------------------------- |
+   | Type           | `AbVolumePair`                    |
+   | Link           | [AbVolumePair](./AbVolumePair.md) |
 

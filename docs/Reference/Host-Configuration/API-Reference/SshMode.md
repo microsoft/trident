@@ -2,9 +2,9 @@
 
 # SshMode
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `enum` |
+| Characteristic | Value  |
+| -------------- | ------ |
+| Type           | `enum` |
 
 ## Variants
 
@@ -12,17 +12,17 @@
 
 Disable SSH for this entity.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `block` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `block`  |
 
 ### Key Only
 
 Enable SSH for this entity with KEY only.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `key-only` |
+| Characteristic | Value      |
+| -------------- | ---------- |
+| Type           | `string`   |
+| Value          | `key-only` |
 

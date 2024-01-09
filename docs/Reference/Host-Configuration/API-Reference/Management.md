@@ -4,9 +4,9 @@
 
 The Management configuration controls the installation of the Trident agent onto the runtime OS.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -14,41 +14,41 @@ The Management configuration controls the installation of the Trident agent onto
 
 Describes where to place the datastore Trident will use to store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `disable` (optional)
 
 When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `boolean` |
-| Default | `false` |
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `boolean` |
+| Default        | `false`   |
 
 ### `enableGrpc` (optional)
 
 Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `boolean` |
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `boolean` |
 
 ### `phonehome` (optional)
 
 URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `selfUpgrade` (optional)
 
 (FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should upgrade itself. If set to `true`, Trident will replicate itself into the runtime OS prior to transitioning. This is useful during development to ensure the matching version of Trident is used. Defaults to `false`.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `boolean` |
-| Default | `false` |
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `boolean` |
+| Default        | `false`   |
 

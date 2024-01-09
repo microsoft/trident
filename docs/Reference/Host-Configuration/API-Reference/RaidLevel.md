@@ -2,44 +2,44 @@
 
 # RaidLevel
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `enum` |
+| Characteristic | Value  |
+| -------------- | ------ |
+| Type           | `enum` |
 
 ## Variants
 
 ### Striping
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `raid0` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `raid0`  |
 
 ### Mirroring
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `raid1` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `raid1`  |
 
 ### Striping with parity
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `raid5` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `raid5`  |
 
 ### Striping with double parity
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `raid6` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `raid6`  |
 
 ### Stripe of mirrors
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `raid10` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `raid10` |
 

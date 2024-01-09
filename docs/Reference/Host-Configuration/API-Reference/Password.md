@@ -4,9 +4,9 @@
 
 Password configuration for a user.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `enum` |
+| Characteristic | Value  |
+| -------------- | ------ |
+| Type           | `enum` |
 
 ## Variants
 
@@ -14,16 +14,16 @@ Password configuration for a user.
 
 Lock the user's password. (equivalent to `passwd -l`)
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ### Properties
 
 #### `mode` **<span style="color:orange;">(required)</span>**
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `locked` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `locked` |
 

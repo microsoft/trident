@@ -4,9 +4,9 @@
 
 Configuration for the host OS.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -14,15 +14,15 @@ Configuration for the host OS.
 
 Map of users to configure on the host. The key is the username.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
-| Default | `[]` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+| Default        | `[]`    |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `User` |
-   | Link | [User](./User.md) |
+   | Characteristic | Value             |
+   | -------------- | ----------------- |
+   | Type           | `User`            |
+   | Link           | [User](./User.md) |
 

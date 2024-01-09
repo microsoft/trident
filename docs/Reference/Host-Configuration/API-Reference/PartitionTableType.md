@@ -4,9 +4,9 @@
 
 Partition table type. Currently only GPT is supported.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `enum` |
+| Characteristic | Value  |
+| -------------- | ------ |
+| Type           | `enum` |
 
 ## Variants
 
@@ -14,8 +14,8 @@ Partition table type. Currently only GPT is supported.
 
 Disk should be formatted with a GUID Partition Table (GPT).
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `gpt` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `gpt`    |
 

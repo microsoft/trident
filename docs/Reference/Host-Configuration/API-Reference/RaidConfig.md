@@ -4,9 +4,9 @@
 
 RAID configuration for a host.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -14,14 +14,14 @@ RAID configuration for a host.
 
 Individual software raid configurations.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `SoftwareRaidArray` |
-   | Link | [SoftwareRaidArray](./SoftwareRaidArray.md) |
+   | Characteristic | Value                                       |
+   | -------------- | ------------------------------------------- |
+   | Type           | `SoftwareRaidArray`                         |
+   | Link           | [SoftwareRaidArray](./SoftwareRaidArray.md) |
 

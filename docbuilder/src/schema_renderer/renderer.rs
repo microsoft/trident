@@ -45,8 +45,8 @@ impl NodeRenderer {
         .context("Failed to load templates")?;
 
         tera.register_filter(
-            "render_characteristic",
-            super::tera_extensions::render_characteristic,
+            "render_characteristics_table",
+            super::tera_extensions::render_characteristics_table,
         );
 
         tera.register_filter("header_level", super::tera_extensions::header_level);

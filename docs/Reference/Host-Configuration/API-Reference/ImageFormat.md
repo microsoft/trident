@@ -4,9 +4,9 @@
 
 Image format.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `enum` |
+| Characteristic | Value  |
+| -------------- | ------ |
+| Type           | `enum` |
 
 ## Variants
 
@@ -14,17 +14,17 @@ Image format.
 
 Raw filesystem image with zstd compression.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `raw-zstd` |
+| Characteristic | Value      |
+| -------------- | ---------- |
+| Type           | `string`   |
+| Value          | `raw-zstd` |
 
 ### variant-2
 
 Raw filesystem image with lzma compression, required by systemd-sysupdate.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `raw-lzma` |
+| Characteristic | Value      |
+| -------------- | ---------- |
+| Type           | `string`   |
+| Value          | `raw-lzma` |
 

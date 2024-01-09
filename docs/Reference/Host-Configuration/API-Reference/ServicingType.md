@@ -4,9 +4,9 @@
 
 The type of servicing performed by Trident that a script should be run for.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `enum` |
+| Characteristic | Value  |
+| -------------- | ------ |
+| Type           | `enum` |
 
 ## Variants
 
@@ -14,44 +14,44 @@ The type of servicing performed by Trident that a script should be run for.
 
 This is the first time Trident is installed on the host.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `clean-install` |
+| Characteristic | Value           |
+| -------------- | --------------- |
+| Type           | `string`        |
+| Value          | `clean-install` |
 
 ### Normal Update
 
 This is a normal update that is not an AB update.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `normal-update` |
+| Characteristic | Value           |
+| -------------- | --------------- |
+| Type           | `string`        |
+| Value          | `normal-update` |
 
 ### AB Update
 
 This is an AB update.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `ab-update` |
+| Characteristic | Value       |
+| -------------- | ----------- |
+| Type           | `string`    |
+| Value          | `ab-update` |
 
 ### Update and Reboot
 
 This is an update that requires a reboot.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `update-and-reboot` |
+| Characteristic | Value               |
+| -------------- | ------------------- |
+| Type           | `string`            |
+| Value          | `update-and-reboot` |
 
 ### All
 
 This includes all servicing types.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `all` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `all`    |
 

@@ -12,9 +12,9 @@ To learn more about RAID, please refer to the [RAID wiki](https://wiki.archlinux
 
 To learn more about `mdadm`, please refer to the [mdadm guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -24,16 +24,16 @@ Devices that will be used for the RAID array.
 
 See the reference links for picking the right number of devices. Devices are partition ids from the `disks` section.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `string` |
-   | Format | `Block Device ID` |
+   | Characteristic | Value             |
+   | -------------- | ----------------- |
+   | Type           | `string`          |
+   | Format         | `Block Device ID` |
 
 ### `id` **<span style="color:orange;">(required)</span>**
 
@@ -41,10 +41,10 @@ A unique identifier for the RAID array.
 
 This is a user defined string that allows to link the RAID array to the mount points and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just RAID arrays.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Format | `Block Device ID` |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
 
 ### `level` **<span style="color:orange;">(required)</span>**
 
@@ -52,10 +52,10 @@ RAID level.
 
 Supported and tested values are `raid0`, `raid1`. Other possible values yet to be tested are: `raid5`, `raid6`, `raid10`.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `RaidLevel` |
-| Link | [RaidLevel](./RaidLevel.md) |
+| Characteristic | Value                       |
+| -------------- | --------------------------- |
+| Type           | `RaidLevel`                 |
+| Link           | [RaidLevel](./RaidLevel.md) |
 
 ### `metadataVersion` **<span style="color:orange;">(required)</span>**
 
@@ -63,9 +63,9 @@ Metadata of the RAID array.
 
 Supported and tested values are `1.0`. Note that this is a string attribute.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `name` **<span style="color:orange;">(required)</span>**
 
@@ -73,7 +73,7 @@ Name of the RAID array.
 
 This is used to reference the RAID array on the system. For example, `some-raid` will result in `/dev/md/some-raid` on the system.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 

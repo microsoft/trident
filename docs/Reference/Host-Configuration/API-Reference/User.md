@@ -4,9 +4,9 @@
 
 Configuration for a specific user.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `object` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
 
 ## Properties
 
@@ -14,53 +14,53 @@ Configuration for a specific user.
 
 Username
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 
 ### `groups` (optional)
 
 List of groups to add the user to. **(IN DEVELOPMENT)**
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `string` |
+   | Characteristic | Value    |
+   | -------------- | -------- |
+   | Type           | `string` |
 
 ### `password` (optional)
 
 Password configuration.
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `Password` |
-| Link | [Password](./Password.md) |
+| Characteristic | Value                     |
+| -------------- | ------------------------- |
+| Type           | `Password`                |
+| Link           | [Password](./Password.md) |
 
 ### `sshKeys` (optional)
 
 List of SSH keys to add to the user's authorized keys. **(IN DEVELOPMENT)**
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `array` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
 
 - Items of the array must have the type:
 
-   | Characteristic | Value |
-   | -------------- | ----- |
-   | Type | `string` |
+   | Characteristic | Value    |
+   | -------------- | -------- |
+   | Type           | `string` |
 
 ### `sshMode` (optional)
 
 SSH configuration for the user. **(IN DEVELOPMENT)**
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `SshMode` |
-| Link | [SshMode](./SshMode.md) |
+| Characteristic | Value                   |
+| -------------- | ----------------------- |
+| Type           | `SshMode`               |
+| Link           | [SshMode](./SshMode.md) |
 

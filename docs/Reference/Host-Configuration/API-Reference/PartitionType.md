@@ -4,9 +4,9 @@
 
 Partition types as defined by The Discoverable Partitions Specification (https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `enum` |
+| Characteristic | Value  |
+| -------------- | ------ |
+| Type           | `enum` |
 
 ## Variants
 
@@ -14,82 +14,82 @@ Partition types as defined by The Discoverable Partitions Specification (https:/
 
 `C12A7328-F81F-11D2-BA4B-00A0C93EC93B`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `esp` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `esp`    |
 
 ### Root partition
 
 x64: `4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `root` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `root`   |
 
 ### Swap partition
 
 `0657fd6d-a4ab-43c4-84e5-0933c84b4f4f`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `swap` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `swap`   |
 
 ### Root partition with dm-verity enabled
 
 x64: `2c7357ed-ebd2-46d9-aec1-23d437ec2bf5`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `root-verity` |
+| Characteristic | Value         |
+| -------------- | ------------- |
+| Type           | `string`      |
+| Value          | `root-verity` |
 
 ### Home partition
 
 `933ac7e1-2eb4-4f13-b844-0e14e2aef915`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `home` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `home`   |
 
 ### Var partition
 
 `4d21b016-b534-45c2-a9fb-5c16e091fd2d`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `var` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `var`    |
 
 ### Usr partition
 
 x64: `8484680c-9521-48c6-9c11-b0720656f69e`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `usr` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `usr`    |
 
 ### Tmp partition
 
 `7ec6f557-3bc5-4aca-b293-16ef5df639d1`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `tmp` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `tmp`    |
 
 ### Generic Linux partition
 
 `0fc63daf-8483-4772-8e79-3d69d8477de4`
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `linux-generic` |
+| Characteristic | Value           |
+| -------------- | --------------- |
+| Type           | `string`        |
+| Value          | `linux-generic` |
 
 ### Server Data partition
 
@@ -97,8 +97,8 @@ x64: `8484680c-9521-48c6-9c11-b0720656f69e`
 
 To use this partition type on the disk with the root volume, make sure to not have `/srv` symlink present in your root volume filesystem. If you do, remove it before running Trident (e.g. by using MIC).
 
-| Characteristic | Value |
-| -------------- | ----- |
-| Type | `string` |
-| Value | `srv` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `srv`    |
 
