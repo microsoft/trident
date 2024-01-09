@@ -118,12 +118,13 @@ fn create_partitions(
             .get_mut(&disk.id)
             .context(format!("Failed to find disk {} in host status", disk.id))?;
 
-        // ensure all /dev/disk/* symlinks are created
-        udevadm::settle()?;
-
         for (index, partition) in disk.partitions.iter().enumerate() {
             let partition_uuid = created_partitions[index].uuid;
             let part_path = Path::new("/dev/disk/by-partuuid").join(partition_uuid.to_string());
+            udevadm::wait(&part_path).context(format!(
+                "Failed waiting for '{}' to appear",
+                part_path.display()
+            ))?;
             if !part_path.exists() {
                 bail!(
                     "Partition {} partuuid symlink {} does not exist",

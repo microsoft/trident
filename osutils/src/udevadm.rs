@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{path::Path, process::Command};
 
 use anyhow::{Context, Error};
 
@@ -18,6 +18,16 @@ pub fn trigger() -> Result<(), Error> {
         .context("Failed trigger udev")
 }
 
+pub fn wait(path: &Path) -> Result<(), Error> {
+    Command::new("udevadm")
+        .arg("wait")
+        .arg("--settle")
+        .arg("--timeout=120")
+        .arg(path)
+        .run_and_check()
+        .context("Failed wait udev")
+}
+
 #[cfg(all(test, feature = "functional-tests"))]
 mod functional_tests {
     use super::*;
@@ -26,5 +36,6 @@ mod functional_tests {
     fn test() {
         settle().unwrap();
         trigger().unwrap();
+        wait(Path::new("/dev/sda")).unwrap();
     }
 }
