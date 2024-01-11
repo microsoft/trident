@@ -14,6 +14,7 @@ COPY src ./src
 COPY trident_api ./trident_api
 COPY setsail ./setsail
 COPY osutils ./osutils
+COPY docbuilder ./docbuilder
 
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0
