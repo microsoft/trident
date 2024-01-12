@@ -42,7 +42,7 @@ pub mod storage;
 
 /// The path to the root of the freshly deployed (from provisioning OS) or
 /// updated OS (from runtime OS).
-const UPDATE_ROOT_PATH: &str = "/partitionMount";
+const UPDATE_ROOT_PATH: &str = "/mnt/newroot";
 /// Bootentry name for A images
 const BOOT_ENTRY_A: &str = "azlinuxA";
 /// Bootentry name for B images

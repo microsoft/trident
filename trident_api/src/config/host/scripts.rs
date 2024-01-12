@@ -16,11 +16,16 @@ use crate::status::{ReconcileState, UpdateKind};
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Scripts {
     /// Scripts to be run after Trident provision stage is complete.
+    ///
+    /// These scripts are run with the root filesystem of the target OS mounted at */mnt/newroot*
+    /// and other partitions specified for the target OS mounted relative to that.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub post_provision: Vec<Script>,
 
     /// Scripts to be run after Trident configuration stage is complete.
+    ///
+    /// These scripts are run from within a chroot of the target OS.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub post_configure: Vec<Script>,

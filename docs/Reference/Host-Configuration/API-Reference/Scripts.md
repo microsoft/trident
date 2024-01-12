@@ -14,6 +14,8 @@ Scripts that can be run on the host during Trident stages. These scripts are run
 
 Scripts to be run after Trident configuration stage is complete.
 
+These scripts are run from within a chroot of the target OS.
+
 | Characteristic | Value   |
 | -------------- | ------- |
 | Type           | `array` |
@@ -28,6 +30,8 @@ Scripts to be run after Trident configuration stage is complete.
 ### `postProvision` (optional)
 
 Scripts to be run after Trident provision stage is complete.
+
+These scripts are run with the root filesystem of the target OS mounted at */mnt/newroot* and other partitions specified for the target OS mounted relative to that.
 
 | Characteristic | Value   |
 | -------------- | ------- |
