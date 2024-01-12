@@ -229,14 +229,18 @@ impl SystemDFilesystemOverlay {
     }
 }
 
-#[cfg(all(test, feature = "functional-tests"))]
+#[cfg(feature = "functional-tests")]
 mod functional_tests {
+    #[cfg(test)]
     use std::os::unix::fs::symlink;
 
+    use pytest_gen::pytest;
+
+    #[cfg(test)]
     use super::*;
 
-    #[test]
-    fn test() {
+    #[pytest(feature = "helpers")]
+    fn test_ephemeral_overlay_mount_unmount() {
         let dir = tempfile::tempdir().unwrap();
         let overlay = EphemeralOverlay::mount(dir.path()).unwrap();
         // create a file on top of the overlay
@@ -248,7 +252,10 @@ mod functional_tests {
         overlay.unmount().unwrap();
         // check that the file does not exist in the target
         assert!(!test_file.exists());
+    }
 
+    #[pytest(feature = "helpers", negative = true)]
+    fn test_ephemeral_overlay_mount_fails_on_missing_target() {
         // fail if target is missing
         let does_not_exist = Path::new("/does-not-exist");
         if does_not_exist.exists() {
@@ -265,8 +272,8 @@ mod functional_tests {
         );
     }
 
-    #[test]
-    pub fn test_systemd() {
+    #[pytest(feature = "helpers")]
+    fn test_systemd_overlay_mount_temporary_unmount() {
         let dir = tempfile::tempdir().unwrap();
         let overlay = SystemDFilesystemOverlay::mount_temporary(dir.path(), &[]).unwrap();
         // create a file on top of the overlay
@@ -278,7 +285,11 @@ mod functional_tests {
         overlay.unmount().unwrap();
         // check that the file does not exist in the target
         assert!(!test_file.exists());
+    }
 
+    #[pytest(feature = "helpers")]
+    fn test_systemd_overlay_mount_temporary_readonly_unmount() {
+        let dir = tempfile::tempdir().unwrap();
         // fail to write file for read-only overlay
         let overlay = SystemDFilesystemOverlay::mount_temporary(dir.path(), &["ro"]).unwrap();
         // create a file on top of the overlay
@@ -288,7 +299,10 @@ mod functional_tests {
             "Read-only file system (os error 30)"
         );
         overlay.unmount().unwrap();
+    }
 
+    #[pytest(feature = "helpers", negative = true)]
+    fn test_systemd_overlay_mount_fails_with_symlink_target() {
         // fail to mount on top of a symlink
         let symlink_path = Path::new("/tmp2");
         if symlink_path.exists() {
@@ -303,7 +317,10 @@ mod functional_tests {
                 .to_string(),
             "Process output:\nstderr:\nJob failed. See \"journalctl -xe\" for details.\n\n"
         );
+    }
 
+    #[pytest(feature = "helpers")]
+    pub fn test_systemd_overlay_mount_persistent_unmount() {
         // test persistent mount
         let dir_base = tempfile::tempdir()
             .context("Failed to create temporary directory")
@@ -317,6 +334,7 @@ mod functional_tests {
             .context("Failed to create overlay upper dir")
             .unwrap();
 
+        let dir = tempfile::tempdir().unwrap();
         let overlay = SystemDFilesystemOverlay::mount(
             dir.path(),
             &overlay_upper_path,

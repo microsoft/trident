@@ -287,10 +287,14 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "functional-tests"))]
+#[cfg(feature = "functional-tests")]
 mod functional_tests {
+    #[cfg(test)]
     use std::path::PathBuf;
 
+    use pytest_gen::pytest;
+
+    #[cfg(test)]
     use super::*;
 
     /// Functional test for `SfDisk::get_info`
@@ -319,7 +323,7 @@ mod functional_tests {
     /// ```
     ///
     /// The output of `sfdisk -J /dev/sda` is expected to be:
-    ///  
+    ///
     /// ```json
     /// {
     ///   "partitiontable": {
@@ -372,8 +376,8 @@ mod functional_tests {
     ///    ]
     /// }
     /// ```
-    #[test]
-    fn test_sfdisk_get() {
+    #[pytest(feature = "helpers")]
+    fn test_get() {
         let disk = SfDisk::get_info("/dev/sda").unwrap();
         assert_eq!(disk.device, PathBuf::from("/dev/sda"));
         assert_eq!(disk.label, SfDiskLabel::Gpt);

@@ -13,6 +13,7 @@ duct = "0.13.6"
 env_logger = "0.10.0"
 glob = "0.3.1"
 indoc = "2.0.3"
+inventory = "0.3.14"
 lazy_static = "1.4.0"
 libc = "0.2.147"
 log = "0.4.20"
@@ -28,6 +29,7 @@ sha2 = "0.10.7"
 sqlite = "0.31.1"
 tempfile = "3.8.0"
 tokio = { version = "1.32.0", features = ["rt-multi-thread"] }
+tokio-stream = "0.1.14"
 tonic = "0.9.2"
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 zstd = "0.12.4"
@@ -38,10 +40,12 @@ url = { version = "2.5.0", features = ["serde"]}
 osutils = { path = "osutils" }
 trident_api = { path = "trident_api" }
 setsail = { path = "setsail" }
-tokio-stream = "0.1.14"
+pytest_gen = { path = "pytest_gen" }
+pytest = { path = "pytest" }
 
 [build-dependencies]
 tonic-build = "0.9.2"
+osutils = { path = "osutils" }
 
 [dev-dependencies]
 indoc = "2"
@@ -52,6 +56,7 @@ maplit = "1.0.2"
 dangerous-options = ["trident_api/dangerous-options"]
 sysupdate = []
 functional-tests = ["osutils/functional-tests"]
+pytest-generator = ["osutils/pytest-generator"]
 
 
 [workspace]

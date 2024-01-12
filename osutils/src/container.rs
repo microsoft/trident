@@ -72,17 +72,24 @@ mod test {
     }
 }
 
-#[cfg(all(test, feature = "functional-tests"))]
+#[cfg(feature = "functional-tests")]
 mod functional_tests {
+    use pytest_gen::pytest;
+
+    #[cfg(test)]
     use super::*;
 
-    #[test]
-    fn test() {
+    #[pytest(feature = "helpers", negative = true)]
+    fn test_get_host_root_path_fails_outside_container() {
         env::remove_var(DOCKER_ENVIRONMENT);
         assert_eq!(
             get_host_root_path().unwrap_err().root_cause().to_string(),
             "Not running in a container"
         );
+    }
+
+    #[pytest(feature = "helpers", negative = true)]
+    fn test_get_host_root_path_fails_in_simulated_container_without_host_mount() {
         env::set_var(DOCKER_ENVIRONMENT, "true");
 
         let test_dir = Path::new(HOST_ROOT_PATH);
@@ -94,8 +101,16 @@ mod functional_tests {
             get_host_root_path().unwrap_err().root_cause().to_string(),
             "Running from docker container, but /host is not mounted"
         );
+    }
 
-        std::fs::create_dir(test_dir).unwrap();
+    #[pytest(feature = "helpers")]
+    fn test_get_host_root_path_in_simulated_container() {
+        env::set_var(DOCKER_ENVIRONMENT, "true");
+
+        let test_dir = Path::new(HOST_ROOT_PATH);
+        if !test_dir.exists() {
+            std::fs::create_dir(test_dir).unwrap();
+        }
         assert_eq!(get_host_root_path().unwrap(), Path::new(HOST_ROOT_PATH));
     }
 }

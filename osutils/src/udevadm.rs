@@ -28,13 +28,19 @@ pub fn wait(path: &Path) -> Result<(), Error> {
         .context("Failed wait udev")
 }
 
-#[cfg(all(test, feature = "functional-tests"))]
+#[cfg(feature = "functional-tests")]
 mod functional_tests {
+    #[cfg(test)]
     use super::*;
+    use pytest_gen::pytest;
 
-    #[test]
-    fn test() {
+    #[pytest(feature = "helpers")]
+    fn test_settle() {
         settle().unwrap();
+    }
+
+    #[pytest(feature = "helpers")]
+    fn test_trigger() {
         trigger().unwrap();
         wait(Path::new("/dev/sda")).unwrap();
     }

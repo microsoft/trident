@@ -188,7 +188,7 @@ stages:
             --tridentconfig $(tridentConfigPath)/trident-config.yaml
       workingDirectory: $(tridentSourceDirectory)/e2e_tests/tests
       displayName: "Trident E2E tests"
-      
+
     - task: PublishTestResults@2
       condition: succeededOrFailed()
       inputs:
@@ -242,7 +242,7 @@ stages:
       parameters:
          tridentSourceDirectory: $(tridentSourceDirectory)
          codeCoverageBaseline: 67 # Unit + functional tests
-         executeUnitTests: false
+         executeUnitTests: true
          installNativeDependencies: false
 
     - task: PublishTestResults@2

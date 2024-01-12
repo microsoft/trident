@@ -904,6 +904,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e186cfbae8084e513daff4240b4797e342f988cecda4fb6c939150f96315fd8"
 
 [[package]]
+name = "inventory"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8573b2b1fb643a372c73b23f4da5f888677feef3305146d68a539250a9bccc7"
+
+[[package]]
 name = "io-lifetimes"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -945,6 +951,15 @@ name = "itertools"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25db6b064527c5d482d0423354fcd07a89a2dfe07b67892e62411946db7f07b0"
 dependencies = [
  "either",
 ]
@@ -1237,8 +1252,11 @@ dependencies = [
  "configparser",
  "duct",
  "indoc",
+ "inventory",
  "log",
  "nix",
+ "pytest",
+ "pytest_gen",
  "regex",
  "serde",
  "serde_json",
@@ -1490,6 +1508,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "213622a1460818959ac1181aaeb2dc9c7f63df720db7d788b3e24eacd1983e13"
 dependencies = [
  "prost",
+]
+
+[[package]]
+name = "pytest"
+version = "0.1.0"
+dependencies = [
+ "indoc",
+ "inventory",
+ "itertools 0.12.0",
+]
+
+[[package]]
+name = "pytest_gen"
+version = "0.1.0"
+dependencies = [
+ "indoc",
+ "inventory",
+ "pytest",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -2290,6 +2328,7 @@ dependencies = [
  "env_logger",
  "glob",
  "indoc",
+ "inventory",
  "lazy_static",
  "libc",
  "log",
@@ -2298,6 +2337,8 @@ dependencies = [
  "nix",
  "osutils",
  "prost",
+ "pytest",
+ "pytest_gen",
  "regex",
  "reqwest",
  "serde",

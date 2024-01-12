@@ -15,6 +15,8 @@ COPY trident_api ./trident_api
 COPY setsail ./setsail
 COPY osutils ./osutils
 COPY docbuilder ./docbuilder
+COPY pytest_gen ./pytest_gen
+COPY pytest ./pytest
 
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0

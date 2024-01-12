@@ -124,7 +124,7 @@ validate-api-schema: build-api-schema docbuilder
 
 .PHONY: build-functional-tests
 build-functional-test:
-	cargo build --tests --features functional-tests
+	cargo build --tests --features functional-tests --all
 
 FUNCTIONAL_TEST_DIR := /tmp/trident-test
 FUNCTIONAL_TEST_JUNIT_XML := target/trident_functional_tests.xml
@@ -148,11 +148,17 @@ build-functional-test-cc:
 		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-tests --all
 
 .PHONY: functional-test
-functional-test: build-functional-test-cc
+functional-test: build-functional-test-cc generate-pytest-wrappers
 	cp ../k8s-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
 	cp ../k8s-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
-	python3 -u -m pytest functional_tests/ --setup-show -vv --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload # -k test_osutils -s
+	python3 -u -m pytest functional_tests/ --setup-show -vv -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload # -k test_osutils -s
 
 .PHONY: patch-functional-test
-patch-functional-test: build-functional-test-cc
-	python3 -u -m pytest functional_tests/ --setup-show -vv --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment # -k test_osutils -s
+patch-functional-test: build-functional-test-cc generate-pytest-wrappers
+	python3 -u -m pytest functional_tests/ --setup-show -vv -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment -s # -k test_osutils -s
+
+.PHONY: generate-pytest-wrappers
+generate-pytest-wrappers:
+	rm -rf functional_tests/generated/*
+	cargo build --features=pytest-generator,functional-tests
+	target/debug/trident pytest

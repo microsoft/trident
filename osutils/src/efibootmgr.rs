@@ -233,9 +233,10 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "functional-tests"))]
+#[cfg(feature = "functional-tests")]
 mod functional_tests {
 
+    #[cfg(test)]
     use super::*;
 
     #[test]

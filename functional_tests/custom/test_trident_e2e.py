@@ -1,7 +1,8 @@
 import yaml
+import pytest
 
-from .tools.trident import TridentTool
-from .conftest import TRIDENT_REPO_DIR_PATH
+from functional_tests.tools.trident import TridentTool
+from functional_tests.conftest import TRIDENT_REPO_DIR_PATH
 
 
 class HostStatusSafeLoader(yaml.SafeLoader):
@@ -12,6 +13,8 @@ class HostStatusSafeLoader(yaml.SafeLoader):
 HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
 
 
+@pytest.mark.functional
+@pytest.mark.core
 def test_trident_run(vm):
     """Basic trident run validation."""
     trident = TridentTool(vm)
@@ -20,6 +23,8 @@ def test_trident_run(vm):
     pass
 
 
+@pytest.mark.functional
+@pytest.mark.core
 def test_trident_get(vm):
     """Basic trident get validation."""
     trident = TridentTool(vm)
@@ -49,6 +54,8 @@ def test_trident_get(vm):
     pass
 
 
+@pytest.mark.functional
+@pytest.mark.core
 def test_trident_start_network(vm):
     """Basic trident start-network validation."""
     trident = TridentTool(vm)

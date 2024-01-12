@@ -1,0 +1,18 @@
+[package]
+name = "pytest_gen"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pytest_gen"
+proc-macro = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+syn = { version = "2.0.43", features = ["full"] }
+quote = "1.0.33"
+indoc = "2.0.3"
+inventory = "0.3.14"
+
+pytest = { path = "../pytest" }

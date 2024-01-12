@@ -56,11 +56,21 @@ enum Commands {
     /// Validates input KickStart file
     // TODO(5910): Remove this in the future
     ParseKickstart { file: String },
+
+    #[cfg(feature = "pytest-generator")]
+    /// Generate Pytest wrappers for functional tests
+    Pytest,
 }
 
 fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
     // Log version ASAP
     info!("Trident version: {}", TRIDENT_VERSION);
+
+    #[cfg(feature = "pytest-generator")]
+    if let Commands::Pytest = args.command {
+        pytest::generate_pytest_wrappers();
+        return Ok(());
+    }
 
     // TODO(5910): Remove this in the future
     if let Commands::ParseKickstart { ref file } = args.command {
@@ -121,6 +131,9 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
 
         // TODO(5910): Remove this in the future
         Commands::ParseKickstart { .. } => unreachable!(),
+
+        #[cfg(feature = "pytest-generator")]
+        Commands::Pytest => unreachable!(),
     }
 
     Ok(())

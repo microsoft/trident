@@ -133,19 +133,21 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "functional-tests"))]
+#[cfg(feature = "functional-tests")]
 mod functional_tests {
+    #[cfg(test)]
     use std::{
         fs::{self, File},
         path::Path,
     };
 
-    use log::warn;
+    use pytest_gen::pytest;
 
+    #[cfg(test)]
     use crate::files::create_dirs;
 
-    #[test]
-    fn test() {
+    #[pytest(feature = "helpers")]
+    fn test_run_detects_open_files() {
         // create a temporary file and keep it open
         let dir_path = Path::new("/tmp/test-lsof");
         create_dirs(dir_path).unwrap();
@@ -154,8 +156,6 @@ mod functional_tests {
 
         // run lsof and check that the file is open
         let process_files_list = super::run(dir_path).unwrap();
-        warn!("in the tefst");
-        println!("in the test println");
         assert_eq!(process_files_list.len(), 1);
         assert_eq!(process_files_list[0].command, "osutils");
         assert_eq!(process_files_list[0].paths.len(), 1);

@@ -288,20 +288,29 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "functional-tests"))]
+#[cfg(feature = "functional-tests")]
 mod functional_tests {
+    use pytest_gen::pytest;
+
+    #[cfg(test)]
     use super::*;
 
-    #[test]
-    fn test() {
+    #[pytest(feature = "helpers")]
+    fn test_run_success() {
         let block_device_list = super::run(Path::new("/dev/sda")).unwrap();
 
         assert_eq!(block_device_list.len(), 1);
         assert_eq!(block_device_list[0].name, "/dev/sda");
         assert_eq!(block_device_list[0].children.as_ref().unwrap().len(), 5);
+    }
 
+    #[pytest(feature = "helpers", negative = true)]
+    fn test_run_fail_on_non_block_file() {
         assert_eq!(super::run(Path::new("/dev/null")).unwrap_err().root_cause().to_string(), "Process output:\nstdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/null: not a block device\n\n");
+    }
 
+    #[pytest(feature = "helpers", negative = true)]
+    fn test_run_fail_on_missing_file() {
         assert_eq!(super::run(Path::new("/dev/does-not-exist")).unwrap_err().root_cause().to_string(), "Process output:\nstdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/does-not-exist: not a block device\n\n");
     }
 }

@@ -40,6 +40,7 @@ can be leveraged outside of that as well.
       - [Unit Tests](#unit-tests)
       - [Functional Tests](#functional-tests)
         - [Functional Test Structure](#functional-test-structure)
+        - [Functional Test Authoring in Rust](#functional-test-authoring-in-rust)
         - [Functional Test Environment](#functional-test-environment)
         - [Functional Test Building and Execution](#functional-test-building-and-execution)
         - [Functional Test Code Coverage](#functional-test-code-coverage)
@@ -69,25 +70,26 @@ Trident can be automatically started using SystemD (see the [service
 definitions](systemd)) or directly started manually. Trident support the
 following commands (input as a command line parameter):
 
-- `start-network`: Uses the `network` or `networkOverride` configuration (see below for
-  details, loaded from `/etc/trident/config.yaml`) to configure networking in
-  the currently running OS. This is mainly use to startup network during initial
-  provisioning when default DHCP configuration is not sufficient.
+- `start-network`: Uses the `network` or `networkOverride` configuration (see
+  below for details, loaded from `/etc/trident/config.yaml`) to configure
+  networking in the currently running OS. This is mainly use to startup network
+  during initial provisioning when default DHCP configuration is not sufficient.
 - `run`: Runs Trident in the current OS. This is the main command to use to
   start Trident. Trident will load its configuration from
   `/etc/trident/config.yaml` and start applying the desired HostConfiguration.
   If you in addition pass `--status <path-to-output-file>`, Trident will write
   the resulting Host Status to the specified file.
-- `get`: At any point in time, you can request to get the current Host
-  Status using this command. This will print the HostStatus to standard output.
-  If you in addition pass `--status <path-to-output-file>`, Trident will write
-  the Host Status into the specified file instead.
+- `get`: At any point in time, you can request to get the current Host Status
+  using this command. This will print the HostStatus to standard output. If you
+  in addition pass `--status <path-to-output-file>`, Trident will write the Host
+  Status into the specified file instead.
 
 For any of the commands, you can change logging verbosity from the default
 `WARN` by passing `--verbosity` and appending one of the following values:
 `OFF`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`. E.g. `--verbosity DEBUG`.
 
-Note that you can override the configuration path by setting the `--config` parameter.
+Note that you can override the configuration path by setting the `--config`
+parameter.
 
 ### Safety check
 
@@ -102,9 +104,9 @@ creating a file named `override-trident-safety-check` in the root directory.
 This configuration file is used by the Trident agent to configure itself. It is
 composed of the following sections:
 
-- **allowedOperations**: a combination of flags representing allowed
-  operations. This is a list of operations that Trident is allowed to perform on
-  the host. Supported flags are:
+- **allowedOperations**: a combination of flags representing allowed operations.
+  This is a list of operations that Trident is allowed to perform on the host.
+  Supported flags are:
   - **Update**: Trident will update the host based on the host configuration,
     but it will not transition the host to the new configuration. This is useful
     if you want to drive additional operations on the host outside of Trident.
@@ -127,8 +129,8 @@ composed of the following sections:
 - **networkOverride**: optional network configuration for the bootstrap OS. If
   not specified, the network configuration from Host Configuration (see below)
   will be used otherwise.
-- **grpc**: If present (to make it present, add `listenPort` attribute which
-  can be `null` for the default port 50051 or the port number to be used for
+- **grpc**: If present (to make it present, add `listenPort` attribute which can
+  be `null` for the default port 50051 or the port number to be used for
   incoming gRPC connections), this indicates that Trident should start a gRPC
   server to listen for commands. The protocol is described by
   [proto/trident.proto](proto/trident.proto). This only applies to the current
@@ -136,25 +138,25 @@ composed of the following sections:
   on the runtime OS via the `enableGrpc` field within the Management section of
   the Host Configuration. TODO: implement and document authorization for
   accessing the gRPC endpoint.
-- **waitForProvisioningNetwork**: USE WITH CAUTION!! IT WILL INCREASE BOOT
-  TIMES IF THE NETWORK CONFIGURATION IS NOT PERFECT. (Only affects clean
-  installs) When set to `true`, Trident will start
-  `systemd-networkd-wait-online` to wait for the provisioning network to be up
-  and configured before starting the provisioning flow. To avoid problems, only
-  configure interfaces you know should work and are required for provisioning.
-  Try to match by full name to avoid matching interfaces you don't want to. E.g.
-  `eth0` instead of `eth*` to avoid matching `eth1` and `eth2` as well.
+- **waitForProvisioningNetwork**: USE WITH CAUTION!! IT WILL INCREASE BOOT TIMES
+  IF THE NETWORK CONFIGURATION IS NOT PERFECT. (Only affects clean installs)
+  When set to `true`, Trident will start `systemd-networkd-wait-online` to wait
+  for the provisioning network to be up and configured before starting the
+  provisioning flow. To avoid problems, only configure interfaces you know
+  should work and are required for provisioning. Try to match by full name to
+  avoid matching interfaces you don't want to. E.g. `eth0` instead of `eth*` to
+  avoid matching `eth1` and `eth2` as well.
 
 Additionally, to configure the host, the desired host configuration can be
 provided through either one of the following options:
 
-- **hostConfigurationFile**: path to the host configuration file. This is a
-  YAML file that describes the host configuration in the Host Configuration
-  format. See below details.
+- **hostConfigurationFile**: path to the host configuration file. This is a YAML
+  file that describes the host configuration in the Host Configuration format.
+  See below details.
 - **hostConfiguration**: describes the host configuration. This is the
   configuration that Trident will apply to the host (same payload as
-  `hostConfigurationFile`, but directly embedded in the Trident
-  configuration). See below details.
+  `hostConfigurationFile`, but directly embedded in the Trident configuration).
+  See below details.
 - **kickstartFile**: path to the kickstart file. This is a kickstart file that
   describes the host configuration in the kickstart format. WIP, early preview
   only. TODO: document what is supported.
@@ -190,11 +192,13 @@ e.g.: `python3 -m http.server --directory trident_api/docs/html/`.
 
 ### Schema
 
-The raw JSON Schema for Host configuration is here: [trident_api/docs/trident-api-schema.json](trident_api/docs/trident-api-schema.json)
+The raw JSON Schema for Host configuration is here:
+[trident_api/docs/trident-api-schema.json](trident_api/docs/trident-api-schema.json)
 
 ### Sample
 
-An example Host Configuration YAML file is available here: [trident_api/docs/sample-host-configuration.yaml](trident_api/docs/sample-host-configuration.yaml)
+An example Host Configuration YAML file is available here:
+[trident_api/docs/sample-host-configuration.yaml](trident_api/docs/sample-host-configuration.yaml)
 
 ## A/B Update
 
@@ -205,9 +209,9 @@ will be eligible for A/B update in a later iteration.
 
 ### Getting Started with Systemd-Sysupdate
 
-First, the OS image payload needs to be made available for systemd-sysupdate
-to operate on. To use the terms from the sysupdate documentation, the source
-image can be published in the following two ways:
+First, the OS image payload needs to be made available for systemd-sysupdate to
+operate on. To use the terms from the sysupdate documentation, the source image
+can be published in the following two ways:
 
 1. **regular-file**: The OS image can be bundled with the installer OS and
 referenced from the initial HostConfiguration as follows:
@@ -269,10 +273,10 @@ requirements per the systemd-sysupdate flow:
    to communicate which version is requested from systemd-sysupdate. This means
    that the user needs to use consistent naming for partition files, so that the
    name of the new partition image will be read by systemd-sysupdate as a newer
-   version. E.g., a convenient naming scheme could be the following:
-   `<partition label/type>_v<version number>.raw.xz` For partition labels, it is
-   recommended to use GPT partition type identifiers, as defined in the Type
-   section of [systemd repart.d
+   version. E.g., a convenient naming scheme could be the following: `<partition
+   label/type>_v<version number>.raw.xz` For partition labels, it is recommended
+   to use GPT partition type identifiers, as defined in the Type section of
+   [systemd repart.d
    manual](https://www.man7.org/linux/man-pages/man5/repart.d.5.html).
 
    4) The storage.images section in the sample HostConfiguration provided above
@@ -322,8 +326,8 @@ storage:
     EOF
     ```
 
-    After overwriting the HostConfiguration, the user needs to apply the HostConfig
-    by restarting Trident with the following command:
+    After overwriting the HostConfiguration, the user needs to apply the
+    HostConfig by restarting Trident with the following command:
 
     ```bash
     sudo systemctl restart trident.service
@@ -338,11 +342,11 @@ storage:
 When the A/B update completes and the baremetal host, or a VM simulating a BM
 host, reboots, the user will be able to log back into the host by using the same
 credentials. Now, the user can view the changes to the system by displaying the
-HostStatus, which is stored in the datastore:
-`cat /var/lib/trident/datastore.sqlite`. The user can use commands such as
-`blkid` and `mount` to confirm that the partitions have been correctly updated
-and that the correct block devices have been mounted at the designated
-mountpoints, such as /boot/efi and /.
+HostStatus, which is stored in the datastore: `cat
+/var/lib/trident/datastore.sqlite`. The user can use commands such as `blkid`
+and `mount` to confirm that the partitions have been correctly updated and that
+the correct block devices have been mounted at the designated mountpoints, such
+as /boot/efi and /.
 
 ### TODO: Next Steps
 
@@ -350,31 +354,31 @@ mountpoints, such as /boot/efi and /.
 data/state partitions. This is required so that certain folders, as required by
 the user, can be read from and/or written to.
 - The user will be able to request an update from a file that is published to
-other backends. In the next iteration, Trident will support downloading OS
-image payloads published as **OCI artifacts** on Azure Container Registry.
-Moreover, based on the users' needs, other image formats might be supported in
-the future, beyond raw Zstd and raw Lzma.
-- To support downloading OCI artifacts and potentially, other backends,
-**a hybrid A/B update** will be implemented: when the user provides a URL link
-that systemd-sysupdate cannot correctly download from, Trident will
-independently download the payload, decompress it, verify its hash, and point
+other backends. In the next iteration, Trident will support downloading OS image
+payloads published as **OCI artifacts** on Azure Container Registry. Moreover,
+based on the users' needs, other image formats might be supported in the future,
+beyond raw Zstd and raw Lzma.
+- To support downloading OCI artifacts and potentially, other backends, **a
+hybrid A/B update** will be implemented: when the user provides a URL link that
+systemd-sysupdate cannot correctly download from, Trident will independently
+download the payload, decompress it, verify its hash, and point
 systemd-sysupdate to the local file, to execute an A/B update. This means that
 the overhead associated with generating and publishing the SHA256SUMS manifest
 file can be lifted from the user.
 - Trident will offer support to update the entire image, i.e. all types of
 partitions and not just root, via systemd-sysupdate.
 - Encryption and dm-verity will be supported.
-- In the next iteration, e2e testing with Trident will be implemented.
-Moreover, the next PR will document the performance metrics for the A/B update,
-such as the total downtime.
-- In the next iteration, Trident will support rollback, in case of an interrupted
-or failed A/B update.
-- Currently, the basic e2e A/B update flow is only successful when using
-kexec() to reboot the system post-update. However, the next iteration will
-also support using firmaware reboot, i.e., reboot() in Trident. A mechanism
-will be implemented to point the firmware to the correct esp partition; now,
-although the GRUB configs are correctly overwritten, the firmware still
-attempts to boot into the A partition by default.
+- In the next iteration, e2e testing with Trident will be implemented. Moreover,
+the next PR will document the performance metrics for the A/B update, such as
+the total downtime.
+- In the next iteration, Trident will support rollback, in case of an
+interrupted or failed A/B update.
+- Currently, the basic e2e A/B update flow is only successful when using kexec()
+to reboot the system post-update. However, the next iteration will also support
+using firmaware reboot, i.e., reboot() in Trident. A mechanism will be
+implemented to point the firmware to the correct esp partition; now, although
+the GRUB configs are correctly overwritten, the firmware still attempts to boot
+into the A partition by default.
 
 ## gRPC Interface
 
@@ -421,9 +425,11 @@ docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/li
   `git clone https://mariner-org@dev.azure.com/mariner-org/ECF/_git/trident`.
 - For functional test execution, clone the [k8s-tests
   repository](https://dev.azure.com/mariner-org/ECF/_git/k8s-tests) and
-  [argus-toolkit repository](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit) side by side
-  with the Trident repository: `git clone
-  https://dev.azure.com/mariner-org/ECF/_git/k8s-tests && git clone https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit`.
+  [argus-toolkit
+  repository](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit) side by
+  side with the Trident repository: `git clone
+  https://dev.azure.com/mariner-org/ECF/_git/k8s-tests && git clone
+  https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit`.
 - Change directory to the Trident repository: `cd trident`.
 - (Only for changes to `trident_api`) Download documentation dependencies:
 
@@ -458,8 +464,8 @@ You can collect the data for computing UT code coverage by running `make
 ut-coverage`. This will produce `*.profraw` files under `target/coverage`.
 
 You can collect both the UT and functional test code coverage by running `make
-functional-test` or `make patch-functional-test`. This will produce
-`*.profraw` files under `target/coverage`.
+functional-test` or `make patch-functional-test`. This will produce `*.profraw`
+files under `target/coverage`.
 
 To view the code coverage report, run `make coverage-report`. This will look for
 all `*.profraw` files and produce several coverage reports under
@@ -493,8 +499,8 @@ make build-api-docs
 ### Testing hierarchy
 
 Developers are expected to accompany any features with unit tests, functional
-tests for white box testing, and end to end tests for black box testing. See more
-details in the following sections.
+tests for white box testing, and end to end tests for black box testing. See
+more details in the following sections.
 
 #### Unit Tests
 
@@ -503,29 +509,33 @@ from everything else. Each module should have a corresponding unit test module
 called `tests` annotated with `#[cfg(test)]`. Each test function should be named
 `test_*` to indicate which function it is testing and annotated with `#[test]`.
 
-Unit tests can be invoked by `make test` or if code coverage is desired, `make ut-coverage`.
+Unit tests can be invoked by `make test` or if code coverage is desired, `make
+ut-coverage`.
 
 Unit tests should:
 
-- Not be disruptive to the execution environment, so they can
-  run on development machines.
+- Not be disruptive to the execution environment, so they can run on development
+  machines.
 - Execute quickly.
 - Be deterministic.
 - Be independent of each other.
 - Not leave any state behind them.
-- Not depend on any external resources, that might not be available on the development machine.
-- Take advantage of mocking of external resources if possible, to allow testing as much
-of the code on the development machine as possible.
+- Not depend on any external resources, that might not be available on the
+  development machine.
+- Take advantage of mocking of external resources if possible, to allow testing
+as much of the code on the development machine as possible.
 - Run in parallel and in a random order.
 - Should be the first line of defense for against any regressions.
 
 #### Functional Tests
 
 Functional tests are meant to test the functionality of a module or a set of
-functions in a real environment. Each module should have a corresponding functional test module
-called `functional_tests` annotated with `#[cfg(all(test, feature =
-"functional-tests"))]`. Naming of test function is up to the developer, but
-should be indicative of what is being tested. Each test function is annotated with `#[test]`.
+functions in a real environment. Trident supports two types of functional tests:
+manually authored custom tests and test generated from Rust code. Each Rust
+module should have a corresponding functional test module called
+`functional_tests` annotated with `#[cfg(feature = "functional-tests")]`. Naming
+of test function is up to the developer, but should be indicative of what is
+being tested. Each test function is annotated with `#[pytest()]` attribute.
 
 Functional tests can be invoked by `make functional-test` and this will
 automatically gather code coverage data as well. This `Makefile` target will
@@ -536,7 +546,8 @@ to update the test binaries and re-run the tests. More details below.
 
 Functional tests should:
 
-- Test the functionality of a module that cannot be easily unit tested in isolation.
+- Test the functionality of a module that cannot be easily unit tested in
+  isolation.
 - Assume they will not run in parallel to other functions.
 - Allow rerunning on the same environment.
 - Run as fast as possible.
@@ -548,34 +559,43 @@ Functional tests should:
 
 Functional tests are structured as follows:
 
-- `/functional_tests`: Contains the functional test code, leveraging
-  `pytest` and common SSH interface from `k8s-tests` repo. `pytest` creates the
-  test VM using is Fixtures concept and while currently only a single VM is
-  created to run all the tests, this could be easily extended to support
-  seperate VMs for different tests. Most of the time, no changes will be
-  required to this layer while developing functional tests.
-- Per module `functional_tests` submodule: Contains the actual test
-  implementation written in `rust`, leveraging other code already present in
-  Trident. The benefit of this approach is that we can leverage common logic and
-  test code is authored side by side with the feature code in a consistent
-  manner. This also allows us to easily shift logic between unit and functional
-  tests.
+- `/functional_tests`: Contains the functional test code, leveraging `pytest`
+  and common SSH interface from `k8s-tests` repo. `pytest` creates the test VM
+  using is Fixtures concept and while currently only a single VM is created to
+  run all the tests, this could be easily extended to support seperate VMs for
+  different tests. Most of the time, no changes will be required to this layer
+  while developing functional tests.
+- `/functional_tests/trident-setup.yaml`: Contains the initial host
+  configuration for the VM that will be used to execute the functional tests.
+- `/functional_tests/custom/../*.py`: Manually authored Pytest modules for more
+  advanced functional tests that can interact with the execution environment,
+  such as rebooting the VM or unplugging a disk.
+- `/functional_tests/generated/../.py`: Autogenerated wrappers of per module
+  `functional_tests` submodules. Contains the actual test implementation written
+  in `rust`, leveraging other code already present in Trident. The benefit of
+  this approach is that we can leverage common logic and test code is authored
+  side by side with the feature code in a consistent manner. This also allows us
+  to easily shift logic between unit and functional tests. The autogenerated
+  files are not checked in, but instead automatically produced during `make
+  *functional-test` Makefile targets.
 
-Note that additional testing logic can be added as part of
-`/functional_tests` as well. At the moment, there are two `pytest` modules
-present:
+##### Functional Test Authoring in Rust
 
-- `test_trident_e2e.py`: Very basic of validation of the main Trident commands:
-  `run`, `get` and `start-network`. As you can see in this module, the `pytest`
-  logic is used to validate the output of the `get` command using checked in
-  `HostStatus`.
-- `test_trident_mods.py`: This module invokes the per module functional tests.
-  Tests of the following crates are present: `osutils`, `setsail`, `trident` and
-  `trident_api`.
+In order to support autogeneration of the Pytest wrappers, the functional tests
+in Rust need to be annotated with `#[pytest]` attribute (instead of the regular
+`#[test]`). The attribute accepts a comma-separated list of key-value pairs,
+where the supported keys are: `negative` and `feature`.
 
-The `pytest` logic can be further used to affect the execution environment from
-the outside, such as unplugging a disk or rebooting the VM while the tests are
-running.
+The `negative` key is used to mark the test as negative, meaning it tests for a
+failure case. The expected associated value type is `boolean`. The `negative`
+key is optional, and if not provided, the test will be considered as positive
+(aka `negative: false`).
+
+The `feature` key is used to mark the test as belonging to a specific feature.
+The expected associated  value type is `string` and supported values are:
+`raid`, `verity`, `encryption`, `abupdate`, `core`, `helpers`. The `feature` key
+is optional, and if not provided, the test will be considered as belonging to
+the `core` feature.
 
 ##### Functional Test Environment
 
@@ -590,7 +610,8 @@ deployment. The tests are started on the deployed OS through SSH connection.
 
 ##### Functional Test Building and Execution
 
-There are three ways to build and execute functional tests using `Makefile` targets:
+There are three ways to build and execute functional tests using `Makefile`
+targets:
 
 - `make build-functional-test`: This will just build the tests locally and not
   perform any execution. This is useful to ensure the tests are building. The
@@ -598,29 +619,30 @@ There are three ways to build and execute functional tests using `Makefile` targ
   `cargo test` would normally produce and invoke.
 
 - `make functional-test`: This will build the tests locally with code coverage
-  profile (using internal `build-functional-test-cc` target), a new `virt-deploy` VM will be created and deployed using
-  `netlaunch`. Afterwards, tests will be uploaded into the VM, executed and
-  code coverage will be downloaded for later viewing. To note, this will also
-  execute all UTs. If you want to iterate on the tests without recreating the
-  VM, but do want to redeploy the OS, you can: `make functional-test
+  profile (using internal `build-functional-test-cc` target), a new
+  `virt-deploy` VM will be created and deployed using `netlaunch`. Afterwards,
+  tests will be uploaded into the VM, executed and code coverage will be
+  downloaded for later viewing. To note, this will also execute all UTs. If you
+  want to iterate on the tests without recreating the VM, but do want to
+  redeploy the OS, you can: `make functional-test
   EXTRA_PARAMS="--reuse-environment --redeploy"`.
 
 - `make patch-functional-test`: This will build the tests locally with code
-  coverage profile (using internal `build-functional-test-cc` target), upload the
-  tests into the existing `virt-deploy` VM, execute the tests and download code
-  coverage for later viewing. This is useful when you want to iterate on the
-  tests and don't want to wait for the VM to be deployed again. It is important
-  to note that only tests that have changed will be re-uploaded. This is
-  determined based on `cargo build` output. To note, this will also
-  execute all UTs.
+  coverage profile (using internal `build-functional-test-cc` target), upload
+  the tests into the existing `virt-deploy` VM, execute the tests and download
+  code coverage for later viewing. This is useful when you want to iterate on
+  the tests and don't want to wait for the VM to be deployed again. It is
+  important to note that only tests that have changed will be re-uploaded. This
+  is determined based on `cargo build` output. To note, this will also execute
+  all UTs.
 
 To execute the functional tests, ensure that `k8s-tests` and `argus-toolkit` of
 recent version are checked out side by side with the `trident` repo.
 Additionally, the following dependencies are required for the Ubuntu based
-pipelines, so you might need to install them on your development machine as
-well (note that this set is different per Ubuntu version and is provided just as
-an illustration of what works for [pipelines](.pipelines/netlaunch-testing.yml),
-so if you are on 22.04 or newer, you might not need to for example reinstall
+pipelines, so you might need to install them on your development machine as well
+(note that this set is different per Ubuntu version and is provided just as an
+illustration of what works for [pipelines](.pipelines/netlaunch-testing.yml), so
+if you are on 22.04 or newer, you might not need to for example reinstall
 `python3-openssl`):
 
 ```bash
@@ -665,15 +687,15 @@ with logic to generate the OS deployment ISO.
 
 Both `functional-test` and `patch-functional-test` targets leverage `pytest`. To
 get more detailed logs or do any changes to the `pytest` logic, you can modify
-the command line of the `Makefile` targets (e.g. using `-k`  to select a specific
-test case to execute), or you can update `functional_tests/pytest.ini`.
+the command line of the `Makefile` targets (e.g. using `-k`  to select a
+specific test case to execute), or you can update `functional_tests/pytest.ini`.
 
 Both `functional-test` and `patch-functional-test` targets leverage
 `functional_tests/conftest.py` to setup the initial VM, upload the tests and
 download the code coverage. Since the setup VM can be leveraged across multiple
-runs of `patch-functional-test`, the VM metadata is stored in a test
-directory passed from the `Makefile`: `/tmp/trident-test`. You can inspect the
-command line options of `conftest.py` to see what is configurable.
+runs of `patch-functional-test`, the VM metadata is stored in a test directory
+passed from the `Makefile`: `/tmp/trident-test`. You can inspect the command
+line options of `conftest.py` to see what is configurable.
 
 The functional test binaries are produced in a fashion that `cargo test` would
 use. That means we can leverage all the feature of `cargo test``, such as
@@ -686,8 +708,8 @@ End to end tests are meant to test the end to end functionality of Trident in a
 real environment. E2E tests are using only public Trident interfaces, by
 providing `HostConfiguration` and comparing the status of the host to
 `HostStatus`. E2E tests are defined under `/e2e_tests` and are currently only
-invoked through the e2e validation pipelines. Each Trident
-feature should be accompanied by one or more E2E tests.
+invoked through the e2e validation pipelines. Each Trident feature should be
+accompanied by one or more E2E tests.
 
 End to end tests should:
 
