@@ -94,7 +94,7 @@ impl Module for ManagementModule {
 
     fn configure(
         &mut self,
-        _host_status: &mut HostStatus,
+        host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         if host_config.management.disable {
@@ -104,11 +104,11 @@ impl Module for ManagementModule {
         fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
             .context("Failed to create trident config directory")?;
 
-        let datastore_path = host_config
+        let datastore_path = host_status
             .management
             .datastore_path
-            .as_deref()
-            .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
+            .as_ref()
+            .context("Datastore path missing from host status")?;
 
         create_trident_config(
             datastore_path,
