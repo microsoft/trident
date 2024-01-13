@@ -1,5 +1,5 @@
 .PHONY: all
-all: check test rpm build-api-docs docker-build build-functional-test
+all: check test build-api-docs rpm docker-build build-functional-test
 
 .PHONY: check
 check:

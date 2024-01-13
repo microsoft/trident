@@ -102,3 +102,12 @@ To use this partition type on the disk with the root volume, make sure to not ha
 | Type           | `string` |
 | Value          | `srv`    |
 
+### Extended Boot Loader Partition
+
+`bc13c2ff-59e6-4262-a352-b275fd6f7172`
+
+| Characteristic | Value      |
+| -------------- | ---------- |
+| Type           | `string`   |
+| Value          | `xbootldr` |
+

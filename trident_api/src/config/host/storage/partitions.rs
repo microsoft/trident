@@ -184,6 +184,11 @@ pub enum PartitionType {
     /// to not have `/srv` symlink present in your root volume filesystem. If
     /// you do, remove it before running Trident (e.g. by using MIC).
     Srv,
+
+    /// # Extended Boot Loader Partition
+    ///
+    /// `bc13c2ff-59e6-4262-a352-b275fd6f7172`
+    Xbootldr,
 }
 
 impl PartitionType {
@@ -203,6 +208,7 @@ impl PartitionType {
             PartitionType::Tmp => "tmp",
             PartitionType::LinuxGeneric => "linux-generic",
             PartitionType::Srv => "srv",
+            PartitionType::Xbootldr => "xbootldr",
         }
     }
 }

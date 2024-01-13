@@ -163,6 +163,7 @@ fn config_part_type_into_discoverable(part_type: PartitionType) -> DiscoverableP
         PartitionType::Tmp => DiscoverablePartitionType::Tmp,
         PartitionType::Usr => DiscoverablePartitionType::Usr,
         PartitionType::Var => DiscoverablePartitionType::Var,
+        PartitionType::Xbootldr => DiscoverablePartitionType::Xbootldr,
     }
 }
 

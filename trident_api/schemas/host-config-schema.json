@@ -496,6 +496,14 @@
           "enum": [
             "srv"
           ]
+        },
+        {
+          "title": "Extended Boot Loader Partition",
+          "description": "`bc13c2ff-59e6-4262-a352-b275fd6f7172`",
+          "type": "string",
+          "enum": [
+            "xbootldr"
+          ]
         }
       ]
     },
