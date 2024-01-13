@@ -26,6 +26,7 @@ steps:
 
   - script: |
       set -ex
+      cargo clippy --version
       cargo clippy --locked --all -- -D warnings 2>&1
       cargo clippy --locked --all --all-features -- -D warnings 2>&1
       cargo clippy --locked --all --tests -- -D warnings 2>&1
