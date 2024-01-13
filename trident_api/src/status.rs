@@ -140,6 +140,10 @@ pub struct EncryptedVolume {
     /// The path of the disk partition or software raid array encrypted.
     pub target_path: PathBuf,
 
+    /// The inherited partition type of the encrypted volume.
+    /// This is the partition type of the underlying partition or raid array.
+    pub partition_type: PartitionType,
+
     /// The size of the encrypted volume.
     pub size: u64,
 
@@ -156,6 +160,10 @@ pub struct RaidArray {
 
     /// List of paths of devices (partitions) that take part in the RAID.
     pub device_paths: Vec<PathBuf>,
+
+    /// The inherited partition type of the RAID array. This is the
+    /// partition type of the underlying devices (partitions).
+    pub partition_type: PartitionType,
 
     /// RAID level.
     pub level: RaidLevel,

@@ -14,7 +14,7 @@ use std::{
 };
 use strum_macros::{Display, EnumString};
 use trident_api::{
-    config::{HostConfiguration, RaidLevel, SoftwareRaidArray},
+    config::{HostConfiguration, PartitionType, RaidLevel, SoftwareRaidArray},
     status::{self, HostStatus, RaidArrayStatus, RaidType},
     BlockDeviceId,
 };
@@ -111,6 +111,7 @@ pub(super) struct RaidDetail {
     pub path: PathBuf,
     pub symlink_path: PathBuf,
     pub devices: Vec<PathBuf>,
+    pub partition_type: PartitionType,
     pub uuid: String,
     pub level: RaidLevel,
     pub state: RaidState,
@@ -139,7 +140,8 @@ pub(super) fn get_raid_details(
     let raid_path = PathBuf::from(format!("/dev/md/{}", raid_array_name));
     let device_paths =
         get_device_paths(host_status, devices).context("Failed to get device paths")?;
-
+    let first_device: &status::Partition = get_partition_by_id(host_status, &devices[0])?;
+    let first_device_type: PartitionType = first_device.ty;
     let component_size = osutils::files::read_file_trim(&md_folder.join("component_size"))?;
 
     // TODO(6331): fins a better way to get the size of the RAID array
@@ -151,6 +153,7 @@ pub(super) fn get_raid_details(
         path: raid_path,
         symlink_path: raid_device.to_path_buf(),
         devices: device_paths.clone(),
+        partition_type: first_device_type,
         uuid: raid_uuid,
         level: *raid_level,
         state: RaidState::from_str(&array_state)?,
@@ -228,6 +231,7 @@ pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> 
 pub(super) fn add_to_host_status(host_status: &mut HostStatus, raid_details: RaidDetail) {
     let new_raid_array = status::RaidArray {
         device_paths: raid_details.devices,
+        partition_type: raid_details.partition_type,
         name: raid_details.name.clone(),
         level: raid_details.level,
         status: RaidArrayStatus::Created,
@@ -674,6 +678,7 @@ mod tests {
             path: PathBuf::from("/dev/md/some_raid"),
             symlink_path: PathBuf::from("/dev/md127"),
             devices: vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sdb1")],
+            partition_type: PartitionType::LinuxGeneric,
             uuid: "00000000-0000-0000-0000-000000000000".to_string(),
             level: RaidLevel::Raid1,
             state: RaidState::Clean,
@@ -699,6 +704,7 @@ mod tests {
             "some_raid".to_string(),
             RaidArray {
                 device_paths: vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sdb1")],
+                partition_type: PartitionType::LinuxGeneric,
                 name: "raid1".to_string(),
                 level: RaidLevel::Raid1,
                 status: RaidArrayStatus::Created,

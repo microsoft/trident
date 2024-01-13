@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, PartitionType},
     status::{BlockDeviceContents, HostStatus},
 };
 
@@ -83,6 +83,7 @@ pub fn provision(
                 trident_api::status::EncryptedVolume {
                     device_name: ev.device_name.clone(),
                     target_path,
+                    partition_type: PartitionType::LinuxGeneric,
                     size: target_size_in_bytes - header_offset_in_bytes,
                     contents: BlockDeviceContents::Unknown,
                 },
