@@ -8,7 +8,6 @@ use anyhow::{anyhow, bail, Context, Error};
 use log::info;
 use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 use trident_api::{
     config::{HostConfiguration, PartitionType},
@@ -25,10 +24,7 @@ pub fn provision(
 ) -> Result<(), Error> {
     if let Some(encryption) = &host_config.storage.encryption {
         let key_file: PathBuf = match &encryption.recovery_key_url {
-            Some(url) => Url::parse(url)
-                .context(format!("Failed to parse recovery key URL '{}'", url))?
-                .path()
-                .into(),
+            Some(url) => url.path().into(),
             None => bail!("Recovery key file generation not yet implemented."),
         };
 

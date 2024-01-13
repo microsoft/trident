@@ -38,4 +38,5 @@ This parameter is optional but highly encouraged. If not specified, only the TPM
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `string` |
+| Format         | `uri`    |
 

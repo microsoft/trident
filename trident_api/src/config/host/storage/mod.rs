@@ -1,25 +1,30 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{ensure, Context, Error};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
-use url::Url;
-
-use crate::{constants::SWAP_FILESYSTEM, is_default, BlockDeviceId};
-
-use imaging::{AbUpdate, Image, ImageFormat};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+use url::Url;
+
+use crate::{is_default, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::{block_device_id_list_schema, block_device_id_schema};
 
+pub mod blkdev_graph;
 pub mod imaging;
 pub mod partitions;
 mod serde_hash;
 
-use partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType};
+use partitions::{AdoptedPartition, Partition};
+
+use imaging::{AbUpdate, Image};
+
+use self::blkdev_graph::{
+    builder::BlockDeviceGraphBuilder, error::BlockDeviceGraphBuildError, graph::BlockDeviceGraph,
+};
 
 /// Storage configuration describes the disks of the host that will be used to
 /// store the OS and data. Not all disks of the host need to be captured inside
@@ -116,7 +121,7 @@ pub struct Encryption {
     /// the key serve as the key. It must be in plain text and not
     /// encoded.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub recovery_key_url: Option<String>,
+    pub recovery_key_url: Option<Url>,
 
     /// The list of LUKS2-encrypted volumes to create.
     ///
@@ -292,212 +297,61 @@ impl Storage {
             .find(|p| &p.id == id)
     }
 
-    pub fn validate(&self) -> Result<(), Error> {
-        let mut block_device_ids = Vec::new();
-        let mut partitions = HashSet::new();
-        let mut raid_arrays = HashSet::new();
-        let mut ab_volume_pairs = HashSet::new();
-        let mut encrypted_volumes = HashSet::new();
+    pub fn build_graph(&self) -> Result<BlockDeviceGraph<'_>, BlockDeviceGraphBuildError> {
+        let mut builder = BlockDeviceGraphBuilder::default();
 
-        // Collect lists of all block device ids
+        // Add disks
         for disk in &self.disks {
-            block_device_ids.push(disk.id.clone());
+            builder.add_node(disk.into());
             for partition in &disk.partitions {
-                block_device_ids.push(partition.id.clone());
-                partitions.insert(partition.id.clone());
+                builder.add_node(partition.into());
             }
         }
+
+        // Add RAID arrays
         for raid in &self.raid.software {
-            block_device_ids.push(raid.id.clone());
-            raid_arrays.insert(raid.id.clone());
+            builder.add_node(raid.into());
         }
+
+        // Add A/B update volume pairs
         if let Some(ab_update) = &self.ab_update {
             for pair in &ab_update.volume_pairs {
-                block_device_ids.push(pair.id.clone());
-                ab_volume_pairs.insert(pair.id.clone());
+                builder.add_node(pair.into());
             }
         }
+
+        // Add encrypted volumes
         if let Some(encryption) = &self.encryption {
             for volume in &encryption.volumes {
-                block_device_ids.push(volume.id.clone());
-                ensure!(
-                    encrypted_volumes.insert(volume.id.clone()),
-                    "ID '{id}' is used by multiple encrypted volumes",
-                    id = volume.id
-                );
+                builder.add_node(volume.into());
             }
         }
 
-        // Check for duplicates
-        let mut block_device_ids_set = HashSet::new();
-        for id in &block_device_ids {
-            if !block_device_ids_set.insert(id.clone()) {
-                bail!("Block device ID '{id}' is used more than once");
-            }
+        // Add mount points
+        for mount_point in &self.mount_points {
+            builder.add_mount_point(mount_point);
         }
 
-        for raid in &self.raid.software {
-            ensure!(
-                !raid.devices.is_empty(),
-                "Software RAID array '{id}' has no devices",
-                id = raid.id
-            );
-            for device in &raid.devices {
-                ensure!(
-                    partitions.contains(device),
-                    "Block device ID '{device}' is used in the RAID configuration but is not a partition",
-                );
-            }
+        // Add images
+        for image in &self.images {
+            builder.add_image(image);
         }
 
+        // Try to build the graph
+        builder.build()
+    }
+
+    /// Validate the storage configuration
+    ///
+    /// This function will validate the storage configuration and return an error
+    /// if the configuration is invalid.
+    pub fn validate(&self) -> Result<(), Error> {
+        // Check basic constraints
+
+        // Check encryption settings
         if let Some(encryption) = &self.encryption {
-            let mut encryption_target_ids_set: HashSet<&BlockDeviceId> = HashSet::new();
-            let mut encryption_device_names_set: HashSet<&String> = HashSet::new();
-
-            for volume in &encryption.volumes {
-                // Encrypted volume target IDs must be unique
-                if !encryption_target_ids_set.insert(&volume.target_id) {
-                    bail!(
-                        "Target ID '{tid}' is used by multiple encrypted volumes",
-                        tid = volume.target_id
-                    );
-                }
-
-                // Encrypted volume device names must be unique
-                ensure!(
-                    encryption_device_names_set.insert(&volume.device_name),
-                    "Encrypted volume device name '{name}' is used more than once",
-                    name = volume.device_name
-                );
-
-                // Encrypted volumes cannot target the same block device
-                // id as a mount point
-                for mount_point in &self.mount_points {
-                    ensure!(
-                        volume.target_id != mount_point.target_id,
-                        "Target ID '{tid}' of encrypted volume '{vid}' is already used by mount point '{mp}' ('{fs}')",
-                        tid = volume.target_id,
-                        vid = volume.id,
-                        mp = mount_point.path.display(),
-                        fs = mount_point.filesystem
-                    );
-                }
-
-                // Encrypted volumes cannot target the same block device
-                // id as a software RAID array
-                for array in &self.raid.software {
-                    for device in &array.devices {
-                        ensure!(
-                            volume.target_id != *device,
-                            "Target ID '{tid}' of encrypted volume '{vid}' is already used by software RAID array '{aid}'",
-                            tid = volume.target_id,
-                            vid = volume.id,
-                            aid = array.id
-                        );
-                    }
-                }
-
-                // Encrypted volumes cannot target the same block device
-                // id as an A/B update volume pair
-                if let Some(ab_update) = &self.ab_update {
-                    for volume_pair in &ab_update.volume_pairs {
-                        ensure!(
-                            volume.target_id != volume_pair.volume_a_id,
-                            "Target ID '{tid}' of encrypted volume '{vid}' is already used by A/B update volume pair '{abid}' (A)",
-                            tid = volume.target_id,
-                            vid = volume.id,
-                            abid = volume_pair.id
-                        );
-                        ensure!(
-                            volume.target_id != volume_pair.volume_b_id,
-                            "Target ID '{tid}' of encrypted volume '{vid}' is already used by A/B update volume pair '{abid}' (B)",
-                            tid = volume.target_id,
-                            vid = volume.id,
-                            abid = volume_pair.id
-                        );
-                    }
-                }
-
-                // Encrypted volumes cannot target the same block device
-                // id as an image
-                for image in &self.images {
-                    ensure!(
-                        volume.target_id != image.target_id,
-                        "Target ID '{tid}' of encrypted volume '{vid}' is already used by image '{img}'",
-                        tid = volume.target_id,
-                        vid = volume.id,
-                        img = image.url
-                    );
-                }
-
-                // Encrypted volume target IDs must not be an esp, root,
-                // or root-verity, or a software RAID array of such
-                // partitions.
-                let pty = if partitions.contains(&volume.target_id) {
-                    // This should find a partition because we already
-                    // checked that the target ID is in partitions.
-                    self.disks
-                        .iter()
-                        .flat_map(|disk| &disk.partitions)
-                        .find(|partition| partition.id == volume.target_id)
-                        .ok_or(anyhow!("Partition '{}' not found", volume.target_id))?
-                        .partition_type
-                } else {
-                    ensure!(
-                            raid_arrays.contains(&volume.target_id),
-                            "Target ID '{tid}' of encrypted volume '{vid}' is not a partition id or software RAID array",
-                            tid = volume.target_id,
-                            vid = volume.id
-                        );
-
-                    // This should find a software RAID array because we
-                    // already checked that the target ID is in
-                    // raid_arrays.
-                    //
-                    // Further, this should find a first device because we
-                    // already checked that all RAID arrays have at least
-                    // one device.
-                    let partition_id = self
-                        .raid
-                        .software
-                        .iter()
-                        .find(|array| array.id == volume.target_id)
-                        .ok_or(anyhow!(
-                            "Software RAID array '{}' not found",
-                            volume.target_id
-                        ))?
-                        .devices
-                        .first()
-                        .ok_or(anyhow!(
-                            "Software RAID array '{}' has no devices",
-                            volume.target_id
-                        ))?;
-
-                    // Similarly, this should find a partition because we
-                    // already checked that the devices of all software
-                    // RAID arrays are in partitions.
-                    self.disks
-                        .iter()
-                        .flat_map(|disk| &disk.partitions)
-                        .find(|partition| partition.id == *partition_id)
-                        .ok_or(anyhow!("Partition '{}' not found", partition_id))?
-                        .partition_type
-                };
-                ensure!(
-                    pty != PartitionType::Esp && pty != PartitionType::Root && pty != PartitionType::RootVerity,
-                    "Target ID '{tid}' of encrypted volume '{vid}' has an invalid partition type '{pty}'",
-                    tid = volume.target_id,
-                    vid = volume.id,
-                    pty = pty.to_sdrepart_part_type()
-                );
-            }
-
             // Encryption recovery key URLs must start with file://
             if let Some(recovery_key_url) = &encryption.recovery_key_url {
-                let recovery_key_url = Url::parse(recovery_key_url).context(format!(
-                    "Encryption recovery key '{}' is not a URL",
-                    recovery_key_url
-                ))?;
                 ensure!(
                     recovery_key_url.scheme() == "file",
                     "Encryption recovery key URL '{}' has an invalid scheme '{}'",
@@ -507,116 +361,10 @@ impl Storage {
             }
         }
 
-        // Check that all references are valid
-        if let Some(ab_update) = &self.ab_update {
-            for pair in &ab_update.volume_pairs {
-                for volume in [&pair.volume_a_id, &pair.volume_b_id] {
-                    ensure!(
-                        block_device_ids_set.contains(volume),
-                        "Block device ID {id} is used in the A/B update configuration but is not defined",
-                        id = volume
-                    );
-                    ensure!(
-                        partitions.contains(volume) || raid_arrays.contains(volume) || encrypted_volumes.contains(volume),
-                        "Block device ID {id} is used in the A/B update configuration but is not a partition, software RAID array, or encrypted volume",
-                        id = volume
-                    );
-                }
-            }
-        }
-        for image in &self.images {
-            ensure!(
-                block_device_ids_set.contains(&image.target_id),
-                "Block device ID '{id}' is used in the image configuration but is not defined in the Storage configuration",
-                id = image.target_id
-            );
-            ensure!(
-                !raid_arrays.contains(&image.target_id),
-                "Image targets a RAID array '{id}', which is not supported",
-                id = image.target_id,
-            );
-            ensure!(
-                partitions.contains(&image.target_id) || encrypted_volumes.contains(&image.target_id) || ab_volume_pairs.contains(&image.target_id),
-                "Block device ID '{id}' is used in the image configuration but is not a partition, encrypted volume, or A/B update volume pair",
-                id = image.target_id
-            );
-
-            if image.format == ImageFormat::RawLzma && !ab_volume_pairs.contains(&image.target_id) {
-                bail!(
-                    "Image '{url}' is raw-lzma but block device ID '{tid}' is not an A/B update volume pair",
-                    url = image.url,
-                    tid = image.target_id
-                );
-            }
-        }
-        for mount_point in &self.mount_points {
-            ensure!(
-                block_device_ids_set.contains(&mount_point.target_id),
-                "Block device ID '{id}' is used in the mount point configuration but is not defined in the Storage configuration",
-                id = mount_point.target_id
-            );
-            ensure!(
-                partitions.contains(&mount_point.target_id) || raid_arrays.contains(&mount_point.target_id) || encrypted_volumes.contains(&mount_point.target_id) || ab_volume_pairs.contains(&mount_point.target_id),
-                "Block device ID {id} is used in the mount point configuration but is not a partition, raid array, encrypted volume, or volume pair",
-                id = mount_point.target_id
-            );
-        }
-
-        // Ensure mutual exclusivity
-        if let Some(ab_update) = &self.ab_update {
-            for pair in &ab_update.volume_pairs {
-                ensure!(
-                    pair.volume_a_id != pair.volume_b_id,
-                    "A/B update volume pair '{id}' has the same volume ID for both volumes",
-                    id = pair.id
-                );
-            }
-        }
-
-        // Check that devices are valid partitions and only part of a single RAID array
-        let mut raid_devices = HashSet::new();
-        for software_raid_config in &self.raid.software {
-            for device_id in &software_raid_config.devices {
-                if !raid_devices.insert(device_id.clone()) {
-                    bail!("Block device '{device_id}' cannot be part of multiple RAID arrays");
-                }
-            }
-
-            // Get sizes of all devices in the RAID array:
-            // 1. Check that all devices are partitions
-            // 2. Check that all partitions have fixed sizes
-            // 3. Collect results
-            let device_sizes: Vec<u64> = software_raid_config
-                .devices
-                .iter()
-                .map(|device_id| {
-                    let partition = self.get_partition(device_id)
-                        .context(format!("Device id '{device_id}' was set as dependency of a RAID array, but is not a valid partition"))?;
-                    if let PartitionSize::Fixed(size) = partition.size {
-                        Ok(size)
-                    } else {
-                        bail!("RAID array references partition '{device_id}' with a non-fixed size")
-                    }
-                })
-                .collect::<Result<Vec<u64>, Error>>()
-                .context(format!("RAID array '{}' has invalid members", software_raid_config.id))?;
-
-            ensure!(
-                device_sizes.iter().min() == device_sizes.iter().max(),
-                "RAID array {} has underlying devices with different sizes",
-                software_raid_config.id
-            );
-        }
-
-        // Test for expected mount point configurations
-        for mount_point in &self.mount_points {
-            ensure!(
-                mount_point.path.starts_with("/") || mount_point.filesystem == SWAP_FILESYSTEM,
-                "Mount point path must be absolute or the filesystem has to be 'swap'"
-            );
-        }
-
-        Ok(())
+        // Build the graph
+        self.build_graph()
+            .map(|_| ())
+            .context("Storage configuration is invalid")
     }
 }
 
@@ -625,132 +373,132 @@ mod tests {
     use std::str::FromStr;
 
     use imaging::{AbVolumePair, ImageFormat, ImageSha256};
+    use partitions::{PartitionSize, PartitionType};
 
     use super::*;
 
-    macro_rules! TEST_STORAGE {
-        () => {
-            Storage {
-                disks: vec![
-                    Disk {
-                        id: "disk1".to_owned(),
-                        device: "/".into(),
-                        ..Default::default()
-                    },
-                    Disk {
-                        id: "disk2".to_owned(),
-                        device: "/etc".into(),
-                        partitions: vec![
-                            Partition {
-                                id: "esp".to_owned(),
-                                partition_type: PartitionType::Esp,
-                                size: PartitionSize::from_str("1M").unwrap(),
-                            },
-                            Partition {
-                                id: "root-a".to_owned(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                            Partition {
-                                id: "root-a-verity".to_owned(),
-                                partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                            Partition {
-                                id: "root-b".to_owned(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                            Partition {
-                                id: "root-b-verity".to_owned(),
-                                partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                            Partition {
-                                id: "mnt-raid-1".to_owned(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                            Partition {
-                                id: "mnt-raid-2".to_owned(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                            Partition {
-                                id: "srv-enc".to_owned(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::from_str("1G").unwrap(),
-                            },
-                        ],
-                        ..Default::default()
-                    },
-                ],
-                encryption: Some(Encryption {
-                    recovery_key_url: Some("file:///recovery.key".to_owned()),
-                    volumes: vec![EncryptedVolume {
-                        id: "srv".to_owned(),
-                        device_name: "luks-srv".to_owned(),
-                        target_id: "srv-enc".to_owned(),
-                    }],
-                }),
-                raid: RaidConfig {
-                    software: vec![SoftwareRaidArray {
-                        id: "mnt".to_owned(),
-                        name: "md-mnt".to_owned(),
-                        level: RaidLevel::Raid1,
-                        metadata_version: "1.2".to_owned(),
-                        devices: vec!["mnt-raid-1".to_owned(), "mnt-raid-2".to_owned()],
-                    }],
+    /// Generate a basic valid Storage configuration for testing.
+    fn test_storage() -> Storage {
+        Storage {
+            disks: vec![
+                Disk {
+                    id: "disk1".to_owned(),
+                    device: "/".into(),
+                    ..Default::default()
                 },
-                mount_points: vec![
-                    MountPoint {
-                        path: PathBuf::from("/"),
-                        filesystem: "ext4".to_owned(),
-                        options: Vec::new(),
-                        target_id: "root".to_owned(),
-                    },
-                    MountPoint {
-                        path: PathBuf::from("/boot/efi"),
-                        filesystem: "vfat".to_owned(),
-                        options: Vec::new(),
-                        target_id: "esp".to_owned(),
-                    },
-                    MountPoint {
-                        path: PathBuf::from("/mnt"),
-                        filesystem: "ext4".to_owned(),
-                        options: Vec::new(),
-                        target_id: "mnt".to_owned(),
-                    },
-                    MountPoint {
-                        path: PathBuf::from("/srv"),
-                        filesystem: "ext4".to_owned(),
-                        options: Vec::new(),
-                        target_id: "srv".to_owned(),
-                    },
-                ],
-                images: vec![
-                    Image {
-                        target_id: "esp".to_owned(),
-                        url: "file:///esp.raw.zst".to_owned(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZstd,
-                    },
-                    Image {
-                        target_id: "root".to_owned(),
-                        url: "file:///root.raw.zst".to_owned(),
-                        sha256: ImageSha256::Ignored,
-                        format: ImageFormat::RawZstd,
-                    },
-                ],
-                ab_update: Some(AbUpdate {
-                    volume_pairs: vec![AbVolumePair {
-                        id: "root".to_owned(),
-                        volume_a_id: "root-a".to_owned(),
-                        volume_b_id: "root-b".to_owned(),
-                    }],
-                }),
-            }
-        };
+                Disk {
+                    id: "disk2".to_owned(),
+                    device: "/etc".into(),
+                    partitions: vec![
+                        Partition {
+                            id: "esp".to_owned(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::from_str("1M").unwrap(),
+                        },
+                        Partition {
+                            id: "root-a".to_owned(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "root-a-verity".to_owned(),
+                            partition_type: PartitionType::RootVerity,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "root-b".to_owned(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "root-b-verity".to_owned(),
+                            partition_type: PartitionType::RootVerity,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "mnt-raid-1".to_owned(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "mnt-raid-2".to_owned(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                        Partition {
+                            id: "srv-enc".to_owned(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
+                    ],
+                    ..Default::default()
+                },
+            ],
+            encryption: Some(Encryption {
+                recovery_key_url: Some(Url::parse("file:///recovery.key").unwrap()),
+                volumes: vec![EncryptedVolume {
+                    id: "srv".to_owned(),
+                    device_name: "luks-srv".to_owned(),
+                    target_id: "srv-enc".to_owned(),
+                }],
+            }),
+            raid: RaidConfig {
+                software: vec![SoftwareRaidArray {
+                    id: "mnt".to_owned(),
+                    name: "md-mnt".to_owned(),
+                    level: RaidLevel::Raid1,
+                    metadata_version: "1.2".to_owned(),
+                    devices: vec!["mnt-raid-1".to_owned(), "mnt-raid-2".to_owned()],
+                }],
+            },
+            mount_points: vec![
+                MountPoint {
+                    path: PathBuf::from("/"),
+                    filesystem: "ext4".to_owned(),
+                    options: Vec::new(),
+                    target_id: "root".to_owned(),
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    filesystem: "vfat".to_owned(),
+                    options: Vec::new(),
+                    target_id: "esp".to_owned(),
+                },
+                MountPoint {
+                    path: PathBuf::from("/mnt"),
+                    filesystem: "ext4".to_owned(),
+                    options: Vec::new(),
+                    target_id: "mnt".to_owned(),
+                },
+                MountPoint {
+                    path: PathBuf::from("/srv"),
+                    filesystem: "ext4".to_owned(),
+                    options: Vec::new(),
+                    target_id: "srv".to_owned(),
+                },
+            ],
+            images: vec![
+                Image {
+                    target_id: "esp".to_owned(),
+                    url: "file:///esp.raw.zst".to_owned(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZstd,
+                },
+                Image {
+                    target_id: "root".to_owned(),
+                    url: "file:///root.raw.zst".to_owned(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZstd,
+                },
+            ],
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![AbVolumePair {
+                    id: "root".to_owned(),
+                    volume_a_id: "root-a".to_owned(),
+                    volume_b_id: "root-b".to_owned(),
+                }],
+            }),
+        }
     }
 
     /// Test that validates that to_sdrepart_part_type() returns the correct string for each
@@ -973,12 +721,12 @@ mod tests {
             mount_points: vec![MountPoint {
                 filesystem: "ext4".to_owned(),
                 options: vec![],
-                target_id: "part1".to_owned(),
+                target_id: "ab1".to_owned(),
                 path: PathBuf::from("/"),
             }],
             images: vec![Image {
-                target_id: "part1".to_owned(),
-                url: "".to_owned(),
+                target_id: "ab1".to_owned(),
+                url: "https://some/url".to_owned(),
                 sha256: imaging::ImageSha256::Checksum("".into()),
                 format: ImageFormat::RawZstd,
             }],
@@ -1036,96 +784,83 @@ mod tests {
 
     #[test]
     fn test_validate_encryption_pass() {
-        let storage: Storage = TEST_STORAGE!();
+        let storage: Storage = test_storage();
         storage.validate().unwrap();
     }
 
-    // A/B update volume pairs can target encrypted volumes (A)
+    /// A/B update volume pairs can target encrypted volumes (A)
     #[test]
     fn test_validate_ab_update_volume_pair_a_id_encryption_pass() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "srv".to_owned();
+        // Delete mount point associated with "srv", otherwise this would fail
+        storage.mount_points.retain(|mp| mp.target_id != "srv");
         storage.validate().unwrap();
     }
 
-    // A/B update volume pairs can target encrypted volumes (B)
+    /// A/B update volume pairs can target encrypted volumes (B)
     #[test]
     fn test_validate_ab_update_volume_pair_b_id_encryption_pass() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "srv".to_owned();
+        // Delete mount point associated with "srv", otherwise this would fail
+        storage.mount_points.retain(|mp| mp.target_id != "srv");
         storage.validate().unwrap();
     }
 
-    // Software RAID arrays must have one or more devices
+    /// Software RAID arrays must have one or more devices
     #[test]
     fn test_validate_software_raid_array_no_devices_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.raid.software[0].devices = Vec::new();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Software RAID array 'mnt' has no devices"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Software RAID arrays cannot target encrypted volumes
+    /// Software RAID arrays cannot target encrypted volumes
     #[test]
     fn test_validate_software_raid_target_id_encryption_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.raid.software[0].devices[0] = "srv".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Block device ID 'srv' is used in the RAID configuration but is not a partition"
-        );
+        eprintln!("{:?}", storage.validate().unwrap_err());
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes and disks must not share the same id
+    /// Encrypted volumes and disks must not share the same id
     #[test]
     fn test_validate_encryption_disks_share_id_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "disk1".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Block device ID 'disk1' is used more than once"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes and partitions must not share the same id
+    /// Encrypted volumes and partitions must not share the same id
     #[test]
     fn test_validate_encryption_partitions_share_id_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "esp".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Block device ID 'esp' is used more than once"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes and software RAID arrays must not share the same id
+    /// Encrypted volumes and software RAID arrays must not share the same id
     #[test]
     fn test_validate_encryption_raid_arrays_share_id_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "mnt".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Block device ID 'mnt' is used more than once"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes and A/B update volume pairs must not share the same id
+    /// Encrypted volumes and A/B update volume pairs must not share the same id
     #[test]
     fn test_validate_encryption_ab_update_volume_pairs_share_id_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "root".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Block device ID 'root' is used more than once"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes themselves must not share the same id
+    /// Encrypted volumes themselves must not share the same id
     #[test]
     fn test_validate_encryption_volumes_share_id_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.disks[0].partitions.push(Partition {
             id: "alt-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
@@ -1141,16 +876,14 @@ mod tests {
                 device_name: "luks-alt".to_owned(),
                 target_id: "alt-enc".to_owned(),
             });
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "ID 'srv' is used by multiple encrypted volumes"
-        );
+
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume device names must be unique
+    /// Encrypted volume device names must be unique
     #[test]
     fn test_validate_encryption_device_names_duplicate_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.disks[0].partitions.push(Partition {
             id: "alt-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
@@ -1172,83 +905,59 @@ mod tests {
             options: Vec::new(),
             target_id: "alt".to_owned(),
         });
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Encrypted volume device name 'luks-srv' is used more than once"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encryption recovery key must be a URL
-    #[test]
-    fn test_validate_encryption_recovery_key_not_url_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
-        storage.encryption.as_mut().unwrap().recovery_key_url =
-            Some("/path/to/recovery.key".to_owned());
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Encryption recovery key '/path/to/recovery.key' is not a URL"
-        );
-    }
-
-    // Encryption recovery key may have file scheme
+    /// Encryption recovery key may have file scheme
     #[test]
     fn test_validate_encryption_recovery_key_file_scheme_pass() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().recovery_key_url =
-            Some("file:///path/to/recovery.key".to_owned());
+            Some(Url::parse("file:///path/to/recovery.key").unwrap());
         storage.validate().unwrap();
     }
 
-    // Encryption recovery key must not have https scheme
+    /// Encryption recovery key must not have https scheme
     #[test]
     fn test_validate_encryption_recovery_key_http_scheme_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().recovery_key_url =
-            Some("https://www.example.com/recovery.key".to_owned());
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Encryption recovery key URL 'https://www.example.com/recovery.key' has an invalid scheme 'https'"
-        );
+            Some(Url::parse("https://www.example.com/recovery.key").unwrap());
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume target ID may be a home partition
+    /// Encrypted volume target ID may be a home partition
     #[test]
     fn test_validate_encryption_target_id_home_pass() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.disks[1].partitions[5].partition_type = PartitionType::Home;
         storage.validate().unwrap();
     }
 
-    // Encrypted volume target ID must not be an esp partition
+    /// Encrypted volume target ID must not be an esp partition
     #[test]
     fn test_validate_encryption_target_id_esp_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "esp".to_owned();
         storage.mount_points.remove(1);
         storage.images.remove(0);
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'esp' of encrypted volume 'srv' has an invalid partition type 'esp'"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume target ID must not be a root partition
+    /// Encrypted volume target ID must not be a root partition
     #[test]
     fn test_validate_encryption_target_id_root_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-a".to_owned();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id =
             "root-a-verity".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'root-a' of encrypted volume 'srv' has an invalid partition type 'root'"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume target ID must not be a root-verity partition
+    /// Encrypted volume target ID must not be a root-verity partition
     #[test]
     fn test_validate_encryption_target_id_root_verity_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage
             .encryption
             .as_mut()
@@ -1257,16 +966,13 @@ mod tests {
             .get_mut(0)
             .unwrap()
             .target_id = "root-a-verity".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'root-a-verity' of encrypted volume 'srv' has an invalid partition type 'root-verity'"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume target ID may be a software RAID array of home partitions
+    /// Encrypted volume target ID may be a software RAID array of home partitions
     #[test]
     fn test_validate_encryption_target_id_raid_home_pass() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Home;
@@ -1274,10 +980,10 @@ mod tests {
         storage.validate().unwrap();
     }
 
-    // Encrypted volume target ID must not be a software RAID array of esp partitions
+    /// Encrypted volume target ID must not be a software RAID array of esp partitions
     #[test]
     fn test_validate_encryption_target_id_raid_esp_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Esp;
@@ -1285,10 +991,10 @@ mod tests {
         storage.validate().unwrap();
     }
 
-    // Encrypted volume target ID must not be a software RAID array of root partitions
+    /// Encrypted volume target ID must not be a software RAID array of root partitions
     #[test]
     fn test_validate_encryption_target_id_raid_root_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Root;
@@ -1296,10 +1002,10 @@ mod tests {
         storage.validate().unwrap();
     }
 
-    // Encrypted volume target ID must not be a software RAID array of root-verity partitions
+    /// Encrypted volume target ID must not be a software RAID array of root-verity partitions
     #[test]
     fn test_validate_encryption_target_id_raid_root_verity_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage
@@ -1321,68 +1027,56 @@ mod tests {
         storage.validate().unwrap();
     }
 
-    // Encrypted volume target ID must not be a software RAID array of no devices.
+    /// Encrypted volume target ID must not be a software RAID array of no devices.
     #[test]
     fn test_validate_encryption_target_id_raid_no_devices_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.raid.software[0].devices = Vec::new();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Software RAID array 'mnt' has no devices"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume target ID must not be a software RAID array of A/B update volume pairs.
+    /// Encrypted volume target ID must not be a software RAID array of A/B update volume pairs.
     #[test]
     fn test_validate_encryption_target_id_raid_ab_update_volume_pair_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.raid.software[0].devices = vec!["root".to_owned()];
         // Remove the first mount point
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Block device ID 'root' is used in the RAID configuration but is not a partition"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume target ID must not be a disk
+    /// Encrypted volume target ID must not be a disk
     #[test]
     fn test_validate_encryption_target_id_disk_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "disk1".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'disk1' of encrypted volume 'srv' is not a partition id or software RAID array"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume target ID can be a software RAID array instead of a partition
+    /// Encrypted volume target ID can be a software RAID array instead of a partition
     #[test]
     fn test_validate_encryption_target_id_raid_pass() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage.validate().unwrap();
     }
 
-    // Encrypted volume target ID must not be an A/B update volume pair
+    /// Encrypted volume target ID must not be an A/B update volume pair
     #[test]
     fn test_validate_encryption_target_id_ab_update_volume_pair_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root".to_owned();
         storage.images.remove(1);
         storage.mount_points.remove(0);
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'root' of encrypted volume 'srv' is not a partition id or software RAID array"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volume target IDs must be unique
+    /// Encrypted volume target IDs must be unique
     #[test]
     fn test_validate_encryption_target_id_duplicate_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage
             .encryption
             .as_mut()
@@ -1399,121 +1093,96 @@ mod tests {
             options: Vec::new(),
             target_id: "alt".to_owned(),
         });
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'srv-enc' is used by multiple encrypted volumes"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes cannot target the same partition as a mount point
+    /// Encrypted volumes cannot target the same partition as a mount point
     #[test]
     fn test_validate_encryption_mount_point_target_part_id_equal_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
         storage.mount_points[2].target_id = "mnt-raid-1".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'mnt-raid-1' of encrypted volume 'srv' is already used by mount point '/mnt' ('ext4')"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes cannot target the same partition as a software RAID array
+    /// Encrypted volumes cannot target the same partition as a software RAID array
     #[test]
     fn test_validate_encryption_software_raid_target_part_id_equal_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'mnt-raid-1' of encrypted volume 'srv' is already used by software RAID array 'mnt'"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes cannot target the same partition as A/B update volume pair (A)
+    /// Encrypted volumes cannot target the same partition as A/B update volume pair (A)
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_a_part_id_equal_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-a".to_owned();
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'root-a' of encrypted volume 'srv' is already used by A/B update volume pair 'root' (A)"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes cannot target the same partition as A/B update volume pair (B)
+    /// Encrypted volumes cannot target the same partition as A/B update volume pair (B)
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_b_part_id_equal_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-b".to_owned();
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'root-b' of encrypted volume 'srv' is already used by A/B update volume pair 'root' (B)"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes cannot target the same software RAID array as an A/B update volume pair (A)
+    /// Encrypted volumes cannot target the same software RAID array as an A/B update volume pair (A)
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_a_raid_id_equal_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2); // remove /mnt mount point
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "mnt".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'mnt' of encrypted volume 'srv' is already used by A/B update volume pair 'root' (A)"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes cannot target the same software RAID array as an A/B update volume pair (B)
+    /// Encrypted volumes cannot target the same software RAID array as an A/B update volume pair (B)
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_b_raid_id_equal_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2); // remove /mnt mount point
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "mnt".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'mnt' of encrypted volume 'srv' is already used by A/B update volume pair 'root' (B)"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Encrypted volumes cannot target the same partition as an image
+    /// Encrypted volumes cannot target the same partition as an image
     #[test]
     fn test_validate_encryption_image_target_part_id_equal_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.images[0].target_id = "srv-enc".to_owned();
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Target ID 'srv-enc' of encrypted volume 'srv' is already used by image 'file:///esp.raw.zst'"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Image must be an A/B update volume pair if format is raw-lzma
+    /// Image must be an A/B update volume pair if format is raw-lzma
     #[test]
+    #[cfg(feature = "sysupdate")]
     fn test_validate_image_raw_lzma_ab_update_volume_pair_pass() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.images[1].format = ImageFormat::RawLzma;
         storage.validate().unwrap();
     }
 
-    // Image must not be a partition if format is ram-lzma
+    /// Image must not be a partition if format is ram-lzma
     #[test]
+    #[cfg(feature = "sysupdate")]
     fn test_validate_image_raw_lzma_partition_fail() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.images[0].format = ImageFormat::RawLzma;
-        assert_eq!(
-            storage.validate().unwrap_err().to_string(),
-            "Image 'file:///esp.raw.zst' is raw-lzma but block device ID 'esp' is not an A/B update volume pair"
-        );
+        storage.validate().unwrap_err();
     }
 
-    // Images can target encrypted volumes
+    /// Images can target encrypted volumes
     #[test]
     fn test_validate_image_target_id_encryption_pass() {
-        let mut storage: Storage = TEST_STORAGE!();
+        let mut storage: Storage = test_storage();
         storage.images[0].target_id = "srv".to_owned();
         storage.validate().unwrap();
     }

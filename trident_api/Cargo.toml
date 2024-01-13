@@ -12,17 +12,21 @@ serde_yaml = "0.9.25"
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 strum = "0.25.0"
 strum_macros = "0.25.0"
+thiserror = "1.0.56"
 url = { version = "2.5.0", features = ["serde"] }
 
 # Optional dependencies
-schemars = { version = "0.8.15", optional = true, features = ["uuid1"] }
+schemars = { version = "0.8.15", optional = true, features = ["url", "uuid1"] }
 serde_json = { version = "1.0.107", optional = true }
-thiserror = "1.0.56"
 
 [dev-dependencies]
 indoc = "2.0.4"
+maplit = "1.0.2"
 
 [features]
+# Enables sysupdate-specific configurations
+sysupdate = []
+
 # Enables dangerous options such as plaintext passwords
 dangerous-options = []
 

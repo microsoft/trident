@@ -1,8 +1,3 @@
-use anyhow::{bail, Context, Error};
-use log::{debug, info};
-use nix::NixPath;
-use reqwest::Url;
-use sha2::Digest;
 use std::{
     ffi::CString,
     fs::{self},
@@ -12,6 +7,13 @@ use std::{
     process::Command,
 };
 
+use anyhow::{bail, Context, Error};
+use log::{debug, info};
+use nix::NixPath;
+use reqwest::Url;
+use sha2::Digest;
+
+use osutils::{exe::RunAndCheck, udevadm};
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256},
     status::{
@@ -22,9 +24,10 @@ use trident_api::{
 };
 
 use crate::modules::{self, storage::tabfile::TabFile};
-use osutils::{exe::RunAndCheck, udevadm};
+
 pub mod mount;
 mod stream_image;
+#[cfg(feature = "sysupdate")]
 mod systemd_sysupdate;
 mod update_grub;
 
@@ -94,11 +97,8 @@ fn update_images(
         if image_url.scheme() == "file" {
             match image.format {
                 // If image is of format RawLzma, the target-id must be an A/B volume pair.
+                #[cfg(feature = "sysupdate")]
                 ImageFormat::RawLzma => {
-                    if !cfg!(feature = "sysupdate") {
-                        bail!("Image format RawLzma is not supported")
-                    }
-
                     // Fetch directory and filename from image URL
                     let (directory, filename, computed_sha256) =
                         systemd_sysupdate::get_local_image(&image_url, image)?;
@@ -138,11 +138,8 @@ fn update_images(
                 // systemd-sysupdate, do it from Trident, to support more format types and avoid
                 // the SHA256SUMS overhead for the user. Related ADO task:
                 // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6175.
+                #[cfg(feature = "sysupdate")]
                 ImageFormat::RawLzma => {
-                    if !cfg!(feature = "sysupdate") {
-                        bail!("Image format RawLzma is not supported")
-                    }
-
                     // Determine if target-id corresponds to an A/B volume pair; if helper
                     // func returns None, then set bool to false
                     let targets_ab_volume_pair =
@@ -536,7 +533,7 @@ pub(super) fn configure(
         .context("Failed to find root partition")?;
 
     // Fetch the Partition object corresponding to root_id
-    if let Some(root_part) = systemd_sysupdate::get_ab_volume_partition(host_status, &root_id) {
+    if let Some(root_part) = host_status.get_ab_volume_partition(&root_id) {
         udevadm::settle()?;
         let root_uuid = update_grub::get_uuid_from_path(&root_part.path)?;
 

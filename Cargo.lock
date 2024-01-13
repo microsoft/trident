@@ -1723,6 +1723,7 @@ dependencies = [
  "schemars_derive",
  "serde",
  "serde_json",
+ "url",
  "uuid",
 ]
 
@@ -2367,6 +2368,7 @@ dependencies = [
  "anyhow",
  "bitflags 2.4.0",
  "indoc",
+ "maplit",
  "netplan-types",
  "schemars",
  "serde",

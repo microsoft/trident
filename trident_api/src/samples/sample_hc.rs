@@ -12,6 +12,7 @@ use crate::config::{
     PartitionTableType, PartitionType, RaidConfig, RaidLevel, Script, Scripts, ServicingType,
     SoftwareRaidArray, SshMode, Storage, User,
 };
+use url::Url;
 
 pub fn sample_host_configuration() -> HostConfiguration {
     HostConfiguration {
@@ -69,7 +70,7 @@ pub fn sample_host_configuration() -> HostConfiguration {
                 }],
             }],
             encryption: Some(Encryption {
-                recovery_key_url: Some("file:///recovery.key".into()),
+                recovery_key_url: Some(Url::parse("file:///recovery.key").unwrap()),
                 volumes: vec![EncryptedVolume {
                     id: "srv".to_string(),
                     device_name: "luks-srv".to_string(),

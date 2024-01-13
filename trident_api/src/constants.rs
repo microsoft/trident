@@ -11,3 +11,9 @@ pub const IMAGE_SHA256_CHECKSUM_IGNORED: &str = "ignored";
 
 /// Name of the swap filesystem.
 pub const SWAP_FILESYSTEM: &str = "swap";
+
+/// None/null mount point.
+pub const NONE_MOUNT_POINT: &str = "none";
+
+/// Swap mount point.
+pub const SWAP_MOUNT_POINT: &str = NONE_MOUNT_POINT;

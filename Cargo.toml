@@ -35,7 +35,7 @@ uuid = { version = "1.4.1", features = ["v4", "serde"] }
 zstd = "0.12.4"
 strum = "0.25.0"
 strum_macros = "0.25.0"
-url = { version = "2.5.0", features = ["serde"]}
+url = { version = "2.5.0", features = ["serde"] }
 
 osutils = { path = "osutils" }
 trident_api = { path = "trident_api" }
@@ -54,7 +54,7 @@ maplit = "1.0.2"
 
 [features]
 dangerous-options = ["trident_api/dangerous-options"]
-sysupdate = []
+sysupdate = ["trident_api/sysupdate"]
 functional-tests = ["osutils/functional-tests"]
 pytest-generator = ["osutils/pytest-generator"]
 

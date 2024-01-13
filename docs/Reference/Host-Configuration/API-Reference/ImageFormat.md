@@ -19,12 +19,3 @@ Raw filesystem image with zstd compression.
 | Type           | `string`   |
 | Value          | `raw-zstd` |
 
-### variant-2
-
-Raw filesystem image with lzma compression, required by systemd-sysupdate.
-
-| Characteristic | Value      |
-| -------------- | ---------- |
-| Type           | `string`   |
-| Value          | `raw-lzma` |
-
