@@ -20,7 +20,10 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use osutils::{exe::OutputChecker, lsblk, udevadm};
+use osutils::{
+    exe::{OutputChecker, RunAndCheck},
+    lsblk, udevadm,
+};
 
 pub(super) const RAID_SYNC_TIMEOUT_SECS: u64 = 180;
 
@@ -31,7 +34,7 @@ pub(super) enum RaidState {
     /// in a clean, healthy state
     #[strum(serialize = "clean")]
     Clean,
-    /// active and operational  
+    /// active and operational
     #[strum(serialize = "active")]
     Active,
     /// IO error
@@ -63,16 +66,13 @@ pub(super) fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Res
     Ok(())
 }
 
-fn examine() -> Result<Output, Error> {
+fn examine() -> Result<String, Error> {
     info!("Examining RAID arrays");
 
     let mut mdadm_command = Command::new("mdadm");
     mdadm_command.arg("--examine").arg("--scan");
 
-    let output = mdadm_command
-        .output()
-        .context("Failed to run mdadm examine")?;
-    Ok(output)
+    mdadm_command.output_and_check()
 }
 
 fn detail() -> Result<Output, Error> {
@@ -208,21 +208,17 @@ fn get_partition_by_id<'a>(
 pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> {
     if !host_status.storage.raid_arrays.is_empty() {
         info!("Creating mdadm config file");
-        let output = examine().context("Failed to run mdadm --examine");
-        if let Ok(output) = output {
-            let mdadm_config_file_path = "/etc/mdadm/mdadm.conf";
-            osutils::files::create_file(mdadm_config_file_path)
-                .context("Failed to create mdadm config file")?;
-            fs::write(Path::new(mdadm_config_file_path), output.stdout)
-                .context("Failed to write mdadm config file")?;
+        let output = examine().context("Failed to examine RAID arrays")?;
+        let mdadm_config_file_path = "/etc/mdadm/mdadm.conf";
+        osutils::files::create_file(mdadm_config_file_path)
+            .context("Failed to create mdadm config file")?;
+        fs::write(Path::new(mdadm_config_file_path), output)
+            .context("Failed to write mdadm config file")?;
 
-            // TODO(6329): Remove this if we can bake the logic to handle RAID withing initrd using MIC
-            cmd!("mkinitrd")
-                .run()
-                .context("Failed to regenerate initrd after creating RAID config")?;
-        } else {
-            bail!("Failed to create mdadm config file. mdadm --examine failed");
-        }
+        // TODO(6329): Remove this if we can bake the logic to handle RAID withing initrd using MIC
+        cmd!("mkinitrd")
+            .run()
+            .context("Failed to regenerate initrd after creating RAID config")?;
     }
     Ok(())
 }
@@ -872,13 +868,13 @@ mod tests {
 
         let raid_info = indoc!(
             r#"
-        Personalities : [raid1] 
+        Personalities : [raid1]
         md126 : active raid1 sda9[1] sda8[0]
             51136 blocks super 1.0 [2/2] [UU]
-            
+
         md127 : active raid1 sda7[1] sda6[0]
             1048512 blocks super 1.0 [2/2] [UU]
-            
+
         unused devices: <none>
         "#
         );
