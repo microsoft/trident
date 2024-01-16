@@ -70,6 +70,15 @@ impl HostConfiguration {
         self.storage.validate()?;
         self.osconfig.validate()?;
         self.scripts.validate()?;
+
+        // Cross module validation
+
+        // If either scripts or osconfig is specified, then root mount point
+        // must be defined
+        if self.scripts != Scripts::default() || self.osconfig != OsConfig::default() {
+            self.storage.validate_root_volume_presence()?;
+        }
+
         Ok(())
     }
 

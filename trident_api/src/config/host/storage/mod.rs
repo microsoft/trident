@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{ensure, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
@@ -361,10 +361,40 @@ impl Storage {
             }
         }
 
+        // Root volume must be present and backed by an image, unless this is no-op
+        if *self != Storage::default() {
+            self.validate_root_volume_presence()?;
+        }
+
         // Build the graph
         self.build_graph()
             .map(|_| ())
             .context("Storage configuration is invalid")
+    }
+
+    /// Check that mount point for the root volume is present and that it is
+    /// backed by an image. This is to make sure that Trident can detect the
+    /// root volume and the root volume is initialized using customer provided
+    /// image, not just an empty filesystem.
+    pub fn validate_root_volume_presence(&self) -> Result<(), Error> {
+        let root_mount_point = self
+            .mount_points
+            .iter()
+            .find(|mp| mp.path == PathBuf::from("/"));
+        match root_mount_point {
+            None => bail!("Root mount point must be present"),
+            Some(mp) => {
+                let root_image = self
+                    .images
+                    .iter()
+                    .find(|image| image.target_id == mp.target_id);
+                if root_image.is_none() {
+                    bail!("Root mount point must be backed by an image");
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -501,6 +531,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_check_root_volume_presence() {
+        let storage = test_storage();
+        storage.validate_root_volume_presence().unwrap();
+
+        let mut storage = test_storage();
+        storage
+            .mount_points
+            .retain(|mp| mp.path != PathBuf::from("/"));
+        assert!(storage.validate_root_volume_presence().is_err());
+
+        let mut storage = test_storage();
+        storage.images.retain(|image| image.target_id != "root");
+        assert!(storage.validate_root_volume_presence().is_err());
+    }
+
     /// Test that validates that to_sdrepart_part_type() returns the correct string for each
     /// PartitionType.
     #[test]
@@ -612,6 +658,18 @@ mod tests {
                     ..Default::default()
                 },
             ],
+            mount_points: vec![MountPoint {
+                filesystem: "ext4".to_string(),
+                options: vec![],
+                target_id: "disk1-partition2".to_string(),
+                path: PathBuf::from("/"),
+            }],
+            images: vec![Image {
+                format: imaging::ImageFormat::RawZstd,
+                target_id: "disk1-partition2".to_string(),
+                url: "http://example.com/image".to_string(),
+                sha256: imaging::ImageSha256::Ignored,
+            }],
             ..Default::default()
         };
         storage.validate().unwrap();
@@ -629,6 +687,12 @@ mod tests {
                 options: vec![],
                 target_id: "ab-update-volume-pair".to_string(),
                 path: PathBuf::from("/"),
+            }],
+            images: vec![Image {
+                format: imaging::ImageFormat::RawZstd,
+                target_id: "ab-update-volume-pair".to_string(),
+                url: "http://example.com/image".to_string(),
+                sha256: imaging::ImageSha256::Ignored,
             }],
             ..storage.clone()
         };
