@@ -324,6 +324,14 @@ Trident can be run from a container. To build the container, run:
 make docker-build
 ```
 
+If you want to use your own `Dockerfile`, you can use
+[Dockerfile.runtime](Dockerfile.runtime) as a sample starting point. To run Trident successfully
+from a container, make sure you set this as part of your `Dockerfile`:
+
+```Dockerfile
+DOCKER_ENVIRONMENT=true
+```
+
 Update `/etc/trident/config.yaml` with the desired configuration.
 
 To run Trident using a docker container, run:
