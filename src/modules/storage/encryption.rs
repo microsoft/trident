@@ -28,6 +28,11 @@ pub fn provision(
             None => bail!("Recovery key file generation not yet implemented."),
         };
 
+        // Check that the TPM 2.0 device is accessible.
+        Command::new("tpm2_pcrread")
+            .run_and_check()
+            .context("Encryption requires access to a TPM 2.0 device but one is not accessible")?;
+
         for ev in encryption.volumes.iter() {
             let (target_path, target_content_status, target_size_in_bytes) = {
                 let partition: &mut trident_api::status::Partition = host_status
@@ -91,8 +96,9 @@ pub fn provision(
 }
 
 /// This function encrypts the target of a single encrypted volume by
-/// reformatting it with a LUK2 header, enrolling a key, and opening it as
-/// a LUKS volume.
+/// reformatting the target with a LUK2 header, enrolling a key file,
+/// enrolling another randomly-generated key and sealing it in the TPM2
+/// device with PCR 7, then opening the target as a LUKS2 volume.
 fn encrypt_and_open_target(
     target_path: &Path,
     device_name: &String,
@@ -127,6 +133,15 @@ fn encrypt_and_open_target(
         .arg(format!("{}M", LUKS_HEADER_SIZE_IN_MIB))
         .arg("--type")
         .arg("luks2")
+        .arg(target_path.as_os_str())
+        .run_and_check()?;
+
+    Command::new("systemd-cryptenroll")
+        .arg("--tpm2-device=auto")
+        .arg("--tpm2-pcrs=7")
+        .arg("--unlock-key-file")
+        .arg(key_file.as_os_str())
+        .arg("--wipe-slot=tpm2")
         .arg(target_path.as_os_str())
         .run_and_check()?;
 
@@ -211,7 +226,7 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
             ev.device_name,
             ev.target_path.display(),
             "-",
-            "luks"
+            "luks,tpm2-device=auto"
         ));
     }
 

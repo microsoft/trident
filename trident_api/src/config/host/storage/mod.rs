@@ -348,17 +348,8 @@ impl Storage {
     pub fn validate(&self) -> Result<(), Error> {
         // Check basic constraints
 
-        // Check encryption settings
         if let Some(encryption) = &self.encryption {
-            // Encryption recovery key URLs must start with file://
-            if let Some(recovery_key_url) = &encryption.recovery_key_url {
-                ensure!(
-                    recovery_key_url.scheme() == "file",
-                    "Encryption recovery key URL '{}' has an invalid scheme '{}'",
-                    recovery_key_url,
-                    recovery_key_url.scheme()
-                );
-            }
+            encryption.validate()?;
         }
 
         // Root volume must be present and backed by an image, unless this is no-op
@@ -396,6 +387,26 @@ impl Storage {
                 "{} mount point must be backed by an image",
                 mount_point_path.display()
             ));
+        }
+
+        Ok(())
+    }
+}
+
+impl Encryption {
+    /// Validate the encryption storage configuration.
+    ///
+    /// This function will validate the encryption configuration and
+    /// return an error if the configuration is invalid.
+    pub fn validate(&self) -> Result<(), Error> {
+        // Encryption recovery key URLs must start with file://
+        if let Some(recovery_key_url) = &self.recovery_key_url {
+            ensure!(
+                recovery_key_url.scheme() == "file",
+                "Encryption recovery key URL '{}' has an invalid scheme '{}'",
+                recovery_key_url,
+                recovery_key_url.scheme()
+            );
         }
 
         Ok(())
