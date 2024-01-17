@@ -14,6 +14,7 @@ COPY src ./src
 COPY trident_api ./trident_api
 COPY setsail ./setsail
 COPY osutils ./osutils
+COPY artifacts/osmodifier /usr/src/mariner/SOURCES/osmodifier
 COPY docbuilder ./docbuilder
 COPY pytest_gen ./pytest_gen
 COPY pytest ./pytest

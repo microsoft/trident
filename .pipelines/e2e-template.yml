@@ -105,9 +105,9 @@ stages:
     downloadBuildTypeRuntimeOS: ${{ parameters.downloadBuildTypeRuntimeOS }}
     runtimeImagePipeline: ${{ parameters.runtimeImagePipelineID }}
     downloadBuildTypeProvOS: ${{ parameters.downloadBuildTypeProvOS }}
-    provOSPipeline:  ${{ parameters.provOSPipelineID }}
+    provOSPipeline: ${{ parameters.provOSPipelineID }}
     downloadBuildTypeIsogen: ${{ parameters.downloadBuildTypeIsogen }}
-    isogenPipeline:  ${{ parameters.isogenPipelineID }}
+    isogenPipeline: ${{ parameters.isogenPipelineID }}
 
 - template: netlaunch-testing.yml
   parameters:

@@ -4,6 +4,7 @@ Version:        %{rpm_ver}
 Release:        %{rpm_rel}%{?dist}
 Vendor:         Microsoft Corporation
 License:        Proprietary
+Source1:        osmodifier
 BuildRequires:  openssl-devel
 BuildRequires:  rust
 BuildRequires:  systemd-units
@@ -16,6 +17,7 @@ Agent for bare metal platform
 %files
 %{_bindir}/%{name}
 %dir /etc/%{name}
+%{_bindir}/osmodifier
 
 # ------------------------------------------------------------------------------
 
@@ -69,6 +71,8 @@ cargo build --release
 test "$(./target/release/trident --version)" = "trident %{trident_version}"
 
 %install
+install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
+
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 
 mkdir -p %{buildroot}%{_unitdir}
