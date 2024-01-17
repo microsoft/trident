@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Write};
 use std::{borrow::Cow, panic::Location};
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -98,7 +99,6 @@ struct TridentErrorInner {
     context: Vec<Cow<'static, str>>,
 }
 
-#[derive(Debug)]
 pub struct TridentError(Box<TridentErrorInner>);
 impl TridentError {
     pub fn secondary_error_context(mut self, secondary: TridentError) -> Self {
@@ -133,6 +133,7 @@ impl<T, K> ReportError<T, K> for Option<T>
 where
     K: Into<ErrorKind>,
 {
+    #[track_caller]
     fn structured(self, kind: K) -> Result<T, TridentError> {
         match self {
             Some(t) => Ok(t),
@@ -151,6 +152,7 @@ where
     E: Into<anyhow::Error>,
     K: Into<ErrorKind>,
 {
+    #[track_caller]
     fn structured(self, kind: K) -> Result<T, TridentError> {
         match self {
             Ok(o) => Ok(o),
@@ -206,6 +208,38 @@ impl Serialize for TridentError {
     }
 }
 
+impl Debug for TridentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} at {}:{}",
+            self.0.kind,
+            self.0.location.file(),
+            self.0.location.line()
+        )?;
+
+        if let Some(ref source) = self.0.source {
+            writeln!(f, "\n\nCaused by:")?;
+            let mut index = 0;
+            let mut source: Option<&dyn std::error::Error> = Some(source.as_ref());
+            while let Some(e) = source {
+                for (i, line) in e.to_string().split('\n').enumerate() {
+                    if i == 0 {
+                        write!(f, "{: >5}: ", index)?;
+                    } else {
+                        f.write_str("\n       ")?;
+                    }
+                    f.write_str(line)?;
+                }
+                f.write_char('\n')?;
+                source = e.source();
+                index += 1;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
@@ -242,5 +276,21 @@ mod tests {
             }
             _ => panic!("value isn't mapping"),
         }
+    }
+
+    #[test]
+    fn test_error_debug() {
+        let error = Err::<(), _>(anyhow::anyhow!("z"))
+            .context("x\ny")
+            .structured(InternalError::Internal("w"))
+            .unwrap_err();
+        assert_eq!(
+            format!("{:?}", error),
+            format!(
+                "Internal error: w at {}:{}\n\nCaused by:\n    0: x\n       y\n    1: z\n",
+                error.0.location.file(),
+                error.0.location.line(),
+            ),
+        );
     }
 }
