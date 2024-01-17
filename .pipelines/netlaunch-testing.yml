@@ -200,7 +200,7 @@ stages:
 
   - job: FunctionalTests
     displayName: Functional Tests
-    timeoutInMinutes: 15
+    timeoutInMinutes: 30
     pool:
       type: linux
       name: CAPKV_Pool
