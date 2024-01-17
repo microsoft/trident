@@ -273,9 +273,9 @@ impl Module for StorageModule {
             .iter()
             .map(|mount_point| {
                 (
-                    mount_point.target_id.clone(),
+                    mount_point.path.clone(),
                     status::MountPoint {
-                        path: mount_point.path.clone(),
+                        target_id: mount_point.target_id.clone(),
                         filesystem: mount_point.filesystem.clone(),
                         options: mount_point.options.clone(),
                     },

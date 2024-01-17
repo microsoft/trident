@@ -416,12 +416,11 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
         if let Some(root_device_id) = host_status
             .storage
             .mount_points
-            .iter()
-            .find(|(_id, mp)| mp.path == Path::new("/"))
-            .map(|(id, _mp)| id.clone())
+            .get(Path::new("/"))
+            .map(|m| &m.target_id)
         {
             // and one of the a/b update volumes points to the root volume
-            if let Some(root_device_pair) = ab_update.volume_pairs.get(&root_device_id) {
+            if let Some(root_device_pair) = ab_update.volume_pairs.get(root_device_id) {
                 let volume_a_path =
                     modules::get_block_device(host_status, &root_device_pair.volume_a_id, false)
                         .context("Failed to get block device for volume A")?
@@ -525,16 +524,15 @@ pub(super) fn configure(
 
     // Fetch the root partition ID from HostStatus; it corresponds to the
     // "/", root fs, mountpoint
-    let root_id = host_status
+    let root_id = &host_status
         .storage
         .mount_points
-        .iter()
-        .find(|(_, mp)| mp.path == Path::new("/"))
-        .map(|(id, _)| id.clone())
-        .context("Failed to find root partition")?;
+        .get(Path::new("/"))
+        .context("Failed to find root partition")?
+        .target_id;
 
     // Fetch the Partition object corresponding to root_id
-    if let Some(root_part) = host_status.get_ab_volume_partition(&root_id) {
+    if let Some(root_part) = host_status.get_ab_volume_partition(root_id) {
         udevadm::settle()?;
         let root_uuid = update_grub::get_uuid_from_path(&root_part.path)?;
 
@@ -706,13 +704,13 @@ mod tests {
                     },
                 },
                 mount_points: btreemap! {
-                    "boot".to_string() => MountPointStatus {
-                        path: PathBuf::from("/boot"),
+                    PathBuf::from("/boot") => MountPointStatus {
+                        target_id: "boot".to_string(),
                         filesystem: "fat32".to_string(),
                         options: vec![],
                     },
-                    "root".to_string() => MountPointStatus {
-                        path: PathBuf::from("/"),
+                    PathBuf::from("/") => MountPointStatus {
+                        target_id: "root".to_string(),
                         filesystem: "ext4".to_string(),
                         options: vec![],
                     },
@@ -880,13 +878,13 @@ mod tests {
                     },
                 },
                 mount_points: btreemap! {
-                    "boot".to_string() => MountPointStatus {
-                        path: PathBuf::from("/boot"),
+                    PathBuf::from("/boot") => MountPointStatus {
+                        target_id: "boot".to_string(),
                         filesystem: "fat32".to_string(),
                         options: vec![],
                     },
-                    "root".to_string() => MountPointStatus {
-                        path: PathBuf::from("/"),
+                    PathBuf::from("/") => MountPointStatus {
+                        target_id: "root".to_string(),
                         filesystem: "ext4".to_string(),
                         options: vec![],
                     },

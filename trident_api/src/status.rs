@@ -72,7 +72,7 @@ pub struct Storage {
     pub encrypted_volumes: BTreeMap<BlockDeviceId, EncryptedVolume>,
 
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub mount_points: BTreeMap<BlockDeviceId, MountPoint>,
+    pub mount_points: BTreeMap<PathBuf, MountPoint>,
 
     /// A/B update status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -210,7 +210,7 @@ pub enum RaidArrayStatus {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MountPoint {
-    pub path: PathBuf,
+    pub target_id: BlockDeviceId,
     pub filesystem: String,
     pub options: Vec<String>,
 }

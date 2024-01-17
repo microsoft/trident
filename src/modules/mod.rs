@@ -368,9 +368,8 @@ fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
     host_status
         .storage
         .mount_points
-        .iter()
-        .find(|(_, mp)| mp.path == Path::new("/"))
-        .and_then(|(target_id, _)| Some(get_block_device(host_status, target_id, false)?.path))
+        .get(Path::new("/"))
+        .and_then(|m| Some(get_block_device(host_status, &m.target_id, false)?.path))
 }
 
 fn get_disk(host_status: &HostStatus, block_device_id: &BlockDeviceId) -> Option<BlockDeviceInfo> {
@@ -697,13 +696,13 @@ mod test {
                     },
                 },
                 mount_points: btreemap! {
-                    "boot".to_owned() => MountPoint {
-                        path: PathBuf::from("/boot"),
+                    PathBuf::from("/boot") => MountPoint {
+                        target_id: "boot".to_owned(),
                         filesystem: "fat32".to_owned(),
                         options: vec![],
                     },
-                    "root".to_owned() => MountPoint {
-                        path: PathBuf::from("/"),
+                    PathBuf::from("/") => MountPoint {
+                        target_id: "root".to_owned(),
                         filesystem: "ext4".to_owned(),
                         options: vec![],
                     },
