@@ -16,6 +16,7 @@ use sha2::Digest;
 use osutils::{exe::RunAndCheck, udevadm};
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256},
+    constants,
     status::{
         AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, Disk, EncryptedVolume,
         HostStatus, Partition, RaidArray, ReconcileState,
@@ -537,24 +538,30 @@ pub(super) fn configure(
         udevadm::settle()?;
         let root_uuid = update_grub::get_uuid_from_path(&root_part.path)?;
 
+        let root_grub_config_path = Path::new("/").join(update_grub::GRUB_BOOT_CONFIG_PATH);
+
         // Call update_grub() to update the UUID of root FS and if needed,
         // PARTUUID of root partition inside GRUB config files
-        update_grub::update_grub_rootfs(
-            update_grub::GRUB_BOOT_CONFIG_PATH,
+        update_grub::update_grub_config(
+            root_grub_config_path.as_path(),
             &root_uuid,
             Some(&root_part.uuid.to_string()),
         )
         .context(format!(
             "Failed to update GRUB config at path '{}'",
-            &update_grub::GRUB_BOOT_CONFIG_PATH
+            root_grub_config_path.display()
         ))?;
 
+        let esp_grub_config_path =
+            Path::new(constants::ESP_MOUNT_POINT_PATH).join(update_grub::GRUB_BOOT_CONFIG_PATH);
+
         // For GRUB_EFI_CONFIG_PATH, no need to update the PARTUUID of root FS inside GRUB
-        update_grub::update_grub_rootfs(update_grub::GRUB_EFI_CONFIG_PATH, &root_uuid, None)
-            .context(format!(
-                "Failed to update GRUB config at path '{}'",
-                &update_grub::GRUB_EFI_CONFIG_PATH
-            ))?;
+        update_grub::update_grub_config(esp_grub_config_path.as_path(), &root_uuid, None).context(
+            format!(
+                "Failed to update GRUB config at path {}",
+                esp_grub_config_path.display()
+            ),
+        )?;
     }
 
     Ok(())

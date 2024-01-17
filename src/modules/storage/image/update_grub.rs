@@ -8,15 +8,12 @@ use anyhow::{bail, Context, Error};
 use osutils::exe::OutputChecker;
 use regex::Regex;
 
-/// The path to the GRUB configuration file in /boot.
-pub const GRUB_BOOT_CONFIG_PATH: &str = "/boot/grub2/grub.cfg";
-
-/// The path to the GRUB configuration file in /boot/efi.
-pub const GRUB_EFI_CONFIG_PATH: &str = "/boot/efi/boot/grub2/grub.cfg";
+/// The path to the GRUB configuration on a volume.
+pub const GRUB_BOOT_CONFIG_PATH: &str = "boot/grub2/grub.cfg";
 
 /// Updates the root filesystem UUID inside the GRUB config.
-pub fn update_grub_rootfs(
-    grub_config: &str,
+pub fn update_grub_config(
+    grub_config: &Path,
     root_fs_uuid: &str,
     root_partuuid: Option<&str>,
 ) -> Result<(), Error> {
@@ -24,7 +21,10 @@ pub fn update_grub_rootfs(
     let grub_config_path = Path::new(grub_config);
 
     if !grub_config_path.exists() {
-        bail!("GRUB config does not exist at path: '{grub_config}'");
+        bail!(
+            "GRUB config does not exist at path: {}",
+            grub_config.display()
+        );
     }
     let mut file_content = fs::read_to_string(grub_config)
         .context("Failed to read the GRUB config file '{grub_config}'")?;
@@ -76,7 +76,7 @@ mod tests {
     use std::fs;
     use uuid::Uuid;
     #[test]
-    fn test_update_grub_rootfs() {
+    fn test_update_grub_config() {
         // Define original GRUB config contents on target machine
         let original_content_grub = r#"
             set timeout=0
@@ -106,23 +106,21 @@ mod tests {
         let temp_file_grub = tempfile::NamedTempFile::new().unwrap();
         let temp_file_path_grub = temp_file_grub.path();
 
-        // Convert the path into a string
-        let path_str_grub = temp_file_path_grub.to_str().unwrap();
-        fs::write(path_str_grub, original_content_grub).unwrap();
+        fs::write(temp_file_path_grub, original_content_grub).unwrap();
 
         // Generate random FS UUID and PARTUUID for the partition
         let random_uuid_grub = Uuid::new_v4().to_string();
         let random_partuuid_grub = Uuid::new_v4().to_string();
 
         // Call update_grub_rootfs()
-        update_grub_rootfs(
-            path_str_grub,
+        update_grub_config(
+            temp_file_path_grub,
             &random_uuid_grub,
             Some(&random_partuuid_grub),
         )
         .unwrap();
         // Read back the content of the file
-        let updated_content_grub = fs::read_to_string(path_str_grub).unwrap();
+        let updated_content_grub = fs::read_to_string(temp_file_path_grub).unwrap();
 
         // Build the expected content with the new UUID
         let expected_content_grub = original_content_grub
@@ -145,19 +143,17 @@ mod tests {
         let temp_file_grub2 = tempfile::NamedTempFile::new().unwrap();
         let temp_file_path_grub2 = temp_file_grub2.path();
 
-        // Convert the path into a string
-        let path_str_grub2 = temp_file_path_grub2.to_str().unwrap();
-        fs::write(path_str_grub2, original_content_grub2).unwrap();
+        fs::write(temp_file_path_grub2, original_content_grub2).unwrap();
 
         // Generate a random UUID for the partition
         let random_uuid_grub2 = Uuid::new_v4().to_string();
 
         // Call update_grub_rootfs() with None as 2nd arg since no need to update
         // PARTUUID of root partition
-        update_grub_rootfs(path_str_grub2, &random_uuid_grub2, None).unwrap();
+        update_grub_config(temp_file_path_grub2, &random_uuid_grub2, None).unwrap();
 
         // Read back the content of the file
-        let updated_content_grub2 = fs::read_to_string(path_str_grub2).unwrap();
+        let updated_content_grub2 = fs::read_to_string(temp_file_path_grub2).unwrap();
 
         // Build the expected content with the new UUID
         let expected_content_grub2 = original_content_grub2

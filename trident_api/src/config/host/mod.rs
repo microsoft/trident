@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::Error;
 use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
@@ -73,10 +75,13 @@ impl HostConfiguration {
 
         // Cross module validation
 
-        // If either scripts or osconfig is specified, then root mount point
+        // If either management, scripts or osconfig is specified, then root mount point
         // must be defined
-        if self.scripts != Scripts::default() || self.osconfig != OsConfig::default() {
-            self.storage.validate_root_volume_presence()?;
+        if self.management != Management::default()
+            || self.scripts != Scripts::default()
+            || self.osconfig != OsConfig::default()
+        {
+            self.storage.validate_volume_presence(Path::new("/"))?;
         }
 
         Ok(())

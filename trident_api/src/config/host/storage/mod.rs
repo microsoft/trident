@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, ensure, Context, Error};
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use strum_macros::{Display, EnumString};
 use schemars::JsonSchema;
 use url::Url;
 
-use crate::{is_default, BlockDeviceId};
+use crate::{constants, is_default, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::{block_device_id_list_schema, block_device_id_schema};
@@ -363,7 +363,8 @@ impl Storage {
 
         // Root volume must be present and backed by an image, unless this is no-op
         if *self != Storage::default() {
-            self.validate_root_volume_presence()?;
+            self.validate_volume_presence(Path::new("/"))?;
+            self.validate_volume_presence(Path::new(constants::ESP_MOUNT_POINT_PATH))?;
         }
 
         // Build the graph
@@ -372,26 +373,29 @@ impl Storage {
             .context("Storage configuration is invalid")
     }
 
-    /// Check that mount point for the root volume is present and that it is
+    /// Check that a mount point for a volume is present and that it is
     /// backed by an image. This is to make sure that Trident can detect the
-    /// root volume and the root volume is initialized using customer provided
+    /// volume and the volume is initialized using customer provided
     /// image, not just an empty filesystem.
-    pub fn validate_root_volume_presence(&self) -> Result<(), Error> {
-        let root_mount_point = self
+    pub fn validate_volume_presence(&self, mount_point_path: &Path) -> Result<(), Error> {
+        let mount_point = self
             .mount_points
             .iter()
-            .find(|mp| mp.path == PathBuf::from("/"));
-        match root_mount_point {
-            None => bail!("Root mount point must be present"),
-            Some(mp) => {
-                let root_image = self
-                    .images
-                    .iter()
-                    .find(|image| image.target_id == mp.target_id);
-                if root_image.is_none() {
-                    bail!("Root mount point must be backed by an image");
-                }
-            }
+            .find(|mp| mp.path == mount_point_path)
+            .context(format!(
+                "{} mount point must be present",
+                mount_point_path.display()
+            ))?;
+
+        let image = self
+            .images
+            .iter()
+            .find(|image| image.target_id == mount_point.target_id);
+        if image.is_none() {
+            bail!(format!(
+                "{} mount point must be backed by an image",
+                mount_point_path.display()
+            ));
         }
 
         Ok(())
@@ -532,19 +536,46 @@ mod tests {
     }
 
     #[test]
-    fn test_check_root_volume_presence() {
+    fn test_validate_volume_presence() {
         let storage = test_storage();
-        storage.validate_root_volume_presence().unwrap();
+        storage.validate_volume_presence(Path::new("/")).unwrap();
+
+        storage
+            .validate_volume_presence(Path::new("/boot/efi"))
+            .unwrap();
+
+        assert_eq!(
+            storage
+                .validate_volume_presence(Path::new("/foobar"))
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "/foobar mount point must be present"
+        );
 
         let mut storage = test_storage();
         storage
             .mount_points
             .retain(|mp| mp.path != PathBuf::from("/"));
-        assert!(storage.validate_root_volume_presence().is_err());
+        assert_eq!(
+            storage
+                .validate_volume_presence(Path::new("/"))
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "/ mount point must be present"
+        );
 
         let mut storage = test_storage();
         storage.images.retain(|image| image.target_id != "root");
-        assert!(storage.validate_root_volume_presence().is_err());
+        assert_eq!(
+            storage
+                .validate_volume_presence(Path::new("/"))
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "/ mount point must be backed by an image"
+        );
     }
 
     /// Test that validates that to_sdrepart_part_type() returns the correct string for each
@@ -658,18 +689,34 @@ mod tests {
                     ..Default::default()
                 },
             ],
-            mount_points: vec![MountPoint {
-                filesystem: "ext4".to_string(),
-                options: vec![],
-                target_id: "disk1-partition2".to_string(),
-                path: PathBuf::from("/"),
-            }],
-            images: vec![Image {
-                format: imaging::ImageFormat::RawZstd,
-                target_id: "disk1-partition2".to_string(),
-                url: "http://example.com/image".to_string(),
-                sha256: imaging::ImageSha256::Ignored,
-            }],
+            mount_points: vec![
+                MountPoint {
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                    target_id: "disk1-partition2".to_string(),
+                    path: PathBuf::from("/"),
+                },
+                MountPoint {
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                    target_id: "disk1-partition1".to_string(),
+                    path: PathBuf::from("/boot/efi"),
+                },
+            ],
+            images: vec![
+                Image {
+                    format: imaging::ImageFormat::RawZstd,
+                    target_id: "disk1-partition2".to_string(),
+                    url: "http://example.com/image".to_string(),
+                    sha256: imaging::ImageSha256::Ignored,
+                },
+                Image {
+                    format: imaging::ImageFormat::RawZstd,
+                    target_id: "disk1-partition1".to_string(),
+                    url: "http://example.com/image".to_string(),
+                    sha256: imaging::ImageSha256::Ignored,
+                },
+            ],
             ..Default::default()
         };
         storage.validate().unwrap();
@@ -682,18 +729,34 @@ mod tests {
                     volume_b_id: "disk2-partition2".to_string(),
                 }],
             }),
-            mount_points: vec![MountPoint {
-                filesystem: "ext4".to_string(),
-                options: vec![],
-                target_id: "ab-update-volume-pair".to_string(),
-                path: PathBuf::from("/"),
-            }],
-            images: vec![Image {
-                format: imaging::ImageFormat::RawZstd,
-                target_id: "ab-update-volume-pair".to_string(),
-                url: "http://example.com/image".to_string(),
-                sha256: imaging::ImageSha256::Ignored,
-            }],
+            mount_points: vec![
+                MountPoint {
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                    target_id: "ab-update-volume-pair".to_string(),
+                    path: PathBuf::from("/"),
+                },
+                MountPoint {
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                    target_id: "disk1-partition1".to_string(),
+                    path: PathBuf::from("/boot/efi"),
+                },
+            ],
+            images: vec![
+                Image {
+                    format: imaging::ImageFormat::RawZstd,
+                    target_id: "ab-update-volume-pair".to_string(),
+                    url: "http://example.com/image".to_string(),
+                    sha256: imaging::ImageSha256::Ignored,
+                },
+                Image {
+                    format: imaging::ImageFormat::RawZstd,
+                    target_id: "disk1-partition1".to_string(),
+                    url: "http://example.com/image".to_string(),
+                    sha256: imaging::ImageSha256::Ignored,
+                },
+            ],
             ..storage.clone()
         };
         mount_volume_pair.validate().unwrap();
@@ -769,6 +832,11 @@ mod tests {
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
                         },
+                        Partition {
+                            id: "part5".to_owned(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
                     ],
                     ..Default::default()
                 },
@@ -782,22 +850,38 @@ mod tests {
                     devices: vec!["part3".to_owned(), "part4".to_owned()],
                 }],
             },
-            mount_points: vec![MountPoint {
-                filesystem: "ext4".to_owned(),
-                options: vec![],
-                target_id: "ab1".to_owned(),
-                path: PathBuf::from("/"),
-            }],
-            images: vec![Image {
-                target_id: "ab1".to_owned(),
-                url: "https://some/url".to_owned(),
-                sha256: imaging::ImageSha256::Checksum("".into()),
-                format: ImageFormat::RawZstd,
-            }],
+            mount_points: vec![
+                MountPoint {
+                    filesystem: "ext4".to_owned(),
+                    options: vec![],
+                    target_id: "ab1".to_owned(),
+                    path: PathBuf::from("/"),
+                },
+                MountPoint {
+                    filesystem: "ext4".to_owned(),
+                    options: vec![],
+                    target_id: "part1".to_owned(),
+                    path: PathBuf::from("/boot/efi"),
+                },
+            ],
+            images: vec![
+                Image {
+                    target_id: "ab1".to_owned(),
+                    url: "https://some/url".to_owned(),
+                    sha256: imaging::ImageSha256::Checksum("".into()),
+                    format: ImageFormat::RawZstd,
+                },
+                Image {
+                    target_id: "part1".to_owned(),
+                    url: "https://some/url".to_owned(),
+                    sha256: imaging::ImageSha256::Checksum("".into()),
+                    format: ImageFormat::RawZstd,
+                },
+            ],
             ab_update: Some(AbUpdate {
                 volume_pairs: vec![AbVolumePair {
                     id: "ab1".to_owned(),
-                    volume_a_id: "part1".to_owned(),
+                    volume_a_id: "part5".to_owned(),
                     volume_b_id: "part2".to_owned(),
                 }],
             }),
@@ -1247,7 +1331,14 @@ mod tests {
     #[test]
     fn test_validate_image_target_id_encryption_pass() {
         let mut storage: Storage = test_storage();
-        storage.images[0].target_id = "srv".to_owned();
+        let mut images = storage.images.clone();
+        images.push(Image {
+            target_id: "srv".to_owned(),
+            url: "file:///root.raw.zst".to_owned(),
+            sha256: ImageSha256::Ignored,
+            format: ImageFormat::RawZstd,
+        });
+        storage.images = images;
         storage.validate().unwrap();
     }
 }
