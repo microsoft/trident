@@ -49,10 +49,12 @@ pub(crate) fn print_sample(dest: Option<impl AsRef<Path>>, markdown: bool) -> Re
         if markdown {
             format!("<!-- {} -->", string)
         } else {
-            string
-                .lines()
-                .map(|l| format!("# {}\n", l.trim()))
-                .collect::<String>()
+            string.lines().fold(String::new(), |mut acc, l| {
+                acc.push_str("# ");
+                acc.push_str(l);
+                acc.push('\n');
+                acc
+            })
         }
     };
 

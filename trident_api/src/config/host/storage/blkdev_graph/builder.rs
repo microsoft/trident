@@ -335,9 +335,9 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                     for (field_name, field_value) in uniqueness_constraint {
                         if let Some(other_id) = unique_fields
                             .entry(kind)
-                            .or_insert_with(HashMap::new)
+                            .or_default()
                             .entry(field_name)
-                            .or_insert_with(HashMap::new)
+                            .or_default()
                             .insert(field_value, id)
                         {
                             return Err(BlockDeviceGraphBuildError::UniqueFieldConstraintError {
