@@ -185,6 +185,19 @@ pub enum HostConfigurationSource {
     KickstartEmbedded(String),
 }
 
+impl std::fmt::Display for HostConfigurationSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HostConfigurationSource::File(path) => write!(f, "file: {}", path.display()),
+            HostConfigurationSource::Embedded(_) => write!(f, "embedded"),
+            HostConfigurationSource::KickstartFile(path) => {
+                write!(f, "kickstart file: {}", path.display())
+            }
+            HostConfigurationSource::KickstartEmbedded(_) => write!(f, "kickstart embedded"),
+        }
+    }
+}
+
 /// GrpcConfiguration is the configuration for the gRPC server.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

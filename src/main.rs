@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    process::ExitCode,
-};
+use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
@@ -9,17 +6,12 @@ use log::{error, info, LevelFilter};
 
 use trident::{Logstream, MultiLogger};
 
-use setsail::KsTranslator;
 use trident_api::error::TridentResultExt;
 
-/// Trident version as provided by environment variables at build time
-pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
-    Some(v) => v,
-    None => env!("CARGO_PKG_VERSION"),
-};
+mod validation;
 
 #[derive(Parser, Debug)]
-#[clap(version = TRIDENT_VERSION)]
+#[clap(version = trident::TRIDENT_VERSION)]
 struct Cli {
     /// Path to the Trident Configuration file
     #[clap(global = true, short, long)]
@@ -55,7 +47,18 @@ enum Commands {
 
     /// Validates input KickStart file
     // TODO(5910): Remove this in the future
-    ParseKickstart { file: String },
+    ParseKickstart { path: PathBuf },
+
+    /// Validate HostConfiguration
+    ///
+    /// Provide one Trident Configuration file or one Host Configuration file.
+    /// When no options are provided, the default Trident Configuration is
+    /// validated.
+    Validate {
+        /// Path to a Host Configuration file
+        #[clap(short = 'n', long = "host-config", conflicts_with = "config")]
+        hc_path: Option<PathBuf>,
+    },
 
     #[cfg(feature = "pytest-generator")]
     /// Generate Pytest wrappers for functional tests
@@ -64,33 +67,29 @@ enum Commands {
 
 fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
     // Log version ASAP
-    info!("Trident version: {}", TRIDENT_VERSION);
+    info!("Trident version: {}", trident::TRIDENT_VERSION);
 
-    #[cfg(feature = "pytest-generator")]
-    if let Commands::Pytest = args.command {
-        pytest::generate_pytest_wrappers();
-        return Ok(());
-    }
-
-    // TODO(5910): Remove this in the future
-    if let Commands::ParseKickstart { ref file } = args.command {
-        let translator = KsTranslator::new().include_fail_is_error(false);
-        match translator.translate(
-            setsail::load_kickstart_file(Path::new(file))
-                .context(format!("Failed to read {file}"))?,
-        ) {
-            Ok(hc) => {
-                println!("{}", serde_yaml::to_string(&hc)?);
-                return Ok(());
+    // Catch exit fast commands
+    match &args.command {
+        Commands::Validate { hc_path } => {
+            return match (args.config.as_ref(), hc_path) {
+                (Some(_), Some(_)) => bail!(
+                    "Cannot validate both Trident Configuration and Host Configuration at once"
+                ),
+                (Some(tc_path), None) => validation::validate_trident_config_file(tc_path),
+                (None, Some(hc_path)) => validation::validate_host_config_file(hc_path),
+                (None, None) => {
+                    validation::validate_trident_config_file(trident::TRIDENT_LOCAL_CONFIG_PATH)
+                }
             }
-            Err(e) => {
-                error!(
-                    "Failed to translate kickstart:\n{}",
-                    serde_json::to_string_pretty(&e.0)?
-                );
-                bail!("Failed to translate kickstart");
-            }
-        };
+        }
+        Commands::ParseKickstart { path } => return validation::validate_setsail(path),
+        #[cfg(feature = "pytest-generator")]
+        Commands::Pytest => {
+            pytest::generate_pytest_wrappers();
+            return Ok(());
+        }
+        _ => (),
     }
 
     // Lock the logstream if we're starting the network
@@ -105,7 +104,6 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
     match &args.command {
         Commands::Run(args) => {
             // Log version again so we can see it in the logstream
-            info!("Running Trident version: {}", TRIDENT_VERSION);
             let res = trident
                 .run()
                 .unstructured("Failed to execute Trident run command");
@@ -129,8 +127,7 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
             .retrieve_host_status(&args.status)
             .context("Failed to retrieve Host Status")?,
 
-        // TODO(5910): Remove this in the future
-        Commands::ParseKickstart { .. } => unreachable!(),
+        Commands::ParseKickstart { .. } | Commands::Validate { .. } => unreachable!(),
 
         #[cfg(feature = "pytest-generator")]
         Commands::Pytest => unreachable!(),

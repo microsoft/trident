@@ -36,6 +36,12 @@ pub use modules::network::provisioning::start as start_provisioning_network;
 pub use multilog::MultiLogger;
 pub use orchestrate::OrchestratorConnection;
 
+/// Trident version as provided by environment variables at build time
+pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 /// Default Trident configuration file path.
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
 
@@ -252,6 +258,8 @@ impl Trident {
             .phonehome
             .as_ref()
             .and_then(|url| OrchestratorConnection::new(url.clone()));
+
+        info!("Running Trident version: {}", TRIDENT_VERSION);
 
         // This creates a channel to send commands to the main trident thread. It lets us use the
         // same logic for processing an initial provision command contained within the trident local

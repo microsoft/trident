@@ -1,0 +1,104 @@
+use std::path::Path;
+
+use anyhow::{bail, Context, Error};
+use log::{error, info};
+use setsail::KsTranslator;
+use trident_api::config::{HostConfiguration, HostConfigurationSource, LocalConfigFile};
+
+pub fn validate_setsail(path: impl AsRef<Path>) -> Result<(), Error> {
+    info!("Validating kickstart file: {}", path.as_ref().display());
+    let translator = KsTranslator::new().include_fail_is_error(false);
+    match translator.translate(
+        setsail::load_kickstart_file(path.as_ref())
+            .context(format!("Failed to read {}", path.as_ref().display()))?,
+    ) {
+        Ok(hc) => {
+            info!("Kickstart is valid");
+            println!("{}", serde_yaml::to_string(&hc)?);
+        }
+        Err(e) => {
+            error!(
+                "Failed to translate kickstart:\n{}",
+                serde_json::to_string_pretty(&e.0)?
+            );
+            bail!("Failed to translate kickstart");
+        }
+    };
+
+    Ok(())
+}
+
+pub fn validate_trident_config_file(path: impl AsRef<Path>) -> Result<(), Error> {
+    info!(
+        "Validating Trident configuration file: {}",
+        path.as_ref().display()
+    );
+    let contents = std::fs::read_to_string(path.as_ref())
+        .with_context(|| format!("Failed to read file: {}", path.as_ref().display()))?;
+
+    match serde_yaml::from_str::<LocalConfigFile>(&contents)
+        .with_context(|| {
+            format!(
+                "Failed to parse Trident Configuration YAML file: {}",
+                path.as_ref().display()
+            )
+        })?
+        .get_host_configuration_source()
+        .context("Invalid Host Configuration source.")?
+        .context("Trident Config does not contain Host Configuration.")?
+    {
+        HostConfigurationSource::Embedded(hc) => {
+            info!("Loading embedded Host Configuration");
+            validate_host_config(*hc)?
+        }
+        HostConfigurationSource::File(path) => {
+            info!("Loading Host Configuration from file: {}", path.display());
+            validate_host_config_file(path)?
+        }
+        s => bail!("Validation is only supported for Host Configuration, found: {s}",),
+    }
+
+    Ok(())
+}
+
+pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), Error> {
+    info!(
+        "Validating Host Configuration file: {}",
+        path.as_ref().display()
+    );
+
+    let contents = std::fs::read_to_string(path.as_ref())
+        .with_context(|| format!("Failed to read file: {}", path.as_ref().display()))?;
+
+    validate_host_config(
+        serde_yaml::from_str::<HostConfiguration>(&contents).with_context(|| {
+            format!(
+                "Failed to parse Host Configuration YAML file: {}",
+                path.as_ref().display()
+            )
+        })?,
+    )
+}
+
+fn validate_host_config(hc: HostConfiguration) -> Result<(), Error> {
+    hc.validate()
+        .with_context(|| format!("Host config is invalid: {:?}", hc))?;
+
+    info!("Host Configuration is valid");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn test_validate_embedded_host_configuration() {
+        let func_test_trident_config =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("functional_tests/trident-setup.yaml");
+        validate_trident_config_file(func_test_trident_config)
+            .expect("Failed to validate functional test Trident Config");
+    }
+}

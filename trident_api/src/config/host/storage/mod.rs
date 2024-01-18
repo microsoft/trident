@@ -374,7 +374,7 @@ impl Storage {
             .iter()
             .find(|mp| mp.path == mount_point_path)
             .context(format!(
-                "{} mount point must be present",
+                "'{}' mount point must be present",
                 mount_point_path.display()
             ))?;
 
@@ -384,7 +384,7 @@ impl Storage {
             .find(|image| image.target_id == mount_point.target_id);
         if image.is_none() {
             bail!(format!(
-                "{} mount point must be backed by an image",
+                "'{}' mount point must be backed by an image",
                 mount_point_path.display()
             ));
         }
@@ -563,7 +563,7 @@ mod tests {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "/foobar mount point must be present"
+            "'/foobar' mount point must be present"
         );
 
         let mut storage = test_storage();
@@ -576,7 +576,7 @@ mod tests {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "/ mount point must be present"
+            "'/' mount point must be present"
         );
 
         let mut storage = test_storage();
@@ -587,7 +587,7 @@ mod tests {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "/ mount point must be backed by an image"
+            "'/' mount point must be backed by an image"
         );
     }
 
