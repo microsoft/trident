@@ -34,13 +34,16 @@ pub fn update_grub_config(
 
     // Update the grub content
     file_content = re_uuid
-        .replace(&file_content, &format!("search -n -u {} -s", root_fs_uuid))
+        .replace(
+            &file_content,
+            &format!("search -n -u {} -s", root_fs_uuid.trim()),
+        )
         .to_string();
     if let Some(root_partuuid) = root_partuuid {
         file_content = re_partuuid
             .replace(
                 &file_content,
-                &format!("set rootdevice=PARTUUID={}", root_partuuid),
+                &format!("set rootdevice=PARTUUID={}", root_partuuid.trim()),
             )
             .to_string()
     }

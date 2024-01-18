@@ -58,7 +58,7 @@ impl EfiBootManagerOutput {
                     }
                 }
             } else if line.starts_with("Boot") {
-                let re = Regex::new(r"^Boot(\d{4})(\*?) (.+)$").unwrap();
+                let re = Regex::new(r"^Boot([0-9a-fA-F]{4})(\*?) (.+)$").unwrap();
                 let captures = re.captures(line.trim());
                 if let Some(captures) = captures {
                     let key = captures
@@ -179,10 +179,11 @@ mod tests {
         BootNext: 0000
         BootCurrent: 0001
         Timeout: 0 seconds
-        BootOrder: 0001,0000,0002
+        BootOrder: 0001,0000,0002,000A
         Boot0000  Windows Boot Manager
         Boot0001* ubuntu
         Boot0002* UEFI: Built-in EFI Shell
+        Boot000A* Mariner
     "};
 
         let bootmgr_output: EfiBootManagerOutput =
@@ -202,20 +203,29 @@ mod tests {
             id: "0002".to_string(),
             label: "UEFI: Built-in EFI Shell".to_string(),
         };
+        let entry4 = EfiBootEntry {
+            id: "000A".to_string(),
+            label: "Mariner".to_string(),
+        };
 
         // Sample EfiBootManagerOutput instance
         let expected_bootmgr_output = EfiBootManagerOutput {
             boot_next: "0000".to_string(),
             boot_current: "0001".to_string(),
-            boot_order: vec!["0001".to_string(), "0000".to_string(), "0002".to_string()],
-            boot_entries: vec![entry1, entry2, entry3],
+            boot_order: vec![
+                "0001".to_string(),
+                "0000".to_string(),
+                "0002".to_string(),
+                "000A".to_string(),
+            ],
+            boot_entries: vec![entry1, entry2, entry3, entry4],
         };
         assert_eq!(bootmgr_output, expected_bootmgr_output);
 
         assert!(bootmgr_output.check_current_boot_entry("0001").unwrap());
 
         assert!(!bootmgr_output.check_current_boot_entry("0002").unwrap());
-        let expected_bootorder = ["0001", "0000", "0002"];
+        let expected_bootorder = ["0001", "0000", "0002", "000A"];
         assert_eq!(
             bootmgr_output.get_boot_order().unwrap(),
             &expected_bootorder
