@@ -15,6 +15,7 @@ impl DataStore {
     pub(crate) fn open_temporary() -> Result<Self, Error> {
         let path = Path::new(&TRIDENT_TEMPORARY_DATASTORE_PATH);
         if path.exists() {
+            info!("Reusing temporary datastore at {}", path.display());
             let existing = Self::open(path)?;
             Ok(Self {
                 db: existing.db,

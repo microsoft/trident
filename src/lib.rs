@@ -269,7 +269,7 @@ impl Trident {
         // If we have a host config source, load it and dispatch it as the first
         // command.
         if let Some(host_config) = Self::get_host_configuration(&self.config)? {
-            info!("Running");
+            info!("Applying host configuration from local config");
             sender
                 .blocking_send(HostUpdateCommand {
                     allowed_operations: self.config.allowed_operations,
@@ -323,6 +323,7 @@ impl Trident {
         // have to be aware of if Trident is running in the context of the
         // container or not.
         if container::is_running_in_container() {
+            info!("Running inside container, entering '/host' chroot");
             if let Err(e) = chroot::enter_host_chroot(
                 container::get_host_root_path()
                     .structured(InitializationError::GetHostRootPath)?
@@ -355,6 +356,7 @@ impl Trident {
         mut receiver: mpsc::Receiver<HostUpdateCommand>,
         orchestrator: &Option<OrchestratorConnection>,
     ) -> Result<(), TridentError> {
+        info!("Handling commands");
         let mut datastore = match self.config.datastore {
             Some(ref datastore_path) => {
                 // Load an existing datastore

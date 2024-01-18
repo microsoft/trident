@@ -137,10 +137,14 @@ pub(super) fn provision_host(
         return Err(InitializationError::SafetyCheck.into());
     }
 
+    info!("Starting provision_host");
     let mut modules = MODULES.lock().unwrap();
     state.with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)?;
 
+    info!("Refreshing host status");
     refresh_host_status(&mut modules, state)?;
+
+    info!("Validating host configuration against system state");
     validate_host_config(&modules, state, host_config, ReconcileState::CleanInstall)?;
 
     if let Some(ref mut sender) = sender {
@@ -157,26 +161,32 @@ pub(super) fn provision_host(
         return Ok(());
     }
 
+    info!("Running prepare");
     prepare(&mut modules, state, host_config)?;
 
     // TODO: We should have a way to indicate which modules setup the root mount point, and which
     // depend on it being in place. Right now we just depend on the "storage" and "image" modules
     // being the first ones to run.
+    info!("Running provision");
     let mount_path = Path::new(UPDATE_ROOT_PATH);
     provision(&mut modules, state, host_config, mount_path)?;
 
     let datastore_ref =
         File::create(TRIDENT_DATASTORE_REF_PATH).context("Failed to create datastore ref file")?;
-    let chroot = chroot::enter_update_chroot(mount_path).unstructured("Failed to enter chroot")?;
     let datastore_path = state
         .host_status()
         .management
         .datastore_path
         .clone()
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
+
+    info!("Entering /mnt/newroot chroot");
+    let chroot = chroot::enter_update_chroot(mount_path).unstructured("Failed to enter chroot")?;
     let mut root_device_path = None;
+
     chroot
         .execute_and_exit(|| {
+            info!("Persisting datastore");
             state
                 .persist(&datastore_path)
                 .structured(ManagementError::PersistDatastore)?;
@@ -187,6 +197,7 @@ pub(super) fn provision_host(
                 datastore_ref,
             )?;
 
+            info!("Running configure");
             configure(&mut modules, state, host_config)
                 .structured(InternalError::Todo("Failed to configure"))?;
 
@@ -205,6 +216,7 @@ pub(super) fn provision_host(
                 drop(sender);
             }
 
+            info!("Closing datastore");
             state.close();
             Ok(())
         })
@@ -214,9 +226,10 @@ pub(super) fn provision_host(
 
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
+        info!("Unmounting /mnt/newroot");
         mount::unmount_updated_volumes(mount_path).context("Failed to unmount target volumes")?;
     } else {
-        info!("Root device path: {:#?}", root_device_path);
+        info!("Performing transition");
         transition(mount_path, &root_device_path, state.host_status())?;
     }
 
@@ -232,6 +245,7 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
 
     let mut modules = MODULES.lock().unwrap();
 
+    info!("Refreshing host status");
     refresh_host_status(&mut modules, state)?;
     if let Some(ref mut sender) = sender {
         sender
@@ -242,6 +256,7 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
             .context("Failed to send host status")?;
     }
 
+    info!("Determining update kind");
     let update_kind = modules
         .iter()
         .filter_map(|m| {
@@ -262,6 +277,7 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
         return Ok(());
     };
 
+    info!("Validating host configuration against system state");
     validate_host_config(
         &modules,
         state,
@@ -286,20 +302,25 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
     state
         .with_host_status(|s| s.reconcile_state = ReconcileState::UpdateInProgress(update_kind))?;
 
+    info!("Running prepare");
     prepare(&mut modules, state, host_config)?;
 
     let mount_path = Path::new(UPDATE_ROOT_PATH);
 
     if let UpdateKind::AbUpdate = update_kind {
+        info!("Running provision");
         provision(&mut modules, state, host_config, mount_path)?;
+        info!("Entering /mnt/newroot chroot");
         chroot::enter_update_chroot(mount_path)
             .unstructured("Failed to enter chroot")?
             .execute_and_exit(|| {
+                info!("Running configure");
                 configure(&mut modules, state, host_config)
                     .structured(InternalError::Todo("Failed to configure"))
             })
             .unstructured("Failed to execute in chroot")?;
     } else {
+        info!("Running configure");
         configure(&mut modules, state, host_config)?;
     }
 
@@ -325,8 +346,9 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
                 return Ok(());
             }
 
-            info!("Root device path: {:#?}", root_block_device_path);
+            info!("Closing datastore");
             state.close();
+            info!("Performing transition");
             transition(mount_path, &root_block_device_path, state.host_status())?;
 
             Ok(())
