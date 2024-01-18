@@ -208,6 +208,7 @@ mod tests {
     use indoc::indoc;
     use maplit::hashmap;
     use trident_api::config::{Scripts, ServicingType};
+    use trident_api::constants;
     use trident_api::status::Storage;
 
     #[test]
@@ -284,7 +285,11 @@ mod tests {
         let mut module = HooksModule::default();
         module.prepare(&mut host_status, &host_config).unwrap();
         module
-            .provision(&mut host_status, &host_config, Path::new("/"))
+            .provision(
+                &mut host_status,
+                &host_config,
+                Path::new(constants::ROOT_MOUNT_POINT_PATH),
+            )
             .unwrap();
 
         assert!(test_dir.exists());

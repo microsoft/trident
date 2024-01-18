@@ -448,6 +448,7 @@ fn open_firewall_for_grpc() -> Result<(), Error> {
 mod tests {
     use trident_api::{
         config::{MountPoint, PartitionType, Storage},
+        constants,
         status::{BlockDeviceContents, BlockDeviceInfo, Disk, Partition},
     };
 
@@ -535,7 +536,7 @@ mod tests {
         let host_config_original = HostConfiguration {
             storage: Storage {
                 mount_points: vec![MountPoint {
-                    path: PathBuf::from("/"),
+                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                     target_id: "sda1".to_string(),
                     filesystem: "ext4".to_string(),
                     options: vec![],

@@ -48,9 +48,13 @@ mod rules;
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{
-        AbVolumePair, Disk, EncryptedVolume, Image, ImageFormat, ImageSha256, MountPoint,
-        Partition, PartitionSize, PartitionTableType, PartitionType, RaidLevel, SoftwareRaidArray,
+    use crate::{
+        config::{
+            AbVolumePair, Disk, EncryptedVolume, Image, ImageFormat, ImageSha256, MountPoint,
+            Partition, PartitionSize, PartitionTableType, PartitionType, RaidLevel,
+            SoftwareRaidArray,
+        },
+        constants,
     };
 
     use super::{
@@ -112,7 +116,7 @@ mod tests {
         builder.add_image(&image);
 
         let mount_point = MountPoint {
-            path: "/".into(),
+            path: constants::ROOT_MOUNT_POINT_PATH.into(),
             target_id: "partition6".into(),
             filesystem: "ext4".into(),
             options: Vec::new(),

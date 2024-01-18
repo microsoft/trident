@@ -177,7 +177,10 @@ fn validate_datastore_location(
 
 #[cfg(test)]
 mod tests {
-    use trident_api::config::{AbUpdate, MountPoint, Storage};
+    use trident_api::{
+        config::{AbUpdate, MountPoint, Storage},
+        constants,
+    };
 
     use super::*;
 
@@ -186,7 +189,7 @@ mod tests {
         let host_config = HostConfiguration {
             storage: Storage {
                 mount_points: vec![MountPoint {
-                    path: "/".into(),
+                    path: constants::ROOT_MOUNT_POINT_PATH.into(),
                     target_id: "sda1".into(),
                     filesystem: "ext4".into(),
                     options: vec![],
@@ -208,7 +211,7 @@ mod tests {
             storage: Storage {
                 mount_points: vec![
                     MountPoint {
-                        path: "/".into(),
+                        path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
                         filesystem: "ext4".into(),
                         options: vec![],
@@ -231,7 +234,7 @@ mod tests {
             storage: Storage {
                 mount_points: vec![
                     MountPoint {
-                        path: "/".into(),
+                        path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
                         filesystem: "ext4".into(),
                         options: vec![],
@@ -268,7 +271,7 @@ mod tests {
             storage: Storage {
                 mount_points: vec![
                     MountPoint {
-                        path: "/".into(),
+                        path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
                         filesystem: "ext4".into(),
                         options: vec![],
@@ -305,7 +308,7 @@ mod tests {
             storage: Storage {
                 mount_points: vec![
                     MountPoint {
-                        path: "/".into(),
+                        path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
                         filesystem: "ext4".into(),
                         options: vec![],
@@ -337,6 +340,10 @@ mod tests {
         };
 
         // expect failure, as we cannot land on A/B volume
-        assert!(validate_datastore_location(Path::new("/"), &host_config).is_err());
+        assert!(validate_datastore_location(
+            Path::new(constants::ROOT_MOUNT_POINT_PATH),
+            &host_config
+        )
+        .is_err());
     }
 }

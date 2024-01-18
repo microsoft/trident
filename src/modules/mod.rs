@@ -9,6 +9,7 @@ use log::info;
 
 use trident_api::{
     config::{HostConfiguration, Operations, PartitionType},
+    constants,
     error::{InitializationError, InternalError, ReportError, TridentResultExt},
     status::{
         AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
@@ -368,7 +369,7 @@ fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
     host_status
         .storage
         .mount_points
-        .get(Path::new("/"))
+        .get(Path::new(constants::ROOT_MOUNT_POINT_PATH))
         .and_then(|m| Some(get_block_device(host_status, &m.target_id, false)?.path))
 }
 
@@ -658,6 +659,7 @@ mod test {
 
     use trident_api::{
         config::{Management, PartitionType},
+        constants,
         status::{AbUpdate, AbVolumePair, BlockDeviceContents, Disk, MountPoint, Storage},
     };
 
@@ -701,7 +703,7 @@ mod test {
                         filesystem: "fat32".to_owned(),
                         options: vec![],
                     },
-                    PathBuf::from("/") => MountPoint {
+                    PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPoint {
                         target_id: "root".to_owned(),
                         filesystem: "ext4".to_owned(),
                         options: vec![],

@@ -18,5 +18,8 @@ pub const NONE_MOUNT_POINT: &str = "none";
 /// Swap mount point.
 pub const SWAP_MOUNT_POINT: &str = NONE_MOUNT_POINT;
 
-/// ESP partition mount point path.
+/// ESP volume mount point path.
 pub const ESP_MOUNT_POINT_PATH: &str = "/boot/efi";
+
+/// Root volume mount point path.
+pub const ROOT_MOUNT_POINT_PATH: &str = "/";

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::is_default;
+use crate::{constants, is_default};
 
 pub(super) mod management;
 pub(super) mod network;
@@ -81,7 +81,8 @@ impl HostConfiguration {
             || self.scripts != Scripts::default()
             || self.osconfig != OsConfig::default()
         {
-            self.storage.validate_volume_presence(Path::new("/"))?;
+            self.storage
+                .validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))?;
         }
 
         Ok(())

@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use trident_api::{
     config::MountPoint,
-    constants::SWAP_FILESYSTEM,
+    constants,
     status::{BlockDeviceContents, HostStatus},
 };
 
@@ -72,7 +72,7 @@ impl TabFile {
                     settings.grow_fs,
                     settings.read_only,
                 )?);
-            } else if mp.filesystem == SWAP_FILESYSTEM && !settings.read_only {
+            } else if mp.filesystem == constants::SWAP_FILESYSTEM && !settings.read_only {
                 // systemd does not create swap as a dependency of the
                 // update-fs.target during provisioning OS, so ensure that swap
                 // gets eventually initialized by forcing make_fs to true. Since
@@ -150,7 +150,7 @@ impl TabFile {
         ))?;
         let mount_path = match path_prefix {
             Some(prefix) => {
-                if mp.path == Path::new("/") {
+                if mp.path == Path::new(constants::ROOT_MOUNT_POINT_PATH) {
                     prefix.to_path_buf()
                 } else {
                     prefix.join(mp.path.strip_prefix("/")?)
@@ -182,9 +182,9 @@ impl TabFile {
         let options_str = options.join(",");
         let dump = 0;
         let fsck_pass = match mp.path.to_string_lossy().as_ref() {
-            "none" => 0, // swap is not checked
-            "/" => 1,    // root is checked first
-            _ => 2,      // all other filesystems are checked after root
+            "none" => 0,                           // swap is not checked
+            constants::ROOT_MOUNT_POINT_PATH => 1, // root is checked first
+            _ => 2,                                // all other filesystems are checked after root
         };
 
         Ok(format!(
@@ -239,6 +239,7 @@ mod tests {
             Disk, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, Partition,
             PartitionSize, PartitionTableType, PartitionType, Storage,
         },
+        constants,
         status::{
             BlockDeviceContents, Disk as DiskStatus, HostStatus, Partition as PartitionStatus,
             ReconcileState, Storage as StorageStatus,
@@ -331,7 +332,7 @@ mod tests {
             TabFile::mount_point_to_line(
                 &host_status,
                 &MountPoint {
-                    path: PathBuf::from("/"),
+                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                     filesystem: "ext4".to_owned(),
                     options: vec!["errors=remount-ro".to_owned()],
                     target_id: "root".to_owned(),
@@ -350,7 +351,7 @@ mod tests {
             TabFile::mount_point_to_line(
                 &host_status,
                 &MountPoint {
-                    path: PathBuf::from("/"),
+                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                     filesystem: "vfat".to_owned(),
                     options: vec!["errors=remount-ro".to_owned()],
                     target_id: "root".to_owned(),
@@ -535,7 +536,7 @@ mod tests {
                         target_id: "efi".to_owned(),
                     },
                     MountPoint {
-                        path: PathBuf::from("/"),
+                        path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                         filesystem: "ext4".to_owned(),
                         options: vec!["errors=remount-ro".to_owned()],
                         target_id: "root".to_owned(),
@@ -687,12 +688,14 @@ mod tests {
         tmpfile.flush().unwrap();
 
         assert_eq!(
-            TabFile::get_device_path(tmpfile.path(), Path::new("/boot/efi")).unwrap(),
+            TabFile::get_device_path(tmpfile.path(), Path::new(constants::ESP_MOUNT_POINT_PATH))
+                .unwrap(),
             PathBuf::from("/dev/sda1")
         );
 
         assert_eq!(
-            TabFile::get_device_path(tmpfile.path(), Path::new("/")).unwrap(),
+            TabFile::get_device_path(tmpfile.path(), Path::new(constants::ROOT_MOUNT_POINT_PATH))
+                .unwrap(),
             PathBuf::from("/dev/sda2")
         );
 

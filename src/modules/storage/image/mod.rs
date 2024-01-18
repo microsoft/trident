@@ -406,8 +406,11 @@ fn get_undeployed_images<'a>(
 pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Error> {
     // update root_device_path of the active root volume
     host_status.storage.root_device_path = Some(
-        TabFile::get_device_path(Path::new("/proc/mounts"), Path::new("/"))
-            .context("Failed find root mount point")?,
+        TabFile::get_device_path(
+            Path::new("/proc/mounts"),
+            Path::new(constants::ROOT_MOUNT_POINT_PATH),
+        )
+        .context("Failed find root mount point")?,
     );
 
     // if a/b update is enabled
@@ -416,7 +419,7 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
         if let Some(root_device_id) = host_status
             .storage
             .mount_points
-            .get(Path::new("/"))
+            .get(Path::new(constants::ROOT_MOUNT_POINT_PATH))
             .map(|m| &m.target_id)
         {
             // and one of the a/b update volumes points to the root volume
@@ -527,7 +530,7 @@ pub(super) fn configure(
     let root_id = &host_status
         .storage
         .mount_points
-        .get(Path::new("/"))
+        .get(Path::new(constants::ROOT_MOUNT_POINT_PATH))
         .context("Failed to find root partition")?
         .target_id;
 
@@ -536,7 +539,8 @@ pub(super) fn configure(
         udevadm::settle()?;
         let root_uuid = update_grub::get_uuid_from_path(&root_part.path)?;
 
-        let root_grub_config_path = Path::new("/").join(update_grub::GRUB_BOOT_CONFIG_PATH);
+        let root_grub_config_path =
+            Path::new(constants::ROOT_MOUNT_POINT_PATH).join(update_grub::GRUB_BOOT_CONFIG_PATH);
 
         // Call update_grub() to update the UUID of root FS and if needed,
         // PARTUUID of root partition inside GRUB config files
@@ -637,7 +641,7 @@ mod tests {
                         options: vec![],
                     },
                     MountPoint {
-                        path: PathBuf::from("/"),
+                        path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                         target_id: "root".to_string(),
                         filesystem: "ext4".to_string(),
                         options: vec![],
@@ -709,7 +713,7 @@ mod tests {
                         filesystem: "fat32".to_string(),
                         options: vec![],
                     },
-                    PathBuf::from("/") => MountPointStatus {
+                    PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPointStatus {
                         target_id: "root".to_string(),
                         filesystem: "ext4".to_string(),
                         options: vec![],
@@ -804,7 +808,7 @@ mod tests {
                         options: vec![],
                     },
                     MountPoint {
-                        path: PathBuf::from("/"),
+                        path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                         target_id: "root".to_string(),
                         filesystem: "ext4".to_string(),
                         options: vec![],
@@ -883,7 +887,7 @@ mod tests {
                         filesystem: "fat32".to_string(),
                         options: vec![],
                     },
-                    PathBuf::from("/") => MountPointStatus {
+                    PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPointStatus {
                         target_id: "root".to_string(),
                         filesystem: "ext4".to_string(),
                         options: vec![],

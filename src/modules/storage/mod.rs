@@ -333,9 +333,12 @@ fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, E
 mod tests {
     use std::str::FromStr;
 
-    use trident_api::config::{
-        Disk, HostConfiguration, Image, ImageFormat, ImageSha256, Partition, PartitionSize,
-        PartitionType, RaidConfig, RaidLevel, SoftwareRaidArray, Storage,
+    use trident_api::{
+        config::{
+            Disk, HostConfiguration, Image, ImageFormat, ImageSha256, Partition, PartitionSize,
+            PartitionType, RaidConfig, RaidLevel, SoftwareRaidArray, Storage,
+        },
+        constants,
     };
 
     use super::*;
@@ -353,7 +356,7 @@ mod tests {
                 disks: vec![
                     Disk {
                         id: "disk1".to_owned(),
-                        device: "/".into(),
+                        device: constants::ROOT_MOUNT_POINT_PATH.into(),
                         ..Default::default()
                     },
                     Disk {
@@ -397,7 +400,7 @@ mod tests {
                     filesystem: "ext4".to_owned(),
                     options: vec![],
                     target_id: "part1".to_owned(),
-                    path: PathBuf::from("/"),
+                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                 }],
                 images: vec![Image {
                     target_id: "part1".to_owned(),

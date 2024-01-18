@@ -13,7 +13,7 @@ use std::{
     fs::{self, File},
     io::Read,
     option::Option,
-    path::PathBuf,
+    path::{self, PathBuf},
     process::Command,
 };
 
@@ -577,7 +577,7 @@ fn filename_dir_from_url(image_url: &str) -> Result<(PathBuf, String), Error> {
 
     // Rebuild the URL without the file name segment
     let mut url_without_file = parsed_url.clone();
-    url_without_file.set_path(&segments.join("/"));
+    url_without_file.set_path(&segments.join(path::MAIN_SEPARATOR_STR));
     let dir_path = PathBuf::from(url_without_file.to_string());
 
     Ok((dir_path, file_name))

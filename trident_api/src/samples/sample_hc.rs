@@ -6,11 +6,14 @@ use netplan_types::{
     NetworkConfig,
 };
 
-use crate::config::{
-    AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption, HostConfiguration,
-    Image, ImageFormat, ImageSha256, MountPoint, OsConfig, Partition, PartitionSize,
-    PartitionTableType, PartitionType, RaidConfig, RaidLevel, Script, Scripts, ServicingType,
-    SoftwareRaidArray, SshMode, Storage, User,
+use crate::{
+    config::{
+        AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption,
+        HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, OsConfig, Partition,
+        PartitionSize, PartitionTableType, PartitionType, RaidConfig, RaidLevel, Script, Scripts,
+        ServicingType, SoftwareRaidArray, SshMode, Storage, User,
+    },
+    constants,
 };
 use url::Url;
 
@@ -94,7 +97,7 @@ pub fn sample_host_configuration() -> HostConfiguration {
                     options: vec!["umask=0077".into()],
                 },
                 MountPoint {
-                    path: "/".into(),
+                    path: constants::ROOT_MOUNT_POINT_PATH.into(),
                     target_id: "root".into(),
                     filesystem: "ext4".into(),
                     options: vec!["defaults".into()],

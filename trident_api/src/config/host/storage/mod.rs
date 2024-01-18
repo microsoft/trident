@@ -354,7 +354,7 @@ impl Storage {
 
         // Root volume must be present and backed by an image, unless this is no-op
         if *self != Storage::default() {
-            self.validate_volume_presence(Path::new("/"))?;
+            self.validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))?;
             self.validate_volume_presence(Path::new(constants::ESP_MOUNT_POINT_PATH))?;
         }
 
@@ -428,7 +428,7 @@ mod tests {
             disks: vec![
                 Disk {
                     id: "disk1".to_owned(),
-                    device: "/".into(),
+                    device: constants::ROOT_MOUNT_POINT_PATH.into(),
                     ..Default::default()
                 },
                 Disk {
@@ -498,7 +498,7 @@ mod tests {
             },
             mount_points: vec![
                 MountPoint {
-                    path: PathBuf::from("/"),
+                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                     filesystem: "ext4".to_owned(),
                     options: Vec::new(),
                     target_id: "root".to_owned(),
@@ -549,7 +549,9 @@ mod tests {
     #[test]
     fn test_validate_volume_presence() {
         let storage = test_storage();
-        storage.validate_volume_presence(Path::new("/")).unwrap();
+        storage
+            .validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))
+            .unwrap();
 
         storage
             .validate_volume_presence(Path::new("/boot/efi"))
@@ -567,10 +569,10 @@ mod tests {
         let mut storage = test_storage();
         storage
             .mount_points
-            .retain(|mp| mp.path != PathBuf::from("/"));
+            .retain(|mp| mp.path != PathBuf::from(constants::ROOT_MOUNT_POINT_PATH));
         assert_eq!(
             storage
-                .validate_volume_presence(Path::new("/"))
+                .validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -581,7 +583,7 @@ mod tests {
         storage.images.retain(|image| image.target_id != "root");
         assert_eq!(
             storage
-                .validate_volume_presence(Path::new("/"))
+                .validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -705,7 +707,7 @@ mod tests {
                     filesystem: "ext4".to_string(),
                     options: vec![],
                     target_id: "disk1-partition2".to_string(),
-                    path: PathBuf::from("/"),
+                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                 },
                 MountPoint {
                     filesystem: "ext4".to_string(),
@@ -745,7 +747,7 @@ mod tests {
                     filesystem: "ext4".to_string(),
                     options: vec![],
                     target_id: "ab-update-volume-pair".to_string(),
-                    path: PathBuf::from("/"),
+                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                 },
                 MountPoint {
                     filesystem: "ext4".to_string(),
@@ -816,7 +818,7 @@ mod tests {
             disks: vec![
                 Disk {
                     id: "disk1".to_owned(),
-                    device: "/".into(),
+                    device: constants::ROOT_MOUNT_POINT_PATH.into(),
                     ..Default::default()
                 },
                 Disk {
@@ -866,7 +868,7 @@ mod tests {
                     filesystem: "ext4".to_owned(),
                     options: vec![],
                     target_id: "ab1".to_owned(),
-                    path: PathBuf::from("/"),
+                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                 },
                 MountPoint {
                     filesystem: "ext4".to_owned(),
