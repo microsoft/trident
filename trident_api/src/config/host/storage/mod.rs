@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{ensure, Context, Error};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
@@ -345,48 +345,27 @@ impl Storage {
     ///
     /// This function will validate the storage configuration and return an error
     /// if the configuration is invalid.
-    pub fn validate(&self) -> Result<(), Error> {
+    pub fn validate(&self, require_root_mount_point: bool) -> Result<(), Error> {
         // Check basic constraints
 
         if let Some(encryption) = &self.encryption {
             encryption.validate()?;
         }
 
-        // Root volume must be present and backed by an image, unless this is no-op
-        if *self != Storage::default() {
-            self.validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))?;
-            self.validate_volume_presence(Path::new(constants::ESP_MOUNT_POINT_PATH))?;
-        }
-
         // Build the graph
-        self.build_graph()
-            .map(|_| ())
-            .context("Storage configuration is invalid")
-    }
+        let graph = self
+            .build_graph()
+            .context("Storage configuration is invalid")?;
 
-    /// Check that a mount point for a volume is present and that it is
-    /// backed by an image. This is to make sure that Trident can detect the
-    /// volume and the volume is initialized using customer provided
-    /// image, not just an empty filesystem.
-    pub fn validate_volume_presence(&self, mount_point_path: &Path) -> Result<(), Error> {
-        let mount_point = self
-            .mount_points
-            .iter()
-            .find(|mp| mp.path == mount_point_path)
-            .context(format!(
-                "'{}' mount point must be present",
-                mount_point_path.display()
-            ))?;
-
-        let image = self
-            .images
-            .iter()
-            .find(|image| image.target_id == mount_point.target_id);
-        if image.is_none() {
-            bail!(format!(
-                "'{}' mount point must be backed by an image",
-                mount_point_path.display()
-            ));
+        // If storage configuration is requested, then ESP volume must be
+        // present, to update Grub configuration
+        if *self != Storage::default() {
+            graph.validate_volume_presence(Path::new(constants::ESP_MOUNT_POINT_PATH))?;
+        }
+        // If either storage configuration is requested or other modules require
+        // root mount point, ensure the root mount point is present
+        if require_root_mount_point || *self != Storage::default() {
+            graph.validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))?;
         }
 
         Ok(())
@@ -546,51 +525,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_validate_volume_presence() {
-        let storage = test_storage();
-        storage
-            .validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))
-            .unwrap();
-
-        storage
-            .validate_volume_presence(Path::new("/boot/efi"))
-            .unwrap();
-
-        assert_eq!(
-            storage
-                .validate_volume_presence(Path::new("/foobar"))
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "'/foobar' mount point must be present"
-        );
-
-        let mut storage = test_storage();
-        storage
-            .mount_points
-            .retain(|mp| mp.path != PathBuf::from(constants::ROOT_MOUNT_POINT_PATH));
-        assert_eq!(
-            storage
-                .validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "'/' mount point must be present"
-        );
-
-        let mut storage = test_storage();
-        storage.images.retain(|image| image.target_id != "root");
-        assert_eq!(
-            storage
-                .validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "'/' mount point must be backed by an image"
-        );
-    }
-
     /// Test that validates that to_sdrepart_part_type() returns the correct string for each
     /// PartitionType.
     #[test]
@@ -732,7 +666,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
 
         let mount_volume_pair = Storage {
             ab_update: Some(AbUpdate {
@@ -772,7 +706,7 @@ mod tests {
             ],
             ..storage.clone()
         };
-        mount_volume_pair.validate().unwrap();
+        mount_volume_pair.validate(true).unwrap();
 
         let bad_volume_pair = Storage {
             ab_update: Some(AbUpdate {
@@ -784,7 +718,14 @@ mod tests {
             }),
             ..storage.clone()
         };
-        assert!(bad_volume_pair.validate().is_err());
+        assert_eq!(
+            bad_volume_pair
+                .validate(true)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Block device 'ab-update-volume-pair' of kind 'A/B volume' references target 'disk1-partition1' more than once"
+        );
 
         let bad_volume_pair_id = Storage {
             ab_update: Some(AbUpdate {
@@ -796,7 +737,14 @@ mod tests {
             }),
             ..storage.clone()
         };
-        assert!(bad_volume_pair_id.validate().is_err());
+        assert_eq!(
+            bad_volume_pair_id
+                .validate(true)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Block device disk1 is defined more than once"
+        );
 
         let bad_image_target = Storage {
             images: vec![Image {
@@ -807,12 +755,19 @@ mod tests {
             }],
             ..storage.clone()
         };
-        assert!(bad_image_target.validate().is_err());
+        assert_eq!(
+            bad_image_target
+                .validate(true)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Image 'http://example.com/image' references non-existent block device 'disk99'"
+        );
     }
 
     #[test]
     fn test_validate2() {
-        Storage::default().validate().unwrap();
+        Storage::default().validate(false).unwrap();
 
         let mut storage = Storage {
             disks: vec![
@@ -900,7 +855,7 @@ mod tests {
             }),
             encryption: None,
         };
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
 
         let storage_golden = storage.clone();
 
@@ -911,42 +866,64 @@ mod tests {
             partition_type: PartitionType::Esp,
             size: PartitionSize::from_str("1M").unwrap(),
         }];
-        assert!(storage.validate().is_err());
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device part1 is defined more than once"
+        );
 
         // fail on duplicate id
         storage = storage_golden.clone();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
-        assert!(storage.validate().is_err());
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device disk1 is defined more than once"
+        );
 
         // fail on missing reference (disk4 does not exist)
         storage = storage_golden.clone();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "disk4".to_owned();
-        assert!(storage.validate().is_err());
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'ab1' of kind 'A/B volume' references non-existent block device 'disk4'"
+        );
 
         // fail on missing reference (disk4 does not exist)
         storage = storage_golden.clone();
         storage.images[0].target_id = "disk4".to_owned();
-        assert!(storage.validate().is_err());
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Image 'https://some/url' references non-existent block device 'disk4'"
+        );
 
         // fail on missing reference (disk4 does not exist)
         storage = storage_golden.clone();
         storage.mount_points[0].target_id = "disk4".to_owned();
-        assert!(storage.validate().is_err());
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Mount point '/' references non-existent block device 'disk4'"
+        );
 
         // fail on bad block device type
         storage = storage_golden.clone();
         storage.images[0].target_id = "disk1".to_owned();
-        assert!(storage.validate().is_err());
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Image 'https://some/url' references block device 'disk1' of invalid kind 'disk', acceptable kinds are: partition or RAID array or A/B volume or encrypted volume"
+        );
 
         // fail if devices are not all the same size for a RAID
+        storage = storage_golden.clone();
         storage.disks[1].partitions[3].size = PartitionSize::from_str("2G").unwrap();
-        assert!(storage.validate().is_err());
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'my-raid1' of kind 'RAID array' references invalid targets"
+        );
     }
 
     #[test]
     fn test_validate_encryption_pass() {
         let storage: Storage = test_storage();
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// A/B update volume pairs can target encrypted volumes (A)
@@ -956,7 +933,7 @@ mod tests {
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "srv".to_owned();
         // Delete mount point associated with "srv", otherwise this would fail
         storage.mount_points.retain(|mp| mp.target_id != "srv");
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// A/B update volume pairs can target encrypted volumes (B)
@@ -966,7 +943,7 @@ mod tests {
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "srv".to_owned();
         // Delete mount point associated with "srv", otherwise this would fail
         storage.mount_points.retain(|mp| mp.target_id != "srv");
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Software RAID arrays must have one or more devices
@@ -974,7 +951,10 @@ mod tests {
     fn test_validate_software_raid_array_no_devices_fail() {
         let mut storage: Storage = test_storage();
         storage.raid.software[0].devices = Vec::new();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'mnt' of kind 'RAID array' has 0 members, but must have at least 2 target(s)"
+        );
     }
 
     /// Software RAID arrays cannot target encrypted volumes
@@ -982,8 +962,11 @@ mod tests {
     fn test_validate_software_raid_target_id_encryption_fail() {
         let mut storage: Storage = test_storage();
         storage.raid.software[0].devices[0] = "srv".to_owned();
-        eprintln!("{:?}", storage.validate().unwrap_err());
-        storage.validate().unwrap_err();
+        eprintln!("{:?}", storage.validate(true).unwrap_err());
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'mnt' of kind 'RAID array' references block device 'srv' of invalid kind 'encrypted volume', acceptable kinds are: partition"
+        );
     }
 
     /// Encrypted volumes and disks must not share the same id
@@ -991,7 +974,10 @@ mod tests {
     fn test_validate_encryption_disks_share_id_fail() {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "disk1".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device disk1 is defined more than once"
+        );
     }
 
     /// Encrypted volumes and partitions must not share the same id
@@ -999,7 +985,10 @@ mod tests {
     fn test_validate_encryption_partitions_share_id_fail() {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "esp".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device esp is defined more than once"
+        );
     }
 
     /// Encrypted volumes and software RAID arrays must not share the same id
@@ -1007,7 +996,10 @@ mod tests {
     fn test_validate_encryption_raid_arrays_share_id_fail() {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "mnt".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device mnt is defined more than once"
+        );
     }
 
     /// Encrypted volumes and A/B update volume pairs must not share the same id
@@ -1015,7 +1007,10 @@ mod tests {
     fn test_validate_encryption_ab_update_volume_pairs_share_id_fail() {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "root".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device root is defined more than once"
+        );
     }
 
     /// Encrypted volumes themselves must not share the same id
@@ -1038,7 +1033,10 @@ mod tests {
                 target_id: "alt-enc".to_owned(),
             });
 
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device srv is defined more than once"
+        );
     }
 
     /// Encrypted volume device names must be unique
@@ -1066,7 +1064,10 @@ mod tests {
             options: Vec::new(),
             target_id: "alt".to_owned(),
         });
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'srv' and 'alt' of kind 'encrypted volume' have a duplicate value for field 'name' ('luks-srv')"
+        );
     }
 
     /// Encryption recovery key may have file scheme
@@ -1075,7 +1076,7 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().recovery_key_url =
             Some(Url::parse("file:///path/to/recovery.key").unwrap());
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Encryption recovery key must not have https scheme
@@ -1084,7 +1085,10 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().recovery_key_url =
             Some(Url::parse("https://www.example.com/recovery.key").unwrap());
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Encryption recovery key URL 'https://www.example.com/recovery.key' has an invalid scheme 'https'"
+        );
     }
 
     /// Encrypted volume target ID may be a home partition
@@ -1092,7 +1096,7 @@ mod tests {
     fn test_validate_encryption_target_id_home_pass() {
         let mut storage: Storage = test_storage();
         storage.disks[1].partitions[5].partition_type = PartitionType::Home;
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Encrypted volume target ID must not be an esp partition
@@ -1102,7 +1106,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "esp".to_owned();
         storage.mount_points.remove(1);
         storage.images.remove(0);
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'srv' of kind 'encrypted volume' references invalid targets"
+        );
     }
 
     /// Encrypted volume target ID must not be a root partition
@@ -1112,7 +1119,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-a".to_owned();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id =
             "root-a-verity".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'srv' of kind 'encrypted volume' references invalid targets"
+        );
     }
 
     /// Encrypted volume target ID must not be a root-verity partition
@@ -1127,7 +1137,10 @@ mod tests {
             .get_mut(0)
             .unwrap()
             .target_id = "root-a-verity".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'srv' of kind 'encrypted volume' references invalid targets"
+        );
     }
 
     /// Encrypted volume target ID may be a software RAID array of home partitions
@@ -1138,7 +1151,7 @@ mod tests {
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Home;
         storage.disks[1].partitions[4].partition_type = PartitionType::Home;
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Encrypted volume target ID must not be a software RAID array of esp partitions
@@ -1149,7 +1162,7 @@ mod tests {
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Esp;
         storage.disks[1].partitions[4].partition_type = PartitionType::Esp;
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Encrypted volume target ID must not be a software RAID array of root partitions
@@ -1160,7 +1173,7 @@ mod tests {
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Root;
         storage.disks[1].partitions[4].partition_type = PartitionType::Root;
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Encrypted volume target ID must not be a software RAID array of root-verity partitions
@@ -1185,7 +1198,7 @@ mod tests {
             .get_mut(4)
             .unwrap()
             .partition_type = PartitionType::RootVerity;
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Encrypted volume target ID must not be a software RAID array of no devices.
@@ -1194,7 +1207,10 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.raid.software[0].devices = Vec::new();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'mnt' of kind 'RAID array' has 0 members, but must have at least 2 target(s)"
+        );
     }
 
     /// Encrypted volume target ID must not be a software RAID array of A/B update volume pairs.
@@ -1204,7 +1220,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.raid.software[0].devices = vec!["root".to_owned()];
         // Remove the first mount point
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'mnt' of kind 'RAID array' has 1 members, but must have at least 2 target(s)"
+        );
     }
 
     /// Encrypted volume target ID must not be a disk
@@ -1212,7 +1231,10 @@ mod tests {
     fn test_validate_encryption_target_id_disk_fail() {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "disk1".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'srv' of kind 'encrypted volume' references block device 'disk1' of invalid kind 'disk', acceptable kinds are: partition or RAID array"
+        );
     }
 
     /// Encrypted volume target ID can be a software RAID array instead of a partition
@@ -1221,7 +1243,7 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Encrypted volume target ID must not be an A/B update volume pair
@@ -1231,7 +1253,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root".to_owned();
         storage.images.remove(1);
         storage.mount_points.remove(0);
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'srv' of kind 'encrypted volume' references block device 'root' of invalid kind 'A/B volume', acceptable kinds are: partition or RAID array"
+        );
     }
 
     /// Encrypted volume target IDs must be unique
@@ -1254,7 +1279,10 @@ mod tests {
             options: Vec::new(),
             target_id: "alt".to_owned(),
         });
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'srv-enc' of kind 'partition' is referenced by multiple block devices: 'alt' and 'srv'"
+        );
     }
 
     /// Encrypted volumes cannot target the same partition as a mount point
@@ -1263,7 +1291,10 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
         storage.mount_points[2].target_id = "mnt-raid-1".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'mnt-raid-1' of kind 'partition' is referenced by multiple block devices: 'mnt' and 'srv'"
+        );
     }
 
     /// Encrypted volumes cannot target the same partition as a software RAID array
@@ -1271,7 +1302,10 @@ mod tests {
     fn test_validate_encryption_software_raid_target_part_id_equal_fail() {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'mnt-raid-1' of kind 'partition' is referenced by multiple block devices: 'mnt' and 'srv'"
+        );
     }
 
     /// Encrypted volumes cannot target the same partition as A/B update volume pair (A)
@@ -1281,7 +1315,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-a".to_owned();
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'root-a' of kind 'partition' is referenced by multiple block devices: 'root' and 'srv'"
+        );
     }
 
     /// Encrypted volumes cannot target the same partition as A/B update volume pair (B)
@@ -1291,7 +1328,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-b".to_owned();
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'root-b' of kind 'partition' is referenced by multiple block devices: 'root' and 'srv'"
+        );
     }
 
     /// Encrypted volumes cannot target the same software RAID array as an A/B update volume pair (A)
@@ -1301,7 +1341,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2); // remove /mnt mount point
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "mnt".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'mnt' of kind 'RAID array' is referenced by multiple block devices: 'root' and 'srv'"
+        );
     }
 
     /// Encrypted volumes cannot target the same software RAID array as an A/B update volume pair (B)
@@ -1311,7 +1354,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2); // remove /mnt mount point
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "mnt".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Block device 'mnt' of kind 'RAID array' is referenced by multiple block devices: 'root' and 'srv'"
+        );
     }
 
     /// Encrypted volumes cannot target the same partition as an image
@@ -1319,7 +1365,10 @@ mod tests {
     fn test_validate_encryption_image_target_part_id_equal_fail() {
         let mut storage: Storage = test_storage();
         storage.images[0].target_id = "srv-enc".to_owned();
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Image 'file:///esp.raw.zst' references block device 'srv-enc' that is already in use by 'srv'"
+        );
     }
 
     /// Image must be an A/B update volume pair if format is raw-lzma
@@ -1328,7 +1377,7 @@ mod tests {
     fn test_validate_image_raw_lzma_ab_update_volume_pair_pass() {
         let mut storage: Storage = test_storage();
         storage.images[1].format = ImageFormat::RawLzma;
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 
     /// Image must not be a partition if format is ram-lzma
@@ -1337,7 +1386,10 @@ mod tests {
     fn test_validate_image_raw_lzma_partition_fail() {
         let mut storage: Storage = test_storage();
         storage.images[0].format = ImageFormat::RawLzma;
-        storage.validate().unwrap_err();
+        assert_eq!(
+            storage.validate(true).unwrap_err().root_cause().to_string(),
+            "Image 'file:///esp.raw.zst' references block device 'esp' of invalid kind 'partition', acceptable kinds are: A/B volume"
+        );
     }
 
     /// Images can target encrypted volumes
@@ -1352,6 +1404,6 @@ mod tests {
             format: ImageFormat::RawZstd,
         });
         storage.images = images;
-        storage.validate().unwrap();
+        storage.validate(true).unwrap();
     }
 }

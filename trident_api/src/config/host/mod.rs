@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use anyhow::Error;
 use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
@@ -7,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{constants, is_default};
+use crate::is_default;
 
 pub(super) mod management;
 pub(super) mod network;
@@ -69,21 +67,13 @@ pub struct HostConfiguration {
 
 impl HostConfiguration {
     pub fn validate(&self) -> Result<(), Error> {
-        self.storage.validate()?;
-        self.osconfig.validate()?;
-        self.scripts.validate()?;
-
-        // Cross module validation
-
-        // If either management, scripts or osconfig is specified, then root mount point
-        // must be defined
-        if self.management != Management::default()
+        let require_root_mount_point = self.management != Management::default()
             || self.scripts != Scripts::default()
             || self.osconfig != OsConfig::default()
-        {
-            self.storage
-                .validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))?;
-        }
+            || self.network.is_some();
+        self.storage.validate(require_root_mount_point)?;
+        self.osconfig.validate()?;
+        self.scripts.validate()?;
 
         Ok(())
     }
