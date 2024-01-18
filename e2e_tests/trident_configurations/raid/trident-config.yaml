@@ -1,0 +1,136 @@
+hostConfiguration:
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+        partitionTableType: gpt
+        partitions:
+          - id: esp1
+            type: esp
+            size: 100M
+          - id: root-a1
+            type: root
+            size: 4G
+          - id: root-b1
+            type: root
+            size: 1G
+          - id: swap1
+            type: swap
+            size: 1G
+          - id: home1
+            type: home
+            size: 100M
+          - id: trident1
+            type: linux-generic
+            size: 100M
+          - id: root-a2
+            type: root
+            size: 4G
+          - id: root-b2
+            type: root
+            size: 1G
+          - id: swap2
+            type: swap
+            size: 1G
+          - id: home2
+            type: home
+            size: 100M
+          - id: trident2
+            type: linux-generic
+            size: 100M
+    raid:
+      software:
+      - id: root-a
+        name: root-a
+        level: raid1
+        devices:
+        - root-a1
+        - root-a2
+        metadataVersion: '1.0'
+      - id: root-b
+        name: root-b
+        level: raid1
+        devices:
+        - root-b1
+        - root-b2
+        metadataVersion: '1.0'
+      - id: home
+        name: home
+        level: raid1
+        devices:
+        - home1
+        - home2
+        metadataVersion: '1.0'
+      - id: trident
+        name: trident
+        level: raid1
+        devices:
+        - trident1
+        - trident2
+        metadataVersion: '1.0'
+    mountPoints:
+      - path: /boot/efi
+        targetId: esp1
+        filesystem: vfat
+        options: ["umask=0077"]
+      - path: /
+        targetId: root
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /home
+        targetId: home
+        filesystem: ext4
+        options: ["defaults"]
+      - path: none
+        targetId: swap1
+        filesystem: swap
+        options: ["sw"]
+      - path: none
+        targetId: swap2
+        filesystem: swap
+        options: ["sw"]
+      - path: /var/lib/trident
+        targetId: trident
+        filesystem: ext4
+        options: ["defaults"]
+    images:
+      - url: file:///trident_cdrom/data/esp.rawzst
+        sha256: ignored
+        format: raw-zstd
+        targetId: esp1
+      - url: file:///trident_cdrom/data/root.rawzst
+        sha256: ignored
+        format: raw-zstd
+        targetId: root
+    abUpdate:
+      volumePairs:
+        - id: root
+          volumeAId: root-a
+          volumeBId: root-b
+  network:
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+    version: 2
+  management:
+    selfUpgrade: false
+  osconfig:
+    users:
+    - name: testing-user
+      sshKeys: []
+      sshMode: key-only
+  scripts:
+    postProvision:
+    - name: sample-provision-script
+      servicingType:
+      - clean-install
+      - ab-update
+      content: echo 'Post provision!'
+      logFilePath: /var/log/sample-provision-script.log
+    postConfigure:
+    - name: testing-privilege
+      servicingType:
+      - clean-install
+      content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
