@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -327,6 +330,21 @@ impl Storage {
             .flat_map(|(_block_device_id, disk)| &disk.partitions)
             .find(|p| p.id == *block_device_id)
     }
+
+    /// Returns the mount point and relative path for a given path.
+    ///
+    /// The mount point is the closest parent directory of the path that is a
+    /// mount point. The relative path is the path relative to the mount point.
+    pub fn get_mount_point_and_relative_path<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> Option<(&MountPoint, &Path)> {
+        self.mount_points
+            .iter()
+            .filter(|(k, _)| path.starts_with(k))
+            .max_by_key(|(k, _)| k.components().count())
+            .and_then(|(k, v)| Some((v, path.strip_prefix(k).ok()?)))
+    }
 }
 
 #[cfg(test)]
@@ -517,6 +535,117 @@ mod tests {
         assert_eq!(
             host_status.get_ab_volume_partition(&"nonexistent".to_owned()),
             None
+        );
+    }
+
+    #[test]
+    fn test_get_mount_point_and_relative_path() {
+        let host_status = HostStatus {
+            storage: Storage {
+                mount_points: btreemap! {
+                    PathBuf::from("/") => MountPoint {
+                        target_id: "root".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    PathBuf::from("/boot") => MountPoint {
+                        target_id: "boot".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    PathBuf::from("/boot/efi") => MountPoint {
+                        target_id: "efi".into(),
+                        filesystem: "vfat".into(),
+                        options: vec![],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            host_status
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/")),
+            Some((
+                &MountPoint {
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                Path::new("")
+            ))
+        );
+
+        assert_eq!(
+            host_status
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi.cfg")),
+            Some((
+                &MountPoint {
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                Path::new("efi.cfg")
+            ))
+        );
+
+        assert_eq!(
+            host_status
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi")),
+            Some((
+                &MountPoint {
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+                Path::new("")
+            ))
+        );
+
+        assert_eq!(
+            host_status
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/")),
+            Some((
+                &MountPoint {
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+                Path::new("")
+            ))
+        );
+
+        assert_eq!(
+            host_status
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/foobar")),
+            Some((
+                &MountPoint {
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+                Path::new("foobar")
+            ))
+        );
+
+        assert_eq!(
+            host_status
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/foobar/")),
+            Some((
+                &MountPoint {
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+                Path::new("foobar")
+            ))
         );
     }
 }

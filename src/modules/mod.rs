@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    fs::{self, File},
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -10,7 +10,7 @@ use log::info;
 use trident_api::{
     config::{HostConfiguration, Operations, PartitionType},
     constants,
-    error::{InitializationError, InternalError, ReportError, TridentResultExt},
+    error::{InitializationError, InternalError, ManagementError, ReportError, TridentResultExt},
     status::{
         AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
     },
@@ -20,12 +20,11 @@ use trident_api::{
 use osutils::{
     chroot,
     efibootmgr::{self, EfiBootManagerOutput},
-    files::create_dirs,
 };
 
 use crate::{
     datastore::DataStore, modules::storage::image::mount, protobufs::HostStatusState,
-    TRIDENT_DATASTORE_PATH,
+    TRIDENT_DATASTORE_REF_PATH,
 };
 use crate::{
     modules::{
@@ -166,14 +165,27 @@ pub(super) fn provision_host(
     let mount_path = Path::new(UPDATE_ROOT_PATH);
     provision(&mut modules, state, host_config, mount_path)?;
 
+    let datastore_ref =
+        File::create(TRIDENT_DATASTORE_REF_PATH).context("Failed to create datastore ref file")?;
     let chroot = chroot::enter_update_chroot(mount_path).unstructured("Failed to enter chroot")?;
-    let datastore_path = get_datastore_path(host_config);
+    let datastore_path = state
+        .host_status()
+        .management
+        .datastore_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
     let mut root_device_path = None;
     chroot
         .execute_and_exit(|| {
             state
-                .persist(datastore_path)
-                .structured(InternalError::Todo("Failed to persist datastore"))?;
+                .persist(&datastore_path)
+                .structured(ManagementError::PersistDatastore)?;
+
+            management::record_datastore_location(
+                state.host_status(),
+                &datastore_path,
+                datastore_ref,
+            )?;
 
             configure(&mut modules, state, host_config)
                 .structured(InternalError::Todo("Failed to configure"))?;
@@ -193,6 +205,7 @@ pub(super) fn provision_host(
                 drop(sender);
             }
 
+            state.close();
             Ok(())
         })
         .unstructured("Failed to execute in chroot")?;
@@ -201,38 +214,11 @@ pub(super) fn provision_host(
 
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
-
-        // Store the generated config on the current root partition so that it can
-        // be used later if need be prior to rebooting.
-        let datastore_source_path = Path::new(UPDATE_ROOT_PATH).join(
-            datastore_path
-                .strip_prefix("/")
-                .context("Datastore path must be absolute")?,
-        );
-
-        create_dirs(datastore_path.parent().context(format!(
-            "Cannot get parent directory of datastore path: {}",
-            datastore_path.display()
-        ))?)
-        .context(format!(
-            "Failed to create parent directory for datastore path: {}",
-            datastore_path.display()
-        ))?;
-
-        fs::copy(&datastore_source_path, datastore_path).context(format!(
-            "Failed to copy generated config from {} to {}",
-            datastore_source_path.display(),
-            datastore_path.display()
-        ))?;
-
         mount::unmount_updated_volumes(mount_path).context("Failed to unmount target volumes")?;
-
-        return Ok(());
+    } else {
+        info!("Root device path: {:#?}", root_device_path);
+        transition(mount_path, &root_device_path, state.host_status())?;
     }
-
-    info!("Root device path: {:#?}", root_device_path);
-    state.close();
-    transition(mount_path, &root_device_path, state.host_status())?;
 
     Ok(())
 }
@@ -354,14 +340,6 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
             unreachable!()
         }
     }
-}
-
-pub(super) fn get_datastore_path(host_config: &HostConfiguration) -> &Path {
-    host_config
-        .management
-        .datastore_path
-        .as_deref()
-        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH))
 }
 
 /// Using the / mount point, figure out what should be used as a root block device.
@@ -663,7 +641,7 @@ mod test {
     use uuid::Uuid;
 
     use trident_api::{
-        config::{Management, PartitionType},
+        config::PartitionType,
         constants,
         status::{AbUpdate, AbVolumePair, BlockDeviceContents, Disk, MountPoint, Storage},
     };
@@ -1073,35 +1051,6 @@ mod test {
                 contents: BlockDeviceContents::Unknown,
             })
         );
-    }
-
-    #[test]
-    fn test_get_datastore_path() {
-        let host_config = HostConfiguration {
-            ..Default::default()
-        };
-        assert_eq!(
-            get_datastore_path(&host_config),
-            Path::new(TRIDENT_DATASTORE_PATH)
-        );
-
-        let host_config = HostConfiguration {
-            management: Default::default(),
-            ..Default::default()
-        };
-        assert_eq!(
-            get_datastore_path(&host_config),
-            Path::new(TRIDENT_DATASTORE_PATH)
-        );
-
-        let host_config = HostConfiguration {
-            management: Management {
-                datastore_path: Some(PathBuf::from("/foo")),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert_eq!(get_datastore_path(&host_config), Path::new("/foo"));
     }
 
     #[test]

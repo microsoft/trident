@@ -248,6 +248,22 @@ impl Module for StorageModule {
         image::provision(host_status, host_config, mount_point)
             .context("Image submodule failed during provision")?;
 
+        host_status.storage.mount_points = host_config
+            .storage
+            .mount_points
+            .iter()
+            .map(|mount_point| {
+                (
+                    mount_point.path.clone(),
+                    status::MountPoint {
+                        target_id: mount_point.target_id.clone(),
+                        filesystem: mount_point.filesystem.clone(),
+                        options: mount_point.options.clone(),
+                    },
+                )
+            })
+            .collect();
+
         Ok(())
     }
 
@@ -266,22 +282,6 @@ impl Module for StorageModule {
         .context("Failed to serialize mount point configuration for the target OS")?
         .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
         .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
-
-        host_status.storage.mount_points = host_config
-            .storage
-            .mount_points
-            .iter()
-            .map(|mount_point| {
-                (
-                    mount_point.path.clone(),
-                    status::MountPoint {
-                        target_id: mount_point.target_id.clone(),
-                        filesystem: mount_point.filesystem.clone(),
-                        options: mount_point.options.clone(),
-                    },
-                )
-            })
-            .collect();
 
         // TODO: update /etc/repart.d directly for the matching disk, derive
         // from where is the root located

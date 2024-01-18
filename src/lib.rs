@@ -3,10 +3,11 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Error};
+use anyhow::{bail, Context, Error};
 use log::{debug, error, info, warn};
 use osutils::exe::RunAndCheck;
 use protobufs::*;
+use sys_mount::{MountFlags, UnmountFlags};
 use tokio::sync::mpsc::{self, Sender, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
@@ -43,6 +44,10 @@ pub const TRIDENT_DATASTORE_PATH: &str = "/var/lib/trident/datastore.sqlite";
 
 /// Location to store the Trident datastore on the provisioning OS.
 pub const TRIDENT_TEMPORARY_DATASTORE_PATH: &str = "/var/lib/trident/tmp-datastore.sqlite";
+
+/// Stores the block device and relative path to the runtime Trident datastore for use by the
+/// provisioning OS.
+pub const TRIDENT_DATASTORE_REF_PATH: &str = "/var/lib/trident/datastore-location.conf";
 
 /// Trident binary path.
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
@@ -103,7 +108,6 @@ struct HostUpdateCommand {
 
 pub struct Trident {
     config: LocalConfigFile,
-    datastore: DataStore,
     server_runtime: Option<tokio::runtime::Runtime>,
 }
 impl Trident {
@@ -153,19 +157,8 @@ impl Trident {
             serde_yaml::to_string(&config).unwrap_or("Failed to serialize host config".into())
         );
 
-        let datastore = if let Some(ref datastore_path) = config.datastore {
-            DataStore::open(datastore_path.as_path()).structured(
-                InitializationError::DatastoreLoad {
-                    path: datastore_path.display().to_string(),
-                },
-            )?
-        } else {
-            DataStore::open_temporary().structured(InitializationError::DatastoreOpen)?
-        };
-
         Ok(Self {
             config,
-            datastore,
             server_runtime: None,
         })
     }
@@ -354,13 +347,25 @@ impl Trident {
         mut receiver: mpsc::Receiver<HostUpdateCommand>,
         orchestrator: &Option<OrchestratorConnection>,
     ) -> Result<(), TridentError> {
+        let mut datastore = match self.config.datastore {
+            Some(ref datastore_path) => {
+                // Load an existing datastore
+                DataStore::open(datastore_path.as_path()).structured(
+                    InitializationError::DatastoreLoad {
+                        path: datastore_path.display().to_string(),
+                    },
+                )?
+            }
+            None => DataStore::open_temporary().structured(InitializationError::DatastoreOpen)?,
+        };
+
         // Process commands. Starting with the initial command indicated in the local config file
         // (if any). Once that has been handled, subsequent commands are received from the gRPC
         // endpoint.
         while let Some(cmd) = receiver.blocking_recv() {
             let has_sender = cmd.sender.is_some();
 
-            if let Err(e) = self.handle_command(cmd) {
+            if let Err(e) = self.handle_command(&mut datastore, cmd) {
                 if let Some(ref orchestrator) = *orchestrator {
                     orchestrator.report_error(format!("{e:?}"));
                 }
@@ -376,7 +381,11 @@ impl Trident {
         Ok(())
     }
 
-    fn handle_command(&mut self, mut cmd: HostUpdateCommand) -> Result<(), TridentError> {
+    fn handle_command(
+        &mut self,
+        datastore: &mut DataStore,
+        mut cmd: HostUpdateCommand,
+    ) -> Result<(), TridentError> {
         if self.config.phonehome.is_some() && cmd.host_config.management.phonehome.is_none() {
             info!("Injecting phonehome into host configuration");
             cmd.host_config.management.phonehome = self.config.phonehome.clone();
@@ -393,11 +402,10 @@ impl Trident {
             SystemDFilesystemOverlay::mount_temporary(Path::new(SYSTEMD_UNIT_ROOT_PATH), &[])
                 .structured(ManagementError::MountOverlay)?;
 
-        let result = if self.datastore.is_persistent() {
-            modules::update(cmd, &mut self.datastore).structured(ManagementError::UpdateHost)
+        let result = if datastore.is_persistent() {
+            modules::update(cmd, datastore).structured(ManagementError::UpdateHost)
         } else {
-            modules::provision_host(cmd, &mut self.datastore)
-                .structured(ManagementError::ProvisionHost)
+            modules::provision_host(cmd, datastore).structured(ManagementError::ProvisionHost)
         };
 
         match overlay
@@ -413,8 +421,38 @@ impl Trident {
     }
 
     pub fn retrieve_host_status(&mut self, output_path: &Option<PathBuf>) -> Result<(), Error> {
-        let host_status_yaml = serde_yaml::to_string(&self.datastore.host_status())
-            .context("Failed to serialize Host Status")?;
+        let host_status = if let Some(ref datastore_path) = self.config.datastore {
+            info!("Opening persistent datastore");
+            DataStore::open(datastore_path.as_path())?
+                .host_status()
+                .clone()
+        } else if Path::new(TRIDENT_DATASTORE_REF_PATH).exists() {
+            info!("Retrieving host status from runtime datastore");
+            let datastore_ref = fs::read_to_string(TRIDENT_DATASTORE_REF_PATH)
+                .context("Failed to read datastore reference")?;
+            let (block_device, relative_path) = datastore_ref
+                .split_once('\n')
+                .context("Failed to parse datastore reference")?;
+
+            let mount_point =
+                tempfile::tempdir_in("/mnt").context("Failed to create temporary mount point")?;
+            let _mount = sys_mount::Mount::builder()
+                .flags(MountFlags::RDONLY)
+                .mount_autodrop(block_device, mount_point.path(), UnmountFlags::DETACH);
+
+            let datastore_path = mount_point.path().join(relative_path);
+            DataStore::open(datastore_path.as_path())?
+                .host_status()
+                .clone()
+        } else if Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH).exists() {
+            info!("Opening temporary datastore");
+            DataStore::open_temporary()?.host_status().clone()
+        } else {
+            bail!("No datastore found")
+        };
+
+        let host_status_yaml =
+            serde_yaml::to_string(&host_status).context("Failed to serialize Host Status")?;
         match output_path {
             Some(path) => {
                 info!("Writing Host Status to {:?}", &path);

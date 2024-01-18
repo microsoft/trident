@@ -2350,6 +2350,7 @@ dependencies = [
  "sqlite",
  "strum",
  "strum_macros",
+ "sys-mount",
  "tempfile",
  "tokio",
  "tokio-stream",

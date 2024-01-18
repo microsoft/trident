@@ -63,6 +63,10 @@ pub enum ManagementError {
     UpdateHost,
     #[error("Failed to provision host")]
     ProvisionHost,
+    #[error("Failed to persist datastore")]
+    PersistDatastore,
+    #[error("Failed to record datastore location")]
+    RecordDatastoreLocation,
 }
 
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]
@@ -90,8 +94,7 @@ pub enum ErrorKind {
     InternalError(#[from] InternalError),
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("An error occurred")]
+#[derive(Debug)]
 struct TridentErrorInner {
     kind: ErrorKind,
     location: &'static Location<'static>,
@@ -103,13 +106,15 @@ pub struct TridentError(Box<TridentErrorInner>);
 impl TridentError {
     pub fn secondary_error_context(mut self, secondary: TridentError) -> Self {
         self.0.context.push(format!(
-            "While handling the error, an additional error was caught: \n\n{:?}\n\nThe earlier error:",
-            anyhow::Error::from(secondary.0)
+            "While handling the error, an additional error was caught: \n\n{secondary:?}\n\nThe earlier error:"
         ).into());
         self
     }
     pub fn unstructured(self, context: impl Into<Cow<'static, str>>) -> anyhow::Error {
-        anyhow::Error::from(self.0).context(context.into())
+        match self.0.source {
+            Some(source) => source.context(self.0.kind).context(context.into()),
+            None => anyhow::Error::from(self.0.kind).context(context.into()),
+        }
     }
 }
 

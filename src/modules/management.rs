@@ -1,11 +1,17 @@
 //! Module in charge of configuring the Trident agent on the runtime OS.
 
-use std::{fs, path::Path};
+use std::{
+    fs::{self, File},
+    io::Write,
+    os::unix::ffi::OsStrExt,
+    path::Path,
+};
 
 use anyhow::{bail, ensure, Context, Error};
 use log::info;
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile},
+    error::{ManagementError, ReportError, TridentError},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
@@ -172,6 +178,40 @@ fn validate_datastore_location(
     {
         bail!("Datastore cannot be on an A/B update volume");
     }
+    Ok(())
+}
+
+/// Write the location of the datastore to the open file handle.
+///
+/// This function is used to record the location of the datastore on the provisioning OS's
+/// filesystem so that the `trident get` command knows where to find it.
+pub(super) fn record_datastore_location(
+    host_status: &HostStatus,
+    datastore_path: &Path,
+    mut datastore_ref: File,
+) -> Result<(), TridentError> {
+    info!("Recording datastore location");
+    let (device, relative_path) = host_status
+        .storage
+        .get_mount_point_and_relative_path(datastore_path)
+        .structured(ManagementError::RecordDatastoreLocation)?;
+    let device_path = &host_status
+        .storage
+        .get_partition_ref(&device.target_id)
+        .structured(ManagementError::RecordDatastoreLocation)?
+        .path;
+    datastore_ref
+        .write_all(device_path.as_os_str().as_bytes())
+        .structured(ManagementError::RecordDatastoreLocation)?;
+    datastore_ref
+        .write_all(b"\n")
+        .structured(ManagementError::RecordDatastoreLocation)?;
+    datastore_ref
+        .write_all(relative_path.as_os_str().as_bytes())
+        .structured(ManagementError::RecordDatastoreLocation)?;
+    datastore_ref
+        .sync_all()
+        .structured(ManagementError::RecordDatastoreLocation)?;
     Ok(())
 }
 
@@ -345,5 +385,100 @@ mod tests {
             &host_config
         )
         .is_err());
+    }
+}
+
+#[cfg(feature = "functional-tests")]
+#[cfg_attr(not(test), allow(unused_imports))]
+mod functional_tests {
+    use super::*;
+    use maplit::btreemap;
+    use pytest_gen::pytest;
+    use std::path::PathBuf;
+    use tempfile::NamedTempFile;
+    use trident_api::{
+        config::PartitionType,
+        status::{BlockDeviceContents, Disk, MountPoint, Partition, Storage},
+    };
+    use uuid::Uuid;
+
+    #[pytest()]
+    fn test_record_datastore_location() {
+        let host_status = HostStatus {
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::nil(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_string(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/a"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "root".to_string(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/b"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "var".to_string(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/c"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+                        ],
+                    },
+                },
+                mount_points: btreemap! {
+                    PathBuf::from("/") => MountPoint {
+                        target_id: "root".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    PathBuf::from("/var") => MountPoint {
+                        target_id: "var".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    PathBuf::from("/boot/efi") => MountPoint {
+                        target_id: "efi".into(),
+                        filesystem: "vfat".into(),
+                        options: vec![],
+                    },
+                },
+                ..Default::default()
+            },
+            reconcile_state: ReconcileState::CleanInstall,
+            ..Default::default()
+        };
+
+        let datastore_ref = NamedTempFile::new().unwrap();
+
+        record_datastore_location(
+            &host_status,
+            Path::new(crate::TRIDENT_DATASTORE_PATH),
+            datastore_ref.reopen().unwrap(),
+        )
+        .unwrap();
+
+        let contents = fs::read(datastore_ref.path()).unwrap();
+        assert_eq!(
+            contents,
+            b"/dev/disk/by-partlabel/c\nlib/trident/datastore.sqlite"
+        )
     }
 }
