@@ -473,26 +473,31 @@ fn get_ab_volume(
 /// the active volume selection will be returned. If active is false, the volume
 /// selection corresponding to the volumes to be updated will be returned.
 fn get_ab_update_volume(host_status: &HostStatus, active: bool) -> Option<AbVolumeSelection> {
-    let active_volume = &host_status.storage.ab_update.as_ref()?.active_volume;
     match &host_status.reconcile_state {
         ReconcileState::UpdateInProgress(UpdateKind::HotPatch)
         | ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)
-        | ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => *active_volume,
+        | ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => {
+            host_status.storage.ab_update.as_ref()?.active_volume
+        }
         ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
             if active {
-                *active_volume
+                host_status.storage.ab_update.as_ref()?.active_volume
             } else {
-                Some(if *active_volume == Some(AbVolumeSelection::VolumeA) {
-                    AbVolumeSelection::VolumeB
-                } else {
-                    AbVolumeSelection::VolumeA
-                })
+                Some(
+                    if host_status.storage.ab_update.as_ref()?.active_volume
+                        == Some(AbVolumeSelection::VolumeA)
+                    {
+                        AbVolumeSelection::VolumeB
+                    } else {
+                        AbVolumeSelection::VolumeA
+                    },
+                )
             }
         }
         ReconcileState::UpdateInProgress(UpdateKind::Incompatible) => None,
         ReconcileState::Ready => {
             if active {
-                *active_volume
+                host_status.storage.ab_update.as_ref()?.active_volume
             } else {
                 None
             }
