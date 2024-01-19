@@ -3,7 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Error};
+use anyhow::anyhow;
+use trident_api::error::{InitializationError, InternalError, ReportError, TridentError};
 
 /// Path to the root of the host filesystem. Expected to be mounted there when
 /// running in a container.
@@ -11,30 +12,43 @@ const HOST_ROOT_PATH: &str = "/host";
 
 /// Environment variable that is set when running in a container. Value is not
 /// important.
-const DOCKER_ENVIRONMENT: &str = "DOCKER_ENVIRONMENT";
+pub const DOCKER_ENVIRONMENT: &str = "DOCKER_ENVIRONMENT";
 
 /// Uses the `DOCKER_ENVIRONMENT` environment variable to determine if the
 /// current process is running in a container. This variable needs to be
-/// explicitly set as part of Dockerfile.
-pub fn is_running_in_container() -> bool {
-    env::var(DOCKER_ENVIRONMENT).is_ok()
+/// explicitly set as part of Dockerfile. Checks for other indirect ways of
+/// determining if running in a container to alert users to set the environment variable.
+pub fn is_running_in_container() -> Result<bool, TridentError> {
+    if env::var(DOCKER_ENVIRONMENT).is_ok() {
+        return Ok(true);
+    }
+
+    if Path::new("/.dockerenv").exists() {
+        return Err(anyhow!(
+            "Running from docker container, but {DOCKER_ENVIRONMENT} environment variable is not set"
+        ))
+        .structured(InitializationError::ContainerMisconfigured);
+    }
+
+    Ok(false)
 }
 
 /// For use only when running in a container. If running in a container, returns
 /// the path to the root of the host filesystem. Host filesystem is expected to
 /// be mounted at the provided input and if that path does not exist, an error
 /// is returned.
-fn get_host_root_path_impl(host_root_path: &Path) -> Result<PathBuf, Error> {
-    if !is_running_in_container() {
-        bail!("Not running in a container")
+fn get_host_root_path_impl(host_root_path: &Path) -> Result<PathBuf, TridentError> {
+    if !is_running_in_container()? {
+        return Err(InternalError::Internal("Not running in a container").into());
     }
 
     // We expect the host filesystem to be available under host_root_path
     if !host_root_path.exists() {
-        bail!(
+        return Err(anyhow!(
             "Running from docker container, but {} is not mounted",
             host_root_path.display()
-        );
+        ))
+        .structured(InitializationError::ContainerMisconfigured);
     }
     Ok(PathBuf::from(host_root_path))
 }
@@ -43,7 +57,7 @@ fn get_host_root_path_impl(host_root_path: &Path) -> Result<PathBuf, Error> {
 /// the path to the root of the host filesystem. Host filesystem is expected to
 /// be mounted at `/host` and if that path does not exist, an error
 /// is returned.
-pub fn get_host_root_path() -> Result<PathBuf, Error> {
+pub fn get_host_root_path() -> Result<PathBuf, TridentError> {
     get_host_root_path_impl(Path::new(HOST_ROOT_PATH))
 }
 
@@ -53,12 +67,6 @@ mod test {
 
     #[test]
     fn test_container() {
-        // is_running_in_container tests
-        env::set_var(DOCKER_ENVIRONMENT, "1");
-        assert!(super::is_running_in_container());
-        env::remove_var(DOCKER_ENVIRONMENT);
-        assert!(!super::is_running_in_container());
-
         // get_host_root_path_impl tests
         env::set_var(DOCKER_ENVIRONMENT, "true");
         assert_eq!(
@@ -74,17 +82,55 @@ mod test {
 
 #[cfg(feature = "functional-tests")]
 mod functional_tests {
+    #[cfg(test)]
+    use std::fs::File;
+
     use pytest_gen::pytest;
 
     #[cfg(test)]
     use super::*;
 
+    #[pytest(feature = "helpers")]
+    fn test_is_running_in_container() {
+        let dockerenv = Path::new("/.dockerenv");
+        if dockerenv.exists() {
+            std::fs::remove_file(dockerenv).unwrap();
+        }
+
+        env::set_var(DOCKER_ENVIRONMENT, "1");
+        assert!(super::is_running_in_container().unwrap());
+        env::remove_var(DOCKER_ENVIRONMENT);
+        assert!(!super::is_running_in_container().unwrap());
+
+        File::create(dockerenv).unwrap();
+        env::set_var(DOCKER_ENVIRONMENT, "1");
+        let result = super::is_running_in_container();
+        env::remove_var(DOCKER_ENVIRONMENT);
+        let result2 = super::is_running_in_container();
+
+        std::fs::remove_file(dockerenv).unwrap();
+
+        assert!(result.unwrap());
+        assert_eq!(
+            result2
+                .unwrap_err()
+                .unstructured("")
+                .root_cause()
+                .to_string(),
+            "Running from docker container, but DOCKER_ENVIRONMENT environment variable is not set"
+        );
+    }
+
     #[pytest(feature = "helpers", negative = true)]
     fn test_get_host_root_path_fails_outside_container() {
         env::remove_var(DOCKER_ENVIRONMENT);
         assert_eq!(
-            get_host_root_path().unwrap_err().root_cause().to_string(),
-            "Not running in a container"
+            get_host_root_path()
+                .unwrap_err()
+                .unstructured("")
+                .root_cause()
+                .to_string(),
+            "Internal error: Not running in a container"
         );
     }
 
@@ -98,7 +144,11 @@ mod functional_tests {
         }
 
         assert_eq!(
-            get_host_root_path().unwrap_err().root_cause().to_string(),
+            get_host_root_path()
+                .unwrap_err()
+                .unstructured("")
+                .root_cause()
+                .to_string(),
             "Running from docker container, but /host is not mounted"
         );
     }

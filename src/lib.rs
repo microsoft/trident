@@ -322,11 +322,11 @@ impl Trident {
         // all subsequent commands are executed in the host's root, and dont
         // have to be aware of if Trident is running in the context of the
         // container or not.
-        if container::is_running_in_container() {
+        if container::is_running_in_container().message("Failed running in container check")? {
             info!("Running inside container, entering '/host' chroot");
             if let Err(e) = chroot::enter_host_chroot(
                 container::get_host_root_path()
-                    .structured(InitializationError::GetHostRootPath)?
+                    .message("Failed to get host root volume path")?
                     .as_path(),
             )
             .message(

@@ -22,6 +22,8 @@ pub enum InitializationError {
     GetHostRootPath,
     #[error("Safety check failed")]
     SafetyCheck,
+    #[error("Container configuration check failed")]
+    ContainerMisconfigured,
 }
 
 /// User provided input was invalid.
