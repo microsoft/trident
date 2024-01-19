@@ -23,6 +23,7 @@ stages:
             *.iso
           targetPath: $(Pipeline.Workspace)/provision-template-iso
           artifactName: provisioning-os-template
+          branchName: 'refs/heads/main'
         displayName: "Download Provision Template ISO"
 
       - task: UniversalPackages@0
@@ -42,6 +43,7 @@ stages:
             *.rpm
           targetPath: $(Pipeline.Workspace)/rpms
           artifactName: drop_Trident_BuildTrident
+          branchName: 'refs/heads/main'
         displayName: "Download Trident RPMs"
 
       - task: UniversalPackages@0

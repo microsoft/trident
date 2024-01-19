@@ -17,6 +17,7 @@ steps:
       buildVersionToDownload: 'latest'
       artifactName: 'installer-iso'
       patterns: '*/installer.iso'
+      branchName: 'refs/heads/main'
       targetPath: '$(System.ArtifactsDirectory)/installer-iso'
 
   - bash: |

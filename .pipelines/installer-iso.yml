@@ -63,6 +63,7 @@ stages:
         definition: ${{ parameters.runtimeImagePipeline }}
         buildVersionToDownload: 'latest'
         artifactName: 'trident-testimg'
+        branchName: 'refs/heads/main'
         targetPath: '$(System.ArtifactsDirectory)/runtime-image'
 
     - task: DownloadPipelineArtifact@2
@@ -73,6 +74,7 @@ stages:
         buildVersionToDownload: 'latest'
         artifactName: 'provisioning-os-template'
         patterns: '*.iso'
+        branchName: 'refs/heads/main'
         targetPath: '$(System.ArtifactsDirectory)/provision-template'
 
     - task: DownloadPipelineArtifact@2
@@ -83,6 +85,7 @@ stages:
         buildVersionToDownload: 'latest'
         artifactName: 'isogen'
         patterns: 'isogen'
+        branchName: 'refs/heads/main'
         targetPath: '$(System.ArtifactsDirectory)/isogen'
 
     - bash: |

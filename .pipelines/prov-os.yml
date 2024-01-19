@@ -55,6 +55,7 @@ stages:
         buildVersionToDownload: 'latest'
         allowFailedBuilds: true
         artifactName: ${{ parameters.artifactName }}
+        branchName: 'refs/heads/main'
         targetPath: '$(System.ArtifactsDirectory)/trident'
 
     - task: Bash@3
