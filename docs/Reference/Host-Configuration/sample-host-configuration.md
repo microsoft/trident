@@ -92,12 +92,12 @@ storage:
       volumeAId: root-a
       volumeBId: root-b
   images:
-  - url: file:///boot.raw.zst
-    sha256: cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8
+  - url: file:///trident_cdrom/data/esp.rawzst
+    sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
     format: raw-zstd
     targetId: esp
-  - url: file:///root.raw.zst
-    sha256: fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d
+  - url: file:///trident_cdrom/data/root.rawzst
+    sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
     format: raw-zstd
     targetId: root
 network:

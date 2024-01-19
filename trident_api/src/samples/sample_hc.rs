@@ -129,17 +129,17 @@ pub fn sample_host_configuration() -> HostConfiguration {
             ],
             images: vec![
                 Image {
-                    url: "file:///boot.raw.zst".into(),
+                    url: "file:///trident_cdrom/data/esp.rawzst".into(),
                     sha256: ImageSha256::Checksum(
-                        "cd93c867cb0238fecb3bc9a268092526ba5f5b351bb17e5aab6fa0a9fc2ae4f8".into(),
+                        "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae".into(),
                     ),
                     format: ImageFormat::RawZstd,
                     target_id: "esp".into(),
                 },
                 Image {
-                    url: "file:///root.raw.zst".into(),
+                    url: "file:///trident_cdrom/data/root.rawzst".into(),
                     sha256: ImageSha256::Checksum(
-                        "fef89794407c89e985deed49c14af882b7abe425c626b0a1a370b286dfa4d28d".into(),
+                        "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293".into(),
                     ),
                     format: ImageFormat::RawZstd,
                     target_id: "root".into(),
