@@ -1,7 +1,10 @@
 use anyhow::{Context, Error};
 use log::info;
 use std::{fs, path::Path};
-use trident_api::status::HostStatus;
+use trident_api::{
+    error::{DatastoreError, ReportError, TridentError},
+    status::HostStatus,
+};
 
 use crate::TRIDENT_TEMPORARY_DATASTORE_PATH;
 
@@ -12,11 +15,11 @@ pub(crate) struct DataStore {
 }
 
 impl DataStore {
-    pub(crate) fn open_temporary() -> Result<Self, Error> {
+    pub(crate) fn open_temporary() -> Result<Self, TridentError> {
         let path = Path::new(&TRIDENT_TEMPORARY_DATASTORE_PATH);
         if path.exists() {
             info!("Reusing temporary datastore at {}", path.display());
-            let existing = Self::open(path)?;
+            let existing = Self::open(path).structured(DatastoreError::DatastoreReopen)?;
             Ok(Self {
                 db: existing.db,
                 host_status: existing.host_status,
@@ -58,22 +61,23 @@ impl DataStore {
         !self.temporary
     }
 
-    fn make_datastore(path: &Path) -> Result<sqlite::Connection, Error> {
+    fn make_datastore(path: &Path) -> Result<sqlite::Connection, TridentError> {
         fs::create_dir_all(path.parent().unwrap())
-            .context("Failed to create trident datastore directory")?;
+            .structured(DatastoreError::CreateDatastoreDirectory)?;
 
-        let db = sqlite::open(path)?;
+        let db = sqlite::open(path).structured(DatastoreError::OpenDatastore)?;
         db.execute(
             "CREATE TABLE IF NOT EXISTS hoststatus (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp DATETIME DEFALUT CURRENT_TIMESTAMP,
                 contents TEXT NOT NULL
             )",
-        )?;
+        )
+        .structured(DatastoreError::DatastoreInit)?;
         Ok(db)
     }
 
-    pub(crate) fn persist(&mut self, path: &Path) -> Result<(), Error> {
+    pub(crate) fn persist(&mut self, path: &Path) -> Result<(), TridentError> {
         if self.temporary {
             let persistent_db = Self::make_datastore(path)?;
             Self::write_host_status(&persistent_db, self.host_status())?;
@@ -85,14 +89,24 @@ impl DataStore {
         Ok(())
     }
 
-    fn write_host_status(db: &sqlite::Connection, host_status: &HostStatus) -> Result<(), Error> {
+    fn write_host_status(
+        db: &sqlite::Connection,
+        host_status: &HostStatus,
+    ) -> Result<(), TridentError> {
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
-            .context("Failed to save host status (prepare)")?;
+            .structured(DatastoreError::DatastoreWrite)?;
         statement
-            .bind((1, &*serde_yaml::to_string(host_status)?))
-            .context("Failed to save host status (bind)")?;
-        statement.next().context("Failed to save host status")?;
+            .bind((
+                1,
+                &*serde_yaml::to_string(host_status)
+                    .structured(DatastoreError::SerializeHostStatus)?,
+            ))
+            .structured(DatastoreError::DatastoreWrite)?;
+        statement
+            .next()
+            .structured(DatastoreError::DatastoreWrite)?;
+
         Ok(())
     }
 
@@ -103,14 +117,14 @@ impl DataStore {
     pub(crate) fn with_host_status<T, F: FnOnce(&mut HostStatus) -> T>(
         &mut self,
         f: F,
-    ) -> Result<T, Error> {
+    ) -> Result<T, TridentError> {
         self.try_with_host_status(|s| Ok(f(s)))
     }
 
-    pub(crate) fn try_with_host_status<T, F: FnOnce(&mut HostStatus) -> Result<T, Error>>(
+    pub(crate) fn try_with_host_status<T, F: FnOnce(&mut HostStatus) -> Result<T, TridentError>>(
         &mut self,
         f: F,
-    ) -> Result<T, Error> {
+    ) -> Result<T, TridentError> {
         let mut updated = self.host_status().clone();
 
         // Call the provided method and return early if the host status was not modified.
@@ -124,7 +138,9 @@ impl DataStore {
         // Always attempt to save the updated host status, even if the previous call failed,
         // but only report errors from saving the host status if it succeeded.
         let ret2 = Self::write_host_status(
-            self.db.as_ref().context("Datastore already closed")?,
+            self.db
+                .as_ref()
+                .structured(DatastoreError::DatastoreClosed)?,
             &self.host_status,
         );
         if ret.is_ok() {
@@ -144,17 +160,13 @@ impl DataStore {
 }
 
 #[cfg(feature = "functional-tests")]
+#[cfg_attr(not(test), allow(unused_imports))]
 mod functional_tests {
-    #[cfg(test)]
-    use anyhow::bail;
-    use pytest_gen::pytest;
-    #[cfg(test)]
-    use tempfile::TempDir;
-    #[cfg(test)]
-    use trident_api::status::ReconcileState;
-
-    #[cfg(test)]
     use super::*;
+    use pytest_gen::pytest;
+    use tempfile::TempDir;
+    use trident_api::error::InternalError;
+    use trident_api::status::ReconcileState;
 
     #[pytest()]
     fn test_open_temporary_persist_reopen() {
@@ -210,7 +222,9 @@ mod functional_tests {
         );
 
         datastore
-            .try_with_host_status(|_s| -> Result<(), Error> { bail!("error") })
+            .try_with_host_status(|_s| -> Result<(), TridentError> {
+                Err(InternalError::Internal("error").into())
+            })
             .unwrap_err();
     }
 }

@@ -11,7 +11,7 @@ use anyhow::{bail, ensure, Context, Error};
 use log::info;
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile},
-    error::{ManagementError, ReportError, TridentError},
+    error::{DatastoreError, ReportError, TridentError},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
@@ -194,24 +194,24 @@ pub(super) fn record_datastore_location(
     let (device, relative_path) = host_status
         .storage
         .get_mount_point_and_relative_path(datastore_path)
-        .structured(ManagementError::RecordDatastoreLocation)?;
+        .structured(DatastoreError::RecordDatastoreLocation)?;
     let device_path = &host_status
         .storage
         .get_partition_ref(&device.target_id)
-        .structured(ManagementError::RecordDatastoreLocation)?
+        .structured(DatastoreError::RecordDatastoreLocation)?
         .path;
     datastore_ref
         .write_all(device_path.as_os_str().as_bytes())
-        .structured(ManagementError::RecordDatastoreLocation)?;
+        .structured(DatastoreError::RecordDatastoreLocation)?;
     datastore_ref
         .write_all(b"\n")
-        .structured(ManagementError::RecordDatastoreLocation)?;
+        .structured(DatastoreError::RecordDatastoreLocation)?;
     datastore_ref
         .write_all(relative_path.as_os_str().as_bytes())
-        .structured(ManagementError::RecordDatastoreLocation)?;
+        .structured(DatastoreError::RecordDatastoreLocation)?;
     datastore_ref
         .sync_all()
-        .structured(ManagementError::RecordDatastoreLocation)?;
+        .structured(DatastoreError::RecordDatastoreLocation)?;
     Ok(())
 }
 

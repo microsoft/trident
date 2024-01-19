@@ -38,6 +38,48 @@ pub enum InvalidInputError {
     KickstartTranslation,
     #[error("Invalid host configuration")]
     InvalidHostConfiguration,
+    #[error("Host configuration is incompatible with current install")]
+    IncompatibleHostConfiguration,
+}
+
+#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DatastoreError {
+    #[error("Failed to create datastore directory")]
+    CreateDatastoreDirectory,
+    #[error("Failed to open new datastore")]
+    OpenDatastore,
+    #[error("Failed to initialize datastore")]
+    DatastoreInit,
+    #[error("Failed re-open temporary datastore")]
+    DatastoreReopen,
+    #[error("Failed to persist datastore")]
+    PersistDatastore,
+    #[error("Failed to serialize host status")]
+    SerializeHostStatus,
+    #[error("Failed to write to datastore")]
+    DatastoreWrite,
+    #[error("Attempted to write to closed datastore")]
+    DatastoreClosed,
+    #[error("Failed to create datastore ref file")]
+    CreateDatastoreRefFile,
+    #[error("Failed to record datastore location")]
+    RecordDatastoreLocation,
+}
+
+#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ModuleError {
+    #[error("{name} module failed to refresh host status")]
+    RefreshHostStatus { name: &'static str },
+    #[error("{name} module failed to validate host configuration")]
+    ValidateHostConfiguration { name: &'static str },
+    #[error("{name} module failed to prepare")]
+    Prepare { name: &'static str },
+    #[error("{name} module failed to provision")]
+    Provision { name: &'static str },
+    #[error("{name} module failed to configure")]
+    Configure { name: &'static str },
 }
 
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]
@@ -63,10 +105,14 @@ pub enum ManagementError {
     UpdateHost,
     #[error("Failed to provision host")]
     ProvisionHost,
-    #[error("Failed to persist datastore")]
-    PersistDatastore,
-    #[error("Failed to record datastore location")]
-    RecordDatastoreLocation,
+    #[error("Failed to set boot entries")]
+    SetBootEntries,
+    #[error("Failed to unmount newroot")]
+    UnmountNewroot,
+    #[error("Failed to assemble kernel cmdline")]
+    SetKernelCmdline,
+    #[error("Failed to perform kexec")]
+    Kexec,
 }
 
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]
@@ -76,6 +122,13 @@ pub enum InternalError {
     Internal(&'static str),
     #[error("An uncategorized error occurred: {0}")]
     Todo(&'static str),
+
+    #[error("Failed to get root block device")]
+    GetRootBlockDevice,
+    #[error("Failed to serialize host status")]
+    SerializeHostStatus,
+    #[error("Failed to send host status")]
+    SendHostStatus,
 }
 
 #[derive(Debug, thiserror::Error, IntoStaticStr)]
@@ -83,13 +136,14 @@ pub enum InternalError {
 pub enum ErrorKind {
     #[error(transparent)]
     Initialization(#[from] InitializationError),
-
     #[error(transparent)]
     InvalidInput(#[from] InvalidInputError),
-
+    #[error(transparent)]
+    ModuleError(#[from] ModuleError),
     #[error(transparent)]
     Management(#[from] ManagementError),
-
+    #[error(transparent)]
+    Datastore(#[from] DatastoreError),
     #[error(transparent)]
     InternalError(#[from] InternalError),
 }
@@ -99,17 +153,19 @@ struct TridentErrorInner {
     kind: ErrorKind,
     location: &'static Location<'static>,
     source: Option<anyhow::Error>,
-    context: Vec<Cow<'static, str>>,
+    context: Vec<(Cow<'static, str>, &'static Location<'static>)>,
 }
 
 pub struct TridentError(Box<TridentErrorInner>);
 impl TridentError {
+    #[track_caller]
     pub fn secondary_error_context(mut self, secondary: TridentError) -> Self {
-        self.0.context.push(format!(
+        self.0.context.push((format!(
             "While handling the error, an additional error was caught: \n\n{secondary:?}\n\nThe earlier error:"
-        ).into());
+        ).into(), Location::caller()));
         self
     }
+
     pub fn unstructured(self, context: impl Into<Cow<'static, str>>) -> anyhow::Error {
         match self.0.source {
             Some(source) => source.context(self.0.kind).context(context.into()),
@@ -179,12 +235,14 @@ pub trait TridentResultExt<T> {
     fn unstructured(self, context: impl Into<Cow<'static, str>>) -> Result<T, anyhow::Error>;
 }
 impl<T> TridentResultExt<T> for Result<T, TridentError> {
+    #[track_caller]
     fn message(mut self, context: impl Into<Cow<'static, str>>) -> Result<T, TridentError> {
         if let Err(ref mut e) = self {
-            e.0.context.push(context.into());
+            e.0.context.push((context.into(), Location::caller()));
         }
         self
     }
+
     fn unstructured(self, context: impl Into<Cow<'static, str>>) -> Result<T, anyhow::Error> {
         self.map_err(|e| e.unstructured(context))
     }
@@ -197,7 +255,9 @@ impl Serialize for TridentError {
         match self.0.kind {
             ErrorKind::Initialization(ref e) => state.serialize_field("error", e)?,
             ErrorKind::InvalidInput(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::ModuleError(ref e) => state.serialize_field("error", e)?,
             ErrorKind::Management(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::Datastore(ref e) => state.serialize_field("error", e)?,
             ErrorKind::InternalError(ref e) => state.serialize_field("error", e)?,
         }
         state.serialize_field("category", <&str>::from(&self.0.kind))?;
@@ -222,6 +282,21 @@ impl Debug for TridentError {
             self.0.location.file(),
             self.0.location.line()
         )?;
+
+        if !self.0.context.is_empty() {
+            writeln!(f, "\n\nContext:")?;
+            for (i, (context, location)) in self.0.context.iter().enumerate() {
+                for (j, line) in context.split('\n').enumerate() {
+                    if j == 0 {
+                        write!(f, "{: >5}: ", i)?;
+                    } else {
+                        f.write_str("\n       ")?;
+                    }
+                    f.write_str(line)?;
+                }
+                writeln!(f, " at {}:{}", location.file(), location.line())?;
+            }
+        }
 
         if let Some(ref source) = self.0.source {
             writeln!(f, "\n\nCaused by:")?;

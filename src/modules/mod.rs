@@ -10,7 +10,10 @@ use log::info;
 use trident_api::{
     config::{HostConfiguration, Operations, PartitionType},
     constants,
-    error::{InitializationError, InternalError, ManagementError, ReportError, TridentResultExt},
+    error::{
+        DatastoreError, InitializationError, InternalError, InvalidInputError, ManagementError,
+        ModuleError, ReportError, TridentError, TridentResultExt,
+    },
     status::{
         AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
     },
@@ -120,7 +123,7 @@ lazy_static::lazy_static! {
 pub(super) fn provision_host(
     command: HostUpdateCommand,
     state: &mut DataStore,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     let HostUpdateCommand {
         ref host_config,
         allowed_operations,
@@ -130,7 +133,7 @@ pub(super) fn provision_host(
     // TODO: needs to be refactored once we have a way to preserve existing partitions
     // This is a safety check so that nobody accidentally formats their dev machine.
     if !fs::read_to_string("/proc/cmdline")
-        .context("Failed to read /proc/cmdline")?
+        .structured(InitializationError::SafetyCheck)?
         .contains("root=/dev/ram0")
         && !Path::new("/override-trident-safety-check").exists()
     {
@@ -151,9 +154,9 @@ pub(super) fn provision_host(
         sender
             .send(Ok(HostStatusState {
                 status: serde_yaml::to_string(state.host_status())
-                    .context("Failed to serialize host status")?,
+                    .structured(InternalError::SerializeHostStatus)?,
             }))
-            .context("Failed to send host status")?;
+            .structured(InternalError::SendHostStatus)?;
     }
 
     if !allowed_operations.contains(Operations::Update) {
@@ -171,8 +174,8 @@ pub(super) fn provision_host(
     let mount_path = Path::new(UPDATE_ROOT_PATH);
     provision(&mut modules, state, host_config, mount_path)?;
 
-    let datastore_ref =
-        File::create(TRIDENT_DATASTORE_REF_PATH).context("Failed to create datastore ref file")?;
+    let datastore_ref = File::create(TRIDENT_DATASTORE_REF_PATH)
+        .structured(DatastoreError::CreateDatastoreRefFile)?;
     let datastore_path = state
         .host_status()
         .management
@@ -181,15 +184,13 @@ pub(super) fn provision_host(
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
 
     info!("Entering /mnt/newroot chroot");
-    let chroot = chroot::enter_update_chroot(mount_path).unstructured("Failed to enter chroot")?;
+    let chroot = chroot::enter_update_chroot(mount_path).message("Failed to enter chroot")?;
     let mut root_device_path = None;
 
     chroot
         .execute_and_exit(|| {
             info!("Persisting datastore");
-            state
-                .persist(&datastore_path)
-                .structured(ManagementError::PersistDatastore)?;
+            state.persist(&datastore_path)?;
 
             management::record_datastore_location(
                 state.host_status(),
@@ -198,12 +199,11 @@ pub(super) fn provision_host(
             )?;
 
             info!("Running configure");
-            configure(&mut modules, state, host_config)
-                .structured(InternalError::Todo("Failed to configure"))?;
+            configure(&mut modules, state, host_config)?;
 
             root_device_path = Some(
                 get_root_block_device_path(state.host_status())
-                    .structured(InternalError::Todo("Failed to get root block device"))?,
+                    .structured(InternalError::GetRootBlockDevice)?,
             );
 
             if let Some(sender) = sender {
@@ -220,14 +220,15 @@ pub(super) fn provision_host(
             state.close();
             Ok(())
         })
-        .unstructured("Failed to execute in chroot")?;
+        .message("Failed to execute in chroot")?;
 
-    let root_device_path = root_device_path.context("Failed to get root block device")?;
+    let root_device_path =
+        root_device_path.structured(InternalError::Internal("Failed to get root block device"))?;
 
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
         info!("Unmounting /mnt/newroot");
-        mount::unmount_updated_volumes(mount_path).context("Failed to unmount target volumes")?;
+        mount::unmount_updated_volumes(mount_path).structured(ManagementError::UnmountNewroot)?;
     } else {
         info!("Performing transition");
         transition(mount_path, &root_device_path, state.host_status())?;
@@ -236,7 +237,10 @@ pub(super) fn provision_host(
     Ok(())
 }
 
-pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Result<(), Error> {
+pub(super) fn update(
+    command: HostUpdateCommand,
+    state: &mut DataStore,
+) -> Result<(), TridentError> {
     let HostUpdateCommand {
         ref host_config,
         allowed_operations,
@@ -251,9 +255,9 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
         sender
             .send(Ok(HostStatusState {
                 status: serde_yaml::to_string(state.host_status())
-                    .context("Failed to serialize host status")?,
+                    .structured(InternalError::SerializeHostStatus)?,
             }))
-            .context("Failed to send host status")?;
+            .structured(InternalError::SendHostStatus)?;
     }
 
     info!("Determining update kind");
@@ -296,7 +300,9 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
         UpdateKind::UpdateAndReboot => info!("Performing update and reboot"),
         UpdateKind::AbUpdate => info!("Performing A/B update"),
         UpdateKind::Incompatible => {
-            bail!("Requested host config is not compatible with current install")
+            return Err(TridentError::from(
+                InvalidInputError::IncompatibleHostConfiguration,
+            ));
         }
     }
     state
@@ -312,13 +318,12 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
         provision(&mut modules, state, host_config, mount_path)?;
         info!("Entering /mnt/newroot chroot");
         chroot::enter_update_chroot(mount_path)
-            .unstructured("Failed to enter chroot")?
+            .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
                 configure(&mut modules, state, host_config)
-                    .structured(InternalError::Todo("Failed to configure"))
             })
-            .unstructured("Failed to execute in chroot")?;
+            .message("Failed to execute in chroot")?;
     } else {
         info!("Running configure");
         configure(&mut modules, state, host_config)?;
@@ -328,21 +333,21 @@ pub(super) fn update(command: HostUpdateCommand, state: &mut DataStore) -> Resul
         sender
             .send(Ok(HostStatusState {
                 status: serde_yaml::to_string(state.host_status())
-                    .context("Failed to serialize host status")?,
+                    .structured(InternalError::SerializeHostStatus)?,
             }))
-            .context("Failed to send host status")?;
+            .structured(InternalError::SendHostStatus)?;
         drop(sender);
     }
 
     match update_kind {
         UpdateKind::UpdateAndReboot | UpdateKind::AbUpdate => {
             let root_block_device_path = get_root_block_device_path(state.host_status())
-                .context("Failed to get root block device")?;
+                .structured(InternalError::GetRootBlockDevice)?;
 
             if !allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
                 mount::unmount_updated_volumes(mount_path)
-                    .context("Failed to unmount target volumes")?;
+                    .structured(ManagementError::UnmountNewroot)?;
                 return Ok(());
             }
 
@@ -509,13 +514,11 @@ fn get_ab_update_volume(host_status: &HostStatus, active: bool) -> Option<AbVolu
 fn refresh_host_status(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     for m in modules {
         state.try_with_host_status(|s| {
-            m.refresh_host_status(s).context(format!(
-                "Module '{}' failed to refresh host status",
-                m.name()
-            ))
+            m.refresh_host_status(s)
+                .structured(ModuleError::RefreshHostStatus { name: m.name() })
         })?;
     }
     Ok(())
@@ -526,13 +529,10 @@ fn validate_host_config(
     state: &DataStore,
     host_config: &HostConfiguration,
     planned_update: ReconcileState,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     for m in modules {
         m.validate_host_config(state.host_status(), host_config, planned_update)
-            .context(format!(
-                "Module '{}' failed to validate host config",
-                m.name()
-            ))?;
+            .structured(ModuleError::ValidateHostConfiguration { name: m.name() })?
     }
     info!("Host config validated");
     Ok(())
@@ -542,11 +542,11 @@ fn prepare(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     for m in modules {
         state.try_with_host_status(|s| {
             m.prepare(s, host_config)
-                .context(format!("Module '{}' failed to prepare", m.name()))
+                .structured(ModuleError::Prepare { name: m.name() })
         })?;
     }
     Ok(())
@@ -557,11 +557,11 @@ fn provision(
     state: &mut DataStore,
     host_config: &HostConfiguration,
     mount_point: &Path,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     for m in modules {
         state.try_with_host_status(|s| {
             m.provision(s, host_config, mount_point)
-                .context(format!("Module '{}' failed to provision", m.name()))
+                .structured(ModuleError::Provision { name: m.name() })
         })?;
     }
     Ok(())
@@ -571,11 +571,11 @@ fn configure(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     for m in modules {
         state.try_with_host_status(|s| {
             m.configure(s, host_config)
-                .context(format!("Module '{}' failed during configure", m.name()))
+                .structured(ModuleError::Configure { name: m.name() })
         })?;
     }
     Ok(())
@@ -585,20 +585,23 @@ fn transition(
     mount_path: &Path,
     root_block_device_path: &Path,
     host_status: &HostStatus,
-) -> Result<(), Error> {
-    let root_block_device_path = root_block_device_path.to_str().context(format!(
-        "Failed to convert root device path {:?} to string",
-        root_block_device_path
-    ))?;
+) -> Result<(), TridentError> {
+    let root_block_device_path = root_block_device_path
+        .to_str()
+        .structured(ManagementError::SetKernelCmdline)
+        .message(format!(
+            "Failed to convert root device path {:?} to string",
+            root_block_device_path
+        ))?;
     info!("Setting boot entries");
 
-    set_boot_entries(host_status).context("Failed to set boot entries")?;
+    set_boot_entries(host_status).structured(ManagementError::SetBootEntries)?;
     info!("Performing soft reboot");
     storage::image::kexec(
         mount_path,
         &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
     )
-    .context("Failed to perform kexec")
+    .structured(ManagementError::Kexec)
 
     // TODO: Solve hard reboot(), so that the firmware chooses the correct boot
     // partition to boot from, after each A/B update. Related ADO task:

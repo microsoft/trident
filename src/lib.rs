@@ -366,7 +366,7 @@ impl Trident {
                     },
                 )?
             }
-            None => DataStore::open_temporary().structured(InitializationError::DatastoreOpen)?,
+            None => DataStore::open_temporary().message("Failed to open temporary datastore")?,
         };
 
         // Process commands. Starting with the initial command indicated in the local config file
@@ -413,9 +413,9 @@ impl Trident {
                 .structured(ManagementError::MountOverlay)?;
 
         let result = if datastore.is_persistent() {
-            modules::update(cmd, datastore).structured(ManagementError::UpdateHost)
+            modules::update(cmd, datastore).message("Failed to update host")
         } else {
-            modules::provision_host(cmd, datastore).structured(ManagementError::ProvisionHost)
+            modules::provision_host(cmd, datastore).message("Failed to provision host")
         };
 
         match overlay
@@ -456,7 +456,10 @@ impl Trident {
                 .clone()
         } else if Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH).exists() {
             info!("Opening temporary datastore");
-            DataStore::open_temporary()?.host_status().clone()
+            DataStore::open_temporary()
+                .unstructured("Failed to open temporary datastore")?
+                .host_status()
+                .clone()
         } else {
             bail!("No datastore found")
         };
