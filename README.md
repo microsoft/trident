@@ -158,33 +158,17 @@ Host Configuration describes the desired state of the host.
 ### Documentation
 
 The full schema is available here:
-[trident_api/docs/trident-api.md](trident_api/docs/trident-api.md).
-
-An HTML version is available in `trident_api/docs/html/trident-api.html`
-
-If you have GUI session on Linux, `make view-docs` may help open your browser
-automatically. Otherwise you can open the docs
-[directly](trident_api/docs/html/trident-api.html). Note that the HTML version
-only works when directly opened using your browser, it will not work when opened
-using the ADO repo browser or directly in VSCode. We are working on uploading
-the docs to the engineering docs site.
-
-You can use the `Live Server` VSCode extension to view the docs in VSCode. After
-installing the extension, you can right click on the HTML file and select `Open
-with Live Server`. This will open the docs in your default browser.
-Alternatively, if you did not want to install the 3rd party extension, you could
-just start your own local web server and open the HTML file in your browser,
-e.g.: `python3 -m http.server --directory trident_api/docs/html/`.
+[HostConfiguration.md](docs/Reference/Host-Configuration/API-Reference/HostConfiguration.md).
 
 ### Schema
 
 The raw JSON Schema for Host configuration is here:
-[trident_api/docs/trident-api-schema.json](trident_api/docs/trident-api-schema.json)
+[host-config-schema.json](trident_api/schemas/host-config-schema.json)
 
 ### Sample
 
 An example Host Configuration YAML file is available here:
-[trident_api/docs/sample-host-configuration.yaml](trident_api/docs/sample-host-configuration.yaml)
+[sample-host-configuration](docs/Reference/Host-Configuration/sample-host-configuration.md)
 
 ## A/B Update
 
