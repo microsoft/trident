@@ -14,7 +14,7 @@ steps:
       buildType: ${{ parameters.downloadBuildType}}
       project: ECF
       definition: ${{ parameters.installerISOPipeline }}
-      buildVersionToDownload: 'latest'
+      buildVersionToDownload: 'latestFromBranch'
       artifactName: 'installer-iso'
       patterns: '*/installer.iso'
       branchName: 'refs/heads/main'

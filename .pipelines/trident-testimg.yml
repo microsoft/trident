@@ -52,7 +52,7 @@ stages:
         buildType: ${{ parameters.downloadBuildType }}
         project: ECF
         definition: ${{ parameters.tridentPipeline }}
-        buildVersionToDownload: 'latest'
+        buildVersionToDownload: 'latestFromBranch'
         allowFailedBuilds: true
         artifactName: ${{ parameters.artifactName }}
         targetPath: '$(Build.SourcesDirectory)/test-images/base/trident'

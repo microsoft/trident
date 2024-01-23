@@ -61,7 +61,7 @@ stages:
         buildType: ${{ parameters.downloadBuildTypeRuntimeOS}}
         project: ECF
         definition: ${{ parameters.runtimeImagePipeline }}
-        buildVersionToDownload: 'latest'
+        buildVersionToDownload: 'latestFromBranch'
         artifactName: 'trident-testimg'
         branchName: 'refs/heads/main'
         targetPath: '$(System.ArtifactsDirectory)/runtime-image'
@@ -71,7 +71,7 @@ stages:
         buildType: ${{ parameters.downloadBuildTypeProvOS }}
         project: ECF
         definition: ${{ parameters.provOSPipeline }}
-        buildVersionToDownload: 'latest'
+        buildVersionToDownload: 'latestFromBranch'
         artifactName: 'provisioning-os-template'
         patterns: '*.iso'
         branchName: 'refs/heads/main'
@@ -82,7 +82,7 @@ stages:
         buildType: ${{ parameters.downloadBuildTypeIsogen }}
         project: ECF
         definition: ${{ parameters.isogenPipeline }}
-        buildVersionToDownload: 'latest'
+        buildVersionToDownload: 'latestFromBranch'
         artifactName: 'isogen'
         patterns: 'isogen'
         branchName: 'refs/heads/main'
