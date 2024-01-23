@@ -30,17 +30,17 @@ impl Chroot {
             vec![
                 Mount::builder()
                     .fstype("devtmpfs")
-                    .flags(MountFlags::RDONLY)
+                    .flags(MountFlags::empty())
                     .mount("devtmpfs", path.join("dev"))
                     .structured(ManagementError::ChrootMountSpecial { dir: "/dev" })?,
                 Mount::builder()
                     .fstype("proc")
-                    .flags(MountFlags::RDONLY)
+                    .flags(MountFlags::empty())
                     .mount("proc", path.join("proc"))
                     .structured(ManagementError::ChrootMountSpecial { dir: "/proc" })?,
                 Mount::builder()
                     .fstype("sysfs")
-                    .flags(MountFlags::RDONLY)
+                    .flags(MountFlags::empty())
                     .mount("sysfs", path.join("sys"))
                     .structured(ManagementError::ChrootMountSpecial { dir: "/sys" })?,
                 Mount::builder()
