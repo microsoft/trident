@@ -1,0 +1,54 @@
+parameters:
+- name: argusRepo
+  type: string
+  default: argus-toolkit
+
+- name: tridentRepo
+  type: string
+  default: self
+
+stages:
+- stage: MakefileValidation
+  displayName: Validate Makefile targets
+
+  jobs:
+  - job: MakeAll
+    displayName: make all
+    timeoutInMinutes: 30
+    pool:
+      type: linux
+      name: CAPKV_Pool
+      hostArchitecture: amd64
+
+    variables:
+      ob_outputDirectory: $(Build.SourcesDirectory)/build
+      argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+      tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+      emu_package_name: ''
+      emu_package_version: ''
+
+    steps:
+    - checkout: self
+    - checkout: ${{ parameters.tridentRepo }}
+    - checkout: ${{ parameters.argusRepo }}
+    - checkout: k8s-tests
+
+    - template: download-emu.yml
+      parameters:
+         tridentSourceDirectory: $(tridentSourceDirectory)
+
+    - bash: |
+        set -eux
+
+        sudo apt install -y protobuf-compiler clang-7 bc
+        sudo python3 -m pip install black
+        cargo install grcov
+        rustup component add llvm-tools-preview
+      displayName: Install dependencies
+
+    - bash: |
+        set -eux
+
+        make all
+      workingDirectory: $(tridentSourceDirectory)
+      displayName: Invoke make all

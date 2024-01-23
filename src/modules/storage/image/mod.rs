@@ -1313,7 +1313,7 @@ mod tests {
                 .get(&"os".to_owned())
                 .unwrap()
                 .partitions
-                .get(0)
+                .first()
                 .unwrap()
                 .contents,
             BlockDeviceContents::Unknown
@@ -1359,7 +1359,7 @@ mod tests {
                 .get(&"os".to_owned())
                 .unwrap()
                 .partitions
-                .get(0)
+                .first()
                 .unwrap()
                 .contents,
             contents.clone()
@@ -1518,7 +1518,7 @@ mod tests {
                 .get(&"os".to_owned())
                 .unwrap()
                 .partitions
-                .get(0)
+                .first()
                 .unwrap()
                 .contents,
             BlockDeviceContents::Initialized

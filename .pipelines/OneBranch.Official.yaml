@@ -69,3 +69,4 @@ extends:
       - template: e2e-template.yml
         parameters:
           publishUniversalFeed: true
+          devBuildValidation: true

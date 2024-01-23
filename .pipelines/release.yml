@@ -48,6 +48,13 @@ steps:
       contents: "*"
     displayName: Copy files to output
 
+  - task: CopyFiles@2
+    inputs:
+      sourceFolder: "${{ parameters.tridentSourceDirectory }}/artifacts"
+      targetFolder: "/usr/src/mariner/SOURCES"
+      contents: "*"
+    displayName: Copy EMU to SOURCES
+
   - script: |
       set -eux
       full_version=$(trident_version)

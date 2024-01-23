@@ -30,24 +30,21 @@ coverage-report:
 .PHONY: coverage
 coverage: ut-coverage coverage-report
 
-.PHONY: download-osmodifier
 EMU_PACKAGE_NAME ?= osmodifier_preview
 EMU_PACKAGE_VERSION ?= 0.1.0-preview.473295
+artifacts/osmodifier:
+	az artifacts universal download \
+		--organization "https://dev.azure.com/mariner-org/" \
+		--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
+		--scope project \
+		--feed "MarinerCoreArtifacts" \
+		--name '$(EMU_PACKAGE_NAME)' \
+		--version '$(EMU_PACKAGE_VERSION)' \
+		--path artifacts/
+	chmod +x artifacts/osmodifier
 
-download-osmodifier:
-	@az artifacts universal download \
-	    --organization "https://dev.azure.com/mariner-org/" \
-	    --project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-	    --scope project \
-	    --feed "MarinerCoreArtifacts" \
-	    --name '$(EMU_PACKAGE_NAME)' \
-	    --version '$(EMU_PACKAGE_VERSION)' \
-	    --path artifacts/
-	@chmod +x artifacts/osmodifier
-	@touch artifacts/osmodifier
-
-.PHONY: rpm download-osmodifier
-rpm: download-osmodifier
+.PHONY: rpm
+rpm: artifacts/osmodifier
 	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
 	docker build --progress plain -t trident/trident-build:latest \
@@ -61,8 +58,8 @@ rpm: download-osmodifier
 	docker rm -v $$id && \
 	tar xf bin/trident.tar.gz -C bin/
 
-.PHONY: docker-build download-osmodifier
-docker-build: download-osmodifier
+.PHONY: docker-build
+docker-build: artifacts/osmodifier
 	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest \
@@ -75,6 +72,7 @@ docker-build: download-osmodifier
 clean:
 	cargo clean
 	rm -rf bin/
+	rm -rf artifacts/
 	find . -name "*.profraw" -type f -delete
 
 # Locally we generally want to compile in debugging mode to reuse local artifacs.

@@ -534,10 +534,9 @@ fn wait_for_raid_resync(
         }
 
         if start_time.elapsed() >= max_duration {
-            let non_idle_devices: Vec<(&String, &String)> = raid_devices
+            let non_idle_devices: Vec<_> = raid_devices
                 .iter()
                 .filter(|(_, sync_status)| *sync_status != "idle")
-                .map(|(raid_device, sync_status)| (raid_device, sync_status))
                 .collect();
 
             for (raid_device, sync_status) in &non_idle_devices {

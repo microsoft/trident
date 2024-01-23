@@ -67,6 +67,10 @@ parameters:
   type: boolean
   default: false
 
+- name: devBuildValidation
+  type: boolean
+  default: false
+
 stages:
 - template: trident-stage.yml
   parameters:
@@ -74,6 +78,12 @@ stages:
     tridentArtifactSource: ${{ parameters.downloadBuildTypeTrident }}
     publishUniversalFeed: ${{ parameters.publishUniversalFeed }}
     codeCoverage: false
+
+- ${{ if eq(parameters.devBuildValidation, 'true') }}:
+  - template: dev-build.yml
+    parameters:
+      argusRepo: ${{ parameters.argusRepo }}
+      tridentRepo: ${{ parameters.tridentRepo }}
 
 - template: prov-os.yml
   parameters:
