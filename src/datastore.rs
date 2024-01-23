@@ -17,22 +17,12 @@ pub(crate) struct DataStore {
 impl DataStore {
     pub(crate) fn open_temporary() -> Result<Self, TridentError> {
         let path = Path::new(&TRIDENT_TEMPORARY_DATASTORE_PATH);
-        if path.exists() {
-            info!("Reusing temporary datastore at {}", path.display());
-            let existing = Self::open(path).structured(DatastoreError::DatastoreReopen)?;
-            Ok(Self {
-                db: existing.db,
-                host_status: existing.host_status,
-                temporary: true,
-            })
-        } else {
-            info!("Creating temporary datastore at {}", path.display());
-            Ok(Self {
-                db: Some(Self::make_datastore(path)?),
-                host_status: HostStatus::default(),
-                temporary: true,
-            })
-        }
+        info!("Creating temporary datastore at {}", path.display());
+        Ok(Self {
+            db: Some(Self::make_datastore(path)?),
+            host_status: HostStatus::default(),
+            temporary: true,
+        })
     }
 
     pub(crate) fn open(path: &Path) -> Result<Self, Error> {
@@ -191,14 +181,15 @@ mod functional_tests {
             );
         }
 
-        // Re-open the temporary datastore and verify that the reconcile state was retained. Then
-        // persist the datastore to a new location.
+        // Re-open the temporary datastore and verify that the reconcile state wasn't retained. Then
+        // rewrite the reconcile state and persist the datastore to a new location.
         {
             let mut datastore = DataStore::open_temporary().unwrap();
-            assert_eq!(
-                datastore.host_status().reconcile_state,
-                ReconcileState::CleanInstall
-            );
+            assert_eq!(datastore.host_status(), &HostStatus::default());
+
+            datastore
+                .with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)
+                .unwrap();
             datastore.persist(&datastore_path).unwrap();
         }
 

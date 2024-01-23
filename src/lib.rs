@@ -456,8 +456,8 @@ impl Trident {
                 .clone()
         } else if Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH).exists() {
             info!("Opening temporary datastore");
-            DataStore::open_temporary()
-                .unstructured("Failed to open temporary datastore")?
+            DataStore::open(Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH))
+                .context("Failed to open temporary datastore")?
                 .host_status()
                 .clone()
         } else {
