@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 
-use anyhow::{bail, Error};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
 use crate::is_default;
+
+use super::error::InvalidHostConfigurationError;
 
 /// Configuration for the host OS.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -100,11 +101,13 @@ pub enum SshMode {
 }
 
 impl OsConfig {
-    pub fn validate(&self) -> Result<(), Error> {
+    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
         let mut usernames = HashSet::new();
         for user in &self.users {
             if !usernames.insert(&user.name) {
-                bail!("Duplicate user name: {}", user.name);
+                return Err(InvalidHostConfigurationError::DuplicateUsernames(
+                    user.name.clone(),
+                ));
             }
         }
 

@@ -69,7 +69,7 @@ impl BlkDevReferrerKind {
     /// | **Image**              | No   | Yes       | TBD              | Yes       | Yes      | Yes             |
     /// | **ImageSysupdate**     | No   | No        | TBD              | No        | Yes      | No              |
     /// | **MountPoint**         | No   | Yes       | TBD              | Yes       | Yes      | Yes             |
-    pub(super) fn valid_target_kinds(&self) -> BlkDevKindFlag {
+    pub(crate) fn valid_target_kinds(&self) -> BlkDevKindFlag {
         match self {
             Self::None => BlkDevKindFlag::empty(),
             Self::RaidArray => BlkDevKindFlag::Partition,
@@ -113,7 +113,7 @@ impl BlkDevReferrerKind {
     /// | **MountPoint**       | 1   | 1   |
     ///
     /// (Above ranges are inclusive)
-    pub(super) fn valid_target_count(&self) -> ValidCardinality {
+    pub(crate) fn valid_target_count(&self) -> ValidCardinality {
         match self {
             Self::None => ValidCardinality::new_zero(),
             Self::RaidArray => ValidCardinality::new_at_least(2),
@@ -152,7 +152,7 @@ impl<'a> HostConfigBlockDevice<'a> {
             }
             HostConfigBlockDevice::ABVolume(_) => None,
             HostConfigBlockDevice::EncryptedVolume(enc_vol) => {
-                Some(vec![("name", enc_vol.device_name.as_bytes())])
+                Some(vec![("deviceName", enc_vol.device_name.as_bytes())])
             }
         }
     }
@@ -175,7 +175,7 @@ impl BlkDevReferrerKind {
     /// RAID array are the same.
     pub(super) fn check_targets(
         &self,
-        node: &BlkDevNode,
+        _node: &BlkDevNode,
         targets: &[&BlkDevNode],
         graph: &BlockDeviceGraph,
     ) -> Result<(), Error> {
@@ -187,7 +187,7 @@ impl BlkDevReferrerKind {
                     // Assumption: all targets are partitions
                     .map(|target| target.host_config_ref.unwrap_partition())
                     .collect::<Result<Vec<&Partition>, Error>>()
-                    .context("Failed to get partitions for RAID array")?,
+                    .context("Failed to get partitions for RAID array.")?,
             )?,
             Self::ABVolume => (),
             Self::EncryptedVolume => {
@@ -198,12 +198,7 @@ impl BlkDevReferrerKind {
                     // If the target is a partition, ensure it is of an
                     // acceptable type
                     HostConfigBlockDevice::Partition(part) => {
-                        encrypted::check_partition_type_supports_encryption(part).context(
-                            format!(
-                                "Encrypted volume '{}' references invalid partition.",
-                                node.id
-                            ),
-                        )?;
+                        encrypted::check_partition_type_supports_encryption(part)?;
                     }
                     // If the target is a RAID array, ensure all its underlying
                     // partitions are of an acceptable type
@@ -211,7 +206,7 @@ impl BlkDevReferrerKind {
                         graph
                             .targets(&target.id)
                             .context(format!(
-                                "Failed to get targets for RAID array '{}'",
+                                "Failed to get targets for RAID array '{}'.",
                                 target.id
                             ))?
                             .iter()
@@ -219,21 +214,17 @@ impl BlkDevReferrerKind {
                             .map(|target| target.host_config_ref.unwrap_partition())
                             .collect::<Result<Vec<&Partition>, Error>>()
                             .context(format!(
-                                "Failed to get partitions for RAID array '{}'",
+                                "Failed to get partitions for RAID array '{}'.",
                                 target.id
                             ))?
                             .into_iter()
                             .try_for_each(encrypted::check_partition_type_supports_encryption)
-                            .context(format!(
-                                "Encrypted volume '{}' references invalid RAID array.",
-                                node.id
-                            ))?;
+                            .context("Encrypted volume references invalid RAID array.")?;
                     }
 
                     // Assumption: all other types are invalid
                     _ => bail!(
-                        "Encrypted volume '{}' references block device of invalid kind '{}'",
-                        node.id,
+                        "Encrypted volume references block device of invalid kind '{}'.",
                         target.id
                     ),
                 }

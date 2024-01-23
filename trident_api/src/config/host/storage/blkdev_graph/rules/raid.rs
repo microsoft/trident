@@ -11,13 +11,13 @@ pub(super) fn check_partition_size_equals(partitions: &[&Partition]) -> Result<(
                 Ok(size)
             } else {
                 bail!(
-                    "RAID array references partition '{}', which does not have a fixed size",
+                    "RAID array references partition '{}', which does not have a fixed size.",
                     part.id
                 );
             }
         })
         .collect::<Result<Vec<u64>, Error>>()
-        .context("Not all members have fixed sizes")?;
+        .context("Not all members have fixed sizes.")?;
 
     // Ensure that all partitions have the same size
     //
@@ -25,11 +25,11 @@ pub(super) fn check_partition_size_equals(partitions: &[&Partition]) -> Result<(
     // the same size.
     let first_size = *sizes
         .first()
-        .context("Failed to get first partition size")?;
+        .context("Failed to get first partition size.")?;
 
     ensure!(
         sizes.into_iter().all(|size| size == first_size),
-        "RAID array references partitions with different sizes"
+        "RAID array references partitions with different sizes."
     );
 
     Ok(())

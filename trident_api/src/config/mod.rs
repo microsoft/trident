@@ -2,6 +2,7 @@ mod host;
 mod trident;
 
 pub use host::{
+    error::InvalidHostConfigurationError,
     management::Management,
     osconfig::{OsConfig, Password, SshMode, User},
     scripts::{Script, Scripts, ServicingType},

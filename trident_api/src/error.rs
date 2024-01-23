@@ -4,6 +4,8 @@ use std::{borrow::Cow, panic::Location};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+use crate::config::InvalidHostConfigurationError;
+
 /// Trident failed to initialize.
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -38,8 +40,8 @@ pub enum InvalidInputError {
     LoadKickstart { path: String },
     #[error("Failed to translate kickstart")]
     KickstartTranslation,
-    #[error("Invalid host configuration")]
-    InvalidHostConfiguration,
+    #[error("Invalid host configuration: {0}")]
+    InvalidHostConfiguration(#[from] InvalidHostConfigurationError),
     #[error("Host configuration is incompatible with current install")]
     IncompatibleHostConfiguration,
 }

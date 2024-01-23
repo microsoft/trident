@@ -1,12 +1,13 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use anyhow::{bail, Error};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
 use crate::status::{ReconcileState, UpdateKind};
+
+use super::error::InvalidHostConfigurationError;
 
 /// Scripts that can be run on the host during Trident stages.
 /// These scripts are run in the order they are defined.
@@ -130,32 +131,26 @@ pub enum ServicingType {
 }
 
 impl Scripts {
-    pub(crate) fn validate(&self) -> Result<(), Error> {
-        for script in &self.post_provision {
-            script.validate()?;
-        }
-        for script in &self.post_configure {
-            script.validate()?;
-        }
+    pub(crate) fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+        self.post_provision
+            .iter()
+            .chain(self.post_configure.iter())
+            .try_for_each(|script| script.validate())?;
         Ok(())
     }
 }
 
 impl Script {
-    pub(crate) fn validate(&self) -> Result<(), Error> {
-        if self.content.is_none() && self.path.is_none() {
-            bail!(
-                "Script '{}': either content or path must be specified",
-                self.name
-            );
+    pub(crate) fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+        match (&self.content, &self.path) {
+            (Some(_), Some(_)) => Err(InvalidHostConfigurationError::ScriptHasBothContentAndPath(
+                self.name.clone(),
+            )),
+            (None, None) => Err(InvalidHostConfigurationError::ScriptHasNoContentOrPath(
+                self.name.clone(),
+            )),
+            _ => Ok(()),
         }
-        if self.content.is_some() && self.path.is_some() {
-            bail!(
-                "Script '{}': Only one of content or path must be specified",
-                self.name
-            );
-        }
-        Ok(())
     }
 }
 

@@ -1,8 +1,6 @@
 use std::{collections::BTreeMap, path::Path};
 
-use anyhow::{bail, Context, Error};
-
-use crate::BlockDeviceId;
+use crate::{config::host::error::InvalidHostConfigurationError, BlockDeviceId};
 
 use super::types::BlkDevNode;
 
@@ -34,7 +32,10 @@ impl<'a> BlockDeviceGraph<'a> {
     /// backed by an image. This is to make sure that Trident can detect the
     /// volume and the volume is initialized using customer provided
     /// image, not just an empty filesystem.
-    pub(crate) fn validate_volume_presence(&self, mount_point_path: &Path) -> Result<(), Error> {
+    pub(crate) fn validate_volume_presence(
+        &self,
+        mount_point_path: &Path,
+    ) -> Result<(), InvalidHostConfigurationError> {
         let (_id, node) = self
             .nodes
             .iter()
@@ -43,17 +44,14 @@ impl<'a> BlockDeviceGraph<'a> {
                     .iter()
                     .any(|mp| mp.path == mount_point_path)
             })
-            .context(format!(
-                "'{}' mount point must be present",
-                mount_point_path.display()
-            ))?;
+            .ok_or(InvalidHostConfigurationError::ExpectedMountPointNotFound {
+                mount_point_path: mount_point_path.display().to_string(),
+            })?;
 
-        if node.image.is_none() {
-            bail!(format!(
-                "'{}' mount point must be backed by an image",
-                mount_point_path.display()
-            ));
-        }
+        node.image
+            .ok_or(InvalidHostConfigurationError::MountPointNotBackedByImage {
+                mount_point_path: mount_point_path.display().to_string(),
+            })?;
 
         Ok(())
     }
@@ -133,15 +131,22 @@ mod tests {
                 .validate_volume_presence(Path::new(
                     "/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-456"
                 ))
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "'/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-456' mount point must be backed by an image"
+                .unwrap_err(),
+            InvalidHostConfigurationError::MountPointNotBackedByImage {
+                mount_point_path: "/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-456"
+                    .into()
+            }
         );
-        assert_eq!(graph
-            .validate_volume_presence(Path::new(
-                "/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-789"
-            ))
-            .unwrap_err().root_cause().to_string(), "'/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-789' mount point must be present");
+        assert_eq!(
+            graph
+                .validate_volume_presence(Path::new(
+                    "/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-789"
+                ))
+                .unwrap_err(),
+            InvalidHostConfigurationError::ExpectedMountPointNotFound {
+                mount_point_path: "/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-789"
+                    .into()
+            }
+        );
     }
 }

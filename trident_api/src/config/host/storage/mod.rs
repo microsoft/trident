@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{ensure, Context, Error};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
@@ -25,6 +24,8 @@ use imaging::{AbUpdate, Image};
 use self::blkdev_graph::{
     builder::BlockDeviceGraphBuilder, error::BlockDeviceGraphBuildError, graph::BlockDeviceGraph,
 };
+
+use super::error::InvalidHostConfigurationError;
 
 /// Storage configuration describes the disks of the host that will be used to
 /// store the OS and data. Not all disks of the host need to be captured inside
@@ -345,7 +346,10 @@ impl Storage {
     ///
     /// This function will validate the storage configuration and return an error
     /// if the configuration is invalid.
-    pub fn validate(&self, require_root_mount_point: bool) -> Result<(), Error> {
+    pub fn validate(
+        &self,
+        require_root_mount_point: bool,
+    ) -> Result<(), InvalidHostConfigurationError> {
         // Check basic constraints
 
         if let Some(encryption) = &self.encryption {
@@ -353,9 +357,7 @@ impl Storage {
         }
 
         // Build the graph
-        let graph = self
-            .build_graph()
-            .context("Storage configuration is invalid")?;
+        let graph = self.build_graph()?;
 
         // If storage configuration is requested, then ESP volume must be
         // present, to update Grub configuration
@@ -377,15 +379,17 @@ impl Encryption {
     ///
     /// This function will validate the encryption configuration and
     /// return an error if the configuration is invalid.
-    pub fn validate(&self) -> Result<(), Error> {
+    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
         // Encryption recovery key URLs must start with file://
         if let Some(recovery_key_url) = &self.recovery_key_url {
-            ensure!(
-                recovery_key_url.scheme() == "file",
-                "Encryption recovery key URL '{}' has an invalid scheme '{}'",
-                recovery_key_url,
-                recovery_key_url.scheme()
-            );
+            if recovery_key_url.scheme() != "file" {
+                return Err(
+                    InvalidHostConfigurationError::InvalidEncryptionRecoveryKeyUrlScheme {
+                        url: recovery_key_url.to_string(),
+                        scheme: recovery_key_url.scheme().to_string(),
+                    },
+                );
+            }
         }
 
         Ok(())
@@ -398,6 +402,8 @@ mod tests {
 
     use imaging::{AbVolumePair, ImageFormat, ImageSha256};
     use partitions::{PartitionSize, PartitionType};
+
+    use crate::config::host::storage::blkdev_graph::types::{BlkDevKind, BlkDevReferrerKind};
 
     use super::*;
 
@@ -719,12 +725,14 @@ mod tests {
             ..storage.clone()
         };
         assert_eq!(
-            bad_volume_pair
-                .validate(true)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "Block device 'ab-update-volume-pair' of kind 'A/B volume' references target 'disk1-partition1' more than once"
+            bad_volume_pair.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateTargetId {
+                    node_id: "ab-update-volume-pair".into(),
+                    kind: BlkDevKind::ABVolume,
+                    target_id: "disk1-partition1".into()
+                }
+            )
         );
 
         let bad_volume_pair_id = Storage {
@@ -738,12 +746,10 @@ mod tests {
             ..storage.clone()
         };
         assert_eq!(
-            bad_volume_pair_id
-                .validate(true)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "Block device disk1 is defined more than once"
+            bad_volume_pair_id.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
+            )
         );
 
         let bad_image_target = Storage {
@@ -756,12 +762,13 @@ mod tests {
             ..storage.clone()
         };
         assert_eq!(
-            bad_image_target
-                .validate(true)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "Image 'http://example.com/image' references non-existent block device 'disk99'"
+            bad_image_target.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ImageNonExistentReference {
+                    image_id: "http://example.com/image".into(),
+                    target_id: "disk99".into()
+                }
+            )
         );
     }
 
@@ -867,56 +874,89 @@ mod tests {
             size: PartitionSize::from_str("1M").unwrap(),
         }];
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device part1 is defined more than once"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateDeviceId("part1".into())
+            ),
         );
 
         // fail on duplicate id
         storage = storage_golden.clone();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device disk1 is defined more than once"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
+            ),
         );
 
         // fail on missing reference (disk4 does not exist)
         storage = storage_golden.clone();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "disk4".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'ab1' of kind 'A/B volume' references non-existent block device 'disk4'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::NonExistentReference {
+                    node_id: "ab1".into(),
+                    kind: BlkDevKind::ABVolume,
+                    target_id: "disk4".into()
+                }
+            ),
         );
 
         // fail on missing reference (disk4 does not exist)
         storage = storage_golden.clone();
         storage.images[0].target_id = "disk4".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Image 'https://some/url' references non-existent block device 'disk4'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ImageNonExistentReference {
+                    image_id: "https://some/url".into(),
+                    target_id: "disk4".into()
+                }
+            ),
         );
 
         // fail on missing reference (disk4 does not exist)
         storage = storage_golden.clone();
         storage.mount_points[0].target_id = "disk4".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Mount point '/' references non-existent block device 'disk4'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::MountPointNonExistentReference {
+                    mount_point: "/".into(),
+                    target_id: "disk4".into()
+                }
+            ),
         );
 
         // fail on bad block device type
         storage = storage_golden.clone();
         storage.images[0].target_id = "disk1".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Image 'https://some/url' references block device 'disk1' of invalid kind 'disk', acceptable kinds are: partition or RAID array or A/B volume or encrypted volume"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ImageInvalidReference {
+                    image_id: "https://some/url".into(),
+                    target_id: "disk1".into(),
+                    target_kind: BlkDevKind::Disk,
+                    valid_references: BlkDevReferrerKind::Image.valid_target_kinds()
+                }
+            ),
         );
 
         // fail if devices are not all the same size for a RAID
         storage = storage_golden.clone();
         storage.disks[1].partitions[3].size = PartitionSize::from_str("2G").unwrap();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'my-raid1' of kind 'RAID array' references invalid targets"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidTargets {
+                    node_id: "my-raid1".into(),
+                    kind: BlkDevKind::RaidArray,
+                    body: "RAID array references partitions with different sizes.".into()
+                }
+            ),
         );
     }
 
@@ -952,8 +992,15 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'mnt' of kind 'RAID array' has 0 members, but must have at least 2 target(s)"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidTargetCount {
+                    node_id: "mnt".into(),
+                    kind: BlkDevKind::RaidArray,
+                    target_count: 0,
+                    expected: BlkDevReferrerKind::RaidArray.valid_target_count()
+                }
+            )
         );
     }
 
@@ -964,8 +1011,16 @@ mod tests {
         storage.raid.software[0].devices[0] = "srv".to_owned();
         eprintln!("{:?}", storage.validate(true).unwrap_err());
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'mnt' of kind 'RAID array' references block device 'srv' of invalid kind 'encrypted volume', acceptable kinds are: partition"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidReferenceKind {
+                    node_id: "mnt".into(),
+                    kind: BlkDevKind::RaidArray,
+                    target_id: "srv".into(),
+                    target_kind: BlkDevKind::EncryptedVolume,
+                    valid_references: BlkDevReferrerKind::RaidArray.valid_target_kinds()
+                }
+            ),
         );
     }
 
@@ -975,8 +1030,10 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "disk1".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device disk1 is defined more than once"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
+            )
         );
     }
 
@@ -986,8 +1043,10 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "esp".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device esp is defined more than once"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateDeviceId("esp".into())
+            )
         );
     }
 
@@ -997,8 +1056,10 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "mnt".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device mnt is defined more than once"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateDeviceId("mnt".into())
+            )
         );
     }
 
@@ -1008,8 +1069,10 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "root".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device root is defined more than once"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateDeviceId("root".into())
+            )
         );
     }
 
@@ -1034,8 +1097,10 @@ mod tests {
             });
 
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device srv is defined more than once"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::DuplicateDeviceId("srv".into())
+            )
         );
     }
 
@@ -1065,8 +1130,16 @@ mod tests {
             target_id: "alt".to_owned(),
         });
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'srv' and 'alt' of kind 'encrypted volume' have a duplicate value for field 'name' ('luks-srv')"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::UniqueFieldConstraintError {
+                    node_id: "srv".into(),
+                    other_id: "alt".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    field_name: "deviceName".into(),
+                    value: "luks-srv".into(),
+                }
+            ),
         );
     }
 
@@ -1086,8 +1159,11 @@ mod tests {
         storage.encryption.as_mut().unwrap().recovery_key_url =
             Some(Url::parse("https://www.example.com/recovery.key").unwrap());
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Encryption recovery key URL 'https://www.example.com/recovery.key' has an invalid scheme 'https'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidEncryptionRecoveryKeyUrlScheme {
+                url: "https://www.example.com/recovery.key".into(),
+                scheme: "https".into(),
+            }
         );
     }
 
@@ -1107,8 +1183,14 @@ mod tests {
         storage.mount_points.remove(1);
         storage.images.remove(0);
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'srv' of kind 'encrypted volume' references invalid targets"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidTargets {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    body: "Partition 'esp' is of unsupported type 'Esp'.".into()
+                }
+            ),
         );
     }
 
@@ -1120,8 +1202,14 @@ mod tests {
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id =
             "root-a-verity".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'srv' of kind 'encrypted volume' references invalid targets"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidTargets {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    body: "Partition 'root-a' is of unsupported type 'Root'.".into()
+                }
+            ),
         );
     }
 
@@ -1138,7 +1226,14 @@ mod tests {
             .unwrap()
             .target_id = "root-a-verity".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidTargets {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    body: "Partition 'root-a-verity' is of unsupported type 'RootVerity'.".into()
+                }
+            ),
             "Block device 'srv' of kind 'encrypted volume' references invalid targets"
         );
     }
@@ -1208,8 +1303,15 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'mnt' of kind 'RAID array' has 0 members, but must have at least 2 target(s)"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidTargetCount {
+                    node_id: "mnt".into(),
+                    kind: BlkDevKind::RaidArray,
+                    target_count: 0,
+                    expected: BlkDevReferrerKind::RaidArray.valid_target_count()
+                }
+            ),
         );
     }
 
@@ -1221,8 +1323,15 @@ mod tests {
         storage.raid.software[0].devices = vec!["root".to_owned()];
         // Remove the first mount point
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'mnt' of kind 'RAID array' has 1 members, but must have at least 2 target(s)"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidTargetCount {
+                    node_id: "mnt".into(),
+                    kind: BlkDevKind::RaidArray,
+                    target_count: 1,
+                    expected: BlkDevReferrerKind::RaidArray.valid_target_count()
+                }
+            ),
         );
     }
 
@@ -1232,8 +1341,16 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "disk1".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'srv' of kind 'encrypted volume' references block device 'disk1' of invalid kind 'disk', acceptable kinds are: partition or RAID array"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidReferenceKind {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    target_id: "disk1".into(),
+                    target_kind: BlkDevKind::Disk,
+                    valid_references: BlkDevReferrerKind::EncryptedVolume.valid_target_kinds()
+                }
+            )
         );
     }
 
@@ -1254,8 +1371,16 @@ mod tests {
         storage.images.remove(1);
         storage.mount_points.remove(0);
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'srv' of kind 'encrypted volume' references block device 'root' of invalid kind 'A/B volume', acceptable kinds are: partition or RAID array"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidReferenceKind {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    target_id: "root".into(),
+                    target_kind: BlkDevKind::ABVolume,
+                    valid_references: BlkDevReferrerKind::EncryptedVolume.valid_target_kinds()
+                }
+            ),
         );
     }
 
@@ -1280,8 +1405,15 @@ mod tests {
             target_id: "alt".to_owned(),
         });
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'srv-enc' of kind 'partition' is referenced by multiple block devices: 'alt' and 'srv'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ReferencedByMultiple {
+                    reference_id: "srv-enc".into(),
+                    reference_kind: BlkDevKind::Partition,
+                    referrer_1: "alt".into(),
+                    referrer_2: "srv".into(),
+                }
+            )
         );
     }
 
@@ -1292,8 +1424,15 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
         storage.mount_points[2].target_id = "mnt-raid-1".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'mnt-raid-1' of kind 'partition' is referenced by multiple block devices: 'mnt' and 'srv'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ReferencedByMultiple {
+                    reference_id: "mnt-raid-1".into(),
+                    reference_kind: BlkDevKind::Partition,
+                    referrer_1: "mnt".into(),
+                    referrer_2: "srv".into(),
+                }
+            ),
         );
     }
 
@@ -1303,8 +1442,15 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'mnt-raid-1' of kind 'partition' is referenced by multiple block devices: 'mnt' and 'srv'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ReferencedByMultiple {
+                    reference_id: "mnt-raid-1".into(),
+                    reference_kind: BlkDevKind::Partition,
+                    referrer_1: "mnt".into(),
+                    referrer_2: "srv".into(),
+                }
+            ),
         );
     }
 
@@ -1316,8 +1462,15 @@ mod tests {
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'root-a' of kind 'partition' is referenced by multiple block devices: 'root' and 'srv'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ReferencedByMultiple {
+                    reference_id: "root-a".into(),
+                    reference_kind: BlkDevKind::Partition,
+                    referrer_1: "root".into(),
+                    referrer_2: "srv".into(),
+                }
+            ),
         );
     }
 
@@ -1329,8 +1482,15 @@ mod tests {
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'root-b' of kind 'partition' is referenced by multiple block devices: 'root' and 'srv'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ReferencedByMultiple {
+                    reference_id: "root-b".into(),
+                    reference_kind: BlkDevKind::Partition,
+                    referrer_1: "root".into(),
+                    referrer_2: "srv".into(),
+                }
+            ),
         );
     }
 
@@ -1342,8 +1502,15 @@ mod tests {
         storage.mount_points.remove(2); // remove /mnt mount point
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "mnt".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'mnt' of kind 'RAID array' is referenced by multiple block devices: 'root' and 'srv'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ReferencedByMultiple {
+                    reference_id: "mnt".into(),
+                    reference_kind: BlkDevKind::RaidArray,
+                    referrer_1: "root".into(),
+                    referrer_2: "srv".into(),
+                }
+            ),
         );
     }
 
@@ -1355,8 +1522,15 @@ mod tests {
         storage.mount_points.remove(2); // remove /mnt mount point
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "mnt".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Block device 'mnt' of kind 'RAID array' is referenced by multiple block devices: 'root' and 'srv'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ReferencedByMultiple {
+                    reference_id: "mnt".into(),
+                    reference_kind: BlkDevKind::RaidArray,
+                    referrer_1: "root".into(),
+                    referrer_2: "srv".into(),
+                }
+            ),
         );
     }
 
@@ -1366,8 +1540,14 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.images[0].target_id = "srv-enc".to_owned();
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Image 'file:///esp.raw.zst' references block device 'srv-enc' that is already in use by 'srv'"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ImageReferenceInUse {
+                    image_id: "file:///esp.raw.zst".into(),
+                    target_id: "srv-enc".into(),
+                    referrer_id: "srv".into(),
+                }
+            ),
         );
     }
 
@@ -1387,8 +1567,15 @@ mod tests {
         let mut storage: Storage = test_storage();
         storage.images[0].format = ImageFormat::RawLzma;
         assert_eq!(
-            storage.validate(true).unwrap_err().root_cause().to_string(),
-            "Image 'file:///esp.raw.zst' references block device 'esp' of invalid kind 'partition', acceptable kinds are: A/B volume"
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::ImageInvalidReference {
+                    image_id: "file:///esp.raw.zst".into(),
+                    target_id: "esp".into(),
+                    target_kind: BlkDevKind::Partition,
+                    valid_references: BlkDevReferrerKind::Image.valid_target_kinds()
+                }
+            )
         );
     }
 

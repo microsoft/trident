@@ -1,4 +1,3 @@
-use anyhow::Error;
 use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +6,7 @@ use schemars::JsonSchema;
 
 use crate::is_default;
 
+pub(super) mod error;
 pub(super) mod management;
 pub(super) mod network;
 pub(super) mod osconfig;
@@ -17,6 +17,8 @@ use management::Management;
 use osconfig::OsConfig;
 use scripts::Scripts;
 use storage::Storage;
+
+use error::InvalidHostConfigurationError;
 
 /// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
@@ -66,7 +68,7 @@ pub struct HostConfiguration {
 }
 
 impl HostConfiguration {
-    pub fn validate(&self) -> Result<(), Error> {
+    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
         let require_root_mount_point = self.management != Management::default()
             || self.scripts != Scripts::default()
             || self.osconfig != OsConfig::default()

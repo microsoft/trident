@@ -3,7 +3,7 @@
 use std::fmt::Display;
 
 use anyhow::{bail, Error};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{
@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Enum for supported block device types
-#[derive(Serialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
 pub enum BlkDevKind {
     /// A disk
@@ -40,7 +40,7 @@ pub enum BlkDevKind {
 
 bitflags::bitflags! {
     /// Bitflags for supported block device types
-    #[derive(Serialize, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub struct BlkDevKindFlag: u32 {
         const Disk = 1;
         const Partition = 1 << 1;

@@ -16,8 +16,8 @@ use tonic::{Request, Response, Status};
 use osutils::overlay::SystemDFilesystemOverlay;
 use osutils::{chroot, container};
 use setsail::KsTranslator;
-use trident_api::config::HostConfigurationSource;
 use trident_api::config::{HostConfiguration, LocalConfigFile, Operations};
+use trident_api::config::{HostConfigurationSource, InvalidHostConfigurationError};
 use trident_api::error::{
     InitializationError, InternalError, InvalidInputError, ManagementError, ReportError,
     TridentError, TridentResultExt,
@@ -174,7 +174,9 @@ impl Trident {
     ) -> Result<Option<Box<HostConfiguration>>, TridentError> {
         config
             .get_host_configuration_source()
-            .structured(InvalidInputError::InvalidHostConfiguration)?
+            .structured(InvalidInputError::InvalidHostConfiguration(
+                InvalidHostConfigurationError::FailedToParse,
+            ))?
             .as_ref()
             .map(Self::load_host_config)
             .transpose()
@@ -230,11 +232,11 @@ impl Trident {
         if let Some(
             HostConfigurationSource::KickstartFile(_)
             | HostConfigurationSource::KickstartEmbedded(_),
-        ) = self
-            .config
-            .get_host_configuration_source()
-            .structured(InvalidInputError::InvalidHostConfiguration)?
-        {
+        ) = self.config.get_host_configuration_source().structured(
+            InvalidInputError::InvalidHostConfiguration(
+                InvalidHostConfigurationError::FailedToParse,
+            ),
+        )? {
             warn!("Cannot set up network early when using kickstart");
             return Ok(());
         }
@@ -403,7 +405,7 @@ impl Trident {
 
         cmd.host_config
             .validate()
-            .structured(InvalidInputError::InvalidHostConfiguration)?;
+            .map_err(InvalidInputError::InvalidHostConfiguration)?;
 
         // Use overlay for holding any changes to the host filesystem that
         // should not be persisted.

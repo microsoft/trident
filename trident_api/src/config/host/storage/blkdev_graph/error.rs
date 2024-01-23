@@ -1,13 +1,13 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::{
     cardinality::ValidCardinality,
     types::{BlkDevKind, BlkDevKindFlag},
 };
 
-#[derive(thiserror::Error, Serialize, Debug)]
+#[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum BlockDeviceGraphBuildError {
-    #[error("Block device {0} is defined more than once")]
+    #[error("Block device '{0}' is defined more than once")]
     DuplicateDeviceId(String),
 
     #[error("Block device '{node_id}' of kind '{kind}' is invalid")]
@@ -26,11 +26,11 @@ pub enum BlockDeviceGraphBuildError {
         target_id: String,
     },
 
-    #[error("Block device '{node_id}' of kind '{kind}' has {target_count} members, but must have {expected} target(s)")]
+    #[error("Block device '{node_id}' of kind '{kind}' has {target_count} target(s), but must have {expected} target(s)")]
     InvalidTargetCount {
         node_id: String,
         kind: BlkDevKind,
-        target_count: String,
+        target_count: usize,
         expected: ValidCardinality,
     },
 
@@ -130,7 +130,7 @@ pub enum BlockDeviceGraphBuildError {
         value: String,
     },
 
-    #[error("Block device '{node_id}' of kind '{kind}' references invalid targets")]
+    #[error("Block device '{node_id}' of kind '{kind}' references invalid targets:\n{body}")]
     InvalidTargets {
         node_id: String,
         kind: BlkDevKind,

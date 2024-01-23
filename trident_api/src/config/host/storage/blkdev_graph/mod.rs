@@ -38,13 +38,12 @@
 //!
 
 pub(super) mod builder;
+pub(super) mod cardinality;
 pub(super) mod conversions;
 pub mod error;
 pub(super) mod graph;
+pub(super) mod rules;
 pub(super) mod types;
-
-mod cardinality;
-mod rules;
 
 #[cfg(test)]
 mod tests {

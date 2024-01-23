@@ -146,7 +146,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                     return Err(BlockDeviceGraphBuildError::InvalidTargetCount {
                         node_id: node.id,
                         kind: node.kind,
-                        target_count: target_count.to_string(),
+                        target_count,
                         expected: valid_cardinality,
                     });
                 }
@@ -375,7 +375,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 .map_err(|e| BlockDeviceGraphBuildError::InvalidTargets {
                     node_id: node.id.clone(),
                     kind: node.kind,
-                    body: e.to_string(),
+                    body: format!("{:#}", e),
                 })?;
         }
 
