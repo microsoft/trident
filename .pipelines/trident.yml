@@ -58,4 +58,5 @@ extends:
 
     stages:
     - template: e2e-template.yml
-      devBuildValidation: true
+      parameters:
+        devBuildValidation: true
