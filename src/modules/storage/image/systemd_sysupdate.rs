@@ -20,20 +20,21 @@ use std::{
 use anyhow::{bail, Context, Error};
 use configparser::ini::Ini;
 use log::{debug, info};
-use osutils::{
-    exe::{OutputChecker, RunAndCheck},
-    udevadm,
-};
 use regex::Regex;
 use reqwest::Url;
 use tempfile;
 
-use crate::{modules, Path};
+use osutils::{
+    exe::{OutputChecker, RunAndCheck},
+    udevadm,
+};
 use trident_api::{
     config::{Image, ImageSha256, PartitionType},
     status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, Partition},
     BlockDeviceId,
 };
+
+use crate::{modules, Path};
 
 use super::HashingReader;
 
@@ -830,7 +831,7 @@ fn get_partition_ref<'a>(
         .find(|p| p.id == *block_device_id)
 }
 
-/// Returns a reference to the Partition object within an AB volume pair that corresponds to the
+/// Returns a reference to the Partition object within an A/B volume pair that corresponds to the
 /// inactive partition, or the one to be updated.
 pub(super) fn get_ab_volume_partition<'a>(
     host_status: &'a HostStatus,

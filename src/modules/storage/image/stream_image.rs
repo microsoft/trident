@@ -1,34 +1,41 @@
-use anyhow::{bail, Context, Error};
-use log::{error, info};
-use reqwest::{blocking::Response, StatusCode, Url};
 use std::{
     fs::{self, File},
     io::{self, BufWriter, Read},
+    path::PathBuf,
     time::Duration,
 };
+
+use anyhow::{bail, Context, Error};
+use log::{error, info};
+use reqwest::{blocking::Response, StatusCode, Url};
 use zstd;
 
-use super::HashingReader;
 use trident_api::{
     config::{Image, ImageSha256},
     status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
 
+use super::HashingReader;
+
+pub const GET_MAX_RETRIES: u8 = 25;
+pub const GET_TIMEOUT_SECS: u64 = 600;
+
 /// This function is called from image/mod.rs, to stream the bytes of an image onto a block device.
 /// The func takes the following arguments:
 /// 1. host_status: A mutable reference to HostStatus object, which is updated to communicate that
 /// the block device is being written to.
 /// 2. stream: A HashingReader instance, which wraps a stream of bytes.
-/// 3. block_device: A BlockDeviceInfo instance, which contains information about the block device
-/// that is being written to, e.g., its path.
-/// 4. block_device_id: BlockDeviceId of the block device.
+/// 3. destination_path: PathBuf of the block device or file.
+/// 4. destination_size: Option<u64>, which is the size of the block device.
+/// 5. block_device_id: BlockDeviceId of the block device.
 /// The func returns a tuple of (String, u64), where the first element is the SHA256 hash of the
 /// stream, and the second element is the number of bytes written to the block device.
 pub(super) fn stream_zstd_image(
     host_status: &mut HostStatus,
     mut stream: HashingReader<Box<dyn Read>>,
-    block_device: &BlockDeviceInfo,
+    destination_path: &PathBuf,
+    destination_size: Option<u64>,
     block_device_id: &BlockDeviceId,
 ) -> Result<(String, u64), Error> {
     // Instantiate decoder for ZSTD stream
@@ -37,8 +44,8 @@ pub(super) fn stream_zstd_image(
     // Open the partition for writing.
     let file = fs::File::options()
         .write(true)
-        .open(&block_device.path)
-        .context(format!("Failed to open '{}'", block_device.path.display()))?;
+        .open(destination_path)
+        .context(format!("Failed to open '{}'", destination_path.display()))?;
 
     // Buffer small writes to the disk, ensuring we write blocks of at least 4MB.
     let mut file = BufWriter::with_capacity(4 << 20, file);
@@ -54,14 +61,19 @@ pub(super) fn stream_zstd_image(
         block_device_id
     ))?;
 
-    // Decompress the image and write it to the block device, making sure not to write past the end.
-    let bytes_copied = io::copy(&mut (&mut decoder).take(block_device.size), &mut file)
-        .context("Failed to copy image")?;
+    // Decompress the image and write it to the block device. If destination is a block device and
+    // destination_size is provided, ensure that no more than destination_size bytes are written
+    let bytes_copied = match destination_size {
+        Some(size) => {
+            io::copy(&mut (&mut decoder).take(size), &mut file).context("Failed to copy image")?
+        }
+        None => io::copy(&mut decoder, &mut file).context("Failed to copy image")?,
+    };
 
     info!(
         "Copied {} bytes to {}",
         bytes_copied,
-        block_device.path.display()
+        destination_path.display()
     );
 
     file.into_inner()
@@ -101,16 +113,25 @@ pub(super) fn deploy(
         Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?)
     } else {
         // For remote files, perform a blocking GET request
-        exponential_backoff_get(&image_url, 25, Duration::from_secs(600))?
+        exponential_backoff_get(
+            &image_url,
+            GET_MAX_RETRIES,
+            Duration::from_secs(GET_TIMEOUT_SECS),
+        )?
     };
 
     // Initialize HashingReader instance on stream
     let stream = HashingReader::new(stream);
     info!("Writing image to block device");
     // Stream image to block device
-    let (computed_sha256, bytes_copied) =
-        stream_zstd_image(host_status, stream, block_device, &image.target_id)
-            .context(format!("Failed to stream image from {}", image.url))?;
+    let (computed_sha256, bytes_copied) = stream_zstd_image(
+        host_status,
+        stream,
+        &block_device.path,
+        Some(block_device.size),
+        &image.target_id,
+    )
+    .context(format!("Failed to stream image from {}", image.url))?;
 
     // Update HostStatus
     super::set_host_status_block_device_contents(
@@ -155,7 +176,7 @@ pub(super) fn deploy(
 /// `timeout` is the timeout for the blocking get request.
 ///
 /// The backoff is exponential, starting at 500ms and doubling each time, up to a maximum of 16s.
-fn exponential_backoff_get(
+pub(crate) fn exponential_backoff_get(
     url: &Url,
     max_retries: u8,
     timeout: Duration,

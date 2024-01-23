@@ -1,0 +1,617 @@
+use std::{
+    fs::{self, File},
+    io::Read,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
+use anyhow::{bail, Context, Error};
+use log::{debug, info};
+use reqwest::Url;
+use tempfile::{NamedTempFile, TempDir};
+
+use osutils::mount;
+use trident_api::{
+    config::{Image, ImageSha256},
+    status::{AbVolumeSelection, BlockDeviceContents, HostStatus},
+};
+
+use crate::modules::{
+    self,
+    constants::ESP_MOUNT_POINT_PATH,
+    storage::image::stream_image::{exponential_backoff_get, stream_zstd_image},
+    storage::image::stream_image::{GET_MAX_RETRIES, GET_TIMEOUT_SECS},
+    BOOT_ENTRY_A, BOOT_ENTRY_B, UPDATE_ROOT_PATH,
+};
+
+use super::HashingReader;
+
+/// Path to the EFI directory on the ESP volume mount point path, /boot/efi, where EFI executables
+/// will be placed on the updated volume, as part of file-based update of ESP:
+/// a. If volume A is currently active, copy boot files into /boot/efi/EFI/azlinuxB,
+/// b. If volume B is currently active OR no volume is currently active, i.e., Trident is doing
+/// CleanInstall, copy boot files into /boot/efi/EFI/azlinuxA.
+const EFI_PATH: &str = "EFI";
+
+/// Directory in the ESP image where the shim binaries are located
+const EFI_BOOT_PATH: &str = "EFI/BOOT";
+
+// Directory in the source ESP image where the GRUB config is located.
+// TODO: In long term, in the source ESP image, the GRUB config will be placed in the same dir as
+// the EFI executables, i.e., /EFI/BOOT/grub.cfg. Related ADO task:
+// https://dev.azure.com/mariner-org/ECF/_workitems/edit/6452.
+const BOOT_GRUB2_PATH: &str = "boot/grub2";
+
+// Directory where the GRUB config will be located on the updated volume.
+// TODO: In long term, on the updated volume, the GRUB config will be placed in the same dir as the
+// EFI executables, i.e., as /EFI/azlinuxA/grub.cfg or /EFI/azlinuxB/grub.cfg. Related ADO task:
+// https://dev.azure.com/mariner-org/ECF/_workitems/edit/6540/.
+const GRUB_BOOT_CONFIG_PATH: &str = "boot/efi/boot/grub2";
+
+// MountGuard is a helper struct that automatically unmounts a directory when it goes out of scope.
+// It is used to ensure that the ESP image is unmounted even if the function returns early.
+struct MountGuard<'a> {
+    mount_dir: &'a Path,
+}
+
+impl<'a> Drop for MountGuard<'a> {
+    fn drop(&mut self) {
+        if let Err(e) = mount::umount(self.mount_dir) {
+            info!(
+                "Failed to unmount directory {}: {}",
+                self.mount_dir.display(),
+                e
+            );
+        }
+    }
+}
+
+/// Performs file-based update of stand-alone ESP volume by copying three boot files into the
+/// correct dir:
+/// 1. If volume A is currently active, place in /boot/efi/EFI/azlinuxB,
+/// 2. If volume B is currently active, place in /boot/efi/EFI/azlinuxA,
+/// 3. If no volume is active, i.e. Trident is doing CleanInstall, place in /boot/efi/EFI/azlinuxA.
+///
+/// The func takes the following arguments:
+/// 1. image_url: &Url, which is the URL of the image to be downloaded,
+/// 2. image: &Image, which is the Image object from HostConfig,
+/// 3. host_status: &mut HostStatus, which is the HostStatus object,
+/// 4. is_local: bool, which is a boolean indicating whether the image is a local file or not.
+///
+/// Local image and dir it's mounted to are temp, so they're automatically removed from the FS
+/// after function returns.
+pub(super) fn deploy_esp(
+    image_url: Url,
+    image: &Image,
+    host_status: &mut HostStatus,
+    is_local: bool,
+) -> Result<(), Error> {
+    // Check whether image_url is local or remote
+    let stream: Box<dyn Read> = if is_local {
+        // For local files, open the file at the given path
+        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?)
+    } else {
+        // For remote files, perform a blocking GET request
+        exponential_backoff_get(
+            &image_url,
+            GET_MAX_RETRIES,
+            Duration::from_secs(GET_TIMEOUT_SECS),
+        )?
+    };
+
+    // Initialize HashingReader instance on stream
+    let stream = HashingReader::new(stream);
+    // Create a temporary file to download ESP image
+    let temp_image = NamedTempFile::new().context("Failed to create a temporary file")?;
+    let temp_image_path = temp_image.path().to_path_buf();
+
+    // Stream image to the temporary file. destination_size is None since we're writing to a new
+    // file and not block device
+    let (computed_sha256, bytes_copied) = stream_zstd_image(
+        host_status,
+        stream,
+        &temp_image_path,
+        None,
+        &image.target_id,
+    )
+    .context(format!("Failed to stream ESP image from {}", image.url))?;
+
+    // Create a temporary directory to mount ESP image
+    let temp_dir = TempDir::new().context("Failed to create a temporary mount directory")?;
+    let temp_mount_dir = temp_dir.path();
+
+    // Mount image to temp dir
+    mount::mount(&temp_image_path, temp_mount_dir).context(format!(
+        "Failed to mount image at path {} to directory {}",
+        temp_image_path.display(),
+        temp_mount_dir.display()
+    ))?;
+
+    // Create a mount guard that will automatically unmount when it goes out of scope
+    let _mount_guard = MountGuard {
+        mount_dir: temp_mount_dir,
+    };
+
+    // Determine which ESP dir to copy boot files into
+    let esp_dir_path = generate_esp_dir_path(host_status)?;
+
+    // Call helper func to copy files from mounted img dir to esp_dir_path
+    info!("Writing boot files to directory {}", esp_dir_path.display());
+    // Generate file name of EFI executable based on target architecture
+    let arch_str = generate_arch_str()
+        .context("Failed to generate arch string based on target architecture")?;
+
+    // Generate list of filepaths to the boot files. Pass in the temp dir path where the image is
+    // mounted to as an argument
+    let boot_files = generate_boot_filepaths(temp_mount_dir, &arch_str)
+        .context("Failed to generate boot filepaths")?;
+
+    // Clear esp_dir_path if it exists
+    if esp_dir_path.exists() {
+        info!("Clearing directory {}", esp_dir_path.display());
+        osutils::files::clean_directory(esp_dir_path.clone()).context(format!(
+            "Failed to clean directory {}",
+            esp_dir_path.display()
+        ))?;
+    } else {
+        // Create esp_dir_path if it doesn't exist
+        info!("Creating directory {}", esp_dir_path.display());
+        fs::create_dir_all(esp_dir_path.clone()).context(format!(
+            "Failed to create directory {}",
+            esp_dir_path.display()
+        ))?;
+    }
+
+    // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
+    copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
+        "Failed to copy boot files from directory {} to directory {}",
+        temp_mount_dir.display(),
+        esp_dir_path.display()
+    ))?;
+
+    // Update HostStatus.
+    // TODO: Setting BlockDeviceContents to Image contents, like for any volume, while updating the
+    // ESP volume is a temporary solution. In the next PR, Trident will set contents of the
+    // partition to ESPImage, a new value in the BlockDeviceContents object. Related ADO task:
+    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625.
+
+    super::set_host_status_block_device_contents(
+        host_status,
+        &image.target_id,
+        BlockDeviceContents::Image {
+            sha256: computed_sha256.clone(),
+            length: bytes_copied,
+            url: image.url.clone(),
+        },
+    )?;
+
+    // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
+    // SHA256 matches SHA256 in HostConfig
+    match image.sha256 {
+        ImageSha256::Ignored => {
+            info!("Ignoring SHA256 for image from '{}'", image.url);
+        }
+        ImageSha256::Checksum(ref expected_sha256) => {
+            if computed_sha256 != *expected_sha256 {
+                bail!(
+                    "SHA256 mismatch for disk image {}: expected {}, got {}",
+                    image.url,
+                    expected_sha256,
+                    computed_sha256
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Copies boot files from temp_mount_dir, where image was mounted to, to given dir esp_dir.
+fn copy_boot_files(
+    temp_mount_dir: &Path,
+    esp_dir: &Path,
+    boot_files: Vec<PathBuf>,
+) -> Result<(), Error> {
+    // Copy the specified files from temp_mount_path to esp_dir_path
+    for boot_file in boot_files.iter() {
+        let source_path = temp_mount_dir.join(boot_file);
+        // Extract filename from path
+        let file_name = Path::new(boot_file).file_name().context(format!(
+            "Failed to extract filename from path {}",
+            boot_file.display()
+        ))?;
+
+        let destination_path = esp_dir.join(file_name);
+
+        // Create directories if they don't exist
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent)
+                .context(format!("Failed to create directory {}", parent.display()))?;
+        }
+
+        info!(
+            "Copying file {} to {}",
+            source_path.display(),
+            destination_path.display()
+        );
+        fs::copy(&source_path, &destination_path).context(format!(
+            "Failed to copy file {} to {}",
+            source_path.display(),
+            destination_path.display()
+        ))?;
+
+        // TODO: In long term, the GRUB config will be placed in the same dir as EFI executables,
+        // when the images will be updated after Mariner 3.0 release. However, now, GRUB config
+        // needs to be copied into /boot/grub2/grub.cfg as well. Related ADO task:
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6540.
+        if file_name == "grub.cfg" {
+            let grub_config_path = Path::new(UPDATE_ROOT_PATH)
+                .join(GRUB_BOOT_CONFIG_PATH)
+                .join(file_name);
+
+            // Create directories if they don't exist
+            if let Some(parent) = grub_config_path.parent() {
+                fs::create_dir_all(parent)
+                    .context(format!("Failed to create directory {}", parent.display()))?;
+            }
+
+            info!(
+                "Copying file {} to {}",
+                source_path.display(),
+                grub_config_path.display()
+            );
+
+            fs::copy(&source_path, &grub_config_path).context(format!(
+                "Failed to copy file {} to {}",
+                source_path.display(),
+                grub_config_path.display()
+            ))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Generates a list of filepaths to the boot files that need to be copied to implement file-based
+/// update of ESP, relative to the mounted directory.
+///
+/// The func takes in 2 arg-s:
+/// 1. temp_mount_dir, which is the path to the directory where the ESP image is mounted to,
+/// 2. efi_filename_ending, which is the filename ending of the EFI executable. E.g., if the target
+/// architecture is x86_64, the arg needs to be "x64" since the EFI executable for x86_64 is named
+/// "grubx64.efi."
+fn generate_boot_filepaths(
+    temp_mount_dir: &Path,
+    efi_filename_ending: &str,
+) -> Result<Vec<PathBuf>, Error> {
+    let mut paths = Vec::new();
+
+    // Check if grub.cfg exists in EFI_BOOT_PATH, otherwise use BOOT_GRUB2_PATH
+    let efi_boot_grub_path = Path::new(temp_mount_dir)
+        .join(EFI_BOOT_PATH)
+        .join("grub.cfg");
+    let boot_grub2_grub_path = Path::new(temp_mount_dir)
+        .join(BOOT_GRUB2_PATH)
+        .join("grub.cfg");
+
+    if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
+        debug!("Using grub.cfg from {}", efi_boot_grub_path.display());
+        paths.push(efi_boot_grub_path);
+    } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
+        debug!("Using grub.cfg from {}", boot_grub2_grub_path.display());
+        paths.push(Path::new(BOOT_GRUB2_PATH).join("grub.cfg"));
+    } else {
+        bail!("Failed to find grub.cfg");
+    }
+
+    // Check if grubx64-noprefix.efi exists; otherwise, use grubx64.efi. With the package update
+    // to use grub2-efi-binary-noprefix RPM, the EFI executable is installed as
+    // grubx64-noprefix.efi.
+    let grub_efi_noprefix_path = Path::new(temp_mount_dir)
+        .join(EFI_BOOT_PATH)
+        .join(format!("grub{}-noprefix.efi", efi_filename_ending));
+    let grub_efi_path = Path::new(temp_mount_dir)
+        .join(EFI_BOOT_PATH)
+        .join(format!("grub{}.efi", efi_filename_ending));
+
+    if grub_efi_noprefix_path.exists() && grub_efi_noprefix_path.is_file() {
+        debug!(
+            "Using grub EFI executable from {}",
+            grub_efi_noprefix_path.display()
+        );
+        paths.push(grub_efi_noprefix_path);
+    } else if grub_efi_path.exists() && grub_efi_path.is_file() {
+        debug!("Using grub EFI executable from {}", grub_efi_path.display());
+        paths.push(grub_efi_path);
+    } else {
+        bail!("Failed to find grub EFI executable");
+    }
+
+    // Construct file names of EFI executables
+    let boot_efi_path = Path::new(temp_mount_dir)
+        .join(EFI_BOOT_PATH)
+        .join(format!("boot{}.efi", efi_filename_ending));
+    if !boot_efi_path.exists() {
+        bail!(
+            "Failed to find boot EFI executable at path {}",
+            boot_efi_path.display()
+        );
+    }
+    debug!("Using boot EFI executable from {}", boot_efi_path.display());
+    paths.push(boot_efi_path);
+
+    Ok(paths)
+}
+
+/// Returns the arch string based on the target architecture.
+///
+/// E.g., if the target architecture is x86_64, the function returns "x64" since the EFI executable
+/// for x86_64 is named "grubx64.efi."
+fn generate_arch_str() -> Result<String, Error> {
+    let arch_string = match () {
+        _ if cfg!(target_arch = "x86_64") => "x64",
+        _ if cfg!(target_arch = "x86") => "ia32",
+        _ if cfg!(target_arch = "arm") => "arm",
+        _ if cfg!(target_arch = "aarch64") => "aa64",
+        // Add more architectures as needed
+        _ => bail!("Failed to generate the filename of EFI executable as the target architecture is not supported"),
+    };
+
+    Ok(arch_string.to_string())
+}
+
+/// Returns the path to the ESP directory where the boot files need to be copied to.
+fn generate_esp_dir_path(host_status: &HostStatus) -> Result<PathBuf, Error> {
+    // Compose the path to the ESP directory
+    let esp_efi_str = Path::new(UPDATE_ROOT_PATH)
+        .join(ESP_MOUNT_POINT_PATH.trim_start_matches('/'))
+        .join(EFI_PATH);
+
+    // Based on which volume is being updated, determine how to name the dir
+    let esp_dir_path = match modules::get_ab_update_volume(host_status, false)
+        .context("Failed to determine which A/B volume is currently inactive")?
+    {
+        AbVolumeSelection::VolumeA => Path::new(&esp_efi_str).join(BOOT_ENTRY_A),
+        AbVolumeSelection::VolumeB => Path::new(&esp_efi_str).join(BOOT_ENTRY_B),
+    };
+
+    Ok(esp_dir_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use maplit::btreemap;
+    use uuid::Uuid;
+
+    use trident_api::{
+        config::PartitionType,
+        status::{AbUpdate, AbVolumePair, Disk, Partition, ReconcileState, Storage, UpdateKind},
+    };
+
+    /// Validates that generate_arch_str() returns the correct string based on target architecture
+    #[test]
+    fn test_generate_arch_str() {
+        let mut expected_arch = "";
+        if cfg!(target_arch = "x86_64") {
+            expected_arch = "x64";
+        } else if cfg!(target_arch = "x86") {
+            expected_arch = "ia32";
+        } else if cfg!(target_arch = "arm") {
+            expected_arch = "arm";
+        } else if cfg!(target_arch = "aarch64") {
+            expected_arch = "aa64";
+        } else {
+            assert!(generate_arch_str().is_err(), "generate_arch_str() should return an error if target architecture is not supported");
+        };
+
+        let generated_arch = generate_arch_str().unwrap();
+        assert_eq!(
+            generated_arch, expected_arch,
+            "Architecture string does not match expected value"
+        );
+    }
+
+    /// Validates logic for setting block device contents
+    #[test]
+    fn test_generate_esp_dir_path() {
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "rootb".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                    "data".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 1000,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![],
+                    },
+                },
+                ab_update: Some(AbUpdate {
+                    active_volume: None,
+                    volume_pairs: btreemap! {
+                        "osab".to_owned() => AbVolumePair {
+                            volume_a_id: "root".to_owned(),
+                            volume_b_id: "rootb".to_owned(),
+                        },
+                    },
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case 1: If no volume is currently active, generate_esp_dir_path() should return
+        // /boot/efi/EFI/azlinuxA
+        assert!(
+            generate_esp_dir_path(&host_status)
+                .unwrap()
+                .ends_with("azlinuxA"),
+            "generate_esp_dir_path() should return /boot/efi/EFI/azlinuxA if no volume is currently active"
+        );
+
+        // Test case 2: If volume A is currently active, generate_esp_dir_path() should return
+        // /boot/efi/EFI/azlinuxB
+        // Modify host_status to set active_volume to volume A
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        host_status
+            .storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+        assert!(
+            generate_esp_dir_path(&host_status)
+                .unwrap()
+                .ends_with("azlinuxB"),
+            "generate_esp_dir_path() should return /boot/efi/EFI/azlinuxB if volume A is currently active"
+        );
+
+        // Test case 3: If volume B is currently active, generate_esp_dir_path() should return
+        // /boot/efi/EFI/azlinuxA
+        // Modify host_status to set active_volume to volume B
+        host_status
+            .storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+        assert!(
+            generate_esp_dir_path(&host_status)
+                .unwrap()
+                .ends_with("azlinuxA"),
+            "generate_esp_dir_path() should return /boot/efi/EFI/azlinuxA if volume B is currently active"
+        );
+    }
+}
+
+#[cfg(all(test, feature = "functional-tests"))]
+mod functional_tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Creates mock boot files in temp_mount_dir
+    fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf]) {
+        for path in boot_files {
+            let full_path = temp_mount_dir.join(path);
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            let mut file = File::create(full_path).unwrap();
+            writeln!(file, "Mock content for {}", path.display()).unwrap();
+        }
+    }
+
+    /// Compares two files byte by byte and returns true if they are identical
+    fn files_are_identical(file1: &Path, file2: &Path) -> bool {
+        let mut buf1 = Vec::new();
+        let mut buf2 = Vec::new();
+        File::open(file1).unwrap().read_to_end(&mut buf1).unwrap();
+        File::open(file2).unwrap().read_to_end(&mut buf2).unwrap();
+        buf1 == buf2
+    }
+
+    /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir
+    #[test]
+    fn test_copy_boot_files() {
+        let temp_mount_dir = TempDir::new().unwrap();
+        let esp_dir = TempDir::new().unwrap();
+        let boot_files = generate_boot_filepaths(temp_mount_dir.path(), "x64").unwrap();
+
+        create_boot_files(temp_mount_dir.path(), &boot_files);
+
+        copy_boot_files(temp_mount_dir.path(), esp_dir.path(), boot_files.clone()).unwrap();
+
+        for boot_file in boot_files {
+            let source_path = temp_mount_dir.path().join(&boot_file);
+            let destination_path = esp_dir.path().join(boot_file.file_name().unwrap());
+
+            assert!(
+                files_are_identical(&source_path, &destination_path),
+                "Files are not identical: {} and {}",
+                source_path.display(),
+                destination_path.display()
+            );
+        }
+    }
+
+    /// Validates that generate_boot_filepaths() returns the correct filepaths based on target
+    #[test]
+    fn test_generate_boot_filepaths() {
+        let efi_boot_path = PathBuf::from(EFI_BOOT_PATH);
+        let grub_cfg_path = Path::new(EFI_BOOT_PATH).join("grub.cfg");
+
+        // Create the directory structure and an empty file
+        fs::create_dir_all(grub_cfg_path.parent().unwrap()).unwrap();
+        File::create(&grub_cfg_path).unwrap();
+
+        // Run generate_boot_filepaths() with the file
+        let generated_paths_with_file = generate_boot_filepaths(&efi_boot_path, "x64").unwrap();
+        // Define your expected paths here when file exists
+        let expected_paths_with_file = vec![
+            PathBuf::from("EFI/BOOT/grubx64.efi"),
+            PathBuf::from("EFI/BOOT/bootx64.efi"),
+            PathBuf::from("EFI/BOOT/grub.cfg"),
+        ];
+        assert_eq!(
+            generated_paths_with_file, expected_paths_with_file,
+            "Generated file paths do not match expected paths when file exists"
+        );
+
+        // Remove the file
+        fs::remove_file(&grub_cfg_path).unwrap();
+
+        // Run generate_boot_filepaths() without the file
+        let generated_paths_without_file = generate_boot_filepaths(&efi_boot_path, "x64").unwrap();
+        // Define your expected paths here when EFI/BOOT/grub.cfg does not exist and
+        // boot/grub2/grub.cfg is used instead
+        let expected_paths_without_file = vec![
+            PathBuf::from("EFI/BOOT/grubx64.efi"),
+            PathBuf::from("EFI/BOOT/bootx64.efi"),
+            PathBuf::from("boot/grub2/grub.cfg"),
+        ];
+        assert_eq!(
+            generated_paths_without_file, expected_paths_without_file,
+            "Generated file paths do not match expected paths when file does not exist"
+        );
+    }
+}

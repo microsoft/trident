@@ -15,7 +15,7 @@ use sha2::Digest;
 
 use osutils::{exe::RunAndCheck, udevadm};
 use trident_api::{
-    config::{HostConfiguration, Image, ImageFormat, ImageSha256},
+    config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     constants,
     status::{
         AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, Disk, EncryptedVolume,
@@ -30,6 +30,7 @@ pub mod mount;
 mod stream_image;
 #[cfg(feature = "sysupdate")]
 mod systemd_sysupdate;
+mod update_esp;
 mod update_grub;
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
@@ -81,16 +82,6 @@ fn update_images(
                 image.target_id
             ))?;
 
-        // TODO: Add more options for download sources
-        info!(
-            "Updating image of block device with id '{}'",
-            &image.target_id
-        );
-        info!(
-            "Downloading image from URL '{}' in '{:?}' format",
-            &image.url, &image.format
-        );
-
         // Parse the URL to determine the download strategy
         let image_url = Url::parse(image.url.as_str())
             .context(format!("Failed to parse image URL '{}'", image.url))?;
@@ -118,16 +109,35 @@ fn update_images(
                     ))?;
                 }
 
-                // If image format is raw-zstd, run helper func direct_deploy() to write image from
-                // local file via stream_image.rs
+                // Otherwise, use direct streaming of image bytes onto the block device
                 ImageFormat::RawZstd => {
-                    // 5th arg is False to communicate that image is a local file, i.e.,  is_local
-                    // will be set to True
-                    stream_image::deploy(image_url, image, host_status, &block_device, true)
+                    // If image does NOT correspond to ESP partition, use direct streaming of image
+                    if !is_esp(host_status, &image.target_id) {
+                        info!(
+                            "Updating image of block device with id '{}'",
+                            &image.target_id
+                        );
+                        info!(
+                            "Downloading image from URL '{}' in '{:?}' format",
+                            &image.url, &image.format
+                        );
+
+                        // 5th arg is False to communicate that image is a local file, i.e.,  is_local
+                        // will be set to True
+                        stream_image::deploy(
+                            image_url.clone(),
+                            image,
+                            host_status,
+                            &block_device,
+                            true,
+                        )
                         .context(format!(
                             "Failed to deploy image {} via direct streaming",
                             image.url
                         ))?;
+                    }
+                    // If image corresponds to ESP partition, no need to deploy image directly; instead,
+                    // perform file-based update of ESP later
                 }
             }
         } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
@@ -161,16 +171,35 @@ fn update_images(
                     )?;
                 }
 
-                // Otherwise, use direct streaming of image bytes onto the block device, by using
-                // stream_image.rs
+                // Otherwise, use direct streaming of image bytes onto the block device
                 ImageFormat::RawZstd => {
-                    // 5th arg is False to communicate that image is not a local file, i.e.,
-                    // is_local will be set to False
-                    stream_image::deploy(image_url, image, host_status, &block_device, false)
+                    // If image does NOT correspond to ESP partition, use direct streaming of image
+                    if !is_esp(host_status, &image.target_id) {
+                        info!(
+                            "Updating image of block device with id '{}'",
+                            &image.target_id
+                        );
+                        info!(
+                            "Downloading image from URL '{}' in '{:?}' format",
+                            &image.url, &image.format
+                        );
+
+                        // 5th arg is False to communicate that image is a local file, i.e.,  is_local
+                        // will be set to True
+                        stream_image::deploy(
+                            image_url.clone(),
+                            image,
+                            host_status,
+                            &block_device,
+                            false,
+                        )
                         .context(format!(
                             "Failed to deploy image {} via direct streaming",
                             image.url
                         ))?;
+                    }
+                    // If image corresponds to ESP partition, no need to deploy image directly; instead,
+                    // perform file-based update of ESP later
                 }
             }
         } else if image_url.scheme() == "oci" {
@@ -185,12 +214,83 @@ fn update_images(
             //
             // Related ADO task:
             // https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
-            todo!("Need to implement downloading images as OCI artifacts from Azure container registry")
+            bail!("Downloading images as OCI artifacts from Azure container registry is not implemented")
         } else {
             bail!("Unsupported URL scheme")
         };
     }
     Ok(())
+}
+
+/// Function that fetches the list of ESP images that need to be updated and performs file-based
+/// update of standalone ESP partition.
+fn update_esp_images(
+    host_status: &mut HostStatus,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    // Fetch the list of ESP images that need to be updated/deployed
+    for image in get_undeployed_esp(host_status, host_config, false) {
+        // Parse the URL to determine the download strategy
+        let image_url = Url::parse(image.url.as_str())
+            .context(format!("Failed to parse image URL '{}'", image.url))?;
+
+        // Only need to perform file-based update of ESP if image is in format RawZstd b/c RawLzma
+        // requires a block-based update of ESP
+        if image.format == ImageFormat::RawZstd {
+            info!(
+                "Performing file-based update of ESP partition with id '{}'",
+                &image.target_id
+            );
+            // If image is a local file, use direct streaming of image bytes onto the block device
+            if image_url.scheme() == "file" {
+                // 5th arg is False to communicate that image is a local file, i.e.,  is_local
+                // will be set to True
+                info!(
+                    "Deploying image {} onto ESP partition with id {}",
+                    image.url, image.target_id
+                );
+                update_esp::deploy_esp(image_url, image, host_status, true).context(format!(
+                    "Failed to deploy image {} onto ESP partition with id {} via direct streaming",
+                    image.url, image.target_id
+                ))?;
+            } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
+                // If image is an HTTP file, use direct streaming of image bytes onto the block device
+                // 5th arg is False to communicate that image is a local file, i.e.,  is_local
+                // will be set to True
+                info!(
+                    "Deploying image {} onto ESP partition with id {}",
+                    image.url, image.target_id
+                );
+                update_esp::deploy_esp(image_url, image, host_status, false).context(format!(
+                    "Failed to deploy image {} onto ESP partition with id {} via direct streaming",
+                    image.url, image.target_id
+                ))?;
+            } else if image_url.scheme() == "oci" {
+                bail!("Downloading images as OCI artifacts from Azure container registry is not implemented")
+            } else {
+                bail!("Unsupported URL scheme")
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Checks if block device corresponding to target_id is ESP partition. This func assumes that disk
+/// always contains a stand-alone ESP partition that is not part of an A/B volume pair. This func
+/// takes two arg-s:
+/// 1. host_status, which is a reference to HostStatus object.
+/// 2. target_id, which is a reference to a String representing the id of the block device.
+//
+/// Returns `true` if the partition is of type ESP, `false` otherwise or if not found.
+fn is_esp(host_status: &HostStatus, target_id: &BlockDeviceId) -> bool {
+    // Iterate through all disks and partitions
+    host_status
+        .storage
+        .disks
+        .values()
+        .flat_map(|disk| &disk.partitions) // Flatten partitions from all disks
+        .find(|&partition| &partition.id == target_id) // Find the target partition
+        .map_or(false, |partition| partition.ty == PartitionType::Esp) // Check if it's an ESP partition
 }
 
 fn get_disk_mut<'a>(
@@ -373,7 +473,7 @@ fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfigurat
 ///
 /// This goes through the list of images in the HostConfiguration and compares
 /// them to the HostStatus. If an image is targeting an AB Volume Pair and
-/// active is true, it compared the image against the active volume, and if
+/// active is true, it compares the image against the active volume, and if
 /// active is false it compares the image against the update volume (i.e. the
 /// one that isn't active).
 fn get_undeployed_images<'a>(
@@ -399,6 +499,35 @@ fn get_undeployed_images<'a>(
                 }
             }
             true
+        })
+        .collect()
+}
+
+/// Returns a list of images that correspond to ESP partition that need to be updated/provisioned.
+///
+/// Uses get_undeployed_images() to fetch the list of images that need to be updated/deployed and
+/// then filters the vector to find images that corresponds to ESP partition.
+fn get_undeployed_esp<'a>(
+    host_status: &HostStatus,
+    host_config: &'a HostConfiguration,
+    active: bool,
+) -> Vec<&'a Image> {
+    // Fetch the list of images that need to be updated/deployed
+    let undeployed_images = get_undeployed_images(host_status, host_config, active);
+
+    // Filter the vector to find images that corresponds to ESP partition
+    undeployed_images
+        .into_iter()
+        .filter(|image| {
+            // Check if image's target_id corresponds to a PartitionType::Esp
+            host_status
+                .storage
+                .disks
+                .iter()
+                .flat_map(|(_block_device_id, disk)| &disk.partitions)
+                .any(|partition| {
+                    partition.id == image.target_id && partition.ty == PartitionType::Esp
+                })
         })
         .collect()
 }
@@ -479,6 +608,11 @@ pub(super) fn provision(
     update_images(host_status, host_config).context("Failed to update filesystem images")?;
     mount::mount_updated_volumes(host_config, host_status, mount_point, false)
         .context("Failed to mount the updated volumes")?;
+
+    // Perform file-based update of ESP images, if needed, after filesystems have been mounted and
+    // initialized
+    update_esp_images(host_status, host_config)
+        .context("Failed to perform file-based update of ESP images")?;
 
     Ok(())
 }
@@ -960,6 +1094,143 @@ mod tests {
         );
     }
 
+    /// Validates that get_undeployed_esp() returns the correct list of images that need to be
+    /// updated/provisioned
+    #[test]
+    fn test_get_undeployed_esp() {
+        // Initialize a HostStatus object with ESP and root partitions
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "foo".to_string() => Disk {
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        path: PathBuf::from("/dev/sda"),
+                        capacity: 10,
+                        contents: BlockDeviceContents::Initialized,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000001")
+                                    .unwrap(),
+                                path: PathBuf::from("/dev/sda1"),
+                                id: "esp".to_string(),
+                                start: 1,
+                                end: 3,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/esp_1.img".to_string(),
+                                    sha256: "esp_sha256_1".to_string(),
+                                    length: 100,
+                                },
+                            },
+                            Partition {
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000002")
+                                    .unwrap(),
+                                path: PathBuf::from("/dev/sda2"),
+                                id: "root".to_string(),
+                                start: 4,
+                                end: 10,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/root_1.img".to_string(),
+                                    sha256: "root_sha256_1".to_string(),
+                                    length: 100,
+                                },
+                            },
+                        ],
+                    },
+                },
+                mount_points: btreemap! {
+                    PathBuf::from("/boot") => MountPointStatus {
+                        target_id: "esp".to_string(),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPointStatus {
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut host_config = HostConfiguration {
+            storage: StorageConfig {
+                mount_points: vec![
+                    MountPoint {
+                        path: PathBuf::from("/boot"),
+                        target_id: "esp".to_string(),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                ],
+                images: vec![
+                    Image {
+                        url: "http://example.com/esp_1.img".to_string(),
+                        target_id: "esp".to_string(),
+                        format: ImageFormat::RawZstd,
+                        sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                    },
+                    Image {
+                        url: "http://example.com/root_2.img".to_string(),
+                        target_id: "root".to_string(),
+                        format: ImageFormat::RawZstd,
+                        sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case 1: ESP partition does not need to be updated
+        assert_eq!(
+            get_undeployed_esp(&host_status, &host_config, false),
+            Vec::<&Image>::new(),
+            "Incorrectly identified ESP partition as needing an update"
+        );
+
+        // Test case 2: ESP partition needs to be updated
+        host_config.storage.images[0].sha256 = ImageSha256::Checksum("esp_sha256_2".to_string());
+        host_config.storage.images[0].url = "http://example.com/esp_2.img".to_string();
+        assert_eq!(
+            get_undeployed_esp(&host_status, &host_config, false),
+            vec![&Image {
+                url: "http://example.com/esp_2.img".to_string(),
+                target_id: "esp".to_string(),
+                format: ImageFormat::RawZstd,
+                sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+            }],
+            "Incorrectly identified ESP partition as not needing an update"
+        );
+
+        // Test case 3: Change PartitionType of ESP partition to swap, so func
+        // get_undeployed_esp() should return an empty vector
+        host_status
+            .storage
+            .disks
+            .get_mut("foo")
+            .unwrap()
+            .partitions
+            .get_mut(0)
+            .unwrap()
+            .ty = PartitionType::Swap;
+        assert_eq!(
+            get_undeployed_esp(&host_status, &host_config, false),
+            Vec::<&Image>::new(),
+            "Incorrectly identified ESP partition as needing an update"
+        );
+    }
+
     /// Validates logic for setting block device contents
     #[test]
     fn test_set_host_status_block_device_contents() {
@@ -1251,6 +1522,91 @@ mod tests {
                 .unwrap()
                 .contents,
             BlockDeviceContents::Initialized
+        );
+    }
+
+    /// Validates that is_esp() correctly determines whether block device corresponds to
+    /// ESP partition.
+    #[test]
+    fn test_is_esp() {
+        // Setup HostStatus with predefined disks and partitions
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root-a".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case 1: Check for ESP partition
+        assert!(
+            is_esp(&host_status, &"esp".to_string()),
+            "ESP partition was not correctly identified"
+        );
+
+        // Test case 2: Check for non-ESP partition
+        assert!(
+            !is_esp(&host_status, &"root-a".to_string()),
+            "Non-ESP partition was incorrectly identified as ESP partition"
+        );
+
+        // Test case 3: Check for non-existent partition
+        assert!(
+            !is_esp(&host_status, &"non-existent".to_string()),
+            "Non-existent partition was incorrectly identified as ESP partition"
+        );
+
+        // Test case 4: Change the id of ESP partition to non-ESP
+        for disk in host_status.storage.disks.values_mut() {
+            for partition in &mut disk.partitions {
+                if partition.id == "esp" {
+                    partition.id = "non-esp".to_owned();
+                }
+            }
+        }
+        assert!(
+            is_esp(&host_status, &"non-esp".to_string()),
+            "ESP partition was not correctly identified"
         );
     }
 }
