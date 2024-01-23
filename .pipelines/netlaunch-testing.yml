@@ -165,10 +165,13 @@ stages:
 
     - bash: |
         set -eux
-        mkdir -p deployment_logs
-        sudo cp $(argusToolkitSourceDirectory)/deployment.log \
-                    $(ob_outputDirectory)/deployment.log
+        if [[ -f $(argusToolkitSourceDirectory)/deployment.log ]]; then
+          mkdir -p deployment_logs
+          sudo cp $(argusToolkitSourceDirectory)/deployment.log \
+                      $(ob_outputDirectory)/deployment.log
+        fi
       workingDirectory: $(tridentSourceDirectory)
+      condition: succeededOrFailed()
       displayName: "Publish deployment.log"
 
     - bash: |
@@ -194,7 +197,7 @@ stages:
       inputs:
         testResultsFormat: JUnit
         testResultsFiles: $(tridentSourceDirectory)/e2e_tests/tests/$(test)_trident_e2e_tests_$(System.JobAttempt).junit.xml
-        testRunTitle: trident_e2e_tests
+        testRunTitle: trident_e2e_tests_$(test)_$(System.JobAttempt)
       displayName: Publish test results
 
 
