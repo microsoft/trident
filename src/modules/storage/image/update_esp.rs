@@ -299,7 +299,7 @@ fn generate_boot_filepaths(
         paths.push(efi_boot_grub_path);
     } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
         debug!("Using grub.cfg from {}", boot_grub2_grub_path.display());
-        paths.push(Path::new(BOOT_GRUB2_PATH).join("grub.cfg"));
+        paths.push(boot_grub2_grub_path);
     } else {
         bail!("Failed to find grub.cfg");
     }
@@ -524,15 +524,21 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "functional-tests"))]
+#[cfg(feature = "functional-tests")]
 mod functional_tests {
+    #[cfg(test)]
     use super::*;
+    #[cfg(test)]
     use std::io::Write;
 
+    use pytest_gen::pytest;
+
     /// Creates mock boot files in temp_mount_dir
+    #[cfg(test)]
     fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf]) {
         for path in boot_files {
             let full_path = temp_mount_dir.join(path);
+
             if let Some(parent) = full_path.parent() {
                 fs::create_dir_all(parent).unwrap();
             }
@@ -542,6 +548,7 @@ mod functional_tests {
     }
 
     /// Compares two files byte by byte and returns true if they are identical
+    #[cfg(test)]
     fn files_are_identical(file1: &Path, file2: &Path) -> bool {
         let mut buf1 = Vec::new();
         let mut buf2 = Vec::new();
@@ -551,19 +558,28 @@ mod functional_tests {
     }
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir
-    #[test]
+    #[pytest(feature = "abupdate")]
     fn test_copy_boot_files() {
         let temp_mount_dir = TempDir::new().unwrap();
         let esp_dir = TempDir::new().unwrap();
-        let boot_files = generate_boot_filepaths(temp_mount_dir.path(), "x64").unwrap();
 
-        create_boot_files(temp_mount_dir.path(), &boot_files);
+        // Create a list of boot files
+        let file_names = vec![
+            PathBuf::from("grub.cfg"),
+            PathBuf::from("grubx64.efi"),
+            PathBuf::from("bootx64.efi"),
+        ];
 
-        copy_boot_files(temp_mount_dir.path(), esp_dir.path(), boot_files.clone()).unwrap();
+        // Call helper func to create mock boot files in temp_mount_dir
+        create_boot_files(temp_mount_dir.path(), &file_names);
+        // Call helper func to copy boot files from temp_mount_dir to esp_dir
+        copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
 
-        for boot_file in boot_files {
-            let source_path = temp_mount_dir.path().join(&boot_file);
-            let destination_path = esp_dir.path().join(boot_file.file_name().unwrap());
+        for file_name in file_names {
+            // Create full path of source_path
+            let source_path = temp_mount_dir.path().join(file_name.clone());
+            // Create full path of destination_path
+            let destination_path = esp_dir.path().join(file_name);
 
             assert!(
                 files_are_identical(&source_path, &destination_path),
@@ -575,43 +591,122 @@ mod functional_tests {
     }
 
     /// Validates that generate_boot_filepaths() returns the correct filepaths based on target
-    #[test]
+    #[pytest(feature = "abupdate")]
     fn test_generate_boot_filepaths() {
-        let efi_boot_path = PathBuf::from(EFI_BOOT_PATH);
-        let grub_cfg_path = Path::new(EFI_BOOT_PATH).join("grub.cfg");
+        // Test case 1: Run generate_boot_filepaths() with GRUB under EFI_BOOT_PATH
+        // Create a temp dir
+        let temp_mount_dir = TempDir::new().unwrap();
+        // Fetch the path of temp dir
+        let temp_mount_path = temp_mount_dir.path();
 
-        // Create the directory structure and an empty file
-        fs::create_dir_all(grub_cfg_path.parent().unwrap()).unwrap();
-        File::create(&grub_cfg_path).unwrap();
+        // Create a GRUB config inside of the temp dir
+        let efi_boot_grub_path = Path::new(temp_mount_path)
+            .join(EFI_BOOT_PATH)
+            .join("grub.cfg");
+        fs::create_dir_all(efi_boot_grub_path.parent().unwrap()).unwrap();
+        File::create(&efi_boot_grub_path).unwrap();
 
-        // Run generate_boot_filepaths() with the file
-        let generated_paths_with_file = generate_boot_filepaths(&efi_boot_path, "x64").unwrap();
+        // Create a grub EFI executable inside of the temp dir
+        let grub_efi_path = Path::new(temp_mount_path)
+            .join(EFI_BOOT_PATH)
+            .join("grubx64.efi");
+        File::create(&grub_efi_path).unwrap();
+
+        // Create a boot EFI executable inside of the temp dir
+        let boot_efi_path = Path::new(temp_mount_path)
+            .join(EFI_BOOT_PATH)
+            .join("bootx64.efi");
+        File::create(&boot_efi_path).unwrap();
+
+        let generated_paths_efi_boot = generate_boot_filepaths(temp_mount_path, "x64").unwrap();
         // Define your expected paths here when file exists
-        let expected_paths_with_file = vec![
-            PathBuf::from("EFI/BOOT/grubx64.efi"),
-            PathBuf::from("EFI/BOOT/bootx64.efi"),
-            PathBuf::from("EFI/BOOT/grub.cfg"),
+        let expected_paths_efi_boot = vec![
+            efi_boot_grub_path.clone(),
+            grub_efi_path.clone(),
+            boot_efi_path.clone(),
         ];
         assert_eq!(
-            generated_paths_with_file, expected_paths_with_file,
+            generated_paths_efi_boot, expected_paths_efi_boot,
             "Generated file paths do not match expected paths when file exists"
         );
 
-        // Remove the file
-        fs::remove_file(&grub_cfg_path).unwrap();
+        // Test case 2: Run generate_boot_filepaths() without GRUB
+        // Remove the GRUB config from the temp dir and create a new one, under BOOT_GRUB2_PATH
+        fs::remove_file(&efi_boot_grub_path).unwrap();
+        assert_eq!(
+            generate_boot_filepaths(temp_mount_path, "x64")
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to find grub.cfg",
+            "generate_boot_filepaths() should fail if grub.cfg does not exist"
+        );
 
-        // Run generate_boot_filepaths() without the file
-        let generated_paths_without_file = generate_boot_filepaths(&efi_boot_path, "x64").unwrap();
-        // Define your expected paths here when EFI/BOOT/grub.cfg does not exist and
-        // boot/grub2/grub.cfg is used instead
-        let expected_paths_without_file = vec![
-            PathBuf::from("EFI/BOOT/grubx64.efi"),
-            PathBuf::from("EFI/BOOT/bootx64.efi"),
-            PathBuf::from("boot/grub2/grub.cfg"),
+        // Test case 3: Run generate_boot_filepaths() with GRUB under BOOT_GRUB2_PATH
+        let boot_grub2_grub_path = Path::new(temp_mount_path)
+            .join(BOOT_GRUB2_PATH)
+            .join("grub.cfg");
+        fs::create_dir_all(boot_grub2_grub_path.parent().unwrap()).unwrap();
+        File::create(&boot_grub2_grub_path).unwrap();
+
+        let generated_paths_boot_grub2 = generate_boot_filepaths(temp_mount_path, "x64").unwrap();
+        // Define expected paths here when EFI/BOOT/grub.cfg does not exist and boot/grub2/grub.cfg
+        // is used instead
+        let expected_paths_boot_grub2 = vec![
+            boot_grub2_grub_path.clone(),
+            grub_efi_path.clone(),
+            boot_efi_path.clone(),
         ];
         assert_eq!(
-            generated_paths_without_file, expected_paths_without_file,
+            generated_paths_boot_grub2, expected_paths_boot_grub2,
             "Generated file paths do not match expected paths when file does not exist"
+        );
+
+        // Test case 4: Run generate_boot_filepaths() without grub EFI executable
+        // Remove old grub EFI executable
+        fs::remove_file(&grub_efi_path).unwrap();
+        assert_eq!(
+            generate_boot_filepaths(temp_mount_path, "x64")
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to find grub EFI executable",
+            "generate_boot_filepaths() should fail if grub EFI executable does not exist"
+        );
+
+        // Test case 5: Run generate_boot_filepaths() with a grub EFI executable with noprefix name
+        // Create a grub EFI executable with the noprefix name inside of the temp dir
+        let grub_efi_noprefix_path = Path::new(temp_mount_path)
+            .join(EFI_BOOT_PATH)
+            .join("grubx64-noprefix.efi");
+        File::create(&grub_efi_noprefix_path).unwrap();
+
+        let generated_paths_noprefix = generate_boot_filepaths(temp_mount_path, "x64").unwrap();
+        // Define expected paths here when EFI/BOOT/grub.cfg does not exist and boot/grub2/grub.cfg
+        // is used instead
+        let expected_paths_noprefix = vec![
+            boot_grub2_grub_path,
+            grub_efi_noprefix_path,
+            boot_efi_path.clone(),
+        ];
+        assert_eq!(
+            generated_paths_noprefix, expected_paths_noprefix,
+            "Generated file paths do not match expected paths when file does not exist"
+        );
+
+        // Test case 6: Run generate_boot_filepaths() without boot EFI executable
+        // Remove old boot EFI executable
+        fs::remove_file(&boot_efi_path).unwrap();
+        assert_eq!(
+            generate_boot_filepaths(temp_mount_path, "x64")
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            format!(
+                "Failed to find boot EFI executable at path {}",
+                boot_efi_path.display()
+            ),
+            "generate_boot_filepaths() should fail if boot EFI executable does not exist"
         );
     }
 }

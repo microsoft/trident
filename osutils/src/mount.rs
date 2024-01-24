@@ -71,22 +71,22 @@ mod functional_tests {
         let mount_point = Path::new("/mnt/cdrom");
 
         // Test mount_file function
-        mount(&device, &mount_point).unwrap();
+        mount(device, mount_point).unwrap();
 
         // Fetch the name of loop device that was mounted at mount point
-        let loop_device = find_loop_device(device.as_ref()).unwrap();
+        let loop_device = find_loop_device(device).unwrap();
         // Validate that the device has been successfully mounted
         assert!(
-            is_device_mounted_at(Path::new(&loop_device), &mount_point),
+            is_device_mounted_at(Path::new(&loop_device), mount_point),
             "Device not mounted at the expected mount point"
         );
 
         // Test unmount_dir function
-        umount(&mount_point).unwrap();
+        umount(mount_point).unwrap();
 
         // Validate that the device has been successfully unmounted
         assert!(
-            !is_device_mounted_at(Path::new(&loop_device), &mount_point),
+            !is_device_mounted_at(Path::new(&loop_device), mount_point),
             "Device not unmounted"
         );
     }
@@ -135,7 +135,7 @@ mod functional_tests {
         let invalid_file_path = PathBuf::from("/path/to/non/existent/file");
 
         // Attempt to mount a non-existent file and assert that it fails
-        let mount_result_1 = mount(&invalid_file_path, temp_mount_dir.path());
+        let mount_result_1 = mount(invalid_file_path, temp_mount_dir.path());
         assert_eq!(
             mount_result_1.unwrap_err().root_cause().to_string(),
             format!(
@@ -150,7 +150,7 @@ mod functional_tests {
         let invalid_mount_dir = PathBuf::from("/path/to/non/existent/directory");
 
         // Attempt to mount a file to a non-existent directory and assert that it fails
-        let mount_result_2 = mount(temp_file.path(), &invalid_mount_dir);
+        let mount_result_2 = mount(temp_file.path(), invalid_mount_dir);
         assert_eq!(
             mount_result_2.unwrap_err().root_cause().to_string(),
             "Process output:\nstderr:\nmount: /path/to/non/existent/directory: mount point does not exist.\n\n",
