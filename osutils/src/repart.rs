@@ -492,29 +492,22 @@ mod tests {
 
 // assumes at least 2 sata connected 16 GB disk setup (and specifically the
 // second disk needs to be 16 GiB in size)
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
-    #[cfg(test)]
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use std::path::PathBuf;
 
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
 
-    #[cfg(test)]
     use crate::lsblk::{self, BlockDevice};
-    #[cfg(test)]
     use crate::udevadm;
 
-    #[cfg(test)]
     use super::*;
 
-    #[cfg(test)]
     const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
-    #[cfg(test)]
     const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
-    #[cfg(test)]
     const DISK_BUS_PATH: &str = "/dev/sdb";
 
-    #[cfg(test)]
     fn generate_partition_definition() -> Vec<RepartPartitionEntry> {
         vec![
             RepartPartitionEntry {
@@ -533,7 +526,7 @@ mod functional_tests {
         ]
     }
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_execute_and_resulting_layout() {
         let unchanged_disk_bus_path = PathBuf::from("/dev/sda");
         let unchanged_block_device_list = lsblk::run(&unchanged_disk_bus_path).unwrap();
@@ -596,7 +589,7 @@ mod functional_tests {
         assert_eq!(expected_block_device_list, block_device_list);
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_execute_fails_on_non_block_device() {
         // Test that we can repartition /dev/null
         let repart = SystemdRepartInvoker::new("/dev/null", RepartMode::Force)
@@ -604,7 +597,7 @@ mod functional_tests {
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/null: Block device required\n\n");
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_execute_fails_on_missing_block_device() {
         // Test that we can repartition a non-existing device
         let repart = SystemdRepartInvoker::new("/dev/does-not-exist", RepartMode::Force)
@@ -612,7 +605,7 @@ mod functional_tests {
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/does-not-exist: No such file or directory\n\n");
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_execute_fails_if_partition_size_too_large() {
         // Test that asking for too much space fails
         let mut partition_definition = generate_partition_definition();

@@ -243,13 +243,14 @@ mod tests {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
 
-    #[cfg(test)]
     use super::*;
+    use pytest_gen::functional_test;
 
-    #[test]
+    #[functional_test(feature = "helpers")]
     fn test_efi_bootmgr() {
         let entry_label = "TestBoot1";
         let bootloader_path = Path::new(r"/EFI/BOOT/bootx64.efi");

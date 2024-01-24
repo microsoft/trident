@@ -35,9 +35,16 @@ Functional tests are meant to test the functionality of a module or a set of
 functions in a real environment. Trident supports two types of functional tests:
 manually authored custom tests and test generated from Rust code. Each Rust
 module should have a corresponding functional test module called
-`functional_tests` annotated with `#[cfg(feature = "functional-tests")]`. Naming
-of test function is up to the developer, but should be indicative of what is
-being tested. Each test function is annotated with `#[pytest()]` attribute.
+`functional_test` annotated with:
+
+```rust
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+```
+
+Naming of test function is up to the developer, but should be indicative of what
+is being tested. Each test function is annotated with `#[functional_test()]`
+attribute.
 
 Functional tests can be invoked by `make functional-test` and this will
 automatically gather code coverage data as well. This `Makefile` target will
@@ -84,9 +91,9 @@ Functional tests are structured as follows:
 ### Functional Test Authoring in Rust
 
 In order to support autogeneration of the Pytest wrappers, the functional tests
-in Rust need to be annotated with `#[pytest]` attribute (instead of the regular
-`#[test]`). The attribute accepts a comma-separated list of key-value pairs,
-where the supported keys are: `negative` and `feature`.
+in Rust need to be annotated with `#[functional_test]` attribute (instead of the
+regular `#[test]`). The attribute accepts a comma-separated list of key-value
+pairs, where the supported keys are: `negative` and `feature`.
 
 The `negative` key is used to mark the test as negative, meaning it tests for a
 failure case. The expected associated value type is `boolean`. The `negative`

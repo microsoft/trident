@@ -31,5 +31,5 @@ strum = "0.25.0"
 strum_macros = "0.25.0"
 
 [features]
-functional-tests = []
+functional-test = []
 pytest-generator = []

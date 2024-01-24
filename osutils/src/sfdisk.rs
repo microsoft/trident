@@ -287,14 +287,13 @@ mod tests {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
-    #[cfg(test)]
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use std::path::PathBuf;
 
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
 
-    #[cfg(test)]
     use super::*;
 
     /// Functional test for `SfDisk::get_info`
@@ -376,7 +375,7 @@ mod functional_tests {
     ///    ]
     /// }
     /// ```
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_get() {
         let disk = SfDisk::get_info("/dev/sda").unwrap();
         assert_eq!(disk.device, PathBuf::from("/dev/sda"));

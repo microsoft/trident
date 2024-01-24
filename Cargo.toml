@@ -55,7 +55,7 @@ indoc = "2"
 [features]
 dangerous-options = ["trident_api/dangerous-options"]
 sysupdate = ["trident_api/sysupdate"]
-functional-tests = ["osutils/functional-tests"]
+functional-test = ["osutils/functional-test"]
 pytest-generator = ["osutils/pytest-generator"]
 
 

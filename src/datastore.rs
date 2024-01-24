@@ -149,16 +149,16 @@ impl DataStore {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-#[cfg_attr(not(test), allow(unused_imports))]
-mod functional_tests {
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use super::*;
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
     use tempfile::TempDir;
     use trident_api::error::InternalError;
     use trident_api::status::ReconcileState;
 
-    #[pytest()]
+    #[functional_test]
     fn test_open_temporary_persist_reopen() {
         let _ = std::fs::remove_file(TRIDENT_TEMPORARY_DATASTORE_PATH);
 

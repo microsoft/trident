@@ -133,20 +133,19 @@ mod tests {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
-    #[cfg(test)]
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use std::{
         fs::{self, File},
         path::Path,
     };
 
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
 
-    #[cfg(test)]
     use crate::files::create_dirs;
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_run_detects_open_files() {
         // create a temporary file and keep it open
         let dir_path = Path::new("/tmp/test-lsof");

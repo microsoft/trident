@@ -16,6 +16,7 @@ pub struct TestCaseMetadata<'a> {
     pub function: &'a str,
     pub negative: bool,
     pub feature: &'a str,
+    pub type_: &'a str,
 }
 
 /// Internal represntation of the test case metadata, extracted from `TestCaseMetadata`.
@@ -174,14 +175,7 @@ pub fn generate_pytest_wrappers() {
             crate_: tcm.module.split("::").next().unwrap(),
             module: tcm.module,
             function: tcm.function,
-            type_: tcm
-                .module
-                .split("::")
-                .last()
-                .unwrap()
-                .split('_')
-                .next()
-                .unwrap(),
+            type_: tcm.type_,
             negative: tcm.negative,
             feature: tcm.feature,
         })

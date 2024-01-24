@@ -12,7 +12,7 @@ enum TestCaseMetadataAttribute {
 }
 
 /// Internal representation of test case metadata, populated from TokenStream of
-/// the function annotated by `#[pytest]` attribute. `function` is inferred from
+/// the function annotated by `#[functional_test()]` attribute. `function` is inferred from
 /// the function name, the rest can be provided by the user.
 #[derive(Default, Debug)]
 struct TestCaseMetadataInt {
@@ -21,7 +21,7 @@ struct TestCaseMetadataInt {
     feature: String,
 }
 
-/// The `pytest` attribute macro. This macro is used to annotate test functions
+/// The `functional_test` attribute macro. This macro is used to annotate test functions
 /// that should be exposed to the pytest test runner. Currently, this should be
 /// only done for the functional tests. This macro will automatically add the
 /// `#[test]` attribute to the function, and will also add the function to the list
@@ -42,7 +42,11 @@ struct TestCaseMetadataInt {
 /// The `feature` key is optional, and if not provided, the test will be
 /// considered as belonging to the `core` feature.
 #[proc_macro_attribute]
-pub fn pytest(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn functional_test(attr: TokenStream, item: TokenStream) -> TokenStream {
+    pytest(attr, item, "functional")
+}
+
+fn pytest(attr: TokenStream, item: TokenStream, test_type: &str) -> TokenStream {
     let mut metadata = extract_test_case_metadata(attr);
 
     // Parse the passed item as a function
@@ -72,6 +76,7 @@ pub fn pytest(attr: TokenStream, item: TokenStream) -> TokenStream {
             function: #function,
             negative: #negative,
             feature: #feature,
+            type_: #test_type,
         }}
 
         #[test]
@@ -83,7 +88,7 @@ pub fn pytest(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
-/// Extracts the test case metadata from the `#[pytest]` attribute argument
+/// Extracts the test case metadata from the `#[functional_test]` attribute argument
 /// list. Failures here will result in red squiggles in VSCode when running with
 /// Rust Analyzer.
 fn extract_test_case_metadata(attr: TokenStream) -> TestCaseMetadataInt {

@@ -80,17 +80,16 @@ mod test {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
-    #[cfg(test)]
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use std::fs::File;
 
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
 
-    #[cfg(test)]
     use super::*;
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_is_running_in_container() {
         let dockerenv = Path::new("/.dockerenv");
         if dockerenv.exists() {
@@ -121,7 +120,7 @@ mod functional_tests {
         );
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_get_host_root_path_fails_outside_container() {
         env::remove_var(DOCKER_ENVIRONMENT);
         assert_eq!(
@@ -134,7 +133,7 @@ mod functional_tests {
         );
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_get_host_root_path_fails_in_simulated_container_without_host_mount() {
         env::set_var(DOCKER_ENVIRONMENT, "true");
 
@@ -153,7 +152,7 @@ mod functional_tests {
         );
     }
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_get_host_root_path_in_simulated_container() {
         env::set_var(DOCKER_ENVIRONMENT, "true");
 

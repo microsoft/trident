@@ -229,17 +229,16 @@ impl SystemDFilesystemOverlay {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
-    #[cfg(test)]
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use std::os::unix::fs::symlink;
 
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
 
-    #[cfg(test)]
     use super::*;
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_ephemeral_overlay_mount_unmount() {
         let dir = tempfile::tempdir().unwrap();
         let overlay = EphemeralOverlay::mount(dir.path()).unwrap();
@@ -254,7 +253,7 @@ mod functional_tests {
         assert!(!test_file.exists());
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_ephemeral_overlay_mount_fails_on_missing_target() {
         // fail if target is missing
         let does_not_exist = Path::new("/does-not-exist");
@@ -272,7 +271,7 @@ mod functional_tests {
         );
     }
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_systemd_overlay_mount_temporary_unmount() {
         let dir = tempfile::tempdir().unwrap();
         let overlay = SystemDFilesystemOverlay::mount_temporary(dir.path(), &[]).unwrap();
@@ -287,7 +286,7 @@ mod functional_tests {
         assert!(!test_file.exists());
     }
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_systemd_overlay_mount_temporary_readonly_unmount() {
         let dir = tempfile::tempdir().unwrap();
         // fail to write file for read-only overlay
@@ -301,7 +300,7 @@ mod functional_tests {
         overlay.unmount().unwrap();
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_systemd_overlay_mount_fails_with_symlink_target() {
         // fail to mount on top of a symlink
         let symlink_path = Path::new("/tmp2");
@@ -319,7 +318,7 @@ mod functional_tests {
         );
     }
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     pub fn test_systemd_overlay_mount_persistent_unmount() {
         // test persistent mount
         let dir_base = tempfile::tempdir()

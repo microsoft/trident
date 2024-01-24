@@ -388,12 +388,12 @@ mod tests {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-#[cfg_attr(not(test), allow(unused_imports))]
-mod functional_tests {
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use super::*;
     use maplit::btreemap;
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
     use trident_api::{
@@ -402,7 +402,7 @@ mod functional_tests {
     };
     use uuid::Uuid;
 
-    #[pytest()]
+    #[functional_test]
     fn test_record_datastore_location() {
         let host_status = HostStatus {
             storage: Storage {

@@ -524,17 +524,15 @@ mod tests {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
-    #[cfg(test)]
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use super::*;
-    #[cfg(test)]
     use std::io::Write;
 
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
 
     /// Creates mock boot files in temp_mount_dir
-    #[cfg(test)]
     fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf]) {
         for path in boot_files {
             let full_path = temp_mount_dir.join(path);
@@ -548,7 +546,6 @@ mod functional_tests {
     }
 
     /// Compares two files byte by byte and returns true if they are identical
-    #[cfg(test)]
     fn files_are_identical(file1: &Path, file2: &Path) -> bool {
         let mut buf1 = Vec::new();
         let mut buf2 = Vec::new();
@@ -558,7 +555,7 @@ mod functional_tests {
     }
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir
-    #[pytest(feature = "abupdate")]
+    #[functional_test(feature = "abupdate")]
     fn test_copy_boot_files() {
         let temp_mount_dir = TempDir::new().unwrap();
         let esp_dir = TempDir::new().unwrap();
@@ -591,7 +588,7 @@ mod functional_tests {
     }
 
     /// Validates that generate_boot_filepaths() returns the correct filepaths based on target
-    #[pytest(feature = "abupdate")]
+    #[functional_test(feature = "abupdate")]
     fn test_generate_boot_filepaths() {
         // Test case 1: Run generate_boot_filepaths() with GRUB under EFI_BOOT_PATH
         // Create a temp dir

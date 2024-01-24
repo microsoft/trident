@@ -1145,23 +1145,18 @@ mod test {
     }
 }
 
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
-    #[cfg(test)]
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use super::*;
 
-    #[cfg(test)]
     use maplit::btreemap;
-    #[cfg(test)]
     use uuid::Uuid;
 
-    #[cfg(test)]
     use osutils::efibootmgr;
-    use pytest_gen::pytest;
-    #[cfg(test)]
+    use pytest_gen::functional_test;
     use trident_api::status::{AbUpdate, AbVolumePair, BlockDeviceContents, Disk, Storage};
 
-    #[cfg(test)]
     fn test_helper_set_bootentries(entry_label: &str, host_status: &HostStatus) {
         let output1 = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output1: EfiBootManagerOutput =
@@ -1179,7 +1174,7 @@ mod functional_tests {
         efibootmgr::delete_boot_entry(&boot_entry_num2).unwrap();
     }
 
-    #[pytest()]
+    #[functional_test]
     fn test_set_bootentries() {
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,

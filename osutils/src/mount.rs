@@ -47,23 +47,20 @@ pub fn umount(mount_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
-    #[cfg(test)]
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use super::*;
-    #[cfg(test)]
     use std::{
         fs,
         path::{Path, PathBuf},
     };
-    #[cfg(test)]
     use tempfile::NamedTempFile;
-    #[cfg(test)]
     use tempfile::TempDir;
 
-    use pytest_gen::pytest;
+    use pytest_gen::functional_test;
 
-    #[pytest(feature = "helpers")]
+    #[functional_test(feature = "helpers")]
     fn test_mount_and_umount() {
         // CDROM device to be mounted
         let device = Path::new("/dev/sr0");
@@ -128,7 +125,7 @@ mod functional_tests {
             .ok_or_else(|| Error::msg("Failed to find loop device in losetup output"))
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_mount_failure() {
         // Test case 1: Create a valid temporary directory but use an invalid file path
         let temp_mount_dir = TempDir::new().unwrap();
@@ -158,7 +155,7 @@ mod functional_tests {
         );
     }
 
-    #[pytest(feature = "helpers", negative = true)]
+    #[functional_test(feature = "helpers", negative = true)]
     fn test_umount_failure() {
         // Create a valid temporary directory
         let temp_mount_dir = TempDir::new().unwrap();

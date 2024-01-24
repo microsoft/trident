@@ -138,7 +138,7 @@ validate-api-schema: build-api-schema docbuilder
 
 .PHONY: build-functional-tests
 build-functional-test:
-	cargo build --tests --features functional-tests --all
+	cargo build --tests --features functional-test --all
 
 FUNCTIONAL_TEST_DIR := /tmp/trident-test
 FUNCTIONAL_TEST_JUNIT_XML := target/trident_functional_tests.xml
@@ -152,14 +152,14 @@ build-functional-test-cc:
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' \
 		LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' \
-		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-tests --all --message-format=json > $(BUILD_OUTPUT)
+		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-test --all --message-format=json > $(BUILD_OUTPUT)
 
 	# Output this in case there were build failures
 	@OPENSSL_STATIC=1 OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' \
 		LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' \
-		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-tests --all
+		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-test --all
 
 .PHONY: functional-test
 functional-test: build-functional-test-cc generate-pytest-wrappers
@@ -174,5 +174,5 @@ patch-functional-test: build-functional-test-cc generate-pytest-wrappers
 .PHONY: generate-pytest-wrappers
 generate-pytest-wrappers:
 	rm -rf functional_tests/generated/*
-	cargo build --features=pytest-generator,functional-tests
+	cargo build --features=pytest-generator,functional-test
 	target/debug/trident pytest
