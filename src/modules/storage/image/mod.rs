@@ -469,13 +469,24 @@ fn refresh_ab_volumes(host_status: &mut HostStatus, host_config: &HostConfigurat
     });
 }
 
-/// Returns a list of images that need to be updated/provisioned.
+/// Returns a list of images that are undeployed.
 ///
-/// This goes through the list of images in the HostConfiguration and compares
-/// them to the HostStatus. If an image is targeting an AB Volume Pair and
-/// active is true, it compares the image against the active volume, and if
-/// active is false it compares the image against the update volume (i.e. the
-/// one that isn't active).
+/// An undeployed image is an Image in the HostConfiguration that meets
+/// one of three conditions:
+///
+/// 1. It is not in HostStatus.
+/// 2. Its target device does not contain an image.
+/// 3. Its target device contains a different image than the one specified
+///    in the HostConfiguration.
+///
+/// An image is different if either the url or sha256sum values are
+/// different. If the sha256sum is set to "ignored" in the
+/// HostConfiguration, then only the url must be different no matter the
+/// contents of the target device.
+///
+/// If the target device is an A/B volume pair, then the active boolean is
+/// used to determine whether that resolves to the active volume or the
+/// inactive one.
 fn get_undeployed_images<'a>(
     host_status: &HostStatus,
     host_config: &'a HostConfiguration,
