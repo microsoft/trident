@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
 pub enum InvalidHostConfigurationError {
     #[error("Failed to parse host configuration")]
     FailedToParse,

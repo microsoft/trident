@@ -6,6 +6,7 @@ use super::{
 };
 
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
 pub enum BlockDeviceGraphBuildError {
     #[error("Block device '{0}' is defined more than once")]
     DuplicateDeviceId(String),
@@ -119,7 +120,7 @@ pub enum BlockDeviceGraphBuildError {
             (of kind '{referrer_b_kind}') cannot share block device '{target_id}' of kind \
             '{target_kind}'. Referrers of kind '{referrer_a_kind}' can only share with: \
             {referrer_a_valid_sharing_peers}. Referrers of kind '{referrer_b_kind}' can \
-            only share with: {referrer_b_valid_sharing_peers}."
+            only share with: {referrer_b_valid_sharing_peers}"
     )]
     ReferrerForbiddenSharing {
         target_id: String,
