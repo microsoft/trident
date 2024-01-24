@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     cardinality::ValidCardinality,
-    types::{BlkDevKind, BlkDevKindFlag},
+    types::{BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag},
 };
 
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -50,16 +50,6 @@ pub enum BlockDeviceGraphBuildError {
         valid_references: BlkDevKindFlag,
     },
 
-    #[error(
-        "Block device '{reference_id}' of kind '{reference_kind}' is referenced by multiple block devices: '{referrer_1}' and '{referrer_2}'"
-    )]
-    ReferencedByMultiple {
-        reference_id: String,
-        reference_kind: BlkDevKind,
-        referrer_1: String,
-        referrer_2: String,
-    },
-
     #[error("Image '{image_id}' references non-existent block device '{target_id}'")]
     ImageNonExistentReference { image_id: String, target_id: String },
 
@@ -69,13 +59,6 @@ pub enum BlockDeviceGraphBuildError {
         target_id: String,
         target_kind: BlkDevKind,
         valid_references: BlkDevKindFlag,
-    },
-
-    #[error("Image '{image_id}' references block device '{target_id}' that is already in use by '{referrer_id}'")]
-    ImageReferenceInUse {
-        image_id: String,
-        target_id: String,
-        referrer_id: String,
     },
 
     #[error("Image '{image_id}' references block device '{target_id}' that is already being imaged with '{other_image_id}'")]
@@ -100,15 +83,6 @@ pub enum BlockDeviceGraphBuildError {
         target_id: String,
         target_kind: BlkDevKind,
         valid_references: BlkDevKindFlag,
-    },
-
-    #[error(
-        "Mount point '{mount_point}' references block device '{target_id}' that is already in use by block device '{referrer_id}'"
-    )]
-    MountPointReferenceInUse {
-        mount_point: String,
-        target_id: String,
-        referrer_id: String,
     },
 
     #[error(
@@ -139,4 +113,22 @@ pub enum BlockDeviceGraphBuildError {
 
     #[error("Internal error")]
     InternalError { body: String },
+
+    #[error(
+        "Referrers '{referrer_a_id}' (of kind '{referrer_a_kind}') and '{referrer_b_id}' \
+            (of kind '{referrer_b_kind}') cannot share block device '{target_id}' of kind \
+            '{target_kind}'. Referrers of kind '{referrer_a_kind}' can only share with: \
+            {referrer_a_valid_sharing_peers}. Referrers of kind '{referrer_b_kind}' can \
+            only share with: {referrer_b_valid_sharing_peers}."
+    )]
+    ReferrerForbiddenSharing {
+        target_id: String,
+        target_kind: BlkDevKind,
+        referrer_a_id: String,
+        referrer_a_kind: BlkDevReferrerKind,
+        referrer_b_id: String,
+        referrer_b_kind: BlkDevReferrerKind,
+        referrer_a_valid_sharing_peers: BlkDevReferrerKindFlag,
+        referrer_b_valid_sharing_peers: BlkDevReferrerKindFlag,
+    },
 }

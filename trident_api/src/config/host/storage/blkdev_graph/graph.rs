@@ -89,7 +89,7 @@ mod tests {
             mount_points: vec![],
             image: Some(&image),
             targets: vec![],
-            dependents: None,
+            dependents: vec![],
         };
         let mount_point = MountPoint {
             path: PathBuf::from("/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-123"),
@@ -106,7 +106,7 @@ mod tests {
             mount_points: vec![],
             image: None,
             targets: vec![],
-            dependents: None,
+            dependents: vec![],
         };
         let mount_point2 = MountPoint {
             path: PathBuf::from("/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-456"),

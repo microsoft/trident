@@ -40,6 +40,8 @@ pub enum BlkDevKind {
 
 bitflags::bitflags! {
     /// Bitflags for supported block device types
+    ///
+    /// MUST MATCH THE CONTENTS OF BlkDevKind
     #[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub struct BlkDevKindFlag: u32 {
         const Disk = 1;
@@ -76,6 +78,54 @@ pub enum HostConfigBlockDevice<'a> {
     EncryptedVolume(&'a EncryptedVolume),
 }
 
+/// Enum for referrer kinds.
+///
+/// Referrers are config items that refer to other block devices.
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BlkDevReferrerKind {
+    /// Represents an 'null referrer' i.e. a block device that does not refer to other block devices
+    ///
+    /// Used to aggregate disks, partitions, and adopted partitions.
+    None,
+
+    /// A RAID array
+    RaidArray,
+
+    /// An A/B volume
+    ABVolume,
+
+    /// An encrypted volume
+    EncryptedVolume,
+
+    /// A regular image
+    Image,
+
+    /// A LZMA image for systemd-sysupdate
+    ImageSysupdate,
+
+    /// A mount point
+    MountPoint,
+}
+
+bitflags::bitflags! {
+    /// Bitflags for supported referrer kinds
+    ///
+    /// MUST MATCH THE CONTENTS OF BlkDevReferrerKind
+    #[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct BlkDevReferrerKindFlag: u32 {
+        // Simple types:
+        const RaidArray = 1 << 0;
+        const ABVolume = 1 << 1;
+        const EncryptedVolume = 1 << 2;
+        const MountPoint = 1 << 3;
+        const Image = 1 << 4;
+        const ImageSysupdate = 1 << 5;
+
+        // Groups:
+        const AnyImage = Self::Image.bits() | Self::ImageSysupdate.bits();
+    }
+}
+
 /// Node representing a block device in the graph
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlkDevNode<'a> {
@@ -98,35 +148,7 @@ pub struct BlkDevNode<'a> {
     pub targets: Vec<BlockDeviceId>,
 
     /// The block device, if any, that depend on this block device
-    pub dependents: Option<BlockDeviceId>,
-}
-
-/// Enum for supported block device types
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BlkDevReferrerKind {
-    /// A kind that does not refer to other block devices
-    ///
-    /// Used to aggregate disks, partitions, and adopted partitions.
-    None,
-
-    /// A RAID array
-    RaidArray,
-
-    /// An A/B volume
-    ABVolume,
-
-    /// An encrypted volume
-    EncryptedVolume,
-
-    /// A regular image
-    Image,
-
-    /// A LZMA image for systemd-sysupdate
-    #[cfg(feature = "sysupdate")]
-    ImageSysupdate,
-
-    /// A mount point
-    MountPoint,
+    pub dependents: Vec<BlockDeviceId>,
 }
 
 impl HostConfigBlockDevice<'_> {
@@ -213,6 +235,21 @@ impl BlkDevKind {
     }
 }
 
+impl BlkDevReferrerKind {
+    /// Returns the flag associated with the block device kind
+    pub(crate) fn as_flag(&self) -> BlkDevReferrerKindFlag {
+        match self {
+            BlkDevReferrerKind::None => BlkDevReferrerKindFlag::empty(),
+            BlkDevReferrerKind::RaidArray => BlkDevReferrerKindFlag::RaidArray,
+            BlkDevReferrerKind::ABVolume => BlkDevReferrerKindFlag::ABVolume,
+            BlkDevReferrerKind::EncryptedVolume => BlkDevReferrerKindFlag::EncryptedVolume,
+            BlkDevReferrerKind::Image => BlkDevReferrerKindFlag::Image,
+            BlkDevReferrerKind::ImageSysupdate => BlkDevReferrerKindFlag::ImageSysupdate,
+            BlkDevReferrerKind::MountPoint => BlkDevReferrerKindFlag::MountPoint,
+        }
+    }
+}
+
 impl<'a> BlkDevNode<'a> {
     /// Creates a new block device node from a basic type i.e. has no members (disk, partition, etc.)
     pub(super) fn new_base(id: BlockDeviceId, hc_ref: HostConfigBlockDevice<'a>) -> Self {
@@ -223,7 +260,7 @@ impl<'a> BlkDevNode<'a> {
             mount_points: Vec::new(),
             image: None,
             targets: Vec::new(),
-            dependents: None,
+            dependents: Vec::new(),
         }
     }
 
@@ -243,7 +280,7 @@ impl<'a> BlkDevNode<'a> {
             mount_points: Vec::new(),
             image: None,
             targets: members.into_iter().cloned().collect(),
-            dependents: None,
+            dependents: Vec::new(),
         }
     }
 }
@@ -257,31 +294,57 @@ impl Display for BlkDevKind {
         match self {
             Self::Disk => write!(f, "disk"),
             Self::Partition => write!(f, "partition"),
-            Self::AdoptedPartition => write!(f, "adopted partition"),
-            Self::RaidArray => write!(f, "RAID array"),
-            Self::ABVolume => write!(f, "A/B volume"),
-            Self::EncryptedVolume => write!(f, "encrypted volume"),
+            Self::AdoptedPartition => write!(f, "adopted-partition"),
+            Self::RaidArray => write!(f, "raid-array"),
+            Self::ABVolume => write!(f, "ab-volume"),
+            Self::EncryptedVolume => write!(f, "encrypted-volume"),
         }
     }
 }
 
-impl Display for BlkDevKindFlag {
+impl Display for BlkDevReferrerKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.into_vec()
-                .iter()
-                .map(|kind| kind.to_string())
-                .collect::<Vec<String>>()
-                .join(" or ")
-        )
+        match self {
+            BlkDevReferrerKind::None => write!(f, "none"),
+            BlkDevReferrerKind::RaidArray => write!(f, "raid-array"),
+            BlkDevReferrerKind::ABVolume => write!(f, "ab-volume"),
+            BlkDevReferrerKind::EncryptedVolume => write!(f, "encrypted-volume"),
+            BlkDevReferrerKind::Image => write!(f, "image"),
+            BlkDevReferrerKind::ImageSysupdate => write!(f, "image-sysupdate"),
+            BlkDevReferrerKind::MountPoint => write!(f, "mount-point"),
+        }
     }
 }
 
-impl BlkDevKindFlag {
+// * * * * * * * * * * * * * * * * * * * * * *
+// * Bitflag display stuff                   *
+// * * * * * * * * * * * * * * * * * * * * * *
+
+/// Trait to turn turning bitflags into vectors of displayable items, one for
+/// each active flag.
+trait BitFlagsBackingEnumVec<T>: bitflags::Flags
+where
+    T: Display,
+{
+    fn backing_enum_vec(self) -> Vec<T>;
+
+    fn user_readable(self) -> String {
+        if self.is_empty() {
+            return "(none)".into();
+        }
+
+        self.backing_enum_vec()
+            .iter()
+            .map(|kind| kind.to_string())
+            .collect::<Vec<String>>()
+            .join(" or ")
+    }
+}
+
+/// Convert a BlkDevKindFlag to a vector of BlkDevKind
+impl BitFlagsBackingEnumVec<BlkDevKind> for BlkDevKindFlag {
     /// Converts the flag to a vector of block device kinds
-    pub(crate) fn into_vec(self) -> Vec<BlkDevKind> {
+    fn backing_enum_vec(self) -> Vec<BlkDevKind> {
         self.into_iter()
             .map(|kind| match kind {
                 BlkDevKindFlag::Disk => BlkDevKind::Disk,
@@ -293,5 +356,36 @@ impl BlkDevKindFlag {
                 _ => unreachable!(),
             })
             .collect()
+    }
+}
+
+/// Convert a BlkDevReferrerKindFlag to a vector of BlkDevReferrerKind
+impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
+    /// Converts the flag to a vector of block device kinds
+    fn backing_enum_vec(self) -> Vec<BlkDevReferrerKind> {
+        self.into_iter()
+            .map(|kind| match kind {
+                BlkDevReferrerKindFlag::RaidArray => BlkDevReferrerKind::RaidArray,
+                BlkDevReferrerKindFlag::ABVolume => BlkDevReferrerKind::ABVolume,
+                BlkDevReferrerKindFlag::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
+                BlkDevReferrerKindFlag::Image => BlkDevReferrerKind::Image,
+                #[cfg(feature = "sysupdate")]
+                BlkDevReferrerKindFlag::ImageSysupdate => BlkDevReferrerKind::ImageSysupdate,
+                BlkDevReferrerKindFlag::MountPoint => BlkDevReferrerKind::MountPoint,
+                _ => unreachable!(),
+            })
+            .collect()
+    }
+}
+
+impl Display for BlkDevKindFlag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.user_readable())
+    }
+}
+
+impl Display for BlkDevReferrerKindFlag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.user_readable())
     }
 }

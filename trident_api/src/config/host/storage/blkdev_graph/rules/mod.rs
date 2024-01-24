@@ -11,9 +11,11 @@
 //! 1. Basic checks: Checks that do not depend on the graph.
 //! 2. Target Kind validity: Can device of kind A refer to device of kind B?
 //! 3. Member Count validity: How many members can a device of kind A have?
-//! 4. Field uniqueness: What field values must be unique across all devices of
+//! 4. Sharing: What referrers can refer to the same target as a given referrer
+//!    at the same time?
+//! 5. Field uniqueness: What field values must be unique across all devices of
 //!    type A?
-//! 5. Node Target validity: Are the targets of a given node valid? Do they meet
+//! 6. Node Target validity: Are the targets of a given node valid? Do they meet
 //!    all the required criteria?
 
 use std::os::unix::ffi::OsStrExt;
@@ -25,7 +27,10 @@ use crate::{config::Partition, constants::SWAP_MOUNT_POINT};
 use super::{
     cardinality::ValidCardinality,
     graph::BlockDeviceGraph,
-    types::{BlkDevKindFlag, BlkDevNode, BlkDevReferrerKind, HostConfigBlockDevice},
+    types::{
+        BlkDevKindFlag, BlkDevNode, BlkDevReferrerKind, BlkDevReferrerKindFlag,
+        HostConfigBlockDevice,
+    },
 };
 
 mod encrypted;
@@ -69,7 +74,7 @@ impl BlkDevReferrerKind {
     /// | **Image**              | No   | Yes       | TBD              | Yes       | Yes      | Yes             |
     /// | **ImageSysupdate**     | No   | No        | TBD              | No        | Yes      | No              |
     /// | **MountPoint**         | No   | Yes       | TBD              | Yes       | Yes      | Yes             |
-    pub(crate) fn valid_target_kinds(&self) -> BlkDevKindFlag {
+    pub(crate) fn valid_target_kinds(self) -> BlkDevKindFlag {
         match self {
             Self::None => BlkDevKindFlag::empty(),
             Self::RaidArray => BlkDevKindFlag::Partition,
@@ -85,7 +90,6 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
                     | BlkDevKindFlag::ABVolume
             }
-            #[cfg(feature = "sysupdate")]
             Self::ImageSysupdate => BlkDevKindFlag::ABVolume,
             Self::MountPoint => {
                 BlkDevKindFlag::Partition
@@ -113,7 +117,7 @@ impl BlkDevReferrerKind {
     /// | **MountPoint**       | 1   | 1   |
     ///
     /// (Above ranges are inclusive)
-    pub(crate) fn valid_target_count(&self) -> ValidCardinality {
+    pub(crate) fn valid_target_count(self) -> ValidCardinality {
         match self {
             Self::None => ValidCardinality::new_zero(),
             Self::RaidArray => ValidCardinality::new_at_least(2),
@@ -122,9 +126,48 @@ impl BlkDevReferrerKind {
             // These two are not really used, but we define them for
             // completeness
             Self::Image => ValidCardinality::new_exact(1),
-            #[cfg(feature = "sysupdate")]
             Self::ImageSysupdate => ValidCardinality::new_exact(1),
             Self::MountPoint => ValidCardinality::new_exact(1),
+        }
+    }
+
+    /// Returns a bitset of other referrers that may also refer to the same
+    /// targets as this referrer kind at the same time.
+    ///
+    /// In other words, what other referrers can share the same targets as the
+    /// current referrer?
+    ///
+    /// Returning an empty bitset means that a kind is claiming *exclusive*
+    /// access over its targets. Nothing else can refer to them.
+    ///
+    /// This is useful for cases when we want a node to be shareable between two
+    /// (or more) referrers or the same or other kind.
+    ///
+    /// IMPORTANT: Sharing goes both ways! Both referrers must be in each
+    /// other's valid_sharing_peers() bitset for it to work!
+    ///
+    /// NOTE: Images and mount points are special referrers that follow
+    /// additional rules not covered here:
+    /// 1. Image kinds can never share with any other image kind. (Only one
+    ///    image slot!)
+    /// 2. Mount points can always share with any number of other mount points
+    ///   **implicitly**!
+    ///
+    /// The reason for this is that images and mount points are not block
+    /// devices, so they get their own respective fields in the BlkDevNode
+    /// object.
+    /// - #1 above is enforced by the node struct having only an `Option` to
+    ///   store the image associated with it.
+    /// - #2 follows from the node struct using a `Vec` to store mount points.
+    pub(crate) fn valid_sharing_peers(self) -> BlkDevReferrerKindFlag {
+        match self {
+            Self::None => BlkDevReferrerKindFlag::empty(),
+            Self::RaidArray => BlkDevReferrerKindFlag::empty(),
+            Self::ABVolume => BlkDevReferrerKindFlag::empty(),
+            Self::EncryptedVolume => BlkDevReferrerKindFlag::empty(),
+            Self::Image => BlkDevReferrerKindFlag::MountPoint,
+            Self::ImageSysupdate => BlkDevReferrerKindFlag::MountPoint,
+            Self::MountPoint => BlkDevReferrerKindFlag::AnyImage,
         }
     }
 }
@@ -230,7 +273,6 @@ impl BlkDevReferrerKind {
                 }
             }
             Self::Image => (),
-            #[cfg(feature = "sysupdate")]
             Self::ImageSysupdate => (),
             Self::MountPoint => (),
         }

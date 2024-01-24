@@ -1407,11 +1407,17 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferencedByMultiple {
-                    reference_id: "srv-enc".into(),
-                    reference_kind: BlkDevKind::Partition,
-                    referrer_1: "alt".into(),
-                    referrer_2: "srv".into(),
+                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+                    target_id: "srv-enc".into(),
+                    target_kind: BlkDevKind::Partition,
+                    referrer_a_id: "alt".into(),
+                    referrer_a_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
+                    referrer_b_id: "srv".into(),
+                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
                 }
             )
         );
@@ -1426,11 +1432,17 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferencedByMultiple {
-                    reference_id: "mnt-raid-1".into(),
-                    reference_kind: BlkDevKind::Partition,
-                    referrer_1: "mnt".into(),
-                    referrer_2: "srv".into(),
+                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+                    target_id: "mnt-raid-1".into(),
+                    target_kind: BlkDevKind::Partition,
+                    referrer_a_id: "mnt".into(),
+                    referrer_a_kind: BlkDevReferrerKind::RaidArray,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::RaidArray
+                        .valid_sharing_peers(),
+                    referrer_b_id: "srv".into(),
+                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
                 }
             ),
         );
@@ -1444,11 +1456,17 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferencedByMultiple {
-                    reference_id: "mnt-raid-1".into(),
-                    reference_kind: BlkDevKind::Partition,
-                    referrer_1: "mnt".into(),
-                    referrer_2: "srv".into(),
+                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+                    target_id: "mnt-raid-1".into(),
+                    target_kind: BlkDevKind::Partition,
+                    referrer_a_id: "mnt".into(),
+                    referrer_a_kind: BlkDevReferrerKind::RaidArray,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::RaidArray
+                        .valid_sharing_peers(),
+                    referrer_b_id: "srv".into(),
+                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
                 }
             ),
         );
@@ -1464,11 +1482,17 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferencedByMultiple {
-                    reference_id: "root-a".into(),
-                    reference_kind: BlkDevKind::Partition,
-                    referrer_1: "root".into(),
-                    referrer_2: "srv".into(),
+                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+                    target_id: "root-a".into(),
+                    target_kind: BlkDevKind::Partition,
+                    referrer_a_id: "root".into(),
+                    referrer_a_kind: BlkDevReferrerKind::ABVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
+                        .valid_sharing_peers(),
+                    referrer_b_id: "srv".into(),
+                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
                 }
             ),
         );
@@ -1484,11 +1508,17 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferencedByMultiple {
-                    reference_id: "root-b".into(),
-                    reference_kind: BlkDevKind::Partition,
-                    referrer_1: "root".into(),
-                    referrer_2: "srv".into(),
+                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+                    target_id: "root-b".into(),
+                    target_kind: BlkDevKind::Partition,
+                    referrer_a_id: "root".into(),
+                    referrer_a_kind: BlkDevReferrerKind::ABVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
+                        .valid_sharing_peers(),
+                    referrer_b_id: "srv".into(),
+                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
                 }
             ),
         );
@@ -1504,11 +1534,17 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferencedByMultiple {
-                    reference_id: "mnt".into(),
-                    reference_kind: BlkDevKind::RaidArray,
-                    referrer_1: "root".into(),
-                    referrer_2: "srv".into(),
+                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+                    target_id: "mnt".into(),
+                    target_kind: BlkDevKind::RaidArray,
+                    referrer_a_id: "root".into(),
+                    referrer_a_kind: BlkDevReferrerKind::ABVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
+                        .valid_sharing_peers(),
+                    referrer_b_id: "srv".into(),
+                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
                 }
             ),
         );
@@ -1524,11 +1560,17 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferencedByMultiple {
-                    reference_id: "mnt".into(),
-                    reference_kind: BlkDevKind::RaidArray,
-                    referrer_1: "root".into(),
-                    referrer_2: "srv".into(),
+                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+                    target_id: "mnt".into(),
+                    target_kind: BlkDevKind::RaidArray,
+                    referrer_a_id: "root".into(),
+                    referrer_a_kind: BlkDevReferrerKind::ABVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
+                        .valid_sharing_peers(),
+                    referrer_b_id: "srv".into(),
+                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
                 }
             ),
         );
@@ -1542,10 +1584,16 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ImageReferenceInUse {
-                    image_id: "file:///esp.raw.zst".into(),
+                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "srv-enc".into(),
-                    referrer_id: "srv".into(),
+                    target_kind: BlkDevKind::Partition,
+                    referrer_a_id: "file:///esp.raw.zst".into(),
+                    referrer_a_kind: BlkDevReferrerKind::Image,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::Image.valid_sharing_peers(),
+                    referrer_b_id: "srv".into(),
+                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                        .valid_sharing_peers(),
                 }
             ),
         );
