@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::info;
+use log::{info, warn};
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile},
     error::{DatastoreError, ReportError, TridentError},
@@ -195,13 +195,13 @@ pub(super) fn record_datastore_location(
         .storage
         .get_mount_point_and_relative_path(datastore_path)
         .structured(DatastoreError::RecordDatastoreLocation)?;
-    let device_path = &host_status
-        .storage
-        .get_partition_ref(&device.target_id)
-        .structured(DatastoreError::RecordDatastoreLocation)?
-        .path;
+    let Some(partition) = &host_status.storage.get_partition_ref(&device.target_id) else {
+        // TODO(6623, 6624): Handle datastore being on RAID arrays or encrypted volumes.
+        warn!("Datastore is not on a partition, cannot record location");
+        return Ok(());
+    };
     datastore_ref
-        .write_all(device_path.as_os_str().as_bytes())
+        .write_all(partition.path.as_os_str().as_bytes())
         .structured(DatastoreError::RecordDatastoreLocation)?;
     datastore_ref
         .write_all(b"\n")

@@ -442,6 +442,11 @@ impl Trident {
             info!("Retrieving host status from runtime datastore");
             let datastore_ref = fs::read_to_string(TRIDENT_DATASTORE_REF_PATH)
                 .context("Failed to read datastore reference")?;
+
+            if datastore_ref.is_empty() {
+                bail!("Datastore reference is empty. This is a trident issue and will be fixed in a future release");
+            }
+
             let (block_device, relative_path) = datastore_ref
                 .split_once('\n')
                 .context("Failed to parse datastore reference")?;
