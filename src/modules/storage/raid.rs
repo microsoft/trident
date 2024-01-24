@@ -1,5 +1,4 @@
 use anyhow::{bail, Context, Error};
-use duct::cmd;
 use log::{info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -215,10 +214,13 @@ pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> 
         fs::write(Path::new(mdadm_config_file_path), output)
             .context("Failed to write mdadm config file")?;
 
-        // TODO(6329): Remove this if we can bake the logic to handle RAID withing initrd using MIC
-        cmd!("mkinitrd")
-            .run()
-            .context("Failed to regenerate initrd after creating RAID config")?;
+        // Disabling for now, as we are going to run one mkinitrd rerun as the
+        // last step fo the deployment, to unblock the boot process. Tracked by
+        // bug 6638.
+        // // TODO(6329): Remove this if we can bake the logic to handle RAID withing initrd using MIC
+        // cmd!("mkinitrd")
+        //     .run()
+        //     .context("Failed to regenerate initrd after creating RAID config")?;
     }
     Ok(())
 }

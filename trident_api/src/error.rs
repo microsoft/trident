@@ -117,6 +117,8 @@ pub enum ManagementError {
     SetKernelCmdline,
     #[error("Failed to perform kexec")]
     Kexec,
+    #[error("Failed to regenerate initrd")]
+    RegenerateInitrd,
 }
 
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]

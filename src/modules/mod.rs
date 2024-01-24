@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File},
     path::{Path, PathBuf},
+    process::Command,
     sync::Mutex,
 };
 
@@ -23,6 +24,7 @@ use trident_api::{
 use osutils::{
     chroot,
     efibootmgr::{self, EfiBootManagerOutput},
+    exe::RunAndCheck,
 };
 
 use crate::{
@@ -578,6 +580,13 @@ fn configure(
                 .structured(ModuleError::Configure { name: m.name() })
         })?;
     }
+
+    // To unblock bug 6638, running mkinitrd as the last step, to fix up the
+    // generated initrd.
+    Command::new("mkinitrd")
+        .run_and_check()
+        .structured(ManagementError::RegenerateInitrd)?;
+
     Ok(())
 }
 
