@@ -5,12 +5,12 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Error};
-use log::info;
+use log::{debug, info};
 use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
 
 use trident_api::{
-    config::{HostConfiguration, PartitionType},
+    config::HostConfiguration,
     status::{BlockDeviceContents, HostStatus},
 };
 
@@ -23,10 +23,16 @@ pub fn provision(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     if let Some(encryption) = &host_config.storage.encryption {
-        let key_file: PathBuf = match &encryption.recovery_key_url {
-            Some(url) => url.path().into(),
-            None => bail!("Recovery key file generation not yet implemented."),
+        let key_file: PathBuf = if let Some(url) = &encryption.recovery_key_url {
+            url.path().into()
+        } else {
+            bail!("Recovery key file generation not yet implemented.");
         };
+
+        debug!(
+            "Using key file '{}' to initialize all encrypted volume targets",
+            key_file.display()
+        );
 
         // Check that the TPM 2.0 device is accessible.
         Command::new("tpm2_pcrread")
@@ -34,8 +40,8 @@ pub fn provision(
             .context("Encryption requires access to a TPM 2.0 device but one is not accessible")?;
 
         for ev in encryption.volumes.iter() {
-            let (target_path, target_content_status, target_size_in_bytes) = {
-                let partition: &mut trident_api::status::Partition = host_status
+            let (target_path, target_content_status, target_size_in_bytes, target_partition_type) =
+                if let Some(partition) = host_status
                     .storage
                     .disks
                     .iter_mut()
@@ -43,26 +49,51 @@ pub fn provision(
                     .find(|partition: &&mut trident_api::status::Partition| {
                         partition.id == ev.target_id
                     })
-                    .context(anyhow!(
-                        "Failed to find partition for encrypted volume '{}'",
+                {
+                    info!(
+                        "Encrypting underlying partition target '{}' ({}) of encrypted volume '{}'",
+                        ev.target_id,
+                        partition.path.display(),
                         ev.id
-                    ))?;
+                    );
 
-                (
-                    partition.path.clone(),
-                    &mut partition.contents,
-                    partition.end - partition.start,
-                )
-            };
+                    (
+                        partition.path.clone(),
+                        &mut partition.contents,
+                        partition.end - partition.start,
+                        partition.ty,
+                    )
+                } else if let Some(array) = host_status.storage.raid_arrays.get_mut(&ev.target_id) {
+                    info!(
+                        "Encrypting underlying software RAID array target '{}' ({}) of encrypted volume '{}'",
+                        ev.target_id,
+                        array.path.display(),
+                        ev.id
+                    );
+
+                    (
+                        array.path.clone(),
+                        &mut array.contents,
+                        array.array_size,
+                        array.partition_type,
+                    )
+                } else {
+                    bail!(format!(
+                        "Underlying target '{}' of encrypted volume '{}' is not a partition or software RAID array",
+                        ev.target_id,
+                        ev.id
+                    ))
+                };
 
             // Set the content status of the target to unknown since we
             // are about to encrypt the block device and this may fail.
             *target_content_status = BlockDeviceContents::Unknown;
 
             encrypt_and_open_target(&target_path, &ev.device_name, &key_file).context(format!(
-                "Failed to encrypt target '{}' ({}) for volume '{}'",
+                "Failed to encrypt and open target '{}' ({}) as {} for volume '{}'",
                 target_path.display(),
                 ev.target_id,
+                ev.device_name,
                 ev.id
             ))?;
 
@@ -78,13 +109,13 @@ pub fn provision(
 
             // Add a representation of the created volume in the host
             // status. The content status is unknown since it is new and
-            // there is nothing on it yet.
+            // there isn't even an empty filesystem on it yet.
             host_status.storage.encrypted_volumes.insert(
                 ev.id.clone(),
                 trident_api::status::EncryptedVolume {
                     device_name: ev.device_name.clone(),
                     target_path,
-                    partition_type: PartitionType::LinuxGeneric,
+                    partition_type: target_partition_type,
                     size: target_size_in_bytes - header_offset_in_bytes,
                     contents: BlockDeviceContents::Unknown,
                 },
@@ -104,12 +135,6 @@ fn encrypt_and_open_target(
     device_name: &String,
     key_file: &Path,
 ) -> Result<(), Error> {
-    info!(
-        "Encrypting target '{}' as '{}'",
-        target_path.display(),
-        device_name
-    );
-
     Command::new("cryptsetup")
         .arg("reencrypt")
         .arg("--encrypt")
@@ -134,7 +159,16 @@ fn encrypt_and_open_target(
         .arg("--type")
         .arg("luks2")
         .arg(target_path.as_os_str())
-        .run_and_check()?;
+        .run_and_check()
+        .context(format!(
+            "Failed to encrypt underlying target '{}'",
+            target_path.display()
+        ))?;
+
+    debug!(
+        "Enrolling TPM2 device for underlying target '{}'",
+        target_path.display()
+    );
 
     Command::new("systemd-cryptenroll")
         .arg("--tpm2-device=auto")
@@ -143,7 +177,17 @@ fn encrypt_and_open_target(
         .arg(key_file.as_os_str())
         .arg("--wipe-slot=tpm2")
         .arg(target_path.as_os_str())
-        .run_and_check()?;
+        .run_and_check()
+        .context(format!(
+            "Failed to enroll TPM2 device for underlying target '{}'",
+            target_path.display()
+        ))?;
+
+    debug!(
+        "Opening underlying encrypted target '{}' as '{}'",
+        target_path.display(),
+        device_name
+    );
 
     Command::new("cryptsetup")
         .arg("luksOpen")
@@ -151,7 +195,12 @@ fn encrypt_and_open_target(
         .arg(key_file.as_os_str())
         .arg(target_path.as_os_str())
         .arg(device_name)
-        .run_and_check()?;
+        .run_and_check()
+        .context(format!(
+            "Failed to open underlying target '{}' as '{}'",
+            target_path.display(),
+            device_name
+        ))?;
 
     Ok(())
 }
