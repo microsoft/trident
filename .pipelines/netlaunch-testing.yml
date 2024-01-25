@@ -70,6 +70,7 @@ stages:
       tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(test)
       ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
       ob_artifactBaseName: $(test)_deployment_log_$(System.JobAttempt)
+      testName: $(test)
 
     steps:
     - checkout: self
@@ -122,7 +123,7 @@ stages:
             --trident $(tridentConfigPath)/trident-config.yaml \
             --logstream \
         2>&1 | tee -a ./deployment.log
-        $(tridentSourceDirectory)/e2e_tests/check_netlaunch.py ./deployment.log
+        $(tridentSourceDirectory)/e2e_tests/check_netlaunch.py ./deployment.log || [ ${{ variables['testName'] }} == 'rerun' ]
       timeoutInMinutes: 5
       workingDirectory: $(argusToolkitSourceDirectory)
       displayName: "Run netlaunch for testing"

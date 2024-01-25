@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::info;
+use log::{info, warn};
 
 use osutils::{
     partition_types::DiscoverablePartitionType,
@@ -234,6 +234,15 @@ impl Module for StorageModule {
         host_config: &HostConfiguration,
         mount_point: &Path,
     ) -> Result<(), Error> {
+        if mount_point.exists() {
+            if let Err(e) = osutils::mount::umount(mount_point, true) {
+                warn!(
+                    "Attempt to unmount '{}' returned error: {e}",
+                    mount_point.display(),
+                );
+            }
+        }
+
         if host_status.reconcile_state == ReconcileState::CleanInstall {
             raid::stop_pre_existing_raid_arrays(host_config)
                 .context("Failed to clean up pre-existing RAID arrays")?;

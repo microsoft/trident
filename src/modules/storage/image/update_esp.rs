@@ -56,7 +56,7 @@ struct MountGuard<'a> {
 
 impl<'a> Drop for MountGuard<'a> {
     fn drop(&mut self) {
-        if let Err(e) = mount::umount(self.mount_dir) {
+        if let Err(e) = mount::umount(self.mount_dir, false) {
             info!(
                 "Failed to unmount directory {}: {}",
                 self.mount_dir.display(),

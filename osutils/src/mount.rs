@@ -26,9 +26,14 @@ pub fn mount(file_path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result
 }
 
 /// Unmounts given directory mount_dir.
-pub fn umount(mount_dir: &Path) -> Result<(), Error> {
+pub fn umount(mount_dir: &Path, recursive: bool) -> Result<(), Error> {
+    let mut cmd = Command::new("umount");
+    if recursive {
+        cmd.arg("-R");
+    }
+
     // Try to unmount the directory
-    if let Err(e) = Command::new("umount").arg(mount_dir).run_and_check() {
+    if let Err(e) = cmd.arg(mount_dir).run_and_check() {
         // If umount returns an error, do best effort to log open files while ignoring failures,
         // such as missing external dependency
         let opened_process_files = lsof::run(mount_dir);
@@ -79,13 +84,35 @@ mod functional_test {
         );
 
         // Test unmount_dir function
-        umount(mount_point).unwrap();
+        umount(mount_point, false).unwrap();
 
         // Validate that the device has been successfully unmounted
         assert!(
             !is_device_mounted_at(Path::new(&loop_device), mount_point),
             "Device not unmounted"
         );
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_recursive_unmount() {
+        let tmp_mount = Path::new("/mnt/tmpfs");
+        fs::create_dir_all(tmp_mount).unwrap();
+        Command::new("mount")
+            .arg("-t")
+            .arg("tmpfs")
+            .arg("-o")
+            .arg("size=1M")
+            .arg("tmpfs")
+            .arg(tmp_mount)
+            .run_and_check()
+            .unwrap();
+
+        let cdrom_mount = tmp_mount.join("cdrom");
+        fs::create_dir_all(&cdrom_mount).unwrap();
+        mount(Path::new("/dev/sr0"), &cdrom_mount).unwrap();
+
+        umount(tmp_mount, true).unwrap();
+        assert!(!cdrom_mount.exists());
     }
 
     /// Checks if a device is mounted at a given mount point
@@ -162,7 +189,7 @@ mod functional_test {
 
         // Test case 1: Attempt to unmount an existing directory that isn't mounted and assert that
         // it fails
-        let umount_result_1 = umount(temp_mount_dir.path());
+        let umount_result_1 = umount(temp_mount_dir.path(), false);
         assert_eq!(
             umount_result_1.unwrap_err().root_cause().to_string(),
             format!(
@@ -174,7 +201,7 @@ mod functional_test {
 
         // Test case 2: Attempt to unmount a directory that does not exist
         let invalid_mount_dir = PathBuf::from("/path/to/non/existent/directory");
-        let umount_result_2 = umount(&invalid_mount_dir);
+        let umount_result_2 = umount(&invalid_mount_dir, false);
         assert_eq!(
             umount_result_2.unwrap_err().root_cause().to_string(),
             "Process output:\nstderr:\numount: /path/to/non/existent/directory: no mount point specified.\n\n",
