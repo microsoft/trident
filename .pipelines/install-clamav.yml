@@ -1,0 +1,15 @@
+steps:
+  - bash: |
+      set -eux
+      OS=$(cat /etc/os-release | grep -w ID | cut -d '=' -f 2 | tr -d '"')
+
+        if [[ $OS == 'mariner' ]]; then
+          sudo dnf update
+          sudo dnf install -y clamav wget
+        elif [[ $OS == 'ubuntu' ]]; then
+          sudo apt update
+          sudo apt install -y clamav wget
+        fi
+
+      sudo wget --recursive --no-parent --no-host-directories --reject "*[^.cvd]" https://packages.microsoft.com/clamav/ -P /var/ib/
+    displayName: "Install antivirus"

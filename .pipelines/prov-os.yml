@@ -47,6 +47,8 @@ stages:
     steps:
     - checkout: ${{ parameters.argusRepo }}
 
+    - template: install-clamav.yml
+
     - task: DownloadPipelineArtifact@2
       inputs:
         buildType: ${{ parameters.downloadBuildType }}

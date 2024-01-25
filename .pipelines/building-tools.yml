@@ -30,6 +30,8 @@ stages:
     steps:
     - checkout: ${{ parameters.argusRepo }}
 
+    - template: install-clamav.yml
+       
     - bash: |
         set -eux
         make build/isogen

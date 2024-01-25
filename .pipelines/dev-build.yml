@@ -33,6 +33,8 @@ stages:
     - checkout: ${{ parameters.argusRepo }}
     - checkout: k8s-tests
 
+    - template: install-clamav.yml
+
     - template: download-emu.yml
       parameters:
          tridentSourceDirectory: $(tridentSourceDirectory)
