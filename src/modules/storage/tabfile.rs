@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use log::debug;
 use osutils::exe::RunAndCheck;
 use serde_json::Value;
 
@@ -89,9 +90,11 @@ impl TabFile {
                 )?);
             }
         }
-        Ok(Self {
-            tab_file_contents: tab_file_lines.join("\n"),
-        })
+
+        let tab_file_contents = tab_file_lines.join("\n");
+        debug!("Temporary fstab file contents:\n{tab_file_contents}");
+
+        Ok(Self { tab_file_contents })
     }
 
     /// Write this tab file to disk at location `tab_file_path`.
