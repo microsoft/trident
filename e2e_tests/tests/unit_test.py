@@ -107,9 +107,9 @@ def test_partitions(connection, tridentConfiguration):
         partitions_blkid[system_name].update(partition)
         # Add information to partitions_system_info which uses PARTLABEL as key
         if "PARTLABEL" in partitions_blkid[system_name]:
-            partitions_system_info[
-                partitions_blkid[system_name]["PARTLABEL"]
-            ] = partitions_blkid[system_name]
+            partitions_system_info[partitions_blkid[system_name]["PARTLABEL"]] = (
+                partitions_blkid[system_name]
+            )
             # Define size of the partitions:
             size = int(partitions_blkid[system_name]["size"][:-1]) * math.pow(1024, 2)
             size = (

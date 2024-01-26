@@ -11,7 +11,7 @@ steps:
   - script: |
       set -eux
       python3 --version
-      python3 -m pip install black
+      python3 -m pip install black==24.1.0
       python3 -m black --version
     displayName: Install Python Black
 
