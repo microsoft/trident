@@ -26,6 +26,7 @@ can be leveraged outside of that as well.
     - [Documentation](#documentation)
     - [Schema](#schema)
     - [Sample](#sample)
+    - [Validator](#validator)
   - [A/B Update](#ab-update)
     - [Getting Started with A/B Update](#getting-started-with-ab-update)
     - [TODO: Next Steps](#todo-next-steps)
@@ -169,6 +170,11 @@ The raw JSON Schema for Host configuration is here:
 
 An example Host Configuration YAML file is available here:
 [sample-host-configuration](docs/Reference/Host-Configuration/sample-host-configuration.md)
+
+### Validator
+
+Trident supports the `validate` subcommand to validate a Host Configuration YAML.
+See [Host Configuration Validation](docs/How-To-Guides/Host-Configuration-Validation.md).
 
 ## A/B Update
 

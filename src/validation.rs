@@ -81,8 +81,7 @@ pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), Error> {
 }
 
 fn validate_host_config(hc: HostConfiguration) -> Result<(), Error> {
-    hc.validate()
-        .with_context(|| format!("Host config is invalid: {:?}", hc))?;
+    hc.validate().context("Host config is invalid")?;
 
     info!("Host Configuration is valid");
     Ok(())
