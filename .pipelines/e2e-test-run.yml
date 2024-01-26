@@ -1,0 +1,44 @@
+parameters:
+- name: test
+  type: string
+  default: ''
+
+- name: hostIp
+  type: string
+  default: ''
+
+- name: tridentConfigPath
+  type: string
+
+- name: tridentSourceDirectory
+  type: string
+
+- name: jUnitXMLIdentifier
+  type: string
+  default: trident_e2e_tests
+
+steps:
+- bash: |
+    set -eux
+    sudo pip3 install pytest
+    sudo pip3 install fabric
+  workingDirectory: ${{ parameters.tridentSourceDirectory }}
+  displayName: "Installing dependencies for E2E tests"
+
+- bash: |
+    set -eux
+    sudo python3 -u -m pytest \
+        --capture=no \
+        --junit-xml=${{ parameters.test }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml \
+        --host ${{ parameters.hostIp }} \
+        --tridentconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml
+  workingDirectory: ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests
+  displayName: "Trident E2E tests"
+
+- task: PublishTestResults@2
+  condition: succeededOrFailed()
+  inputs:
+    testResultsFormat: JUnit
+    testResultsFiles: ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/${{ parameters.test }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml
+    testRunTitle: trident_e2e_tests
+  displayName: Publish test results

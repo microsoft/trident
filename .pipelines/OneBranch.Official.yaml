@@ -67,3 +67,4 @@ extends:
         parameters:
           publishUniversalFeed: true
           devBuildValidation: true
+          baremetalValidation: true

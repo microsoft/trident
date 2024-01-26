@@ -1,0 +1,35 @@
+parameters:
+- name: tridentSourceDirectory
+  type: string
+
+- name: updateRuntimeOSTrident
+  type: boolean
+  default: false
+
+- name: tridentConfigPath
+  type: string
+
+steps:
+- bash: |
+    set -eux
+    sudo snap install yq
+  workingDirectory: ${{ parameters.tridentSourceDirectory }}
+  displayName: "Installing dependencies"
+
+- bash: |
+    set -eux
+    sudo yq eval '.host-configuration.management.self-upgrade = true' trident-config.yaml -i
+  condition: eq(${{ parameters.updateRuntimeOSTrident }}, true)
+  workingDirectory: ${{ parameters.tridentConfigPath }}
+  displayName: "Update trident in Runtime OS"
+
+- bash: |
+    set -eux
+    sudo python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/add_key.py \
+        --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/key \
+        --tridentconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml
+    sudo openssl rsa -in ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/key \
+        -out ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/key
+    sudo chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/key
+  workingDirectory: ${{ parameters.tridentSourceDirectory }}
+  displayName: "Setting keys to ssh for testing"

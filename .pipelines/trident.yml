@@ -34,7 +34,6 @@ resources:
     - repository: k8s-tests
       type: git
       name: k8s-tests
-      ref: refs/heads/main
 
     - repository: test-images
       type: git

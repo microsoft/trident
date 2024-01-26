@@ -71,6 +71,10 @@ parameters:
   type: boolean
   default: false
 
+- name: baremetalValidation
+  type: boolean
+  default: false
+
 stages:
 - template: trident-stage.yml
   parameters:
@@ -127,5 +131,14 @@ stages:
     installerISOPipeline: ${{ parameters.installerISOPipelineID }}
     updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
 
-- ${{ if eq(parameters.publishUniversalFeed, 'true') }}:
+- ${{ if eq(parameters.baremetalValidation, 'true') }}:
+  - template: baremetal-testing.yml
+    parameters:
+      argusRepo: ${{ parameters.argusRepo }}
+      tridentRepo: ${{ parameters.tridentRepo }}
+      downloadBuildType: ${{ parameters.downloadBuildTypeInstallerISO }}
+      installerISOPipeline: ${{ parameters.installerISOPipelineID }}
+      updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
+
+- ${{ if and(eq(parameters.publishUniversalFeed, 'true'), eq(parameters.baremetalValidation, 'true')) }}:
   - template: publish.yml

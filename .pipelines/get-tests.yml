@@ -1,0 +1,31 @@
+parameters:
+- name: tridentRepo
+  type: string
+  default: self
+
+jobs:
+- job: DefineTests
+  displayName: Get List of tests to run
+  timeoutInMinutes: 10
+  pool:
+    type: linux
+
+  variables:
+    ob_outputDirectory: $(Build.SourcesDirectory)/build
+    tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+
+  steps:
+  - checkout: ${{ parameters.tridentRepo }}
+
+  - bash: |
+      set -eux
+      tests=""
+      for dir in */; do
+        dir=${dir%*/}
+        tests+=", \"$dir\" : {\"test\": \"$dir\"}"
+      done
+      tests="{${tests:2}}"
+      echo "##vso[task.setvariable variable=listOfTests;isOutput=true]$tests"
+    workingDirectory: $(tridentSourceDirectory)/e2e_tests/trident_configurations
+    name: setTests
+    displayName: List of E2E Tests
