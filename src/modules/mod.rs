@@ -581,8 +581,9 @@ fn configure(
         })?;
     }
 
-    // To unblock bug 6638, running mkinitrd as the last step, to fix up the
-    // generated initrd.
+    // To unblock bug
+    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6638, running
+    // mkinitrd as the last step, to fix up the generated initrd.
     Command::new("mkinitrd")
         .run_and_check()
         .structured(ManagementError::RegenerateInitrd)?;

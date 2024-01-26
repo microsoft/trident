@@ -10,7 +10,7 @@ use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
 
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, PartitionType},
     status::{BlockDeviceContents, HostStatus},
 };
 
@@ -270,24 +270,56 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
     let mut contents: String = String::new();
 
     for (_id, ev) in host_status.storage.encrypted_volumes.iter() {
-        contents.push_str(&format!(
-            "{}\t{}\t{}\t{}\n",
+        info!(
+            "Adding crypttab entry for volume '{}' ({})",
             ev.device_name,
-            ev.target_path.display(),
-            "-",
-            "luks,tpm2-device=auto"
-        ));
+            ev.target_path.display()
+        );
+
+        // An encrypted swap device is special-cased in the crypttab due
+        // to the unique nature and requirements of swap spaces in a Linux
+        // system. It often contains sensitive data temporarily stored in
+        // RAM, so encrypting it is crucial for security, and unlike
+        // regular partitions, which uses a TPM2.0 device for passwordless
+        // startup, the swap device is completely wiped and formatted on
+        // each system startup. For systemd to do this, it needs a key,
+        // and here in the crypttab the swap device is configured with a
+        // randomly generated key from `/dev/random`. This is the most
+        // reliable way to generated a truly random key on Linux systems.
+        // Since the key that is used to open the swap deivce is
+        // immediately discarded, this process also ensures that data left
+        // in swap isn't recoverable after a reboot, enhancing security.
+        match ev.partition_type {
+            PartitionType::Swap => contents.push_str(&format!(
+                "{}\t{}\t{}\tluks,swap\n",
+                ev.device_name,
+                ev.target_path.display(),
+                "/dev/random"
+            )),
+            _ => contents.push_str(&format!(
+                "{}\t{}\t{}\tluks,tpm2-device=auto\n",
+                ev.device_name,
+                ev.target_path.display(),
+                "none"
+            )),
+        }
     }
 
-    // Avoid writing an empty file.
-    if !contents.is_empty() {
-        info!("Creating /etc/crypttab");
-        osutils::files::write_file(path, 0o644, contents.as_bytes()).context(format!(
-            "Failed to write /etc/crypttab with contents '{}'",
-            contents
-        ))?;
+    if contents.is_empty() {
+        if path.exists() {
+            info!("Removing crypttab because there are no encrypted volumes");
+            std::fs::remove_file(&path).context("Failed to remove crypttab")?;
+        }
+    } else {
+        debug!("crypttab file contents:\n{contents}");
+        osutils::files::write_file(path, 0o644, contents.as_bytes())
+            .context("Failed to create crypttab")?;
     }
 
+    // Running mkinitrd would be necessary at the end of this function,
+    // but it is already being run as the last step of a deployment to
+    // unblock the boot process. This is being tracked by bug
+    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6638.
     Ok(())
 }
 

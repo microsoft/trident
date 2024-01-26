@@ -185,9 +185,10 @@ fn set_password(name: &str, password: &Password) -> Result<(), Error> {
                 .run()?
                 .check()
                 .context(format!("Failed to set password for user {}", name))?;
-            // Disabling for now, as we are going to run one mkinitrd rerun as the
-            // last step fo the deployment, to unblock the boot process. Tracked by
-            // bug 6638.
+            // Disabling for now, as we are going to run one mkinitrd
+            // rerun as the last step fo the deployment, to unblock the
+            // boot process. Tracked by bug
+            // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6638.
             // // Run mkinitrd to successfully set the password
             // // Not doing this does not reflect the password successfully to login
             // osutils::exe::RunAndCheck::run_and_check(&mut std::process::Command::new("mkinitrd"))?;
