@@ -39,18 +39,20 @@ stages:
       parameters:
          tridentSourceDirectory: $(tridentSourceDirectory)
 
-    - bash: |
+    - script: |
         set -eux
-
         sudo apt install -y protobuf-compiler clang-7 bc
         sudo python3 -m pip install black
-        cargo install grcov
-        rustup component add llvm-tools-preview
-      displayName: Install dependencies
+      displayName: Install native dependencies
+
+    - template: rustup.yml
+
+    - script: cargo install grcov
+      workingDirectory: $(tridentSourceDirectory)
+      displayName: Install grcov
 
     - bash: |
         set -eux
-
         make all
       workingDirectory: $(tridentSourceDirectory)
       displayName: Invoke make all

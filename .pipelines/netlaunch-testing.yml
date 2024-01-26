@@ -235,6 +235,8 @@ stages:
         ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
       displayName: Install dependencies
 
+    - template: rustup.yml
+
     - bash: |
         set -eux
 
@@ -248,6 +250,7 @@ stages:
          codeCoverageBaseline: 68 # Unit + functional tests
          executeUnitTests: true
          installNativeDependencies: false
+         rustup: false
 
     - task: PublishTestResults@2
       condition: succeededOrFailed()

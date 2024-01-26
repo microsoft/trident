@@ -16,28 +16,17 @@ parameters:
     type: boolean
     default: true
 
+  - name: rustup
+    type: boolean
+    default: true
+
 steps:
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel bc
     displayName: Install native dependencies
     condition: eq(${{ parameters.installNativeDependencies }}, true)
 
-  - task: RustInstaller@1
-    inputs:
-      # Can be any "MSRustup" version, such as ms-stable, ms-1.54 or ms-stable-20210513.5 - for more details see https://mscodehub.visualstudio.com/Rust/_git/rust.msrustup
-      # For supported versions see https://mscodehub.visualstudio.com/Rust/_packaging?_a=package&feed=Rust&view=versions&package=rust.tools-x86_64-pc-windows-msvc&protocolType=NuGet
-      rustVersion: ms-1.73
-      # Space separated list of additional targets: only the host target is supported with the toolchain by default.
-      #additionalTargets: $(additionalRustTargets)
-      # URL of an Azure Artifacts feed configured with a crates.io upstream. Must be within the current ADO collection.
-      # NOTE: Azure Artifacts support for Rust is not yet public, but it is enabled for internal ADO organizations.
-      # https://learn.microsoft.com/en-us/azure/devops/artifacts/how-to/set-up-upstream-sources?view=azure-devops
-      cratesIoFeedOverride: sparse+https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/crates.io/Cargo/index/
-      # URL of an Azure Artifacts NuGet feed configured with the mscodehub Rust feed as an upstream.
-      # * The feed must be within the current ADO collection.
-      # * The CI account, usually "Project Collection Build Service (org-name)", must have at least "Collaborator" permission.
-      # When setting up the upstream NuGet feed, use following Azure Artifacts feed locator:
-      #   azure-feed://mscodehub/Rust/Rust@Release
-      toolchainFeed: https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/Rust/nuget/v3/index.json
+  - ${{ if eq(parameters.rustup, 'true') }}:
+    - template: rustup.yml
 
   - script: cargo install grcov
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
