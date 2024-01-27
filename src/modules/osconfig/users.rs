@@ -102,11 +102,7 @@ pub(super) fn set_up_users(mut users: Vec<User>) -> Result<(), Error> {
 fn ssh_global_config(users: &[User]) -> Result<(), Error> {
     let mut buffer = Vec::new();
 
-    // Globally block passwords
-    buffer.push("PasswordAuthentication no".to_owned());
-    buffer.push("KbdInteractiveAuthentication no".to_owned());
-
-    // Set root login mode
+    // Set root login mode only when root is managed by Trident
     if let Some(root_user) = users.iter().find(|u| u.name == "root") {
         buffer.push(format!(
             "PermitRootLogin {}",
@@ -119,24 +115,15 @@ fn ssh_global_config(users: &[User]) -> Result<(), Error> {
         ));
     }
 
-    // List of users that are allowed to login through SSH
-    let allowusers = users
+    // List of trident-managed users that are NOT allowed to login through SSH
+    let denyusers = users
         .iter()
-        .filter_map(|user| {
-            if user.ssh_mode == SshMode::Block {
-                None
-            } else {
-                Some(user.name.as_str())
-            }
-        })
+        .filter_map(|user| (user.ssh_mode == SshMode::Block).then_some(user.name.as_str()))
         .collect::<Vec<_>>();
 
-    // If there are any users that can login, add a config block for them
-    if !allowusers.is_empty() {
-        buffer.push(format!("AllowUsers {}", allowusers.join(" ")));
-    } else {
-        // If there are no users that can login, block all users
-        buffer.push("DenyUsers *".to_owned());
+    // If there are any users that should not be allowed to login, add a config block for them
+    if !denyusers.is_empty() {
+        buffer.push(format!("DenyUsers {}", denyusers.join(" ")));
     }
 
     #[cfg(feature = "dangerous-options")]
