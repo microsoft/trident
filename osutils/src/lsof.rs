@@ -12,13 +12,13 @@ pub struct ProcessFiles {
     pub paths: Vec<PathBuf>,
 }
 
-pub fn run(directory_path: &Path) -> Result<Vec<ProcessFiles>, Error> {
+pub fn run(directory_path: impl AsRef<Path>) -> Result<Vec<ProcessFiles>, Error> {
     let result = Command::new("lsof")
         .arg("-V") // report what could not be found
         .arg("-x") // controls handling of cross-over processing for symlinks and mounts
         .arg("f") // follow volume mounts (but not symlinks)
         .arg("+D") // and do it for the entire subtree under `directory_path`
-        .arg(directory_path) // search recursively
+        .arg(directory_path.as_ref()) // search recursively
         .arg("-F") // controls output format
         .arg("cn") // fetch command and name
         .output()

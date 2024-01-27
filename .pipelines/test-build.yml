@@ -27,9 +27,10 @@ steps:
   - script: |
       set -ex
       cargo clippy --version
-      cargo clippy --locked --all -- -D warnings 2>&1
-      cargo clippy --locked --all --all-features -- -D warnings 2>&1
-      cargo clippy --locked --all --tests -- -D warnings 2>&1
+      cargo clippy --locked --workspace -- -D warnings 2>&1
+      cargo clippy --locked --workspace --all-features -- -D warnings 2>&1
+      cargo clippy --locked --workspace --tests -- -D warnings 2>&1
+      cargo clippy --locked --workspace --tests --all-features -- -D warnings 2>&1
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Clippy (Linting)
 

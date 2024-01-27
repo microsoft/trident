@@ -26,17 +26,17 @@ pub fn mount(file_path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result
 }
 
 /// Unmounts given directory mount_dir.
-pub fn umount(mount_dir: &Path, recursive: bool) -> Result<(), Error> {
+pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error> {
     let mut cmd = Command::new("umount");
     if recursive {
         cmd.arg("-R");
     }
 
     // Try to unmount the directory
-    if let Err(e) = cmd.arg(mount_dir).run_and_check() {
+    if let Err(e) = cmd.arg(mount_dir.as_ref()).run_and_check() {
         // If umount returns an error, do best effort to log open files while ignoring failures,
         // such as missing external dependency
-        let opened_process_files = lsof::run(mount_dir);
+        let opened_process_files = lsof::run(mount_dir.as_ref());
 
         if let Ok(opened_process_files) = opened_process_files {
             error!("Open files: {:?}", opened_process_files);
@@ -45,7 +45,7 @@ pub fn umount(mount_dir: &Path, recursive: bool) -> Result<(), Error> {
         // Propagate the original unmount error
         return Err(e.context(format!(
             "Failed to unmount directory {}",
-            mount_dir.display()
+            mount_dir.as_ref().display()
         )));
     }
 
@@ -56,10 +56,7 @@ pub fn umount(mount_dir: &Path, recursive: bool) -> Result<(), Error> {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-    };
+    use std::{fs, path::Path};
     use tempfile::NamedTempFile;
     use tempfile::TempDir;
 
@@ -79,7 +76,7 @@ mod functional_test {
         let loop_device = find_loop_device(device).unwrap();
         // Validate that the device has been successfully mounted
         assert!(
-            is_device_mounted_at(Path::new(&loop_device), mount_point),
+            is_device_mounted_at(&loop_device, mount_point),
             "Device not mounted at the expected mount point"
         );
 
@@ -117,13 +114,13 @@ mod functional_test {
 
     /// Checks if a device is mounted at a given mount point
     #[cfg(test)]
-    fn is_device_mounted_at(device: &Path, mount_point: &Path) -> bool {
+    fn is_device_mounted_at(device: impl AsRef<Path>, mount_point: impl AsRef<Path>) -> bool {
         let mounts = fs::read_to_string("/proc/mounts").expect("Failed to read /proc/mounts");
         for line in mounts.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2
-                && parts[0] == device.to_string_lossy()
-                && parts[1] == mount_point.to_string_lossy()
+                && parts[0] == device.as_ref().to_string_lossy()
+                && parts[1] == mount_point.as_ref().to_string_lossy()
             {
                 return true;
             }
@@ -156,10 +153,9 @@ mod functional_test {
     fn test_mount_failure() {
         // Test case 1: Create a valid temporary directory but use an invalid file path
         let temp_mount_dir = TempDir::new().unwrap();
-        let invalid_file_path = PathBuf::from("/path/to/non/existent/file");
 
         // Attempt to mount a non-existent file and assert that it fails
-        let mount_result_1 = mount(invalid_file_path, temp_mount_dir.path());
+        let mount_result_1 = mount("/path/to/non/existent/file", temp_mount_dir.path());
         assert_eq!(
             mount_result_1.unwrap_err().root_cause().to_string(),
             format!(
@@ -171,10 +167,9 @@ mod functional_test {
 
         // Test case 2: Create a valid temporary file but use an invalid directory path
         let temp_file = NamedTempFile::new().unwrap();
-        let invalid_mount_dir = PathBuf::from("/path/to/non/existent/directory");
 
         // Attempt to mount a file to a non-existent directory and assert that it fails
-        let mount_result_2 = mount(temp_file.path(), invalid_mount_dir);
+        let mount_result_2 = mount(temp_file.path(), "/path/to/non/existent/directory");
         assert_eq!(
             mount_result_2.unwrap_err().root_cause().to_string(),
             "Process output:\nstderr:\nmount: /path/to/non/existent/directory: mount point does not exist.\n\n",
@@ -200,8 +195,7 @@ mod functional_test {
         );
 
         // Test case 2: Attempt to unmount a directory that does not exist
-        let invalid_mount_dir = PathBuf::from("/path/to/non/existent/directory");
-        let umount_result_2 = umount(&invalid_mount_dir, false);
+        let umount_result_2 = umount("/path/to/non/existent/directory", false);
         assert_eq!(
             umount_result_2.unwrap_err().root_cause().to_string(),
             "Process output:\nstderr:\numount: /path/to/non/existent/directory: no mount point specified.\n\n",

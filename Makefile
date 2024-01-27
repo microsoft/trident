@@ -3,8 +3,12 @@ all: format check test build-api-docs rpm docker-build build-functional-test cov
 
 .PHONY: check
 check:
-	cargo check --all-features --tests
-	cargo clippy --all-features --tests -- -D warnings
+	cargo check --workspace --all-features --tests
+	cargo clippy --version
+	cargo clippy --locked --workspace -- -D warnings 2>&1
+	cargo clippy --locked --workspace --all-features -- -D warnings 2>&1
+	cargo clippy --locked --workspace --tests -- -D warnings 2>&1
+	cargo clippy --locked --workspace --tests --all-features -- -D warnings 2>&1
 	cargo fmt -- --check
 
 .PHONY: format

@@ -77,7 +77,7 @@ impl From<&clap::Arg> for ArgModel {
                 format!(
                     "<{}>",
                     arg.get_value_names()
-                        .map(|v| v.get(0).map(|v| v.to_string()).unwrap())
+                        .map(|v| v.first().map(|v| v.to_string()).unwrap())
                         .unwrap_or(arg.get_id().to_string())
                 )
             } else if let Some(value_names) = arg.get_value_names() {
