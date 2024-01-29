@@ -181,6 +181,7 @@ impl TridentError {
 }
 
 impl<T: Into<ErrorKind>> From<T> for TridentError {
+    #[track_caller]
     fn from(kind: T) -> Self {
         TridentError(Box::new(TridentErrorInner {
             kind: kind.into(),
