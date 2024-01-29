@@ -203,6 +203,9 @@ pub(super) fn provision_host(
             info!("Running configure");
             configure(&mut modules, state, host_config)?;
 
+            info!("Regenerating initrd");
+            regenerate_initrd()?;
+
             root_device_path = Some(
                 get_root_block_device_path(state.host_status())
                     .structured(InternalError::GetRootBlockDevice)?,
@@ -323,12 +326,18 @@ pub(super) fn update(
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
-                configure(&mut modules, state, host_config)
+                configure(&mut modules, state, host_config)?;
+
+                info!("Regenerating initrd");
+                regenerate_initrd()
             })
             .message("Failed to execute in chroot")?;
     } else {
         info!("Running configure");
         configure(&mut modules, state, host_config)?;
+
+        info!("Regenerating initrd");
+        regenerate_initrd()?;
     }
 
     if let Some(sender) = sender {
@@ -581,14 +590,21 @@ fn configure(
         })?;
     }
 
-    // To unblock bug
-    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6638, running
-    // mkinitrd as the last step, to fix up the generated initrd.
+    Ok(())
+}
+
+/// Regenerates the initrd for the host, using host-specific configuration.
+fn regenerate_initrd() -> Result<(), TridentError> {
+    // We could autodetect configurations on the fly, but for more predictable
+    // behavior and speedier subsequent boots, we will regenerate the host-specific initrd
+    // here.
+
+    // At the moment, this is needed for RAID, encryption, adding a root
+    // password into initrd and to update the hardcoded UUID of the ESP.
+
     Command::new("mkinitrd")
         .run_and_check()
-        .structured(ManagementError::RegenerateInitrd)?;
-
-    Ok(())
+        .structured(ManagementError::RegenerateInitrd)
 }
 
 fn transition(
@@ -1248,5 +1264,28 @@ mod functional_test {
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
 
         test_helper_set_bootentries(BOOT_ENTRY_B, &host_status);
+    }
+
+    #[functional_test]
+    fn test_regenerate_initrd() {
+        let initrd_path = glob::glob("/boot/initrd.img-*").unwrap().next();
+        let original = &initrd_path;
+        if let Some(initrd_path) = &initrd_path {
+            std::fs::remove_file(initrd_path.as_ref().unwrap()).unwrap();
+        }
+
+        regenerate_initrd().unwrap();
+
+        // some should have been created
+        let initrd_path = glob::glob("/boot/initrd.img-*").unwrap().next();
+        assert!(initrd_path.is_some());
+
+        // and the filename should match the original, if we can find the
+        // original; making it conditional in case it was missing in the first
+        // place, possibly due to failure in a test that makes changes to the initrd
+        if let Some(original) = original {
+            let initrd_path = initrd_path.unwrap().unwrap();
+            assert_eq!(original.as_ref().unwrap(), &initrd_path);
+        }
     }
 }

@@ -317,10 +317,6 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
             .context("Failed to create crypttab")?;
     }
 
-    // Running mkinitrd would be necessary at the end of this function,
-    // but it is already being run as the last step of a deployment to
-    // unblock the boot process. This is being tracked by bug
-    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6638.
     Ok(())
 }
 
