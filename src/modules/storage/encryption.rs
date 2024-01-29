@@ -23,11 +23,12 @@ pub fn provision(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     if let Some(encryption) = &host_config.storage.encryption {
-        let key_file: PathBuf = if let Some(url) = &encryption.recovery_key_url {
-            url.path().into()
-        } else {
-            bail!("Recovery key file generation not yet implemented.");
-        };
+        let key_file: PathBuf = encryption
+            .recovery_key_url
+            .as_ref()
+            .context("Recovery key file generation not yet implemented.")?
+            .path()
+            .into();
 
         debug!(
             "Using key file '{}' to initialize all encrypted volume targets",
