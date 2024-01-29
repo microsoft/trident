@@ -67,8 +67,8 @@ stages:
 
   jobs:
   - template: get-tests.yml
-    parameters:
-      tridentRepo: self
+    parameters: 
+      tridentRepo: ${{ parameters.tridentRepo }}
     
   - job: ${{ parameters.jobName }}
     displayName: Run E2E Test

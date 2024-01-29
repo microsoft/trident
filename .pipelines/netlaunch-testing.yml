@@ -26,6 +26,8 @@ stages:
 
   jobs:
   - template: get-tests.yml
+    parameters: 
+      tridentRepo: ${{ parameters.tridentRepo }}
 
   - job: Testing
     dependsOn: DefineTests
