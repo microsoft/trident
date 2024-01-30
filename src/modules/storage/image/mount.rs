@@ -1,7 +1,7 @@
 use std::{fs, path::Path, process::Command};
 
 use anyhow::{Context, Error};
-use log::error;
+use log::{debug, error};
 use osutils::{exe::RunAndCheck, lsof, systemd};
 use trident_api::{config::HostConfiguration, status::HostStatus};
 
@@ -104,14 +104,19 @@ pub(crate) fn mount_updated_volumes(
                 + (if read_only { " (read-only)" } else { "" }),
         );
 
-    if let Err(e) = mount_result {
-        error!("{e:?}");
-        let dep_output = Command::new("systemctl")
+    debug!(
+        "systemctl list-dependencies --all {}:\n{}",
+        update_fs_target.to_string_lossy(),
+        Command::new("systemctl")
             .arg("list-dependencies")
+            .arg("--all")
             .arg(update_fs_target)
             .output_and_check()
-            .context("Failed to list dependencies of the mount target")?;
-        error!("Dependencies of the mount target:\n{dep_output}");
+            .context("Failed to list dependencies of the mount target")?
+    );
+
+    if let Err(e) = mount_result {
+        error!("{e:?}");
         unmount_updated_volumes(root_mount_path)?;
         return Err(e);
     }
