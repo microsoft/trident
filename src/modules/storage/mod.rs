@@ -340,7 +340,7 @@ fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, E
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{os::unix::fs::PermissionsExt, str::FromStr};
 
     use trident_api::{
         config::{
@@ -352,15 +352,26 @@ mod tests {
 
     use super::*;
 
-    /// Validates Storage module HostConfiguration validation logic.
-    #[test]
-    fn test_validate_host_config() {
-        let empty_host_status = HostStatus {
+    fn get_host_status() -> HostStatus {
+        HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             ..Default::default()
-        };
+        }
+    }
 
-        let mut host_config = HostConfiguration {
+    // Create a temporary recovery key file. The file will be deleted once
+    // the object returned is out of scope and dropped.
+    pub fn get_recovery_key_file() -> tempfile::NamedTempFile {
+        let recovery_key_file: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let recovery_key_path: PathBuf = recovery_key_file.path().to_owned();
+        std::fs::write(&recovery_key_path, "recovery-key").unwrap();
+        let mut perms: std::fs::Permissions = recovery_key_path.metadata().unwrap().permissions();
+        perms.set_mode(0o600);
+        recovery_key_file
+    }
+
+    fn get_host_config(recovery_key_file: &tempfile::NamedTempFile) -> HostConfiguration {
+        HostConfiguration {
             storage: Storage {
                 disks: vec![
                     Disk {
@@ -390,6 +401,11 @@ mod tests {
                             Partition {
                                 id: "part4".to_owned(),
                                 partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "part5".to_owned(),
+                                partition_type: PartitionType::Srv,
                                 size: PartitionSize::from_str("1G").unwrap(),
                             },
                         ],
@@ -424,20 +440,44 @@ mod tests {
                         volume_b_id: "part2".to_owned(),
                     }],
                 }),
-                encryption: None,
+                encryption: Some(trident_api::config::Encryption {
+                    recovery_key_url: Some(
+                        url::Url::from_file_path(recovery_key_file.path()).unwrap(),
+                    ),
+                    volumes: vec![trident_api::config::EncryptedVolume {
+                        id: "enc1".to_owned(),
+                        device_name: "luks-enc".to_owned(),
+                        target_id: "part5".to_owned(),
+                    }],
+                }),
             },
             ..Default::default()
-        };
+        }
+    }
 
-        // fail on duplicate disk path
+    /// Validates Storage module HostConfiguration validation logic.
+    #[test]
+    fn test_validate_host_config_pass() {
+        let host_status = get_host_status();
+        let recovery_key_file = get_recovery_key_file();
+        let host_config = get_host_config(&recovery_key_file);
+
+        StorageModule
+            .validate_host_config(&host_status, &host_config, ReconcileState::CleanInstall)
+            .unwrap();
+    }
+
+    // Disk devices must be unique.
+    #[test]
+    fn tests_validate_host_config_duplicate_disk_path_fail() {
+        let host_status = get_host_status();
+        let recovery_key_file = get_recovery_key_file();
+        let mut host_config = get_host_config(&recovery_key_file);
+
         host_config.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
 
         assert!(StorageModule
-            .validate_host_config(
-                &empty_host_status,
-                &host_config,
-                ReconcileState::CleanInstall
-            )
+            .validate_host_config(&host_status, &host_config, ReconcileState::CleanInstall)
             .is_err());
     }
 }
