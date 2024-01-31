@@ -118,10 +118,14 @@ pub struct Trident {
 }
 impl Trident {
     pub fn new(config_path: Option<PathBuf>, logstream: Logstream) -> Result<Self, TridentError> {
-        let config_path = match config_path {
-            Some(path) => path,
-            None => PathBuf::from(TRIDENT_LOCAL_CONFIG_PATH),
+        let config_path = if let Some(path) = config_path {
+            path.to_owned()
+        } else if Path::new("/host").join(TRIDENT_LOCAL_CONFIG_PATH).exists() {
+            Path::new("/host").join(TRIDENT_LOCAL_CONFIG_PATH)
+        } else {
+            Path::new(TRIDENT_LOCAL_CONFIG_PATH).to_owned()
         };
+
         // Load the config file
         info!("Loading config from '{}'", config_path.display());
         let config_contents =
