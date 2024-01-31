@@ -551,7 +551,7 @@ fn wait_for_raid_resync(
     Ok(())
 }
 
-fn create_sw_raid_array(
+pub(super) fn create_sw_raid_array(
     host_status: &mut HostStatus,
     config: &SoftwareRaidArray,
 ) -> Result<(), Error> {

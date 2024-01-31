@@ -5,8 +5,9 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use osutils::exe::OutputChecker;
+use osutils::exe::RunAndCheck;
 use regex::Regex;
+use uuid::Uuid;
 
 /// The path to the GRUB configuration on a volume.
 pub const GRUB_BOOT_CONFIG_PATH: &str = "boot/grub2/grub.cfg";
@@ -15,7 +16,7 @@ pub const GRUB_BOOT_CONFIG_PATH: &str = "boot/grub2/grub.cfg";
 pub fn update_grub_config(
     grub_config: &Path,
     root_fs_uuid: &str,
-    root_partuuid: Option<&str>,
+    root_device_path: Option<&Path>,
 ) -> Result<(), Error> {
     // Read the GRUB config file as a string
     let grub_config_path = Path::new(grub_config);
@@ -39,38 +40,47 @@ pub fn update_grub_config(
             &format!("search -n -u {} -s", root_fs_uuid.trim()),
         )
         .to_string();
-    if let Some(root_partuuid) = root_partuuid {
+    if let Some(root_device_path) = root_device_path {
         file_content = re_partuuid
             .replace(
                 &file_content,
-                &format!("set rootdevice=PARTUUID={}", root_partuuid.trim()),
+                &format!(
+                    "set rootdevice={}",
+                    root_device_path
+                        .to_str()
+                        .context("Failed to convert root device path to string")?
+                        .trim()
+                ),
             )
             .to_string()
     }
     fs::write(grub_config, file_content).context("failed to write the updated grub content")
 }
 
-/// Returns the UUID of the partition at the given path.
-pub fn get_uuid_from_path(partition_path: &Path) -> Result<String, Error> {
+/// Returns the UUID of a block device at the given path.
+pub fn get_uuid_from_path(block_device_path: &Path) -> Result<Uuid, Error> {
     // Canonicalize the path
-    let canonical_path = fs::canonicalize(partition_path).with_context(|| {
+    let canonical_path = fs::canonicalize(block_device_path).with_context(|| {
         format!(
             "Failed to canonicalize the path '{}'",
-            partition_path.display()
+            block_device_path.display()
         )
     })?;
 
     // Run the blkid command to fetch block devices
-    Command::new("blkid")
+    let output = Command::new("blkid")
         .arg("-o")
         .arg("value")
         .arg("-s")
         .arg("UUID")
         .arg(&canonical_path)
-        .output()
-        .context("failed to run blkid command to fetch block devices")?
-        .check_output()
-        .context("blkid command to fetch block devices exited with an error")
+        .output_and_check()
+        .context("failed to run blkid command to fetch block devices")?;
+
+    Uuid::parse_str(output.trim()).context(format!(
+        "Failed to get UUID for path '{}'",
+        canonical_path.display()
+    ))
 }
 
 #[cfg(test)]
@@ -113,23 +123,18 @@ mod tests {
 
         // Generate random FS UUID and PARTUUID for the partition
         let random_uuid_grub = Uuid::new_v4().to_string();
-        let random_partuuid_grub = Uuid::new_v4().to_string();
+        let root_path = Path::new("/dev/sda1");
 
         // Call update_grub_rootfs()
-        update_grub_config(
-            temp_file_path_grub,
-            &random_uuid_grub,
-            Some(&random_partuuid_grub),
-        )
-        .unwrap();
+        update_grub_config(temp_file_path_grub, &random_uuid_grub, Some(root_path)).unwrap();
         // Read back the content of the file
         let updated_content_grub = fs::read_to_string(temp_file_path_grub).unwrap();
 
         // Build the expected content with the new UUID
         let expected_content_grub = original_content_grub
             .replace(
-                "29f8eed2-3c85-4da0-b32e-480e54379766",
-                &random_partuuid_grub,
+                "PARTUUID=29f8eed2-3c85-4da0-b32e-480e54379766",
+                root_path.to_str().unwrap(),
             )
             .replace("9e6a9d2c-b7fe-4359-ac45-18b505e29d8b", &random_uuid_grub);
 

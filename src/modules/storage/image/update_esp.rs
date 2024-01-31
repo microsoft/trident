@@ -31,7 +31,7 @@ use super::HashingReader;
 /// a. If volume A is currently active, copy boot files into /boot/efi/EFI/azlinuxB,
 /// b. If volume B is currently active OR no volume is currently active, i.e., Trident is doing
 /// CleanInstall, copy boot files into /boot/efi/EFI/azlinuxA.
-const EFI_PATH: &str = "EFI";
+pub const EFI_PATH: &str = "EFI";
 
 /// Directory in the ESP image where the shim binaries are located
 const EFI_BOOT_PATH: &str = "EFI/BOOT";
@@ -485,8 +485,8 @@ mod tests {
         assert!(
             generate_esp_dir_path(&host_status)
                 .unwrap()
-                .ends_with("azlinuxA"),
-            "generate_esp_dir_path() should return /boot/efi/EFI/azlinuxA if no volume is currently active"
+                .ends_with(BOOT_ENTRY_A),
+            "generate_esp_dir_path() should return /boot/efi/EFI/AZLA if no volume is currently active"
         );
 
         // Test case 2: If volume A is currently active, generate_esp_dir_path() should return
@@ -502,8 +502,8 @@ mod tests {
         assert!(
             generate_esp_dir_path(&host_status)
                 .unwrap()
-                .ends_with("azlinuxB"),
-            "generate_esp_dir_path() should return /boot/efi/EFI/azlinuxB if volume A is currently active"
+                .ends_with(BOOT_ENTRY_B),
+            "generate_esp_dir_path() should return /boot/efi/EFI/AZLB if volume A is currently active"
         );
 
         // Test case 3: If volume B is currently active, generate_esp_dir_path() should return
@@ -518,8 +518,8 @@ mod tests {
         assert!(
             generate_esp_dir_path(&host_status)
                 .unwrap()
-                .ends_with("azlinuxA"),
-            "generate_esp_dir_path() should return /boot/efi/EFI/azlinuxA if volume B is currently active"
+                .ends_with(BOOT_ENTRY_A),
+            "generate_esp_dir_path() should return /boot/efi/EFI/AZLA if volume B is currently active"
         );
     }
 }

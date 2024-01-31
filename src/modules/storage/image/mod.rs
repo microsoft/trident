@@ -13,7 +13,7 @@ use nix::NixPath;
 use reqwest::Url;
 use sha2::Digest;
 
-use osutils::{exe::RunAndCheck, udevadm};
+use osutils::exe::RunAndCheck;
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     constants,
@@ -30,7 +30,7 @@ pub mod mount;
 mod stream_image;
 #[cfg(feature = "sysupdate")]
 mod systemd_sysupdate;
-mod update_esp;
+pub(crate) mod update_esp;
 mod update_grub;
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
@@ -669,47 +669,45 @@ pub(super) fn configure(
     }
 
     // End of patch block
+    update_grub_config(host_status).context("Failed to update GRUB config")?;
 
-    // Fetch the root partition ID from HostStatus; it corresponds to the
-    // "/", root fs, mountpoint
-    let root_id = &host_status
-        .storage
-        .mount_points
-        .get(Path::new(constants::ROOT_MOUNT_POINT_PATH))
-        .context("Failed to find root partition")?
-        .target_id;
+    Ok(())
+}
 
-    // Fetch the Partition object corresponding to root_id
-    if let Some(root_part) = host_status.get_ab_volume_partition(root_id) {
-        udevadm::settle()?;
-        let root_uuid = update_grub::get_uuid_from_path(&root_part.path)?;
-
-        let root_grub_config_path =
-            Path::new(constants::ROOT_MOUNT_POINT_PATH).join(update_grub::GRUB_BOOT_CONFIG_PATH);
-
-        // Call update_grub() to update the UUID of root FS and if needed,
-        // PARTUUID of root partition inside GRUB config files
-        update_grub::update_grub_config(
-            root_grub_config_path.as_path(),
-            &root_uuid,
-            Some(&root_part.uuid.to_string()),
-        )
-        .context(format!(
-            "Failed to update GRUB config at path '{}'",
-            root_grub_config_path.display()
-        ))?;
-
-        let esp_grub_config_path =
-            Path::new(constants::ESP_MOUNT_POINT_PATH).join(update_grub::GRUB_BOOT_CONFIG_PATH);
-
-        // For GRUB_EFI_CONFIG_PATH, no need to update the PARTUUID of root FS inside GRUB
-        update_grub::update_grub_config(esp_grub_config_path.as_path(), &root_uuid, None).context(
-            format!(
-                "Failed to update GRUB config at path {}",
-                esp_grub_config_path.display()
-            ),
-        )?;
+fn update_grub_config(host_status: &HostStatus) -> Result<(), Error> {
+    // Get the root block device path
+    let root_device_path = modules::get_root_block_device_path(host_status)
+        .context("Cannot find the root block device path")?;
+    if root_device_path.as_os_str().is_empty() {
+        bail!("Root device path is none");
     }
+
+    let root_uuid = update_grub::get_uuid_from_path(root_device_path.as_path())?.to_string();
+    let root_grub_config_path =
+        Path::new(constants::ROOT_MOUNT_POINT_PATH).join(update_grub::GRUB_BOOT_CONFIG_PATH);
+
+    // Call update_grub() to update the UUID of root FS and if needed,
+    // path to the root device
+    update_grub::update_grub_config(
+        root_grub_config_path.as_path(),
+        &root_uuid,
+        Some(&root_device_path),
+    )
+    .context(format!(
+        "Failed to update GRUB config at path '{}'",
+        root_grub_config_path.display()
+    ))?;
+
+    let esp_grub_config_path =
+        Path::new(constants::ESP_MOUNT_POINT_PATH).join(update_grub::GRUB_BOOT_CONFIG_PATH);
+
+    // For GRUB_EFI_CONFIG_PATH, no need to update the path to the root device inside GRUB
+    update_grub::update_grub_config(esp_grub_config_path.as_path(), &root_uuid, None).context(
+        format!(
+            "Failed to update GRUB config at path {}",
+            esp_grub_config_path.display()
+        ),
+    )?;
 
     Ok(())
 }
@@ -1619,5 +1617,470 @@ mod tests {
             is_esp(&host_status, &"non-esp".to_string()),
             "ESP partition was not correctly identified"
         );
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use std::path::PathBuf;
+
+    use crate::modules::storage::raid::create_sw_raid_array;
+
+    use super::*;
+    use maplit::btreemap;
+    use osutils::{
+        lsblk::{self, BlockDevice},
+        partition_types::DiscoverablePartitionType,
+        repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
+        udevadm,
+    };
+    use pytest_gen::functional_test;
+    use trident_api::{
+        config::{RaidLevel, SoftwareRaidArray},
+        status::{MountPoint, Storage},
+    };
+
+    use uuid::Uuid;
+    const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
+    const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
+    const DISK_BUS_PATH: &str = "/dev/sdb";
+    const PART2_SIZE: u64 = 2 * 1024 * 1024 * 1024; // 2 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
+
+    fn generate_partition_definition() -> Vec<RepartPartitionEntry> {
+        vec![
+            RepartPartitionEntry {
+                partition_type: DiscoverablePartitionType::Esp,
+                label: None,
+                size_min_bytes: Some(PART1_SIZE),
+                size_max_bytes: Some(PART1_SIZE),
+            },
+            RepartPartitionEntry {
+                partition_type: DiscoverablePartitionType::Root,
+                label: None,
+                size_min_bytes: Some(PART2_SIZE),
+                size_max_bytes: Some(PART2_SIZE),
+            },
+            RepartPartitionEntry {
+                partition_type: DiscoverablePartitionType::LinuxGeneric,
+                label: None,
+                // When min==max==None, it's a grow partition
+                size_min_bytes: None,
+                size_max_bytes: None,
+            },
+        ]
+    }
+
+    pub fn test_execute_and_resulting_layout() {
+        let partition_definition = generate_partition_definition();
+
+        let disk_bus_path = PathBuf::from(DISK_BUS_PATH);
+
+        let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartMode::Force)
+            .with_partition_entries(partition_definition.clone());
+
+        let partitions = repart.execute().unwrap();
+
+        assert_eq!(partitions.len(), 3);
+
+        let part1 = &partitions[0];
+        let part1_start = 1024 * 1024;
+        assert_eq!(part1.start, part1_start);
+        assert_eq!(part1.size, PART1_SIZE);
+
+        let part2 = &partitions[1];
+        let part2_start = part1_start + PART1_SIZE;
+        assert_eq!(part2.start, part2_start);
+        assert_eq!(part2.size, PART2_SIZE);
+
+        let part3 = &partitions[2];
+        assert_eq!(part3.start, part2_start + PART2_SIZE);
+        assert_eq!(
+            part3.size,
+            16 * 1024 * 1024 * 1024 - part1_start - PART1_SIZE - PART2_SIZE - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
+        );
+
+        udevadm::settle().unwrap();
+
+        let expected_block_device_list = vec![BlockDevice {
+            name: "/dev/sdb".into(),
+            part_uuid: None,
+            size: DISK_SIZE,
+            parent_kernel_name: None,
+            children: Some(vec![
+                BlockDevice {
+                    name: "/dev/sdb1".into(),
+                    part_uuid: Some(part1.uuid),
+                    size: part1.size,
+                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    children: None,
+                },
+                BlockDevice {
+                    name: "/dev/sdb2".into(),
+                    part_uuid: Some(part2.uuid),
+                    size: part2.size,
+                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    children: None,
+                },
+                BlockDevice {
+                    name: "/dev/sdb3".into(),
+                    part_uuid: Some(part3.uuid),
+                    size: part3.size,
+                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    children: None,
+                },
+            ]),
+        }];
+
+        let block_device_list = lsblk::run(&disk_bus_path).unwrap();
+        assert_eq!(expected_block_device_list, block_device_list);
+    }
+
+    fn mkfs(path: &Path) {
+        // Build the mkfs.ext4 command
+        Command::new("mkfs.ext4").arg(path).run_and_check().unwrap();
+    }
+
+    #[functional_test(feature = "helpers")]
+    /// This functions tests update_grub by setting up root on a raid array.
+    fn test_update_grub_root_raided() {
+        test_execute_and_resulting_layout();
+        let mut host_status = HostStatus {
+            storage: Storage {
+                disks: btreemap! {
+                    "foo".into() => Disk {
+                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
+                        path: PathBuf::from("/dev/sda"),
+                        capacity: 10,
+                        contents: BlockDeviceContents::Initialized,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000001u128),
+                                path: PathBuf::from("/dev/sda1"),
+                                id: "boot1".into(),
+                                start: 1,
+                                end: 3,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000002u128),
+                                path: PathBuf::from("/dev/sda3"),
+                                id: "root1".into(),
+                                start: 4,
+                                end: 10,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                        ],
+                    },
+                    "foo1".into() => Disk {
+                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
+                        path: PathBuf::from("/dev/sdb"),
+                        capacity: 10,
+                        contents: BlockDeviceContents::Initialized,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
+                                path: PathBuf::from("/dev/sdb1"),
+                                id: "boot2".into(),
+                                start: 1,
+                                end: 3,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000005u128),
+                                path: PathBuf::from("/dev/sdb2"),
+                                id: "root2".into(),
+                                start: 4,
+                                end: 10,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                        ],
+                    },
+
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Create a raid array
+        let raid_array = SoftwareRaidArray {
+            id: "raid_array".into(),
+            name: "md0".into(),
+            devices: vec!["root1".to_string(), "root2".to_string()],
+            level: RaidLevel::Raid1,
+            metadata_version: "1.2".into(),
+        };
+        create_sw_raid_array(&mut host_status, &raid_array).unwrap();
+        let root_device_path = PathBuf::from(format!("/dev/md/{}", &raid_array.name));
+
+        // Make this as Root device
+        host_status.storage.root_device_path = Some(root_device_path.clone());
+
+        // Add mount points
+        host_status.storage.mount_points = btreemap! {
+                   PathBuf::from("/boot") => MountPoint {
+                       target_id: "boot1".to_owned(),
+                       filesystem: "fat32".to_owned(),
+                       options: vec![],
+                   },
+               PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPoint {
+                   target_id: raid_array.id.clone(),
+                   filesystem: "ext4".to_owned(),
+                   options: vec![],
+               },
+        };
+        mkfs(&root_device_path);
+        assert!(update_grub_config(&host_status).is_ok());
+    }
+
+    #[functional_test(feature = "helpers")]
+    /// This functions tests update_grub by setting up root on a standalone partition.
+    fn test_update_grub_root_standalone_partition() {
+        test_execute_and_resulting_layout();
+        let mut host_status = HostStatus {
+            storage: Storage {
+                disks: btreemap! {
+                    "foo".into() => Disk {
+                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
+                        path: PathBuf::from("/dev/sdb"),
+                        capacity: 10,
+                        contents: BlockDeviceContents::Initialized,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
+                                path: PathBuf::from("/dev/sdb1"),
+                                id: "boot".into(),
+                                start: 1,
+                                end: 3,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000005u128),
+                                path: PathBuf::from("/dev/sdb2"),
+                                id: "root".into(),
+                                start: 4,
+                                end: 10,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                        ],
+                    },
+
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Add mount points
+        host_status.storage.mount_points = btreemap! {
+                   PathBuf::from("/boot") => MountPoint {
+                       target_id: "boot".to_owned(),
+                       filesystem: "fat32".to_owned(),
+                       options: vec![],
+                   },
+                   PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPoint {
+                    target_id: "root".to_string(),
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                },
+        };
+
+        let root_device_path = PathBuf::from("/dev/sdb2");
+        mkfs(&root_device_path);
+        assert!(update_grub_config(&host_status).is_ok());
+    }
+
+    #[functional_test(feature = "helpers")]
+    /// This functions tests update_grub by setting up root as an ab volume partition.
+    fn test_update_grub_root_abvolume() {
+        test_execute_and_resulting_layout();
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/sdb"),
+                        uuid: Uuid::nil(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_string(),
+                                path: PathBuf::from("/dev/sdb1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "root-a".to_string(),
+                                path: PathBuf::from("/dev/sdb2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+                            Partition {
+                                id: "root-b".to_string(),
+                                path: PathBuf::from("/dev/sdb3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::nil(),
+                            },
+                        ],
+                    },
+                },
+                ab_update: Some(AbUpdate {
+                    volume_pairs: btreemap! {
+                        "root".to_string() => AbVolumePair {
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        },
+                    },
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Add mount points
+        host_status.storage.mount_points = btreemap! {
+                   PathBuf::from("/boot") => MountPoint {
+                       target_id: "boot".to_owned(),
+                       filesystem: "fat32".to_owned(),
+                       options: vec![],
+                   },
+                   PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPoint {
+                    target_id: "root".to_string(),
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                },
+        };
+
+        let root_device_path = PathBuf::from("/dev/sdb2");
+        mkfs(&root_device_path);
+        assert!(update_grub_config(&host_status).is_ok());
+    }
+
+    #[functional_test(feature = "helpers")]
+    /// This functions tests update_grub by setting up root on a standalone partition and setting root uuid empty so that the function bails on root_uuid being empty.
+    fn test_update_grub_root_uuid_empty() {
+        test_execute_and_resulting_layout();
+        let mut host_status = HostStatus {
+            storage: Storage {
+                disks: btreemap! {
+                    "foo".into() => Disk {
+                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
+                        path: PathBuf::from("/dev/sdb"),
+                        capacity: 10,
+                        contents: BlockDeviceContents::Initialized,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
+                                path: PathBuf::from("/dev/sdb1"),
+                                id: "boot".into(),
+                                start: 1,
+                                end: 3,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000005u128),
+                                path: PathBuf::from("/dev/sdb2"),
+                                id: "root".into(),
+                                start: 4,
+                                end: 10,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                        ],
+                    },
+
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Add root mount point
+        host_status.storage.mount_points = btreemap! {
+                   PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPoint {
+                    target_id: "root".to_string(),
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                },
+        };
+
+        let result = update_grub_config(&host_status);
+
+        assert!(
+            result.is_err()
+                && result.unwrap_err().to_string() == "Failed to get UUID for path '/dev/sdb2'"
+        );
+    }
+
+    #[functional_test(feature = "helpers")]
+    /// This functions tests update_grub by setting up root path empty so that the function bails on root path being None.
+    fn test_update_grub_root_path_empty() {
+        test_execute_and_resulting_layout();
+        let mut host_status = HostStatus {
+            storage: Storage {
+                disks: btreemap! {
+                    "foo".into() => Disk {
+                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
+                        path: PathBuf::from("/dev/sdb"),
+                        capacity: 10,
+                        contents: BlockDeviceContents::Initialized,
+                        partitions: vec![
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
+                                path: PathBuf::from("/dev/sdb1"),
+                                id: "boot".into(),
+                                start: 1,
+                                end: 3,
+                                ty: PartitionType::Esp,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                            Partition {
+                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000005u128),
+                                path: PathBuf::from(""),
+                                id: "root".into(),
+                                start: 4,
+                                end: 10,
+                                ty: PartitionType::Root,
+                                contents: BlockDeviceContents::Initialized,
+                            },
+                        ],
+                    },
+
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Add root mount point
+        host_status.storage.mount_points = btreemap! {
+                   PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPoint {
+                    target_id: "root".to_string(),
+                    filesystem: "ext4".to_string(),
+                    options: vec![],
+                },
+        };
+
+        let result = update_grub_config(&host_status);
+        assert!(result.is_err() && result.unwrap_err().to_string() == "Root device path is none");
     }
 }
