@@ -205,7 +205,7 @@ impl Module for StorageModule {
                 device_paths.insert(device_path.clone(), disk.id.clone())
             {
                 bail!(
-                    "Disks {} and {} point to the same device {}",
+                    "Disks '{}' and '{}' point to the same device '{}'",
                     disk.id,
                     existing_disk_id,
                     device_path.display()
@@ -476,8 +476,12 @@ mod tests {
 
         host_config.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
 
-        assert!(StorageModule
-            .validate_host_config(&host_status, &host_config, ReconcileState::CleanInstall)
-            .is_err());
+        assert_eq!(
+            StorageModule
+                .validate_host_config(&host_status, &host_config, ReconcileState::CleanInstall)
+                .unwrap_err()
+                .to_string(),
+            "Disks 'disk2' and 'disk1' point to the same device '/tmp'"
+        );
     }
 }
