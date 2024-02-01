@@ -169,11 +169,11 @@ build-functional-test-cc:
 functional-test: build-functional-test-cc generate-pytest-wrappers
 	cp ../k8s-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
 	cp ../k8s-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
-	python3 -u -m pytest functional_tests/ --setup-show -vv -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload # -k test_osutils -s
+	python3 -u -m pytest functional_tests/ --setup-show -vv -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload # -k test_osutils -s
 
 .PHONY: patch-functional-test
 patch-functional-test: build-functional-test-cc generate-pytest-wrappers
-	python3 -u -m pytest functional_tests/ --setup-show -vv -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment -s # -k test_osutils -s
+	python3 -u -m pytest functional_tests/ --setup-show -vv -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment -s # -k test_osutils -s
 
 .PHONY: generate-pytest-wrappers
 generate-pytest-wrappers:

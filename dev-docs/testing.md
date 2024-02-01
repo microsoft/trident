@@ -141,7 +141,7 @@ targets:
   downloaded for later viewing. To note, this will also execute all UTs. If you
   want to iterate on the tests without recreating the VM, but do want to
   redeploy the OS, you can: `make functional-test
-  EXTRA_PARAMS="--reuse-environment --redeploy"`.
+  FUNCTIONAL_TEST_EXTRA_PARAMS="--reuse-environment --redeploy"`.
 
 - `make patch-functional-test`: This will build the tests locally with code
   coverage profile (using internal `build-functional-test-cc` target), upload
