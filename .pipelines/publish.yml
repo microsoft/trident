@@ -42,6 +42,26 @@ stages:
         inputs:
           buildType: current
           patterns: |
+            pxe-artifacts.zip
+          targetPath: $(Pipeline.Workspace)/pxe-artifacts
+          artifactName: installer-iso
+          branchName: 'refs/heads/main'
+        displayName: "Download PXE artifacts"
+
+      - task: UniversalPackages@0
+        displayName: "Publish pxe-artifacts Universal Package"
+        inputs:
+          command: publish
+          vstsFeedPublish: ECF/Trident
+          vstsFeedPackagePublish: pxe-artifacts-preview
+          publishDirectory: "$(Pipeline.Workspace)/pxe-artifacts"
+          versionPublish: $(Build.BuildNumber)
+          versionOption: custom
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          patterns: |
             *.rpm
           targetPath: $(Pipeline.Workspace)/rpms
           artifactName: drop_Trident_BuildTrident

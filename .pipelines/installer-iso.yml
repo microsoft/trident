@@ -111,3 +111,27 @@ stages:
             -m "$(argusToolkitSourceDirectory)/build/installer-iso/added_files.json"
       workingDirectory: $(argusToolkitSourceDirectory)
       displayName: "Build Installer ISO for testing components"
+
+    - script: sudo tdnf install -y p7zip p7zip-plugins zstd wget
+      displayName: "Install native dependencies"
+
+    - bash: |
+        set -eux
+        7z e $(argusToolkitSourceDirectory)/build/installer-iso/installer.iso
+        mv INITRD.IMG initrd.img
+        mv VMLINUZ vmlinuz
+        mv GRUB.CFG grub.cfg
+
+        wget https://packages.microsoft.com/cbl-mariner/2.0/prod/base/x86_64/Packages/s/shim-15.4-2.cm2.x86_64.rpm
+        7z e shim-15.4-2.cm2.x86_64.rpm
+        7z e shim-15.4-2.cm2.x86_64.cpio
+
+        wget https://packages.microsoft.com/cbl-mariner/2.0/prod/base/x86_64/Packages/g/grub2-efi-binary-noprefix-2.06-12.cm2.x86_64.rpm
+        7z e grub2-efi-binary-noprefix-2.06-12.cm2.x86_64.rpm
+        zstd -d grub2-efi-binary-noprefix-2.06-12.cm2.x86_64.cpio.zstd
+        7z e grub2-efi-binary-noprefix-2.06-12.cm2.x86_64.cpio
+        mv grubx64-noprefix.efi grubx64.efi
+
+        7z a $(argusToolkitSourceDirectory)/build/pxe-artifacts.zip initrd.img vmlinuz grub.cfg bootx64.efi grubx64.efi
+      workingDirectory: $(argusToolkitSourceDirectory)
+      displayName: "Extract PXE artifacts"
