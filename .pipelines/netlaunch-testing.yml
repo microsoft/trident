@@ -187,7 +187,7 @@ stages:
     - template: coverage.yml
       parameters:
          tridentSourceDirectory: $(tridentSourceDirectory)
-         codeCoverageBaseline: 69 # Unit + functional tests
+         codeCoverageBaseline: 71 # Unit + functional tests
          executeUnitTests: true
          installNativeDependencies: false
          rustup: false
