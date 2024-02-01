@@ -17,6 +17,23 @@ use trident_api::{
 const LUKS_HEADER_SEGMENT_KEY: &str = "0";
 const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
 
+pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error> {
+    if let Some(encryption) = &host_config.storage.encryption {
+        if let Some(recovery_key_url) = &encryption.recovery_key_url {
+            let key_file: PathBuf = recovery_key_url.path().into();
+
+            if !key_file.exists() {
+                bail!(
+                    "Recovery key file '{}' does not exist",
+                    key_file.to_string_lossy()
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// This function provisions all configured encrypted volumes.
 pub fn provision(
     host_status: &mut HostStatus,
@@ -322,7 +339,141 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use trident_api::{
+        config::{
+            Disk, EncryptedVolume, Encryption, Image, ImageFormat, ImageSha256, MountPoint,
+            Partition, PartitionSize, RaidConfig, Storage,
+        },
+        constants,
+    };
+    use url::Url;
+
+    use crate::modules::storage::tests::get_recovery_key_file;
+
     use super::*;
+
+    fn get_storage(recovery_key_file: &tempfile::NamedTempFile) -> Storage {
+        Storage {
+            disks: vec![Disk {
+                id: "os".to_owned(),
+                device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
+                partitions: vec![
+                    Partition {
+                        id: "esp".to_owned(),
+                        partition_type: PartitionType::Esp,
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                    Partition {
+                        id: "root".to_owned(),
+                        partition_type: PartitionType::Root,
+                        size: PartitionSize::from_str("8G").unwrap(),
+                    },
+                    Partition {
+                        id: "srv-enc".to_owned(),
+                        partition_type: PartitionType::Srv,
+                        size: PartitionSize::from_str("1T").unwrap(),
+                    },
+                ],
+                ..Default::default()
+            }],
+            raid: RaidConfig { software: vec![] },
+            mount_points: vec![
+                MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "esp".to_string(),
+                    filesystem: "fat32".to_string(),
+                    options: vec!["defaults".to_owned()],
+                },
+                MountPoint {
+                    path: constants::ROOT_MOUNT_POINT_PATH.into(),
+                    target_id: "root".to_string(),
+                    filesystem: "ext4".to_string(),
+                    options: vec!["defaults".to_owned()],
+                },
+                MountPoint {
+                    path: PathBuf::from("/srv"),
+                    target_id: "srv".to_string(),
+                    filesystem: "ext4".to_string(),
+                    options: vec!["defaults".to_owned()],
+                },
+            ],
+            images: vec![
+                Image {
+                    url: "file:///trident_cdrom/data/esp.rawzst".into(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZstd,
+                    target_id: "esp".to_owned(),
+                },
+                Image {
+                    url: "file:///trident_cdrom/data/root.rawzst".into(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZstd,
+                    target_id: "root".to_owned(),
+                },
+                Image {
+                    url: "file:///trident_cdrom/data/srv.rawzst".into(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZstd,
+                    target_id: "srv".to_owned(),
+                },
+            ],
+            ab_update: None,
+            encryption: Some(Encryption {
+                recovery_key_url: Some(Url::from_file_path(recovery_key_file.path()).unwrap()),
+                volumes: vec![EncryptedVolume {
+                    id: "srv".to_owned(),
+                    device_name: "luks-srv".to_owned(),
+                    target_id: "srv-enc".to_owned(),
+                }],
+            }),
+        }
+    }
+
+    fn test_host_config(recovery_key_file: &tempfile::NamedTempFile) -> HostConfiguration {
+        HostConfiguration {
+            storage: get_storage(recovery_key_file),
+            ..Default::default()
+        }
+    }
+
+    // Encryption configuration without modification is valid.
+    #[test]
+    fn test_validate_host_config_pass() {
+        let recovery_key_file = get_recovery_key_file();
+        let host_config = test_host_config(&recovery_key_file);
+        validate_host_config(&host_config).unwrap();
+    }
+
+    // Encryption doesn't need to be configured at all.
+    #[test]
+    fn test_validate_host_config_encryption_none_pass() {
+        let recovery_key_file = get_recovery_key_file();
+        let mut host_config = test_host_config(&recovery_key_file);
+
+        host_config.storage.encryption = None;
+
+        validate_host_config(&host_config).unwrap();
+    }
+
+    // Encryption recovery key file needs to exist on the system.
+    #[test]
+    fn test_validate_host_config_recovery_key_not_exist_fail() {
+        let recovery_key_file = get_recovery_key_file();
+        let host_config = test_host_config(&recovery_key_file);
+
+        // Delete the recovery key file.
+        std::fs::remove_file(recovery_key_file.path()).unwrap();
+
+        assert_eq!(
+            validate_host_config(&host_config).unwrap_err().to_string(),
+            format!(
+                "Recovery key file '{}' does not exist",
+                recovery_key_file.path().display()
+            )
+        );
+    }
 
     #[test]
     fn test_parse_luks_dump_for_header_offset_str_16mib_pass() {

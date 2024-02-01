@@ -213,6 +213,9 @@ impl Module for StorageModule {
             }
         }
 
+        encryption::validate_host_config(host_config)
+            .context("Encryption host configuration validation failed")?;
+
         Ok(())
     }
 
@@ -482,6 +485,25 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "Disks 'disk2' and 'disk1' point to the same device '/tmp'"
+        );
+    }
+
+    // Validating the Storage module include encryption configuration validation.
+    #[test]
+    fn test_validate_host_config_encryption_invalid_fail() {
+        let host_status = get_host_status();
+        let recovery_key_file = get_recovery_key_file();
+        let host_config = get_host_config(&recovery_key_file);
+
+        // Delete the recovery key file to make the encryption configuration invalid.
+        std::fs::remove_file(recovery_key_file.path()).unwrap();
+
+        assert_eq!(
+            StorageModule
+                .validate_host_config(&host_status, &host_config, ReconcileState::CleanInstall)
+                .unwrap_err()
+                .to_string(),
+            "Encryption host configuration validation failed"
         );
     }
 }

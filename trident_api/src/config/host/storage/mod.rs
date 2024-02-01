@@ -408,7 +408,7 @@ mod tests {
     use super::*;
 
     /// Generate a basic valid Storage configuration for testing.
-    fn test_storage() -> Storage {
+    fn get_storage() -> Storage {
         Storage {
             disks: vec![
                 Disk {
@@ -962,14 +962,14 @@ mod tests {
 
     #[test]
     fn test_validate_encryption_pass() {
-        let storage: Storage = test_storage();
+        let storage: Storage = get_storage();
         storage.validate(true).unwrap();
     }
 
     /// A/B update volume pairs can target encrypted volumes (A)
     #[test]
     fn test_validate_ab_update_volume_pair_a_id_encryption_pass() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "srv".to_owned();
         // Delete mount point associated with "srv", otherwise this would fail
         storage.mount_points.retain(|mp| mp.target_id != "srv");
@@ -979,7 +979,7 @@ mod tests {
     /// A/B update volume pairs can target encrypted volumes (B)
     #[test]
     fn test_validate_ab_update_volume_pair_b_id_encryption_pass() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "srv".to_owned();
         // Delete mount point associated with "srv", otherwise this would fail
         storage.mount_points.retain(|mp| mp.target_id != "srv");
@@ -989,7 +989,7 @@ mod tests {
     /// Software RAID arrays must have one or more devices
     #[test]
     fn test_validate_software_raid_array_no_devices_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1007,7 +1007,7 @@ mod tests {
     /// Software RAID arrays cannot target encrypted volumes
     #[test]
     fn test_validate_software_raid_target_id_encryption_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.raid.software[0].devices[0] = "srv".to_owned();
         eprintln!("{:?}", storage.validate(true).unwrap_err());
         assert_eq!(
@@ -1027,7 +1027,7 @@ mod tests {
     /// Encrypted volumes and disks must not share the same id
     #[test]
     fn test_validate_encryption_disks_share_id_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1040,7 +1040,7 @@ mod tests {
     /// Encrypted volumes and partitions must not share the same id
     #[test]
     fn test_validate_encryption_partitions_share_id_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "esp".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1053,7 +1053,7 @@ mod tests {
     /// Encrypted volumes and software RAID arrays must not share the same id
     #[test]
     fn test_validate_encryption_raid_arrays_share_id_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "mnt".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1066,7 +1066,7 @@ mod tests {
     /// Encrypted volumes and A/B update volume pairs must not share the same id
     #[test]
     fn test_validate_encryption_ab_update_volume_pairs_share_id_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].id = "root".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1079,7 +1079,7 @@ mod tests {
     /// Encrypted volumes themselves must not share the same id
     #[test]
     fn test_validate_encryption_volumes_share_id_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.disks[0].partitions.push(Partition {
             id: "alt-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
@@ -1107,7 +1107,7 @@ mod tests {
     /// Encrypted volume device names must be unique
     #[test]
     fn test_validate_encryption_device_names_duplicate_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.disks[0].partitions.push(Partition {
             id: "alt-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
@@ -1146,7 +1146,7 @@ mod tests {
     /// Encryption recovery key may have file scheme
     #[test]
     fn test_validate_encryption_recovery_key_file_scheme_pass() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().recovery_key_url =
             Some(Url::parse("file:///path/to/recovery.key").unwrap());
         storage.validate(true).unwrap();
@@ -1155,7 +1155,7 @@ mod tests {
     /// Encryption recovery key must not have https scheme
     #[test]
     fn test_validate_encryption_recovery_key_http_scheme_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().recovery_key_url =
             Some(Url::parse("https://www.example.com/recovery.key").unwrap());
         assert_eq!(
@@ -1170,7 +1170,7 @@ mod tests {
     /// Encrypted volume target ID may be a home partition
     #[test]
     fn test_validate_encryption_target_id_home_pass() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.disks[1].partitions[5].partition_type = PartitionType::Home;
         storage.validate(true).unwrap();
     }
@@ -1178,7 +1178,7 @@ mod tests {
     /// Encrypted volume target ID must not be an esp partition
     #[test]
     fn test_validate_encryption_target_id_esp_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "esp".to_owned();
         storage.mount_points.remove(1);
         storage.images.remove(0);
@@ -1197,7 +1197,7 @@ mod tests {
     /// Encrypted volume target ID must not be a root partition
     #[test]
     fn test_validate_encryption_target_id_root_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-a".to_owned();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id =
             "root-a-verity".to_owned();
@@ -1216,7 +1216,7 @@ mod tests {
     /// Encrypted volume target ID must not be a root-verity partition
     #[test]
     fn test_validate_encryption_target_id_root_verity_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage
             .encryption
             .as_mut()
@@ -1241,7 +1241,7 @@ mod tests {
     /// Encrypted volume target ID may be a software RAID array of home partitions
     #[test]
     fn test_validate_encryption_target_id_raid_home_pass() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Home;
@@ -1252,7 +1252,7 @@ mod tests {
     /// Encrypted volume target ID must not be a software RAID array of esp partitions
     #[test]
     fn test_validate_encryption_target_id_raid_esp_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Esp;
@@ -1263,7 +1263,7 @@ mod tests {
     /// Encrypted volume target ID must not be a software RAID array of root partitions
     #[test]
     fn test_validate_encryption_target_id_raid_root_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage.disks[1].partitions[3].partition_type = PartitionType::Root;
@@ -1274,7 +1274,7 @@ mod tests {
     /// Encrypted volume target ID must not be a software RAID array of root-verity partitions
     #[test]
     fn test_validate_encryption_target_id_raid_root_verity_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage
@@ -1299,7 +1299,7 @@ mod tests {
     /// Encrypted volume target ID must not be a software RAID array of no devices.
     #[test]
     fn test_validate_encryption_target_id_raid_no_devices_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
@@ -1318,7 +1318,7 @@ mod tests {
     /// Encrypted volume target ID must not be a software RAID array of A/B update volume pairs.
     #[test]
     fn test_validate_encryption_target_id_raid_ab_update_volume_pair_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.raid.software[0].devices = vec!["root".to_owned()];
         // Remove the first mount point
@@ -1338,7 +1338,7 @@ mod tests {
     /// Encrypted volume target ID must not be a disk
     #[test]
     fn test_validate_encryption_target_id_disk_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1357,7 +1357,7 @@ mod tests {
     /// Encrypted volume target ID can be a software RAID array instead of a partition
     #[test]
     fn test_validate_encryption_target_id_raid_pass() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2);
         storage.validate(true).unwrap();
@@ -1366,7 +1366,7 @@ mod tests {
     /// Encrypted volume target ID must not be an A/B update volume pair
     #[test]
     fn test_validate_encryption_target_id_ab_update_volume_pair_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root".to_owned();
         storage.images.remove(1);
         storage.mount_points.remove(0);
@@ -1387,7 +1387,7 @@ mod tests {
     /// Encrypted volume target IDs must be unique
     #[test]
     fn test_validate_encryption_target_id_duplicate_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage
             .encryption
             .as_mut()
@@ -1426,7 +1426,7 @@ mod tests {
     /// Encrypted volumes cannot target the same partition as a mount point
     #[test]
     fn test_validate_encryption_mount_point_target_part_id_equal_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
         storage.mount_points[2].target_id = "mnt-raid-1".to_owned();
         assert_eq!(
@@ -1451,7 +1451,7 @@ mod tests {
     /// Encrypted volumes cannot target the same partition as a software RAID array
     #[test]
     fn test_validate_encryption_software_raid_target_part_id_equal_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1475,7 +1475,7 @@ mod tests {
     /// Encrypted volumes cannot target the same partition as A/B update volume pair (A)
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_a_part_id_equal_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-a".to_owned();
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
@@ -1501,7 +1501,7 @@ mod tests {
     /// Encrypted volumes cannot target the same partition as A/B update volume pair (B)
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_b_part_id_equal_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-b".to_owned();
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
@@ -1527,7 +1527,7 @@ mod tests {
     /// Encrypted volumes cannot target the same software RAID array as an A/B update volume pair (A)
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_a_raid_id_equal_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2); // remove /mnt mount point
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "mnt".to_owned();
@@ -1553,7 +1553,7 @@ mod tests {
     /// Encrypted volumes cannot target the same software RAID array as an A/B update volume pair (B)
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_b_raid_id_equal_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
         storage.mount_points.remove(2); // remove /mnt mount point
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "mnt".to_owned();
@@ -1579,7 +1579,7 @@ mod tests {
     /// Encrypted volumes cannot target the same partition as an image
     #[test]
     fn test_validate_encryption_image_target_part_id_equal_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.images[0].target_id = "srv-enc".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1603,7 +1603,7 @@ mod tests {
     #[test]
     #[cfg(feature = "sysupdate")]
     fn test_validate_image_raw_lzma_ab_update_volume_pair_pass() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.images[1].format = ImageFormat::RawLzma;
         storage.validate(true).unwrap();
     }
@@ -1612,7 +1612,7 @@ mod tests {
     #[test]
     #[cfg(feature = "sysupdate")]
     fn test_validate_image_raw_lzma_partition_fail() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         storage.images[0].format = ImageFormat::RawLzma;
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1630,7 +1630,7 @@ mod tests {
     /// Images can target encrypted volumes
     #[test]
     fn test_validate_image_target_id_encryption_pass() {
-        let mut storage: Storage = test_storage();
+        let mut storage: Storage = get_storage();
         let mut images = storage.images.clone();
         images.push(Image {
             target_id: "srv".to_owned(),
