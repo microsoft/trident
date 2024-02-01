@@ -26,6 +26,7 @@ pytest_gen = { path = "../pytest_gen" }
 pytest = { path = "../pytest" }
 
 [dev-dependencies]
+glob = "0.3.1"
 indoc = "2"
 strum = "0.25.0"
 strum_macros = "0.25.0"

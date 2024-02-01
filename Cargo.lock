@@ -1255,6 +1255,7 @@ dependencies = [
  "anyhow",
  "configparser",
  "duct",
+ "glob",
  "indoc",
  "inventory",
  "log",

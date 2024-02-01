@@ -1,7 +1,6 @@
 use std::{
     fs::{self, File},
     path::{Path, PathBuf},
-    process::Command,
     sync::Mutex,
 };
 
@@ -24,7 +23,7 @@ use trident_api::{
 use osutils::{
     chroot,
     efibootmgr::{self, EfiBootManagerOutput},
-    exe::RunAndCheck,
+    mkinitrd,
 };
 
 use self::storage::image::update_esp;
@@ -614,9 +613,7 @@ fn regenerate_initrd() -> Result<(), TridentError> {
     // At the moment, this is needed for RAID, encryption, adding a root
     // password into initrd and to update the hardcoded UUID of the ESP.
 
-    Command::new("mkinitrd")
-        .run_and_check()
-        .structured(ManagementError::RegenerateInitrd)
+    mkinitrd::execute()
 }
 
 fn transition(
@@ -1377,28 +1374,5 @@ mod functional_test {
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
 
         test_helper_set_bootentries(BOOT_ENTRY_B, &host_status);
-    }
-
-    #[functional_test]
-    fn test_regenerate_initrd() {
-        let initrd_path = glob::glob("/boot/initrd.img-*").unwrap().next();
-        let original = &initrd_path;
-        if let Some(initrd_path) = &initrd_path {
-            std::fs::remove_file(initrd_path.as_ref().unwrap()).unwrap();
-        }
-
-        regenerate_initrd().unwrap();
-
-        // some should have been created
-        let initrd_path = glob::glob("/boot/initrd.img-*").unwrap().next();
-        assert!(initrd_path.is_some());
-
-        // and the filename should match the original, if we can find the
-        // original; making it conditional in case it was missing in the first
-        // place, possibly due to failure in a test that makes changes to the initrd
-        if let Some(original) = original {
-            let initrd_path = initrd_path.unwrap().unwrap();
-            assert_eq!(original.as_ref().unwrap(), &initrd_path);
-        }
     }
 }

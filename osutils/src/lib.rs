@@ -5,6 +5,7 @@ pub mod exe;
 pub mod files;
 pub mod lsblk;
 pub mod lsof;
+pub mod mkinitrd;
 pub mod mount;
 pub mod overlay;
 pub mod partition_types;
