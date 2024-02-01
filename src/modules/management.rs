@@ -11,7 +11,7 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{info, warn};
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile},
-    error::{DatastoreError, ReportError, TridentError},
+    error::{DatastoreError, ManagementError, ReportError, TridentError},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
@@ -194,7 +194,9 @@ pub(super) fn record_datastore_location(
     let (device, relative_path) = host_status
         .storage
         .get_mount_point_and_relative_path(datastore_path)
-        .structured(DatastoreError::RecordDatastoreLocation)?;
+        .structured(ManagementError::from(
+            DatastoreError::RecordDatastoreLocation,
+        ))?;
     let Some(partition) = &host_status.storage.get_partition_ref(&device.target_id) else {
         // TODO(6623, 6624): Handle datastore being on RAID arrays or encrypted volumes.
         warn!("Datastore is not on a partition, cannot record location");
@@ -202,16 +204,22 @@ pub(super) fn record_datastore_location(
     };
     datastore_ref
         .write_all(partition.path.as_os_str().as_bytes())
-        .structured(DatastoreError::RecordDatastoreLocation)?;
+        .structured(ManagementError::from(
+            DatastoreError::RecordDatastoreLocation,
+        ))?;
     datastore_ref
         .write_all(b"\n")
-        .structured(DatastoreError::RecordDatastoreLocation)?;
+        .structured(ManagementError::from(
+            DatastoreError::RecordDatastoreLocation,
+        ))?;
     datastore_ref
         .write_all(relative_path.as_os_str().as_bytes())
-        .structured(DatastoreError::RecordDatastoreLocation)?;
-    datastore_ref
-        .sync_all()
-        .structured(DatastoreError::RecordDatastoreLocation)?;
+        .structured(ManagementError::from(
+            DatastoreError::RecordDatastoreLocation,
+        ))?;
+    datastore_ref.sync_all().structured(ManagementError::from(
+        DatastoreError::RecordDatastoreLocation,
+    ))?;
     Ok(())
 }
 

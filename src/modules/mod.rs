@@ -178,8 +178,9 @@ pub(super) fn provision_host(
     let mount_path = Path::new(UPDATE_ROOT_PATH);
     provision(&mut modules, state, host_config, mount_path)?;
 
-    let datastore_ref = File::create(TRIDENT_DATASTORE_REF_PATH)
-        .structured(DatastoreError::CreateDatastoreRefFile)?;
+    let datastore_ref = File::create(TRIDENT_DATASTORE_REF_PATH).structured(
+        ManagementError::from(DatastoreError::CreateDatastoreRefFile),
+    )?;
     let datastore_path = state
         .host_status()
         .management
@@ -530,8 +531,9 @@ fn refresh_host_status(
 ) -> Result<(), TridentError> {
     for m in modules {
         state.try_with_host_status(|s| {
-            m.refresh_host_status(s)
-                .structured(ModuleError::RefreshHostStatus { name: m.name() })
+            m.refresh_host_status(s).structured(ManagementError::from(
+                ModuleError::RefreshHostStatus { name: m.name() },
+            ))
         })?;
     }
     Ok(())
@@ -545,7 +547,9 @@ fn validate_host_config(
 ) -> Result<(), TridentError> {
     for m in modules {
         m.validate_host_config(state.host_status(), host_config, planned_update)
-            .structured(ModuleError::ValidateHostConfiguration { name: m.name() })?
+            .structured(ManagementError::from(
+                ModuleError::ValidateHostConfiguration { name: m.name() },
+            ))?
     }
     info!("Host config validated");
     Ok(())
@@ -559,7 +563,9 @@ fn prepare(
     for m in modules {
         state.try_with_host_status(|s| {
             m.prepare(s, host_config)
-                .structured(ModuleError::Prepare { name: m.name() })
+                .structured(ManagementError::from(ModuleError::Prepare {
+                    name: m.name(),
+                }))
         })?;
     }
     Ok(())
@@ -574,7 +580,9 @@ fn provision(
     for m in modules {
         state.try_with_host_status(|s| {
             m.provision(s, host_config, mount_point)
-                .structured(ModuleError::Provision { name: m.name() })
+                .structured(ManagementError::from(ModuleError::Provision {
+                    name: m.name(),
+                }))
         })?;
     }
     Ok(())
@@ -588,7 +596,9 @@ fn configure(
     for m in modules {
         state.try_with_host_status(|s| {
             m.configure(s, host_config)
-                .structured(ModuleError::Configure { name: m.name() })
+                .structured(ManagementError::from(ModuleError::Configure {
+                    name: m.name(),
+                }))
         })?;
     }
 

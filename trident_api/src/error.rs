@@ -48,6 +48,10 @@ pub enum InvalidInputError {
 
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+pub enum UnsupportedConfigurationError {}
+
+#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum DatastoreError {
     #[error("Failed to create datastore directory")]
     CreateDatastoreDirectory,
@@ -119,6 +123,11 @@ pub enum ManagementError {
     Kexec,
     #[error("Failed to regenerate initrd")]
     RegenerateInitrd,
+
+    #[error(transparent)]
+    Module(#[from] ModuleError),
+    #[error(transparent)]
+    Datastore(#[from] DatastoreError),
 }
 
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]
@@ -137,21 +146,33 @@ pub enum InternalError {
     SendHostStatus,
 }
 
+/// Each variant of `ErrorKind` corresponds to a different category of error. The categories are
+/// intended to be user-meaningful and to be used for routing issues to the proper team.
 #[derive(Debug, thiserror::Error, IntoStaticStr)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ErrorKind {
+    /// Trident failed to initialize.
     #[error(transparent)]
     Initialization(#[from] InitializationError),
+
+    /// Trident failed because it was provided invalid user input.
     #[error(transparent)]
     InvalidInput(#[from] InvalidInputError),
+
+    /// Trident was unable to provision or update due to the current configuration of the system.
     #[error(transparent)]
-    ModuleError(#[from] ModuleError),
+    UnsupportedConfiguration(#[from] UnsupportedConfigurationError),
+
+    /// Some step during provisioning or update failed. User investigation is required to determine
+    /// whether this is an issue with Trident or one of its dependencies, or whether the system is
+    /// misconfigured.
     #[error(transparent)]
     Management(#[from] ManagementError),
+
+    /// An uncategorized error occurred or a bug was encountered. This indicates a problem with
+    /// Trident.
     #[error(transparent)]
-    Datastore(#[from] DatastoreError),
-    #[error(transparent)]
-    InternalError(#[from] InternalError),
+    Internal(#[from] InternalError),
 }
 
 #[derive(Debug)]
@@ -262,10 +283,9 @@ impl Serialize for TridentError {
         match self.0.kind {
             ErrorKind::Initialization(ref e) => state.serialize_field("error", e)?,
             ErrorKind::InvalidInput(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::ModuleError(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::UnsupportedConfiguration(ref e) => state.serialize_field("error", e)?,
             ErrorKind::Management(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::Datastore(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::InternalError(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::Internal(ref e) => state.serialize_field("error", e)?,
         }
         state.serialize_field("category", <&str>::from(&self.0.kind))?;
         state.serialize_field(

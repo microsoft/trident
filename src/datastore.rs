@@ -2,7 +2,7 @@ use anyhow::{Context, Error};
 use log::info;
 use std::{fs, path::Path};
 use trident_api::{
-    error::{DatastoreError, ReportError, TridentError},
+    error::{DatastoreError, ManagementError, ReportError, TridentError},
     status::HostStatus,
 };
 
@@ -52,10 +52,12 @@ impl DataStore {
     }
 
     fn make_datastore(path: &Path) -> Result<sqlite::Connection, TridentError> {
-        fs::create_dir_all(path.parent().unwrap())
-            .structured(DatastoreError::CreateDatastoreDirectory)?;
+        fs::create_dir_all(path.parent().unwrap()).structured(ManagementError::from(
+            DatastoreError::CreateDatastoreDirectory,
+        ))?;
 
-        let db = sqlite::open(path).structured(DatastoreError::OpenDatastore)?;
+        let db =
+            sqlite::open(path).structured(ManagementError::from(DatastoreError::OpenDatastore))?;
         db.execute(
             "CREATE TABLE IF NOT EXISTS hoststatus (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,7 +65,7 @@ impl DataStore {
                 contents TEXT NOT NULL
             )",
         )
-        .structured(DatastoreError::DatastoreInit)?;
+        .structured(ManagementError::from(DatastoreError::DatastoreInit))?;
         Ok(db)
     }
 
@@ -85,17 +87,17 @@ impl DataStore {
     ) -> Result<(), TridentError> {
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
-            .structured(DatastoreError::DatastoreWrite)?;
+            .structured(ManagementError::from(DatastoreError::DatastoreWrite))?;
         statement
             .bind((
                 1,
                 &*serde_yaml::to_string(host_status)
-                    .structured(DatastoreError::SerializeHostStatus)?,
+                    .structured(ManagementError::from(DatastoreError::SerializeHostStatus))?,
             ))
-            .structured(DatastoreError::DatastoreWrite)?;
+            .structured(ManagementError::from(DatastoreError::DatastoreWrite))?;
         statement
             .next()
-            .structured(DatastoreError::DatastoreWrite)?;
+            .structured(ManagementError::from(DatastoreError::DatastoreWrite))?;
 
         Ok(())
     }
@@ -130,7 +132,7 @@ impl DataStore {
         let ret2 = Self::write_host_status(
             self.db
                 .as_ref()
-                .structured(DatastoreError::DatastoreClosed)?,
+                .structured(ManagementError::from(DatastoreError::DatastoreClosed))?,
             &self.host_status,
         );
         if ret.is_ok() {
