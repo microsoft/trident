@@ -18,9 +18,26 @@ Username
 | -------------- | -------- |
 | Type           | `string` |
 
-### `groups` (optional)
+### `password` (optional)
 
-List of groups to add the user to. **(IN DEVELOPMENT)**
+Password configuration.
+
+| Characteristic | Value                     |
+| -------------- | ------------------------- |
+| Type           | `Password`                |
+| Link           | [Password](./Password.md) |
+
+### `primaryGroup` (optional)
+
+Primary group to add the user to.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
+### `secondaryGroups` (optional)
+
+List of secondary groups to add the user to.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -31,15 +48,6 @@ List of groups to add the user to. **(IN DEVELOPMENT)**
    | Characteristic | Value    |
    | -------------- | -------- |
    | Type           | `string` |
-
-### `password` (optional)
-
-Password configuration.
-
-| Characteristic | Value                     |
-| -------------- | ------------------------- |
-| Type           | `Password`                |
-| Link           | [Password](./Password.md) |
 
 ### `sshKeys` (optional)
 
@@ -63,4 +71,21 @@ SSH configuration for the user. **(IN DEVELOPMENT)**
 | -------------- | ----------------------- |
 | Type           | `SshMode`               |
 | Link           | [SshMode](./SshMode.md) |
+
+### `startupCommand` (optional)
+
+Command to be executed at startup, providing a way to run custom scripts or applications on user login.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
+### `uid` (optional)
+
+Specifies the desired User ID. If not provided, the system will automatically assign a UID.
+
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `integer` |
+| Format         | `int32`   |
 

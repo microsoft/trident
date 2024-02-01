@@ -1,19 +1,84 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
+    process::Command,
 };
 
+use crate::OS_MODIFIER_BINARY_PATH;
 use anyhow::{bail, Context, Error, Ok};
-use duct::cmd;
 use log::{debug, warn};
-
-use osutils::exe::OutputChecker;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use tempfile::NamedTempFile;
 use trident_api::config::{Password, SshMode, User};
 
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";
 const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
 
-pub(super) fn set_up_users(mut users: Vec<User>) -> Result<(), Error> {
+/// A helper struct to convert user into MIC's user format
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
+pub struct MICUser {
+    pub name: String,
+
+    #[serde(rename = "UID", skip_serializing_if = "Option::is_none")]
+    pub uid: Option<i32>,
+
+    #[serde(default)]
+    pub password_hashed: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+
+    #[cfg(feature = "dangerous-options")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password_expires_days: Option<u64>,
+
+    #[serde(rename = "SSHPubKeys", skip_serializing_if = "Vec::is_empty")]
+    pub ssh_pub_keys: Vec<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_group: Option<String>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub secondary_groups: Vec<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub startup_command: Option<String>,
+}
+
+impl MICUser {
+    pub fn new(name: String, user: User) -> Self {
+        let (password, password_hashed) = match user.password {
+            #[cfg(feature = "dangerous-options")]
+            Password::DangerousPlainText(s) => (s, false),
+            #[cfg(feature = "dangerous-options")]
+            Password::DangerousHashed(s) => (s, true),
+            Password::Locked => (String::new(), true),
+        };
+
+        MICUser {
+            name,
+            uid: user.uid,
+            password: Some(password),
+            password_hashed: Some(password_hashed),
+            #[cfg(feature = "dangerous-options")]
+            password_expires_days: user.dangerous_password_expires_days,
+            ssh_pub_keys: user.ssh_keys,
+            primary_group: user.primary_group,
+            secondary_groups: user.secondary_groups,
+            startup_command: user.startup_command,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct MICSystemConfig {
+    users: Vec<MICUser>,
+}
+
+pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
     if Path::new(SSHD_CONFIG_FILE).exists() {
         debug!("Setting up sshd config...");
 
@@ -87,16 +152,34 @@ pub(super) fn set_up_users(mut users: Vec<User>) -> Result<(), Error> {
 
     debug!("Setting up users...");
 
-    // Take care of root separately
-    if let Some(index) = users.iter().position(|user| user.name == "root") {
-        let root_user = users.swap_remove(index);
-        configure_root_user(root_user).context("Failed to set up root user")?;
-    }
-
-    // Set up all other users
-    users.into_iter().try_for_each(|user| {
-        configure_user(&user).context(format!("Failed to set up user {}", user.name))
+    let mic_users_yaml = serde_yaml::to_string(&MICSystemConfig {
+        users: users
+            .into_iter()
+            .map(|user| MICUser::new(user.name.clone(), user))
+            .collect(),
     })
+    .context("Failed to serialize MIC configuration")?;
+
+    let mut tmpfile = NamedTempFile::new().context("Failed to create a temporary file")?;
+    tmpfile
+        .write_all(mic_users_yaml.as_bytes())
+        .context("Failed to write MIC users YAML to temporary file")?;
+    tmpfile.flush().context("Failed to flush temporary file")?;
+
+    let emu_log_file =
+        File::create("/var/log/debug.log").context("Failed to create and open EMU log file")?;
+
+    // Invoke os modifier with the user config file
+    Command::new(OS_MODIFIER_BINARY_PATH)
+        .arg("--config-file")
+        .arg(tmpfile.path())
+        .arg("--log-level=debug")
+        .stdout(emu_log_file.try_clone()?)
+        .stderr(emu_log_file)
+        .status()
+        .context("Failed to run OS modifier")?;
+
+    Ok(())
 }
 
 fn ssh_global_config(users: &[User]) -> Result<(), Error> {
@@ -158,137 +241,6 @@ fn ssh_global_config(users: &[User]) -> Result<(), Error> {
         .context("Failed to create sshd config file for global config")?
         .write_all(buffer.join("\n").as_bytes())
         .context("Failed to write global user sshd config")?;
-
-    Ok(())
-}
-
-fn set_password(name: &str, password: &Password) -> Result<(), Error> {
-    match password {
-        #[cfg(feature = "dangerous-options")]
-        Password::DangerousPlainText(password) => {
-            warn!("Using plain text password for user {}", name);
-            cmd!("chpasswd")
-                .stdin_bytes(format!("{}:{}", name, password).as_bytes())
-                .run()?
-                .check()
-                .context(format!("Failed to set password for user {}", name))?;
-        }
-        #[cfg(feature = "dangerous-options")]
-        Password::DangerousHashed(password) => {
-            warn!("Using encrypted password for user {}", name);
-            cmd!("chpasswd", "--encrypted")
-                .stdin_bytes(format!("{}:{}", name, password).as_bytes())
-                .run()?
-                .check()
-                .context(format!("Failed to set password for user {}", name))?;
-        }
-        Password::Locked => {
-            warn!("Locking user {}", name);
-            cmd!("passwd", "--lock", name)
-                .run()?
-                .check()
-                .context(format!("Failed to lock password for user {}", name))?;
-        }
-    }
-
-    Ok(())
-}
-
-fn set_ssh_keys<P>(home: P, name: &str, keys: &Vec<String>) -> Result<(), Error>
-where
-    P: AsRef<Path>,
-{
-    if keys.is_empty() {
-        // Nothing to do
-        return Ok(());
-    }
-
-    // Save the UID of the home dir
-    let uid = osutils::files::get_owner_uid(&home).context(format!(
-        "Failed to get UID of user with homedir {}",
-        home.as_ref().display()
-    ))?;
-
-    // Save the GID of the home dir
-    let gid = osutils::files::get_owner_gid(&home).context(format!(
-        "Failed to get GID of user with homedir {}",
-        home.as_ref().display()
-    ))?;
-
-    // Create the .ssh dir
-    let ssh_dir = home.as_ref().join(".ssh");
-    // Create the authorized_keys file and write the keys to it
-    let auth_keys = ssh_dir.join("authorized_keys");
-    osutils::files::create_file_mode(auth_keys, 0o600)
-        .context(format!(
-            "Failed to create authorized_keys file for user {}",
-            name
-        ))?
-        .write_all(keys.join("\n").as_bytes())
-        .context(format!("Failed to write authorized_keys for user {}", name))?;
-
-    // Make sure the .ssh dir and authorized_keys file are owned by the user
-
-    // TODO: use this api when we use Rust >= 1.73
-    // std::os::unix::fs::chown(ssh_dir, Some(uid), Some(gid)).context("Failed to chown .ssh dir")?;
-    // std::os::unix::fs::chown(auth_keys, Some(uid), Some(gid))
-    //     .context("Failed to chown authorized_keys")?;
-
-    // For now we have to use this :(
-    cmd!("chown", "-R", format!("{}:{}", uid, gid), &ssh_dir)
-        .run()?
-        .check()
-        .context("Failed to chown .ssh dir")?;
-
-    Ok(())
-}
-
-fn configure_root_user(root_metadata: User) -> Result<(), Error> {
-    set_password("root", &root_metadata.password)?;
-    set_ssh_keys("/root", "root", &root_metadata.ssh_keys)
-        .context("Failed to set ssh keys for user root")?;
-
-    Ok(())
-}
-
-fn configure_user(user: &User) -> Result<(), Error> {
-    warn!("Configuring user {}", user.name);
-
-    // Set homedir to be /home/<username>
-    let homedir = PathBuf::from("/home").join(&user.name);
-
-    // Create the user
-    let result = cmd!(
-        "useradd",
-        "-m",
-        "-s",
-        "/bin/bash",
-        "-d",
-        &homedir,
-        &user.name
-    )
-    .run()?;
-
-    // Proceed if user is created successfully or if the user already exists
-    if !result.status.success() && result.status.code() != Some(9) {
-        result
-            .check()
-            .context(format!("Failed to create user {}", user.name))?;
-    }
-
-    set_password(&user.name, &user.password)?;
-
-    // Add the user to the groups
-    for group in user.groups.as_slice() {
-        let args = vec!["-a", "-G", group, &user.name];
-        duct::cmd("usermod", args).run()?.check().context(format!(
-            "Failed to add user {} to group {}",
-            user.name, group
-        ))?;
-    }
-
-    set_ssh_keys(&homedir, &user.name, &user.ssh_keys)
-        .context(format!("Failed to set ssh keys for user {}", user.name))?;
 
     Ok(())
 }

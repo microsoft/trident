@@ -821,13 +821,6 @@
         "name"
       ],
       "properties": {
-        "groups": {
-          "description": "List of groups to add the user to. **(IN DEVELOPMENT)**",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "name": {
           "description": "Username",
           "type": "string"
@@ -839,6 +832,18 @@
               "$ref": "#/definitions/Password"
             }
           ]
+        },
+        "primaryGroup": {
+          "description": "Primary group to add the user to.",
+          "type": "string",
+          "nullable": true
+        },
+        "secondaryGroups": {
+          "description": "List of secondary groups to add the user to.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "sshKeys": {
           "description": "List of SSH keys to add to the user's authorized keys. **(IN DEVELOPMENT)**",
@@ -854,6 +859,17 @@
               "$ref": "#/definitions/SshMode"
             }
           ]
+        },
+        "startupCommand": {
+          "description": "Command to be executed at startup, providing a way to run custom scripts or applications on user login.",
+          "type": "string",
+          "nullable": true
+        },
+        "uid": {
+          "description": "Specifies the desired User ID. If not provided, the system will automatically assign a UID.",
+          "type": "integer",
+          "format": "int32",
+          "nullable": true
         }
       },
       "additionalProperties": false

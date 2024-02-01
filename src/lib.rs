@@ -57,6 +57,7 @@ pub const TRIDENT_DATASTORE_REF_PATH: &str = "/var/lib/trident/datastore-locatio
 
 /// Trident binary path.
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
+pub const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
 
 /// Systemd unit root path.
 const SYSTEMD_UNIT_ROOT_PATH: &str = "/etc/systemd/system";
@@ -329,11 +330,21 @@ impl Trident {
         // have to be aware of if Trident is running in the context of the
         // container or not.
         if container::is_running_in_container().message("Failed running in container check")? {
+            debug!("Copying os modifier binary from container to host");
+
+            let host_root_path_buf =
+                container::get_host_root_path().message("Failed to get host root volume path")?;
+
+            // Copy EMU binary from container to host
+            fs::copy(
+                OS_MODIFIER_BINARY_PATH,
+                host_root_path_buf.join(OS_MODIFIER_BINARY_PATH.trim_start_matches('/')),
+            )
+            .structured(ManagementError::OSModifierCopy)?;
+
             info!("Running inside container, entering '/host' chroot");
             if let Err(e) = chroot::enter_host_chroot(
-                container::get_host_root_path()
-                    .message("Failed to get host root volume path")?
-                    .as_path(),
+                &host_root_path_buf,
             )
             .message(
                 "Failed to enter host chroot, which is required when executing inside a container",

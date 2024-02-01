@@ -11,7 +11,7 @@ hostConfiguration:
   osconfig:
     users:
       - name: testuser
-        groups:
+        secondaryGroups:
         - wheel
         sshKeys: []
         sshMode: key-only

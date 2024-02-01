@@ -35,7 +35,7 @@ coverage-report:
 coverage: ut-coverage coverage-report
 
 EMU_PACKAGE_NAME ?= osmodifier_preview
-EMU_PACKAGE_VERSION ?= 0.1.0-preview.473295
+EMU_PACKAGE_VERSION ?= 0.1.0-preview.490287
 artifacts/osmodifier:
 	az artifacts universal download \
 		--organization "https://dev.azure.com/mariner-org/" \

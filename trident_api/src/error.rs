@@ -123,7 +123,8 @@ pub enum ManagementError {
     Kexec,
     #[error("Failed to regenerate initrd")]
     RegenerateInitrd,
-
+    #[error("Failed to copy os modifier binary to host")]
+    OSModifierCopy,
     #[error(transparent)]
     Module(#[from] ModuleError),
     #[error(transparent)]

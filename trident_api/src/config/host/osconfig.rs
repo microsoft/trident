@@ -33,20 +33,34 @@ pub struct User {
     #[serde(default, skip_serializing_if = "is_default")]
     pub password: Password,
 
-    /// List of groups to add the user to. **(IN DEVELOPMENT)**
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub groups: Vec<String>,
+    /// Specifies the desired User ID. If not provided, the system will automatically assign a UID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<i32>,
+
+    /// Primary group to add the user to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary_group: Option<String>,
+
+    /// List of secondary groups to add the user to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secondary_groups: Vec<String>,
 
     /// List of SSH keys to add to the user's authorized keys. **(IN DEVELOPMENT)**
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ssh_keys: Vec<String>,
 
     /// SSH configuration for the user. **(IN DEVELOPMENT)**
-    #[serde(default)]
-    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub ssh_mode: SshMode,
+
+    /// Number of days until the password expires, used for setting up password expiry policy.
+    #[cfg(feature = "dangerous-options")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dangerous_password_expires_days: Option<u64>,
+
+    /// Command to be executed at startup, providing a way to run custom scripts or applications on user login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup_command: Option<String>,
 }
 
 /// Password configuration for a user.

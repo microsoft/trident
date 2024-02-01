@@ -1,4 +1,7 @@
-use anyhow::Error;
+use std::{fs, path::Path};
+
+use anyhow::{Context, Error};
+use log::info;
 
 use trident_api::{
     config::HostConfiguration,
@@ -6,6 +9,7 @@ use trident_api::{
 };
 
 use crate::modules::Module;
+use crate::OS_MODIFIER_BINARY_PATH;
 
 mod users;
 
@@ -26,6 +30,26 @@ impl Module for OsConfigModule {
         _host_config: &HostConfiguration,
     ) -> Option<UpdateKind> {
         None
+    }
+
+    // TODO: Revisit this to handle read-only path in runtime os
+    // Also, when os modifier becomes available in RPM, install it in the provisioning and runtime OSs.
+    // Tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/6327/
+    // and https://dev.azure.com/mariner-org/ECF/_workitems/edit/6303
+    fn provision(
+        &mut self,
+        _host_status: &mut HostStatus,
+        _host_config: &HostConfiguration,
+        mount_path: &Path,
+    ) -> Result<(), Error> {
+        info!("Copying os modifier binary to runtime OS");
+        fs::copy(
+            OS_MODIFIER_BINARY_PATH,
+            mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]),
+        )
+        .context("Failed to copy os modifier binary to runtime OS")?;
+
+        Ok(())
     }
 
     fn configure(
