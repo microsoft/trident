@@ -117,6 +117,13 @@ using `netlaunch` and `Trident`. `Trident` will use the checked in
 `functional_tests/trident-setup.yaml` `HostConfiguration` for the initial host
 deployment. The tests are started on the deployed OS through SSH connection.
 
+In the functional test environment, tests are run on top of block device
+/dev/sda. As a result, any changes made by the testing logic should **not**
+modify this block device. E.g., this block device should not be reformatted to
+a clean filesystem, be mounted/unmounted, etc. On the other hand, **/dev/sdb**
+is available for any modifications that are needed for functional testing
+purposes.
+
 ### Functional Test Building and Execution
 
 There are three ways to build and execute functional tests using `Makefile`
