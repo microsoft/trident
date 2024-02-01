@@ -40,5 +40,5 @@ steps:
   inputs:
     testResultsFormat: JUnit
     testResultsFiles: ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/${{ parameters.test }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml
-    testRunTitle: trident_e2e_tests
+    testRunTitle: $(System.StageName)_trident_e2e_tests_${{ parameters.test }}_$(System.JobAttempt)
   displayName: Publish test results
