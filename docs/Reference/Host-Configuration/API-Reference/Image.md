@@ -21,9 +21,9 @@ The format of the image.
 
 ### `sha256` **<span style="color:orange;">(required)</span>**
 
-The SHA256 checksum of the image.
+The SHA256 checksum of the compressed image.
 
-This is used to verify the integrity of the image.
+The hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.
 
 Accepted values:
 
@@ -48,7 +48,7 @@ The ID of the partition that will be used to store the image.
 
 The URL of the image.
 
-Supported schemes are: `file`, `http`, `https`.
+Supported schemes are: `file`, `http`, and `https`.
 
 | Characteristic | Value    |
 | -------------- | -------- |
