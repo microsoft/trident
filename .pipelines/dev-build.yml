@@ -1,8 +1,4 @@
 parameters:
-- name: argusRepo
-  type: string
-  default: argus-toolkit
-
 - name: tridentRepo
   type: string
   default: self
@@ -12,8 +8,8 @@ stages:
   displayName: Validate Makefile targets
 
   jobs:
-  - job: MakeAll
-    displayName: make all
+  - job: Make
+    displayName: make
     timeoutInMinutes: 30
     pool:
       type: linux
@@ -22,7 +18,6 @@ stages:
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/build
-      argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
       tridentSourceDirectory: $(Build.SourcesDirectory)/trident
       emu_package_name: ''
       emu_package_version: ''
@@ -30,8 +25,6 @@ stages:
     steps:
     - checkout: self
     - checkout: ${{ parameters.tridentRepo }}
-    - checkout: ${{ parameters.argusRepo }}
-    - checkout: k8s-tests
 
     - template: install-clamav.yml
 
@@ -42,17 +35,12 @@ stages:
     - script: |
         set -eux
         sudo apt install -y protobuf-compiler clang-7 bc
-        sudo python3 -m pip install black
       displayName: Install native dependencies
 
     - template: rustup.yml
 
-    - script: cargo install grcov
-      workingDirectory: $(tridentSourceDirectory)
-      displayName: Install grcov
-
     - bash: |
         set -eux
-        make all
+        make rpm docker-build
       workingDirectory: $(tridentSourceDirectory)
-      displayName: Invoke make all
+      displayName: Invoke make

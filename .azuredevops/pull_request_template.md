@@ -23,16 +23,8 @@ Reviewers should get a clear understanding of the goals of this PR.
 
 
 # 📝 Checks
-<!-- Just a quick reminder :) -->
+<!-- Note any manual checks you've run -->
 
-- [ ] Format Check
-- [ ] Check rust
-- [ ] Updated API docs
-- [ ] Tests Pass
-- [ ] Functional Tests Pass
-- [ ] Local make targets work
-  - [ ] `make rpm`
-  - [ ] `make docker-build`
 
 # 📌 Follow-ups
 <!-- When applicable, add links to tasks or PR for work that will be addressed

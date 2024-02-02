@@ -34,6 +34,9 @@ extends:
         break: true # always break the build on policheck issues. You can disable it by setting to 'false'
       # suppression:
       #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
+    featureFlags:
+      runOnHost: true
 
     stages:
     - template: trident-stage.yml
+    - template: dev-build.yml
