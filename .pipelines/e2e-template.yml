@@ -86,7 +86,6 @@ stages:
 - ${{ if eq(parameters.devBuildValidation, 'true') }}:
   - template: dev-build.yml
     parameters:
-      argusRepo: ${{ parameters.argusRepo }}
       tridentRepo: ${{ parameters.tridentRepo }}
 
 - template: prov-os.yml
