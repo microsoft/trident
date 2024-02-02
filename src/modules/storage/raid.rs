@@ -435,7 +435,7 @@ fn mdadm_detail_to_struct(mdadm_output: &str) -> Result<Vec<MdadmDetail>, Error>
     Ok(mdadm_details)
 }
 
-fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
+pub(super) fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
     let mut umount_command = Command::new("umount");
     umount_command.arg(raid_path);
 

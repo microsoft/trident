@@ -1625,7 +1625,7 @@ mod tests {
 mod functional_test {
     use std::path::PathBuf;
 
-    use crate::modules::storage::raid::create_sw_raid_array;
+    use crate::modules::storage::raid;
 
     use super::*;
     use maplit::btreemap;
@@ -1815,7 +1815,7 @@ mod functional_test {
             level: RaidLevel::Raid1,
             metadata_version: "1.2".into(),
         };
-        create_sw_raid_array(&mut host_status, &raid_array).unwrap();
+        raid::create_sw_raid_array(&mut host_status, &raid_array).unwrap();
         let root_device_path = PathBuf::from(format!("/dev/md/{}", &raid_array.name));
 
         // Make this as Root device
@@ -1836,6 +1836,9 @@ mod functional_test {
         };
         mkfs(&root_device_path);
         assert!(update_grub_config(&host_status).is_ok());
+
+        // Unmount and stop the raid array
+        raid::unmount_and_stop(&root_device_path).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
