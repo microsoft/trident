@@ -65,12 +65,12 @@ stages:
         targetType: 'inline'
         script: |
           set -eux
-          make input/trident
           # Copy trident, trident-service and trident-provisioning rpms to the
-          # input/trident directory.
-          cp $(System.ArtifactsDirectory)/trident/trident-*.rpm $(argusToolkitSourceDirectory)/input/trident
+          # artifacts/trident directory.
+          mkdir -p $(argusToolkitSourceDirectory)/artifacts/trident
+          cp $(System.ArtifactsDirectory)/trident/trident-*.rpm $(argusToolkitSourceDirectory)/artifacts/trident
         workingDirectory: $(argusToolkitSourceDirectory)
-      displayName: "Moving trident rpms to input directory"
+      displayName: "Moving trident rpms to artifacts directory"
 
     - task: Bash@3
       inputs:
@@ -87,7 +87,7 @@ stages:
               sed 's/MARINER_GIT_REF ?= //')
 
           $(argusToolkitSourceDirectory)/prov-builder/build.sh \
-              $(argusToolkitSourceDirectory)/input/trident \
+              $(argusToolkitSourceDirectory)/artifacts/trident \
               $(argusToolkitSourceDirectory)/build \
               $mariner_git_ref
         workingDirectory: $(argusToolkitSourceDirectory)
