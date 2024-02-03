@@ -10,7 +10,7 @@ use crate::{
     config::{
         AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption,
         HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, OsConfig, Partition,
-        PartitionSize, PartitionTableType, PartitionType, RaidConfig, RaidLevel, Script, Scripts,
+        PartitionSize, PartitionTableType, PartitionType, Raid, RaidLevel, Script, Scripts,
         ServicingType, SoftwareRaidArray, SshMode, Storage, User,
     },
     constants,
@@ -80,7 +80,7 @@ pub fn sample_host_configuration() -> HostConfiguration {
                     target_id: "enc-srv".to_string(),
                 }],
             }),
-            raid: RaidConfig {
+            raid: Raid {
                 software: vec![SoftwareRaidArray {
                     id: "some_raid".to_string(),
                     name: "some_raid1".to_string(),

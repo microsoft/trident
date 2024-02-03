@@ -77,8 +77,8 @@ Mount point configuration.
 
 RAID configuration.
 
-| Characteristic | Value                         |
-| -------------- | ----------------------------- |
-| Type           | `RaidConfig`                  |
-| Link           | [RaidConfig](./RaidConfig.md) |
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `Raid`            |
+| Link           | [Raid](./Raid.md) |
 

@@ -348,7 +348,7 @@ mod tests {
     use trident_api::{
         config::{
             Disk, HostConfiguration, Image, ImageFormat, ImageSha256, Partition, PartitionSize,
-            PartitionType, RaidConfig, RaidLevel, SoftwareRaidArray, Storage,
+            PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
         },
         constants,
     };
@@ -415,7 +415,7 @@ mod tests {
                         ..Default::default()
                     },
                 ],
-                raid: RaidConfig {
+                raid: Raid {
                     software: vec![SoftwareRaidArray {
                         id: "my-raid1".to_owned(),
                         name: "my-raid".to_owned(),

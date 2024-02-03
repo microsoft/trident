@@ -44,7 +44,7 @@ pub struct Storage {
 
     /// RAID configuration.
     #[serde(default, skip_serializing_if = "is_default")]
-    pub raid: RaidConfig,
+    pub raid: Raid,
 
     /// Mount point configuration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -172,7 +172,7 @@ pub struct EncryptedVolume {
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct RaidConfig {
+pub struct Raid {
     /// Individual software raid configurations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub software: Vec<SoftwareRaidArray>,
@@ -472,7 +472,7 @@ mod tests {
                     target_id: "srv-enc".to_owned(),
                 }],
             }),
-            raid: RaidConfig {
+            raid: Raid {
                 software: vec![SoftwareRaidArray {
                     id: "mnt".to_owned(),
                     name: "md-mnt".to_owned(),
@@ -816,7 +816,7 @@ mod tests {
                     ..Default::default()
                 },
             ],
-            raid: RaidConfig {
+            raid: Raid {
                 software: vec![SoftwareRaidArray {
                     id: "my-raid1".to_owned(),
                     name: "my-raid".to_owned(),

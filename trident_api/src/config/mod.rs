@@ -9,7 +9,7 @@ pub use host::{
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},
     storage::{
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
-        Disk, EncryptedVolume, Encryption, MountPoint, PartitionTableType, RaidConfig, RaidLevel,
+        Disk, EncryptedVolume, Encryption, MountPoint, PartitionTableType, Raid, RaidLevel,
         SoftwareRaidArray, Storage,
     },
     HostConfiguration,

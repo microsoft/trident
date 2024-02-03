@@ -344,7 +344,7 @@ mod tests {
     use trident_api::{
         config::{
             Disk, EncryptedVolume, Encryption, Image, ImageFormat, ImageSha256, MountPoint,
-            Partition, PartitionSize, RaidConfig, Storage,
+            Partition, PartitionSize, Raid, Storage,
         },
         constants,
     };
@@ -378,7 +378,7 @@ mod tests {
                 ],
                 ..Default::default()
             }],
-            raid: RaidConfig { software: vec![] },
+            raid: Raid { software: vec![] },
             mount_points: vec![
                 MountPoint {
                     path: PathBuf::from("/boot/efi"),

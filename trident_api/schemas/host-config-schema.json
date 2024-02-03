@@ -529,7 +529,7 @@
         }
       ]
     },
-    "RaidConfig": {
+    "Raid": {
       "description": "RAID configuration for a host.",
       "type": "object",
       "properties": {
@@ -807,7 +807,7 @@
           "description": "RAID configuration.",
           "allOf": [
             {
-              "$ref": "#/definitions/RaidConfig"
+              "$ref": "#/definitions/Raid"
             }
           ]
         }

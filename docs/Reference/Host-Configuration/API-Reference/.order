@@ -14,7 +14,7 @@ Partition
 PartitionTableType
 PartitionType
 Password
-RaidConfig
+Raid
 RaidLevel
 Script
 Scripts
