@@ -1,15 +1,13 @@
 use anyhow::{bail, Context, Error};
-use log::{info, warn};
+use log::info;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
     str::FromStr,
-    thread,
-    time::{Duration, Instant},
 };
 use strum_macros::{Display, EnumString};
 use trident_api::{
@@ -23,8 +21,6 @@ use osutils::{
     exe::{OutputChecker, RunAndCheck},
     lsblk, udevadm,
 };
-
-pub(super) const RAID_SYNC_TIMEOUT_SECS: u64 = 180;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
 #[serde(rename_all = "kebab-case")]
@@ -469,7 +465,6 @@ pub(super) fn create_sw_raid(
                 software_raid_config.name
             ))?;
         }
-        wait_for_raid_resync(&host_status.storage.raid_arrays)?;
         udevadm::trigger().context("Udev failed while scanning for new devices")?;
 
         for software_raid_config in &host_config.storage.raid.software {
@@ -484,68 +479,6 @@ pub(super) fn create_sw_raid(
                 software_raid_config.name
             ))?;
         }
-    }
-
-    Ok(())
-}
-
-fn wait_for_raid_resync(
-    raid_arrays: &BTreeMap<BlockDeviceId, status::RaidArray>,
-) -> Result<(), Error> {
-    info!("Waiting for RAID arrays to be in an idle state");
-
-    let start_time = Instant::now();
-    let max_duration = Duration::from_secs(RAID_SYNC_TIMEOUT_SECS);
-
-    let mut raid_devices: Vec<(String, String)> = raid_arrays
-        .values()
-        .map(|raid_array| {
-            let symlink_name = get_raid_device_name(raid_array.raid_symlink_path.as_path())
-                .context("Failed to get RAID symlink")?;
-            Ok((symlink_name, "".to_string()))
-        })
-        .collect::<Result<Vec<(String, String)>, Error>>()?;
-
-    loop {
-        let mut all_idle = true;
-
-        // check if any RAID devices are not idle
-        raid_devices
-            .iter_mut()
-            .filter(|(_, sync_status)| *sync_status != "idle")
-            .for_each(|(raid_device, sync_status)| {
-                if let Ok(sync_action) = osutils::files::read_file_trim(&PathBuf::from(format!(
-                    "/sys/block/{}/md/sync_action",
-                    raid_device.clone()
-                ))) {
-                    *sync_status = sync_action.clone();
-                    all_idle = false;
-                }
-            });
-
-        if all_idle {
-            break;
-        }
-
-        if start_time.elapsed() >= max_duration {
-            let non_idle_devices: Vec<_> = raid_devices
-                .iter()
-                .filter(|(_, sync_status)| *sync_status != "idle")
-                .collect();
-
-            for (raid_device, sync_status) in &non_idle_devices {
-                warn!(
-                    "RAID device '{}' sync status is '{}'",
-                    raid_device, sync_status
-                );
-            }
-
-            if !non_idle_devices.is_empty() {
-                bail!("Timed out waiting for RAID to be in a clean state");
-            }
-        }
-
-        thread::sleep(Duration::from_secs(5));
     }
 
     Ok(())
