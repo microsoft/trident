@@ -14,6 +14,7 @@ pub mod scripts;
 pub mod sfdisk;
 pub mod systemd;
 pub mod udevadm;
+pub mod veritysetup;
 
 pub(crate) mod crate_private {
     pub trait Sealed {}
