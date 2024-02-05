@@ -1,9 +1,10 @@
 use std::{
+    collections::HashSet,
     ffi::CString,
     fs::{self},
     io::{self, Read},
     os::{fd::AsRawFd, unix::prelude::PermissionsExt},
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -543,6 +544,114 @@ fn get_undeployed_esp<'a>(
         .collect()
 }
 
+/// Reinitializes volumes by reformatting them to clean file systems if the following conditions
+/// are fulfilled:
+/// 1. Volume is the update (non-active) volume of an A/B volume pair,
+/// 2. HostConfiguration does not request an image for the A/B volume pair.
+///
+/// Each volume is reformatted to contain a clean filesystem of the needed type.
+fn reinitialize_update_volumes(
+    host_status: &HostStatus,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    // Fetch list of volumes
+    let volumes_to_clear = get_volumes_to_reinitialize(host_status, host_config)?;
+
+    // Iterate through vector, and reinitialize each volume by reformatting it to a clean FS
+    for (pair_id, volume_id, volume_path) in volumes_to_clear {
+        reinitialize_volume_fs(host_status, &pair_id, &volume_id, &volume_path).context(
+            format!(
+                "Failed to reinitialize update volume '{}' from A/B volume pair '{}'",
+                volume_id, pair_id
+            ),
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Returns a list of volumes that fulfill the following conditions:
+/// 1. Volume is the update (non-active) volume of an A/B volume pair,
+/// 2. HostConfiguration does not request an image for the A/B volume pair.
+///
+/// Returns a vector of tuples, where each tuple contains the id of the volume pair, as well as the
+/// id and block device path of the volume to reinitialize.
+fn get_volumes_to_reinitialize(
+    host_status: &HostStatus,
+    host_config: &HostConfiguration,
+) -> Result<Vec<(BlockDeviceId, BlockDeviceId, PathBuf)>, Error> {
+    // Fetch list of volume ids for which images are requested in HostConfiguration
+    let requested_image_ids: HashSet<BlockDeviceId> = host_config
+        .storage
+        .images
+        .iter()
+        .map(|image| image.target_id.clone())
+        .collect();
+
+    // Iterate through A/B volume pairs and collect volumes to reinitialize
+    Ok(host_status
+        .storage
+        .ab_update
+        .as_ref()
+        .map_or(Vec::new(), |ab_update| {
+            ab_update
+                .volume_pairs
+                .iter()
+                .filter_map(|(pair_id, pair)| {
+                    // Check if the image is not requested for this A/B volume pair
+                    if !requested_image_ids.contains(pair_id) {
+                        // Based on active_volume, fetch id of update volume
+                        let volume_id = match modules::get_ab_update_volume(host_status, false) {
+                            Some(AbVolumeSelection::VolumeA) => &pair.volume_a_id,
+                            Some(AbVolumeSelection::VolumeB) => &pair.volume_b_id,
+                            // Since update volumes should not be reinitialized on CleanInstall,
+                            // this should not be the case, but handle it anyway
+                            _ => return None,
+                        };
+
+                        modules::get_block_device(host_status, volume_id, false)
+                            .map(|bdi| (pair_id.clone(), volume_id.clone(), bdi.path.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }))
+}
+
+/// Reinitializes the volume by reformatting it to a clean filesystem. Accepts 4 arg-s:
+/// 1. host_status, which is a reference to HostStatus object.
+/// 2. pair_id, which is the id of the A/B volume pair.
+/// 3. volume_id, which is the id of the volume.
+/// 4. volume_path, which is the block device path of the volume.
+fn reinitialize_volume_fs(
+    host_status: &HostStatus,
+    pair_id: &BlockDeviceId,
+    volume_id: &BlockDeviceId,
+    volume_path: &Path,
+) -> Result<(), Error> {
+    // Fetch filesystem type of the volume by checking mountpoint info for the volume pair
+    let filesystem = host_status
+        .storage
+        .get_filesystem(pair_id)
+        .context(format!(
+            "Failed to find mount point for A/B volume pair '{pair_id}'"
+        ))?;
+
+    // Run mkfs to reformat the volume FS
+    mkfs::run(volume_path, filesystem).context(format!(
+        "Failed to format update volume '{}' from A/B volume pair '{}' to filesystem of type '{}'",
+        volume_id, pair_id, filesystem
+    ))?;
+
+    info!(
+        "Reinitialized update volume '{}' from A/B volume pair '{}' by reformatting block device '{}' to filesystem of type '{}'",
+        volume_id, pair_id, volume_path.display(), filesystem
+    );
+
+    Ok(())
+}
+
 pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Error> {
     // update root_device_path of the active root volume
     host_status.storage.root_device_path = Some(
@@ -654,6 +763,16 @@ pub(super) fn provision(
     // an issue with systemd.
     format_unimaged_mounted_encrypted_volumes(host_status, host_config)
         .context("Failed to format unimaged encrypted volumes")?;
+
+    // If HostConfiguration does not request an image to be deploed onto an A/B volume pair, need
+    // to reformat the volume to a clean file system. Check this only if we're NOT doing
+    // CleanInstall AND we have ab_update
+    if host_status.reconcile_state != ReconcileState::CleanInstall
+        && host_status.storage.ab_update.is_some()
+    {
+        reinitialize_update_volumes(host_status, host_config)
+            .context("Failed to reinitialize update volumes of A/B volume pairs for which no images were requested")?;
+    }
 
     mount::mount_updated_volumes(host_config, host_status, mount_point, false)
         .context("Failed to mount the updated volumes")?;
@@ -1656,6 +1775,182 @@ mod tests {
             "ESP partition was not correctly identified"
         );
     }
+
+    /// Validates that get_volumes_to_reinitialize() returns the correct list of volumes that need
+    /// to be reinitialized.
+    #[test]
+    fn test_get_volumes_to_reinitialize() {
+        // Setup HostConfiguration where image is requested for volume pair with id root
+        let mut host_config = HostConfiguration {
+            storage: StorageConfig {
+                mount_points: vec![
+                    MountPoint {
+                        path: PathBuf::from("/boot/efi"),
+                        target_id: "esp".to_string(),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                ],
+                images: vec![Image {
+                    url: "http://example.com/root_3.img".to_string(),
+                    target_id: "root".to_string(),
+                    format: ImageFormat::RawZstd,
+                    sha256: ImageSha256::Checksum("root_sha256_3".to_string()),
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Setup HostStatus
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/esp_1.img".to_string(),
+                                    sha256: "esp_sha256_1".to_string(),
+                                    length: 100,
+                                },
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root-a".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/root_1.img".to_string(),
+                                    sha256: "root_sha256_1".to_string(),
+                                    length: 100,
+                                },
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/root_2.img".to_string(),
+                                    sha256: "root_sha256_2".to_string(),
+                                    length: 100,
+                                },
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case 1: Running get_volumes_to_reinitialize() with host's status set to CleanInstall
+        // should return an empty vector
+        assert_eq!(
+            get_volumes_to_reinitialize(&host_status, &host_config).unwrap(),
+            Vec::<(BlockDeviceId, BlockDeviceId, PathBuf)>::new(),
+            "Failed to determine that no volumes should be reinitialized on CleanInstall"
+        );
+
+        // Test case 2: Set host's status to UpdateInProgress(AbUpdate) and set active volume to A.
+        // Running get_volumes_to_reinitialize() when there is an image requested for A/B volume pair with
+        // id root should return an empty vector
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        host_status.storage.ab_update = Some(AbUpdate {
+            active_volume: Some(AbVolumeSelection::VolumeA),
+            volume_pairs: [(
+                "root".to_string(),
+                AbVolumePair {
+                    volume_a_id: "root-a".to_string(),
+                    volume_b_id: "root-b".to_string(),
+                },
+            )]
+            .iter()
+            .map(|p| {
+                (
+                    p.0.clone(),
+                    AbVolumePair {
+                        volume_a_id: p.1.volume_a_id.clone(),
+                        volume_b_id: p.1.volume_b_id.clone(),
+                    },
+                )
+            })
+            .collect(),
+        });
+
+        assert_eq!(
+            get_volumes_to_reinitialize(&host_status, &host_config).unwrap(),
+            Vec::<(BlockDeviceId, BlockDeviceId, PathBuf)>::new(),
+            "Failed to determine that no volumes should be reinitialized when images for all A/B volume pairs are requested"
+        );
+
+        // Test case 3: Remove image for target_id root from HostStatus. Running
+        // get_volumes_to_reinitialize() should now return a vector containing the target_id of the volume
+        // pair with id root
+        host_config.storage.images = vec![];
+
+        let expected_path_rootb = PathBuf::from("/dev/disk/by-partlabel/osp3");
+
+        // Vector is expected to contain "root-b" since A is active volume
+        let expected_volume_rootb = vec![(
+            "root".to_string(),
+            "root-b".to_string(),
+            expected_path_rootb.clone(),
+        )];
+
+        assert_eq!(
+            get_volumes_to_reinitialize(&host_status, &host_config).unwrap(),
+            expected_volume_rootb,
+            "Failed to determine that volume root-b should be reinitialized when image for A/B volume pair root is missing and active volume is A"
+        );
+
+        // Test case 4: Set active volume to B. Now, vector is expected to contain "root-a"
+        host_status
+            .storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeB);
+
+        let expected_path_roota = PathBuf::from("/dev/disk/by-partlabel/osp2");
+
+        let expected_volume_roota = vec![(
+            "root".to_string(),
+            "root-a".to_string(),
+            expected_path_roota.clone(),
+        )];
+
+        assert_eq!(
+            get_volumes_to_reinitialize(&host_status, &host_config).unwrap(),
+            expected_volume_roota,
+            "Failed to determine that volume root-1 should be reinitialized when image for A/B volume pair root is missing and active volume is B"
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -1669,6 +1964,7 @@ mod functional_test {
     use maplit::btreemap;
     use osutils::{
         lsblk::{self, BlockDevice},
+        mount,
         partition_types::DiscoverablePartitionType,
         repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
         udevadm,
@@ -1676,7 +1972,7 @@ mod functional_test {
     use pytest_gen::functional_test;
     use trident_api::{
         config::{RaidLevel, SoftwareRaidArray},
-        status::{MountPoint, Storage},
+        status::{MountPoint, Storage, UpdateKind},
     };
 
     use uuid::Uuid;
@@ -1742,12 +2038,14 @@ mod functional_test {
 
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/sdb".into(),
+            fstype: None,
             part_uuid: None,
             size: DISK_SIZE,
             parent_kernel_name: None,
             children: Some(vec![
                 BlockDevice {
                     name: "/dev/sdb1".into(),
+                    fstype: None,
                     part_uuid: Some(part1.uuid),
                     size: part1.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
@@ -1755,6 +2053,7 @@ mod functional_test {
                 },
                 BlockDevice {
                     name: "/dev/sdb2".into(),
+                    fstype: None,
                     part_uuid: Some(part2.uuid),
                     size: part2.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
@@ -1762,6 +2061,7 @@ mod functional_test {
                 },
                 BlockDevice {
                     name: "/dev/sdb3".into(),
+                    fstype: None,
                     part_uuid: Some(part3.uuid),
                     size: part3.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
@@ -2136,5 +2436,237 @@ mod functional_test {
         let result = update_grub_config(&host_status);
 
         assert!(result.is_err() && result.unwrap_err().to_string() == "Root device path is none");
+    }
+
+    #[functional_test(feature = "helpers")]
+    /// Validates that reinitialize_volume_fs() correctly reinitializes a volume by reformatting it
+    /// to the specified filesystem.
+    fn test_reinitialize_volume_fs() {
+        // Setup HostStatus
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::UpdateInProgress(UpdateKind::AbUpdate),
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "root-a".to_owned(),
+                                path: PathBuf::from("/dev/sdb1"),
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/root_1.img".to_string(),
+                                    sha256: "root_sha256_1".to_string(),
+                                    length: 100,
+                                },
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_owned(),
+                                path: PathBuf::from("/dev/sdb2"),
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/root_2.img".to_string(),
+                                    sha256: "root_sha256_2".to_string(),
+                                    length: 100,
+                                },
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                },
+                ab_update: Some(AbUpdate {
+                    active_volume: Some(AbVolumeSelection::VolumeA),
+                    volume_pairs: [(
+                        "root".to_string(),
+                        AbVolumePair {
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        },
+                    )]
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.0.clone(),
+                            AbVolumePair {
+                                volume_a_id: p.1.volume_a_id.clone(),
+                                volume_b_id: p.1.volume_b_id.clone(),
+                            },
+                        )
+                    })
+                    .collect(),
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Add mount point
+        host_status.storage.mount_points = btreemap! {
+            PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPoint {
+                target_id: "root".to_string(),
+                filesystem: "ext4".to_string(),
+                options: vec![],
+            },
+        };
+
+        // Test case 1: Running reinitialize_volume_fs() on a valid volume to format as ext4.
+        // First, zero out the metadata of the volume
+        Command::new("dd")
+            .arg("if=/dev/zero")
+            .arg("of=/dev/sdb2")
+            .arg("bs=1M")
+            .arg("count=1")
+            .output_and_check()
+            .unwrap();
+
+        // Run reinitialize_volume_fs() to reformat to ext4 filesystem
+        reinitialize_volume_fs(
+            &host_status,
+            &"root".to_string(),
+            &"root-b".to_string(),
+            &PathBuf::from("/dev/sdb2"),
+        )
+        .unwrap();
+
+        // Confirm that /dev/sdb2 has been reformatted to ext4
+        let block_device_list = lsblk::run(Path::new("/dev/sdb2")).unwrap();
+
+        // Find the block device for /dev/sdb2
+        assert_eq!(
+            block_device_list[0].fstype.as_ref().unwrap(),
+            "ext4",
+            "Filesystem type on /dev/sdb2 is not ext4"
+        );
+
+        // Create /mnt/sdb2 if does not exist and confirm that /dev/sdb2 can be mounted
+        Command::new("mkdir")
+            .arg("-p")
+            .arg("/mnt/sdb2")
+            .output_and_check()
+            .unwrap();
+
+        mount::mount(Path::new("/dev/sdb2"), Path::new("/mnt/sdb2")).unwrap();
+
+        // Unmount /dev/sdb2
+        mount::umount(Path::new("/mnt/sdb2"), false).unwrap();
+
+        // Test case 2: Running reinitialize_volume_fs() on a valid volume to format as vfat.
+        // Run again to reformat to vfat filesystem
+        reinitialize_volume_fs(
+            &host_status,
+            &"root".to_string(),
+            &"root-b".to_string(),
+            &PathBuf::from("/dev/sdb2"),
+        )
+        .unwrap();
+
+        // Confirm that /dev/sdb2 has been reformatted to vfat
+        let block_device_list_new = lsblk::run(Path::new("/dev/sdb2")).unwrap();
+
+        // Find the block device for /dev/sdb2
+        assert_eq!(
+            block_device_list_new[0].fstype.as_ref().unwrap(),
+            "ext4",
+            "Filesystem type on /dev/sdb2 is not ext4"
+        );
+
+        // Confirm that can be mounted
+        mount::mount(Path::new("/dev/sdb2"), Path::new("/mnt/sdb2")).unwrap();
+
+        // Unmount /dev/sdb2
+        mount::umount(Path::new("/mnt/sdb2"), false).unwrap();
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_reinitialize_volume_fs_negative() {
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::UpdateInProgress(UpdateKind::AbUpdate),
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "root-a".to_owned(),
+                                path: PathBuf::from("/dev/sdb1"),
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/root_1.img".to_string(),
+                                    sha256: "root_sha256_1".to_string(),
+                                    length: 100,
+                                },
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_owned(),
+                                path: PathBuf::from("/dev/sdb2"),
+                                contents: BlockDeviceContents::Image {
+                                    url: "http://example.com/root_2.img".to_string(),
+                                    sha256: "root_sha256_2".to_string(),
+                                    length: 100,
+                                },
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                },
+                ab_update: Some(AbUpdate {
+                    active_volume: Some(AbVolumeSelection::VolumeA),
+                    volume_pairs: [(
+                        "root".to_string(),
+                        AbVolumePair {
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        },
+                    )]
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.0.clone(),
+                            AbVolumePair {
+                                volume_a_id: p.1.volume_a_id.clone(),
+                                volume_b_id: p.1.volume_b_id.clone(),
+                            },
+                        )
+                    })
+                    .collect(),
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let result = reinitialize_volume_fs(
+            &host_status,
+            &"root".to_string(),
+            &"root-b".to_string(),
+            &PathBuf::from("/dev/sdb2"),
+        );
+
+        assert_eq!(
+            result.unwrap_err().root_cause().to_string(),
+            "Failed to find mount point for A/B volume pair 'root'",
+            "Failed to return error when reinitialize_volume_fs() is run on a volume that does not correspond to an existing mountpoint"
+        );
     }
 }

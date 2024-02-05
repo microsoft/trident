@@ -564,12 +564,14 @@ mod functional_test {
 
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/sdb".into(),
+            fstype: None,
             part_uuid: None,
             size: DISK_SIZE,
             parent_kernel_name: None,
             children: Some(vec![
                 BlockDevice {
                     name: "/dev/sdb1".into(),
+                    fstype: None,
                     part_uuid: Some(part1.uuid),
                     size: part1.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
@@ -577,6 +579,7 @@ mod functional_test {
                 },
                 BlockDevice {
                     name: "/dev/sdb2".into(),
+                    fstype: None,
                     part_uuid: Some(part2.uuid),
                     size: part2.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),

@@ -6,19 +6,24 @@ use log::error;
 use crate::exe::RunAndCheck;
 use crate::lsof;
 
-/// Mounts file in file_path to a dir mount_dir.
-pub fn mount(file_path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result<(), Error> {
-    // Mount the image
-    Command::new("mount")
-        // -o loop is required to mount a file instead of block device
-        .arg("-o")
-        .arg("loop")
-        .arg(file_path.as_ref())
+/// Mounts file or block device in path to a dir mount_dir.
+pub fn mount(path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result<(), Error> {
+    let mut command = Command::new("mount");
+
+    // Check if file_path is a regular file and not a block device
+    if path.as_ref().is_file() {
+        // Use -o loop for mounting files
+        command.arg("-o").arg("loop");
+    }
+
+    // Execute the mount command
+    command
+        .arg(path.as_ref())
         .arg(mount_dir.as_ref())
         .run_and_check()
         .context(format!(
-            "Failed to mount file {} to directory {}",
-            file_path.as_ref().display(),
+            "Failed to mount {} to directory {}",
+            path.as_ref().display(),
             mount_dir.as_ref().display(),
         ))?;
 
@@ -69,11 +74,20 @@ mod functional_test {
         // Mount point
         let mount_point = Path::new("/mnt/cdrom");
 
+        // Create the mount point directory if it doesn't exist yet
+        fs::create_dir_all(mount_point).unwrap();
+
         // Test mount_file function
         mount(device, mount_point).unwrap();
 
-        // Fetch the name of loop device that was mounted at mount point
-        let loop_device = find_loop_device(device).unwrap();
+        // If device is a file, fetch the name of loop device that was mounted at mount point;
+        // otherwise, use the device path itself
+        let loop_device = if device.is_file() {
+            find_loop_device(device).unwrap()
+        } else {
+            device.to_string_lossy().to_string()
+        };
+
         // Validate that the device has been successfully mounted
         assert!(
             is_device_mounted_at(&loop_device, mount_point),
@@ -85,7 +99,7 @@ mod functional_test {
 
         // Validate that the device has been successfully unmounted
         assert!(
-            !is_device_mounted_at(Path::new(&loop_device), mount_point),
+            !is_device_mounted_at(&loop_device, mount_point),
             "Device not unmounted"
         );
     }
@@ -159,7 +173,7 @@ mod functional_test {
         assert_eq!(
             mount_result_1.unwrap_err().root_cause().to_string(),
             format!(
-                "Process output:\nstderr:\nmount: {}: failed to setup loop device for /path/to/non/existent/file.\n\n",
+                "Process output:\nstderr:\nmount: {}: special device /path/to/non/existent/file does not exist.\n\n",
                 temp_mount_dir.path().display()
             ),
             "Unexpected error message for non-existent file"
