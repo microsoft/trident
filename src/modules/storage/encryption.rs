@@ -28,6 +28,8 @@ pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error
                     key_file.to_string_lossy()
                 );
             }
+        } else {
+            bail!("Recovery key file URL not specified and recovery key file generation not yet implemented.");
         }
     }
 
@@ -431,7 +433,7 @@ mod tests {
         }
     }
 
-    fn test_host_config(recovery_key_file: &tempfile::NamedTempFile) -> HostConfiguration {
+    fn get_host_config(recovery_key_file: &tempfile::NamedTempFile) -> HostConfiguration {
         HostConfiguration {
             storage: get_storage(recovery_key_file),
             ..Default::default()
@@ -442,7 +444,7 @@ mod tests {
     #[test]
     fn test_validate_host_config_pass() {
         let recovery_key_file = get_recovery_key_file();
-        let host_config = test_host_config(&recovery_key_file);
+        let host_config = get_host_config(&recovery_key_file);
         validate_host_config(&host_config).unwrap();
     }
 
@@ -450,18 +452,37 @@ mod tests {
     #[test]
     fn test_validate_host_config_encryption_none_pass() {
         let recovery_key_file = get_recovery_key_file();
-        let mut host_config = test_host_config(&recovery_key_file);
+        let mut host_config = get_host_config(&recovery_key_file);
 
         host_config.storage.encryption = None;
 
         validate_host_config(&host_config).unwrap();
     }
 
+    // Encryption configuration needs recovery key file specified.
+    #[test]
+    fn test_validate_host_config_recovery_key_none_fail() {
+        let recovery_key_file = get_recovery_key_file();
+        let mut host_config = get_host_config(&recovery_key_file);
+
+        host_config
+            .storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .recovery_key_url = None;
+
+        assert_eq!(
+            validate_host_config(&host_config).unwrap_err().to_string(),
+            "Recovery key file URL not specified and recovery key file generation not yet implemented."
+        );
+    }
+
     // Encryption recovery key file needs to exist on the system.
     #[test]
     fn test_validate_host_config_recovery_key_not_exist_fail() {
         let recovery_key_file = get_recovery_key_file();
-        let host_config = test_host_config(&recovery_key_file);
+        let host_config = get_host_config(&recovery_key_file);
 
         // Delete the recovery key file.
         std::fs::remove_file(recovery_key_file.path()).unwrap();
