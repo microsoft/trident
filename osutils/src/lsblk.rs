@@ -34,7 +34,7 @@ pub fn run(device_path: impl AsRef<Path>) -> Result<Vec<BlockDevice>, Error> {
         .arg("--output-all")
         .arg("--bytes")
         .output_and_check()
-        .context("Failed execute lsblk")?;
+        .context("Failed to execute lsblk")?;
 
     let parsed = parse_lsblk_output(result.as_str());
     if parsed.is_err() {

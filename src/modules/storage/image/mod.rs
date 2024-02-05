@@ -13,7 +13,7 @@ use nix::NixPath;
 use reqwest::Url;
 use sha2::Digest;
 
-use osutils::exe::RunAndCheck;
+use osutils::{exe::RunAndCheck, mkfs};
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     constants,
@@ -605,6 +605,35 @@ pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfig
     !undeployed_images.is_empty()
 }
 
+// Format every mounted encrypted volume that is not imaged or initialized.
+fn format_unimaged_mounted_encrypted_volumes(
+    host_status: &mut HostStatus,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    if let Some(encryption) = &host_config.storage.encryption {
+        for ev in &encryption.volumes {
+            let block_device_info = modules::get_encrypted_volume(host_status, &ev.id)
+                .context(format!("Failed to find encrypted volume '{}'", &ev.id))?;
+            if matches!(
+                block_device_info.contents,
+                BlockDeviceContents::Unknown | BlockDeviceContents::Zeroed
+            ) {
+                if let Some(filesystem) = host_status.storage.get_filesystem(&ev.id) {
+                    mkfs::run(&block_device_info.path, filesystem)
+                        .context(format!("Failed to format encrypted volume '{}'", &ev.id))?;
+                } else {
+                    debug!(
+                        "Skipping format of encrypted volume '{}' as it is not directly mounted",
+                        &ev.id
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub(super) fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
@@ -617,6 +646,15 @@ pub(super) fn provision(
     }
 
     update_images(host_status, host_config).context("Failed to update filesystem images")?;
+
+    // Without ensuring all encrypted volumes are formatted before
+    // mounting updated volumes, systemd will mark unformatted encrypted
+    // volumes as dead and will stall the mount process.
+    // 'x-systemd.makefs' in the fstab doesn't fix this. It appears to be
+    // an issue with systemd.
+    format_unimaged_mounted_encrypted_volumes(host_status, host_config)
+        .context("Failed to format unimaged encrypted volumes")?;
+
     mount::mount_updated_volumes(host_config, host_status, mount_point, false)
         .context("Failed to mount the updated volumes")?;
 

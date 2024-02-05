@@ -345,6 +345,18 @@ impl Storage {
             .max_by_key(|(k, _)| k.components().count())
             .and_then(|(k, v)| Some((v, path.strip_prefix(k).ok()?)))
     }
+
+    /// Returns the filesystem of the mount point corresponding to the
+    /// given block device id.
+    pub fn get_filesystem(&self, block_device_id: &BlockDeviceId) -> Option<&String> {
+        self.mount_points.iter().find_map(|(_, mp)| {
+            if mp.target_id == *block_device_id {
+                Some(&mp.filesystem)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -647,5 +659,94 @@ mod tests {
                 Path::new("foobar")
             ))
         );
+    }
+
+    #[test]
+    fn test_get_filesystem_single_mount_point_id_match_returns_filesystem() {
+        let storage = Storage {
+            disks: BTreeMap::new(),
+            raid_arrays: BTreeMap::new(),
+            encrypted_volumes: BTreeMap::new(),
+            mount_points: btreemap! {
+                PathBuf::from("/") => MountPoint {
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+            },
+            ab_update: Some(AbUpdate {
+                volume_pairs: BTreeMap::new(),
+                active_volume: None,
+            }),
+            root_device_path: None,
+        };
+
+        assert_eq!(storage.get_filesystem(&"root".into()).unwrap(), "ext4");
+    }
+
+    #[test]
+    fn test_get_filesystem_three_mount_points_id_match_returns_filesystem() {
+        let storage = Storage {
+            disks: BTreeMap::new(),
+            raid_arrays: BTreeMap::new(),
+            encrypted_volumes: BTreeMap::new(),
+            mount_points: btreemap! {
+                PathBuf::from("/") => MountPoint {
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                PathBuf::from("/boot") => MountPoint {
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                PathBuf::from("/boot/efi") => MountPoint {
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+            },
+            ab_update: Some(AbUpdate {
+                volume_pairs: BTreeMap::new(),
+                active_volume: None,
+            }),
+            root_device_path: None,
+        };
+
+        assert_eq!(storage.get_filesystem(&"efi".into()).unwrap(), "vfat");
+    }
+
+    #[test]
+    fn test_get_filesystem_three_mount_points_no_match_returns_none() {
+        let storage = Storage {
+            disks: BTreeMap::new(),
+            raid_arrays: BTreeMap::new(),
+            encrypted_volumes: BTreeMap::new(),
+            mount_points: btreemap! {
+                PathBuf::from("/") => MountPoint {
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                PathBuf::from("/boot") => MountPoint {
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                PathBuf::from("/boot/efi") => MountPoint {
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+            },
+            ab_update: Some(AbUpdate {
+                volume_pairs: BTreeMap::new(),
+                active_volume: None,
+            }),
+            root_device_path: None,
+        };
+
+        assert!(storage.get_filesystem(&"srv".into()).is_none());
     }
 }
