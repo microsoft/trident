@@ -42,8 +42,9 @@ zstd = "0.12.4"
 osutils = { path = "osutils" }
 trident_api = { path = "trident_api" }
 setsail = { path = "setsail" }
+
 pytest_gen = { path = "pytest_gen" }
-pytest = { path = "pytest" }
+pytest = { path = "pytest", optional = true }
 
 [build-dependencies]
 tonic-build = "0.9.2"
@@ -55,9 +56,16 @@ indoc = "2"
 [features]
 dangerous-options = ["trident_api/dangerous-options"]
 sysupdate = ["trident_api/sysupdate"]
-functional-test = ["osutils/functional-test"]
-pytest-generator = ["osutils/pytest-generator"]
+functional-test = ["pytest", "osutils/functional-test"]
+pytest-generator = ["pytest", "osutils/pytest-generator"]
 
 
 [workspace]
-members = ["trident_api", "setsail", "osutils", "docbuilder"]
+members = [
+    "trident_api",
+    "setsail",
+    "osutils",
+    "docbuilder",
+    "pytest",
+    "pytest_gen",
+]

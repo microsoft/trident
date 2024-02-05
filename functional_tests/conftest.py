@@ -10,6 +10,9 @@ import fnmatch
 import json
 import time
 
+from functools import partial
+from typing import Any, Dict, Iterable, List, Optional, Union
+from pytest import Collector, File, Function, Item
 from pathlib import Path
 
 from .ssh_node import SshNode
@@ -69,6 +72,87 @@ def pytest_addoption(parser):
 
     parser.addoption(
         "--redeploy", action="store_true", help="Redeploy OS using Trident."
+    )
+
+
+def pytest_collect_file(file_path: Path, parent: Collector) -> Optional[Collector]:
+    """Creates a custom collector for ft.json."""
+    if file_path.name == "ft.json":
+        # Note: name is ignored here, but is needed by the constructor.
+        return FuncTestCollector.from_parent(parent, name="functest", path=file_path)
+
+
+class FuncTestCollector(File):
+    """A custom collector for Functional tests defined in ft.json.
+    `ft.json` is the output of the pytest crate, produced by running
+    `trident pytest`
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def collect(self) -> Iterable[Union[Item, Collector]]:
+        with open(self.path, "r") as f:
+            import json
+
+            data = json.load(f)
+        for crate, crate_data in data.items():
+            yield RustModule.from_parent(
+                self, name=crate, crate=crate, module_data=crate_data
+            )
+
+
+class RustModule(Collector):
+    """A custom collector for Rust modules."""
+
+    def __init__(
+        self,
+        crate: str,
+        module_data: Dict[str, Dict[str, Any]],
+        module_path: List[str] = [],
+        **kwargs,
+    ):
+        self.crate = crate
+        self.module_data = module_data
+        self.module_path = module_path
+        super().__init__(**kwargs)
+
+    def collect(self) -> Iterable[Union[Item, Collector]]:
+        # Yield a new collector for each submodule
+        for module_name, module_data in self.module_data.get("submodules", {}).items():
+            yield RustModule.from_parent(
+                self,
+                crate=self.crate,
+                name=module_name,
+                module_data=module_data,
+                module_path=self.module_path + [module_name],
+            )
+
+        # Yield a function for each test case
+        for test_name, test_data in self.module_data.get("test_cases", {}).items():
+            node = Function.from_parent(
+                self,
+                name=test_name,
+                callobj=partial(
+                    run_rust_functional_test,
+                    crate=self.crate,
+                    module_path="::".join(self.module_path),
+                    test_case=test_name,
+                ),
+            )
+            for marker in test_data.get("markers", []):
+                node.add_marker(marker)
+            yield node
+
+
+def run_rust_functional_test(vm, crate, module_path, test_case):
+    """Runs a rust test on the VM."""
+    from functional_tests.tools.runner import RunnerTool
+
+    testRunner = RunnerTool(vm)
+    testRunner.run(
+        crate,
+        f"{module_path}::{test_case}",
     )
 
 

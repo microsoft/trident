@@ -86,7 +86,7 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
         Commands::ParseKickstart { path } => return validation::validate_setsail(path),
         #[cfg(feature = "pytest-generator")]
         Commands::Pytest => {
-            pytest::generate_pytest_wrappers();
+            pytest::generate_functional_test_manifest();
             return Ok(());
         }
         _ => (),

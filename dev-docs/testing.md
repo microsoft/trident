@@ -4,6 +4,19 @@ Developers are expected to accompany any features with unit tests, functional
 tests for white box testing, and end to end tests for black box testing. See
 more details in the following sections.
 
+- [Testing hierarchy](#testing-hierarchy)
+  - [Unit Tests](#unit-tests)
+  - [Functional Tests](#functional-tests)
+    - [Functional Test Structure](#functional-test-structure)
+    - [Functional Test Authoring in Rust](#functional-test-authoring-in-rust)
+    - [Functional Test Environment](#functional-test-environment)
+    - [Functional Test Building and Execution](#functional-test-building-and-execution)
+    - [Functional Test Code Coverage](#functional-test-code-coverage)
+    - [Additional Notes](#additional-notes)
+    - [Selective Test Execution](#selective-test-execution)
+  - [E2E Tests](#e2e-tests)
+
+
 ## Unit Tests
 
 Unit tests are meant to test the functionality of a single function in isolation
@@ -217,6 +230,39 @@ The functional test binaries are produced in a fashion that `cargo test` would
 use. That means we can leverage all the feature of `cargo test``, such as
 randomizing test order or running tests in parallel without additional custom
 code.
+
+### Selective Test Execution
+
+The functional test `make` targets support the variable `FILTER`. This is meant to 
+be used to filter the tests that are executed. For example, if you want to execute
+only the tests from a certain rust crate, you can do:
+
+```bash
+make functional-test FILTER=ft.json/<crate>
+```
+
+You can narrow down the filter by adding the modules, up to each individual test.
+
+```bash
+make functional-test FILTER=ft.json/<crate>::<module1>::<module2>
+```
+
+```bash
+make functional-test FILTER=ft.json/<crate>::<module>::<test>
+```
+
+*NOTE: `ft.json` is the name of the generated JSON file that contains the test
+inventory. It is generated during the `make build-functional-test` step. Pytest
+node IDs incorporate the file where the test got collected from, so all
+rust-based tests will have the `ft.json` prefix.*
+
+You can also do the traditional pytest filtering on native Python tests by using
+the python module path:
+
+```bash
+# Example to only run tests in the custom/test_trident_e2e.py file
+make functional-test FILTER=custom/test_trident_e2e.py
+```
 
 ## E2E Tests
 

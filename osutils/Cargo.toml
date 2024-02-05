@@ -23,7 +23,7 @@ which = "4.4.2"
 regex = "1.10.2"
 
 pytest_gen = { path = "../pytest_gen" }
-pytest = { path = "../pytest" }
+pytest = { path = "../pytest", optional = true }
 
 [dev-dependencies]
 glob = "0.3.1"
@@ -32,5 +32,5 @@ strum = "0.25.0"
 strum_macros = "0.25.0"
 
 [features]
-functional-test = []
-pytest-generator = []
+functional-test = ["pytest"]
+pytest-generator = ["pytest"]
