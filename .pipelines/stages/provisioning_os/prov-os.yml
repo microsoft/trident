@@ -25,7 +25,7 @@ parameters:
 
 stages:
 - stage: ProvisioningOSTemplate
-  displayName: Provisioning OS ISO Template
+  displayName: Provisioning OS Template
   dependsOn: ${{ parameters.tridentStage }}
 
   jobs:
@@ -47,7 +47,7 @@ stages:
     steps:
     - checkout: ${{ parameters.argusRepo }}
 
-    - template: install-clamav.yml
+    - template: ../common_tasks/install-clamav.yml
 
     - task: DownloadPipelineArtifact@2
       inputs:

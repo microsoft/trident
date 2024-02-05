@@ -30,7 +30,7 @@ stages:
     steps:
     - checkout: ${{ parameters.argusRepo }}
 
-    - template: install-clamav.yml
+    - template: ../common_tasks/install-clamav.yml
        
     - bash: |
         set -eux

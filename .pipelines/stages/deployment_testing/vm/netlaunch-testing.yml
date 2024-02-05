@@ -25,7 +25,7 @@ stages:
   dependsOn: InstallerISO
 
   jobs:
-  - template: get-tests.yml
+  - template: ../common_tasks/get-tests.yml
     parameters: 
       tridentRepo: ${{ parameters.tridentRepo }}
 
@@ -60,7 +60,7 @@ stages:
          downloadBuildType: ${{ parameters.downloadBuildType}}
          installerISOPipeline: ${{ parameters.installerISOPipeline }}
 
-    - template: trident-prep.yml
+    - template: ../common_tasks/trident-prep.yml
       parameters:
         tridentSourceDirectory: $(tridentSourceDirectory)
         tridentConfigPath: $(tridentConfigPath)
@@ -135,7 +135,7 @@ stages:
       condition: succeededOrFailed()
       displayName: "Publish deployment.log"
 
-    - template: e2e-test-run.yml
+    - template: ../common_tasks/e2e-test-run.yml
       parameters:
         test: $(test)
         hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
@@ -175,7 +175,7 @@ stages:
         ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
       displayName: Install dependencies
 
-    - template: rustup.yml
+    - template: ../../common_tasks/rustup.yml
 
     - bash: |
         set -eux
@@ -184,7 +184,7 @@ stages:
       workingDirectory: $(tridentSourceDirectory)
       displayName: Execute Functional Tests
 
-    - template: coverage.yml
+    - template: ../../common_tasks/coverage.yml
       parameters:
          tridentSourceDirectory: $(tridentSourceDirectory)
          codeCoverageBaseline: 71 # Unit + functional tests

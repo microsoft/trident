@@ -38,5 +38,5 @@ extends:
       runOnHost: true
 
     stages:
-    - template: trident-stage.yml
-    - template: dev-build.yml
+    - template: stages/trident_rpms/trident-stage.yml
+    - template: stages/validate_makefile/dev-build.yml

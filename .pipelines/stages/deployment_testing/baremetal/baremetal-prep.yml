@@ -1,4 +1,3 @@
-# Core build logic that is common to all OneBranch builds.
 parameters:
   - name: downloadBuildType
     type: string

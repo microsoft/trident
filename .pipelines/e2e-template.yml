@@ -76,7 +76,7 @@ parameters:
   default: false
 
 stages:
-- template: trident-stage.yml
+- template: stages/trident_rpms/trident-stage.yml
   parameters:
     tridentRepo: ${{ parameters.tridentRepo }}
     tridentArtifactSource: ${{ parameters.downloadBuildTypeTrident }}
@@ -84,11 +84,11 @@ stages:
     codeCoverage: false
 
 - ${{ if eq(parameters.devBuildValidation, 'true') }}:
-  - template: dev-build.yml
+  - template: stages/validate_makefile/dev-build.yml
     parameters:
       tridentRepo: ${{ parameters.tridentRepo }}
 
-- template: prov-os.yml
+- template: stages/provisioning_os/prov-os.yml
   parameters:
     provOSArtifactSource: ${{ parameters.downloadBuildTypeProvOS }}
     tridentStage : ${{ parameters.tridentStage }}
@@ -97,7 +97,7 @@ stages:
     tridentPipeline: ${{ parameters.tridentPipelineID }}
     artifactName: ${{ parameters.tridentArtifact }}
 
-- template: trident-testimg.yml
+- template: stages/runtime_os/trident-testimg.yml
   parameters:
     runtimeOSArtifactSource: ${{ parameters.downloadBuildTypeRuntimeOS }}
     testImagesRepo: ${{ parameters.testImagesRepo }}
@@ -106,12 +106,12 @@ stages:
     tridentPipeline: ${{ parameters.tridentPipelineID }}
     artifactName: ${{ parameters.tridentArtifact }}
 
-- template: building-tools.yml
+- template: stages/building_tools/building-tools.yml
   parameters:
     argusRepo: ${{ parameters.argusRepo }}
     isogenArtifactSource: ${{ parameters.downloadBuildTypeIsogen }}
 
-- template: installer-iso.yml
+- template: stages/installer_iso/installer-iso.yml
   parameters:
     installerISOArtifactSource: ${{ parameters.downloadBuildTypeInstallerISO }}
     argusRepo: ${{ parameters.argusRepo }}
@@ -122,7 +122,7 @@ stages:
     downloadBuildTypeIsogen: ${{ parameters.downloadBuildTypeIsogen }}
     isogenPipeline: ${{ parameters.isogenPipelineID }}
 
-- template: netlaunch-testing.yml
+- template: stages/deployment_testing/vm/netlaunch-testing.yml
   parameters:
     argusRepo: ${{ parameters.argusRepo }}
     tridentRepo: ${{ parameters.tridentRepo }}
@@ -131,7 +131,7 @@ stages:
     updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
 
 - ${{ if eq(parameters.baremetalValidation, 'true') }}:
-  - template: baremetal-testing.yml
+  - template: stages/deployment_testing/baremetal/baremetal-testing.yml
     parameters:
       argusRepo: ${{ parameters.argusRepo }}
       tridentRepo: ${{ parameters.tridentRepo }}
@@ -140,4 +140,4 @@ stages:
       updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
 
 - ${{ if and(eq(parameters.publishUniversalFeed, 'true'), eq(parameters.baremetalValidation, 'true')) }}:
-  - template: publish.yml
+  - template: stages/publishing/publish.yml

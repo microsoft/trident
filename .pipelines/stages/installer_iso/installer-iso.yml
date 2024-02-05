@@ -33,7 +33,7 @@ parameters:
 
 stages:
 - stage: InstallerISO
-  displayName: Provisioning OS Installer ISO
+  displayName: Installer ISO
   dependsOn:
     - BuildingTools
     - ProvisioningOSTemplate

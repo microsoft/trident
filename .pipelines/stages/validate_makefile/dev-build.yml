@@ -26,9 +26,9 @@ stages:
     - checkout: self
     - checkout: ${{ parameters.tridentRepo }}
 
-    - template: install-clamav.yml
+    - template: ../common_tasks/install-clamav.yml
 
-    - template: download-emu.yml
+    - template: ../common_tasks/download-emu.yml
       parameters:
          tridentSourceDirectory: $(tridentSourceDirectory)
 
@@ -37,7 +37,7 @@ stages:
         sudo apt install -y protobuf-compiler clang-7 bc
       displayName: Install native dependencies
 
-    - template: rustup.yml
+    - template: ../common_tasks/rustup.yml
 
     - bash: |
         set -eux

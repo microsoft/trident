@@ -48,7 +48,7 @@ stages:
     steps:
     - checkout: ${{ parameters.tridentRepo }}
 
-    - template: coverage.yml
+    - template: ../common_tasks/coverage.yml
       parameters:
          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
          codeCoverageBaseline: 65 # Unit tests
@@ -68,7 +68,7 @@ stages:
     steps:
     - checkout: ${{ parameters.tridentRepo }}
 
-    - template: download-emu.yml
+    - template: ../common_tasks/download-emu.yml
       parameters:
          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
 
