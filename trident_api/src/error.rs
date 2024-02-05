@@ -121,6 +121,8 @@ pub enum ManagementError {
     SetKernelCmdline,
     #[error("Failed to perform kexec")]
     Kexec,
+    #[error("Failed to reboot")]
+    Reboot,
     #[error("Failed to regenerate initrd")]
     RegenerateInitrd,
     #[error("Failed to copy os modifier binary to host")]

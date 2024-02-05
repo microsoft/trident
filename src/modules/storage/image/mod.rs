@@ -375,6 +375,7 @@ fn set_host_status_block_device_contents(
     anyhow::bail!("No block device with id '{}' found", block_device_id);
 }
 
+#[allow(unused)]
 pub fn kexec(mount_path: &Path, args: &str) -> Result<(), Error> {
     let root = mount_path
         .to_str()

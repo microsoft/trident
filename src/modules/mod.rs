@@ -617,36 +617,35 @@ fn regenerate_initrd() -> Result<(), TridentError> {
 }
 
 fn transition(
-    mount_path: &Path,
-    root_block_device_path: &Path,
+    _mount_path: &Path,
+    _root_block_device_path: &Path,
     host_status: &HostStatus,
 ) -> Result<(), TridentError> {
-    let root_block_device_path = root_block_device_path
-        .to_str()
-        .structured(ManagementError::SetKernelCmdline)
-        .message(format!(
-            "Failed to convert root device path {:?} to string",
-            root_block_device_path
-        ))?;
+    // let root_block_device_path = root_block_device_path
+    //     .to_str()
+    //     .structured(ManagementError::SetKernelCmdline)
+    //     .message(format!(
+    //         "Failed to convert root device path {:?} to string",
+    //         root_block_device_path
+    //     ))?;
     info!("Setting boot entries");
 
     //TODO - set_boot_entries only if ABUpdate is in state AbUpdateStaged/ CleanInstall
     // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
     set_boot_entries(host_status).structured(ManagementError::SetBootEntries)?;
-    //TODO - update ABUpdate state to AbUpdateFinalized
-    // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
-    info!("Performing soft reboot");
-    storage::image::kexec(
-        mount_path,
-        &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
-    )
-    .structured(ManagementError::Kexec)
 
-    // TODO: Solve hard reboot(), so that the firmware chooses the correct boot
-    // partition to boot from, after each A/B update. Related ADO task:
-    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6169.
-    //info!("Performing hard reboot");
-    //storage::image::reboot().context("Failed to perform hard reboot")
+    // TODO(6721): Re-enable kexec
+    // TODO - update ABUpdate state to AbUpdateFinalized
+    // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
+    // info!("Performing soft reboot");
+    // storage::image::kexec(
+    //     mount_path,
+    //     &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
+    // )
+    // .structured(ManagementError::Kexec)
+
+    info!("Performing reboot");
+    storage::image::reboot().structured(ManagementError::Reboot)
 }
 
 fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error> {

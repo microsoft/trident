@@ -52,6 +52,17 @@ impl GrubConfig {
         Ok(())
     }
 
+    /// Lazy approach at disabling SELinux
+    ///
+    /// Will be removed in the future
+    /// TODO(6775): re-enable selinux
+    pub fn disable_selinux(&mut self) {
+        self.contents = self
+            .contents
+            .replace("security=selinux", "")
+            .replace("selinux=1", "");
+    }
+
     /// Find the linux command line in the GRUB config.
     fn find_linux_command_line(&self) -> Result<&str, Error> {
         let re = Regex::new(LINUX_COMMAND_LINE_PATTERN)?;

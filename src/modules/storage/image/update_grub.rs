@@ -18,6 +18,10 @@ pub fn update_grub_config(
     root_device_path: Option<&Path>,
 ) -> Result<(), Error> {
     let mut grub_config = GrubConfig::read(grub_config_path)?;
+
+    // TODO(6775): re-enable selinux
+    grub_config.disable_selinux();
+
     grub_config.update_search(root_fs_uuid)?;
     if let Some(root_device_path) = root_device_path {
         grub_config.update_rootdevice(root_device_path)?;
@@ -77,7 +81,7 @@ mod tests {
             set rootdevice=PARTUUID=29f8eed2-3c85-4da0-b32e-480e54379766
 
             menuentry "CBL-Mariner" {
-                    linux $bootprefix/$mariner_linux security=selinux selinux=1 rd.auto=1 root=$rootdevice $mariner_cmdline lockdown=integrity sysctl.kernel.unprivileged_bpf_disabled=1 $systemd_cmdline console=tty0 console=ttyS0 $kernelopts
+                    linux $bootprefix/$mariner_linux   rd.auto=1 root=$rootdevice $mariner_cmdline lockdown=integrity sysctl.kernel.unprivileged_bpf_disabled=1 $systemd_cmdline console=tty0 console=ttyS0 $kernelopts
                     if [ -f $bootprefix/$mariner_initrd ]; then
                             initrd $bootprefix/$mariner_initrd
                     fi
