@@ -4,9 +4,8 @@ use std::{
     process::Command,
 };
 
-use anyhow::{bail, Context, Error};
-use osutils::exe::RunAndCheck;
-use regex::Regex;
+use anyhow::{Context, Error};
+use osutils::{exe::RunAndCheck, grub::GrubConfig};
 use uuid::Uuid;
 
 /// The path to the GRUB configuration on a volume.
@@ -14,47 +13,16 @@ pub const GRUB_BOOT_CONFIG_PATH: &str = "boot/grub2/grub.cfg";
 
 /// Updates the root filesystem UUID inside the GRUB config.
 pub fn update_grub_config(
-    grub_config: &Path,
-    root_fs_uuid: &str,
+    grub_config_path: &Path,
+    root_fs_uuid: &Uuid,
     root_device_path: Option<&Path>,
 ) -> Result<(), Error> {
-    // Read the GRUB config file as a string
-    let grub_config_path = Path::new(grub_config);
-
-    if !grub_config_path.exists() {
-        bail!(
-            "GRUB config does not exist at path: {}",
-            grub_config.display()
-        );
-    }
-    let mut file_content = fs::read_to_string(grub_config)
-        .context("Failed to read the GRUB config file '{grub_config}'")?;
-
-    let re_uuid = Regex::new(r"search -n -u [\w-]+ -s").unwrap();
-    let re_partuuid = Regex::new(r"set rootdevice=PARTUUID=[\w-]+").unwrap();
-
-    // Update the grub content
-    file_content = re_uuid
-        .replace(
-            &file_content,
-            &format!("search -n -u {} -s", root_fs_uuid.trim()),
-        )
-        .to_string();
+    let mut grub_config = GrubConfig::read(grub_config_path)?;
+    grub_config.update_search(root_fs_uuid)?;
     if let Some(root_device_path) = root_device_path {
-        file_content = re_partuuid
-            .replace(
-                &file_content,
-                &format!(
-                    "set rootdevice={}",
-                    root_device_path
-                        .to_str()
-                        .context("Failed to convert root device path to string")?
-                        .trim()
-                ),
-            )
-            .to_string()
+        grub_config.update_rootdevice(root_device_path)?;
     }
-    fs::write(grub_config, file_content).context("failed to write the updated grub content")
+    grub_config.write()
 }
 
 /// Returns the UUID of a block device at the given path.
@@ -122,7 +90,7 @@ mod tests {
         fs::write(temp_file_path_grub, original_content_grub).unwrap();
 
         // Generate random FS UUID and PARTUUID for the partition
-        let random_uuid_grub = Uuid::new_v4().to_string();
+        let random_uuid_grub = Uuid::new_v4();
         let root_path = Path::new("/dev/sda1");
 
         // Call update_grub_rootfs()
@@ -136,7 +104,10 @@ mod tests {
                 "PARTUUID=29f8eed2-3c85-4da0-b32e-480e54379766",
                 root_path.to_str().unwrap(),
             )
-            .replace("9e6a9d2c-b7fe-4359-ac45-18b505e29d8b", &random_uuid_grub);
+            .replace(
+                "9e6a9d2c-b7fe-4359-ac45-18b505e29d8b",
+                &random_uuid_grub.to_string(),
+            );
 
         // Assert that the updated content matches the expected content
         assert_eq!(updated_content_grub, expected_content_grub);
@@ -154,7 +125,7 @@ mod tests {
         fs::write(temp_file_path_grub2, original_content_grub2).unwrap();
 
         // Generate a random UUID for the partition
-        let random_uuid_grub2 = Uuid::new_v4().to_string();
+        let random_uuid_grub2 = Uuid::new_v4();
 
         // Call update_grub_rootfs() with None as 2nd arg since no need to update
         // PARTUUID of root partition
@@ -164,8 +135,10 @@ mod tests {
         let updated_content_grub2 = fs::read_to_string(temp_file_path_grub2).unwrap();
 
         // Build the expected content with the new UUID
-        let expected_content_grub2 = original_content_grub2
-            .replace("febfaaaa-fec4-4682-aee2-54f2d46b39ae", &random_uuid_grub2);
+        let expected_content_grub2 = original_content_grub2.replace(
+            "febfaaaa-fec4-4682-aee2-54f2d46b39ae",
+            &random_uuid_grub2.to_string(),
+        );
 
         // Assert that the updated content matches the expected content
         assert_eq!(updated_content_grub2, expected_content_grub2);

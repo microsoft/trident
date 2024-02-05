@@ -720,7 +720,7 @@ fn update_grub_config(host_status: &HostStatus) -> Result<(), Error> {
         bail!("Root device path is none");
     }
 
-    let root_uuid = update_grub::get_uuid_from_path(root_device_path.as_path())?.to_string();
+    let root_uuid = update_grub::get_uuid_from_path(root_device_path.as_path())?;
     let root_grub_config_path =
         Path::new(constants::ROOT_MOUNT_POINT_PATH).join(update_grub::GRUB_BOOT_CONFIG_PATH);
 
@@ -1855,9 +1855,23 @@ mod functional_test {
         };
         raid::create_sw_raid_array(&mut host_status, &raid_array).unwrap();
         let root_device_path = PathBuf::from(format!("/dev/md/{}", &raid_array.name));
+        let result = test_update_grub_root_raided_internal(
+            &mut host_status,
+            &raid_array,
+            root_device_path.as_path(),
+        );
+        // Unmount and stop the raid array
+        raid::unmount_and_stop(&root_device_path).unwrap();
+        result.unwrap();
+    }
 
+    fn test_update_grub_root_raided_internal(
+        host_status: &mut HostStatus,
+        raid_array: &SoftwareRaidArray,
+        root_device_path: &Path,
+    ) -> Result<(), Error> {
         // Make this as Root device
-        host_status.storage.root_device_path = Some(root_device_path.clone());
+        host_status.storage.root_device_path = Some(root_device_path.to_owned());
 
         // Add mount points
         host_status.storage.mount_points = btreemap! {
@@ -1872,11 +1886,9 @@ mod functional_test {
                    options: vec![],
                },
         };
-        mkfs(&root_device_path);
-        assert!(update_grub_config(&host_status).is_ok());
+        mkfs(root_device_path);
 
-        // Unmount and stop the raid array
-        raid::unmount_and_stop(&root_device_path).unwrap();
+        update_grub_config(host_status)
     }
 
     #[functional_test(feature = "helpers")]
@@ -1935,7 +1947,7 @@ mod functional_test {
 
         let root_device_path = PathBuf::from("/dev/sdb2");
         mkfs(&root_device_path);
-        assert!(update_grub_config(&host_status).is_ok());
+        update_grub_config(&host_status).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -2012,7 +2024,7 @@ mod functional_test {
 
         let root_device_path = PathBuf::from("/dev/sdb2");
         mkfs(&root_device_path);
-        assert!(update_grub_config(&host_status).is_ok());
+        update_grub_config(&host_status).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -2122,6 +2134,7 @@ mod functional_test {
         };
 
         let result = update_grub_config(&host_status);
+
         assert!(result.is_err() && result.unwrap_err().to_string() == "Root device path is none");
     }
 }
