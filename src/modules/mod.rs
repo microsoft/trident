@@ -4,11 +4,11 @@ use std::{
     sync::Mutex,
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::Error;
 use log::info;
 
 use trident_api::{
-    config::{HostConfiguration, Operations, PartitionType},
+    config::{HostConfiguration, Operations},
     constants,
     error::{
         DatastoreError, InitializationError, InternalError, InvalidInputError, ManagementError,
@@ -20,24 +20,20 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::{
-    chroot,
-    efibootmgr::{self, EfiBootManagerOutput},
-    mkinitrd,
-};
+use osutils::{chroot, mkinitrd};
 
-use self::storage::image::update_esp;
 use crate::{
     datastore::DataStore, modules::storage::image::mount, protobufs::HostStatusState,
     TRIDENT_DATASTORE_REF_PATH,
 };
 use crate::{
     modules::{
-        self, hooks::HooksModule, management::ManagementModule, network::NetworkModule,
+        hooks::HooksModule, management::ManagementModule, network::NetworkModule,
         osconfig::OsConfigModule, storage::StorageModule,
     },
     HostUpdateCommand,
 };
+pub mod bootentries;
 pub mod hooks;
 pub mod management;
 pub mod network;
@@ -464,22 +460,17 @@ fn get_ab_volume(
             .iter()
             .find(|v| v.0 == block_device_id);
         if let Some(v) = ab_volume {
-            // temporary hack to have one esp partition (esp-a)
-            // task https://dev.azure.com/mariner-org/ECF/_workitems/edit/6289
-            if v.0 == "esp" {
-                return get_block_device(host_status, &v.1.volume_a_id, false);
-            } else {
-                return get_ab_update_volume(host_status, active).and_then(|selection| {
-                    match selection {
-                        AbVolumeSelection::VolumeA => {
-                            get_block_device(host_status, &v.1.volume_a_id, false)
-                        }
-                        AbVolumeSelection::VolumeB => {
-                            get_block_device(host_status, &v.1.volume_b_id, false)
-                        }
+            // TODO https://dev.azure.com/mariner-org/ECF/_workitems/edit/6808- should we support esp as part of abVolume?
+            return get_ab_update_volume(host_status, active).and_then(
+                |selection| match selection {
+                    AbVolumeSelection::VolumeA => {
+                        get_block_device(host_status, &v.1.volume_a_id, false)
                     }
-                });
-            }
+                    AbVolumeSelection::VolumeB => {
+                        get_block_device(host_status, &v.1.volume_b_id, false)
+                    }
+                },
+            );
         }
     }
     None
@@ -630,9 +621,12 @@ fn transition(
     //     ))?;
     info!("Setting boot entries");
 
-    //TODO - set_boot_entries only if ABUpdate is in state AbUpdateStaged/ CleanInstall
+    // TODO - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/ delete boot entries
+    // TODO - set_boot_entries only if ABUpdate is in state AbUpdateStaged/ CleanInstall
     // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
-    set_boot_entries(host_status).structured(ManagementError::SetBootEntries)?;
+    bootentries::call_set_boot_next_and_update_hs(host_status)?;
+    //TODO - update ABUpdate state to AbUpdateFinalized
+    // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
 
     // TODO(6721): Re-enable kexec
     // TODO - update ABUpdate state to AbUpdateFinalized
@@ -646,77 +640,6 @@ fn transition(
 
     info!("Performing reboot");
     storage::image::reboot().structured(ManagementError::Reboot)
-}
-
-fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error> {
-    match modules::get_ab_update_volume(host_status, false) {
-        Some(AbVolumeSelection::VolumeA) => Ok((
-            BOOT_ENTRY_A,
-            Path::new(constants::ROOT_MOUNT_POINT_PATH)
-                .join(update_esp::EFI_PATH)
-                .join(BOOT_ENTRY_A)
-                .join(BOOT64_EFI)
-                .to_path_buf(),
-        )),
-
-        Some(AbVolumeSelection::VolumeB) => Ok((
-            BOOT_ENTRY_B,
-            Path::new(constants::ROOT_MOUNT_POINT_PATH)
-                .join(update_esp::EFI_PATH)
-                .join(BOOT_ENTRY_B)
-                .join(BOOT64_EFI)
-                .to_path_buf(),
-        )),
-
-        None => bail!("Unsupported AB volume selection"),
-    }
-}
-
-/// Creates a boot entry for the updated AB partition and sets the `BootNext` variable to boot from the updated partition on next boot.
-fn set_boot_entries(host_status: &HostStatus) -> Result<(), Error> {
-    let (entry_label_new, bootloader_path_new) =
-        get_label_and_path(host_status).context("Failed to get label and path")?;
-    let output = efibootmgr::list_bootmgr_entries()?;
-    let bootmgr_output = EfiBootManagerOutput::parse_efibootmgr_output(&output)?;
-
-    if bootmgr_output.boot_entry_exists(entry_label_new)? {
-        let entry_number = bootmgr_output.get_boot_entry_number(entry_label_new)?;
-        efibootmgr::delete_boot_entry(&entry_number)?;
-        let mut boot_order = bootmgr_output.get_boot_order()?;
-        if boot_order.contains(&entry_number) {
-            boot_order.retain(|x| x != &entry_number);
-            efibootmgr::modify_boot_order(boot_order.join(",").as_str())?;
-        }
-    }
-    let disk_path = get_first_partition_of_type(host_status, PartitionType::Esp)
-        .context("Failed to fetch esp disk path ")?;
-    efibootmgr::create_boot_entry(entry_label_new, disk_path, bootloader_path_new)
-        .context("Failed to add boot entry")?;
-    let output = efibootmgr::list_bootmgr_entries()?;
-    let bootmgr_output = EfiBootManagerOutput::parse_efibootmgr_output(&output)?;
-
-    let added_entry_number = bootmgr_output
-        .get_boot_entry_number(entry_label_new)
-        .context("Failed to get boot entry number")?;
-    efibootmgr::set_bootnext(&added_entry_number).context("Failed to get set `BootNext`")
-}
-
-/// Returns disk path based on partitionType
-fn get_first_partition_of_type(
-    host_status: &HostStatus,
-    partition_ty: PartitionType,
-) -> Result<PathBuf, Error> {
-    return host_status
-        .storage
-        .disks
-        .values()
-        .find_map(|disk| {
-            disk.partitions
-                .iter()
-                .find(|partition| partition.ty == partition_ty)
-                .map(|_| disk.to_block_device().path.clone())
-        })
-        .context("Failed to find disk path");
 }
 
 #[cfg(test)]
@@ -733,59 +656,6 @@ mod test {
     };
 
     use super::*;
-
-    #[test]
-    /// Validates logic for determining which A/B volume to use for updates
-    fn test_get_label_and_path() {
-        let mut host_status = HostStatus {
-            storage: Storage {
-                ab_update: Some(AbUpdate {
-                    volume_pairs: BTreeMap::new(),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            reconcile_state: ReconcileState::CleanInstall,
-            ..Default::default()
-        };
-
-        // Test that clean-install will always use volume A for updates
-        assert_eq!(
-            get_label_and_path(&host_status).unwrap(),
-            (
-                BOOT_ENTRY_A,
-                Path::new(constants::ROOT_MOUNT_POINT_PATH)
-                    .join(update_esp::EFI_PATH)
-                    .join(BOOT_ENTRY_A)
-                    .join(BOOT64_EFI)
-            )
-        );
-
-        // test that UpdateInProgress(HostPatch, NormalUpdate, UpdateAndReboot)
-        // will always use the active volume for updates
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
-        assert_eq!(
-            get_label_and_path(&host_status).unwrap(),
-            (
-                BOOT_ENTRY_B,
-                Path::new(constants::ROOT_MOUNT_POINT_PATH)
-                    .join(update_esp::EFI_PATH)
-                    .join(BOOT_ENTRY_B)
-                    .join(BOOT64_EFI)
-            )
-        );
-
-        // test that UpdateInProgress(Incompatible) will return None
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::Incompatible);
-        let error_message = get_label_and_path(&host_status).unwrap_err().to_string();
-        assert_eq!(error_message, "Unsupported AB volume selection");
-    }
 
     #[test]
     fn test_get_root_block_device_path() {
@@ -1190,188 +1060,5 @@ mod test {
                 contents: BlockDeviceContents::Unknown,
             })
         );
-    }
-
-    #[test]
-    fn test_get_first_partition_of_type() {
-        let host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/sda"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/sda1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "root-a".to_string(),
-                                path: PathBuf::from("/dev/sda2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "root-b".to_string(),
-                                path: PathBuf::from("/dev/sda3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            }
-
-                        ],
-                    },
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let result = get_first_partition_of_type(&host_status, PartitionType::Esp);
-        assert_eq!(result.unwrap(), PathBuf::from("/dev/sda"));
-
-        let result = get_first_partition_of_type(&host_status, PartitionType::Root);
-        assert_eq!(result.unwrap(), PathBuf::from("/dev/sda"));
-        let result = get_first_partition_of_type(&host_status, PartitionType::Var);
-        assert!(result.is_err());
-    }
-}
-
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-
-    use maplit::btreemap;
-    use uuid::Uuid;
-
-    use osutils::efibootmgr;
-    use pytest_gen::functional_test;
-    use trident_api::status::{AbUpdate, AbVolumePair, BlockDeviceContents, Disk, Storage};
-
-    fn test_helper_set_bootentries(entry_label: &str, host_status: &HostStatus) {
-        set_boot_entries(host_status).unwrap();
-        let output = efibootmgr::list_bootmgr_entries().unwrap();
-        let bootmgr_output: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
-        let boot_entry_num = bootmgr_output.get_boot_entry_number(entry_label).unwrap();
-        assert_eq!(bootmgr_output.boot_next, boot_entry_num);
-        efibootmgr::delete_boot_entry(&boot_entry_num).unwrap();
-    }
-
-    #[functional_test]
-    fn test_set_bootentries() {
-        let mut host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/sda"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/sda1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "root-a".to_string(),
-                                path: PathBuf::from("/dev/sda2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "root-b".to_string(),
-                                path: PathBuf::from("/dev/sda3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            },
-
-                        ],
-                    },
-
-                },
-                ab_update: Some(AbUpdate {
-                    volume_pairs: btreemap! {
-                        "root".to_string() => AbVolumePair {
-                            volume_a_id: "root-a".to_string(),
-                            volume_b_id: "root-b".to_string(),
-                        },
-                    },
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        //for cleanInstall add A partition entry
-        test_helper_set_bootentries(BOOT_ENTRY_A, &host_status);
-
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
-
-        // Create A partition entry and add the boot entry number to boot order before calling set_boot_entries
-        let output = efibootmgr::list_bootmgr_entries().unwrap();
-        let bootmgr_output: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
-        let bootloader_path_new = Path::new("/")
-            .join(update_esp::EFI_PATH)
-            .join(BOOT_ENTRY_A)
-            .join(BOOT64_EFI);
-        if !bootmgr_output.boot_entry_exists(BOOT_ENTRY_A).unwrap() {
-            let disk_path = get_first_partition_of_type(&host_status, PartitionType::Esp).unwrap();
-            efibootmgr::create_boot_entry(BOOT_ENTRY_A, disk_path, bootloader_path_new).unwrap();
-            let output = efibootmgr::list_bootmgr_entries().unwrap();
-            let bootmgr_output: EfiBootManagerOutput =
-                EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
-            let mut initial_bootorder = bootmgr_output.get_boot_order().unwrap();
-            let boot_entry = bootmgr_output.get_boot_entry_number(BOOT_ENTRY_A).unwrap();
-
-            // Add boot entry to boot order if not present
-            if !initial_bootorder.contains(&boot_entry) {
-                initial_bootorder.push(boot_entry);
-                efibootmgr::modify_boot_order(initial_bootorder.join(",").as_str()).unwrap();
-            }
-            let output1 = efibootmgr::list_bootmgr_entries().unwrap();
-            let bootmgr_output1: EfiBootManagerOutput =
-                EfiBootManagerOutput::parse_efibootmgr_output(&output1).unwrap();
-            assert_eq!(initial_bootorder, bootmgr_output1.get_boot_order().unwrap());
-        }
-
-        test_helper_set_bootentries(BOOT_ENTRY_A, &host_status);
-
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
-
-        test_helper_set_bootentries(BOOT_ENTRY_B, &host_status);
     }
 }

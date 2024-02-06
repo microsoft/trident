@@ -143,12 +143,20 @@ pub fn create_boot_entry(
 }
 
 /// Sets `BootNext` variable using efibootmgr.
-pub fn set_bootnext(entry_number: &str) -> Result<(), Error> {
+pub fn set_boot_next(entry_number: &str) -> Result<(), Error> {
     Command::new("efibootmgr")
         .arg("--bootnext")
         .arg(entry_number)
         .run_and_check()
         .context("Failed to add temporary next boot entry through efibootmgr")
+}
+
+/// Delete `BootNext` variable using efibootmgr.
+pub fn delete_boot_next() -> Result<(), Error> {
+    Command::new("efibootmgr")
+        .arg("--delete-bootnext")
+        .run_and_check()
+        .context("Failed to delete bootnext through efibootmgr")
 }
 
 /// Modifies the `BootOrder` variable of efibootmgr.
@@ -225,10 +233,10 @@ mod tests {
         assert!(bootmgr_output.check_current_boot_entry("0001").unwrap());
 
         assert!(!bootmgr_output.check_current_boot_entry("0002").unwrap());
-        let expected_bootorder = ["0001", "0000", "0002", "000A"];
+        let expected_boot_order = ["0001", "0000", "0002", "000A"];
         assert_eq!(
             bootmgr_output.get_boot_order().unwrap(),
-            &expected_bootorder
+            &expected_boot_order
         );
         assert_eq!(
             bootmgr_output
@@ -246,48 +254,100 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-
     use super::*;
     use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]
-    fn test_efi_bootmgr() {
+    fn test_efi_bootmgr_pass() {
+        // Define the boot entry label, disk path and bootloader path
         let entry_label = "TestBoot1";
+        let disk_path = "/dev/sda1";
         let bootloader_path = Path::new(r"/EFI/BOOT/bootx64.efi");
 
+        // Get the initial boot order
         let output = list_bootmgr_entries().unwrap();
         let bootmgr_output_initial =
             EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
+        let boot_order_initial = bootmgr_output_initial.get_boot_order().unwrap();
 
-        let bootorder_initial = bootmgr_output_initial.get_boot_order().unwrap();
-
-        let disk_path = "/dev/sda1";
-
+        // Create a boot entry
         create_boot_entry(entry_label, disk_path, bootloader_path).unwrap();
         let output1 = list_bootmgr_entries().unwrap();
         let bootmgr_output1 = EfiBootManagerOutput::parse_efibootmgr_output(&output1).unwrap();
 
+        // Get the boot entry number of the boot entry that is created above
         let bootentry_number = bootmgr_output1.get_boot_entry_number(entry_label).unwrap();
 
+        // Verify if the boot entry exists
         let bootentry_exists = bootmgr_output1.boot_entry_exists(entry_label).unwrap();
         assert!(bootentry_exists);
 
-        set_bootnext(&bootentry_number).unwrap();
+        // Set bootnext to the new boot entry that is created above
+        set_boot_next(&bootentry_number).unwrap();
         let output2 = list_bootmgr_entries().unwrap();
         let bootmgr_output2 = EfiBootManagerOutput::parse_efibootmgr_output(&output2).unwrap();
 
         assert!(bootmgr_output2.boot_next == bootentry_number);
-        let new_bootorder_str = bootentry_number + "," + &bootorder_initial.join(",");
-        modify_boot_order(&new_bootorder_str).unwrap();
+        let new_boot_order_str = bootentry_number + "," + &boot_order_initial.join(",");
+
+        // Modify boot order to set the new boot entry as the first boot entry
+        modify_boot_order(&new_boot_order_str).unwrap();
         let output3 = list_bootmgr_entries().unwrap();
         let bootmgr_output3 = EfiBootManagerOutput::parse_efibootmgr_output(&output3).unwrap();
 
-        assert!(bootmgr_output3.boot_order.join(",") == new_bootorder_str);
+        assert!(bootmgr_output3.boot_order.join(",") == new_boot_order_str);
+
+        // Delete the boot entry thats created above
         delete_boot_entry(&bootmgr_output3.boot_next).unwrap();
 
         let output4 = list_bootmgr_entries().unwrap();
         let bootmgr_output4 = EfiBootManagerOutput::parse_efibootmgr_output(&output4).unwrap();
         let bootentry_exists = bootmgr_output4.boot_entry_exists(entry_label).unwrap();
         assert!(!bootentry_exists);
+
+        // Delete bootnext
+        delete_boot_next().unwrap();
+        let output5 = list_bootmgr_entries().unwrap();
+        let bootmgr_output5 = EfiBootManagerOutput::parse_efibootmgr_output(&output5).unwrap();
+        assert!(bootmgr_output5.boot_next.is_empty());
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_efi_bootmgr_delete_boot_next_fail() {
+        // Define the boot entry label, disk path and bootloader path
+        let entry_label = "TestBoot1";
+        let disk_path = "/dev/sda1";
+        let bootloader_path = Path::new(r"/EFI/BOOT/bootx64.efi");
+
+        // Create a boot entry
+        create_boot_entry(entry_label, disk_path, bootloader_path).unwrap();
+        let output1 = list_bootmgr_entries().unwrap();
+        let bootmgr_output1 = EfiBootManagerOutput::parse_efibootmgr_output(&output1).unwrap();
+
+        // Get the boot entry number of the boot entry that is created above
+        let bootentry_number = bootmgr_output1.get_boot_entry_number(entry_label).unwrap();
+
+        // Set bootnext to the new boot entry that is created above
+        set_boot_next(&bootentry_number).unwrap();
+        let output2 = list_bootmgr_entries().unwrap();
+        let bootmgr_output2 = EfiBootManagerOutput::parse_efibootmgr_output(&output2).unwrap();
+
+        assert!(bootmgr_output2.boot_next == bootentry_number);
+
+        // Delete the boot entry thats created above
+        delete_boot_entry(&bootmgr_output2.boot_next).unwrap();
+
+        // Delete bootnext
+        delete_boot_next().unwrap();
+        let output3 = list_bootmgr_entries().unwrap();
+        let bootmgr_output3 = EfiBootManagerOutput::parse_efibootmgr_output(&output3).unwrap();
+        assert!(bootmgr_output3.boot_next.is_empty());
+
+        // Delete bootnext again should fail
+        assert_eq!(
+            delete_boot_next().unwrap_err().root_cause().to_string(),
+            "Process output:\nstderr:\nCould not delete BootNext: No such file or directory\n\n",
+            "Unexpected error message for deleting bootnext"
+        );
     }
 }

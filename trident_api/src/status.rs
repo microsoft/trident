@@ -23,6 +23,10 @@ pub struct HostStatus {
 
     #[serde(default)]
     pub storage: Storage,
+
+    /// BootNext variable of efibootmgr.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boot_next: Option<String>,
 }
 
 /// ReconcileState is the state of the host's reconciliation process. Through

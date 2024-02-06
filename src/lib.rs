@@ -24,6 +24,7 @@ use trident_api::error::{
 };
 
 use crate::datastore::DataStore;
+use crate::modules::bootentries;
 
 mod datastore;
 mod logstream;
@@ -405,6 +406,14 @@ impl Trident {
                 }
             }
         }
+
+        // Temporarily calling set_boot_order here until we have a better place to call it
+        // TODO -  https://dev.azure.com/mariner-org/ECF/_workitems/edit/6814
+        if let Some(ref datastore_path) = self.config.datastore {
+            info!("Setting boot order");
+            bootentries::set_boot_order(datastore_path.as_path())?;
+        }
+
         Ok(())
     }
 

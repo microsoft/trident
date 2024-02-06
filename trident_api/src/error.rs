@@ -113,8 +113,8 @@ pub enum ManagementError {
     UpdateHost,
     #[error("Failed to provision host")]
     ProvisionHost,
-    #[error("Failed to set boot entries")]
-    SetBootEntries,
+    #[error("Failed to set boot next")]
+    SetBootNext,
     #[error("Failed to unmount newroot")]
     UnmountNewroot,
     #[error("Failed to assemble kernel cmdline")]
@@ -131,6 +131,12 @@ pub enum ManagementError {
     Module(#[from] ModuleError),
     #[error(transparent)]
     Datastore(#[from] DatastoreError),
+    #[error("Failed to list boot entries")]
+    ListBootEntries,
+    #[error("Failed to parse boot manager output")]
+    ParseEfibootmgrOutput,
+    #[error("Failed to modify bootorder")]
+    ModifyBootOrder,
 }
 
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]

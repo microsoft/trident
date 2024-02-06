@@ -58,12 +58,13 @@ pub fn get_uuid_from_path(block_device_path: &Path) -> Result<Uuid, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
     use std::fs;
     use uuid::Uuid;
-    #[test]
-    fn test_update_grub_config() {
+
+    fn get_original_grub_content() -> (&'static str, &'static str) {
         // Define original GRUB config contents on target machine
-        let original_content_grub = r#"
+        let original_content_grub = indoc! {r#"
             set timeout=0
             set bootprefix=/boot
             search -n -u 9e6a9d2c-b7fe-4359-ac45-18b505e29d8b -s
@@ -85,51 +86,71 @@ mod tests {
                     if [ -f $bootprefix/$mariner_initrd ]; then
                             initrd $bootprefix/$mariner_initrd
                     fi
-            }"#;
+            }"#};
 
-        // Create a temporary file and write the original content to it
-        let temp_file_grub = tempfile::NamedTempFile::new().unwrap();
-        let temp_file_path_grub = temp_file_grub.path();
-
-        fs::write(temp_file_path_grub, original_content_grub).unwrap();
-
-        // Generate random FS UUID and PARTUUID for the partition
-        let random_uuid_grub = Uuid::new_v4();
-        let root_path = Path::new("/dev/sda1");
-
-        // Call update_grub_rootfs()
-        update_grub_config(temp_file_path_grub, &random_uuid_grub, Some(root_path)).unwrap();
-        // Read back the content of the file
-        let updated_content_grub = fs::read_to_string(temp_file_path_grub).unwrap();
-
-        // Build the expected content with the new UUID
-        let expected_content_grub = original_content_grub
-            .replace(
-                "PARTUUID=29f8eed2-3c85-4da0-b32e-480e54379766",
-                root_path.to_str().unwrap(),
-            )
-            .replace(
-                "9e6a9d2c-b7fe-4359-ac45-18b505e29d8b",
-                &random_uuid_grub.to_string(),
-            );
-
-        // Assert that the updated content matches the expected content
-        assert_eq!(updated_content_grub, expected_content_grub);
-
-        let original_content_grub2 = r#"search -n -u febfaaaa-fec4-4682-aee2-54f2d46b39ae -s
+        let original_content_grub2 = indoc! {r#"search -n -u febfaaaa-fec4-4682-aee2-54f2d46b39ae -s
 
             # If '/boot' is a seperate partition, BootUUID will point directly to '/boot'.
             # In this case we should omit the '/boot' prefix from all paths.
             set bootprefix=/boot
-            configfile $bootprefix/grub2/grub.cfg"#;
+            configfile $bootprefix/grub2/grub.cfg"#};
+
+        (original_content_grub, original_content_grub2)
+    }
+
+    fn get_expected_grub_content(
+        random_uuid_grub: String,
+        root_path: Option<&Path>,
+        random_uuid_grub2: String,
+    ) -> (String, String) {
+        // Define expected GRUB config contents after updating the rootfs UUID
+        let (original_content_grub, original_content_grub2) = get_original_grub_content();
+        // Build the expected content with the new UUID
+        let expected_content_grub = original_content_grub
+            .replace(
+                "PARTUUID=29f8eed2-3c85-4da0-b32e-480e54379766",
+                root_path.unwrap().to_str().unwrap(),
+            )
+            .replace("9e6a9d2c-b7fe-4359-ac45-18b505e29d8b", &random_uuid_grub);
+
+        // Build the expected content with the new UUID
+        let expected_content_grub2 = original_content_grub2
+            .replace("febfaaaa-fec4-4682-aee2-54f2d46b39ae", &random_uuid_grub2);
+
+        (expected_content_grub, expected_content_grub2)
+    }
+
+    #[test]
+    fn test_update_grub_config_random_rootuuid() {
+        let (original_content_grub, original_content_grub2) = get_original_grub_content();
+
+        // Create a temporary file and write the original content to it
+        let temp_file_grub = tempfile::NamedTempFile::new().unwrap();
+        let temp_file_path_grub = temp_file_grub.path();
+        fs::write(temp_file_path_grub, original_content_grub).unwrap();
+
+        // Generate random FS UUID and root path for the partition
+        let random_uuid_grub = Uuid::new_v4();
+        let random_uuid_grub2 = Uuid::new_v4();
+        let root_path = Path::new("/dev/sda1");
+
+        // Call update_grub_rootfs()
+        update_grub_config(temp_file_path_grub, &random_uuid_grub, Some(root_path)).unwrap();
+
+        // Read back the content of the file
+        let updated_content_grub = fs::read_to_string(temp_file_path_grub).unwrap();
+        let (expected_content_grub, expected_content_grub2) = get_expected_grub_content(
+            random_uuid_grub.to_string(),
+            Some(root_path),
+            random_uuid_grub2.clone().to_string(),
+        );
+
+        // Assert that the updated content matches the expected content
+        assert_eq!(updated_content_grub, expected_content_grub);
 
         let temp_file_grub2 = tempfile::NamedTempFile::new().unwrap();
         let temp_file_path_grub2 = temp_file_grub2.path();
-
         fs::write(temp_file_path_grub2, original_content_grub2).unwrap();
-
-        // Generate a random UUID for the partition
-        let random_uuid_grub2 = Uuid::new_v4();
 
         // Call update_grub_rootfs() with None as 2nd arg since no need to update
         // PARTUUID of root partition
@@ -137,12 +158,6 @@ mod tests {
 
         // Read back the content of the file
         let updated_content_grub2 = fs::read_to_string(temp_file_path_grub2).unwrap();
-
-        // Build the expected content with the new UUID
-        let expected_content_grub2 = original_content_grub2.replace(
-            "febfaaaa-fec4-4682-aee2-54f2d46b39ae",
-            &random_uuid_grub2.to_string(),
-        );
 
         // Assert that the updated content matches the expected content
         assert_eq!(updated_content_grub2, expected_content_grub2);
