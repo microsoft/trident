@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use const_format::formatcp;
 use log::{debug, info};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
@@ -18,7 +19,10 @@ use trident_api::{
 
 use crate::modules::{
     self,
-    constants::ESP_MOUNT_POINT_PATH,
+    constants::{
+        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, GRUB2_RELATIVE_PATH,
+    },
     storage::image::stream_image::{exponential_backoff_get, stream_zstd_image},
     storage::image::stream_image::{GET_MAX_RETRIES, GET_TIMEOUT_SECS},
     BOOT_ENTRY_A, BOOT_ENTRY_B, UPDATE_ROOT_PATH,
@@ -26,27 +30,12 @@ use crate::modules::{
 
 use super::HashingReader;
 
-/// Path to the EFI directory on the ESP volume mount point path, /boot/efi, where EFI executables
-/// will be placed on the updated volume, as part of file-based update of ESP:
-/// a. If volume A is currently active, copy boot files into /boot/efi/EFI/azlinuxB,
-/// b. If volume B is currently active OR no volume is currently active, i.e., Trident is doing
-/// CleanInstall, copy boot files into /boot/efi/EFI/azlinuxA.
-pub const EFI_PATH: &str = "EFI";
-
-/// Directory in the ESP image where the shim binaries are located
-const EFI_BOOT_PATH: &str = "EFI/BOOT";
-
-// Directory in the source ESP image where the GRUB config is located.
-// TODO: In long term, in the source ESP image, the GRUB config will be placed in the same dir as
-// the EFI executables, i.e., /EFI/BOOT/grub.cfg. Related ADO task:
-// https://dev.azure.com/mariner-org/ECF/_workitems/edit/6452.
-const BOOT_GRUB2_PATH: &str = "boot/grub2";
-
 // Directory where the GRUB config will be located on the updated volume.
 // TODO: In long term, on the updated volume, the GRUB config will be placed in the same dir as the
 // EFI executables, i.e., as /EFI/azlinuxA/grub.cfg or /EFI/azlinuxB/grub.cfg. Related ADO task:
 // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6540/.
-const GRUB_BOOT_CONFIG_PATH: &str = "boot/efi/boot/grub2";
+const GRUB_BOOT_CONFIG_PATH: &str =
+    formatcp!("{ESP_RELATIVE_MOUNT_POINT_PATH}/{GRUB2_RELATIVE_PATH}");
 
 // MountGuard is a helper struct that automatically unmounts a directory when it goes out of scope.
 // It is used to ensure that the ESP image is unmounted even if the function returns early.
@@ -244,7 +233,7 @@ fn copy_boot_files(
         // when the images will be updated after Mariner 3.0 release. However, now, GRUB config
         // needs to be copied into /boot/grub2/grub.cfg as well. Related ADO task:
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6540.
-        if file_name == "grub.cfg" {
+        if file_name == GRUB2_CONFIG_FILENAME {
             let grub_config_path = Path::new(UPDATE_ROOT_PATH)
                 .join(GRUB_BOOT_CONFIG_PATH)
                 .join(file_name);
@@ -286,32 +275,40 @@ fn generate_boot_filepaths(
 ) -> Result<Vec<PathBuf>, Error> {
     let mut paths = Vec::new();
 
-    // Check if grub.cfg exists in EFI_BOOT_PATH, otherwise use BOOT_GRUB2_PATH
+    // Check if grub.cfg exists in EFI_DEFAULT_BIN_RELATIVE_PATH, otherwise use GRUB2_RELATIVE_PATH
     let efi_boot_grub_path = Path::new(temp_mount_dir)
-        .join(EFI_BOOT_PATH)
-        .join("grub.cfg");
-    let boot_grub2_grub_path = Path::new(temp_mount_dir)
-        .join(BOOT_GRUB2_PATH)
-        .join("grub.cfg");
+        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+        .join(GRUB2_CONFIG_FILENAME);
 
+    // Directory in the source ESP image where the GRUB config is located.
+    // TODO: In long term, in the source ESP image, the GRUB config will be placed in the same dir as
+    // the EFI executables, i.e., /EFI/BOOT/grub.cfg. Related ADO task:
+    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6452.
+    let boot_grub2_grub_path = Path::new(temp_mount_dir).join(GRUB2_CONFIG_RELATIVE_PATH);
     if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
-        debug!("Using grub.cfg from {}", efi_boot_grub_path.display());
+        debug!(
+            "Using {GRUB2_CONFIG_FILENAME} from {}",
+            efi_boot_grub_path.display()
+        );
         paths.push(efi_boot_grub_path);
     } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
-        debug!("Using grub.cfg from {}", boot_grub2_grub_path.display());
+        debug!(
+            "Using {GRUB2_CONFIG_FILENAME} from {}",
+            boot_grub2_grub_path.display()
+        );
         paths.push(boot_grub2_grub_path);
     } else {
-        bail!("Failed to find grub.cfg");
+        bail!("Failed to find {GRUB2_CONFIG_FILENAME}");
     }
 
     // Check if grubx64-noprefix.efi exists; otherwise, use grubx64.efi. With the package update
     // to use grub2-efi-binary-noprefix RPM, the EFI executable is installed as
     // grubx64-noprefix.efi.
     let grub_efi_noprefix_path = Path::new(temp_mount_dir)
-        .join(EFI_BOOT_PATH)
+        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
         .join(format!("grub{}-noprefix.efi", efi_filename_ending));
     let grub_efi_path = Path::new(temp_mount_dir)
-        .join(EFI_BOOT_PATH)
+        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
         .join(format!("grub{}.efi", efi_filename_ending));
 
     if grub_efi_noprefix_path.exists() && grub_efi_noprefix_path.is_file() {
@@ -329,7 +326,7 @@ fn generate_boot_filepaths(
 
     // Construct file names of EFI executables
     let boot_efi_path = Path::new(temp_mount_dir)
-        .join(EFI_BOOT_PATH)
+        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
         .join(format!("boot{}.efi", efi_filename_ending));
     if !boot_efi_path.exists() {
         bail!(
@@ -363,16 +360,22 @@ fn generate_arch_str() -> Result<String, Error> {
 /// Returns the path to the ESP directory where the boot files need to be copied to.
 fn generate_esp_dir_path(host_status: &HostStatus) -> Result<PathBuf, Error> {
     // Compose the path to the ESP directory
-    let esp_efi_str = Path::new(UPDATE_ROOT_PATH)
-        .join(ESP_MOUNT_POINT_PATH.trim_start_matches('/'))
-        .join(EFI_PATH);
+
+    // Path to the EFI directory on the ESP volume mount point path, /boot/efi, where EFI executables
+    // will be placed on the updated volume, as part of file-based update of ESP:
+    // a. If volume A is currently active, copy boot files into /boot/efi/EFI/azlinuxB,
+    // b. If volume B is currently active OR no volume is currently active, i.e., Trident is doing
+    // CleanInstall, copy boot files into /boot/efi/EFI/azlinuxA.
+    let esp_efi_path = Path::new(UPDATE_ROOT_PATH)
+        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+        .join(ESP_EFI_DIRECTORY);
 
     // Based on which volume is being updated, determine how to name the dir
     let esp_dir_path = match modules::get_ab_update_volume(host_status, false)
         .context("Failed to determine which A/B volume is currently inactive")?
     {
-        AbVolumeSelection::VolumeA => Path::new(&esp_efi_str).join(BOOT_ENTRY_A),
-        AbVolumeSelection::VolumeB => Path::new(&esp_efi_str).join(BOOT_ENTRY_B),
+        AbVolumeSelection::VolumeA => Path::new(&esp_efi_path).join(BOOT_ENTRY_A),
+        AbVolumeSelection::VolumeB => Path::new(&esp_efi_path).join(BOOT_ENTRY_B),
     };
 
     Ok(esp_dir_path)
@@ -562,7 +565,7 @@ mod functional_test {
 
         // Create a list of boot files
         let file_names = vec![
-            PathBuf::from("grub.cfg"),
+            PathBuf::from(GRUB2_CONFIG_FILENAME),
             PathBuf::from("grubx64.efi"),
             PathBuf::from("bootx64.efi"),
         ];
@@ -590,7 +593,7 @@ mod functional_test {
     /// Validates that generate_boot_filepaths() returns the correct filepaths based on target
     #[functional_test(feature = "abupdate")]
     fn test_generate_boot_filepaths() {
-        // Test case 1: Run generate_boot_filepaths() with GRUB under EFI_BOOT_PATH
+        // Test case 1: Run generate_boot_filepaths() with GRUB under EFI_DEFAULT_BIN_RELATIVE_PATH
         // Create a temp dir
         let temp_mount_dir = TempDir::new().unwrap();
         // Fetch the path of temp dir
@@ -598,20 +601,20 @@ mod functional_test {
 
         // Create a GRUB config inside of the temp dir
         let efi_boot_grub_path = Path::new(temp_mount_path)
-            .join(EFI_BOOT_PATH)
-            .join("grub.cfg");
+            .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+            .join(GRUB2_CONFIG_FILENAME);
         fs::create_dir_all(efi_boot_grub_path.parent().unwrap()).unwrap();
         File::create(&efi_boot_grub_path).unwrap();
 
         // Create a grub EFI executable inside of the temp dir
         let grub_efi_path = Path::new(temp_mount_path)
-            .join(EFI_BOOT_PATH)
+            .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
             .join("grubx64.efi");
         File::create(&grub_efi_path).unwrap();
 
         // Create a boot EFI executable inside of the temp dir
         let boot_efi_path = Path::new(temp_mount_path)
-            .join(EFI_BOOT_PATH)
+            .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
             .join("bootx64.efi");
         File::create(&boot_efi_path).unwrap();
 
@@ -628,7 +631,7 @@ mod functional_test {
         );
 
         // Test case 2: Run generate_boot_filepaths() without GRUB
-        // Remove the GRUB config from the temp dir and create a new one, under BOOT_GRUB2_PATH
+        // Remove the GRUB config from the temp dir and create a new one, under GRUB2_RELATIVE_PATH
         fs::remove_file(&efi_boot_grub_path).unwrap();
         assert_eq!(
             generate_boot_filepaths(temp_mount_path, "x64")
@@ -639,10 +642,10 @@ mod functional_test {
             "generate_boot_filepaths() should fail if grub.cfg does not exist"
         );
 
-        // Test case 3: Run generate_boot_filepaths() with GRUB under BOOT_GRUB2_PATH
+        // Test case 3: Run generate_boot_filepaths() with GRUB under GRUB2_RELATIVE_PATH
         let boot_grub2_grub_path = Path::new(temp_mount_path)
-            .join(BOOT_GRUB2_PATH)
-            .join("grub.cfg");
+            .join(GRUB2_RELATIVE_PATH)
+            .join(GRUB2_CONFIG_FILENAME);
         fs::create_dir_all(boot_grub2_grub_path.parent().unwrap()).unwrap();
         File::create(&boot_grub2_grub_path).unwrap();
 
@@ -674,7 +677,7 @@ mod functional_test {
         // Test case 5: Run generate_boot_filepaths() with a grub EFI executable with noprefix name
         // Create a grub EFI executable with the noprefix name inside of the temp dir
         let grub_efi_noprefix_path = Path::new(temp_mount_path)
-            .join(EFI_BOOT_PATH)
+            .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
             .join("grubx64-noprefix.efi");
         File::create(&grub_efi_noprefix_path).unwrap();
 

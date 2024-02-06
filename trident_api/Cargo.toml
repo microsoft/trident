@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.75", features = ["backtrace"] }
 bitflags = { version = "2.4.0", features = ["serde"] }
+const_format = "0.2.32"
 netplan-types = "0.4.0"
 serde = { version = "1.0.185", features = ["derive"] }
 serde_yaml = "0.9.25"

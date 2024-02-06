@@ -121,7 +121,7 @@ fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error
         Some(AbVolumeSelection::VolumeA) => Ok((
             BOOT_ENTRY_A,
             Path::new(constants::ROOT_MOUNT_POINT_PATH)
-                .join(modules::storage::image::update_esp::EFI_PATH)
+                .join(constants::ESP_EFI_DIRECTORY)
                 .join(BOOT_ENTRY_A)
                 .join(BOOT64_EFI)
                 .to_path_buf(),
@@ -130,7 +130,7 @@ fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error
         Some(AbVolumeSelection::VolumeB) => Ok((
             BOOT_ENTRY_B,
             Path::new(constants::ROOT_MOUNT_POINT_PATH)
-                .join(modules::storage::image::update_esp::EFI_PATH)
+                .join(constants::ESP_EFI_DIRECTORY)
                 .join(BOOT_ENTRY_B)
                 .join(BOOT64_EFI)
                 .to_path_buf(),
@@ -237,8 +237,6 @@ mod tests {
     };
     use uuid::Uuid;
 
-    use crate::modules::storage::image::update_esp;
-
     use super::*;
 
     /// Validates logic for determining which A/B volume to use for updates
@@ -262,7 +260,7 @@ mod tests {
             (
                 BOOT_ENTRY_A,
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
-                    .join(update_esp::EFI_PATH)
+                    .join(constants::ESP_EFI_DIRECTORY)
                     .join(BOOT_ENTRY_A)
                     .join(BOOT64_EFI)
             )
@@ -282,7 +280,7 @@ mod tests {
             (
                 BOOT_ENTRY_B,
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
-                    .join(update_esp::EFI_PATH)
+                    .join(constants::ESP_EFI_DIRECTORY)
                     .join(BOOT_ENTRY_B)
                     .join(BOOT64_EFI)
             )

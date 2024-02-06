@@ -9,6 +9,7 @@ publish = false
 anyhow = { version = "1.0.75", features = ["backtrace"] }
 clap = { version = "4.3.23", features = ["derive"] }
 configparser = { version = "3.0.2", features = ["indexmap"] }
+const_format = "0.2.32"
 duct = "0.13.6"
 env_logger = "0.10.0"
 glob = "0.3.1"
