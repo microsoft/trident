@@ -145,7 +145,7 @@ class RustModule(Collector):
             yield node
 
 
-def run_rust_functional_test(vm, crate, module_path, test_case):
+def run_rust_functional_test(vm, wipe_sdb, crate, module_path, test_case):
     """Runs a rust test on the VM."""
     from functional_tests.tools.runner import RunnerTool
 
@@ -154,6 +154,14 @@ def run_rust_functional_test(vm, crate, module_path, test_case):
         crate,
         f"{module_path}::{test_case}",
     )
+
+
+@pytest.fixture(scope="function")
+def wipe_sdb(vm: SshNode):
+    """Wipes the SDB on the VM."""
+    vm.execute("sudo wipefs -af /dev/sdb")
+    yield
+    vm.execute("sudo wipefs -af /dev/sdb")
 
 
 def disable_phonehome(ssh_node: SshNode):
@@ -245,7 +253,7 @@ def deploy_vm(
     ssh_key_path: Path,
     known_hosts_path: Path,
     installer_iso_path: Path,
-):
+) -> SshNode:
     """# Provision a VM with the given parameters, using virt-deploy to create the VM
     and netlaunch to deploy the OS.
     """
@@ -268,7 +276,9 @@ def deploy_vm(
     return ssh_node
 
 
-def create_ssh_node(remote_addr_path: Path, ssh_key_path: Path, known_hosts_path: Path):
+def create_ssh_node(
+    remote_addr_path: Path, ssh_key_path: Path, known_hosts_path: Path
+) -> SshNode:
     """Creates an SSH node that can be used to interact with the VM."""
     with open(remote_addr_path, "r") as file:
         remote_addr = file.read().strip()
@@ -335,7 +345,7 @@ def argus_runcmd(cmd, check=True, **kwargs):
 
 
 @pytest.fixture(scope="package")
-def vm(request):
+def vm(request) -> SshNode:
     """Define the VirtDeploy based LibVirt VM as a resource the tests can use."""
 
     keep_environment = request.config.getoption("--keep-environment")
