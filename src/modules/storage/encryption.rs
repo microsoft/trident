@@ -28,6 +28,17 @@ pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error
                     key_file.to_string_lossy()
                 );
             }
+            let key_file_metadata = std::fs::metadata(&key_file).context(format!(
+                "Failed to get metadata for recovery key file '{}'",
+                key_file.display()
+            ))?;
+
+            if key_file_metadata.len() == 0 {
+                bail!(
+                    "Recovery key file '{}' is empty",
+                    key_file.to_string_lossy()
+                );
+            }
         } else {
             bail!("Recovery key file URL not specified and recovery key file generation not yet implemented.");
         }
@@ -491,6 +502,23 @@ mod tests {
             validate_host_config(&host_config).unwrap_err().to_string(),
             format!(
                 "Recovery key file '{}' does not exist",
+                recovery_key_file.path().display()
+            )
+        );
+    }
+
+    #[test]
+    fn test_validate_host_config_recovery_key_empty_fail() {
+        let recovery_key_file = get_recovery_key_file();
+        let host_config = get_host_config(&recovery_key_file);
+
+        // Set the recovery key file's contents to empty.
+        std::fs::write(recovery_key_file.path(), "").unwrap();
+
+        assert_eq!(
+            validate_host_config(&host_config).unwrap_err().to_string(),
+            format!(
+                "Recovery key file '{}' is empty",
                 recovery_key_file.path().display()
             )
         );

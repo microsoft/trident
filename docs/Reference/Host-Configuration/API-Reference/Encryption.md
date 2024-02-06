@@ -33,7 +33,7 @@ A URL to the file containing the recovery key to use for encryption.
 
 This parameter is optional but highly encouraged. If not specified, only the TPM2 device will be enrolled.
 
-`file` is the only currently supported URL scheme. The contents of the key serve as the key. It must be in plain text and not encoded.
+`file` is the only currently supported URL scheme. The contents of the file serve as the key and must not be empty. It must be in plain text, not encoded.
 
 | Characteristic | Value    |
 | -------------- | -------- |

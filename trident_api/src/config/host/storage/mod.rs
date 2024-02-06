@@ -119,8 +119,8 @@ pub struct Encryption {
     /// specified, only the TPM2 device will be enrolled.
     ///
     /// `file` is the only currently supported URL scheme. The contents of
-    /// the key serve as the key. It must be in plain text and not
-    /// encoded.
+    /// the file serve as the key and must not be empty. It must be in
+    /// plain text, not encoded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recovery_key_url: Option<Url>,
 
