@@ -20,7 +20,7 @@ pub enum InvalidHostConfigurationError {
     #[error("Encryption recovery key URL '{url}' has an invalid scheme '{scheme}'")]
     InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },
 
-    #[error("The block device graph is invalid")]
+    #[error(transparent)]
     InvalidBlockDeviceGraph(
         #[from] super::storage::blkdev_graph::error::BlockDeviceGraphBuildError,
     ),
