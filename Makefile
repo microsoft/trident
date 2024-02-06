@@ -28,7 +28,7 @@ ut-coverage:
 .PHONY: coverage-report
 coverage-report:
 	# cargo install grcov
-	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,lcov,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
+	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
 
 .PHONY: coverage

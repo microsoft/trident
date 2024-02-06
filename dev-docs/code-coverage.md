@@ -16,14 +16,15 @@ following reports: `html`, `lcov`, `covdir`, `cobertura`:
 - The `html` report is the easiest to view:
   [target/coverage/html/index.html](target/coverage/html/index.html) (note that
   this file is not checked in, only generated on demand by running `make
-  coverage-report`). You can look at [Documentation](../README.md#documentation) section for
-  more details on viewing the `html` remotely through VSCode.
-- The `lcov` is used by `Coverage Gutters` VSCode extension to show code
-  coverage directly over the code in the VSCode editor, which helps to see which
-  lines are covered and which not.
+  coverage-report`). You can look at [Documentation](../README.md#documentation)
+  section for more details on viewing the `html` remotely through VSCode.
 - The `covdir` report is in the JSON format, so easy for automated processing.
   The `coverage-report` target actually prints the overall coverage as extracted
   from the `covdir` report.
 - The `cobertura` report is something that ADO understands and is published
   during pipeline run to ADO, so that we can see code coverage as part of
-  pipeline run results.
+  pipeline run results. It is also used by `Coverage Gutters` VSCode extension
+  to show code coverage directly over the code in the VSCode editor, which helps
+  to see which lines are covered and which not. For `Coverage Gutters` to pick
+  up the generated coverage and display it in VSCode, ensure that
+  `coverage-gutters.coverageFileNames` VSCode setting contains `cobertura.xml`.
