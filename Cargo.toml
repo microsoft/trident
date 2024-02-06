@@ -54,11 +54,16 @@ osutils = { path = "osutils" }
 [dev-dependencies]
 indoc = "2"
 
+
 [features]
 dangerous-options = ["trident_api/dangerous-options"]
 sysupdate = ["trident_api/sysupdate"]
 functional-test = ["pytest", "osutils/functional-test"]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
+
+
+[profile.dev.package."*"]
+opt-level = 2
 
 
 [workspace]
