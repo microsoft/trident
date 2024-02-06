@@ -369,10 +369,9 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 BlkDevReferrerKindFlag::ABVolume => BlkDevReferrerKind::ABVolume,
                 BlkDevReferrerKindFlag::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
                 BlkDevReferrerKindFlag::Image => BlkDevReferrerKind::Image,
-                #[cfg(feature = "sysupdate")]
                 BlkDevReferrerKindFlag::ImageSysupdate => BlkDevReferrerKind::ImageSysupdate,
                 BlkDevReferrerKindFlag::MountPoint => BlkDevReferrerKind::MountPoint,
-                _ => unreachable!(),
+                _ => unreachable!("Invalid referrer kind flag: {:?}", kind),
             })
             .collect()
     }
@@ -387,5 +386,36 @@ impl Display for BlkDevKindFlag {
 impl Display for BlkDevReferrerKindFlag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.user_readable())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{BitFlagsBackingEnumVec, BlkDevKindFlag, BlkDevReferrerKindFlag};
+
+    #[test]
+    fn test_backing_enum_block_dev_kind() {
+        BlkDevKindFlag::all().iter().for_each(|flag| {
+            let flag_vec = flag.backing_enum_vec();
+            assert_eq!(
+                flag_vec.len(),
+                1,
+                "Flag '{:?}' could not be converted to enum",
+                flag
+            );
+        });
+    }
+
+    #[test]
+    fn test_backing_enum_block_dev_referrer_kind() {
+        BlkDevReferrerKindFlag::all().iter().for_each(|flag| {
+            let flag_vec = flag.backing_enum_vec();
+            assert_eq!(
+                flag_vec.len(),
+                1,
+                "Flag '{:?}' could not be converted to enum",
+                flag
+            );
+        });
     }
 }
