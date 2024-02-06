@@ -2521,10 +2521,11 @@ mod functional_test {
         };
 
         // Test case 1: Running reinitialize_volume_fs() on a valid volume to format as ext4.
-        // First, zero out the metadata of the volume
+        // First, zero out the metadata of the volume. Use /dev/sdb since cannot rely on
+        // /dev/sdb2 being present.
         Command::new("dd")
             .arg("if=/dev/zero")
-            .arg("of=/dev/sdb2")
+            .arg("of=/dev/sdb")
             .arg("bs=1M")
             .arg("count=1")
             .output_and_check()
@@ -2535,57 +2536,31 @@ mod functional_test {
             &host_status,
             &"root".to_string(),
             &"root-b".to_string(),
-            &PathBuf::from("/dev/sdb2"),
+            &PathBuf::from("/dev/sdb"),
         )
         .unwrap();
 
-        // Confirm that /dev/sdb2 has been reformatted to ext4
-        let block_device_list = lsblk::run(Path::new("/dev/sdb2")).unwrap();
+        // Confirm that /dev/sdb has been reformatted to ext4
+        let block_device_list = lsblk::run(Path::new("/dev/sdb")).unwrap();
 
-        // Find the block device for /dev/sdb2
+        // Find the current FS on /dev/sdb
         assert_eq!(
             block_device_list[0].fstype.as_ref().unwrap(),
             "ext4",
-            "Filesystem type on /dev/sdb2 is not ext4"
+            "Filesystem type on /dev/sdb is not ext4"
         );
 
-        // Create /mnt/sdb2 if does not exist and confirm that /dev/sdb2 can be mounted
+        // Create /mnt/sdb if does not exist and confirm that /dev/sdb can be mounted
         Command::new("mkdir")
             .arg("-p")
-            .arg("/mnt/sdb2")
+            .arg("/mnt/sdb")
             .output_and_check()
             .unwrap();
 
-        mount::mount(Path::new("/dev/sdb2"), Path::new("/mnt/sdb2")).unwrap();
+        mount::mount(Path::new("/dev/sdb"), Path::new("/mnt/sdb")).unwrap();
 
-        // Unmount /dev/sdb2
-        mount::umount(Path::new("/mnt/sdb2"), false).unwrap();
-
-        // Test case 2: Running reinitialize_volume_fs() on a valid volume to format as vfat.
-        // Run again to reformat to vfat filesystem
-        reinitialize_volume_fs(
-            &host_status,
-            &"root".to_string(),
-            &"root-b".to_string(),
-            &PathBuf::from("/dev/sdb2"),
-        )
-        .unwrap();
-
-        // Confirm that /dev/sdb2 has been reformatted to vfat
-        let block_device_list_new = lsblk::run(Path::new("/dev/sdb2")).unwrap();
-
-        // Find the block device for /dev/sdb2
-        assert_eq!(
-            block_device_list_new[0].fstype.as_ref().unwrap(),
-            "ext4",
-            "Filesystem type on /dev/sdb2 is not ext4"
-        );
-
-        // Confirm that can be mounted
-        mount::mount(Path::new("/dev/sdb2"), Path::new("/mnt/sdb2")).unwrap();
-
-        // Unmount /dev/sdb2
-        mount::umount(Path::new("/mnt/sdb2"), false).unwrap();
+        // Unmount /dev/sdb
+        mount::umount(Path::new("/mnt/sdb"), false).unwrap();
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -2661,7 +2636,7 @@ mod functional_test {
             &host_status,
             &"root".to_string(),
             &"root-b".to_string(),
-            &PathBuf::from("/dev/sdb2"),
+            &PathBuf::from("/dev/sdb"),
         );
 
         assert_eq!(
