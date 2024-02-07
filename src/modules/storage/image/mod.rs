@@ -111,7 +111,7 @@ fn update_images(
                 }
 
                 // Otherwise, use direct streaming of image bytes onto the block device
-                ImageFormat::RawZstd => {
+                ImageFormat::RawZst => {
                     // If image does NOT correspond to ESP partition, use direct streaming of image
                     if !is_esp(host_status, &image.target_id) {
                         info!(
@@ -173,7 +173,7 @@ fn update_images(
                 }
 
                 // Otherwise, use direct streaming of image bytes onto the block device
-                ImageFormat::RawZstd => {
+                ImageFormat::RawZst => {
                     // If image does NOT correspond to ESP partition, use direct streaming of image
                     if !is_esp(host_status, &image.target_id) {
                         info!(
@@ -237,7 +237,7 @@ fn update_esp_images(
 
         // Only need to perform file-based update of ESP if image is in format RawZstd b/c RawLzma
         // requires a block-based update of ESP
-        if image.format == ImageFormat::RawZstd {
+        if image.format == ImageFormat::RawZst {
             info!(
                 "Performing file-based update of ESP partition with id '{}'",
                 &image.target_id
@@ -960,13 +960,13 @@ mod tests {
                     Image {
                         url: "http://example.com/esp.img".to_string(),
                         target_id: "boot".to_string(),
-                        format: ImageFormat::RawZstd,
+                        format: ImageFormat::RawZst,
                         sha256: ImageSha256::Checksum("foobar".to_string()),
                     },
                     Image {
                         url: "http://example.com/image1.img".to_string(),
                         target_id: "root".to_string(),
-                        format: ImageFormat::RawZstd,
+                        format: ImageFormat::RawZst,
                         sha256: ImageSha256::Ignored,
                     },
                 ],
@@ -1053,7 +1053,7 @@ mod tests {
             vec![&Image {
                 url: "http://example.com/esp.img".to_string(),
                 target_id: "boot".to_string(),
-                format: ImageFormat::RawZstd,
+                format: ImageFormat::RawZst,
                 sha256: ImageSha256::Checksum("barfoo".to_string()),
             }]
         );
@@ -1066,7 +1066,7 @@ mod tests {
             vec![&Image {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
-                format: ImageFormat::RawZstd,
+                format: ImageFormat::RawZst,
                 sha256: ImageSha256::Ignored,
             }]
         );
@@ -1079,7 +1079,7 @@ mod tests {
             vec![&Image {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
-                format: ImageFormat::RawZstd,
+                format: ImageFormat::RawZst,
                 sha256: ImageSha256::Checksum("foobar".to_string()),
             }]
         );
@@ -1094,13 +1094,13 @@ mod tests {
                 &Image {
                     url: "http://example.com/image2.img".to_string(),
                     target_id: "boot".to_string(),
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                     sha256: ImageSha256::Checksum("foobar".to_string()),
                 },
                 &Image {
                     url: "http://example.com/image1.img".to_string(),
                     target_id: "root".to_string(),
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                     sha256: ImageSha256::Ignored,
                 }
             ]
@@ -1127,13 +1127,13 @@ mod tests {
                     Image {
                         url: "http://example.com/esp.img".to_string(),
                         target_id: "boot".to_string(),
-                        format: ImageFormat::RawZstd,
+                        format: ImageFormat::RawZst,
                         sha256: ImageSha256::Checksum("foobar".to_string()),
                     },
                     Image {
                         url: "http://example.com/image1.img".to_string(),
                         target_id: "root".to_string(),
-                        format: ImageFormat::RawZstd,
+                        format: ImageFormat::RawZst,
                         sha256: ImageSha256::Ignored,
                     },
                 ],
@@ -1212,7 +1212,7 @@ mod tests {
             vec![&Image {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
-                format: ImageFormat::RawZstd,
+                format: ImageFormat::RawZst,
                 sha256: ImageSha256::Ignored,
             }]
         );
@@ -1223,7 +1223,7 @@ mod tests {
             vec![&Image {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
-                format: ImageFormat::RawZstd,
+                format: ImageFormat::RawZst,
                 sha256: ImageSha256::Ignored,
             }]
         );
@@ -1263,7 +1263,7 @@ mod tests {
             vec![&Image {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
-                format: ImageFormat::RawZstd,
+                format: ImageFormat::RawZst,
                 sha256: ImageSha256::Ignored,
             }]
         );
@@ -1352,13 +1352,13 @@ mod tests {
                     Image {
                         url: "http://example.com/esp_1.img".to_string(),
                         target_id: "esp".to_string(),
-                        format: ImageFormat::RawZstd,
+                        format: ImageFormat::RawZst,
                         sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
                     },
                     Image {
                         url: "http://example.com/root_2.img".to_string(),
                         target_id: "root".to_string(),
-                        format: ImageFormat::RawZstd,
+                        format: ImageFormat::RawZst,
                         sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
                     },
                 ],
@@ -1382,7 +1382,7 @@ mod tests {
             vec![&Image {
                 url: "http://example.com/esp_2.img".to_string(),
                 target_id: "esp".to_string(),
-                format: ImageFormat::RawZstd,
+                format: ImageFormat::RawZst,
                 sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
             }],
             "Incorrectly identified ESP partition as not needing an update"
@@ -1809,7 +1809,7 @@ mod tests {
                 images: vec![Image {
                     url: "http://example.com/root_3.img".to_string(),
                     target_id: "root".to_string(),
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                     sha256: ImageSha256::Checksum("root_sha256_3".to_string()),
                 }],
                 ..Default::default()

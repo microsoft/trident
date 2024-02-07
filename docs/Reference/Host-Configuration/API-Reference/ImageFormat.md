@@ -14,8 +14,8 @@ Image format.
 
 Raw filesystem image with zstd compression.
 
-| Characteristic | Value      |
-| -------------- | ---------- |
-| Type           | `string`   |
-| Value          | `raw-zstd` |
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `string`  |
+| Value          | `raw-zst` |
 

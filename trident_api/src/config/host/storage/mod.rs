@@ -512,13 +512,13 @@ mod tests {
                     target_id: "esp".to_owned(),
                     url: "file:///esp.raw.zst".to_owned(),
                     sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                 },
                 Image {
                     target_id: "root".to_owned(),
                     url: "file:///root.raw.zst".to_owned(),
                     sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -658,13 +658,13 @@ mod tests {
             ],
             images: vec![
                 Image {
-                    format: imaging::ImageFormat::RawZstd,
+                    format: imaging::ImageFormat::RawZst,
                     target_id: "disk1-partition2".to_string(),
                     url: "http://example.com/image".to_string(),
                     sha256: imaging::ImageSha256::Ignored,
                 },
                 Image {
-                    format: imaging::ImageFormat::RawZstd,
+                    format: imaging::ImageFormat::RawZst,
                     target_id: "disk1-partition1".to_string(),
                     url: "http://example.com/image".to_string(),
                     sha256: imaging::ImageSha256::Ignored,
@@ -698,13 +698,13 @@ mod tests {
             ],
             images: vec![
                 Image {
-                    format: imaging::ImageFormat::RawZstd,
+                    format: imaging::ImageFormat::RawZst,
                     target_id: "ab-update-volume-pair".to_string(),
                     url: "http://example.com/image".to_string(),
                     sha256: imaging::ImageSha256::Ignored,
                 },
                 Image {
-                    format: imaging::ImageFormat::RawZstd,
+                    format: imaging::ImageFormat::RawZst,
                     target_id: "disk1-partition1".to_string(),
                     url: "http://example.com/image".to_string(),
                     sha256: imaging::ImageSha256::Ignored,
@@ -754,7 +754,7 @@ mod tests {
 
         let bad_image_target = Storage {
             images: vec![Image {
-                format: imaging::ImageFormat::RawZstd,
+                format: imaging::ImageFormat::RawZst,
                 target_id: "disk99".to_string(),
                 url: "http://example.com/image".to_string(),
                 sha256: imaging::ImageSha256::Ignored,
@@ -844,13 +844,13 @@ mod tests {
                     target_id: "ab1".to_owned(),
                     url: "https://some/url".to_owned(),
                     sha256: imaging::ImageSha256::Checksum("".into()),
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                 },
                 Image {
                     target_id: "part1".to_owned(),
                     url: "https://some/url".to_owned(),
                     sha256: imaging::ImageSha256::Checksum("".into()),
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -1636,7 +1636,7 @@ mod tests {
             target_id: "srv".to_owned(),
             url: "file:///root.raw.zst".to_owned(),
             sha256: ImageSha256::Ignored,
-            format: ImageFormat::RawZstd,
+            format: ImageFormat::RawZst,
         });
         storage.images = images;
         storage.validate(true).unwrap();

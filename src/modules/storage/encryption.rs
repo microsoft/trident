@@ -416,19 +416,19 @@ mod tests {
                 Image {
                     url: "file:///trident_cdrom/data/esp.rawzst".into(),
                     sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                     target_id: "esp".to_owned(),
                 },
                 Image {
                     url: "file:///trident_cdrom/data/root.rawzst".into(),
                     sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                     target_id: "root".to_owned(),
                 },
                 Image {
                     url: "file:///trident_cdrom/data/srv.rawzst".into(),
                     sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                     target_id: "srv".to_owned(),
                 },
             ],

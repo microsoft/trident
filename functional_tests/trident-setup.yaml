@@ -12,68 +12,68 @@ hostConfiguration:
     users:
       - name: testuser
         secondaryGroups:
-        - wheel
+          - wheel
         sshKeys: []
         sshMode: key-only
   scripts:
     postConfigure:
-    - content: 'echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel'
-      name: wheel
-      servicingType:
-      - clean-install
+      - content: 'echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel'
+        name: wheel
+        servicingType:
+          - clean-install
   storage:
     abUpdate:
       volumePairs:
-      - id: root
-        volumeAId: root-a
-        volumeBId: root-b
+        - id: root
+          volumeAId: root-a
+          volumeBId: root-b
     images:
-    - format: raw-zstd
-      sha256: ignored
-      targetId: esp
-      url: file:///trident_cdrom/data/esp.rawzst
-    - format: raw-zstd
-      sha256: ignored
-      targetId: root
-      url: file:///trident_cdrom/data/root.rawzst
+      - format: raw-zst
+        sha256: ignored
+        targetId: esp
+        url: file:///trident_cdrom/data/esp.rawzst
+      - format: raw-zst
+        sha256: ignored
+        targetId: root
+        url: file:///trident_cdrom/data/root.rawzst
     disks:
-    - device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-      id: os
-      partitionTableType: gpt
-      partitions:
-      - id: esp
-        size: 50M
-        type: esp
-      - id: root-a
-        size: 5G
-        type: root
-      - id: root-b
-        size: 2G
-        type: root
-      - id: swap
-        size: 2G
-        type: swap
-      - id: trident
-        size: 100M
-        type: linux-generic
+      - device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+        id: os
+        partitionTableType: gpt
+        partitions:
+          - id: esp
+            size: 50M
+            type: esp
+          - id: root-a
+            size: 5G
+            type: root
+          - id: root-b
+            size: 2G
+            type: root
+          - id: swap
+            size: 2G
+            type: swap
+          - id: trident
+            size: 100M
+            type: linux-generic
     mountPoints:
-    - filesystem: vfat
-      options:
-      - umask=0077
-      path: /boot/efi
-      targetId: esp
-    - filesystem: ext4
-      options:
-      - defaults
-      path: /
-      targetId: root
-    - filesystem: ext4
-      options:
-      - defaults
-      path: /var/lib/trident
-      targetId: trident
-    - filesystem: swap
-      options:
-      - sw
-      path: none
-      targetId: swap
+      - filesystem: vfat
+        options:
+          - umask=0077
+        path: /boot/efi
+        targetId: esp
+      - filesystem: ext4
+        options:
+          - defaults
+        path: /
+        targetId: root
+      - filesystem: ext4
+        options:
+          - defaults
+        path: /var/lib/trident
+        targetId: trident
+      - filesystem: swap
+        options:
+          - sw
+        path: none
+        targetId: swap

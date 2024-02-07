@@ -490,7 +490,7 @@ mod tests {
                             "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
                                 .to_owned(),
                         ),
-                        format: ImageFormat::RawZstd,
+                        format: ImageFormat::RawZst,
                         target_id: "efi".into(),
                     },
                     Image {
@@ -499,7 +499,7 @@ mod tests {
                             "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
                                 .to_owned(),
                         ),
-                        format: ImageFormat::RawZstd,
+                        format: ImageFormat::RawZst,
                         target_id: "root".to_owned(),
                     },
                 ],

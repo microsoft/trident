@@ -218,11 +218,11 @@ OS and referenced from the initial HostConfiguration as follows:
       images:
         - url: file:///trident_cdrom/data/esp.rawzst
           sha256: e8c938d2bc312893fe5a230d8d92434876cf96feb6499129a08b8b9d97590231
-          format: raw-zstd
+          format: raw-zst
           targetId: esp
         - url: file:///trident_cdrom/data/root.rawzst
           sha256: f1373b6216fc1597533040dcb320d9e859da849d99d030ee2e8b6778156f82f3
-          format: raw-zstd
+          format: raw-zst
           targetId: root
       abUpdate:
         volumePairs:

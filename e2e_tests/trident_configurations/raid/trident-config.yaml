@@ -40,34 +40,34 @@ hostConfiguration:
             size: 100M
     raid:
       software:
-      - id: root-a
-        name: root-a
-        level: raid1
-        devices:
-        - root-a1
-        - root-a2
-        metadataVersion: '1.0'
-      - id: root-b
-        name: root-b
-        level: raid1
-        devices:
-        - root-b1
-        - root-b2
-        metadataVersion: '1.0'
-      - id: home
-        name: home
-        level: raid1
-        devices:
-        - home1
-        - home2
-        metadataVersion: '1.0'
-      - id: trident
-        name: trident
-        level: raid1
-        devices:
-        - trident1
-        - trident2
-        metadataVersion: '1.0'
+        - id: root-a
+          name: root-a
+          level: raid1
+          devices:
+            - root-a1
+            - root-a2
+          metadataVersion: "1.0"
+        - id: root-b
+          name: root-b
+          level: raid1
+          devices:
+            - root-b1
+            - root-b2
+          metadataVersion: "1.0"
+        - id: home
+          name: home
+          level: raid1
+          devices:
+            - home1
+            - home2
+          metadataVersion: "1.0"
+        - id: trident
+          name: trident
+          level: raid1
+          devices:
+            - trident1
+            - trident2
+          metadataVersion: "1.0"
     mountPoints:
       - path: /boot/efi
         targetId: esp1
@@ -96,11 +96,11 @@ hostConfiguration:
     images:
       - url: file:///trident_cdrom/data/esp.rawzst
         sha256: ignored
-        format: raw-zstd
+        format: raw-zst
         targetId: esp1
       - url: file:///trident_cdrom/data/root.rawzst
         sha256: ignored
-        format: raw-zstd
+        format: raw-zst
         targetId: root
     abUpdate:
       volumePairs:
@@ -118,19 +118,19 @@ hostConfiguration:
     selfUpgrade: false
   osconfig:
     users:
-    - name: testing-user
-      sshKeys: []
-      sshMode: key-only
+      - name: testing-user
+        sshKeys: []
+        sshMode: key-only
   scripts:
     postProvision:
-    - name: sample-provision-script
-      servicingType:
-      - clean-install
-      - ab-update
-      content: echo 'Post provision!'
-      logFilePath: /var/log/sample-provision-script.log
+      - name: sample-provision-script
+        servicingType:
+          - clean-install
+          - ab-update
+        content: echo 'Post provision!'
+        logFilePath: /var/log/sample-provision-script.log
     postConfigure:
-    - name: testing-privilege
-      servicingType:
-      - clean-install
-      content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
+      - name: testing-privilege
+        servicingType:
+          - clean-install
+        content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'

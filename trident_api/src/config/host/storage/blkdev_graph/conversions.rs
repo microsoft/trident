@@ -74,7 +74,7 @@ where
 impl From<&Image> for BlkDevReferrerKind {
     fn from(i: &Image) -> Self {
         match i.format {
-            ImageFormat::RawZstd => BlkDevReferrerKind::Image,
+            ImageFormat::RawZst => BlkDevReferrerKind::Image,
             #[cfg(feature = "sysupdate")]
             ImageFormat::RawLzma => BlkDevReferrerKind::ImageSysupdate,
         }

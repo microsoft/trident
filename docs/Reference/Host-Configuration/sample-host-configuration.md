@@ -94,11 +94,11 @@ storage:
   images:
   - url: file:///trident_cdrom/data/esp.rawzst
     sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
-    format: raw-zstd
+    format: raw-zst
     targetId: esp
   - url: file:///trident_cdrom/data/root.rawzst
     sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
-    format: raw-zstd
+    format: raw-zst
     targetId: root
 network:
   version: 2

@@ -79,7 +79,7 @@ mod tests {
         let image = Image {
             url: "foo".into(),
             sha256: ImageSha256::Ignored,
-            format: ImageFormat::RawZstd,
+            format: ImageFormat::RawZst,
             target_id: "foo".into(),
         };
         let mut node = BlkDevNode {

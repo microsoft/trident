@@ -434,7 +434,7 @@ mod tests {
                     target_id: "part1".to_owned(),
                     url: "".to_owned(),
                     sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                 }],
                 ab_update: Some(trident_api::config::AbUpdate {
                     volume_pairs: vec![trident_api::config::AbVolumePair {

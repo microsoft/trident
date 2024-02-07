@@ -112,7 +112,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             images.push(Image {
                 url: img.clone(),
                 sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZstd,
+                format: ImageFormat::RawZst,
                 target_id: partition_id.clone(),
             });
         }

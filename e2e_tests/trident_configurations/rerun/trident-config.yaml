@@ -23,11 +23,11 @@ hostConfiguration:
     images:
       - url: file:///trident_cdrom/data/esp.rawzst
         sha256: ignored
-        format: raw-zstd
+        format: raw-zst
         targetId: esp
       - url: file:///trident_cdrom/data/root.rawzst
         sha256: ignored
-        format: raw-zstd
+        format: raw-zst
         targetId: root
   network:
     ethernets:
@@ -40,24 +40,24 @@ hostConfiguration:
     selfUpgrade: false
   osconfig:
     users:
-    - name: testing-user
-      sshKeys: []
-      sshMode: key-only
+      - name: testing-user
+        sshKeys: []
+        sshMode: key-only
   scripts:
     postProvision:
-    - name: detect-second-run
-      servicingType:
-      - all
-      interpreter: /usr/bin/python3
-      content: |
-        import sys
-        import os.path
-        if not os.path.isfile("/already-run"):
-          f = open('/already-run', 'x')
-          f.close()
-          sys.exit(1)
+      - name: detect-second-run
+        servicingType:
+          - all
+        interpreter: /usr/bin/python3
+        content: |
+          import sys
+          import os.path
+          if not os.path.isfile("/already-run"):
+            f = open('/already-run', 'x')
+            f.close()
+            sys.exit(1)
     postConfigure:
-    - name: testing-privilege
-      servicingType:
-      - clean-install
-      content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
+      - name: testing-privilege
+        servicingType:
+          - clean-install
+        content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'

@@ -47,11 +47,11 @@ hostConfiguration:
     images:
       - url: file:///trident_cdrom/data/esp.rawzst
         sha256: ignored
-        format: raw-zstd
+        format: raw-zst
         targetId: esp
       - url: file:///trident_cdrom/data/root.rawzst
         sha256: ignored
-        format: raw-zstd
+        format: raw-zst
         targetId: root
     abUpdate:
       volumePairs:
@@ -69,12 +69,12 @@ hostConfiguration:
     selfUpgrade: false
   osconfig:
     users:
-    - name: testing-user
-      sshKeys: []
-      sshMode: key-only
+      - name: testing-user
+        sshKeys: []
+        sshMode: key-only
   scripts:
     postConfigure:
-    - name: testing-privilege
-      servicingType:
-      - clean-install
-      content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
+      - name: testing-privilege
+        servicingType:
+          - clean-install
+        content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'

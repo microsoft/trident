@@ -110,7 +110,7 @@ mod tests {
             url: "http://image".into(),
             target_id: "partition6".into(),
             sha256: ImageSha256::Checksum("checksum".into()),
-            format: ImageFormat::RawZstd,
+            format: ImageFormat::RawZst,
         };
         builder.add_image(&image);
 

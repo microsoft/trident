@@ -133,7 +133,7 @@ pub fn sample_host_configuration() -> HostConfiguration {
                     sha256: ImageSha256::Checksum(
                         "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae".into(),
                     ),
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                     target_id: "esp".into(),
                 },
                 Image {
@@ -141,7 +141,7 @@ pub fn sample_host_configuration() -> HostConfiguration {
                     sha256: ImageSha256::Checksum(
                         "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293".into(),
                     ),
-                    format: ImageFormat::RawZstd,
+                    format: ImageFormat::RawZst,
                     target_id: "root".into(),
                 },
             ],
