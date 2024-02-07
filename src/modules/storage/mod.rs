@@ -246,20 +246,6 @@ impl Module for StorageModule {
             }
         }
 
-        if host_status.reconcile_state == ReconcileState::CleanInstall {
-            raid::stop_pre_existing_raid_arrays(host_config)
-                .context("Failed to clean up pre-existing RAID arrays")?;
-            create_partitions(host_status, host_config)
-                .context("Failed to create disk partitions")?;
-            raid::create_sw_raid(host_status, host_config)
-                .context("Failed to create software RAID")?;
-            encryption::provision(host_status, host_config)
-                .context("Encryption submodule failed during provision")?;
-        }
-
-        image::provision(host_status, host_config, mount_point)
-            .context("Image submodule failed during provision")?;
-
         host_status.storage.mount_points = host_config
             .storage
             .mount_points
@@ -275,6 +261,20 @@ impl Module for StorageModule {
                 )
             })
             .collect();
+
+        if host_status.reconcile_state == ReconcileState::CleanInstall {
+            raid::stop_pre_existing_raid_arrays(host_config)
+                .context("Failed to clean up pre-existing RAID arrays")?;
+            create_partitions(host_status, host_config)
+                .context("Failed to create disk partitions")?;
+            raid::create_sw_raid(host_status, host_config)
+                .context("Failed to create software RAID")?;
+            encryption::provision(host_status, host_config)
+                .context("Encryption submodule failed during provision")?;
+        }
+
+        image::provision(host_status, host_config, mount_point)
+            .context("Image submodule failed during provision")?;
 
         Ok(())
     }

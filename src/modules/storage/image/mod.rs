@@ -715,22 +715,30 @@ pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfig
     !undeployed_images.is_empty()
 }
 
-// Format every mounted encrypted volume that is not imaged or initialized.
+// Format every mounted encrypted volume that is not imaged or initialized except for swap volumes.
 fn format_unimaged_mounted_encrypted_volumes(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     if let Some(encryption) = &host_config.storage.encryption {
         for ev in &encryption.volumes {
-            let block_device_info = modules::get_encrypted_volume(host_status, &ev.id)
+            let mut block_device_info = modules::get_encrypted_volume(host_status, &ev.id)
                 .context(format!("Failed to find encrypted volume '{}'", &ev.id))?;
             if matches!(
                 block_device_info.contents,
                 BlockDeviceContents::Unknown | BlockDeviceContents::Zeroed
             ) {
                 if let Some(filesystem) = host_status.storage.get_filesystem(&ev.id) {
-                    mkfs::run(&block_device_info.path, filesystem)
-                        .context(format!("Failed to format encrypted volume '{}'", &ev.id))?;
+                    if filesystem == "swap" {
+                        debug!(
+                            "Skipping format of encrypted volume '{}' as it is a swap volume",
+                            &ev.id
+                        );
+                    } else {
+                        mkfs::run(&block_device_info.path, filesystem)
+                            .context(format!("Failed to format encrypted volume '{}'", &ev.id))?;
+                        block_device_info.contents = BlockDeviceContents::Initialized;
+                    }
                 } else {
                     debug!(
                         "Skipping format of encrypted volume '{}' as it is not directly mounted",
