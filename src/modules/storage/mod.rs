@@ -343,8 +343,9 @@ fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, E
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::fs::PermissionsExt, str::FromStr};
+    use std::{fs::Permissions, os::unix::fs::PermissionsExt, str::FromStr};
 
+    use tempfile::NamedTempFile;
     use trident_api::{
         config::{
             Disk, HostConfiguration, Image, ImageFormat, ImageSha256, Partition, PartitionSize,
@@ -364,12 +365,11 @@ mod tests {
 
     // Create a temporary recovery key file. The file will be deleted once
     // the object returned is out of scope and dropped.
-    pub fn get_recovery_key_file() -> tempfile::NamedTempFile {
-        let recovery_key_file: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+    pub fn get_recovery_key_file() -> NamedTempFile {
+        let recovery_key_file: NamedTempFile = NamedTempFile::new().unwrap();
         let recovery_key_path: PathBuf = recovery_key_file.path().to_owned();
-        std::fs::write(&recovery_key_path, "recovery-key").unwrap();
-        let mut perms: std::fs::Permissions = recovery_key_path.metadata().unwrap().permissions();
-        perms.set_mode(0o600);
+        fs::write(&recovery_key_path, "recovery-key").unwrap();
+        fs::set_permissions(recovery_key_path, Permissions::from_mode(0o600)).unwrap();
         recovery_key_file
     }
 
@@ -496,7 +496,7 @@ mod tests {
         let host_config = get_host_config(&recovery_key_file);
 
         // Delete the recovery key file to make the encryption configuration invalid.
-        std::fs::remove_file(recovery_key_file.path()).unwrap();
+        fs::remove_file(recovery_key_file.path()).unwrap();
 
         assert_eq!(
             StorageModule
