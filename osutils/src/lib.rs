@@ -1,5 +1,6 @@
 pub mod chroot;
 pub mod container;
+pub mod e2fsck;
 pub mod efibootmgr;
 pub mod exe;
 pub mod files;
@@ -15,6 +16,7 @@ pub mod repart;
 pub mod scripts;
 pub mod sfdisk;
 pub mod systemd;
+pub mod tune2fs;
 pub mod udevadm;
 pub mod veritysetup;
 

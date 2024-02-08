@@ -100,7 +100,7 @@ pub(super) fn stream_zstd_image(
 /// 4. block_device: &BlockDeviceInfo, which is the BlockDeviceInfo object,
 /// 5. is_local: bool, which is a boolean indicating whether the image is a local file or not.
 pub(super) fn deploy(
-    image_url: Url,
+    image_url: &Url,
     image: &Image,
     host_status: &mut HostStatus,
     block_device: &BlockDeviceInfo,
@@ -110,11 +110,11 @@ pub(super) fn deploy(
     // read stream
     let stream: Box<dyn Read> = if is_local {
         // For local files, open the file at the given path
-        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?)
+        Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image_url))?)
     } else {
         // For remote files, perform a blocking GET request
         exponential_backoff_get(
-            &image_url,
+            image_url,
             GET_MAX_RETRIES,
             Duration::from_secs(GET_TIMEOUT_SECS),
         )?
@@ -131,7 +131,7 @@ pub(super) fn deploy(
         Some(block_device.size),
         &image.target_id,
     )
-    .context(format!("Failed to stream image from {}", image.url))?;
+    .context(format!("Failed to stream image from {}", image_url))?;
 
     // Update HostStatus
     super::set_host_status_block_device_contents(
@@ -140,7 +140,7 @@ pub(super) fn deploy(
         BlockDeviceContents::Image {
             sha256: computed_sha256.clone(),
             length: bytes_copied,
-            url: image.url.clone(),
+            url: image_url.to_string(),
         },
     )?;
 
@@ -148,13 +148,13 @@ pub(super) fn deploy(
     // SHA256 matches SHA256 in HostConfig
     match image.sha256 {
         ImageSha256::Ignored => {
-            info!("Ignoring SHA256 for image from '{}'", image.url);
+            info!("Ignoring SHA256 for image from '{}'", image_url);
         }
         ImageSha256::Checksum(ref expected_sha256) => {
             if computed_sha256 != *expected_sha256 {
                 bail!(
                     "SHA256 mismatch for disk image {}: expected {}, got {}",
-                    image.url,
+                    image_url,
                     expected_sha256,
                     computed_sha256
                 );

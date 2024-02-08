@@ -13,8 +13,9 @@ use log::{debug, info};
 use nix::NixPath;
 use reqwest::Url;
 use sha2::Digest;
+use uuid::Uuid;
 
-use osutils::{exe::RunAndCheck, mkfs};
+use osutils::{exe::RunAndCheck, mkfs, tune2fs};
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     constants::{
@@ -22,8 +23,8 @@ use trident_api::{
         ROOT_MOUNT_POINT_PATH,
     },
     status::{
-        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, Disk, EncryptedVolume,
-        HostStatus, Partition, RaidArray, ReconcileState,
+        AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Disk,
+        EncryptedVolume, HostStatus, Partition, RaidArray, ReconcileState,
     },
     BlockDeviceId,
 };
@@ -117,28 +118,12 @@ fn update_images(
                 ImageFormat::RawZst => {
                     // If image does NOT correspond to ESP partition, use direct streaming of image
                     if !is_esp(host_status, &image.target_id) {
-                        info!(
-                            "Updating image of block device with id '{}'",
-                            &image.target_id
-                        );
-                        info!(
-                            "Downloading image from URL '{}' in '{:?}' format",
-                            &image.url, &image.format
-                        );
-
-                        // 5th arg is False to communicate that image is a local file, i.e.,  is_local
-                        // will be set to True
-                        stream_image::deploy(
-                            image_url.clone(),
-                            image,
-                            host_status,
-                            &block_device,
-                            true,
-                        )
-                        .context(format!(
-                            "Failed to deploy image {} via direct streaming",
-                            image.url
-                        ))?;
+                        update_image(&image_url, image, host_status, &block_device, true).context(
+                            format!(
+                        "Failed to deploy image '{}' to block device '{}' via direct streaming",
+                        image.url, image.target_id
+                    ),
+                        )?;
                     }
                     // If image corresponds to ESP partition, no need to deploy image directly; instead,
                     // perform file-based update of ESP later
@@ -179,27 +164,17 @@ fn update_images(
                 ImageFormat::RawZst => {
                     // If image does NOT correspond to ESP partition, use direct streaming of image
                     if !is_esp(host_status, &image.target_id) {
-                        info!(
-                            "Updating image of block device with id '{}'",
-                            &image.target_id
-                        );
-                        info!(
-                            "Downloading image from URL '{}' in '{:?}' format",
-                            &image.url, &image.format
-                        );
-
-                        // 5th arg is False to communicate that image is a local file, i.e.,  is_local
-                        // will be set to True
-                        stream_image::deploy(
-                            image_url.clone(),
+                        update_image(
+                            &image_url,
                             image,
                             host_status,
                             &block_device,
+                            // Set is_local to false since image is not a local file
                             false,
                         )
                         .context(format!(
-                            "Failed to deploy image {} via direct streaming",
-                            image.url
+                            "Failed to deploy image '{}' to block device '{}' via direct streaming",
+                            image.url, image.target_id
                         ))?;
                     }
                     // If image corresponds to ESP partition, no need to deploy image directly; instead,
@@ -226,6 +201,88 @@ fn update_images(
     Ok(())
 }
 
+/// Invokes stream_image::deploy() to deploy an image onto a non-ESP volume. If the volume is the
+/// mount point for /boot, assigns a new randomized FS UUID to the updated volume. Accepts 5 arg-s:
+/// 1. image_url: Url, which is the URL of the image to be deployed,
+/// 2. image: &Image, which is the Image object from HostConfig,
+/// 3. host_status,
+/// 4. block_device: BlockDeviceInfo of the volume on which the image will be deployed,
+/// 5. is_local: bool indicating whether the image is a local file or not.
+fn update_image(
+    image_url: &Url,
+    image: &Image,
+    host_status: &mut HostStatus,
+    block_device: &BlockDeviceInfo,
+    is_local: bool,
+) -> Result<(), Error> {
+    info!(
+        "Deploying image from URL '{}' to block device '{}'",
+        image.url, image.target_id
+    );
+
+    stream_image::deploy(image_url, image, host_status, block_device, is_local).context(
+        format!(
+            "Failed to deploy image '{}' to block device '{}' via direct streaming",
+            image.url, image.target_id
+        ),
+    )?;
+
+    // If target_id corresponds to an A/B volume pair that serves as the mount point for /boot,
+    // assign a new randomized FS UUID to that updated volume. This is necessary so that the grub
+    // boot loader can select the correct volume to load the kernel and initrd from, when the
+    // firmware reboots after the A/B update.
+    if is_mount_point_for_boot(host_status, &image.target_id) {
+        info!(
+            "Identified block device with id '{}' as the mount point for /boot",
+            image.target_id
+        );
+
+        let new_fs_uuid = update_fs_uuid(&block_device.path)
+            .context(format!(
+                "Failed to assign a new randomized filesystem UUID to updated volume from A/B volume pair '{}'",
+                &image.target_id
+            ))?;
+
+        info!(
+            "Assigned a new randomized filesystem UUID '{}' to updated volume at path '{}'",
+            new_fs_uuid,
+            block_device.path.display()
+        );
+    }
+
+    Ok(())
+}
+
+/// Validates whether the A/B volume pair corresponding to target_id is the mount point for the
+/// /boot directory.
+fn is_mount_point_for_boot(host_status: &HostStatus, target_id: &BlockDeviceId) -> bool {
+    // Fetch block device id corresponding to /boot from mount points and compare
+    // boot_block_device_id with target_id
+    if let Some(boot_block_device_id) =
+        &super::path_to_mount_point_from_status(host_status, Path::new(BOOT_MOUNT_POINT_PATH))
+            .map(|mp| &mp.target_id)
+    {
+        boot_block_device_id == &target_id
+    } else {
+        false
+    }
+}
+
+/// Assigns a new randomized FS UUID to the updated volume. Accepts one arg: block_device_path,
+/// which is the block device path of the updated volume. Returns the new FS UUID.
+fn update_fs_uuid(block_device_path: &Path) -> Result<Uuid, Error> {
+    // Generate a random UUID for the updated volume
+    let fs_uuid = Uuid::new_v4();
+    // Run tune2fs to assign a new randomized FS UUID to the updated volume
+    tune2fs::run(&fs_uuid, block_device_path).context(format!(
+        "Failed to assign a new randomized filesystem UUID '{}' to updated volume at path '{}'",
+        fs_uuid,
+        block_device_path.display()
+    ))?;
+
+    Ok(fs_uuid)
+}
+
 /// Function that fetches the list of ESP images that need to be updated and performs file-based
 /// update of standalone ESP partition.
 fn update_esp_images(
@@ -245,27 +302,23 @@ fn update_esp_images(
                 "Performing file-based update of ESP partition with id '{}'",
                 &image.target_id
             );
-            // If image is a local file, use direct streaming of image bytes onto the block device
+
+            info!(
+                "Deploying image {} onto ESP partition with id {}",
+                image.url, image.target_id
+            );
+
             if image_url.scheme() == "file" {
-                // 5th arg is False to communicate that image is a local file, i.e.,  is_local
-                // will be set to True
-                info!(
-                    "Deploying image {} onto ESP partition with id {}",
-                    image.url, image.target_id
-                );
-                update_esp::deploy_esp(image_url, image, host_status, true).context(format!(
+                // 5th arg is true to communicate that image is a local file, i.e.,  is_local
+                // will be set to true
+                update_esp::deploy_esp(&image_url, image, host_status, true).context(format!(
                     "Failed to deploy image {} onto ESP partition with id {} via direct streaming",
                     image.url, image.target_id
                 ))?;
             } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
-                // If image is an HTTP file, use direct streaming of image bytes onto the block device
-                // 5th arg is False to communicate that image is a local file, i.e.,  is_local
-                // will be set to True
-                info!(
-                    "Deploying image {} onto ESP partition with id {}",
-                    image.url, image.target_id
-                );
-                update_esp::deploy_esp(image_url, image, host_status, false).context(format!(
+                // 5th arg is false to communicate that image is a local file, i.e.,  is_local
+                // will be set to false
+                update_esp::deploy_esp(&image_url, image, host_status, false).context(format!(
                     "Failed to deploy image {} onto ESP partition with id {} via direct streaming",
                     image.url, image.target_id
                 ))?;
@@ -660,7 +713,7 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
     // update root_device_path of the active root volume
     host_status.storage.root_device_path = Some(
         TabFile::get_device_path(Path::new("/proc/mounts"), Path::new(ROOT_MOUNT_POINT_PATH))
-            .context("Failed find root mount point")?,
+            .context("Failed to find root mount point")?,
     );
 
     // if a/b update is enabled
@@ -1976,6 +2029,59 @@ mod tests {
             "Failed to determine that volume root-1 should be reinitialized when image for A/B volume pair root is missing and active volume is B"
         );
     }
+
+    /// Validates that is_mount_point_for_boot() correctly determines whether the block device is
+    /// a mount point for /boot.
+    #[test]
+    fn test_is_mount_point_for_boot() {
+        // Setup HostStatus with predefined mount points
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![],
+                    },
+                },
+                mount_points: btreemap! {
+                    PathBuf::from("/boot") => MountPointStatus {
+                        target_id: "boot".to_string(),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    PathBuf::from(ROOT_MOUNT_POINT_PATH) => MountPointStatus {
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case 1: Check for mount point for /boot
+        assert!(
+            is_mount_point_for_boot(&host_status, &"boot".to_string()),
+            "Block device with target_id boot was not correctly identified as mount point for /boot"
+        );
+
+        // Test case 2: Check for non-mount point for /boot
+        assert!(
+            !is_mount_point_for_boot(&host_status, &"root".to_string()),
+            "Block device with target_id root was incorrectly identified as mount point for /boot"
+        );
+
+        // Test case 3: Check for non-existent mount point
+        assert!(
+            !is_mount_point_for_boot(&host_status, &"non-existent".to_string()),
+            "Non-existent target_id was incorrectly identified as mount point for /boot"
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -2684,5 +2790,22 @@ mod functional_test {
             "Failed to find mount point for A/B volume pair 'root'",
             "Failed to return error when reinitialize_volume_fs() is run on a volume that does not correspond to an existing mountpoint"
         );
+    }
+
+    /// Validates that run() correctly assigns a new UUID to the filesystem.
+    #[functional_test(feature = "helpers")]
+    fn test_update_fs_uuid() {
+        let block_device_path = Path::new("/dev/sdb");
+        // Create a new ext4 filesystem on /dev/sdb
+        mkfs::run(block_device_path, "ext4").unwrap();
+
+        let new_uuid = update_fs_uuid(block_device_path).unwrap();
+
+        // Validate that the UUID was assigned correctly by running blkid command to fetch block
+        // devices
+        let fs_uuid = update_grub::get_uuid_from_path(block_device_path).unwrap();
+
+        // Assert that the UUIDs match
+        assert_eq!(fs_uuid, new_uuid);
     }
 }
