@@ -107,7 +107,7 @@ virt-deploy VM with two disks and patched Trident.
 
    ```bash
    sudo systemctl stop trident
-   sudo tdnf install -y moby-engine moby-cli
+   sudo tdnf install -y moby-engine moby-cli dosfstools
    sudo systemctl start docker
    ```
 
@@ -138,11 +138,12 @@ virt-deploy VM with two disks and patched Trident.
    sudo sed -i 's#/dev/disk/by-path/pci-0000:00:1f.2-ata-2#/dev/disk/by-path/pci-0000:00:1f.2-ata-3#g' /etc/trident/config.yaml
    ```
 
-10. Delete the sqlite datastore, so we can try to perform clean install. This
-    validates a lot more steps compared to update process.
+10. Create an override file, so we can try to perform clean install. This
+    validates a lot more steps compared to update process. Make sure this file
+    is created in an environment that can be reset, as it can lead to data loss.
 
     ```bash
-    sudo rm /var/lib/trident/datastore.sqlite
+    sudo touch /override-trident-safety-check
     ```
 
 11. Run Trident from the container to perform clean install:
