@@ -62,10 +62,6 @@ functional-test = ["pytest", "osutils/functional-test"]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
 
 
-[profile.dev.package."*"]
-opt-level = 2
-
-
 [workspace]
 members = [
     "trident_api",
