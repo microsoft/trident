@@ -19,7 +19,7 @@ use crate::{
     modules::Module, TRIDENT_BINARY_PATH, TRIDENT_DATASTORE_PATH, TRIDENT_LOCAL_CONFIG_PATH,
 };
 
-use super::storage::path_to_mount_point;
+use super::storage;
 
 #[derive(Default, Debug)]
 pub struct ManagementModule;
@@ -160,9 +160,10 @@ fn validate_datastore_location(
             datastore_path.display()
         ))?;
 
-    let datastore_block_device_id = &path_to_mount_point(host_config, datastore_path)
-        .map(|mp| &mp.target_id)
-        .context("Failed to find mount point for datastore")?;
+    let datastore_block_device_id =
+        &storage::path_to_mount_point_from_config(host_config, datastore_path)
+            .map(|mp| &mp.target_id)
+            .context("Failed to find mount point for datastore")?;
 
     if host_config
         .storage
