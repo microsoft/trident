@@ -12,6 +12,9 @@ use crate::{
     BlockDeviceId,
 };
 
+#[cfg(feature = "verity-preview")]
+use crate::config::VerityDevice;
+
 /// Enum for supported block device types
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
@@ -36,6 +39,9 @@ pub enum BlkDevKind {
 
     /// An encrypted volume
     EncryptedVolume,
+
+    /// A verity device
+    VerityDevice,
 }
 
 bitflags::bitflags! {
@@ -50,6 +56,7 @@ bitflags::bitflags! {
         const RaidArray = 1 << 3;
         const ABVolume = 1 << 4;
         const EncryptedVolume = 1 << 5;
+        const VerityDevice = 1 << 6;
     }
 }
 
@@ -76,6 +83,10 @@ pub enum HostConfigBlockDevice<'a> {
 
     /// An encrypted volume
     EncryptedVolume(&'a EncryptedVolume),
+
+    #[cfg(feature = "verity-preview")]
+    /// A verity device
+    VerityDevice(&'a VerityDevice),
 }
 
 /// Enum for referrer kinds.
@@ -105,6 +116,9 @@ pub enum BlkDevReferrerKind {
 
     /// A mount point
     MountPoint,
+
+    /// A verity device
+    VerityDevice,
 }
 
 bitflags::bitflags! {
@@ -120,6 +134,7 @@ bitflags::bitflags! {
         const MountPoint = 1 << 3;
         const Image = 1 << 4;
         const ImageSysupdate = 1 << 5;
+        const VerityDevice = 1 << 6;
 
         // Groups:
         const AnyImage = Self::Image.bits() | Self::ImageSysupdate.bits();
@@ -161,6 +176,8 @@ impl HostConfigBlockDevice<'_> {
             HostConfigBlockDevice::RaidArray(_) => BlkDevKind::RaidArray,
             HostConfigBlockDevice::ABVolume(_) => BlkDevKind::ABVolume,
             HostConfigBlockDevice::EncryptedVolume(_) => BlkDevKind::EncryptedVolume,
+            #[cfg(feature = "verity-preview")]
+            HostConfigBlockDevice::VerityDevice(_) => BlkDevKind::VerityDevice,
         }
     }
 
@@ -220,6 +237,7 @@ impl BlkDevKind {
             BlkDevKind::RaidArray => BlkDevKindFlag::RaidArray,
             BlkDevKind::ABVolume => BlkDevKindFlag::ABVolume,
             BlkDevKind::EncryptedVolume => BlkDevKindFlag::EncryptedVolume,
+            BlkDevKind::VerityDevice => BlkDevKindFlag::VerityDevice,
         }
     }
 
@@ -231,6 +249,7 @@ impl BlkDevKind {
             BlkDevKind::RaidArray => BlkDevReferrerKind::RaidArray,
             BlkDevKind::ABVolume => BlkDevReferrerKind::ABVolume,
             BlkDevKind::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
+            BlkDevKind::VerityDevice => BlkDevReferrerKind::VerityDevice,
         }
     }
 }
@@ -246,6 +265,7 @@ impl BlkDevReferrerKind {
             BlkDevReferrerKind::Image => BlkDevReferrerKindFlag::Image,
             BlkDevReferrerKind::ImageSysupdate => BlkDevReferrerKindFlag::ImageSysupdate,
             BlkDevReferrerKind::MountPoint => BlkDevReferrerKindFlag::MountPoint,
+            BlkDevReferrerKind::VerityDevice => BlkDevReferrerKindFlag::VerityDevice,
         }
     }
 }
@@ -298,6 +318,7 @@ impl Display for BlkDevKind {
             Self::RaidArray => write!(f, "raid-array"),
             Self::ABVolume => write!(f, "ab-volume"),
             Self::EncryptedVolume => write!(f, "encrypted-volume"),
+            Self::VerityDevice => write!(f, "verity-device"),
         }
     }
 }
@@ -312,6 +333,7 @@ impl Display for BlkDevReferrerKind {
             BlkDevReferrerKind::Image => write!(f, "image"),
             BlkDevReferrerKind::ImageSysupdate => write!(f, "image-sysupdate"),
             BlkDevReferrerKind::MountPoint => write!(f, "mount-point"),
+            BlkDevReferrerKind::VerityDevice => write!(f, "verity-device"),
         }
     }
 }
@@ -353,6 +375,7 @@ impl BitFlagsBackingEnumVec<BlkDevKind> for BlkDevKindFlag {
                 BlkDevKindFlag::RaidArray => BlkDevKind::RaidArray,
                 BlkDevKindFlag::ABVolume => BlkDevKind::ABVolume,
                 BlkDevKindFlag::EncryptedVolume => BlkDevKind::EncryptedVolume,
+                BlkDevKindFlag::VerityDevice => BlkDevKind::VerityDevice,
                 _ => unreachable!(),
             })
             .collect()
@@ -371,6 +394,7 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 BlkDevReferrerKindFlag::Image => BlkDevReferrerKind::Image,
                 BlkDevReferrerKindFlag::ImageSysupdate => BlkDevReferrerKind::ImageSysupdate,
                 BlkDevReferrerKindFlag::MountPoint => BlkDevReferrerKind::MountPoint,
+                BlkDevReferrerKindFlag::VerityDevice => BlkDevReferrerKind::VerityDevice,
                 _ => unreachable!("Invalid referrer kind flag: {:?}", kind),
             })
             .collect()

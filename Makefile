@@ -34,6 +34,10 @@ coverage-report:
 .PHONY: coverage
 coverage: ut-coverage coverage-report
 
+.PHONY: clean-coverage
+clean-coverage:
+	rm -rf target/coverage/profraw
+
 EMU_PACKAGE_NAME ?= osmodifier_preview
 EMU_PACKAGE_VERSION ?= 0.1.0-preview.490287
 artifacts/osmodifier:

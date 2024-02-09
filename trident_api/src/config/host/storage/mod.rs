@@ -328,6 +328,12 @@ impl Storage {
             }
         }
 
+        // Add verity devices
+        #[cfg(feature = "verity-preview")]
+        for verity in &self.verity {
+            builder.add_node(verity.into());
+        }
+
         // Add mount points
         for mount_point in &self.mount_points {
             builder.add_mount_point(mount_point);

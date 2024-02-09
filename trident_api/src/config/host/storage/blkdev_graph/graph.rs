@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, path::Path};
 
 use crate::{config::host::error::InvalidHostConfigurationError, BlockDeviceId};
 
-use super::types::BlkDevNode;
+use super::types::{BlkDevKind, BlkDevNode};
 
 #[derive(Debug, Clone)]
 pub struct BlockDeviceGraph<'a> {
@@ -13,6 +13,11 @@ impl<'a> BlockDeviceGraph<'a> {
     /// Get a reference to a specific node
     pub fn get(&self, id: &BlockDeviceId) -> Option<&BlkDevNode<'a>> {
         self.nodes.get(id)
+    }
+
+    /// List all nodes
+    pub fn list(&self) -> Vec<&BlkDevNode<'a>> {
+        self.nodes.values().collect()
     }
 
     /// Get a list of references to the members of a specific node
@@ -48,12 +53,24 @@ impl<'a> BlockDeviceGraph<'a> {
                 mount_point_path: mount_point_path.display().to_string(),
             })?;
 
+        // either backed by image or backed by verity device with two targets,
+        // each backed by an image
         node.image
+            .map(|_| ())
+            .or_else(|| {
+                if node.kind == BlkDevKind::VerityDevice
+                    && node.targets.len() == 2
+                    && self.nodes.get(&node.targets[0])?.image.is_some()
+                    && self.nodes.get(&node.targets[1])?.image.is_some()
+                {
+                    Some(())
+                } else {
+                    None
+                }
+            })
             .ok_or(InvalidHostConfigurationError::MountPointNotBackedByImage {
                 mount_point_path: mount_point_path.display().to_string(),
-            })?;
-
-        Ok(())
+            })
     }
 }
 

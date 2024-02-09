@@ -20,9 +20,9 @@
 
 use std::os::unix::ffi::OsStrExt;
 
-use anyhow::{bail, Context, Error, Ok};
+use anyhow::Error;
 
-use crate::{config::Partition, constants::SWAP_MOUNT_POINT};
+use crate::constants::SWAP_MOUNT_POINT;
 
 use super::{
     cardinality::ValidCardinality,
@@ -35,6 +35,7 @@ use super::{
 
 mod encrypted;
 mod raid;
+mod verity;
 
 /// This impl block contains validation rules for host-config objects
 impl<'a> HostConfigBlockDevice<'a> {
@@ -51,6 +52,8 @@ impl<'a> HostConfigBlockDevice<'a> {
             HostConfigBlockDevice::RaidArray(_) => (),
             HostConfigBlockDevice::ABVolume(_) => (),
             HostConfigBlockDevice::EncryptedVolume(_) => (),
+            #[cfg(feature = "verity-preview")]
+            HostConfigBlockDevice::VerityDevice(_) => (),
         }
 
         Ok(())
@@ -63,18 +66,19 @@ impl BlkDevReferrerKind {
     ///
     /// This table shows the valid block device kinds that can be referenced by each referrer:
     ///
-    /// | Referrer \ Target Kind | Disk | Partition | AdoptedPartition | RaidArray | ABVolume | EncryptedVolume |
-    /// | ---------------------- | ---- | --------- | ---------------- | --------- | -------- | --------------- |
-    /// | **Disk**               | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
-    /// | **Partition**          | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
-    /// | **AdoptedPartition**   | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
-    /// | **RaidArray**          | No   | Yes       | TBD              | No        | No       | No              |
-    /// | **ABVolume**           | No   | Yes       | TBD              | Yes       | No       | Yes             |
-    /// | **EncryptedVolume**    | No   | Yes       | TBD              | Yes       | No       | No              |
-    /// | **Image**              | No   | Yes       | TBD              | Yes       | Yes      | Yes             |
-    /// | **ImageSysupdate**     | No   | No        | TBD              | No        | Yes      | No              |
-    /// | **MountPoint**         | No   | Yes       | TBD              | Yes       | Yes      | Yes             |
-    pub(crate) fn valid_target_kinds(self) -> BlkDevKindFlag {
+    /// | Referrer \ Target Kind | Disk | Partition | AdoptedPartition | RaidArray | ABVolume | EncryptedVolume | VerityDevice |
+    /// | ---------------------- | ---- | --------- | ---------------- | --------- | -------- | --------------- | ------------ |
+    /// | **Disk**               | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             | N/A          |
+    /// | **Partition**          | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             | N/A          |
+    /// | **AdoptedPartition**   | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             | N/A          |
+    /// | **RaidArray**          | No   | Yes       | TBD              | No        | No       | No              | No           |
+    /// | **ABVolume**           | No   | Yes       | TBD              | Yes       | No       | Yes             | No           |
+    /// | **EncryptedVolume**    | No   | Yes       | TBD              | Yes       | No       | No              | No           |
+    /// | **Image**              | No   | Yes       | TBD              | Yes       | Yes      | Yes             | No           |
+    /// | **ImageSysupdate**     | No   | No        | TBD              | No        | Yes      | No              | No           |
+    /// | **MountPoint**         | No   | Yes       | TBD              | Yes       | Yes      | Yes             | Yes          |
+    /// | **VerityDevice**       | No   | Yes       | TBD              | Yes       | Yes      | No              | No           |
+    pub(crate) fn valid_target_kinds(&self) -> BlkDevKindFlag {
         match self {
             Self::None => BlkDevKindFlag::empty(),
             Self::RaidArray => BlkDevKindFlag::Partition,
@@ -97,6 +101,10 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
                     | BlkDevKindFlag::ABVolume
                     | BlkDevKindFlag::RaidArray
+                    | BlkDevKindFlag::VerityDevice
+            }
+            Self::VerityDevice => {
+                BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray | BlkDevKindFlag::ABVolume
             }
         }
     }
@@ -115,6 +123,7 @@ impl BlkDevReferrerKind {
     /// | **EncryptedVolume**  | 1   | 1   |
     /// | **Image**            | 1   | 1   |
     /// | **MountPoint**       | 1   | 1   |
+    /// | **VerityDevice**     | 2   | 2   |
     ///
     /// (Above ranges are inclusive)
     pub(crate) fn valid_target_count(self) -> ValidCardinality {
@@ -123,7 +132,8 @@ impl BlkDevReferrerKind {
             Self::RaidArray => ValidCardinality::new_at_least(2),
             Self::ABVolume => ValidCardinality::new_exact(2),
             Self::EncryptedVolume => ValidCardinality::new_exact(1),
-            // These two are not really used, but we define them for
+            Self::VerityDevice => ValidCardinality::new_exact(2),
+            // These three are not really used, but we define them for
             // completeness
             Self::Image => ValidCardinality::new_exact(1),
             Self::ImageSysupdate => ValidCardinality::new_exact(1),
@@ -165,9 +175,16 @@ impl BlkDevReferrerKind {
             Self::RaidArray => BlkDevReferrerKindFlag::empty(),
             Self::ABVolume => BlkDevReferrerKindFlag::empty(),
             Self::EncryptedVolume => BlkDevReferrerKindFlag::empty(),
-            Self::Image => BlkDevReferrerKindFlag::MountPoint,
+            Self::Image => {
+                BlkDevReferrerKindFlag::MountPoint | BlkDevReferrerKindFlag::VerityDevice
+            }
             Self::ImageSysupdate => BlkDevReferrerKindFlag::MountPoint,
             Self::MountPoint => BlkDevReferrerKindFlag::AnyImage,
+            Self::VerityDevice => {
+                // Not supporting ImageSysupdate for now, until we have more
+                // testing in place to support ImageSysupdate
+                BlkDevReferrerKindFlag::Image
+            }
         }
     }
 }
@@ -197,6 +214,10 @@ impl<'a> HostConfigBlockDevice<'a> {
             HostConfigBlockDevice::EncryptedVolume(enc_vol) => {
                 Some(vec![("deviceName", enc_vol.device_name.as_bytes())])
             }
+            #[cfg(feature = "verity-preview")]
+            HostConfigBlockDevice::VerityDevice(verity_device) => {
+                Some(vec![("name", verity_device.device_name.as_bytes())])
+            }
         }
     }
 }
@@ -218,63 +239,19 @@ impl BlkDevReferrerKind {
     /// RAID array are the same.
     pub(super) fn check_targets(
         &self,
-        _node: &BlkDevNode,
+        node: &BlkDevNode,
         targets: &[&BlkDevNode],
         graph: &BlockDeviceGraph,
     ) -> Result<(), Error> {
         match self {
             Self::None => (),
-            Self::RaidArray => raid::check_partition_size_equals(
-                &targets
-                    .iter()
-                    // Assumption: all targets are partitions
-                    .map(|target| target.host_config_ref.unwrap_partition())
-                    .collect::<Result<Vec<&Partition>, Error>>()
-                    .context("Failed to get partitions for RAID array.")?,
-            )?,
+            Self::RaidArray => raid::check_targets(node, targets, graph)?,
             Self::ABVolume => (),
-            Self::EncryptedVolume => {
-                // Assumption: just one target exists.
-                // We already validated that targets.len() == 1
-                let target = targets[0];
-                match target.host_config_ref {
-                    // If the target is a partition, ensure it is of an
-                    // acceptable type
-                    HostConfigBlockDevice::Partition(part) => {
-                        encrypted::check_partition_type_supports_encryption(part)?;
-                    }
-                    // If the target is a RAID array, ensure all its underlying
-                    // partitions are of an acceptable type
-                    HostConfigBlockDevice::RaidArray(_) => {
-                        graph
-                            .targets(&target.id)
-                            .context(format!(
-                                "Failed to get targets for RAID array '{}'.",
-                                target.id
-                            ))?
-                            .iter()
-                            // Assumption: all targets are partitions
-                            .map(|target| target.host_config_ref.unwrap_partition())
-                            .collect::<Result<Vec<&Partition>, Error>>()
-                            .context(format!(
-                                "Failed to get partitions for RAID array '{}'.",
-                                target.id
-                            ))?
-                            .into_iter()
-                            .try_for_each(encrypted::check_partition_type_supports_encryption)
-                            .context("Encrypted volume references invalid RAID array.")?;
-                    }
-
-                    // Assumption: all other types are invalid
-                    _ => bail!(
-                        "Encrypted volume references block device of invalid kind '{}'.",
-                        target.id
-                    ),
-                }
-            }
+            Self::EncryptedVolume => encrypted::check_targets(node, targets, graph)?,
             Self::Image => (),
             Self::ImageSysupdate => (),
             Self::MountPoint => (),
+            Self::VerityDevice => verity::check_targets(node, targets, graph)?,
         }
 
         Ok(())

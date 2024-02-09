@@ -4,6 +4,9 @@ use crate::config::{
     AbVolumePair, Disk, EncryptedVolume, Image, ImageFormat, Partition, SoftwareRaidArray,
 };
 
+#[cfg(feature = "verity-preview")]
+use crate::config::VerityDevice;
+
 use super::types::{BlkDevNode, BlkDevReferrerKind, HostConfigBlockDevice};
 
 /// Get a BlkDevNode from a Disk reference
@@ -53,6 +56,21 @@ where
             raid_array.id.clone(),
             HostConfigBlockDevice::RaidArray(raid_array),
             raid_array.devices.iter(),
+        )
+    }
+}
+
+#[cfg(feature = "verity-preview")]
+/// Get a BlkDevNode from a VerityDevice reference
+impl<'a, 'b> From<&'a VerityDevice> for BlkDevNode<'b>
+where
+    'a: 'b,
+{
+    fn from(verity_device: &'a VerityDevice) -> Self {
+        Self::new_composite(
+            verity_device.id.clone(),
+            HostConfigBlockDevice::VerityDevice(verity_device),
+            [&verity_device.data_target_id, &verity_device.hash_target_id],
         )
     }
 }
