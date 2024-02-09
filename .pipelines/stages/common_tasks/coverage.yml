@@ -27,7 +27,7 @@ steps:
   - ${{ if eq(parameters.rustup, 'true') }}:
     - template: rustup.yml
 
-  - script: cargo install grcov
+  - script: cargo install grcov --locked
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Install grcov
 
