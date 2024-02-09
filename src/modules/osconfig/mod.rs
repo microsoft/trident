@@ -39,15 +39,19 @@ impl Module for OsConfigModule {
     fn provision(
         &mut self,
         _host_status: &mut HostStatus,
-        _host_config: &HostConfiguration,
+        host_config: &HostConfiguration,
         mount_path: &Path,
     ) -> Result<(), Error> {
-        info!("Copying os modifier binary to runtime OS");
-        fs::copy(
-            OS_MODIFIER_BINARY_PATH,
-            mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]),
-        )
-        .context("Failed to copy os modifier binary to runtime OS")?;
+        let target_path = mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]);
+
+        if !host_config.osconfig.users.is_empty() && !target_path.exists() {
+            info!("Copying os modifier binary to runtime OS");
+            fs::copy(
+                OS_MODIFIER_BINARY_PATH,
+                mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]),
+            )
+            .context("Failed to copy os modifier binary to runtime OS")?;
+        }
 
         Ok(())
     }
@@ -68,7 +72,10 @@ impl Module for OsConfigModule {
             return Ok(());
         }
 
-        users::set_up_users(host_config.osconfig.users.clone())?;
+        if !host_config.osconfig.users.is_empty() {
+            users::set_up_users(host_config.osconfig.users.clone())
+                .context("Failed to set up users")?;
+        }
 
         Ok(())
     }
