@@ -429,7 +429,7 @@ impl Trident {
 
         cmd.host_config
             .validate()
-            .map_err(InvalidInputError::InvalidHostConfiguration)?;
+            .map_err(|e| TridentError::new(InvalidInputError::InvalidHostConfiguration(e)))?;
 
         // Use overlay for holding any changes to the host filesystem that
         // should not be persisted.

@@ -216,7 +216,7 @@ mod functional_test {
 
         datastore
             .try_with_host_status(|_s| -> Result<(), TridentError> {
-                Err(InternalError::Internal("error").into())
+                Err(TridentError::new(InternalError::Internal("error")))
             })
             .unwrap_err();
     }

@@ -136,7 +136,7 @@ pub(super) fn provision_host(
         .contains("root=/dev/ram0")
         && !Path::new("/override-trident-safety-check").exists()
     {
-        return Err(InitializationError::SafetyCheck.into());
+        return Err(TridentError::new(InitializationError::SafetyCheck));
     }
 
     info!("Starting provision_host");
@@ -303,7 +303,7 @@ pub(super) fn update(
         UpdateKind::UpdateAndReboot => info!("Performing update and reboot"),
         UpdateKind::AbUpdate => info!("Performing A/B update"),
         UpdateKind::Incompatible => {
-            return Err(TridentError::from(
+            return Err(TridentError::new(
                 InvalidInputError::IncompatibleHostConfiguration,
             ));
         }

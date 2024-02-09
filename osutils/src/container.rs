@@ -39,7 +39,9 @@ pub fn is_running_in_container() -> Result<bool, TridentError> {
 /// is returned.
 fn get_host_root_path_impl(host_root_path: &Path) -> Result<PathBuf, TridentError> {
     if !is_running_in_container()? {
-        return Err(InternalError::Internal("Not running in a container").into());
+        return Err(TridentError::new(InternalError::Internal(
+            "Not running in a container",
+        )));
     }
 
     // We expect the host filesystem to be available under host_root_path

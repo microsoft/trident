@@ -22,7 +22,7 @@ pub enum InitializationError {
     DatastoreOpen,
     #[error("Failed to get host root path")]
     GetHostRootPath,
-    #[error("Safety check failed")]
+    #[error("Trident directed to perform clean install but safety check failed")]
     SafetyCheck,
     #[error("Container configuration check failed")]
     ContainerMisconfigured,
@@ -195,6 +195,16 @@ struct TridentErrorInner {
 pub struct TridentError(Box<TridentErrorInner>);
 impl TridentError {
     #[track_caller]
+    pub fn new(kind: impl Into<ErrorKind>) -> Self {
+        TridentError(Box::new(TridentErrorInner {
+            kind: kind.into(),
+            location: Location::caller(),
+            source: None,
+            context: Vec::new(),
+        }))
+    }
+
+    #[track_caller]
     pub fn secondary_error_context(mut self, secondary: TridentError) -> Self {
         self.0.context.push((format!(
             "While handling the error, an additional error was caught: \n\n{secondary:?}\n\nThe earlier error:"
@@ -207,18 +217,6 @@ impl TridentError {
             Some(source) => source.context(self.0.kind).context(context.into()),
             None => anyhow::Error::from(self.0.kind).context(context.into()),
         }
-    }
-}
-
-impl<T: Into<ErrorKind>> From<T> for TridentError {
-    #[track_caller]
-    fn from(kind: T) -> Self {
-        TridentError(Box::new(TridentErrorInner {
-            kind: kind.into(),
-            location: Location::caller(),
-            source: None,
-            context: Vec::new(),
-        }))
     }
 }
 
