@@ -68,3 +68,4 @@ extends:
           publishUniversalFeed: true
           devBuildValidation: true
           baremetalValidation: true
+          buildPurpose: daily

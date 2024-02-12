@@ -3,6 +3,23 @@ parameters:
   type: string
   default: self
 
+- name: buildPurpose
+  type: string
+  default: validation
+  values:
+  - AUTO
+  - daily
+  - pullrequest
+  - post_merge
+  - validation
+
+- name: deploymentEnvironment
+  type: string
+  default: virtualMachine
+  values:
+  - bareMetal
+  - virtualMachine
+
 jobs:
 - job: DefineTests
   displayName: Get List of tests to run
@@ -19,13 +36,38 @@ jobs:
 
   - bash: |
       set -eux
-      tests=""
-      for dir in */; do
-        dir=${dir%*/}
-        tests+=", \"$dir\" : {\"test\": \"$dir\"}"
-      done
-      tests="{${tests:2}}"
-      echo "##vso[task.setvariable variable=listOfTests;isOutput=true]$tests"
-    workingDirectory: $(tridentSourceDirectory)/e2e_tests/trident_configurations
-    name: setTests
-    displayName: List of E2E Tests
+
+      value=${{ parameters.buildPurpose }}
+      if [ "$value" == "AUTO" ]; then
+        case "$(Build.Reason)" in
+          "PullRequest")
+            value=pullrequest
+            ;;
+          "IndividualCI"|"BatchedCI")
+            value=post_merge
+            ;;
+          *)
+            value=validation
+            ;;
+        esac
+      fi
+
+      # When assigning $value to a pipeline variable, an extra character (') is added, 
+      # even if not visible in the variable, cleaning it solves the issue:
+      cleaned_buildPurpose=$(echo "$value" | tr -dc '[:alnum:]')
+      echo "##vso[task.setvariable variable=buildPurpose;isOutput=true]$value"
+    name: setBuildPurpose
+    displayName: Specify Build reason to select tests per trident configuration
+
+  - bash: |
+      set -eux
+      matrix=$(
+          python3 $(tridentSourceDirectory)/e2e_tests/tests/helpers/read_target_configurations.py \
+            --config $(tridentSourceDirectory)/e2e_tests/target-configurations.yaml \
+            --env ${{ parameters.deploymentEnvironment }} \
+            --purpose $(setBuildPurpose.buildPurpose) \
+          )
+      echo "##vso[task.setvariable variable=matrixConfigurations;isOutput=true]$matrix"
+    workingDirectory: $(tridentSourceDirectory)/e2e_tests
+    name: setConfigurations
+    displayName: Matrix of trident configurations for E2E Tests

@@ -1,4 +1,14 @@
 parameters:
+- name: buildPurpose
+  type: string
+  default: 'AUTO'
+  values:
+  - AUTO
+  - daily
+  - pullrequest
+  - post_merge
+  - validation
+
 - name: argusRepo
   type: string
   default: argus-toolkit
@@ -27,7 +37,9 @@ stages:
   jobs:
   - template: ../common_tasks/get-tests.yml
     parameters: 
+      buildPurpose: ${{ parameters.buildPurpose }}
       tridentRepo: ${{ parameters.tridentRepo }}
+      deploymentEnvironment: virtualMachine
 
   - job: Testing
     dependsOn: DefineTests
@@ -39,16 +51,18 @@ stages:
 
     strategy:
       matrix:
-        $[ dependencies.DefineTests.outputs['setTests.listOfTests'] ]
+        $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
 
     variables:
+      buildPurpose: $[ dependencies.DefineTests.outputs['setBuildPurpose.buildPurpose'] ]
+      tridentConfigurationName: $(configuration)
+
       tridentSourceDirectory: $(Build.SourcesDirectory)/trident
       argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
 
-      tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(test)
+      tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(tridentConfigurationName)
       ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
-      ob_artifactBaseName: $(test)_deployment_log_$(System.JobAttempt)
-      testName: $(test)
+      ob_artifactBaseName: $(tridentConfigurationName)_deployment_log_$(System.JobAttempt)
 
     steps:
     - checkout: self
@@ -83,7 +97,7 @@ stages:
             --trident $(tridentConfigPath)/trident-config.yaml \
             --logstream \
         2>&1 | tee -a ./deployment.log
-        $(tridentSourceDirectory)/e2e_tests/check_netlaunch.py ./deployment.log || [ ${{ variables['testName'] }} == 'rerun' ]
+        $(tridentSourceDirectory)/e2e_tests/tests/helpers/check_netlaunch.py ./deployment.log || [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]
       timeoutInMinutes: 5
       workingDirectory: $(argusToolkitSourceDirectory)
       displayName: "Run netlaunch for testing"
@@ -137,7 +151,9 @@ stages:
 
     - template: ../common_tasks/e2e-test-run.yml
       parameters:
-        test: $(test)
+        buildPurpose: $(buildPurpose)
+        deploymentEnvironment: virtualMachine
+        tridentConfigurationName: $(tridentConfigurationName)
         hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
         tridentConfigPath: $(tridentConfigPath)
         tridentSourceDirectory: $(tridentSourceDirectory)

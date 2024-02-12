@@ -31,6 +31,16 @@ parameters:
   type: string
   default: trident_baremetal_tests
 
+- name: buildPurpose
+  type: string
+  default: 'daily'
+  values:
+  - AUTO
+  - daily
+  - pullrequest
+  - post_merge
+  - validation
+
 - name: argusRepo
   type: string
   default: argus-toolkit
@@ -68,7 +78,9 @@ stages:
   jobs:
   - template: ../common_tasks/get-tests.yml
     parameters: 
+      buildPurpose: ${{ parameters.buildPurpose }}
       tridentRepo: ${{ parameters.tridentRepo }}
+      deploymentEnvironment: bareMetal
     
   - job: ${{ parameters.jobName }}
     displayName: Run E2E Test
@@ -81,21 +93,24 @@ stages:
 
     strategy:
       matrix:
-        $[ dependencies.DefineTests.outputs['setTests.listOfTests'] ]
+        $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
       maxParallel: 1
+    
+    variables:    
+    - name: TRIDENT_CONFIGURATION_NAME
+      value: $(configuration)
 
-    variables:
     - name: TRIDENT_SOURCE_DIR
       value: $(Build.SourcesDirectory)/trident
 
     - name: ARGUS_TOOLKIT_DIR
       value: $(Build.SourcesDirectory)/argus-toolkit
 
-    - name: TRIDENT_CONFIG_FILE
-      value: $(TRIDENT_SOURCE_DIR)/e2e_tests/trident_configurations/$(test)/trident-config.yaml
-
     - name: TRIDENT_CONFIG_PATH
-      value: $(TRIDENT_SOURCE_DIR)/e2e_tests/trident_configurations
+      value: $(TRIDENT_SOURCE_DIR)/e2e_tests/trident_configurations/$(TRIDENT_CONFIGURATION_NAME)
+
+    - name: TRIDENT_CONFIG_FILE
+      value: $(TRIDENT_CONFIG_PATH)/trident-config.yaml
 
     - name: SSH_KEY_FILE
       value: $(Pipeline.Workspace)/ssh-key
@@ -104,7 +119,7 @@ stages:
       value: $(Build.SourcesDirectory)/build
 
     - name: ob_artifactBaseName
-      value: $(test)_baremetal_deployment_log_$(System.JobAttempt)
+      value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_deployment_log_$(System.JobAttempt)
 
     - name: K8S_SANITY_DIR
       value: $(Build.SourcesDirectory)/k8s-tests/k8s-sanity
@@ -130,7 +145,7 @@ stages:
     - template: ../common_tasks/trident-prep.yml
       parameters:
         tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-        tridentConfigPath: $(TRIDENT_CONFIG_PATH)/$(test)
+        tridentConfigPath: $(TRIDENT_CONFIG_PATH)
         updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
         
     - bash: |
@@ -159,7 +174,7 @@ stages:
 
     - template: k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml@k8s-tests
       parameters:
-        jobName: ${{ parameters.jobName }}_$(test)
+        jobName: ${{ parameters.jobName }}_$(TRIDENT_CONFIGURATION_NAME)
         bmcUsername: $(baremetal_controller.bmc_username)
         bmcPassword: $(baremetal_controller.bmc_password)
         bmcIp: ${{ parameters.bmcIp }}
@@ -196,7 +211,9 @@ stages:
 
     - template: ../common_tasks/e2e-test-run.yml
       parameters:
-        test: $(test)
+        buildPurpose: ${{ parameters.buildPurpose }}
+        deploymentEnvironment: bareMetal
+        tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
         hostIp: ${{ parameters.oamIp }}
-        tridentConfigPath: $(TRIDENT_CONFIG_PATH)/$(test)
+        tridentConfigPath: $(TRIDENT_CONFIG_PATH)
         tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)

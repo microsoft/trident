@@ -1,7 +1,15 @@
 parameters:
-- name: test
+- name: buildPurpose
+  type: string
+  default: validation
+
+- name: tridentConfigurationName
   type: string
   default: ''
+
+- name: deploymentEnvironment
+  type: string
+  default: virtualMachine
 
 - name: hostIp
   type: string
@@ -29,7 +37,7 @@ steps:
     set -eux
     sudo python3 -u -m pytest \
         --capture=no \
-        --junit-xml=${{ parameters.test }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml \
+        --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml \
         --host ${{ parameters.hostIp }} \
         --tridentconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml
   workingDirectory: ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests
@@ -39,6 +47,6 @@ steps:
   condition: succeededOrFailed()
   inputs:
     testResultsFormat: JUnit
-    testResultsFiles: ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/${{ parameters.test }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml
-    testRunTitle: $(System.StageName)_trident_e2e_tests_${{ parameters.test }}_$(System.JobAttempt)
+    testResultsFiles: ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml
+    testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_$(System.JobAttempt)
   displayName: Publish test results

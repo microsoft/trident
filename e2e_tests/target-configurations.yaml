@@ -1,0 +1,37 @@
+bareMetal:
+  daily:
+  - base
+  - rerun
+  - simple
+  - raid_small
+virtualMachine:
+  daily:
+  - base
+  - rerun
+  - simple
+  - raid_small
+  post_merge:
+  - base
+  - rerun
+  - simple
+  - raid_small
+  pullrequest:
+  - base
+  - rerun
+  - simple
+  - raid_small
+  validation:
+  - base
+  - rerun
+  - simple
+  - raid_small
+
+# Supported deployment environments:
+# - bareMetal
+# - virtualMachine
+
+# Supported E2E trident pipeline build purposes:
+# - daily 
+# - pullrequest
+# - post_merge
+# - validation
