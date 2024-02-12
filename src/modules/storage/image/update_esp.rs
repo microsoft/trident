@@ -229,6 +229,18 @@ fn copy_boot_files(
             destination_path.display()
         ))?;
 
+        // Rename grub-noprefix efi to grub efi
+        if file_name == format!("grub{}-noprefix.efi", generate_arch_str()?).as_str() {
+            fs::rename(
+                &destination_path,
+                esp_dir
+                    .join(format!("grub{}.efi", generate_arch_str()?))
+                    .to_str()
+                    .context("Failed to convert path to string")?,
+            )
+            .context("Failed to rename grub-noprefix efi")?;
+        }
+
         // TODO: In long term, the GRUB config will be placed in the same dir as EFI executables,
         // when the images will be updated after Mariner 3.0 release. However, now, GRUB config
         // needs to be copied into /boot/grub2/grub.cfg as well. Related ADO task:
@@ -580,6 +592,43 @@ mod functional_test {
             let source_path = temp_mount_dir.path().join(file_name.clone());
             // Create full path of destination_path
             let destination_path = esp_dir.path().join(file_name);
+
+            assert!(
+                files_are_identical(&source_path, &destination_path),
+                "Files are not identical: {} and {}",
+                source_path.display(),
+                destination_path.display()
+            );
+        }
+    }
+
+    /// Validates that copy_boot_files() correctly copies boot files with grub-noprefix from temp_mount_dir to esp_dir
+    #[functional_test(feature = "abupdate")]
+    fn test_copy_boot_files_grub_noprefix() {
+        let temp_mount_dir = TempDir::new().unwrap();
+        let esp_dir = TempDir::new().unwrap();
+
+        // Create a list of boot files
+        let file_names = vec![
+            PathBuf::from(GRUB2_CONFIG_FILENAME),
+            PathBuf::from("grubx64-noprefix.efi"),
+            PathBuf::from("bootx64.efi"),
+        ];
+
+        // Call helper func to create mock boot files in temp_mount_dir
+        create_boot_files(temp_mount_dir.path(), &file_names);
+        // Call helper func to copy boot files from temp_mount_dir to esp_dir
+        copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
+
+        for file_name in file_names {
+            // Create full path of source_path
+            let source_path = temp_mount_dir.path().join(file_name.clone());
+            // Create full path of destination_path
+            let mut destination_path = esp_dir.path().join(file_name.clone());
+
+            if file_name == PathBuf::from("grubx64-noprefix.efi") {
+                destination_path = esp_dir.path().join("grubx64.efi");
+            }
 
             assert!(
                 files_are_identical(&source_path, &destination_path),
