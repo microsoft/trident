@@ -16,6 +16,7 @@ use trident_api::{
 
 const LUKS_HEADER_SEGMENT_KEY: &str = "0";
 const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
+const CRYPTTAB_PATH: &str = "/etc/crypttab";
 
 pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error> {
     if let Some(encryption) = &host_config.storage.encryption {
@@ -297,7 +298,7 @@ fn parse_luks_dump_for_header_offset(luks_dump_output: &[u8]) -> Result<u64, Err
 }
 
 pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
-    let path: PathBuf = PathBuf::from("/etc/crypttab");
+    let path: PathBuf = PathBuf::from(CRYPTTAB_PATH);
     let mut contents: String = String::new();
 
     for (_id, ev) in host_status.storage.encrypted_volumes.iter() {
