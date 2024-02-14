@@ -224,6 +224,16 @@ impl HostConfigBlockDevice<'_> {
             bail!("Block device is not a disk")
         }
     }
+
+    #[cfg(feature = "verity-preview")]
+    #[allow(dead_code)]
+    pub(super) fn unwrap_verity_device(&self) -> Result<&VerityDevice, Error> {
+        if let HostConfigBlockDevice::VerityDevice(verity_device) = self {
+            Ok(verity_device)
+        } else {
+            bail!("Block device is not a verity device")
+        }
+    }
 }
 
 /// Conversion from BlkDevKind to BlkDevKindFlag

@@ -22,7 +22,7 @@ fn check_partition_type_supports_verity(part: &Partition) -> Result<(), Error> {
         PartitionType::Root | PartitionType::RootVerity
     ) {
         bail!(
-            "Partition '{}' is of unsupported type '{:?}'.",
+            "Partition '{}' is of unsupported type '{:?}'",
             part.id,
             part.partition_type
         );
@@ -41,7 +41,7 @@ fn check_targets_image(node: &BlkDevNode, targets: &[&BlkDevNode]) -> Result<(),
         // Check the target is initialized by image
         target
             .image
-            .context(format!("Block device '{}' is not initialized using image, which is required for verity device '{}' to work.", target.id, node.id))?;
+            .context(format!("Block device '{}' is not initialized using image, which is required for verity device '{}' to work", target.id, node.id))?;
     }
 
     Ok(())
@@ -83,7 +83,7 @@ fn check_targets_partition_type(
             // partitions are of an acceptable type
             HostConfigBlockDevice::RaidArray(_) => check_all_part_types_matching(graph, target)
                 .context(format!(
-                    "Verity device '{}' targets incompatible RAID array '{}'.",
+                    "Verity device '{}' targets incompatible RAID array '{}'",
                     node.id, target.id
                 ))?,
             // Only supports A/B update volumes over partitions and RAID arrays.
@@ -91,13 +91,13 @@ fn check_targets_partition_type(
             // that there is one of each (root, root-verity).
             HostConfigBlockDevice::ABVolume(_) => check_all_part_types_matching(graph, target)
                 .context(format!(
-                    "Verity device '{}' targets incompatible A/B update volume '{}'.",
+                    "Verity device '{}' targets incompatible A/B update volume '{}'",
                     node.id, target.id
                 ))?,
 
             // Assumption: all other types are invalid
             _ => bail!(
-                "Verity device references block device '{}' of invalid kind '{}'.",
+                "Verity device references block device '{}' of invalid kind '{}'",
                 target.id,
                 target.kind
             ),
@@ -106,7 +106,7 @@ fn check_targets_partition_type(
         if part_type == PartitionType::Root {
             if data_found {
                 bail!(
-                    "Verity device '{}' references multiple partitions of type 'root'.",
+                    "Verity device '{}' references multiple partitions of type 'root'",
                     node.id
                 );
             }
@@ -115,7 +115,7 @@ fn check_targets_partition_type(
             // PartitionType::RootVerity
             if hash_found {
                 bail!(
-                    "Verity device '{}' references multiple partitions of type 'root-verity'.",
+                    "Verity device '{}' references multiple partitions of type 'root-verity'",
                     node.id
                 );
             }
@@ -126,7 +126,7 @@ fn check_targets_partition_type(
     if !data_found || !hash_found {
         // should not be reachable
         bail!(
-            "Verity device '{}' references a partition of type '{}' without a corresponding partition of type '{}'.",
+            "Verity device '{}' references a partition of type '{}' without a corresponding partition of type '{}'",
             node.id,
             if data_found { "root-verity" } else { "root" },
             if data_found { "root" } else { "root-verity" }
@@ -150,12 +150,12 @@ fn check_all_part_types_matching(
         node.kind, node.id,
     ))?;
     let first = part_types.first().context(format!(
-        "Block device of kind '{}' and id '{}' has missing underlying partitions.",
+        "Block device of kind '{}' and id '{}' has missing underlying partitions",
         node.kind, node.id
     ))?;
     if !part_types.iter().all(|pt| first == pt) {
         bail!(
-            "Block device of kind '{}' and id '{}' has partitions of different types.",
+            "Block device of kind '{}' and id '{}' has partitions of different types",
             node.kind,
             node.id
         );
@@ -172,7 +172,7 @@ fn extract_part_types(
     graph
         .targets(&node.id)
         .context(format!(
-            "Failed to get targets for '{}' of kind '{}'.",
+            "Failed to get targets for '{}' of kind '{}'",
             node.id, node.kind
         ))?
         .iter()
@@ -189,7 +189,7 @@ fn extract_part_types(
                             graph
                                 .get(d)
                                 .context(format!(
-                                "Failed to get block device '{}' referenced by RAID array '{}'.",
+                                "Failed to get block device '{}' referenced by RAID array '{}'",
                                 d, target.id
                             ))?
                                 .host_config_ref
@@ -198,7 +198,7 @@ fn extract_part_types(
                         .collect()
                 }
                 _ => bail!(
-                    "Block device '{}' of kind '{}' references block device '{}' of invalid kind '{}'.",
+                    "Block device '{}' of kind '{}' references block device '{}' of invalid kind '{}'",
                     node.id,
                     node.kind,
                     target.id,
@@ -210,7 +210,7 @@ fn extract_part_types(
         .flatten()
         .collect::<Result<Vec<_>, Error>>()
         .context(format!(
-            "Failed to get partitions for RAID array '{}'.",
+            "Failed to get partitions for RAID array '{}'",
             node.id
         ))?
         .into_iter()
@@ -227,7 +227,7 @@ fn extract_part_types(
 fn check_targets_kind(targets: &[&BlkDevNode]) -> Result<(), Error> {
     let first = targets.first().context("Missing targets")?.kind;
     if !targets.iter().all(|t| t.kind == first) {
-        bail!("Inconsistent targets detected.",);
+        bail!("Inconsistent targets detected",);
     }
 
     // TODO perform deeper analysis, e.g. if the targets are A/b update volumes,
@@ -256,15 +256,15 @@ pub(super) fn check_targets(
     // using partitions of expected types (one root and one root-verity) and are
     // of the same kind.
     check_targets_image(node, targets).context(format!(
-        "Verity device '{}' points to a block device that has not been initialized with an image.",
+        "Verity device '{}' points to a block device that has not been initialized with an image",
         node.id
     ))?;
     check_targets_partition_type(node, targets, graph).context(format!(
-        "Verity device '{}' points to block devices with incompatible partition types.",
+        "Verity device '{}' points to block devices with incompatible partition types",
         node.id
     ))?;
     check_targets_kind(targets).context(format!(
-        "Verity device '{}' point to block devices of different kinds.",
+        "Verity device '{}' point to block devices of different kinds",
         node.id
     ))?;
 
@@ -307,7 +307,7 @@ mod test {
             check_partition_type_supports_verity(&partition)
                 .unwrap_err()
                 .to_string(),
-            "Partition 'foo' is of unsupported type 'Esp'."
+            "Partition 'foo' is of unsupported type 'Esp'"
         );
     }
 
@@ -371,7 +371,24 @@ mod test {
         };
 
         #[cfg(feature = "verity-preview")]
-        todo!("Use proper host_config_ref");
+        let verity = VerityDevice {
+            id: "verity".into(),
+            device_name: "verity".into(),
+            data_target_id: "part_root".into(),
+            hash_target_id: "part_root_verity".into(),
+        };
+
+        #[cfg(feature = "verity-preview")]
+        let verity1 = BlkDevNode {
+            id: "verity1".into(),
+            kind: BlkDevKind::VerityDevice,
+            targets: vec!["part_root".into(), "part_root_verity".into()],
+            host_config_ref: HostConfigBlockDevice::VerityDevice(&verity),
+            mount_points: vec![],
+            image: None,
+            dependents: vec![],
+        };
+
         let verity1 = BlkDevNode {
             id: "verity1".into(),
             kind: BlkDevKind::VerityDevice,
@@ -399,7 +416,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' points to a block device that has not been initialized with an image."
+            "Verity device 'verity1' points to a block device that has not been initialized with an image"
         );
 
         assert_eq!(
@@ -410,7 +427,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' points to a block device that has not been initialized with an image."
+            "Verity device 'verity1' points to a block device that has not been initialized with an image"
         );
 
         assert_eq!(
@@ -421,7 +438,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' points to a block device that has not been initialized with an image."
+            "Verity device 'verity1' points to a block device that has not been initialized with an image"
         );
     }
 
@@ -545,7 +562,7 @@ mod test {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "Partition 'part3' is of unsupported type 'Esp'."
+            "Partition 'part3' is of unsupported type 'Esp'"
         )
     }
 
@@ -643,7 +660,7 @@ mod test {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "Block device of kind 'raid-array' and id 'raid' has partitions of different types."
+            "Block device of kind 'raid-array' and id 'raid' has partitions of different types"
         );
 
         // missing partitions
@@ -659,7 +676,7 @@ mod test {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "Block device of kind 'raid-array' and id 'raid' has missing underlying partitions."
+            "Block device of kind 'raid-array' and id 'raid' has missing underlying partitions"
         );
     }
 
@@ -743,7 +760,24 @@ mod test {
         };
 
         #[cfg(feature = "verity-preview")]
-        todo!("Use proper host_config_ref");
+        let verity = VerityDevice {
+            id: "verity".into(),
+            device_name: "verity".into(),
+            data_target_id: "part_root".into(),
+            hash_target_id: "part_root_verity".into(),
+        };
+
+        #[cfg(feature = "verity-preview")]
+        let verity1 = BlkDevNode {
+            id: "verity1".into(),
+            kind: BlkDevKind::VerityDevice,
+            targets: vec![],
+            host_config_ref: HostConfigBlockDevice::VerityDevice(&verity),
+            mount_points: vec![],
+            image: None,
+            dependents: vec![],
+        };
+
         let verity1 = BlkDevNode {
             id: "verity1".into(),
             kind: BlkDevKind::VerityDevice,
@@ -793,7 +827,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Partition 'part_esp' is of unsupported type 'Esp'."
+            "Partition 'part_esp' is of unsupported type 'Esp'"
         );
 
         assert_eq!(
@@ -806,7 +840,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Partition 'part_esp' is of unsupported type 'Esp'."
+            "Partition 'part_esp' is of unsupported type 'Esp'"
         );
 
         assert_eq!(
@@ -819,7 +853,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Partition 'part_esp' is of unsupported type 'Esp'."
+            "Partition 'part_esp' is of unsupported type 'Esp'"
         );
 
         assert_eq!(
@@ -832,7 +866,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' references multiple partitions of type 'root'."
+            "Verity device 'verity1' references multiple partitions of type 'root'"
         );
 
         assert_eq!(
@@ -845,7 +879,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' references multiple partitions of type 'root-verity'."
+            "Verity device 'verity1' references multiple partitions of type 'root-verity'"
         );
 
         // similar for raid arrays
@@ -887,7 +921,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' references multiple partitions of type 'root'."
+            "Verity device 'verity1' references multiple partitions of type 'root'"
         );
 
         // similar for ab volumes
@@ -926,7 +960,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' references multiple partitions of type 'root'."
+            "Verity device 'verity1' references multiple partitions of type 'root'"
         );
     }
 
@@ -1004,21 +1038,21 @@ mod test {
             check_targets_kind(&[&part_root_node, &raid_node])
                 .unwrap_err()
                 .to_string(),
-            "Inconsistent targets detected."
+            "Inconsistent targets detected"
         );
 
         assert_eq!(
             check_targets_kind(&[&part_root_node, &ab_volume_node])
                 .unwrap_err()
                 .to_string(),
-            "Inconsistent targets detected."
+            "Inconsistent targets detected"
         );
 
         assert_eq!(
             check_targets_kind(&[&raid_node, &ab_volume_node])
                 .unwrap_err()
                 .to_string(),
-            "Inconsistent targets detected."
+            "Inconsistent targets detected"
         );
     }
 }
