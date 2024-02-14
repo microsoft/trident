@@ -794,10 +794,15 @@ fn format_unimaged_mounted_encrypted_volumes(
                     }
                 } else {
                     debug!(
-                        "Skipping format of encrypted volume '{}' as it is not directly mounted",
+                        "Skipping format of encrypted volume '{}' as it is not mounted",
                         &ev.id
                     );
                 }
+            } else {
+                debug!(
+                    "Skipping format of encrypted volume '{}' as it is already formatted",
+                    &ev.id
+                );
             }
         }
     }

@@ -1,0 +1,76 @@
+hostConfiguration:
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+        partitionTableType: gpt
+        partitions:
+          - id: esp
+            type: esp
+            size: 1G
+          - id: root
+            type: root
+            size: 8G
+          - id: web-e-1
+            type: linux-generic
+            size: 1G
+          - id: web-e-2
+            type: linux-generic
+            size: 1G
+    raid:
+      software:
+        - id: web-e
+          name: web-e
+          level: raid1
+          devices:
+            - web-e-1
+            - web-e-2
+          metadataVersion: "1.2"
+    encryption:
+      recoveryKeyUrl: "file:///recovery.key"
+      volumes:
+        - id: web
+          deviceName: web
+          targetId: web-e
+    mountPoints:
+      - path: /boot/efi
+        targetId: esp
+        filesystem: vfat
+        options: ["umask=0077"]
+      - path: /
+        targetId: root
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /web
+        targetId: web
+        filesystem: ext4
+        options: ["defaults"]
+    images:
+      - url: file:///trident_cdrom/data/esp.rawzst
+        sha256: ignored
+        format: raw-zst
+        targetId: esp
+      - url: file:///trident_cdrom/data/root.rawzst
+        sha256: ignored
+        format: raw-zst
+        targetId: root
+  network:
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+    version: 2
+  management:
+    selfUpgrade: false
+  osconfig:
+    users:
+      - name: testing-user
+        sshKeys: []
+        sshMode: key-only
+  scripts:
+    postConfigure:
+      - name: testing-privilege
+        servicingType:
+          - clean-install
+        content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'

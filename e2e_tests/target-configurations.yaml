@@ -1,37 +1,47 @@
 bareMetal:
   daily:
-  - base
-  - rerun
-  - simple
-  - raid_small
+    - base
+    - encrypted-abupdate
+    - encrypted-partition
+    - encrypted-raid
+    - encrypted-swap
+    - raid-small
+    - rerun
+    - simple
 virtualMachine:
   daily:
-  - base
-  - rerun
-  - simple
-  - raid_small
+    - base
+    - encrypted-abupdate
+    - encrypted-partition
+    - encrypted-raid
+    - encrypted-swap
+    - raid-small
+    - rerun
+    - simple
   post_merge:
-  - base
-  - rerun
-  - simple
-  - raid_small
+    - base
+    - encrypted-abupdate
+    - encrypted-partition
+    - encrypted-raid
+    - encrypted-swap
+    - raid-small
+    - rerun
+    - simple
   pullrequest:
-  - base
-  - rerun
-  - simple
-  - raid_small
+    - base
+    - encrypted-abupdate
+    - encrypted-partition
+    - encrypted-raid
+    - encrypted-swap
+    - raid-small
+    - rerun
+    - simple
   validation:
-  - base
-  - rerun
-  - simple
-  - raid_small
-
-# Supported deployment environments:
-# - bareMetal
-# - virtualMachine
-
-# Supported E2E trident pipeline build purposes:
-# - daily 
-# - pullrequest
-# - post_merge
-# - validation
+    - base
+    - encrypted-abupdate
+    - encrypted-partition
+    - encrypted-raid
+    - encrypted-swap
+    - raid-small
+    - rerun
+    - simple
