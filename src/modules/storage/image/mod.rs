@@ -258,11 +258,12 @@ fn update_image(
 fn is_mount_point_for_boot(host_status: &HostStatus, target_id: &BlockDeviceId) -> bool {
     // Fetch block device id corresponding to /boot from mount points and compare
     // boot_block_device_id with target_id
-    if let Some(boot_block_device_id) =
-        &super::path_to_mount_point_from_status(host_status, Path::new(BOOT_MOUNT_POINT_PATH))
-            .map(|mp| &mp.target_id)
+    if let Some(boot_block_device_id) = host_status
+        .storage
+        .path_to_mount_point(Path::new(BOOT_MOUNT_POINT_PATH))
+        .map(|mp| &mp.target_id)
     {
-        boot_block_device_id == &target_id
+        boot_block_device_id == target_id
     } else {
         false
     }
@@ -907,9 +908,10 @@ fn update_grub_configs(host_status: &HostStatus) -> Result<(), Error> {
     }
 
     // Find the block device which holds /boot
-    let boot_mount_point =
-        &super::path_to_mount_point_from_status(host_status, Path::new(BOOT_MOUNT_POINT_PATH))
-            .context("Failed to find mount point for boot block device")?;
+    let boot_mount_point = host_status
+        .storage
+        .path_to_mount_point(Path::new(BOOT_MOUNT_POINT_PATH))
+        .context("Failed to find mount point for boot block device")?;
     // get_uuid_from_path expects a filesystem that uses UUIDs, so limiting to
     // ext4 for now
     // TODO: improve supported filesystems validation in API: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6853

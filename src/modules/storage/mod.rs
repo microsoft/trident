@@ -14,7 +14,7 @@ use osutils::{
     udevadm,
 };
 use trident_api::{
-    config::{HostConfiguration, MountPoint, PartitionSize, PartitionType},
+    config::{HostConfiguration, PartitionSize, PartitionType},
     status::{self, BlockDeviceContents, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
@@ -312,38 +312,6 @@ impl Module for StorageModule {
     }
 }
 
-/// Find the mount point that is holding the given path. This is useful to find
-/// the volume on which the given absolute path is located. This version uses HC
-/// to find the information and is useful early in the process when HS has not
-/// yet been populated.
-pub(super) fn path_to_mount_point_from_config<'a>(
-    host_config: &'a HostConfiguration,
-    path: &Path,
-) -> Option<&'a MountPoint> {
-    host_config
-        .storage
-        .mount_points
-        .iter()
-        .filter(|mp| path.starts_with(&mp.path))
-        .max_by_key(|mp| mp.path.as_os_str().len())
-}
-
-/// Find the mount point that is holding the given path. This is useful to find
-/// the volume on which the given absolute path is located. This version uses HS
-/// to find the information and is preferred as it refers to the status of the system.
-fn path_to_mount_point_from_status<'a>(
-    host_status: &'a HostStatus,
-    path: &Path,
-) -> Option<&'a status::MountPoint> {
-    host_status
-        .storage
-        .mount_points
-        .iter()
-        .filter(|(mp_path, _)| path.starts_with(mp_path))
-        .max_by_key(|(mp_path, _)| mp_path.as_os_str().len())
-        .map(|(_, mp)| mp)
-}
-
 /// Returns the path of the first symlink in directory whose canonical path is target.
 /// Requires that target is already a canonical path.
 fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, Error> {
@@ -368,8 +336,8 @@ mod tests {
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
-            Disk, HostConfiguration, Image, ImageFormat, ImageSha256, Partition, PartitionSize,
-            PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
+            Disk, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, Partition,
+            PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
         },
         constants::ROOT_MOUNT_POINT_PATH,
     };
@@ -525,122 +493,5 @@ mod tests {
                 .to_string(),
             "Encryption host configuration validation failed"
         );
-    }
-
-    #[test]
-    fn test_path_to_mount_point_from_config() {
-        let mut host_config = get_host_config(&get_recovery_key_file());
-        let mount_point = path_to_mount_point_from_config(
-            &host_config,
-            Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path(),
-        )
-        .unwrap();
-        assert_eq!(mount_point.target_id, "part1");
-
-        // ensure to pick the longest prefix
-        host_config.storage.mount_points.push(MountPoint {
-            filesystem: "ext4".to_owned(),
-            options: vec![],
-            target_id: "part2".to_owned(),
-            path: PathBuf::from(ROOT_MOUNT_POINT_PATH)
-                .join("boot")
-                .as_path()
-                .into(),
-        });
-
-        let mount_point = path_to_mount_point_from_config(
-            &host_config,
-            Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path(),
-        )
-        .unwrap();
-        assert_eq!(mount_point.target_id, "part2");
-
-        // validate longer paths
-        let mount_point = path_to_mount_point_from_config(
-            &host_config,
-            Path::new(ROOT_MOUNT_POINT_PATH)
-                .join("boot/foo/bar")
-                .as_path(),
-        )
-        .unwrap();
-        assert_eq!(mount_point.target_id, "part2");
-
-        let mount_point = path_to_mount_point_from_config(
-            &host_config,
-            Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar").as_path(),
-        )
-        .unwrap();
-        assert_eq!(mount_point.target_id, "part1");
-
-        // validate failure without any mount points
-        host_config.storage.mount_points.clear();
-        assert!(path_to_mount_point_from_config(
-            &host_config,
-            Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path()
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn test_path_to_mount_point_from_status() {
-        let mut host_status = get_host_status();
-        let mount_point = status::MountPoint {
-            target_id: "part1".to_owned(),
-            filesystem: "ext4".to_owned(),
-            options: vec![],
-        };
-        host_status.storage.mount_points.insert(
-            PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
-            mount_point.clone(),
-        );
-
-        let mount_point = path_to_mount_point_from_status(
-            &host_status,
-            Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path(),
-        )
-        .unwrap();
-        assert_eq!(mount_point.target_id, "part1");
-
-        // ensure to pick the longest prefix
-        host_status.storage.mount_points.insert(
-            PathBuf::from(ROOT_MOUNT_POINT_PATH),
-            status::MountPoint {
-                filesystem: "ext4".to_owned(),
-                options: vec![],
-                target_id: "part2".to_owned(),
-            },
-        );
-
-        let mount_point = path_to_mount_point_from_status(
-            &host_status,
-            Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path(),
-        )
-        .unwrap();
-        assert_eq!(mount_point.target_id, "part1");
-
-        // validate longer paths
-        let mount_point = path_to_mount_point_from_status(
-            &host_status,
-            Path::new(ROOT_MOUNT_POINT_PATH)
-                .join("boot/foo/bar")
-                .as_path(),
-        )
-        .unwrap();
-        assert_eq!(mount_point.target_id, "part1");
-
-        let mount_point = path_to_mount_point_from_status(
-            &host_status,
-            Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar").as_path(),
-        )
-        .unwrap();
-        assert_eq!(mount_point.target_id, "part2");
-
-        // validate failure without any mount points
-        host_status.storage.mount_points.clear();
-        assert!(path_to_mount_point_from_status(
-            &host_status,
-            Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path()
-        )
-        .is_none());
     }
 }

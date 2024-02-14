@@ -383,11 +383,24 @@ impl Storage {
             }
         })
     }
+
+    /// Find the mount point that is holding the given path. This is useful to find
+    /// the volume on which the given absolute path is located. This version uses HS
+    /// to find the information and is preferred as it refers to the status of the system.
+    pub fn path_to_mount_point<'a>(&'a self, path: &Path) -> Option<&'a MountPoint> {
+        self.mount_points
+            .iter()
+            .filter(|(mp_path, _)| path.starts_with(mp_path))
+            .max_by_key(|(mp_path, _)| mp_path.as_os_str().len())
+            .map(|(_, mp)| mp)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use maplit::btreemap;
+
+    use crate::constants::ROOT_MOUNT_POINT_PATH;
 
     use super::*;
 
@@ -860,5 +873,68 @@ mod tests {
         };
 
         assert_eq!(storage.get_filesystem(&"root-a".into()).unwrap(), "ext4");
+    }
+
+    #[test]
+    fn test_path_to_mount_point() {
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            ..Default::default()
+        };
+        let mount_point = MountPoint {
+            target_id: "part1".to_owned(),
+            filesystem: "ext4".to_owned(),
+            options: vec![],
+        };
+        host_status.storage.mount_points.insert(
+            PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
+            mount_point.clone(),
+        );
+
+        let mount_point = host_status
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .unwrap();
+        assert_eq!(mount_point.target_id, "part1");
+
+        // ensure to pick the longest prefix
+        host_status.storage.mount_points.insert(
+            PathBuf::from(ROOT_MOUNT_POINT_PATH),
+            MountPoint {
+                filesystem: "ext4".to_owned(),
+                options: vec![],
+                target_id: "part2".to_owned(),
+            },
+        );
+
+        let mount_point = host_status
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .unwrap();
+        assert_eq!(mount_point.target_id, "part1");
+
+        // validate longer paths
+        let mount_point = host_status
+            .storage
+            .path_to_mount_point(
+                Path::new(ROOT_MOUNT_POINT_PATH)
+                    .join("boot/foo/bar")
+                    .as_path(),
+            )
+            .unwrap();
+        assert_eq!(mount_point.target_id, "part1");
+
+        let mount_point = host_status
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar").as_path())
+            .unwrap();
+        assert_eq!(mount_point.target_id, "part2");
+
+        // validate failure without any mount points
+        host_status.storage.mount_points.clear();
+        assert!(host_status
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .is_none());
     }
 }

@@ -10,7 +10,7 @@ use std::{
 use anyhow::{bail, ensure, Context, Error};
 use log::{info, warn};
 use trident_api::{
-    config::{HostConfiguration, LocalConfigFile},
+    config::{HostConfiguration, LocalConfigFile, Storage},
     error::{DatastoreError, ManagementError, ReportError, TridentError},
     status::{HostStatus, ReconcileState, UpdateKind},
 };
@@ -18,8 +18,6 @@ use trident_api::{
 use crate::{
     modules::Module, TRIDENT_BINARY_PATH, TRIDENT_DATASTORE_PATH, TRIDENT_LOCAL_CONFIG_PATH,
 };
-
-use super::storage;
 
 #[derive(Default, Debug)]
 pub struct ManagementModule;
@@ -161,7 +159,7 @@ fn validate_datastore_location(
         ))?;
 
     let datastore_block_device_id =
-        &storage::path_to_mount_point_from_config(host_config, datastore_path)
+        &Storage::path_to_mount_point(&host_config.storage, datastore_path)
             .map(|mp| &mp.target_id)
             .context("Failed to find mount point for datastore")?;
 

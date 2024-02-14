@@ -378,6 +378,17 @@ impl Storage {
 
         Ok(())
     }
+
+    /// Find the mount point that is holding the given path. This is useful to find
+    /// the volume on which the given absolute path is located. This version uses HC
+    /// to find the information and is useful early in the process when HS has not
+    /// yet been populated.
+    pub fn path_to_mount_point<'a>(&'a self, path: &Path) -> Option<&'a MountPoint> {
+        self.mount_points
+            .iter()
+            .filter(|mp| path.starts_with(&mp.path))
+            .max_by_key(|mp| mp.path.as_os_str().len())
+    }
 }
 
 impl Encryption {
@@ -409,7 +420,13 @@ mod tests {
     use imaging::{AbVolumePair, ImageFormat, ImageSha256};
     use partitions::{PartitionSize, PartitionType};
 
-    use crate::config::host::storage::blkdev_graph::types::{BlkDevKind, BlkDevReferrerKind};
+    use crate::{
+        config::{
+            host::storage::blkdev_graph::types::{BlkDevKind, BlkDevReferrerKind},
+            HostConfiguration,
+        },
+        constants::ROOT_MOUNT_POINT_PATH,
+    };
 
     use super::*;
 
@@ -1646,5 +1663,128 @@ mod tests {
         });
         storage.images = images;
         storage.validate(true).unwrap();
+    }
+
+    #[test]
+    fn test_path_to_mount_point() {
+        let mut host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "disk1".to_owned(),
+                        device: ROOT_MOUNT_POINT_PATH.into(),
+                        ..Default::default()
+                    },
+                    Disk {
+                        id: "disk2".to_owned(),
+                        device: "/tmp".into(),
+                        partitions: vec![
+                            Partition {
+                                id: "part1".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("1M").unwrap(),
+                            },
+                            Partition {
+                                id: "part2".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "part3".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "part4".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "part5".to_owned(),
+                                partition_type: PartitionType::Srv,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                ],
+                raid: Raid {
+                    software: vec![SoftwareRaidArray {
+                        id: "my-raid1".to_owned(),
+                        name: "my-raid".to_owned(),
+                        level: RaidLevel::Raid1,
+                        metadata_version: "1.2".to_owned(),
+                        devices: vec!["part3".to_owned(), "part4".to_owned()],
+                    }],
+                },
+                mount_points: vec![MountPoint {
+                    filesystem: "ext4".to_owned(),
+                    options: vec![],
+                    target_id: "part1".to_owned(),
+                    path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                }],
+                images: vec![Image {
+                    target_id: "part1".to_owned(),
+                    url: "".to_owned(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZst,
+                }],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![AbVolumePair {
+                        id: "ab1".to_owned(),
+                        volume_a_id: "part1".to_owned(),
+                        volume_b_id: "part2".to_owned(),
+                    }],
+                }),
+                encryption: None,
+            },
+            ..Default::default()
+        };
+        let mount_point = host_config
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .unwrap();
+        assert_eq!(mount_point.target_id, "part1");
+
+        // ensure to pick the longest prefix
+        host_config.storage.mount_points.push(MountPoint {
+            filesystem: "ext4".to_owned(),
+            options: vec![],
+            target_id: "part2".to_owned(),
+            path: PathBuf::from(ROOT_MOUNT_POINT_PATH)
+                .join("boot")
+                .as_path()
+                .into(),
+        });
+
+        let mount_point = host_config
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .unwrap();
+        assert_eq!(mount_point.target_id, "part2");
+
+        // validate longer paths
+        let mount_point = host_config
+            .storage
+            .path_to_mount_point(
+                Path::new(ROOT_MOUNT_POINT_PATH)
+                    .join("boot/foo/bar")
+                    .as_path(),
+            )
+            .unwrap();
+        assert_eq!(mount_point.target_id, "part2");
+
+        let mount_point = host_config
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar").as_path())
+            .unwrap();
+        assert_eq!(mount_point.target_id, "part1");
+
+        // validate failure without any mount points
+        host_config.storage.mount_points.clear();
+        assert!(host_config
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .is_none());
     }
 }
