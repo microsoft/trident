@@ -1,7 +1,8 @@
 bareMetal:
   daily:
     - base
-    - encrypted-abupdate
+    - abupdate-on-encrypted-raid
+    - abupdate-on-encrypted-partitions
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
@@ -11,7 +12,8 @@ bareMetal:
 virtualMachine:
   daily:
     - base
-    - encrypted-abupdate
+    - abupdate-on-encrypted-raid
+    - abupdate-on-encrypted-partitions
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
@@ -20,7 +22,8 @@ virtualMachine:
     - simple
   post_merge:
     - base
-    - encrypted-abupdate
+    - abupdate-on-encrypted-raid
+    - abupdate-on-encrypted-partitions
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
@@ -29,7 +32,8 @@ virtualMachine:
     - simple
   pullrequest:
     - base
-    - encrypted-abupdate
+    - abupdate-on-encrypted-raid
+    - abupdate-on-encrypted-partitions
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
@@ -38,7 +42,8 @@ virtualMachine:
     - simple
   validation:
     - base
-    - encrypted-abupdate
+    - abupdate-on-encrypted-raid
+    - abupdate-on-encrypted-partitions
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
