@@ -36,7 +36,7 @@ stages:
 
   jobs:
   - template: ../common_tasks/get-tests.yml
-    parameters: 
+    parameters:
       buildPurpose: ${{ parameters.buildPurpose }}
       tridentRepo: ${{ parameters.tridentRepo }}
       deploymentEnvironment: virtualMachine
@@ -79,7 +79,7 @@ stages:
         tridentSourceDirectory: $(tridentSourceDirectory)
         tridentConfigPath: $(tridentConfigPath)
         updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
-        
+
     - bash: |
         set -eux
         sg libvirt "./virt-deploy create"
@@ -213,3 +213,10 @@ stages:
       inputs:
         testResultsFormat: "JUnit"
         testResultsFiles: "$(tridentSourceDirectory)/target/trident_functional_tests.xml"
+
+    - bash: |
+        set -eux
+
+        sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso"
+      workingDirectory: $(tridentSourceDirectory)
+      displayName: Rerun Functional Tests
