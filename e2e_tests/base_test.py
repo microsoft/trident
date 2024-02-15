@@ -4,10 +4,20 @@ import os
 import pytest
 import yaml
 
+pytestmark = [pytest.mark.base]
+
 
 class HostStatusSafeLoader(yaml.SafeLoader):
     def accept_image(self, node):
         return self.construct_mapping(node)
+
+
+def test_connection(connection):
+    # Check ssh connection
+    result = connection.run("sudo echo 'Successful connection'")
+    output = result.stdout.strip()
+
+    assert output == "Successful connection"
 
 
 def test_partitions(connection, tridentConfiguration):

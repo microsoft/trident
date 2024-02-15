@@ -25,11 +25,11 @@ steps:
 
 - bash: |
     set -eux
-    sudo python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/add_key.py \
-        --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/key \
+    python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/add_key.py \
+        --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
         --tridentconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml
-    sudo openssl rsa -in ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/key \
-        -out ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/key
-    sudo chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/helpers/key
+    openssl rsa -in ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
+        -out ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
+    chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
   workingDirectory: ${{ parameters.tridentSourceDirectory }}
   displayName: "Setting keys to ssh for testing"

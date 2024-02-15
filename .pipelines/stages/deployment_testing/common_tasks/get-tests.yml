@@ -62,7 +62,7 @@ jobs:
   - bash: |
       set -eux
       matrix=$(
-          python3 $(tridentSourceDirectory)/e2e_tests/tests/helpers/read_target_configurations.py \
+          python3 $(tridentSourceDirectory)/e2e_tests/helpers/read_target_configurations.py \
             --config $(tridentSourceDirectory)/e2e_tests/target-configurations.yaml \
             --env ${{ parameters.deploymentEnvironment }} \
             --purpose $(setBuildPurpose.buildPurpose) \

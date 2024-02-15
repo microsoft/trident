@@ -35,18 +35,19 @@ steps:
 
 - bash: |
     set -eux
-    sudo python3 -u -m pytest \
+    python3 -u -m pytest \
+        -m "${{ parameters.buildPurpose }}" \
         --capture=no \
         --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml \
         --host ${{ parameters.hostIp }} \
-        --tridentconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml
-  workingDirectory: ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests
+        --configuration ${{ parameters.tridentConfigPath }}
+  workingDirectory: ${{ parameters.tridentSourceDirectory }}/e2e_tests
   displayName: "Trident E2E tests"
 
 - task: PublishTestResults@2
   condition: succeededOrFailed()
   inputs:
     testResultsFormat: JUnit
-    testResultsFiles: ${{ parameters.tridentSourceDirectory }}/e2e_tests/tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml
+    testResultsFiles: ${{ parameters.tridentSourceDirectory }}/e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml
     testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_$(System.JobAttempt)
   displayName: Publish test results
