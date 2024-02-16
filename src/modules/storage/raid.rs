@@ -18,8 +18,9 @@ use trident_api::{
 use uuid::Uuid;
 
 use osutils::{
+    block_devices,
     exe::{OutputChecker, RunAndCheck},
-    lsblk, udevadm,
+    udevadm,
 };
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
@@ -254,27 +255,6 @@ pub(super) fn update_raid_in_host_status(
     Ok(())
 }
 
-fn get_disk_for_partition(partition: &Path) -> Result<PathBuf, Error> {
-    let partition_block_device_list =
-        lsblk::run(partition).context("Failed to get partition metadata")?;
-    if partition_block_device_list.len() != 1 {
-        bail!(
-            "Failed to get disk for partition: {:?}, unexpected number of results returned",
-            partition
-        );
-    }
-
-    let parent_kernel_name = &partition_block_device_list[0]
-        .parent_kernel_name
-        .as_ref()
-        .context(format!(
-            "Failed to get disk for partition: {:?}, pk_name not found",
-            partition
-        ))?;
-
-    Ok(PathBuf::from(parent_kernel_name))
-}
-
 pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> Result<(), Error> {
     if !mdstat_present(Path::new("/proc/mdstat"))? {
         // No pre-existing RAID arrays. Nothing to do.
@@ -298,8 +278,8 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
     let parsed_mdadm_detail =
         mdadm_detail_to_struct(&mdadm_detail_output_str).context("Failed to parse mdadm detail")?;
 
-    let trident_disks =
-        get_trident_disks(host_config).context("Failed to get disks defined in Trident")?;
+    let trident_disks = super::get_hostconfig_disk_paths(host_config)
+        .context("Failed to get disks defined in Host Configuration")?;
 
     for raid_array in parsed_mdadm_detail {
         let raid_symlink = raid_array
@@ -311,59 +291,30 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
         let mut raid_disks = HashSet::new();
 
         for device in &raid_array.devices {
-            let disk = get_disk_for_partition(&PathBuf::from(device)).with_context(|| {
-                format!(
-                    "Failed to get disk for partition in an existing RAID: {:?}",
-                    raid_array.raid_path
-                )
-            })?;
+            let disk = block_devices::get_disk_for_partition(&PathBuf::from(device)).with_context(
+                || {
+                    format!(
+                        "Failed to get disk for partition in an existing RAID: {:?}",
+                        raid_array.raid_path
+                    )
+                },
+            )?;
 
             raid_disks.insert(disk);
         }
-        if can_stop_pre_existing_raid(&raid_array.raid_path, &raid_disks, &trident_disks)? {
+        if block_devices::can_stop_pre_existing_device(
+            &raid_disks,
+            &trident_disks.iter().cloned().collect::<HashSet<_>>(),
+        )
+        .context(format!(
+            "Failed to stop RAID array '{}'",
+            raid_array.raid_path.display()
+        ))? {
             unmount_and_stop(&raid_symlink)?;
         }
     }
 
     Ok(())
-}
-
-fn get_trident_disks(host_config: &HostConfiguration) -> Result<HashSet<PathBuf>, Error> {
-    host_config
-        .storage
-        .disks
-        .iter()
-        .map(|disk| {
-            disk.device
-                .canonicalize()
-                .with_context(|| format!("failed to get canonicalized path for disk: {}", disk.id))
-        })
-        .collect()
-}
-
-fn can_stop_pre_existing_raid(
-    raid_name: &Path,
-    raid_disks: &HashSet<PathBuf>,
-    trident_disks: &HashSet<PathBuf>,
-) -> Result<bool, Error> {
-    let symmetric_diff: HashSet<_> = raid_disks
-        .symmetric_difference(trident_disks)
-        .cloned()
-        .collect();
-
-    if raid_disks.is_disjoint(trident_disks) {
-        // RAID array does not have any of its underlying disks mentioned in HostConfig, we should not touch it
-        Ok(false)
-    } else if symmetric_diff.is_empty() || raid_disks.is_subset(trident_disks) {
-        // RAID array's underlying disks are all part of HostConfig, we can unmount and stop the RAID
-        return Ok(true);
-    } else {
-        // RAID array has underlying disks that are not part of HostConfig, we cannot touch it, abort
-        bail!(
-            "RAID array '{:?}' has underlying disks that are not part of Trident configuration. RAID disks: {:?}, Trident disks: {:?}",
-            raid_name, raid_disks, trident_disks
-        );
-    }
 }
 
 fn mdstat_present(mdstat_path: &Path) -> Result<bool, Error> {
@@ -748,35 +699,6 @@ mod tests {
             get_raid_device_name(raid_device).expect("Failed to get RAID device name");
 
         assert_eq!(device_name, "md127");
-    }
-
-    #[test]
-    fn test_can_stpp_pre_existing_raid() -> Result<(), Error> {
-        let raid_name = PathBuf::from("my-raid");
-        let raid_disks: HashSet<PathBuf> = ["/dev/sda".into(), "/dev/sdb".into()].into();
-        let trident_disks: HashSet<PathBuf> = ["/dev/sda".into(), "/dev/sdb".into()].into();
-        let trident_disks2: HashSet<PathBuf> = ["/dev/sdb".into(), "/dev/sdc".into()].into();
-        let trident_disks3: HashSet<PathBuf> = ["/dev/sdc".into(), "/dev/sdd".into()].into();
-        let trident_disks4: HashSet<PathBuf> =
-            ["/dev/sda".into(), "/dev/sdb".into(), "/dev/sdc".into()].into();
-
-        // No overlapping disks, should not touch
-        let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks3)?;
-        assert!(!overlap);
-
-        // Fully overlapping disks, should stop
-        let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks)?;
-        assert!(overlap);
-
-        // Partially overlapping disks, cannot touch, error.
-        let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks2);
-        assert!(overlap.is_err());
-
-        // Trident disks are a superset of RAID disks, we can stop
-        let overlap = can_stop_pre_existing_raid(&raid_name, &raid_disks, &trident_disks4)?;
-        assert!(overlap);
-
-        Ok(())
     }
 
     #[test]

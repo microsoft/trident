@@ -1,3 +1,4 @@
+pub mod block_devices;
 pub mod chroot;
 pub mod container;
 pub mod e2fsck;

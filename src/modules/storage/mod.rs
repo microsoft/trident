@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -8,6 +7,7 @@ use anyhow::{bail, Context, Error};
 use log::{info, warn};
 
 use osutils::{
+    block_devices,
     partition_types::DiscoverablePartitionType,
     repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
     sfdisk::SfDisk,
@@ -40,9 +40,11 @@ fn create_partitions(
         ))?;
 
         let disk_bus_path =
-            find_symlink_for_target(&disk_path, Path::new("/dev/disk/by-path")).context(
-                format!("Failed to find bus path of '{}'", disk_path.display()),
-            )?;
+            block_devices::find_symlink_for_target(&disk_path, Path::new("/dev/disk/by-path"))
+                .context(format!(
+                    "Failed to find bus path of '{}'",
+                    disk_path.display()
+                ))?;
 
         // Generate a hash map of {key: partition_id, value: partlabel},
         // so that sdrepart.rs can give initial "old-version" labels, i.e.
@@ -312,26 +314,27 @@ impl Module for StorageModule {
     }
 }
 
-/// Returns the path of the first symlink in directory whose canonical path is target.
-/// Requires that target is already a canonical path.
-fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, Error> {
-    fs::read_dir(directory)?
-        .flatten()
-        .filter_map(|f| {
-            if let Ok(target_path) = f.path().canonicalize() {
-                if target_path == target {
-                    return Some(f.path());
-                }
-            }
-            None
+/// Get the canonicalized paths of all disks in a Host Configuration
+fn get_hostconfig_disk_paths(host_config: &HostConfiguration) -> Result<Vec<PathBuf>, Error> {
+    host_config
+        .storage
+        .disks
+        .iter()
+        .map(|disk| {
+            disk.device
+                .canonicalize()
+                .with_context(|| format!("failed to get canonicalized path for disk: {}", disk.id))
         })
-        .min()
-        .context(format!("Failed to find symlink for '{}'", target.display()))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::Permissions, os::unix::fs::PermissionsExt, str::FromStr};
+    use std::{
+        fs::{self, Permissions},
+        os::unix::fs::PermissionsExt,
+        str::FromStr,
+    };
 
     use tempfile::NamedTempFile;
     use trident_api::{
@@ -492,6 +495,61 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "Encryption host configuration validation failed"
+        );
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+    use pytest_gen::functional_test;
+    use trident_api::config::{Disk, Storage};
+
+    #[functional_test]
+    fn test_get_hostconfig_disk_paths() {
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "disk1".to_owned(),
+                        device: "/dev/sda".into(),
+                        ..Default::default()
+                    },
+                    Disk {
+                        id: "disk2".to_owned(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-3".into(),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let disks = get_hostconfig_disk_paths(&host_config).unwrap();
+        assert_eq!(
+            disks,
+            vec![PathBuf::from("/dev/sda"), PathBuf::from("/dev/sdb")]
+        );
+
+        // fail on missing disk
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "disk1".to_owned(),
+                    device: "/dev/sdc".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            get_hostconfig_disk_paths(&host_config)
+                .unwrap_err()
+                .to_string(),
+            "failed to get canonicalized path for disk: disk1"
         );
     }
 }
