@@ -769,6 +769,38 @@ pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfig
     !undeployed_images.is_empty()
 }
 
+/// Validates that every undeployed image targets either the ESP partition or an A/B volume pair.
+/// If not, returns an error to reject HostConfiguration.
+///
+/// This func is called only during A/B updates, to ensure that the HostConfiguration does not
+/// request Trident to overwrite images on the volumes that are shared between A and B, such as
+/// /var/lib/trident.
+pub(super) fn validate_undeployed_images(
+    host_status: &HostStatus,
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    for image in get_undeployed_images(host_status, host_config, false) {
+        let is_valid_target = if let Some(ab_update) = &host_status.storage.ab_update {
+            // If ab_update is not null, check if target_id corresponds to an A/B volume pair or
+            // ESP partition
+            ab_update.volume_pairs.contains_key(&image.target_id)
+                || is_esp(host_status, &image.target_id)
+        } else {
+            // If ab_update is null, only check if target_id corresponds to the ESP partition
+            is_esp(host_status, &image.target_id)
+        };
+
+        if !is_valid_target {
+            bail!(
+                "Image '{}' cannot target block device '{}' as it is neither the ESP partition nor an A/B volume pair, so it cannot be overwritten during A/B update",
+                image.url, image.target_id
+            )
+        }
+    }
+
+    Ok(())
+}
+
 // Format every mounted encrypted volume that is not imaged or initialized except for swap volumes.
 fn format_unimaged_mounted_encrypted_volumes(
     host_status: &mut HostStatus,
@@ -2087,6 +2119,283 @@ mod tests {
         assert!(
             !is_mount_point_for_boot(&host_status, &"non-existent".to_string()),
             "Non-existent target_id was incorrectly identified as mount point for /boot"
+        );
+    }
+
+    /// Validates that the logic in validate_undeployed_images() is correct.
+    #[test]
+    fn test_validate_undeployed_images() {
+        // Initialize a HostStatus object
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root-a".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "trident".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp4"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 10000,
+                                end: 100000,
+                                ty: PartitionType::LinuxGeneric,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Initialize a HostConfiguration object
+        let mut host_config = HostConfiguration {
+            storage: StorageConfig {
+                mount_points: vec![
+                    MountPoint {
+                        path: PathBuf::from("/esp"),
+                        target_id: "esp".to_string(),
+                        filesystem: "fat32".to_string(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Initialize image objects
+        let image_esp = Image {
+            url: "http://example.com/esp_1.img".to_string(),
+            target_id: "esp".to_string(),
+            format: ImageFormat::RawZst,
+            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+        };
+        let image_root = Image {
+            url: "http://example.com/root_1.img".to_string(),
+            target_id: "root".to_string(),
+            format: ImageFormat::RawZst,
+            sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+        };
+        let image_trident = Image {
+            url: "http://example.com/trident_1.img".to_string(),
+            target_id: "trident".to_string(),
+            format: ImageFormat::RawZst,
+            sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+        };
+
+        // Test case 1: Running validate_undeployed_images() when update of ESP image only is
+        // requested should return ((Ok)), even if ab_update is null.
+        // Update images section of host_config
+        host_config.storage.images = vec![image_esp.clone()];
+        assert!(
+            validate_undeployed_images(&host_status, &host_config).is_ok(),
+            "Failed to determine that no images should be undeployed when update of ESP image is requested"
+        );
+
+        // Test case 2: Running validate_undeployed_images() when update of ESP and root images is
+        // requested should return an error since ab_update is null.
+        // Update images section of host_config
+        host_config.storage.images = vec![image_esp.clone(), image_root.clone()];
+        // Compare the actual error kind with the expected one.
+        assert_eq!(
+            validate_undeployed_images(&host_status, &host_config)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+                "Image 'http://example.com/root_1.img' cannot target block device 'root' as it is neither the ESP partition nor an A/B volume pair, so it cannot be overwritten during A/B update",
+            "Unexpected error kind"
+        );
+
+        // Test case 3: Running validate_undeployed_images() when all images are valid should
+        // return ((Ok))
+        host_status.storage.ab_update = Some(AbUpdate {
+            active_volume: Some(AbVolumeSelection::VolumeA),
+            volume_pairs: [(
+                "root".to_string(),
+                AbVolumePair {
+                    volume_a_id: "root-a".to_string(),
+                    volume_b_id: "root-b".to_string(),
+                },
+            )]
+            .iter()
+            .map(|p| {
+                (
+                    p.0.clone(),
+                    AbVolumePair {
+                        volume_a_id: p.1.volume_a_id.clone(),
+                        volume_b_id: p.1.volume_b_id.clone(),
+                    },
+                )
+            })
+            .collect(),
+        });
+
+        host_config.storage.images = vec![image_esp.clone()];
+        assert!(
+            validate_undeployed_images(&host_status, &host_config).is_ok(),
+            "Failed to determine that no images should be undeployed when all images are valid"
+        );
+
+        // Test case 4: Running validate_undeployed_images() when there is an image requested for
+        // block device 'trident' should return an error since it's neither the ESP partition nor
+        // an A/B volume pair
+        // Update images section of host_config
+        host_config.storage.images =
+            vec![image_esp.clone(), image_root.clone(), image_trident.clone()];
+        // Compare the actual error kind with the expected one.
+        assert_eq!(
+            validate_undeployed_images(&host_status, &host_config)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Image 'http://example.com/trident_1.img' cannot target block device 'trident' as it is neither the ESP partition nor an A/B volume pair, so it cannot be overwritten during A/B update",
+            "Unexpected error kind"
+        );
+
+        // Test case 5: Running validate_undeployed_images() when there is an image requested for
+        // root should return an error since root is a single volume and not an A/B volume pair in
+        // this scenario
+        let mut host_status_2 = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "boot-a".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::LinuxGeneric,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "boot-b".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp4"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 10000,
+                                end: 100000,
+                                ty: PartitionType::LinuxGeneric,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        host_status_2.storage.ab_update = Some(AbUpdate {
+            active_volume: Some(AbVolumeSelection::VolumeA),
+            volume_pairs: [(
+                "boot".to_string(),
+                AbVolumePair {
+                    volume_a_id: "boot-a".to_string(),
+                    volume_b_id: "boot-b".to_string(),
+                },
+            )]
+            .iter()
+            .map(|p| {
+                (
+                    p.0.clone(),
+                    AbVolumePair {
+                        volume_a_id: p.1.volume_a_id.clone(),
+                        volume_b_id: p.1.volume_b_id.clone(),
+                    },
+                )
+            })
+            .collect(),
+        });
+
+        let image_boot = Image {
+            url: "http://example.com/boot_1.img".to_string(),
+            target_id: "boot".to_string(),
+            format: ImageFormat::RawZst,
+            sha256: ImageSha256::Checksum("boot_sha256_1".to_string()),
+        };
+
+        // Update images section of host_config
+        host_config.storage.images =
+            vec![image_esp.clone(), image_root.clone(), image_boot.clone()];
+        // Compare the actual error kind with the expected one.
+        assert_eq!(
+            validate_undeployed_images(&host_status_2, &host_config)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Image 'http://example.com/root_1.img' cannot target block device 'root' as it is neither the ESP partition nor an A/B volume pair, so it cannot be overwritten during A/B update",
+            "Unexpected error kind"
         );
     }
 }

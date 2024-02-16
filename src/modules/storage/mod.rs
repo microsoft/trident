@@ -191,9 +191,9 @@ impl Module for StorageModule {
 
     fn validate_host_config(
         &self,
-        _host_status: &HostStatus,
+        host_status: &HostStatus,
         host_config: &HostConfiguration,
-        _planned_update: ReconcileState,
+        planned_update: ReconcileState,
     ) -> Result<(), Error> {
         // Ensure any two disks point to different devices. This requires canonicalizing the device
         // paths, which can only be done on the target system.
@@ -213,6 +213,15 @@ impl Module for StorageModule {
                     device_path.display()
                 );
             }
+        }
+
+        // If Trident is performing an A/B update, validate that every undeployed image inside
+        // HostConfiguration targets either the ESP partition or an A/B volume pair. An invalid HC
+        // should be rejected since Trident cannot overwrite the image on a volume that is shared
+        // between A and B.
+        if planned_update != ReconcileState::CleanInstall {
+            image::validate_undeployed_images(host_status, host_config)
+                .context("Validation of host configuration failed: HC requests update of images that cannot be overwritten")?;
         }
 
         encryption::validate_host_config(host_config)
