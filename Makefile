@@ -134,7 +134,7 @@ build-api-docs: build-api-schema docbuilder
 	@echo Wrote Markdown docs to $(TRIDENT_API_HC_MARKDOWN_DIR)
 
 .PHONY: validate-api-schema
-validate-api-schema: build-api-schema docbuilder
+validate-api-schema: build-api-schema docbuilder validate-hc-sample
 	@echo ""
 	@echo "Validating Trident API schema..."
 	@diff $(TRIDENT_API_HC_SCHEMA_CHECKED_IN) $(TRIDENT_API_HC_SCHEMA_GENERATED) || { \
@@ -143,6 +143,12 @@ validate-api-schema: build-api-schema docbuilder
 	}
 	@echo "Trident API Schema is OK!"
 
+.PHONY: validate-hc-sample
+validate-hc-sample: build-api-docs
+	$(eval TMP := $(shell mktemp -d))
+	$(DOCBUILDER_BIN) host-config sample -o $(TMP)/sample-host-configuration.yaml
+	cargo run validate --host-config $(TMP)/sample-host-configuration.yaml
+	rm -rf $(TMP)
 
 .PHONY: build-functional-tests
 build-functional-test:
