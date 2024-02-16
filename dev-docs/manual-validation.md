@@ -19,3 +19,4 @@ graduates one of the preview releases into a release.
 ## What
 
 - [Container validation](validating-container.md)
+- [A/B update validation](validating-ab-update.md)

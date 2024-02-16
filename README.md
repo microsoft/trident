@@ -182,7 +182,7 @@ Currently, **a basic A/B update flow via direct streaming** is available with
 Trident. Users can request Trident to perform the initial deployment and A/B
 upgrades of a disk partition, a RAID array, or an encrypted volume that is part
 of an A/B volume pair. The image has to be published as a local raw file
-compressed into the ZSTD format.
+compressed using the zstd compression algorithm.
 
 ### Getting Started with A/B Update
 
@@ -273,7 +273,7 @@ user can view the changes to the system by fetching the host's status:
 
 The user can also use commands such as `blkid` and `mount` to confirm that the
 volume pairs have been correctly updated and that the correct block devices
-have been mounted at the designated mountpoints, such.
+have been mounted at the designated mountpoints.
 
 ### TODO: Next Steps
 In the future iterations, Trident will support the following additional
