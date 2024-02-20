@@ -5,6 +5,7 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error, info, warn};
+use nix::unistd::Uid;
 use osutils::exe::RunAndCheck;
 use protobufs::*;
 use sys_mount::{MountFlags, UnmountFlags};
@@ -19,8 +20,8 @@ use setsail::KsTranslator;
 use trident_api::config::{HostConfiguration, LocalConfigFile, Operations};
 use trident_api::config::{HostConfigurationSource, InvalidHostConfigurationError};
 use trident_api::error::{
-    InitializationError, InternalError, InvalidInputError, ManagementError, ReportError,
-    TridentError, TridentResultExt,
+    ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
+    InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt,
 };
 
 use crate::datastore::DataStore;
@@ -268,6 +269,12 @@ impl Trident {
             .and_then(|url| OrchestratorConnection::new(url.clone()));
 
         info!("Running Trident version: {}", TRIDENT_VERSION);
+
+        if !Uid::effective().is_root() {
+            return Err(TridentError::new(
+                ExecutionEnvironmentMisconfigurationError::MissingRequiredPermissions,
+            ));
+        }
 
         // This creates a channel to send commands to the main trident thread. It lets us use the
         // same logic for processing an initial provision command contained within the trident local

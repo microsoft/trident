@@ -103,7 +103,6 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
 
     match &args.command {
         Commands::Run(args) => {
-            // Log version again so we can see it in the logstream
             let res = trident
                 .run()
                 .unstructured("Failed to execute Trident run command");

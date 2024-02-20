@@ -28,6 +28,18 @@ pub enum InitializationError {
     ContainerMisconfigured,
 }
 
+/// Trident failed to run because the execution environment was misconfigured.
+/// This is a user attributable error as it relates to the environment in which
+/// Trident is running, which is user defined.
+#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExecutionEnvironmentMisconfigurationError {
+    #[error(
+        "Selected operation cannot be performed due to missing permissions, root privileges required"
+    )]
+    MissingRequiredPermissions,
+}
+
 /// User provided input was invalid.
 #[derive(Debug, thiserror::Error, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -164,6 +176,10 @@ pub enum ErrorKind {
     #[error(transparent)]
     Initialization(#[from] InitializationError),
 
+    /// Trident failed to run because the execution environment was misconfigured.
+    #[error(transparent)]
+    ExecutionEnvironmentMisconfiguration(#[from] ExecutionEnvironmentMisconfigurationError),
+
     /// Trident failed because it was provided invalid user input.
     #[error(transparent)]
     InvalidInput(#[from] InvalidInputError),
@@ -289,6 +305,9 @@ impl Serialize for TridentError {
         state.serialize_field("message", &self.0.kind.to_string())?;
         match self.0.kind {
             ErrorKind::Initialization(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::ExecutionEnvironmentMisconfiguration(ref e) => {
+                state.serialize_field("error", e)?
+            }
             ErrorKind::InvalidInput(ref e) => state.serialize_field("error", e)?,
             ErrorKind::UnsupportedConfiguration(ref e) => state.serialize_field("error", e)?,
             ErrorKind::Management(ref e) => state.serialize_field("error", e)?,
