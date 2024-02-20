@@ -129,14 +129,18 @@ pub(super) fn provision_host(
         mut sender,
     } = command;
 
-    // TODO: needs to be refactored once we have a way to preserve existing partitions
-    // This is a safety check so that nobody accidentally formats their dev machine.
-    if !fs::read_to_string("/proc/cmdline")
-        .structured(InitializationError::SafetyCheck)?
-        .contains("root=/dev/ram0")
-        && !Path::new("/override-trident-safety-check").exists()
     {
-        return Err(TridentError::new(InitializationError::SafetyCheck));
+        // TODO: needs to be refactored once we have a way to preserve existing partitions
+        // This is a safety check so that nobody accidentally formats their dev
+        // machine.
+        let cmdline =
+            fs::read_to_string("/proc/cmdline").structured(InitializationError::SafetyCheck)?;
+        if !cmdline.contains("root=/dev/ram0")
+            && !cmdline.contains("root=live:LABEL=CDROM")
+            && !Path::new("/override-trident-safety-check").exists()
+        {
+            return Err(TridentError::new(InitializationError::SafetyCheck));
+        }
     }
 
     info!("Starting provision_host");
