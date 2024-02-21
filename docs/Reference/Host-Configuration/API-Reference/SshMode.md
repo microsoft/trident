@@ -8,7 +8,7 @@
 
 ## Variants
 
-### [DEFAULT] Blocked
+### \[DEFAULT\] Blocked
 
 Disable SSH for this entity.
 

@@ -73,7 +73,7 @@ pub struct User {
 )]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum Password {
-    /// # [DEFAULT] Locked Password
+    /// # \[DEFAULT\] Locked Password
     ///
     /// Lock the user's password. (equivalent to `passwd -l`)
     #[default]
@@ -96,7 +96,7 @@ pub enum Password {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum SshMode {
-    /// # [DEFAULT] Blocked
+    /// # \[DEFAULT\] Blocked
     ///
     /// Disable SSH for this entity.
     #[default]

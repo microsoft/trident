@@ -10,7 +10,7 @@ Password configuration for a user.
 
 ## Variants
 
-### [DEFAULT] Locked Password
+### \[DEFAULT\] Locked Password
 
 Lock the user's password. (equivalent to `passwd -l`)
 

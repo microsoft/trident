@@ -126,7 +126,7 @@ pub struct AdoptedPartition {
     pub continue_if_no_match: bool,
 }
 
-/// Partition types as defined by The Discoverable Partitions Specification (https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
+/// Partition types as defined by The Discoverable Partitions Specification (<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
@@ -195,7 +195,7 @@ impl PartitionType {
     /// Helper function that returns PartititionType as a string. Return values
     /// are based on GPT partition type identifiers, as defined in the Type
     /// section of systemd repart.d manual:
-    /// https://www.man7.org/linux/man-pages/man5/repart.d.5.html.
+    /// <https://www.man7.org/linux/man-pages/man5/repart.d.5.html>.
     pub fn to_sdrepart_part_type(&self) -> &str {
         match self {
             PartitionType::Esp => "esp",

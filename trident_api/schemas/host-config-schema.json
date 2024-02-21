@@ -415,7 +415,7 @@
       ]
     },
     "PartitionType": {
-      "description": "Partition types as defined by The Discoverable Partitions Specification (https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).",
+      "description": "Partition types as defined by The Discoverable Partitions Specification (<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).",
       "oneOf": [
         {
           "title": "EFI System Partition",
@@ -511,7 +511,7 @@
       "description": "Password configuration for a user.",
       "oneOf": [
         {
-          "title": "[DEFAULT] Locked Password",
+          "title": "\\[DEFAULT\\] Locked Password",
           "description": "Lock the user's password. (equivalent to `passwd -l`)",
           "type": "object",
           "required": [
@@ -743,7 +743,7 @@
     "SshMode": {
       "oneOf": [
         {
-          "title": "[DEFAULT] Blocked",
+          "title": "\\[DEFAULT\\] Blocked",
           "description": "Disable SSH for this entity.",
           "type": "string",
           "enum": [
