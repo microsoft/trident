@@ -3,6 +3,7 @@
 from assertpy import assert_that  # type: ignore
 
 from ..node_interface import INode
+from ..ssh_node import SshExecutableResult
 
 
 class TridentTool:
@@ -11,15 +12,18 @@ class TridentTool:
 
     def run(
         self,
-    ) -> None:
-        cmd = f"sudo trident run --verbosity DEBUG"
+        sudo=True,
+    ) -> SshExecutableResult:
+        cmd = f"trident run --verbosity DEBUG"
 
-        result = self.node.execute(cmd)
-        assert_that(result.exit_code).is_equal_to(0)
+        if sudo:
+            cmd = "sudo " + cmd
+
+        return self.node.execute(cmd)
 
     def get(
         self,
-    ) -> None:
+    ) -> str:
         cmd = f"trident get --verbosity DEBUG"
 
         result = self.node.execute(cmd)

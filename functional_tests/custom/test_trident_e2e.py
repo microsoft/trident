@@ -1,6 +1,8 @@
 import yaml
 import pytest
 
+from assertpy import assert_that  # type: ignore
+
 from functional_tests.tools.trident import TridentTool
 from functional_tests.conftest import TRIDENT_REPO_DIR_PATH
 
@@ -18,7 +20,17 @@ HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image
 def test_trident_run(vm):
     """Basic trident run validation."""
     trident = TridentTool(vm)
-    trident.run()
+    result = trident.run()
+    assert_that(result.exit_code).is_equal_to(0)
+
+    result = trident.run(False)
+    assert_that(result.exit_code).is_equal_to(2)
+    assert_that(
+        result.stderr.index(
+            "Selected operation cannot be performed due to missing permissions, root privileges required"
+        )
+        != -1
+    )
 
     pass
 
