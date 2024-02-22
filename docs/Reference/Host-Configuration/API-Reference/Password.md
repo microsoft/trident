@@ -4,6 +4,10 @@
 
 Password configuration for a user.
 
+**NOTICE:**
+
+As a security measure, **Trident does NOT support passwords** for Trident-created users. The only allowed value for this field is a locked password, which is the default when this field is skipped. A locked password means that the user account does not allow logging in using password authentication. It is recommended to use SSH keys for authentication instead.
+
 | Characteristic | Value  |
 | -------------- | ------ |
 | Type           | `enum` |
