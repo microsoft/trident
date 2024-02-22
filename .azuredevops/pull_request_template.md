@@ -23,7 +23,7 @@ Reviewers should get a clear understanding of the goals of this PR.
 
 
 # 📝 Checks
-<!-- Note any manual checks you've run -->
+<!-- Note any manual checks you've run, base list of tests: dev-docs/manual-validation.md -->
 
 
 # 📌 Follow-ups
