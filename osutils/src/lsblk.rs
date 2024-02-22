@@ -19,6 +19,7 @@ pub struct LsBlkOutput {
 pub struct BlockDevice {
     pub name: String,
     pub fstype: Option<String>,
+    pub fssize: Option<String>,
     #[serde(rename = "partuuid")]
     pub part_uuid: Option<Uuid>,
     pub size: u64,
@@ -259,6 +260,7 @@ mod tests {
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/nvme0n1".into(),
             fstype: None,
+            fssize: None,
             part_uuid: None,
             size: 512110190592,
             parent_kernel_name: None,
@@ -266,6 +268,7 @@ mod tests {
                 BlockDevice {
                     name: "/dev/nvme0n1p1".into(),
                     fstype: Some("vfat".into()),
+                    fssize: Some("535805952".into()),
                     part_uuid: Some(
                         Uuid::parse_str("b46b76eb-b2f9-441a-9686-8b24fa2b2161").unwrap(),
                     ),
@@ -276,6 +279,7 @@ mod tests {
                 BlockDevice {
                     name: "/dev/nvme0n1p2".into(),
                     fstype: Some("ext4".into()),
+                    fssize: Some("502392610816".into()),
                     part_uuid: Some(
                         Uuid::parse_str("af002b41-3dbe-4044-82d2-f0560ef58b7a").unwrap(),
                     ),

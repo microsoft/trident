@@ -15,6 +15,7 @@ pub mod mount;
 pub mod overlay;
 pub mod partition_types;
 pub mod repart;
+pub mod resize2fs;
 pub mod scripts;
 pub mod sfdisk;
 pub mod systemd;

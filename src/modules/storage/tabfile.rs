@@ -24,7 +24,6 @@ pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 pub(crate) struct TabFileSettings<'a> {
     pub(crate) path_prefix: Option<&'a path::Path>,
     pub(crate) required_by: Option<&'a path::Path>,
-    pub(crate) grow_fs: bool,
     pub(crate) read_only: bool,
 }
 
@@ -55,7 +54,6 @@ impl TabFile {
                     mp,
                     &settings.path_prefix,
                     &extra_options,
-                    settings.grow_fs,
                     settings.read_only,
                 )?);
             } else if mp.filesystem == constants::SWAP_FILESYSTEM && !settings.read_only {
@@ -69,7 +67,6 @@ impl TabFile {
                     mp,
                     &None,
                     &extra_options,
-                    false,
                     settings.read_only,
                 )?);
             }
@@ -121,7 +118,6 @@ impl TabFile {
         mp: &MountPoint,
         path_prefix: &Option<&path::Path>,
         extra_options: &Option<Vec<String>>,
-        grow_fs: bool,
         read_only: bool,
     ) -> Result<String, Error> {
         let mount_device_path = modules::get_block_device(host_status, &mp.target_id, false)
@@ -150,10 +146,6 @@ impl TabFile {
         ))?;
         let filesystem = &mp.filesystem;
         let mut options = mp.options.clone();
-        // TODO extend the fs list
-        if grow_fs && !options.contains(&"x-systemd.growfs".to_owned()) && filesystem == "ext4" {
-            options.push("x-systemd.growfs".to_owned());
-        }
         if read_only && !options.contains(&"ro".to_owned()) {
             options.push("ro".to_owned());
         }
@@ -301,7 +293,6 @@ mod tests {
                 },
                 &None,
                 &None,
-                true,
                 false
             )
             .unwrap(),
@@ -320,10 +311,9 @@ mod tests {
                 &None,
                 &None,
                 true,
-                true,
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,x-systemd.growfs,ro 0 1"
+            "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,ro 0 1"
         );
 
         assert_eq!(
@@ -337,7 +327,6 @@ mod tests {
                 },
                 &None,
                 &None,
-                true,
                 false
             )
             .unwrap(),
@@ -355,7 +344,6 @@ mod tests {
                 },
                 &None,
                 &None,
-                false,
                 false
             )
             .unwrap(),
@@ -372,7 +360,6 @@ mod tests {
             },
             &None,
             &None,
-            true,
             false
         )
         .is_err());
@@ -388,7 +375,6 @@ mod tests {
                 },
                 &None,
                 &None,
-                true,
                 false
             )
             .unwrap(),
@@ -405,7 +391,6 @@ mod tests {
             },
             &Some(Path::new("/mnt")),
             &Some(vec!["foobar".to_owned()]),
-            true,
             false
         )
         .is_err());
@@ -421,11 +406,10 @@ mod tests {
                 },
                 &Some(Path::new("/mnt")),
                 &Some(vec!["foobar".to_owned()]),
-                true,
                 false
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.growfs,foobar 0 2"
+            "/dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,foobar 0 2"
         );
     }
 
@@ -433,15 +417,15 @@ mod tests {
     fn test_from_mount_points() {
         let expected_fstab = indoc! {r#"
             /dev/disk/by-partlabel/osp1 /mnt/boot/efi vfat umask=0077,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
-            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.growfs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
-            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.growfs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
+            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
+            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
             /dev/disk/by-partlabel/swap none swap sw,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 0
         "#};
 
         let expected_fstab3 = indoc! {r#"
             /dev/disk/by-partlabel/osp1 /mnt/boot/efi vfat umask=0077,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
-            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.growfs,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
-            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.growfs,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
+            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
+            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
         "#};
 
         let expected_fstab2 = indoc! {r#"
@@ -602,7 +586,6 @@ mod tests {
                 &TabFileSettings {
                     path_prefix: Some(Path::new("/mnt")),
                     required_by: Some(Path::new("update-fs.target")),
-                    grow_fs: true,
                     ..Default::default()
                 },
             )
@@ -619,7 +602,6 @@ mod tests {
                 &TabFileSettings {
                     path_prefix: Some(Path::new("/mnt")),
                     required_by: Some(Path::new("update-fs.target")),
-                    grow_fs: true,
                     read_only: true,
                 }
             )

@@ -15,8 +15,22 @@ pub fn run(device_path: &Path, filesystem: &str) -> Result<(), Error> {
 
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
+/// Helper function to create a filesystem that is smaller than the full device size
+pub(super) fn run_blocks(device_path: &Path, filesystem: &str, blocks: u64) -> Result<(), Error> {
+    Command::new("mkfs")
+        .arg("--type")
+        .arg(filesystem)
+        .arg(device_path)
+        .arg(format!("{blocks}"))
+        .run_and_check()
+        .context("Failed to execute mkfs")
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use pytest_gen::functional_test;
+    use sys_mount::{MountFlags, UnmountFlags};
 
     use super::*;
 
@@ -34,6 +48,27 @@ mod functional_test {
         if !Path::new("/mnt").exists() {
             Command::new("mkdir").arg("/mnt").run_and_check().unwrap();
         }
+    }
+
+    fn test_filesystem(filesystem: &str) {
+        let block_device_path = Path::new("/dev/sdb");
+
+        super::run(block_device_path, filesystem).unwrap();
+
+        let mount_point = tempfile::tempdir()
+            .context("Failed to create temporary mount point")
+            .unwrap();
+        let _mount = sys_mount::Mount::builder()
+            .flags(MountFlags::RDONLY)
+            .mount_autodrop(block_device_path, mount_point.path(), UnmountFlags::DETACH);
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_supported_filesystems() {
+        test_filesystem("ext2");
+        test_filesystem("ext3");
+        test_filesystem("ext4");
+        test_filesystem("vfat");
     }
 
     #[functional_test(feature = "helpers")]

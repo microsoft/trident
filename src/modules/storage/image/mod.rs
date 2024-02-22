@@ -14,7 +14,7 @@ use reqwest::Url;
 use sha2::Digest;
 use uuid::Uuid;
 
-use osutils::{exe::RunAndCheck, tune2fs};
+use osutils::{exe::RunAndCheck, resize2fs, tune2fs};
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     constants::{
@@ -226,10 +226,11 @@ fn update_image(
         ),
     )?;
 
-    // If target_id corresponds to an A/B volume pair that serves as the mount point for /boot,
+    // If target_id corresponds to a block device that serves as the mount point for /boot,
     // assign a new randomized FS UUID to that updated volume. This is necessary so that the grub
     // boot loader can select the correct volume to load the kernel and initrd from, when the
-    // firmware reboots after the A/B update.
+    // firmware reboots after the A/B update (and in generally, so that grub
+    // picks the right /boot volume to boot from).
     if is_mount_point_for_boot(host_status, &image.target_id) {
         info!(
             "Identified block device with id '{}' as the mount point for /boot",
@@ -238,7 +239,7 @@ fn update_image(
 
         let new_fs_uuid = update_fs_uuid(&block_device.path)
             .context(format!(
-                "Failed to assign a new randomized filesystem UUID to updated volume from A/B volume pair '{}'",
+                "Failed to assign a new randomized filesystem UUID to updated volume on block device '{}'",
                 &image.target_id
             ))?;
 
@@ -249,10 +250,32 @@ fn update_image(
         );
     }
 
+    // If the image has ext* filesystem and is not to be mounted read-only,
+    // resize the filesystem. For now, we determine the filesystem by looking at
+    // the corresponding mountpoint.
+    let mount_point = host_status
+        .storage
+        .mount_points
+        .values()
+        .find(|mp| mp.target_id == image.target_id);
+    if let Some(mount_point) = mount_point {
+        if (mount_point.filesystem == "ext4"
+            || mount_point.filesystem == "ext3"
+            || mount_point.filesystem == "ext2")
+            && !mount_point.options.contains(&"ro".into())
+        {
+            info!("Resizing filesystem on block device '{}'", &image.target_id);
+            resize_ext_fs(&block_device.path).context(format!(
+                "Failed to resize filesystem on block device '{}'",
+                &image.target_id
+            ))?;
+        }
+    }
+
     Ok(())
 }
 
-/// Validates whether the A/B volume pair corresponding to target_id is the mount point for the
+/// Validates whether the block device corresponding to target_id is the mount point for the
 /// /boot directory.
 fn is_mount_point_for_boot(host_status: &HostStatus, target_id: &BlockDeviceId) -> bool {
     // Fetch block device id corresponding to /boot from mount points and compare
@@ -281,6 +304,15 @@ fn update_fs_uuid(block_device_path: &Path) -> Result<Uuid, Error> {
     ))?;
 
     Ok(fs_uuid)
+}
+
+/// Resize ext2/ext3/ext4 filesystem on the given block device to the maximum
+/// size of the underlying block device
+fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
+    resize2fs::run(block_device_path).context(format!(
+        "Failed to resize partition on block device at path '{}'",
+        block_device_path.display()
+    ))
 }
 
 /// Function that fetches the list of ESP images that need to be updated and performs file-based
@@ -1752,6 +1784,7 @@ mod functional_test {
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/sdb".into(),
             fstype: None,
+            fssize: None,
             part_uuid: None,
             size: DISK_SIZE,
             parent_kernel_name: None,
@@ -1759,6 +1792,7 @@ mod functional_test {
                 BlockDevice {
                     name: "/dev/sdb1".into(),
                     fstype: None,
+                    fssize: None,
                     part_uuid: Some(part1.uuid),
                     size: part1.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
@@ -1767,6 +1801,7 @@ mod functional_test {
                 BlockDevice {
                     name: "/dev/sdb2".into(),
                     fstype: None,
+                    fssize: None,
                     part_uuid: Some(part2.uuid),
                     size: part2.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
@@ -1775,6 +1810,7 @@ mod functional_test {
                 BlockDevice {
                     name: "/dev/sdb3".into(),
                     fstype: None,
+                    fssize: None,
                     part_uuid: Some(part3.uuid),
                     size: part3.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
