@@ -126,14 +126,21 @@ pub struct Partition {
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum BlockDeviceContents {
+    /// Default state when no specific initialization of the block device has been performed.
     #[default]
     Unknown,
+
+    /// Block device has been zeroed out.
     Zeroed,
+
+    /// Block device has been initialized using an image.
     Image {
         sha256: String,
         length: u64,
         url: String,
     },
+
+    /// Block device has been initialized in some other way besides an image or zeroing.
     Initialized,
 }
 

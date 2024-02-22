@@ -458,6 +458,19 @@ fn get_ab_volume(
     block_device_id: &BlockDeviceId,
     active: bool,
 ) -> Option<BlockDeviceInfo> {
+    get_ab_volume_block_device_id(host_status, block_device_id, active).and_then(
+        |child_block_device_id| get_block_device(host_status, &child_block_device_id, active),
+    )
+}
+
+/// Returns a block device id for a volume from the given AB Volume Pair. If
+/// active is true it returns the active volume, and if active is false it
+/// returns the update volume (i.e. the one that isn't active).
+fn get_ab_volume_block_device_id(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+    active: bool,
+) -> Option<BlockDeviceId> {
     if let Some(ab_update) = &host_status.storage.ab_update {
         let ab_volume = ab_update
             .volume_pairs
@@ -465,16 +478,10 @@ fn get_ab_volume(
             .find(|v| v.0 == block_device_id);
         if let Some(v) = ab_volume {
             // TODO https://dev.azure.com/mariner-org/ECF/_workitems/edit/6808- should we support esp as part of abVolume?
-            return get_ab_update_volume(host_status, active).and_then(
-                |selection| match selection {
-                    AbVolumeSelection::VolumeA => {
-                        get_block_device(host_status, &v.1.volume_a_id, false)
-                    }
-                    AbVolumeSelection::VolumeB => {
-                        get_block_device(host_status, &v.1.volume_b_id, false)
-                    }
-                },
-            );
+            return get_ab_update_volume(host_status, active).map(|selection| match selection {
+                AbVolumeSelection::VolumeA => v.1.volume_a_id.clone(),
+                AbVolumeSelection::VolumeB => v.1.volume_b_id.clone(),
+            });
         }
     }
     None
@@ -863,6 +870,25 @@ mod test {
                 size: 900,
                 contents: BlockDeviceContents::Unknown,
             }
+        );
+
+        assert_eq!(
+            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), false),
+            Some("rootb".to_owned())
+        );
+
+        assert_eq!(
+            get_ab_volume_block_device_id(&host_status, &"osb".to_owned(), false),
+            None
+        );
+
+        assert_eq!(
+            get_ab_volume(&host_status, &"osab".to_owned(), false),
+            Some(BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                size: 9000,
+                contents: BlockDeviceContents::Unknown,
+            })
         );
     }
 

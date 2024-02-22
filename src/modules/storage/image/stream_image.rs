@@ -16,6 +16,8 @@ use trident_api::{
     BlockDeviceId,
 };
 
+use crate::modules::storage;
+
 use super::HashingReader;
 
 pub const GET_MAX_RETRIES: u8 = 25;
@@ -51,7 +53,7 @@ pub(super) fn stream_zstd_image(
     let mut file = BufWriter::with_capacity(4 << 20, file);
 
     // Mark the block device as having unknown contents in case the write operation is interrupted.
-    super::set_host_status_block_device_contents(
+    storage::set_host_status_block_device_contents(
         host_status,
         block_device_id,
         BlockDeviceContents::Unknown,
@@ -134,7 +136,7 @@ pub(super) fn deploy(
     .context(format!("Failed to stream image from {}", image_url))?;
 
     // Update HostStatus
-    super::set_host_status_block_device_contents(
+    storage::set_host_status_block_device_contents(
         host_status,
         &image.target_id,
         BlockDeviceContents::Image {

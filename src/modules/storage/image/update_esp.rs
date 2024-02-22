@@ -23,8 +23,12 @@ use crate::modules::{
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, GRUB2_RELATIVE_PATH,
     },
-    storage::image::stream_image::{exponential_backoff_get, stream_zstd_image},
-    storage::image::stream_image::{GET_MAX_RETRIES, GET_TIMEOUT_SECS},
+    storage::{
+        self,
+        image::stream_image::{
+            exponential_backoff_get, stream_zstd_image, GET_MAX_RETRIES, GET_TIMEOUT_SECS,
+        },
+    },
     BOOT_ENTRY_A, BOOT_ENTRY_B, UPDATE_ROOT_PATH,
 };
 
@@ -164,7 +168,7 @@ pub(super) fn deploy_esp(
     // partition to ESPImage, a new value in the BlockDeviceContents object. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625.
 
-    super::set_host_status_block_device_contents(
+    storage::set_host_status_block_device_contents(
         host_status,
         &image.target_id,
         BlockDeviceContents::Image {

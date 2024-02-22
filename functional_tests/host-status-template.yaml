@@ -33,7 +33,7 @@ storage:
         start: 5422186496
         end: 7569670144
         type: root
-        contents: initialized
+        contents: unknown
         uuid: placeholder
       - id: swap
         path: placeholder

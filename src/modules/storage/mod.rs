@@ -15,13 +15,17 @@ use osutils::{
 };
 use trident_api::{
     config::{HostConfiguration, PartitionSize, PartitionType},
-    status::{self, BlockDeviceContents, HostStatus, ReconcileState, UpdateKind},
+    status::{
+        self, AbVolumeSelection, BlockDeviceContents, Disk, EncryptedVolume, HostStatus, Partition,
+        RaidArray, ReconcileState, UpdateKind,
+    },
     BlockDeviceId,
 };
 
-use crate::modules::Module;
+use crate::modules::{self, Module};
 
 mod encryption;
+mod filesystem;
 pub mod image;
 mod raid;
 pub mod tabfile;
@@ -143,7 +147,7 @@ fn create_partitions(
                 start,
                 end: start + size,
                 ty: partition.partition_type,
-                contents: BlockDeviceContents::Initialized,
+                contents: BlockDeviceContents::Unknown,
                 uuid: partition_uuid,
             });
         }
@@ -284,8 +288,19 @@ impl Module for StorageModule {
                 .context("Encryption submodule failed during provision")?;
         }
 
-        image::provision(host_status, host_config, mount_point)
+        image::provision(host_status, host_config)
             .context("Image submodule failed during provision")?;
+        filesystem::create_filesystems(host_config, host_status)
+            .context("Failed to create filesystems")?;
+
+        // TODO refactor further
+        image::mount::mount_updated_volumes(host_config, host_status, mount_point, false)
+            .context("Failed to mount the updated volumes")?;
+
+        // Perform file-based update of ESP images, if needed, after filesystems have been mounted and
+        // initialized
+        image::update_esp_images(host_status, host_config)
+            .context("Failed to perform file-based update of ESP images")?;
 
         Ok(())
     }
@@ -337,6 +352,87 @@ fn get_hostconfig_disk_paths(host_config: &HostConfiguration) -> Result<Vec<Path
         .collect()
 }
 
+fn set_host_status_block_device_contents(
+    host_status: &mut HostStatus,
+    block_device_id: &BlockDeviceId,
+    contents: BlockDeviceContents,
+) -> Result<(), Error> {
+    if let Some(disk) = get_disk_mut(host_status, block_device_id) {
+        disk.contents = contents;
+        return Ok(());
+    }
+
+    if let Some(partition) = get_partition_mut(host_status, block_device_id) {
+        partition.contents = contents;
+        return Ok(());
+    }
+
+    if let Some(ab_update) = &host_status.storage.ab_update {
+        if let Some(ab_volume_pair) = ab_update.volume_pairs.get(block_device_id) {
+            let target_id = match modules::get_ab_update_volume(host_status, false) {
+                Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
+                Some(AbVolumeSelection::VolumeB) => Some(&ab_volume_pair.volume_b_id),
+                None => None,
+            };
+            if let Some(target_id) = target_id {
+                return set_host_status_block_device_contents(
+                    host_status,
+                    &target_id.clone(),
+                    contents,
+                );
+            }
+        }
+    }
+
+    if let Some(raid) = get_raid_mut(host_status, block_device_id) {
+        raid.contents = contents;
+        return Ok(());
+    }
+
+    if let Some(encrypted_volume) = get_encrypted_volume_mut(host_status, block_device_id) {
+        encrypted_volume.contents = contents;
+        return Ok(());
+    }
+
+    anyhow::bail!("No block device with id '{}' found", block_device_id);
+}
+
+fn get_disk_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut Disk> {
+    host_status.storage.disks.get_mut(block_device_id)
+}
+
+fn get_partition_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut Partition> {
+    host_status
+        .storage
+        .disks
+        .iter_mut()
+        .flat_map(|(_block_device_id, disk)| &mut disk.partitions)
+        .find(|p| p.id == *block_device_id)
+}
+
+fn get_raid_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut RaidArray> {
+    host_status.storage.raid_arrays.get_mut(block_device_id)
+}
+
+fn get_encrypted_volume_mut<'a>(
+    host_status: &'a mut HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<&'a mut EncryptedVolume> {
+    host_status
+        .storage
+        .encrypted_volumes
+        .get_mut(block_device_id)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -345,14 +441,18 @@ mod tests {
         str::FromStr,
     };
 
+    use maplit::btreemap;
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
-            Disk, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, Partition,
-            PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
+            Disk as DiskConfig, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint,
+            Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
+            SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
+        status::{AbUpdate, AbVolumePair, Storage},
     };
+    use uuid::Uuid;
 
     use super::*;
 
@@ -375,38 +475,38 @@ mod tests {
 
     fn get_host_config(recovery_key_file: &tempfile::NamedTempFile) -> HostConfiguration {
         HostConfiguration {
-            storage: Storage {
+            storage: StorageConfig {
                 disks: vec![
-                    Disk {
+                    DiskConfig {
                         id: "disk1".to_owned(),
                         device: ROOT_MOUNT_POINT_PATH.into(),
                         ..Default::default()
                     },
-                    Disk {
+                    DiskConfig {
                         id: "disk2".to_owned(),
                         device: "/tmp".into(),
                         partitions: vec![
-                            Partition {
+                            PartitionConfig {
                                 id: "part1".to_owned(),
                                 partition_type: PartitionType::Esp,
                                 size: PartitionSize::from_str("1M").unwrap(),
                             },
-                            Partition {
+                            PartitionConfig {
                                 id: "part2".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
                             },
-                            Partition {
+                            PartitionConfig {
                                 id: "part3".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
                             },
-                            Partition {
+                            PartitionConfig {
                                 id: "part4".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
                             },
-                            Partition {
+                            PartitionConfig {
                                 id: "part5".to_owned(),
                                 partition_type: PartitionType::Srv,
                                 size: PartitionSize::from_str("1G").unwrap(),
@@ -504,6 +604,300 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "Encryption host configuration validation failed"
+        );
+    }
+
+    /// Validates logic for setting block device contents
+    #[test]
+    fn test_set_host_status_block_device_contents() {
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "rootb".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                    "data".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 1000,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![],
+                    },
+                },
+                ab_update: Some(AbUpdate {
+                    active_volume: None,
+                    volume_pairs: btreemap! {
+                        "osab".to_owned() => AbVolumePair {
+                            volume_a_id: "root".to_owned(),
+                            volume_b_id: "rootb".to_owned(),
+                        },
+                    },
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .first()
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(1)
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Unknown
+        );
+
+        // test for disks
+        let contents = BlockDeviceContents::Zeroed;
+        set_host_status_block_device_contents(&mut host_status, &"os".to_owned(), contents.clone())
+            .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        // test for partitions
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"efi".to_owned(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .first()
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        // test for ab volumes
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"osab".to_owned(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(1)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"osab".to_owned(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(1)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        host_status
+            .storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .active_volume = Some(AbVolumeSelection::VolumeA);
+
+        set_host_status_block_device_contents(
+            &mut host_status,
+            &"osab".to_owned(),
+            contents.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .get(2)
+                .unwrap()
+                .contents,
+            contents.clone()
+        );
+
+        // test failure when missing id is provided
+        assert_eq!(
+            set_host_status_block_device_contents(
+                &mut host_status,
+                &"foorbar".to_owned(),
+                contents.clone()
+            )
+            .err()
+            .unwrap()
+            .to_string(),
+            "No block device with id 'foorbar' found"
+        );
+    }
+
+    /// Validates logic for querying disks and partitions.
+    #[test]
+    fn test_get_disk_partition_mut() {
+        let mut host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "efi".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 100,
+                                end: 1000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                            Partition {
+                                id: "rootb".to_owned(),
+                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 1000,
+                                end: 10000,
+                                ty: PartitionType::Root,
+                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
+                                    .unwrap(),
+                            },
+                        ],
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let disk_mut = get_disk_mut(&mut host_status, &"os".to_owned());
+        disk_mut.unwrap().contents = BlockDeviceContents::Zeroed;
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Zeroed
+        );
+
+        let partition_mut = get_partition_mut(&mut host_status, &"efi".to_owned());
+        partition_mut.unwrap().contents = BlockDeviceContents::Initialized;
+        assert_eq!(
+            host_status
+                .storage
+                .disks
+                .get(&"os".to_owned())
+                .unwrap()
+                .partitions
+                .first()
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Initialized
         );
     }
 }

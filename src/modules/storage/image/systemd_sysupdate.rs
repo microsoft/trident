@@ -34,7 +34,10 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::{modules, Path};
+use crate::{
+    modules::{self, storage},
+    Path,
+};
 
 use super::HashingReader;
 
@@ -793,7 +796,7 @@ pub(super) fn deploy(
     // If A/B update succeeded, update HostStatus
     if image_length > 0 && img_deploy_instance.status == Status::Succeeded {
         // If sysupdate succeeds, update contents of HostStatus
-        super::set_host_status_block_device_contents(
+        storage::set_host_status_block_device_contents(
             host_status,
             &image.target_id,
             BlockDeviceContents::Image {

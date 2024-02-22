@@ -51,7 +51,6 @@ pub(crate) fn mount_updated_volumes(
     if read_only {
         tab_file_settings.read_only = true;
     } else {
-        tab_file_settings.make_fs = true;
         tab_file_settings.grow_fs = true;
     }
 

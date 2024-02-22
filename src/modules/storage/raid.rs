@@ -12,7 +12,7 @@ use std::{
 use strum_macros::{Display, EnumString};
 use trident_api::{
     config::{HostConfiguration, PartitionType, RaidLevel, SoftwareRaidArray},
-    status::{self, HostStatus, RaidArrayStatus, RaidType},
+    status::{self, BlockDeviceContents, HostStatus, RaidArrayStatus, RaidType},
     BlockDeviceId,
 };
 use uuid::Uuid;
@@ -22,6 +22,8 @@ use osutils::{
     exe::{OutputChecker, RunAndCheck},
     udevadm,
 };
+
+use crate::modules::storage;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
 #[serde(rename_all = "kebab-case")]
@@ -38,7 +40,7 @@ pub(super) enum RaidState {
     Inactive,
 }
 
-pub(super) fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Result<(), Error> {
+fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Result<(), Error> {
     let devices = &config.devices;
     let raid_path = PathBuf::from(format!("/dev/md/{}", &config.name));
     let device_paths =
@@ -382,7 +384,7 @@ fn mdadm_detail_to_struct(mdadm_output: &str) -> Result<Vec<MdadmDetail>, Error>
     Ok(mdadm_details)
 }
 
-pub(super) fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
+fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
     let mut umount_command = Command::new("umount");
     umount_command.arg(raid_path);
 
@@ -423,7 +425,7 @@ pub(super) fn create_sw_raid(
                 host_status,
                 &software_raid_config.id,
                 RaidArrayStatus::Ready,
-                status::BlockDeviceContents::Initialized,
+                status::BlockDeviceContents::Unknown,
             )
             .context(format!(
                 "Failed to update host status for RAID: '{}'",
@@ -452,6 +454,18 @@ pub(super) fn create_sw_raid_array(
         .context("Failed to read RAID details after creation")?;
 
     add_to_host_status(host_status, raid_details.clone());
+
+    for block_device_id in &config.devices {
+        storage::set_host_status_block_device_contents(
+            host_status,
+            block_device_id,
+            BlockDeviceContents::Initialized,
+        )
+        .context(format!(
+            "Failed to set block device contents for block device '{}'",
+            block_device_id,
+        ))?
+    }
 
     Ok(())
 }

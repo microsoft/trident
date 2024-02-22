@@ -10,6 +10,7 @@ pub mod lsblk;
 pub mod lsof;
 pub mod mkfs;
 pub mod mkinitrd;
+pub mod mkswap;
 pub mod mount;
 pub mod overlay;
 pub mod partition_types;
