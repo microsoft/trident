@@ -238,17 +238,17 @@ be used to filter the tests that are executed. For example, if you want to execu
 only the tests from a certain rust crate, you can do:
 
 ```bash
-make functional-test FILTER=ft.json/<crate>
+make functional-test FILTER=ft.json::<crate>
 ```
 
 You can narrow down the filter by adding the modules, up to each individual test.
 
 ```bash
-make functional-test FILTER=ft.json/<crate>::<module1>::<module2>
+make functional-test FILTER=ft.json::<crate>::<module1>::<module2>
 ```
 
 ```bash
-make functional-test FILTER=ft.json/<crate>::<module>::<test>
+make functional-test FILTER=ft.json::<crate>::<module>::<test>
 ```
 
 *NOTE: `ft.json` is the name of the generated JSON file that contains the test
