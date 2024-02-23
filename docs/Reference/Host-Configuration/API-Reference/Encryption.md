@@ -29,11 +29,37 @@ This parameter is required and must not be empty. Each item is an object that wi
 
 ### `recoveryKeyUrl` (optional)
 
-A URL to the file containing the recovery key to use for encryption.
+A URL to read the recovery key from.
 
-This parameter is optional but highly encouraged. If not specified, only the TPM2 device will be enrolled.
+This parameter allows specifying a local file path to a recovery key file via a `file://` URL scheme. The recovery key file serves as an essential fallback to recover data should TPM 2.0 automatic decryption fail. If not specified, only the TPM 2.0 device will be enrolled.
 
-`file` is the only currently supported URL scheme. The contents of the file serve as the key and must not be empty. It must be in plain text, not encoded.
+The URL must be non-empty if provided. Other URL schemes are not supported at this time.
+
+# Recommended Configuration
+
+It is strongly advised to configure a recovery key file, as it plays a pivotal role in data recovery.
+
+# File Format Expectations
+
+The recovery key file must be a binary file without any encoding. This direct format ensures compatibility with cryptsetup and systemd APIs. Be mindful that all file content, including any potential whitespace or newline characters, is considered part of the recovery key.
+
+# Security Considerations
+
+Ensuring the recovery key's confidentiality and integrity is paramount. Employ secure storage and rigorous access control measures. Specifically:
+
+- The file containing the key should only be accessible by the root user and have `0400` permissions set.
+
+- The recovery key should be a minimum of 32 bytes long and should be generated with enough high entropy to defend against brute force or cryptographic attacks targeting on-disk hash values.
+
+# Generating a Recovery Key
+
+One way to create a recovery key file on Linux systems is using the `dd` utility:
+
+> Note: The following example is for illustration purposes only. > Be sure to generate recovery keys with diligence and attention > to security principles. Please adjust the following example > according to your own security policies and operational > environment to fit your specific security requirements and > constraints.
+
+```sh touch ./recovery.key chmod 0400 ./recovery.key dd if=/dev/random of=./recovery.key bs=1 count=256 ```
+
+This command generates 256 bytes of random data for the recovery key, sourcing entropy from `/dev/random`. Be aware, in environments with limited entropy sources, such as certain embedded systems, `/dev/random` may not provide sufficient data promptly. Alternative entropy sources or methods may be required.
 
 | Characteristic | Value    |
 | -------------- | -------- |
