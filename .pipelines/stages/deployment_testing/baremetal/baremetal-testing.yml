@@ -13,11 +13,11 @@ parameters:
 
 - name: bmcIp
   type: string
-  default: '10.8.3.19'
+  default: '10.8.3.18'
 
 - name: oamIp
   type: string
-  default: '10.8.4.50'
+  default: '10.8.4.70'
 
 - name: interfaceForOamIp
   type: string
