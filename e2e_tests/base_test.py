@@ -97,6 +97,26 @@ def test_partitions(connection, tridentConfiguration):
     #             ],
     #         },
     #         {
+    #             "name": "sdb",
+    #             "maj:min": "8:16",
+    #             "rm": false,
+    #             "size": "32G",
+    #             "ro": false,
+    #             "type": "disk",
+    #             "mountpoints": [null],
+    #             "children": [
+    #                 {
+    #                     "name": "sdb1",
+    #                     "maj:min": "8:17",
+    #                     "rm": false,
+    #                     "size": "10M",
+    #                     "ro": false,
+    #                     "type": "part",
+    #                     "mountpoints": [null],
+    #                 }
+    #             ],
+    #         },
+    #         {
     #             "name": "sr0",
     #             "maj:min": "11:0",
     #             "rm": true,
@@ -108,8 +128,17 @@ def test_partitions(connection, tridentConfiguration):
     #     ]
     # }
 
-    # Structure output
-    for partition in lsblk_info["blockdevices"][0]["children"]:
+    # Gather all partitions from all disks, blockdevices with no children are partitions
+    lsblk_partitions = [
+        partition
+        for block_device in lsblk_info["blockdevices"]
+        for partition in (
+            block_device["children"] if "children" in block_device else [block_device]
+        )
+    ]
+
+    # Join lsblk and blkid information to compare with host configuration
+    for partition in lsblk_partitions:
         # Update information
         system_name = partition["name"]
         if not system_name in partitions_blkid:
