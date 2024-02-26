@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File},
     path::{Path, PathBuf},
+    process::Command,
     sync::Mutex,
 };
 
@@ -20,25 +21,29 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::{chroot, mkinitrd};
+use osutils::{chroot, exe::RunAndCheck, mkinitrd};
 
-use crate::{
-    datastore::DataStore, modules::storage::image::mount, protobufs::HostStatusState,
-    TRIDENT_DATASTORE_REF_PATH,
-};
+use crate::{datastore::DataStore, protobufs::HostStatusState, TRIDENT_DATASTORE_REF_PATH};
 use crate::{
     modules::{
-        hooks::HooksModule, management::ManagementModule, network::NetworkModule,
+        boot::BootModule, hooks::HooksModule, management::ManagementModule, network::NetworkModule,
         osconfig::OsConfigModule, storage::StorageModule,
     },
     HostUpdateCommand,
 };
-pub mod bootentries;
+
+// Trident modules
+pub mod boot;
 pub mod hooks;
 pub mod management;
 pub mod network;
 pub mod osconfig;
 pub mod storage;
+
+// Helper modules
+pub mod bootentries;
+pub mod kexec;
+pub mod mount_root;
 
 /// The path to the root of the freshly deployed (from provisioning OS) or
 /// updated OS (from runtime OS).
@@ -56,7 +61,9 @@ trait Module: Send {
     // fn dependencies(&self) -> &'static [&'static str];
 
     /// Refresh the host status.
-    fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error>;
+    fn refresh_host_status(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
+        Ok(())
+    }
 
     /// Select the update kind based on the host status and host config.
     fn select_update_kind(
@@ -104,14 +111,17 @@ trait Module: Send {
     /// accordingly.
     fn configure(
         &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-    ) -> Result<(), Error>;
+        _host_status: &mut HostStatus,
+        _host_config: &HostConfiguration,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 lazy_static::lazy_static! {
     static ref MODULES: Mutex<Vec<Box<dyn Module>>> = Mutex::new(vec![
         Box::<StorageModule>::default(),
+        Box::<BootModule>::default(),
         Box::<NetworkModule>::default(),
         Box::<OsConfigModule>::default(),
         Box::<ManagementModule>::default(),
@@ -170,12 +180,12 @@ pub(super) fn provision_host(
     info!("Running prepare");
     prepare(&mut modules, state, host_config)?;
 
-    // TODO: We should have a way to indicate which modules setup the root mount point, and which
-    // depend on it being in place. Right now we just depend on the "storage" and "image" modules
-    // being the first ones to run.
+    info!("Preparing storage to mount new root");
+    let new_root_path = Path::new(UPDATE_ROOT_PATH);
+    let mounts = initialize_new_root(state, host_config, new_root_path)?;
+
     info!("Running provision");
-    let mount_path = Path::new(UPDATE_ROOT_PATH);
-    provision(&mut modules, state, host_config, mount_path)?;
+    provision(&mut modules, state, host_config, new_root_path)?;
 
     let datastore_ref = File::create(TRIDENT_DATASTORE_REF_PATH).structured(
         ManagementError::from(DatastoreError::CreateDatastoreRefFile),
@@ -188,7 +198,7 @@ pub(super) fn provision_host(
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
 
     info!("Entering /mnt/newroot chroot");
-    let chroot = chroot::enter_update_chroot(mount_path).message("Failed to enter chroot")?;
+    let chroot = chroot::enter_update_chroot(new_root_path).message("Failed to enter chroot")?;
     let mut root_device_path = None;
 
     chroot
@@ -235,10 +245,10 @@ pub(super) fn provision_host(
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
         info!("Unmounting /mnt/newroot");
-        mount::unmount_updated_volumes(mount_path).structured(ManagementError::UnmountNewroot)?;
+        mount_root::unmount_new_root(mounts, new_root_path)?;
     } else {
         info!("Performing transition");
-        transition(mount_path, &root_device_path, state.host_status())?;
+        transition(new_root_path, &root_device_path, state.host_status())?;
     }
 
     Ok(())
@@ -318,13 +328,16 @@ pub(super) fn update(
     info!("Running prepare");
     prepare(&mut modules, state, host_config)?;
 
-    let mount_path = Path::new(UPDATE_ROOT_PATH);
+    let new_root_path = Path::new(UPDATE_ROOT_PATH);
 
-    if let UpdateKind::AbUpdate = update_kind {
+    let mounts = if let UpdateKind::AbUpdate = update_kind {
+        info!("Preparing storage to mount new root");
+        let mounts = initialize_new_root(state, host_config, new_root_path)?;
+
         info!("Running provision");
-        provision(&mut modules, state, host_config, mount_path)?;
+        provision(&mut modules, state, host_config, new_root_path)?;
         info!("Entering /mnt/newroot chroot");
-        chroot::enter_update_chroot(mount_path)
+        chroot::enter_update_chroot(new_root_path)
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
@@ -334,13 +347,17 @@ pub(super) fn update(
                 regenerate_initrd()
             })
             .message("Failed to execute in chroot")?;
+
+        Some(mounts)
     } else {
         info!("Running configure");
         configure(&mut modules, state, host_config)?;
 
         info!("Regenerating initrd");
         regenerate_initrd()?;
-    }
+
+        None
+    };
 
     if let Some(sender) = sender {
         sender
@@ -359,15 +376,16 @@ pub(super) fn update(
 
             if !allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
-                mount::unmount_updated_volumes(mount_path)
-                    .structured(ManagementError::UnmountNewroot)?;
+                if let Some(mounts) = mounts {
+                    mount_root::unmount_new_root(mounts, new_root_path)?;
+                }
                 return Ok(());
             }
 
             info!("Closing datastore");
             state.close();
             info!("Performing transition");
-            transition(mount_path, &root_block_device_path, state.host_status())?;
+            transition(new_root_path, &root_block_device_path, state.host_status())?;
 
             Ok(())
         }
@@ -576,17 +594,33 @@ fn provision(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
-    mount_point: &Path,
+    new_root_path: &Path,
 ) -> Result<(), TridentError> {
-    for m in modules {
-        state.try_with_host_status(|s| {
-            m.provision(s, host_config, mount_point)
+    for module in modules {
+        state.try_with_host_status(|host_status| {
+            module
+                .provision(host_status, host_config, new_root_path)
                 .structured(ManagementError::from(ModuleError::Provision {
-                    name: m.name(),
+                    name: module.name(),
                 }))
-        })?;
+        })?
     }
+
     Ok(())
+}
+
+fn initialize_new_root(
+    state: &mut DataStore,
+    host_config: &HostConfiguration,
+    new_root_path: &Path,
+) -> Result<Vec<PathBuf>, TridentError> {
+    state.try_with_host_status(|host_status| {
+        storage::initialize_block_devices(host_status, host_config, new_root_path)
+    })?;
+    let mounts = state.try_with_host_status(|host_status| {
+        mount_root::mount_new_root(host_status, new_root_path)
+    })?;
+    Ok(mounts)
 }
 
 fn configure(
@@ -616,6 +650,21 @@ fn regenerate_initrd() -> Result<(), TridentError> {
     // password into initrd and to update the hardcoded UUID of the ESP.
 
     mkinitrd::execute()
+}
+
+pub fn reboot() -> Result<(), TridentError> {
+    // Sync all writes to the filesystem.
+    nix::unistd::sync();
+
+    info!("Rebooting system");
+    Command::new("systemctl")
+        .arg("reboot")
+        .run_and_check()
+        .structured(ManagementError::Reboot)?;
+
+    // TODO consider sleep here to allow the reboot to complete
+
+    unreachable!()
 }
 
 fn transition(
@@ -650,7 +699,7 @@ fn transition(
     // .structured(ManagementError::Kexec)
 
     info!("Performing reboot");
-    storage::image::reboot().structured(ManagementError::Reboot)
+    reboot()
 }
 
 #[cfg(test)]

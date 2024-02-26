@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Write};
+use std::path::PathBuf;
 use std::{borrow::Cow, panic::Location};
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -7,7 +8,7 @@ use strum_macros::IntoStaticStr;
 use crate::config::InvalidHostConfigurationError;
 
 /// Trident failed to initialize.
-#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InitializationError {
     #[error("Failed load local configuration")]
@@ -31,7 +32,7 @@ pub enum InitializationError {
 /// Trident failed to run because the execution environment was misconfigured.
 /// This is a user attributable error as it relates to the environment in which
 /// Trident is running, which is user defined.
-#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ExecutionEnvironmentMisconfigurationError {
     #[error(
@@ -41,7 +42,7 @@ pub enum ExecutionEnvironmentMisconfigurationError {
 }
 
 /// User provided input was invalid.
-#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InvalidInputError {
     #[error("Failed to load host configuration file from '{path}'")]
@@ -58,11 +59,11 @@ pub enum InvalidInputError {
     IncompatibleHostConfiguration,
 }
 
-#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum UnsupportedConfigurationError {}
 
-#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum DatastoreError {
     #[error("Failed to create datastore directory")]
@@ -87,7 +88,7 @@ pub enum DatastoreError {
     RecordDatastoreLocation,
 }
 
-#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ModuleError {
     #[error("{name} module failed to refresh host status")]
@@ -102,7 +103,7 @@ pub enum ModuleError {
     Configure { name: &'static str },
 }
 
-#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ManagementError {
     #[error("Failed to start network")]
@@ -127,8 +128,10 @@ pub enum ManagementError {
     ProvisionHost,
     #[error("Failed to set boot next")]
     SetBootNext,
-    #[error("Failed to unmount newroot")]
-    UnmountNewroot,
+    #[error("Failed to mount newroot")]
+    MountNewroot,
+    #[error("Failed to unmount newroot, unable to unmount '{dir}'")]
+    UnmountNewroot { dir: PathBuf },
     #[error("Failed to assemble kernel cmdline")]
     SetKernelCmdline,
     #[error("Failed to perform kexec")]
@@ -149,9 +152,21 @@ pub enum ManagementError {
     ParseEfibootmgrOutput,
     #[error("Failed to modify bootorder")]
     ModifyBootOrder,
+    #[error("Failed to clean up pre-existing RAID arrays")]
+    CleanupRaid,
+    #[error("Failed to create disk partitions")]
+    CreatePartitions,
+    #[error("Failed to create software RAID")]
+    CreateRaid,
+    #[error("Failed to create encrypted volumes")]
+    CreateEncryptedVolumes,
+    #[error("Failed to deploy images")]
+    DeployImages,
+    #[error("Failed to create filesystems")]
+    CreateFilesystems,
 }
 
-#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InternalError {
     #[error("Internal error: {0}")]
@@ -169,7 +184,7 @@ pub enum InternalError {
 
 /// Each variant of `ErrorKind` corresponds to a different category of error. The categories are
 /// intended to be user-meaningful and to be used for routing issues to the proper team.
-#[derive(Debug, thiserror::Error, IntoStaticStr)]
+#[derive(Debug, Eq, thiserror::Error, IntoStaticStr, PartialEq)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ErrorKind {
     /// Trident failed to initialize.
@@ -233,6 +248,11 @@ impl TridentError {
             Some(source) => source.context(self.0.kind).context(context.into()),
             None => anyhow::Error::from(self.0.kind).context(context.into()),
         }
+    }
+
+    /// Returns a reference to the inner ErrorKind.
+    pub fn kind(&self) -> &ErrorKind {
+        &self.0.kind
     }
 }
 

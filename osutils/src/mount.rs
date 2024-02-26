@@ -7,22 +7,34 @@ use crate::exe::RunAndCheck;
 use crate::lsof;
 
 /// Mounts file or block device in path to a dir mount_dir.
-pub fn mount(path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result<(), Error> {
+pub fn mount(
+    path: impl AsRef<Path>,
+    mount_dir: impl AsRef<Path>,
+    filesystem: &str,
+    options: &[String],
+) -> Result<(), Error> {
+    let mut options = options.to_owned();
     let mut command = Command::new("mount");
 
     // Check if file_path is a regular file and not a block device
     if path.as_ref().is_file() {
         // Use -o loop for mounting files
-        command.arg("-o").arg("loop");
+        options.push("loop".into());
+    }
+
+    if !options.is_empty() {
+        command.arg("-o").arg(options.join(","));
     }
 
     // Execute the mount command
     command
+        .arg("-t")
+        .arg(filesystem)
         .arg(path.as_ref())
         .arg(mount_dir.as_ref())
         .run_and_check()
         .context(format!(
-            "Failed to mount {} to directory {}",
+            "Failed to mount {} to path {}",
             path.as_ref().display(),
             mount_dir.as_ref().display(),
         ))?;
@@ -44,7 +56,9 @@ pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error>
         let opened_process_files = lsof::run(mount_dir.as_ref());
 
         if let Ok(opened_process_files) = opened_process_files {
-            error!("Open files: {:?}", opened_process_files);
+            if !opened_process_files.is_empty() {
+                error!("Open files: {:?}", opened_process_files);
+            }
         }
 
         // Propagate the original unmount error
@@ -78,7 +92,7 @@ mod functional_test {
         fs::create_dir_all(mount_point).unwrap();
 
         // Test mount_file function
-        mount(device, mount_point).unwrap();
+        mount(device, mount_point, "iso9660", &[]).unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
         // otherwise, use the device path itself
@@ -108,22 +122,35 @@ mod functional_test {
     fn test_recursive_unmount() {
         let tmp_mount = Path::new("/mnt/tmpfs");
         fs::create_dir_all(tmp_mount).unwrap();
-        Command::new("mount")
-            .arg("-t")
-            .arg("tmpfs")
-            .arg("-o")
-            .arg("size=1M")
-            .arg("tmpfs")
-            .arg(tmp_mount)
-            .run_and_check()
-            .unwrap();
+        mount("tmpfs", tmp_mount, "tmpfs", &["size=1M".into()]).unwrap();
 
         let cdrom_mount = tmp_mount.join("cdrom");
         fs::create_dir_all(&cdrom_mount).unwrap();
-        mount(Path::new("/dev/sr0"), &cdrom_mount).unwrap();
+        mount(Path::new("/dev/sr0"), &cdrom_mount, "auto", &[]).unwrap();
 
         umount(tmp_mount, true).unwrap();
         assert!(!cdrom_mount.exists());
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_readonly_mount() {
+        let tmp_mount = Path::new("/mnt/tmpfs");
+        fs::create_dir_all(tmp_mount).unwrap();
+        mount(
+            "tmpfs",
+            tmp_mount,
+            "tmpfs",
+            &["size=1M".into(), "ro".into()],
+        )
+        .unwrap();
+
+        let cdrom_mount = tmp_mount.join("cdrom");
+        assert_eq!(
+            fs::create_dir_all(cdrom_mount).unwrap_err().to_string(),
+            "Read-only file system (os error 30)"
+        );
+
+        umount(tmp_mount, true).unwrap();
     }
 
     /// Checks if a device is mounted at a given mount point
@@ -169,7 +196,12 @@ mod functional_test {
         let temp_mount_dir = TempDir::new().unwrap();
 
         // Attempt to mount a non-existent file and assert that it fails
-        let mount_result_1 = mount("/path/to/non/existent/file", temp_mount_dir.path());
+        let mount_result_1 = mount(
+            "/path/to/non/existent/file",
+            temp_mount_dir.path(),
+            "auto",
+            &[],
+        );
         assert_eq!(
             mount_result_1.unwrap_err().root_cause().to_string(),
             format!(
@@ -183,7 +215,12 @@ mod functional_test {
         let temp_file = NamedTempFile::new().unwrap();
 
         // Attempt to mount a file to a non-existent directory and assert that it fails
-        let mount_result_2 = mount(temp_file.path(), "/path/to/non/existent/directory");
+        let mount_result_2 = mount(
+            temp_file.path(),
+            "/path/to/non/existent/directory",
+            "auto",
+            &[],
+        );
         assert_eq!(
             mount_result_2.unwrap_err().root_cause().to_string(),
             "Process output:\nstderr:\nmount: /path/to/non/existent/directory: mount point does not exist.\n\n",

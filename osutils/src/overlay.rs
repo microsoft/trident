@@ -214,7 +214,9 @@ impl SystemDFilesystemOverlay {
             let opened_process_files = lsof::run(&self.target_path);
             // best effort, ignore failures here (such as missing external dependency)
             if let Ok(opened_process_files) = opened_process_files {
-                error!("Open files: {:?}", opened_process_files);
+                if !opened_process_files.is_empty() {
+                    error!("Open files: {:?}", opened_process_files);
+                }
             }
 
             res?

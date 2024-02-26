@@ -1,3 +1,4 @@
+pub mod blkid;
 pub mod block_devices;
 pub mod chroot;
 pub mod container;
@@ -6,6 +7,7 @@ pub mod efibootmgr;
 pub mod exe;
 pub mod files;
 pub mod grub;
+pub mod hashing_reader;
 pub mod lsblk;
 pub mod lsof;
 pub mod mkfs;

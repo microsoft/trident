@@ -15,6 +15,7 @@ use osutils::{
 };
 use trident_api::{
     config::{HostConfiguration, PartitionSize, PartitionType},
+    error::{ManagementError, ReportError, TridentError},
     status::{
         self, AbVolumeSelection, BlockDeviceContents, Disk, EncryptedVolume, HostStatus, Partition,
         RaidArray, ReconcileState, UpdateKind,
@@ -246,65 +247,6 @@ impl Module for StorageModule {
         None
     }
 
-    fn provision(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        mount_point: &Path,
-    ) -> Result<(), Error> {
-        if mount_point.exists() {
-            if let Err(e) = osutils::mount::umount(mount_point, true) {
-                warn!(
-                    "Attempt to unmount '{}' returned error: {e}",
-                    mount_point.display(),
-                );
-            }
-        }
-
-        host_status.storage.mount_points = host_config
-            .storage
-            .mount_points
-            .iter()
-            .map(|mount_point| {
-                (
-                    mount_point.path.clone(),
-                    status::MountPoint {
-                        target_id: mount_point.target_id.clone(),
-                        filesystem: mount_point.filesystem.clone(),
-                        options: mount_point.options.clone(),
-                    },
-                )
-            })
-            .collect();
-
-        if host_status.reconcile_state == ReconcileState::CleanInstall {
-            raid::stop_pre_existing_raid_arrays(host_config)
-                .context("Failed to clean up pre-existing RAID arrays")?;
-            create_partitions(host_status, host_config)
-                .context("Failed to create disk partitions")?;
-            raid::create_sw_raid(host_status, host_config)
-                .context("Failed to create software RAID")?;
-            encryption::provision(host_status, host_config)
-                .context("Encryption submodule failed during provision")?;
-        }
-
-        image::provision(host_status, host_config)
-            .context("Image submodule failed during provision")?;
-        filesystem::create_filesystems(host_config, host_status)
-            .context("Failed to create filesystems")?;
-
-        // TODO refactor further
-        image::mount::mount_updated_volumes(host_config, host_status, mount_point, false)
-            .context("Failed to mount the updated volumes")?;
-
-        // Perform file-based update of ESP images, if needed, after filesystems have been mounted and
-        // initialized
-        image::update_esp_images(host_status, host_config)
-            .context("Failed to perform file-based update of ESP images")?;
-
-        Ok(())
-    }
-
     fn configure(
         &mut self,
         host_status: &mut HostStatus,
@@ -338,6 +280,53 @@ impl Module for StorageModule {
     }
 }
 
+pub(super) fn initialize_block_devices(
+    host_status: &mut HostStatus,
+    host_config: &HostConfiguration,
+    mount_point: &Path,
+) -> Result<(), TridentError> {
+    if mount_point.exists() {
+        if let Err(e) = osutils::mount::umount(mount_point, true) {
+            warn!(
+                "Attempt to unmount '{}' returned error: {e}",
+                mount_point.display(),
+            );
+        }
+    }
+
+    host_status.storage.mount_points = host_config
+        .storage
+        .mount_points
+        .iter()
+        .map(|mount_point| {
+            (
+                mount_point.path.clone(),
+                status::MountPoint {
+                    target_id: mount_point.target_id.clone(),
+                    filesystem: mount_point.filesystem.clone(),
+                    options: mount_point.options.clone(),
+                },
+            )
+        })
+        .collect();
+
+    if host_status.reconcile_state == ReconcileState::CleanInstall {
+        raid::stop_pre_existing_raid_arrays(host_config)
+            .structured(ManagementError::CleanupRaid)?;
+        create_partitions(host_status, host_config)
+            .structured(ManagementError::CreatePartitions)?;
+        raid::create_sw_raid(host_status, host_config).structured(ManagementError::CreateRaid)?;
+        encryption::provision(host_status, host_config)
+            .structured(ManagementError::CreateEncryptedVolumes)?;
+    }
+
+    image::provision(host_status, host_config).structured(ManagementError::DeployImages)?;
+    filesystem::create_filesystems(host_config, host_status)
+        .structured(ManagementError::CreateFilesystems)?;
+
+    Ok(())
+}
+
 /// Get the canonicalized paths of all disks in a Host Configuration
 fn get_hostconfig_disk_paths(host_config: &HostConfiguration) -> Result<Vec<PathBuf>, Error> {
     host_config
@@ -352,7 +341,7 @@ fn get_hostconfig_disk_paths(host_config: &HostConfiguration) -> Result<Vec<Path
         .collect()
 }
 
-fn set_host_status_block_device_contents(
+pub(super) fn set_host_status_block_device_contents(
     host_status: &mut HostStatus,
     block_device_id: &BlockDeviceId,
     contents: BlockDeviceContents,

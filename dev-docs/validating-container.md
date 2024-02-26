@@ -34,6 +34,8 @@ only tests basics, and one more thorough, with a small workaround.
 
 ### Light-weight validation steps
 
+*Currently broken, fix tracked by: [Bug 6704](https://dev.azure.com/mariner-org/ECF/_workitems/edit/6704).*
+
 1. Boot the VM with the Provisioning OS using standard `make run-netlaunch`. Do
    not use any password auth in the HC, as the non-dev build of Trident would
    fail with that HC.
@@ -65,7 +67,7 @@ only tests basics, and one more thorough, with a small workaround.
 
    ```bash
    sudo sed -i "s#/trident_cdrom/data#`pwd`#g" /etc/trident/config.yaml
-   sudo sed -i 's#phonehome:.+##g' /etc/trident/config.yaml
+   sudo sed -i -r 's#phonehome:.+##g' /etc/trident/config.yaml
    sudo sed -i 's#selfUpgrade: true#selfUpgrade: false#g' /etc/trident/config.yaml
    sudo sed -i 's#datastore: .*##g' /etc/trident/config.yaml
    ```
@@ -107,7 +109,7 @@ virt-deploy VM with two disks and patched Trident.
 
    ```bash
    sudo systemctl stop trident
-   sudo tdnf install -y moby-engine moby-cli dosfstools
+   sudo tdnf install -y moby-engine moby-cli
    sudo systemctl start docker
    ```
 
@@ -132,7 +134,7 @@ virt-deploy VM with two disks and patched Trident.
 
    ```bash
    sudo sed -i "s#/trident_cdrom/data#`pwd`#g" /etc/trident/config.yaml
-   sudo sed -i 's#phonehome:.+##g' /etc/trident/config.yaml
+   sudo sed -i -r 's#phonehome:.+##g' /etc/trident/config.yaml
    sudo sed -i 's#selfUpgrade: true#selfUpgrade: false#g' /etc/trident/config.yaml
    sudo sed -i 's#datastore: .*##g' /etc/trident/config.yaml
    sudo sed -i 's#/dev/disk/by-path/pci-0000:00:1f.2-ata-2#/dev/disk/by-path/pci-0000:00:1f.2-ata-3#g' /etc/trident/config.yaml

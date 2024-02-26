@@ -445,12 +445,12 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
+    use pytest_gen::functional_test;
+
     use std::process::Command;
 
-    use super::*;
-
     use osutils::{exe::RunAndCheck, lsblk, mount};
-    use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]
     /// Validates that initialize_block_device() correctly initializes a block device by formatting it
@@ -487,7 +487,13 @@ mod functional_test {
             .output_and_check()
             .unwrap();
 
-        mount::mount(Path::new("/dev/sdb"), Path::new("/mnt/sdb")).unwrap();
+        mount::mount(
+            Path::new("/dev/sdb"),
+            Path::new("/mnt/sdb"),
+            "ext4",
+            &["defaults".into()],
+        )
+        .unwrap();
 
         // Unmount /dev/sdb
         mount::umount(Path::new("/mnt/sdb"), false).unwrap();

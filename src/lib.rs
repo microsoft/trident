@@ -14,7 +14,6 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use osutils::overlay::SystemDFilesystemOverlay;
 use osutils::{chroot, container};
 use setsail::KsTranslator;
 use trident_api::config::{HostConfiguration, LocalConfigFile, Operations};
@@ -60,9 +59,6 @@ pub const TRIDENT_DATASTORE_REF_PATH: &str = "/var/lib/trident/datastore-locatio
 /// Trident binary path.
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 pub const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
-
-/// Systemd unit root path.
-const SYSTEMD_UNIT_ROOT_PATH: &str = "/etc/systemd/system";
 
 mod protobufs {
     tonic::include_proto!("trident");
@@ -438,28 +434,10 @@ impl Trident {
             .validate()
             .map_err(|e| TridentError::new(InvalidInputError::InvalidHostConfiguration(e)))?;
 
-        // Use overlay for holding any changes to the host filesystem that
-        // should not be persisted.
-        // TODO: mount the overlay only if we actually need to perform an update
-        let overlay =
-            SystemDFilesystemOverlay::mount_temporary(Path::new(SYSTEMD_UNIT_ROOT_PATH), &[])
-                .structured(ManagementError::MountOverlay)?;
-
-        let result = if datastore.is_persistent() {
+        if datastore.is_persistent() {
             modules::update(cmd, datastore).message("Failed to update host")
         } else {
             modules::provision_host(cmd, datastore).message("Failed to provision host")
-        };
-
-        match overlay
-            .unmount()
-            .structured(ManagementError::UnmountOverlay)
-        {
-            Ok(_) => result,
-            Err(e2) => match result {
-                Ok(_) => Err(e2),
-                Err(e) => Err(e.secondary_error_context(e2)),
-            },
         }
     }
 

@@ -26,6 +26,7 @@ use tempfile;
 
 use osutils::{
     exe::{OutputChecker, RunAndCheck},
+    hashing_reader::HashingReader,
     udevadm,
 };
 use trident_api::{
@@ -38,8 +39,6 @@ use crate::{
     modules::{self, storage},
     Path,
 };
-
-use super::HashingReader;
 
 /// This struct describes an A/B update of a SINGLE image via systemd-sysupdate.
 pub(super) struct ImageDeployment {

@@ -1,12 +1,13 @@
 use std::{
     fs::{self, File},
     io::{self, BufWriter, Read},
-    path::PathBuf,
+    path::Path,
     time::Duration,
 };
 
 use anyhow::{bail, Context, Error};
 use log::{error, info};
+use osutils::hashing_reader::HashingReader;
 use reqwest::{blocking::Response, StatusCode, Url};
 use zstd;
 
@@ -17,8 +18,6 @@ use trident_api::{
 };
 
 use crate::modules::storage;
-
-use super::HashingReader;
 
 pub const GET_MAX_RETRIES: u8 = 25;
 pub const GET_TIMEOUT_SECS: u64 = 600;
@@ -33,25 +32,13 @@ pub const GET_TIMEOUT_SECS: u64 = 600;
 /// 5. block_device_id: BlockDeviceId of the block device.
 /// The func returns a tuple of (String, u64), where the first element is the SHA256 hash of the
 /// stream, and the second element is the number of bytes written to the block device.
-pub(super) fn stream_zstd_image(
+pub(crate) fn stream_zstd_image(
     host_status: &mut HostStatus,
-    mut stream: HashingReader<Box<dyn Read>>,
-    destination_path: &PathBuf,
+    reader: HashingReader<Box<dyn Read>>,
+    destination_path: &Path,
     destination_size: Option<u64>,
     block_device_id: &BlockDeviceId,
 ) -> Result<(String, u64), Error> {
-    // Instantiate decoder for ZSTD stream
-    let mut decoder = zstd::stream::read::Decoder::new(&mut stream)?;
-
-    // Open the partition for writing.
-    let file = fs::File::options()
-        .write(true)
-        .open(destination_path)
-        .context(format!("Failed to open '{}'", destination_path.display()))?;
-
-    // Buffer small writes to the disk, ensuring we write blocks of at least 4MB.
-    let mut file = BufWriter::with_capacity(4 << 20, file);
-
     // Mark the block device as having unknown contents in case the write operation is interrupted.
     storage::set_host_status_block_device_contents(
         host_status,
@@ -62,6 +49,26 @@ pub(super) fn stream_zstd_image(
         "Failed to set block device contents for '{}'",
         block_device_id
     ))?;
+
+    stream_zstd_image_internal(reader, destination_path, destination_size)
+}
+
+pub(crate) fn stream_zstd_image_internal(
+    mut reader: HashingReader<Box<dyn Read>>,
+    destination_path: &Path,
+    destination_size: Option<u64>,
+) -> Result<(String, u64), Error> {
+    // Instantiate decoder for ZSTD stream
+    let mut decoder = zstd::stream::read::Decoder::new(&mut reader)?;
+
+    // Open the partition for writing.
+    let file = fs::File::options()
+        .write(true)
+        .open(destination_path)
+        .context(format!("Failed to open '{}'", destination_path.display()))?;
+
+    // Buffer small writes to the disk, ensuring we write blocks of at least 4MB.
+    let mut file = BufWriter::with_capacity(4 << 20, file);
 
     // Decompress the image and write it to the block device. If destination is a block device and
     // destination_size is provided, ensure that no more than destination_size bytes are written
@@ -89,7 +96,7 @@ pub(super) fn stream_zstd_image(
         bail!("Image is larger than destination");
     }
 
-    let computed_sha256 = &stream.hash();
+    let computed_sha256 = &reader.hash();
 
     Ok((computed_sha256.to_string(), bytes_copied)) // Return both values as a tuple
 }
