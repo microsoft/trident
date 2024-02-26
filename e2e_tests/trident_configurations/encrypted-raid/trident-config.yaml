@@ -27,7 +27,6 @@ hostConfiguration:
             - web-e-2
           metadataVersion: "1.2"
     encryption:
-      recoveryKeyUrl: "file:///recovery.key"
       volumes:
         - id: web
           deviceName: web

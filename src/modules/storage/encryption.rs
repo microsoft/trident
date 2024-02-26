@@ -1,5 +1,8 @@
 use std::{
     collections::BTreeMap,
+    fs::{self, File, Permissions},
+    io::Read,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -8,6 +11,7 @@ use anyhow::{anyhow, bail, Context, Error};
 use log::{debug, info};
 use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 
 use trident_api::{
     config::{HostConfiguration, PartitionType},
@@ -17,6 +21,7 @@ use trident_api::{
 const LUKS_HEADER_SEGMENT_KEY: &str = "0";
 const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
+const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
 pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error> {
     if let Some(encryption) = &host_config.storage.encryption {
@@ -40,8 +45,6 @@ pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error
                     key_file.to_string_lossy()
                 );
             }
-        } else {
-            bail!("Recovery key file URL not specified and recovery key file generation not yet implemented.");
         }
     }
 
@@ -54,16 +57,25 @@ pub fn provision(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     if let Some(encryption) = &host_config.storage.encryption {
-        let key_file: PathBuf = encryption
-            .recovery_key_url
-            .as_ref()
-            .context("Recovery key file generation not yet implemented.")?
-            .path()
-            .into();
+        let key_file_tmp: NamedTempFile;
+        let key_file_path: PathBuf;
+        if let Some(recovery_key_url) = &encryption.recovery_key_url {
+            key_file_path = recovery_key_url.path().into()
+        } else {
+            // Create a temporary file to store the recovery key file. The
+            // key file will be deleted once the NamedTempFile is out of
+            // scope and dropped.
+            key_file_tmp = NamedTempFile::new().context("Failed to create recovery key file")?;
+            key_file_path = key_file_tmp.path().to_owned();
+            fs::set_permissions(&key_file_path, Permissions::from_mode(0o600))
+                .context("Failed to set permissions on temporary recovery key file")?;
+            generate_recovery_key_file(&key_file_path)
+                .context("Failed to generate recovery key file")?;
+        };
 
         debug!(
             "Using key file '{}' to initialize all encrypted volume targets",
-            key_file.display()
+            key_file_path.display()
         );
 
         // Check that the TPM 2.0 device is accessible.
@@ -121,13 +133,15 @@ pub fn provision(
             // are about to encrypt the block device and this may fail.
             *target_content_status = BlockDeviceContents::Unknown;
 
-            encrypt_and_open_target(&target_path, &ev.device_name, &key_file).context(format!(
-                "Failed to encrypt and open target '{}' ({}) as {} for volume '{}'",
-                target_path.display(),
-                ev.target_id,
-                ev.device_name,
-                ev.id
-            ))?;
+            encrypt_and_open_target(&target_path, &ev.device_name, &key_file_path).context(
+                format!(
+                    "Failed to encrypt and open target '{}' ({}) as {} for volume '{}'",
+                    target_path.display(),
+                    ev.target_id,
+                    ev.device_name,
+                    ev.id
+                ),
+            )?;
 
             // Set the content status of the target to initialized since
             // the block device now contains a valid LUKS volume.
@@ -235,6 +249,31 @@ fn encrypt_and_open_target(
         ))?;
 
     Ok(())
+}
+
+/// This function creates a file at the specified path and fills it with
+/// cryptographically secure random bytes sourced from `/dev/random`. It
+/// is intended for generating a recovery key file with a specified size
+/// defined by `TMP_RECOVERY_KEY_SIZE`.
+///
+/// `path` is a reference to a `Path` object that specifies the location
+/// and name of the file to be created. This path should be accessible and
+/// writable by the process.
+///
+/// This function can return an error if opening or reading `/dev/random`
+/// fails. It can also error when writing to the specified file path
+/// fails, which could be due to permission issues, non-existent
+/// directories in the path, or other filesystem-related errors.
+pub fn generate_recovery_key_file(path: &Path) -> Result<(), Error> {
+    let mut random_file: File = File::open("/dev/random").context("Failed to open /dev/random")?;
+    let mut random_buffer: [u8; TMP_RECOVERY_KEY_SIZE] = [0u8; TMP_RECOVERY_KEY_SIZE];
+    random_file
+        .read_exact(&mut random_buffer)
+        .context("Failed to read from /dev/random")?;
+    fs::write(path, random_buffer).context(format!(
+        "Failed to write random data to recovery key file '{}'",
+        path.display()
+    ))
 }
 
 /// This is an abbreviated representation of the JSON output of
@@ -469,25 +508,6 @@ mod tests {
         host_config.storage.encryption = None;
 
         validate_host_config(&host_config).unwrap();
-    }
-
-    // Encryption configuration needs recovery key file specified.
-    #[test]
-    fn test_validate_host_config_recovery_key_none_fail() {
-        let recovery_key_file = get_recovery_key_file();
-        let mut host_config = get_host_config(&recovery_key_file);
-
-        host_config
-            .storage
-            .encryption
-            .as_mut()
-            .unwrap()
-            .recovery_key_url = None;
-
-        assert_eq!(
-            validate_host_config(&host_config).unwrap_err().to_string(),
-            "Recovery key file URL not specified and recovery key file generation not yet implemented."
-        );
     }
 
     // Encryption recovery key file needs to exist on the system.

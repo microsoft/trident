@@ -15,7 +15,6 @@ hostConfiguration:
             type: swap
             size: 1G
     encryption:
-      recoveryKeyUrl: "file:///recovery.key"
       volumes:
         - id: swap
           deviceName: swap

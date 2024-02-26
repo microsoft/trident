@@ -468,8 +468,8 @@ mod tests {
     pub fn get_recovery_key_file() -> NamedTempFile {
         let recovery_key_file: NamedTempFile = NamedTempFile::new().unwrap();
         let recovery_key_path: PathBuf = recovery_key_file.path().to_owned();
-        fs::write(&recovery_key_path, "recovery-key").unwrap();
-        fs::set_permissions(recovery_key_path, Permissions::from_mode(0o600)).unwrap();
+        fs::set_permissions(&recovery_key_path, Permissions::from_mode(0o600)).unwrap();
+        encryption::generate_recovery_key_file(&recovery_key_path).unwrap();
         recovery_key_file
     }
 

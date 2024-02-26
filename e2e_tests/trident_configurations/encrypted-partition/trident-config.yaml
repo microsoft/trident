@@ -15,7 +15,6 @@ hostConfiguration:
             type: linux-generic
             size: 1G
     encryption:
-      recoveryKeyUrl: "file:///recovery.key"
       volumes:
         - id: web
           deviceName: web
