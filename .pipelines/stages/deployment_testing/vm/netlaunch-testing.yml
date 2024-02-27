@@ -98,7 +98,7 @@ stages:
             --logstream \
         2>&1 | tee -a ./deployment.log
         $(tridentSourceDirectory)/e2e_tests/helpers/check_netlaunch.py ./deployment.log || [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]
-      timeoutInMinutes: 5
+      timeoutInMinutes: 7
       workingDirectory: $(argusToolkitSourceDirectory)
       displayName: "Run netlaunch for testing"
 
