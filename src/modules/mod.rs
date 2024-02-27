@@ -3,14 +3,16 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::Mutex,
+    thread,
+    time::Duration,
 };
 
 use anyhow::Error;
-use log::info;
+use log::{error, info};
 
 use trident_api::{
     config::{HostConfiguration, Operations},
-    constants,
+    constants::{self, ROOT_MOUNT_POINT_PATH},
     error::{
         DatastoreError, InitializationError, InternalError, InvalidInputError, ManagementError,
         ModuleError, ReportError, TridentError, TridentResultExt,
@@ -21,7 +23,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::{chroot, exe::RunAndCheck, mkinitrd};
+use osutils::{chroot, container, exe::RunAndCheck, mkinitrd};
 
 use crate::{datastore::DataStore, protobufs::HostStatusState, TRIDENT_DATASTORE_REF_PATH};
 use crate::{
@@ -54,6 +56,11 @@ const BOOT_ENTRY_A: &str = "AZLA";
 const BOOT_ENTRY_B: &str = "AZLB";
 /// Boot efi executable
 const BOOT64_EFI: &str = "bootx64.efi";
+/// Trident will by default prevent running Clean Install on deployments other
+/// than from the Provisioning ISO, to limit chances of accidental data loss. To
+/// override, user can create this file on the host.
+const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
+
 trait Module: Send {
     fn name(&self) -> &'static str;
 
@@ -147,7 +154,12 @@ pub(super) fn provision_host(
             fs::read_to_string("/proc/cmdline").structured(InitializationError::SafetyCheck)?;
         if !cmdline.contains("root=/dev/ram0")
             && !cmdline.contains("root=live:LABEL=CDROM")
-            && !Path::new("/override-trident-safety-check").exists()
+            && (container::is_running_in_container()? // if running on the host, check for this path
+                || !Path::new(SAFETY_OVERRIDE_CHECK_PATH).exists())
+            && (!container::is_running_in_container()? // if running in a container, check for this path
+                || !container::get_host_root_path()?
+                    .join(SAFETY_OVERRIDE_CHECK_PATH.trim_start_matches(ROOT_MOUNT_POINT_PATH))
+                    .exists())
         {
             return Err(TridentError::new(InitializationError::SafetyCheck));
         }
@@ -658,13 +670,15 @@ pub fn reboot() -> Result<(), TridentError> {
 
     info!("Rebooting system");
     Command::new("systemctl")
+        .env("SYSTEMD_IGNORE_CHROOT", "true")
         .arg("reboot")
         .run_and_check()
         .structured(ManagementError::Reboot)?;
 
-    // TODO consider sleep here to allow the reboot to complete
+    thread::sleep(Duration::from_secs(600));
 
-    unreachable!()
+    error!("Waited for reboot for 10 minutes, but nothing happened, aborting");
+    Err(TridentError::new(ManagementError::RebootTimeout))
 }
 
 fn transition(

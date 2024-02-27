@@ -164,6 +164,8 @@ pub enum ManagementError {
     DeployImages,
     #[error("Failed to create filesystems")]
     CreateFilesystems,
+    #[error("Reboot timed out")]
+    RebootTimeout,
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]

@@ -327,7 +327,7 @@ Update `/etc/trident/config.yaml` with the desired configuration.
 To run Trident using a docker container, run:
 
 ```bash
-docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host --pid host trident/trident run
+docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run/udev:/run/udev -v /sys:/sys -v /run/systemd:/run/systemd --pid host trident/trident run
 ```
 
 ## Development

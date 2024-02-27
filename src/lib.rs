@@ -14,10 +14,12 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use osutils::{chroot, container};
+use osutils::container;
 use setsail::KsTranslator;
-use trident_api::config::{HostConfiguration, LocalConfigFile, Operations};
-use trident_api::config::{HostConfigurationSource, InvalidHostConfigurationError};
+use trident_api::config::{
+    HostConfiguration, HostConfigurationSource, InvalidHostConfigurationError, LocalConfigFile,
+    Operations,
+};
 use trident_api::error::{
     ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
     InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt,
@@ -327,43 +329,7 @@ impl Trident {
             drop(sender);
         }
 
-        // When running inside a container, we want to chroot into the host's
-        // root. To do this, we assume the container is created with a volume/bind
-        // mount of the host's root at /host. We enter this chroot here so that
-        // all subsequent commands are executed in the host's root, and dont
-        // have to be aware of if Trident is running in the context of the
-        // container or not.
-        if container::is_running_in_container().message("Failed running in container check")? {
-            debug!("Copying os modifier binary from container to host");
-
-            let host_root_path_buf =
-                container::get_host_root_path().message("Failed to get host root volume path")?;
-
-            // Copy EMU binary from container to host
-            fs::copy(
-                OS_MODIFIER_BINARY_PATH,
-                host_root_path_buf.join(OS_MODIFIER_BINARY_PATH.trim_start_matches('/')),
-            )
-            .structured(ManagementError::OSModifierCopy)?;
-
-            info!("Running inside container, entering '/host' chroot");
-            if let Err(e) = chroot::enter_host_chroot(
-                &host_root_path_buf,
-            )
-            .message(
-                "Failed to enter host chroot, which is required when executing inside a container",
-            )?
-            .execute_and_exit(|| self.handle_commands(receiver, &orchestrator))
-            .message("Failed to execute in the host chroot")
-            {
-                if let Some(ref orchestrator) = orchestrator {
-                    orchestrator.report_error(format!("{e:?}"));
-                }
-                return Err(e);
-            }
-        } else {
-            self.handle_commands(receiver, &orchestrator)?;
-        };
+        self.handle_commands(receiver, &orchestrator)?;
 
         if let Some(ref orchestrator) = orchestrator {
             orchestrator.report_success()
@@ -433,6 +399,12 @@ impl Trident {
         cmd.host_config
             .validate()
             .map_err(|e| TridentError::new(InvalidInputError::InvalidHostConfiguration(e)))?;
+
+        // When running inside a container, we need access to various host
+        // paths. For now, check at least for presence of /host, which needs to
+        // point to host's /. This function will return an error if running in a
+        // container and /host is not mounted.
+        container::is_running_in_container().message("Running in container check failed")?;
 
         if datastore.is_persistent() {
             modules::update(cmd, datastore).message("Failed to update host")

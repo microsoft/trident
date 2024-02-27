@@ -66,8 +66,15 @@ rpm: artifacts/osmodifier
 	docker rm -v $$id && \
 	tar xf bin/trident.tar.gz -C bin/
 
+SYSTEMD_RPM_TAR_URL ?= https://hermesimages.blob.core.windows.net/hermes-test/systemd-254-3.tar.gz
+
+artifacts/systemd/systemd-254-3.cm2.x86_64.rpm:
+	mkdir -p ./artifacts/systemd
+	curl $(SYSTEMD_RPM_TAR_URL) | tar -xz -C ./artifacts/systemd --strip-components=1
+	rm -f ./artifacts/systemd/*.src.rpm ./artifacts/systemd/systemd-debuginfo*.rpm ./artifacts/systemd/systemd-devel-*.rpm
+
 .PHONY: docker-build
-docker-build: artifacts/osmodifier
+docker-build: artifacts/osmodifier artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
 	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest \

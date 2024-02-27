@@ -93,7 +93,7 @@ pub(crate) fn stream_zstd_image_internal(
     // Attempt to read an additional byte from the stream to see whether the whole image was
     // consumed.
     if decoder.read(&mut [0])? != 0 {
-        bail!("Image is larger than destination");
+        bail!("Image is larger than destination ({} bytes already copied, however additional bytes remaining)", bytes_copied);
     }
 
     let computed_sha256 = &reader.hash();

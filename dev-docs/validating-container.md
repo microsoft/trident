@@ -75,7 +75,7 @@ only tests basics, and one more thorough, with a small workaround.
 7. Run Trident from the container to perform A/B update:
 
    ```bash
-   sudo docker run -it --rm --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host --pid host acrafoimages.azurecr.io/trident:$ALIAS run -v DEBUG
+   sudo docker run -it --rm --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run/udev:/run/udev -v /sys:/sys -v /run/systemd:/run/systemd -v `pwd`:`pwd` --pid host acrafoimages.azurecr.io/trident:$ALIAS run -v DEBUG
    ```
 
 8. The VM should reboot into a different image. You might see a failure of
@@ -150,11 +150,11 @@ virt-deploy VM with two disks and patched Trident.
 
 11. Run Trident from the container to perform clean install:
 
-   ```bash
-   sudo docker run -it --rm --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host --pid host acrafoimages.azurecr.io/trident:$ALIAS run -v DEBUG
-   ```
+    ```bash
+    sudo docker run -it --rm --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run/udev:/run/udev -v /sys:/sys -v /run/systemd:/run/systemd -v `pwd`:`pwd` --pid host acrafoimages.azurecr.io/trident:$ALIAS run -v DEBUG
+    ```
 
 12. The VM should reboot into a different image. You might see a failure of
-   Trident, as the HC used might not be compatible with Trident in the new
-   runtime image. You can also tell the different image if you look at the
-   hostname on the login prompt.
+    Trident, as the HC used might not be compatible with Trident in the new
+    runtime image. You can also tell the different image if you look at the
+    hostname on the login prompt.
