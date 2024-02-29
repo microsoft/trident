@@ -45,6 +45,34 @@ pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error
                     key_file.to_string_lossy()
                 );
             }
+
+            if !key_file_metadata.is_file() {
+                bail!(
+                    "Recovery key '{}' is not a file",
+                    key_file.to_string_lossy()
+                );
+            }
+
+            let key_file_perms_mode: u32 = key_file_metadata.permissions().mode();
+
+            // In Unix-based systems, the file mode is represented by four
+            // octal digits. The first digit specifies the file type,
+            // while the subsequent three digits determine the access
+            // permissions for the owner, group, and others, respectively.
+            // To confirm that only the file owner possesses read and
+            // write permissions, it's essential to check that neither the
+            // group nor others have any permissions. This is accomplished
+            // by applying a bitmask '& 0o77' to the mode, which isolates
+            // the permissions for the group and others. We then verify
+            // that these isolated permissions are indeed set to 0,
+            // ensuring exclusive access for the owner.
+            if (key_file_perms_mode & 0o77) != 0 {
+                bail!(
+                    "Recovery key file '{}' must not be readable or writable by group or others but has permissions 0o{:03o}",
+                    key_file.to_string_lossy(),
+                    key_file_perms_mode & 0o777
+                );
+            }
         }
     }
 
@@ -392,7 +420,7 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{os::unix::fs::PermissionsExt, str::FromStr};
 
     use trident_api::{
         config::{
@@ -526,6 +554,88 @@ mod tests {
                 recovery_key_file.path().display()
             )
         );
+    }
+
+    // Encryption needs recovery key url to point to a file.
+    #[test]
+    fn test_validate_host_config_recovery_key_not_file_fail() {
+        let recovery_key_file = get_recovery_key_file();
+        let mut host_config = get_host_config(&recovery_key_file);
+        let encryption = host_config.storage.encryption.as_mut().unwrap();
+
+        // Point to the recovery key file's directory.
+        let recovery_key_dir: &Path = recovery_key_file.path().parent().unwrap();
+        encryption.recovery_key_url = Some(Url::from_directory_path(recovery_key_dir).unwrap());
+
+        assert_eq!(
+            validate_host_config(&host_config).unwrap_err().to_string(),
+            format!(
+                "Recovery key '{}/' is not a file",
+                recovery_key_dir.display()
+            )
+        );
+    }
+
+    // Encryption needs recovery key url to point to a file that is only accessible by the owner.
+    #[test]
+    fn test_validate_host_config_recovery_key_perm_pass() {
+        let recovery_key_file = get_recovery_key_file();
+        let host_config = get_host_config(&recovery_key_file);
+
+        // Loop through all possible permission modes.
+        for owner_digit in 0..=7 {
+            for group_digit in 0..=7 {
+                for other_digit in 0..=7 {
+                    // Skip the invalid permission modes, where either the group or other digits are not 0.
+                    if group_digit != 0 || other_digit != 0 {
+                        continue;
+                    }
+
+                    let mode = owner_digit << 6 | group_digit << 3 | other_digit;
+
+                    // Set the recovery key file's permissions to mode
+                    let mut perms = recovery_key_file.path().metadata().unwrap().permissions();
+                    perms.set_mode(mode);
+                    std::fs::set_permissions(recovery_key_file.path(), perms).unwrap();
+
+                    validate_host_config(&host_config).unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_host_config_recovery_key_perm_fail() {
+        let recovery_key_file = get_recovery_key_file();
+        let host_config = get_host_config(&recovery_key_file);
+
+        // Loop through all possible permission modes.
+        for owner_digit in 0..=7 {
+            for group_digit in 0..=7 {
+                for other_digit in 0..=7 {
+                    // Skip the valid permission modes, the ones with group and other digits set to 0o0.
+                    if group_digit == 0 && other_digit == 0 {
+                        continue;
+                    }
+
+                    let mode = owner_digit << 6 | group_digit << 3 | other_digit;
+
+                    // Set the recovery key file's permissions to mode
+                    let mut perms = recovery_key_file.path().metadata().unwrap().permissions();
+                    perms.set_mode(mode);
+                    std::fs::set_permissions(recovery_key_file.path(), perms).unwrap();
+
+                    assert_eq!(
+                        validate_host_config(&host_config).unwrap_err().to_string(),
+                        format!(
+                            "Recovery key file '{}' must not be readable or writable by group or others but has permissions 0o{:03o}",
+                            recovery_key_file.path().display(),
+                            mode
+                        )
+                    );
+                }
+            }
+        }
     }
 
     #[test]

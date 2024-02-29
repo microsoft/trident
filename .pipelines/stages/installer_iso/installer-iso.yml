@@ -114,7 +114,7 @@ stages:
               chmod +x $(argusToolkitSourceDirectory)/build/installer-iso-components/isogen
               $(argusToolkitSourceDirectory)/build/installer-iso-components/isogen \
                   -i "$(argusToolkitSourceDirectory)/build/installer-iso-components/provision-template.iso" \
-                  -f "$(argusToolkitSourceDirectory)/recovery.key:/recovery.key" \
+                  -f "$(argusToolkitSourceDirectory)/recovery.key:/recovery.key:400" \
                   -a "$(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image" \
                   -o "$(argusToolkitSourceDirectory)/build/installer-iso/installer.iso" \
                   -m "$(argusToolkitSourceDirectory)/build/installer-iso/added_files.json"
