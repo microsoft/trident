@@ -1,7 +1,7 @@
 parameters:
 - name: httpProxy
   type: string
-  default: 'http://172.16.1.9:3128'
+  default: 'http://172.16.1.10:3128'
 
 - name: noProxy
   type: string
@@ -159,6 +159,11 @@ stages:
         # Create the Lab metadata file
         cd $(K8S_SANITY_DIR)
 
+        # Use Azure DevOps artifact feed as a proxy for PyPI.
+        # This allows ADO to audit the packages used and to search for malware.
+        sudo env "PATH=$PATH" poetry source add --priority=default ado https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/Mariner-HCI-Build-Dependencies-Feed/pypi/simple
+        sudo env "PATH=$PATH" poetry config -- http-basic.ado build "$SYSTEM_ACCESSTOKEN"
+
         # Provision poetry venv.
         sudo env "PATH=$PATH" make setup-baremetal-provisioning
 
@@ -170,6 +175,8 @@ stages:
               --ssh-pub-key $(SSH_KEY_FILE).pub  \
               --interface-name ${{ parameters.interfaceForOamIp }}
         cat $(TRIDENT_CONFIG_FILE)
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
       displayName: 'Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details'
 
     - template: k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml@k8s-tests
