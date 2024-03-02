@@ -67,3 +67,4 @@ stages:
         mic_version: $(mic_version)
         baseimg_package: $(baseimg_package)
         baseimg_version: $(baseimg_version)
+        target: trident-testimage
