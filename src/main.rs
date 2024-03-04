@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::ExitCode};
+use std::{panic, path::PathBuf, process::ExitCode};
 
 use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
@@ -98,41 +98,48 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
         logstream.disable();
     }
 
-    let mut trident = trident::Trident::new(args.config.clone(), logstream)
-        .unstructured("Failed to initialize trident")?;
+    let res = panic::catch_unwind(move || {
+        let mut trident = trident::Trident::new(args.config.clone(), logstream)
+            .unstructured("Failed to initialize trident")?;
 
-    match &args.command {
-        Commands::Run(args) => {
-            let res = trident
-                .run()
-                .unstructured("Failed to execute Trident run command");
+        match &args.command {
+            Commands::Run(args) => {
+                let res = trident
+                    .run()
+                    .unstructured("Failed to execute Trident run command");
 
-            // return HostStatus if requested
-            if args.status.is_some() {
-                if let Err(e) = trident
-                    .retrieve_host_status(&args.status)
-                    .context("Failed to retrieve Host Status")
-                {
-                    error!("{e}");
+                // return HostStatus if requested
+                if args.status.is_some() {
+                    if let Err(e) = trident
+                        .retrieve_host_status(&args.status)
+                        .context("Failed to retrieve Host Status")
+                    {
+                        error!("{e}");
+                    }
                 }
+
+                res?;
             }
+            Commands::StartNetwork => trident
+                .start_network()
+                .unstructured("Failed to start network")?,
+            Commands::GetHostStatus(args) => trident
+                .retrieve_host_status(&args.status)
+                .context("Failed to retrieve Host Status")?,
 
-            res?;
+            Commands::ParseKickstart { .. } | Commands::Validate { .. } => unreachable!(),
+
+            #[cfg(feature = "pytest-generator")]
+            Commands::Pytest => unreachable!(),
         }
-        Commands::StartNetwork => trident
-            .start_network()
-            .unstructured("Failed to start network")?,
-        Commands::GetHostStatus(args) => trident
-            .retrieve_host_status(&args.status)
-            .context("Failed to retrieve Host Status")?,
 
-        Commands::ParseKickstart { .. } | Commands::Validate { .. } => unreachable!(),
+        Ok(())
+    });
 
-        #[cfg(feature = "pytest-generator")]
-        Commands::Pytest => unreachable!(),
+    match res {
+        Err(e) => bail!("Trident panicked: {e:?}"),
+        Ok(r) => r,
     }
-
-    Ok(())
 }
 
 fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
