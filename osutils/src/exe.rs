@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Error};
+use log::trace;
 
 use crate::crate_private::Sealed;
 
@@ -200,30 +201,51 @@ impl Sealed for Command {}
 
 impl RunAndCheck for Command {
     fn run_and_check(&mut self) -> Result<(), Error> {
-        self.output()
+        let result = self.output();
+        trace!(
+            "Executed '{}': {}. Details: {:?}",
+            self.render_command(),
+            result.explain_exit(),
+            &result
+        );
+        result
             .check()
             .with_context(|| format!("Error when running: {}", self.render_command()))
     }
 
     fn output_and_check(&mut self) -> Result<String, Error> {
-        self.output()
+        let result = self.output();
+        trace!(
+            "Executed '{}': {}. Details: {:?}",
+            self.render_command(),
+            result.explain_exit(),
+            &result
+        );
+        result
             .check_output()
             .with_context(|| format!("Error when running: {}", self.render_command()))
     }
 
     fn raw_output_and_check(&mut self) -> Result<Output, Error> {
         // Run the process and store the result.
-        let res = self.output();
+        let result = self.output();
+        trace!(
+            "Executed '{}': {}. Details: {:?}",
+            self.render_command(),
+            result.explain_exit(),
+            &result
+        );
 
         // Check the result to be sure it's Ok(output) and that the subprocess
         // exited successfully.
-        res.check()
+        result
+            .check()
             .with_context(|| format!("Error when running: {}", self.render_command()))?;
 
         // We already checked the result, so we know it's an Ok(output) and
         // output.is_success() == true. We need to return the output, so we
         // unwrap() it out of the result.
-        Ok(res.unwrap())
+        Ok(result.unwrap())
     }
 
     fn render_command(&self) -> String {
