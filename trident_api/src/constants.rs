@@ -62,6 +62,10 @@ pub const ROOT_EFI_DIRECTORY: &str = "efi";
 /// Root volume mount point path.
 pub const ROOT_MOUNT_POINT_PATH: &str = "/";
 
+/// The path to the root of the freshly deployed (from provisioning OS) or
+/// updated OS (from runtime OS).
+pub const UPDATE_ROOT_PATH: &str = "/mnt/newroot";
+
 /// Boot volume relative mount point path (boot) relative to the root mount point.
 pub const BOOT_RELATIVE_MOUNT_POINT_PATH: &str = BOOT_DIRECTORY;
 

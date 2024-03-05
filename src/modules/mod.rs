@@ -12,7 +12,7 @@ use log::{error, info};
 
 use trident_api::{
     config::{HostConfiguration, Operations},
-    constants::{self, ROOT_MOUNT_POINT_PATH},
+    constants::{self, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
     error::{
         DatastoreError, InitializationError, InternalError, InvalidInputError, ManagementError,
         ModuleError, ReportError, TridentError, TridentResultExt,
@@ -47,9 +47,6 @@ pub mod bootentries;
 pub mod kexec;
 pub mod mount_root;
 
-/// The path to the root of the freshly deployed (from provisioning OS) or
-/// updated OS (from runtime OS).
-const UPDATE_ROOT_PATH: &str = "/mnt/newroot";
 /// Bootentry name for A images
 const BOOT_ENTRY_A: &str = "AZLA";
 /// Bootentry name for B images

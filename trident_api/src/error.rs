@@ -147,10 +147,8 @@ pub enum ManagementError {
     #[error(transparent)]
     Datastore(#[from] DatastoreError),
     #[error("Failed to list boot entries")]
-    ListBootEntries,
-    #[error("Failed to parse boot manager output")]
-    ParseEfibootmgrOutput,
-    #[error("Failed to modify bootorder")]
+    ListAndParseBootEntries,
+    #[error("Failed to list and parse boot manager entries")]
     ModifyBootOrder,
     #[error("Failed to clean up pre-existing RAID arrays")]
     CleanupRaid,

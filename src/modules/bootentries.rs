@@ -5,7 +5,7 @@ use log::{debug, info};
 use osutils::efibootmgr;
 use osutils::efibootmgr::EfiBootManagerOutput;
 use trident_api::config::PartitionType;
-use trident_api::constants;
+use trident_api::constants::{self, UPDATE_ROOT_PATH};
 use trident_api::error::{InitializationError, ManagementError, ReportError, TridentError};
 use trident_api::status::{AbVolumeSelection, HostStatus};
 
@@ -13,7 +13,7 @@ use crate::datastore::DataStore;
 use crate::modules::{BOOT_ENTRY_A, BOOT_ENTRY_B};
 use crate::{modules, TRIDENT_DATASTORE_PATH};
 
-use super::{BOOT64_EFI, UPDATE_ROOT_PATH};
+use super::BOOT64_EFI;
 
 /// Calls the set_boot_next to set the boot next variable and  then updates the host status.
 ///
@@ -25,10 +25,8 @@ pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), 
     set_boot_next(host_status).structured(ManagementError::SetBootNext)?;
 
     // Get the output of efibootmgr
-    let output = efibootmgr::list_bootmgr_entries().structured(ManagementError::ListBootEntries)?;
-    let bootmgr_output: EfiBootManagerOutput =
-        EfiBootManagerOutput::parse_efibootmgr_output(&output)
-            .structured(ManagementError::ParseEfibootmgrOutput)?;
+    let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
+        .structured(ManagementError::ListAndParseBootEntries)?;
 
     // Open datastore
     let datastore_path = host_status
@@ -36,7 +34,7 @@ pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), 
         .datastore_path
         .as_deref()
         .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
-
+    debug!("Opening datastore at path: {}", datastore_path.display());
     let new_path = Path::new(UPDATE_ROOT_PATH).join(
         datastore_path
             .to_str()
@@ -54,7 +52,8 @@ pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), 
             Some(bootmgr_output.boot_next)
         } else {
             None
-        }
+        };
+        debug!("Updating host status with BootNext: {:?}", s.boot_next);
     })?;
 
     //TODO-  https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807 better way to close datastore
@@ -68,10 +67,10 @@ pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), 
 fn set_boot_next(host_status: &HostStatus) -> Result<(), Error> {
     let (entry_label_new, bootloader_path_new) =
         get_label_and_path(host_status).context("Failed to get label and path")?;
-    let output = efibootmgr::list_bootmgr_entries()?;
-    let bootmgr_output = EfiBootManagerOutput::parse_efibootmgr_output(&output)?;
+    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
 
     if bootmgr_output.boot_entry_exists(entry_label_new)? {
+        debug!("Boot entry already exists, deleting and adding new entry with label '{entry_label_new}'");
         let entry_number = bootmgr_output.get_boot_entry_number(entry_label_new)?;
         efibootmgr::delete_boot_entry(&entry_number)?;
         let mut boot_order = bootmgr_output.get_boot_order()?;
@@ -82,14 +81,18 @@ fn set_boot_next(host_status: &HostStatus) -> Result<(), Error> {
     }
     let disk_path = get_first_partition_of_type(host_status, PartitionType::Esp)
         .context("Failed to fetch esp disk path ")?;
+    debug!("Disk path: of first esp partition {:?}", disk_path);
     efibootmgr::create_boot_entry(entry_label_new, disk_path, bootloader_path_new)
         .context("Failed to add boot entry")?;
-    let output = efibootmgr::list_bootmgr_entries()?;
-    let bootmgr_output = EfiBootManagerOutput::parse_efibootmgr_output(&output)?;
+    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
 
     let added_entry_number = bootmgr_output
         .get_boot_entry_number(entry_label_new)
         .context("Failed to get boot entry number")?;
+    debug!(
+        "Added entry number: {:?} and setting bootnext to this entry",
+        added_entry_number
+    );
     efibootmgr::set_boot_next(&added_entry_number).context("Failed to get set `BootNext`")
 }
 
@@ -152,14 +155,13 @@ pub fn set_boot_order(datastore_path: &Path) -> Result<(), TridentError> {
         })?;
     let host_status = datastore.host_status();
 
-    let output = efibootmgr::list_bootmgr_entries().structured(ManagementError::ListBootEntries)?;
-    let bootmgr_output: EfiBootManagerOutput =
-        EfiBootManagerOutput::parse_efibootmgr_output(&output)
-            .structured(ManagementError::ParseEfibootmgrOutput)?;
+    let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
+        .structured(ManagementError::ListAndParseBootEntries)?;
 
     let (new_boot_order, clear_boot_next) = update_efi_boot_order(host_status, &bootmgr_output);
 
     if let Some(new_boot_order) = new_boot_order {
+        debug!("Modifying boot order to: {}", new_boot_order);
         efibootmgr::modify_boot_order(&new_boot_order)
             .structured(ManagementError::ModifyBootOrder)?;
     } else {
@@ -167,6 +169,7 @@ pub fn set_boot_order(datastore_path: &Path) -> Result<(), TridentError> {
     }
 
     if clear_boot_next {
+        debug!("Clearing boot_next variable from host status");
         datastore.with_host_status(|s| {
             s.boot_next = None;
         })?;
@@ -474,21 +477,26 @@ mod functional_test {
     use super::*;
     use maplit::btreemap;
     use tempfile::TempDir;
-    use trident_api::status::{AbUpdate, AbVolumePair, Partition, ReconcileState, UpdateKind};
+    use trident_api::{
+        constants::{ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+        status::{AbUpdate, AbVolumePair, Partition, ReconcileState, UpdateKind},
+    };
 
     use uuid::Uuid;
 
     use osutils::efibootmgr::{self, EfiBootManagerOutput};
     use pytest_gen::functional_test;
 
-    use std::iter::Iterator;
+    use std::{
+        fs::{create_dir_all, File},
+        iter::Iterator,
+    };
     use trident_api::status::{BlockDeviceContents, Disk, Storage};
 
     #[allow(dead_code)]
     fn delete_boot_next() {
-        let output = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         if !bootmgr_output.boot_next.is_empty() {
             // Unset the boot_next variable using efibootmgr
             efibootmgr::delete_boot_next().unwrap();
@@ -500,9 +508,7 @@ mod functional_test {
         efibootmgr::create_boot_entry("TestBoot1", "/dev/sda", "/EFI/AZLA/bootx64.efi").unwrap();
         efibootmgr::create_boot_entry("TestBoot2", "/dev/sda", "/EFI/AZLA/bootx64.efi").unwrap();
         efibootmgr::create_boot_entry("TestBoot3", "/dev/sda", "/EFI/AZLA/bootx64.efi").unwrap();
-        let output = efibootmgr::list_bootmgr_entries().unwrap();
-        let bootmgr_output: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
+        let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries().unwrap();
 
         let _entry_number1 = bootmgr_output.get_boot_entry_number("TestBoot1").unwrap();
         let entry_number2 = bootmgr_output.get_boot_entry_number("TestBoot2").unwrap();
@@ -518,9 +524,8 @@ mod functional_test {
     }
 
     fn delete_created_boot_entries() {
-        let output = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
 
         let entry_number1 = bootmgr_output.get_boot_entry_number("TestBoot1").unwrap();
         let entry_number2 = bootmgr_output.get_boot_entry_number("TestBoot2").unwrap();
@@ -543,9 +548,8 @@ mod functional_test {
         let temp_dir = TempDir::new().unwrap();
         let datastore_path = temp_dir.path().join("db.sqlite");
 
-        let output = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let boot_current = &bootmgr_output.boot_current;
         let initial_boot_order = bootmgr_output.boot_order;
         let mut datastore = DataStore::open_temporary().unwrap();
@@ -569,9 +573,8 @@ mod functional_test {
         assert!(host_status.boot_next.is_none());
 
         // Get the modified boot_order
-        let output1 = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output1: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output1).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let final_boot_order = bootmgr_output1.boot_order;
 
         // Set expected boot_order i.e boot_next as the first entry and rest of the entries in the same order as initial_boot_order.
@@ -609,9 +612,8 @@ mod functional_test {
         let temp_dir = TempDir::new().unwrap();
         let datastore_path = temp_dir.path().join("db.sqlite");
 
-        let output = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let entry_number1 = bootmgr_output.get_boot_entry_number("TestBoot2").unwrap();
         let initial_boot_order = bootmgr_output.boot_order;
         let mut datastore = DataStore::open_temporary().unwrap();
@@ -634,9 +636,8 @@ mod functional_test {
         assert!(host_status.boot_next.is_none());
 
         // Get the modified boot_order
-        let output1 = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output1: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output1).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let final_boot_order = bootmgr_output1.boot_order;
 
         // Cleanup
@@ -658,9 +659,8 @@ mod functional_test {
         let temp_dir = TempDir::new().unwrap();
         let datastore_path = temp_dir.path().join("db.sqlite");
 
-        let output = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let initial_boot_order = bootmgr_output.boot_order;
         let mut datastore = DataStore::open_temporary().unwrap();
 
@@ -681,9 +681,8 @@ mod functional_test {
         assert!(host_status.boot_next.is_none());
 
         // Get the modified boot_order
-        let output1 = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output1: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output1).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let final_boot_order = bootmgr_output1.boot_order;
 
         // Cleanup
@@ -693,17 +692,15 @@ mod functional_test {
     }
 
     fn test_helper_set_boot_entries(entry_label: &str, host_status: &HostStatus) {
-        let output1 = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output1: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output1).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         if bootmgr_output1.boot_entry_exists(entry_label).unwrap() {
             let boot_entry_num1 = bootmgr_output1.get_boot_entry_number(entry_label).unwrap();
             efibootmgr::delete_boot_entry(&boot_entry_num1).unwrap();
         }
         set_boot_next(host_status).unwrap();
-        let output2 = efibootmgr::list_bootmgr_entries().unwrap();
         let bootmgr_output2: EfiBootManagerOutput =
-            EfiBootManagerOutput::parse_efibootmgr_output(&output2).unwrap();
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let boot_entry_num2 = bootmgr_output2.get_boot_entry_number(entry_label).unwrap();
         assert_eq!(bootmgr_output2.boot_next, boot_entry_num2);
         efibootmgr::delete_boot_entry(&boot_entry_num2).unwrap();
@@ -780,7 +777,18 @@ mod functional_test {
         test_helper_set_boot_entries(BOOT_ENTRY_A, &host_status);
 
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
-
+        let dir_path = Path::new(&format!(
+            "{}/{}",
+            ROOT_MOUNT_POINT_PATH, ESP_RELATIVE_MOUNT_POINT_PATH
+        ))
+        .join(constants::ESP_EFI_DIRECTORY)
+        .join(BOOT_ENTRY_B);
+        create_dir_all(dir_path.clone()).unwrap();
+        // Create B partition bootloader entry
+        let file_path = dir_path.join(BOOT64_EFI).to_path_buf();
+        File::create(file_path.clone()).unwrap();
         test_helper_set_boot_entries(BOOT_ENTRY_B, &host_status);
+        // Delete the file
+        std::fs::remove_file(file_path.clone()).unwrap();
     }
 }
