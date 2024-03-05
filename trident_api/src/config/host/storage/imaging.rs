@@ -9,7 +9,7 @@ use crate::BlockDeviceId;
 use crate::schema_helpers::block_device_id_schema;
 
 /// Per image configuration.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Image {
@@ -41,7 +41,7 @@ pub struct Image {
 }
 
 /// Image SHA256 checksum.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum ImageSha256 {
     /// The SHA256 checksum of the image.
@@ -55,7 +55,7 @@ pub enum ImageSha256 {
 }
 
 /// Image format.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum ImageFormat {
@@ -72,7 +72,7 @@ pub enum ImageFormat {
 
 /// A/B update configuration. Carries information about the A/B update volume
 /// pairs that are used to perform A/B updates.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct AbUpdate {
@@ -88,7 +88,7 @@ pub struct AbUpdate {
 /// devices used for the A/B update.
 ///
 /// **Under development, initial logic for illustration purposes only.**
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct AbVolumePair {

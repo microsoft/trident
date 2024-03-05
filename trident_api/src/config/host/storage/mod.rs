@@ -30,7 +30,7 @@ use super::error::InvalidHostConfigurationError;
 /// Storage configuration describes the disks of the host that will be used to
 /// store the OS and data. Not all disks of the host need to be captured inside
 /// the Host Configuration, only those that Trident should operate on.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Storage {
@@ -60,7 +60,7 @@ pub struct Storage {
 }
 
 /// Per disk configuration.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Disk {
@@ -95,7 +95,7 @@ pub struct Disk {
 }
 
 /// Partition table type. Currently only GPT is supported.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum PartitionTableType {
@@ -108,7 +108,7 @@ pub enum PartitionTableType {
 
 /// Configure encrypted volumes of underlying disk partitions or software
 /// raid arrays.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Encryption {
@@ -185,7 +185,7 @@ pub struct Encryption {
 }
 
 /// A LUKS2-encrypted volume configuration.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct EncryptedVolume {
@@ -220,7 +220,7 @@ pub struct EncryptedVolume {
 }
 
 /// RAID configuration for a host.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Raid {
@@ -243,7 +243,7 @@ pub struct Raid {
 ///
 /// To learn more about `mdadm`, please refer to the [mdadm
 /// guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct SoftwareRaidArray {
@@ -312,7 +312,7 @@ pub enum RaidLevel {
 ///
 /// These are used by Trident to update the `/etc/fstab` in the runtime OS to
 /// correctly mount the volumes.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct MountPoint {

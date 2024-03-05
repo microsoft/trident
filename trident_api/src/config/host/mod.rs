@@ -21,7 +21,7 @@ use storage::Storage;
 use error::InvalidHostConfigurationError;
 
 /// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct HostConfiguration {
