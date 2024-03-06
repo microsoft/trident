@@ -227,7 +227,6 @@ pub(super) fn add_to_host_status(host_status: &mut HostStatus, raid_details: Rai
         array_size: raid_details.size,
         ty: RaidType::Software,
         path: raid_details.path,
-        raid_symlink_path: raid_details.symlink_path,
         uuid: Uuid::parse_str(&raid_details.uuid).unwrap(),
         contents: status::BlockDeviceContents::Unknown,
     };
@@ -598,7 +597,6 @@ mod tests {
                 array_size: 12345,
                 ty: RaidType::Software,
                 path: PathBuf::from("/dev/md/some_raid"),
-                raid_symlink_path: PathBuf::from("/dev/md127"),
                 uuid: Uuid::parse_str("5ddca66e-2a11-4b5c-ab97-5c5158ab10b8").unwrap(),
                 contents: status::BlockDeviceContents::Unknown,
             },
