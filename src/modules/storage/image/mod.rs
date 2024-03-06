@@ -9,10 +9,11 @@ use log::{debug, info};
 use reqwest::Url;
 use uuid::Uuid;
 
-use osutils::{resize2fs, tune2fs};
+use osutils::{container, resize2fs, tune2fs};
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+    error::TridentResultExt,
     status::{
         AbUpdate, AbVolumePair, AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo,
         HostStatus, ReconcileState,
@@ -369,9 +370,17 @@ pub(crate) fn get_undeployed_images<'a>(
 }
 
 pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Error> {
+    // If running in a container, look for the host root mount point
+    let root_mount_path = if container::is_running_in_container()
+        .unstructured("Failed to determine wheter running in a container")?
+    {
+        container::get_host_root_path().unstructured("Failed to get host root mount path")?
+    } else {
+        Path::new(ROOT_MOUNT_POINT_PATH).to_path_buf()
+    };
     // update root_device_path of the active root volume
     host_status.storage.root_device_path = Some(
-        TabFile::get_device_path(Path::new("/proc/mounts"), Path::new(ROOT_MOUNT_POINT_PATH))
+        TabFile::get_device_path(Path::new("/proc/mounts"), root_mount_path.as_path())
             .context("Failed to find root mount point")?,
     );
 
@@ -409,6 +418,11 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
                     } else if &volume_b_path.canonicalize()? == root_device_path {
                         Some(AbVolumeSelection::VolumeB)
                     } else {
+                        // To prevent data loss, abort if we cannot find the
+                        // matching root volume outside of clean install
+                        if host_status.reconcile_state != ReconcileState::CleanInstall {
+                            bail!("No matching root volume found");
+                        }
                         None
                     };
                 }

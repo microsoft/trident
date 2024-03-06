@@ -76,7 +76,7 @@ running the A/B update flow with Trident.
 6. Request an A/B update by applying an edited Trident HostConfig. In the
    local TridentConfig, update **storage.images** section to include the
    local URL links to the update images:
-   
+
    ```bash
    cat > /etc/trident/config.yaml << EOF
    <body of the updated Trident HostConfig>
