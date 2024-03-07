@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Error};
 use log::{error, info};
@@ -69,6 +72,15 @@ pub(super) fn mount_new_root(
                         target_path.display(),
                         mp.target_id
                     );
+                }
+                if let Ok(entries) = fs::read_dir(&target_path) {
+                    if entries.count() > 0 {
+                        bail!(
+                            "Mount path '{}' for block device '{}' is not empty",
+                            target_path.display(),
+                            mp.target_id
+                        );
+                    }
                 }
             } else {
                 // TODO handle read only filesystems, especially for the root
@@ -557,6 +569,65 @@ mod functional_test {
             &ErrorKind::Management(ManagementError::UnmountNewroot {
                 dir: PathBuf::from("/path/to/non/existent/directory")
             })
+        );
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_mount_with_populated_dir_failure() {
+        // Mount point
+        let temp_mount_dir = TempDir::new().unwrap();
+
+        let host_status = HostStatus {
+            storage: Storage {
+                mount_points: vec![(
+                    PathBuf::from("/"),
+                    MountPoint {
+                        target_id: "sr0".to_string(),
+                        filesystem: "iso9660".to_string(),
+                        options: vec!["ro".into()],
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                disks: btreemap! {
+                    "os".into() => Disk {
+                        path: PathBuf::from("/dev/sr"),
+                        uuid: Uuid::nil(),
+                        capacity: 0,
+                        contents: BlockDeviceContents::Unknown,
+                        partitions: vec![
+                            Partition {
+                                id: "sr0".to_string(),
+                                path: PathBuf::from("/dev/sr0"),
+                                contents: BlockDeviceContents::Unknown,
+                                start: 0,
+                                end: 0,
+                                ty: PartitionType::Esp,
+                                uuid: Uuid::nil(),
+                            },
+                        ]
+                    }
+                },
+                raid_arrays: Default::default(),
+                encrypted_volumes: Default::default(),
+                ab_update: None,
+                root_device_path: None,
+            },
+            ..Default::default()
+        };
+
+        // Create the mount point directory if it doesn't exist yet
+        // Add a file to the mount point directory to simulate a populated directory
+        let temp_mount_point_file = temp_mount_dir.path().join("temp_file");
+        File::create(temp_mount_point_file).unwrap();
+
+        // Attempt to mount the CDROM device to the mount point and assert that it fails
+        let mount_result = mount_new_root(&host_status, temp_mount_dir.path())
+            .expect_err("Expected mount_new_root to fail because of populated directory as path");
+
+        assert_eq!(
+            mount_result.kind(),
+            &ErrorKind::Management(ManagementError::MountNewroot)
         );
     }
 }

@@ -375,4 +375,28 @@ mod tests {
         // Cleanup
         temp_dir.close().unwrap();
     }
+
+    #[test]
+    fn test_set_env_vars() {
+        let mut script_runner =
+            ScriptRunner::new_interpreter(PathBuf::from("/bin/bash"), "echo $TEST_VAR".as_bytes());
+        let mut env_vars = HashMap::new();
+        env_vars.insert("TEST_VAR".into(), "test-value".into());
+        let host_status = HostStatus {
+            reconcile_state: ReconcileState::CleanInstall,
+            storage: Storage {
+                root_device_path: Some("/dev/sda".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        set_env_vars(&mut script_runner, &env_vars, &host_status).unwrap();
+        // Check that the environment variables are set in script_runner after the function call
+        let expected_env_vars = hashmap! {
+            "TEST_VAR".into() => "test-value".into(),
+            "UPDATE_KIND".into() => "clean_install".into(),
+            "TARGET_ROOT".into() => "/dev/sda".into()
+        };
+        assert_eq!(script_runner.env_vars, expected_env_vars);
+    }
 }
