@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Error};
+use log::debug;
 use osutils::{blkid, grub::GrubConfig};
 use trident_api::{
     constants::{
@@ -16,6 +17,11 @@ use crate::modules;
 /// Updates the boot filesystem UUID on the search command inside the GRUB
 /// config.
 fn update_grub_config_esp(grub_config_path: &Path, boot_fs_uuid: &Uuid) -> Result<(), Error> {
+    debug!(
+        "Updating ESP GRUB config at path '{}' with UUID '{}'",
+        grub_config_path.display(),
+        boot_fs_uuid
+    );
     let mut grub_config = GrubConfig::read(grub_config_path)?;
     grub_config.update_search(boot_fs_uuid)?;
     grub_config.write()
@@ -28,6 +34,12 @@ fn update_grub_config_boot(
     boot_fs_uuid: &Uuid,
     root_device_path: &Path,
 ) -> Result<(), Error> {
+    debug!(
+        "Updating GRUB config at path '{}' with UUID '{}' and root device '{}'",
+        grub_config_path.display(),
+        boot_fs_uuid,
+        root_device_path.display()
+    );
     let mut grub_config = GrubConfig::read(grub_config_path)?;
 
     // TODO(6775): re-enable selinux

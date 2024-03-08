@@ -6,7 +6,6 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::debug;
 use osutils::exe::RunAndCheck;
 use serde_json::Value;
 
@@ -14,6 +13,7 @@ use trident_api::{config::MountPoint, constants, status::HostStatus};
 
 use crate::modules;
 
+#[derive(Debug)]
 pub(crate) struct TabFile {
     tab_file_contents: String,
 }
@@ -72,10 +72,9 @@ impl TabFile {
             }
         }
 
-        let tab_file_contents = tab_file_lines.join("\n");
-        debug!("Temporary fstab file contents:\n{tab_file_contents}");
-
-        Ok(Self { tab_file_contents })
+        Ok(Self {
+            tab_file_contents: tab_file_lines.join("\n"),
+        })
     }
 
     /// Write this tab file to disk at location `tab_file_path`.
@@ -221,10 +220,8 @@ mod tests {
 
     use crate::modules::storage::tabfile::{TabFile, TabFileSettings};
 
-    /// Validates /etc/fstab line generation logic.
-    #[test]
-    fn test_mount_point_to_line() {
-        let host_status = HostStatus {
+    fn get_host_status() -> HostStatus {
+        HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             storage: StorageStatus {
                 disks: btreemap! {
@@ -280,7 +277,13 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+    }
+
+    /// Validates /etc/fstab line generation logic.
+    #[test]
+    fn test_mount_point_to_line_base() {
+        let host_status = get_host_status();
 
         assert_eq!(
             TabFile::mount_point_to_line(
@@ -298,7 +301,12 @@ mod tests {
             .unwrap(),
             "/dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2"
         );
+    }
 
+    /// Validates /etc/fstab line generation logic. Read-only.
+    #[test]
+    fn test_mount_point_to_line_readonly() {
+        let host_status = get_host_status();
         assert_eq!(
             TabFile::mount_point_to_line(
                 &host_status,
@@ -315,7 +323,12 @@ mod tests {
             .unwrap(),
             "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,ro 0 1"
         );
+    }
 
+    /// Validates /etc/fstab line generation logic. Custom options.
+    #[test]
+    fn test_mount_point_to_line_options() {
+        let host_status = get_host_status();
         assert_eq!(
             TabFile::mount_point_to_line(
                 &host_status,
@@ -332,7 +345,12 @@ mod tests {
             .unwrap(),
             "/dev/disk/by-partlabel/osp2 / vfat errors=remount-ro 0 1"
         );
+    }
 
+    /// Validates /etc/fstab line generation logic. Multiple options.
+    #[test]
+    fn test_mount_point_to_line_multiple_options() {
+        let host_status = get_host_status();
         assert_eq!(
             TabFile::mount_point_to_line(
                 &host_status,
@@ -349,21 +367,36 @@ mod tests {
             .unwrap(),
             "/dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2"
         );
+    }
 
-        assert!(TabFile::mount_point_to_line(
-            &host_status,
-            &MountPoint {
-                path: PathBuf::from("/random"),
-                filesystem: "ext4".to_owned(),
-                options: vec![],
-                target_id: "foobar".to_owned(),
-            },
-            &None,
-            &None,
-            false
-        )
-        .is_err());
+    /// Validates /etc/fstab line generation logic. Missing target id.
+    #[test]
+    fn test_mount_point_to_line_missing_id() {
+        let host_status = get_host_status();
+        assert_eq!(
+            TabFile::mount_point_to_line(
+                &host_status,
+                &MountPoint {
+                    path: PathBuf::from("/random"),
+                    filesystem: "ext4".to_owned(),
+                    options: vec![],
+                    target_id: "foobar".to_owned(),
+                },
+                &None,
+                &None,
+                false
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
+            "Failed to find block device with id foobar"
+        );
+    }
 
+    /// Validates /etc/fstab line generation logic. Swap.
+    #[test]
+    fn test_mount_point_to_line_swap() {
+        let host_status = get_host_status();
         assert_eq!(
             TabFile::mount_point_to_line(
                 &host_status,
@@ -380,21 +413,36 @@ mod tests {
             .unwrap(),
             "/dev/disk/by-partlabel/swap none swap sw 0 0"
         );
+    }
 
-        assert!(TabFile::mount_point_to_line(
-            &host_status,
-            &MountPoint {
-                path: PathBuf::from("none"),
-                filesystem: "swap".to_owned(),
-                options: vec!["sw".to_owned()],
-                target_id: "swap".to_owned(),
-            },
-            &Some(Path::new("/mnt")),
-            &Some(vec!["foobar".to_owned()]),
-            false
-        )
-        .is_err());
+    /// Validates /etc/fstab line generation logic. No prefix for swap.
+    #[test]
+    fn test_mount_point_to_line_swap_prefix() {
+        let host_status = get_host_status();
+        assert_eq!(
+            TabFile::mount_point_to_line(
+                &host_status,
+                &MountPoint {
+                    path: PathBuf::from("none"),
+                    filesystem: "swap".to_owned(),
+                    options: vec!["sw".to_owned()],
+                    target_id: "swap".to_owned(),
+                },
+                &Some(Path::new("/mnt")),
+                &Some(vec!["foobar".to_owned()]),
+                false
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
+            "prefix not found"
+        );
+    }
 
+    /// Validates /etc/fstab line generation logic. Extra options.
+    #[test]
+    fn test_mount_point_to_line_extra_options() {
+        let host_status = get_host_status();
         assert_eq!(
             TabFile::mount_point_to_line(
                 &host_status,

@@ -164,6 +164,8 @@ pub enum ManagementError {
     CreateFilesystems,
     #[error("Reboot timed out")]
     RebootTimeout,
+    #[error("Failed to check mount point")]
+    MountPointCheck,
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]

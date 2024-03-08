@@ -6,14 +6,15 @@ use std::{
 
 use crate::OS_MODIFIER_BINARY_PATH;
 use anyhow::{bail, Context, Error, Ok};
-use log::{debug, warn};
+use log::{debug, trace, warn};
+use osutils::files;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
 use tempfile::NamedTempFile;
 use trident_api::config::{Password, SshMode, User};
 
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";
 const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
+const EMU_LOG_PATH: &str = "/var/log/emu.log";
 
 /// A helper struct to convert user into MIC's user format
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -80,7 +81,7 @@ struct MICSystemConfig {
 
 pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
     if Path::new(SSHD_CONFIG_FILE).exists() {
-        debug!("Setting up sshd config...");
+        debug!("Setting up sshd config");
 
         // Create sshd config dir
         osutils::files::create_dirs(SSHD_CONFIG_DIR).context("Failed to create sshd config dir")?;
@@ -150,7 +151,7 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
         warn!("sshd_config not found, skipping sshd config");
     }
 
-    debug!("Setting up users...");
+    debug!("Setting up users");
 
     let mic_users_yaml = serde_yaml::to_string(&MICSystemConfig {
         users: users
@@ -166,8 +167,9 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
         .context("Failed to write MIC users YAML to temporary file")?;
     tmpfile.flush().context("Failed to flush temporary file")?;
 
+    let emu_log_path = PathBuf::from(EMU_LOG_PATH);
     let emu_log_file =
-        File::create("/var/log/debug.log").context("Failed to create and open EMU log file")?;
+        files::create_file(&emu_log_path).context("Failed to create and open EMU log file")?;
 
     // Invoke os modifier with the user config file
     Command::new(OS_MODIFIER_BINARY_PATH)
@@ -178,6 +180,12 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
         .stderr(emu_log_file)
         .status()
         .context("Failed to run OS modifier")?;
+
+    if emu_log_path.exists() {
+        let emu_log =
+            std::fs::read_to_string(emu_log_path).context("Failed to read EMU log file")?;
+        trace!("EMU log: '{}'", emu_log);
+    }
 
     Ok(())
 }

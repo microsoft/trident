@@ -1,10 +1,7 @@
 use anyhow::{Context, Error};
 use log::info;
 
-use trident_api::{
-    config::HostConfiguration,
-    status::{HostStatus, UpdateKind},
-};
+use trident_api::{config::HostConfiguration, status::HostStatus};
 
 use crate::modules::Module;
 
@@ -16,18 +13,6 @@ pub struct NetworkModule;
 impl Module for NetworkModule {
     fn name(&self) -> &'static str {
         "network"
-    }
-
-    fn refresh_host_status(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn select_update_kind(
-        &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Option<UpdateKind> {
-        None
     }
 
     fn configure(

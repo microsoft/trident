@@ -1,8 +1,4 @@
-use std::{
-    fs::{self, Permissions},
-    os::unix::prelude::PermissionsExt,
-    path::Path,
-};
+use std::path::Path;
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
@@ -383,6 +379,10 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
         TabFile::get_device_path(Path::new("/proc/mounts"), root_mount_path.as_path())
             .context("Failed to find root mount point")?,
     );
+    debug!(
+        "Using root device path: {:?}",
+        host_status.storage.root_device_path
+    );
 
     // if a/b update is enabled
     if let Some(ab_update) = &host_status.storage.ab_update {
@@ -425,6 +425,16 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
                         }
                         None
                     };
+
+                    debug!(
+                        "Active volume: {:?}",
+                        host_status
+                            .storage
+                            .ab_update
+                            .as_ref()
+                            .unwrap()
+                            .active_volume
+                    );
                 }
             }
         }
@@ -480,55 +490,11 @@ pub(super) fn provision(
     // Only call refresh_ab_volumes() and set active_volume to None if
     // the reconcile_state is CleanInstall
     if host_status.reconcile_state == ReconcileState::CleanInstall {
+        debug!("Initializing A/B volumes");
         refresh_ab_volumes(host_status, host_config);
     }
 
     update_images(host_status, host_config).context("Failed to update filesystem images")?;
-
-    Ok(())
-}
-
-pub(super) fn configure(
-    _host_status: &mut HostStatus,
-    _host_config: &HostConfiguration,
-) -> Result<(), Error> {
-    // Patch /var in case it was injected as a volume
-
-    // TODO - this is a temporary fix for the issue where /var is mounted as
-    // a volume, longer term, we should either require user to provide /var
-    // partition image or allow to copy contents of /var from the root fs
-    // image, similar to what MIC will do
-
-    // if we let users mount over /var, some services will fail to start, so
-    // we need to recreate missing directories first
-    let var_log_path = Path::new("/var/log");
-    if !var_log_path.exists() {
-        fs::create_dir(var_log_path)?;
-        fs::set_permissions(var_log_path, Permissions::from_mode(0o755))?;
-    }
-
-    // auditd requires /var/log/audit to be present, and auditd is a
-    // required component for Mariner images
-    let var_log_audit_path = var_log_path.join("audit");
-    if !var_log_audit_path.exists() {
-        fs::create_dir(&var_log_audit_path)?;
-        fs::set_permissions(var_log_audit_path, Permissions::from_mode(0o700))?;
-    }
-
-    // sshd requires /var/lib/sshd to be present, and sshd is a
-    // required component for Mariner images
-    let var_lib_path = Path::new("/var/lib");
-    if !var_lib_path.exists() {
-        fs::create_dir(var_lib_path)?;
-        fs::set_permissions(var_lib_path, Permissions::from_mode(0o755))?;
-    }
-    let var_lib_sshd_path = var_lib_path.join("sshd");
-    if !var_lib_sshd_path.exists() {
-        fs::create_dir(&var_lib_sshd_path)?;
-        fs::set_permissions(var_lib_sshd_path, Permissions::from_mode(0o700))?;
-    }
-
-    // End of patch block
 
     Ok(())
 }

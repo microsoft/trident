@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Error};
-use log::info;
+use log::debug;
 
 use trident_api::{
     config::HostConfiguration,
@@ -20,18 +20,6 @@ impl Module for OsConfigModule {
         "os-config"
     }
 
-    fn refresh_host_status(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn select_update_kind(
-        &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Option<UpdateKind> {
-        None
-    }
-
     // TODO: Revisit this to handle read-only path in runtime os
     // Also, when os modifier becomes available in RPM, install it in the provisioning and runtime OSs.
     // Tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/6327/
@@ -45,7 +33,7 @@ impl Module for OsConfigModule {
         let target_path = mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]);
 
         if !host_config.osconfig.users.is_empty() && !target_path.exists() {
-            info!("Copying os modifier binary to runtime OS");
+            debug!("Copying os modifier binary to runtime OS");
             fs::copy(
                 OS_MODIFIER_BINARY_PATH,
                 mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]),
@@ -69,6 +57,10 @@ impl Module for OsConfigModule {
         if host_status.reconcile_state != ReconcileState::CleanInstall
             && host_status.reconcile_state != ReconcileState::UpdateInProgress(UpdateKind::AbUpdate)
         {
+            debug!(
+                "Skipping os-config module for reconcile state: {:?}",
+                host_status.reconcile_state
+            );
             return Ok(());
         }
 

@@ -8,11 +8,11 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{info, warn};
+use log::{debug, info, warn};
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile, Storage},
     error::{DatastoreError, ManagementError, ReportError, TridentError},
-    status::{HostStatus, ReconcileState, UpdateKind},
+    status::{HostStatus, ReconcileState},
 };
 
 use crate::{
@@ -24,10 +24,6 @@ pub struct ManagementModule;
 impl Module for ManagementModule {
     fn name(&self) -> &'static str {
         "management"
-    }
-
-    fn refresh_host_status(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
-        Ok(())
     }
 
     fn validate_host_config(
@@ -57,14 +53,6 @@ impl Module for ManagementModule {
         Ok(())
     }
 
-    fn select_update_kind(
-        &self,
-        _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Option<UpdateKind> {
-        None
-    }
-
     fn provision(
         &mut self,
         host_status: &mut HostStatus,
@@ -72,6 +60,7 @@ impl Module for ManagementModule {
         mount_path: &Path,
     ) -> Result<(), Error> {
         if host_config.management.disable {
+            info!("Not provisioning management module as it is disabled");
             return Ok(());
         }
 
@@ -82,6 +71,10 @@ impl Module for ManagementModule {
                 .as_deref()
                 .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH))
                 .to_owned(),
+        );
+        debug!(
+            "Datastore path: {:?}",
+            host_status.management.datastore_path
         );
 
         if host_config.management.self_upgrade {
@@ -119,6 +112,8 @@ impl Module for ManagementModule {
             host_config,
             Path::new(TRIDENT_LOCAL_CONFIG_PATH),
         )?;
+        debug!("Trident config created");
+
         Ok(())
     }
 }

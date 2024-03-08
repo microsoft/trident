@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::Error;
-use log::{error, info};
+use log::{debug, error, info};
 
 use trident_api::{
     config::{HostConfiguration, Operations},
@@ -557,12 +557,16 @@ fn refresh_host_status(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
 ) -> Result<(), TridentError> {
-    for m in modules {
+    for module in modules {
+        debug!("Starting stage 'Refresh' for module '{}'", module.name());
         state.try_with_host_status(|s| {
-            m.refresh_host_status(s).structured(ManagementError::from(
-                ModuleError::RefreshHostStatus { name: m.name() },
-            ))
+            module
+                .refresh_host_status(s)
+                .structured(ManagementError::from(ModuleError::RefreshHostStatus {
+                    name: module.name(),
+                }))
         })?;
+        debug!("Finished stage 'Refresh' for module '{}'", module.name());
     }
     Ok(())
 }
@@ -573,11 +577,16 @@ fn validate_host_config(
     host_config: &HostConfiguration,
     planned_update: ReconcileState,
 ) -> Result<(), TridentError> {
-    for m in modules {
-        m.validate_host_config(state.host_status(), host_config, planned_update)
+    for module in modules {
+        debug!("Starting stage 'Validate' for module '{}'", module.name());
+        module
+            .validate_host_config(state.host_status(), host_config, planned_update)
             .structured(ManagementError::from(
-                ModuleError::ValidateHostConfiguration { name: m.name() },
-            ))?
+                ModuleError::ValidateHostConfiguration {
+                    name: module.name(),
+                },
+            ))?;
+        debug!("Finished stage 'Validate' for module '{}'", module.name());
     }
     info!("Host config validated");
     Ok(())
@@ -588,13 +597,16 @@ fn prepare(
     state: &mut DataStore,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
-    for m in modules {
+    for module in modules {
+        debug!("Starting stage 'Prepare' for module '{}'", module.name());
         state.try_with_host_status(|s| {
-            m.prepare(s, host_config)
+            module
+                .prepare(s, host_config)
                 .structured(ManagementError::from(ModuleError::Prepare {
-                    name: m.name(),
+                    name: module.name(),
                 }))
         })?;
+        debug!("Finished stage 'Prepare' for module '{}'", module.name());
     }
     Ok(())
 }
@@ -606,13 +618,15 @@ fn provision(
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
     for module in modules {
+        debug!("Starting stage 'Provision' for module '{}'", module.name());
         state.try_with_host_status(|host_status| {
             module
                 .provision(host_status, host_config, new_root_path)
                 .structured(ManagementError::from(ModuleError::Provision {
                     name: module.name(),
                 }))
-        })?
+        })?;
+        debug!("Finished stage 'Provision' for module '{}'", module.name());
     }
 
     Ok(())
@@ -637,13 +651,16 @@ fn configure(
     state: &mut DataStore,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
-    for m in modules {
+    for module in modules {
+        debug!("Starting stage 'Configure' for module '{}'", module.name());
         state.try_with_host_status(|s| {
-            m.configure(s, host_config)
+            module
+                .configure(s, host_config)
                 .structured(ManagementError::from(ModuleError::Configure {
-                    name: m.name(),
+                    name: module.name(),
                 }))
         })?;
+        debug!("Finished stage 'Configure' for module '{}'", module.name());
     }
 
     Ok(())

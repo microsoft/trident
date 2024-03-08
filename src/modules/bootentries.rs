@@ -81,7 +81,7 @@ fn set_boot_next(host_status: &HostStatus) -> Result<(), Error> {
     }
     let disk_path = get_first_partition_of_type(host_status, PartitionType::Esp)
         .context("Failed to fetch esp disk path ")?;
-    debug!("Disk path: of first esp partition {:?}", disk_path);
+    debug!("Disk path of first esp partition {:?}", disk_path);
     efibootmgr::create_boot_entry(entry_label_new, disk_path, bootloader_path_new)
         .context("Failed to add boot entry")?;
     let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;

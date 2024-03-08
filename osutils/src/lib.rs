@@ -14,6 +14,7 @@ pub mod mkfs;
 pub mod mkinitrd;
 pub mod mkswap;
 pub mod mount;
+pub mod mountpoint;
 pub mod overlay;
 pub mod partition_types;
 pub mod repart;

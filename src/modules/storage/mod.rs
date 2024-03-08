@@ -4,10 +4,10 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{info, warn};
+use log::{debug, info, trace, warn};
 
 use osutils::{
-    block_devices,
+    block_devices, mountpoint,
     partition_types::DiscoverablePartitionType,
     repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
     sfdisk::SfDisk,
@@ -183,10 +183,26 @@ impl Module for StorageModule {
 
     fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
         // Remove disks that no longer exist.
+        let original_disks = host_status.storage.disks.clone();
         host_status
             .storage
             .disks
             .retain(|_id, disk| disk.path.exists());
+
+        let removed_disks = original_disks
+            .keys()
+            .filter(|id| !host_status.storage.disks.contains_key(*id))
+            .collect::<Vec<_>>();
+        if !removed_disks.is_empty() {
+            info!(
+                "Removed disks that no longer exist from status: {}",
+                removed_disks
+                    .iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
 
         image::refresh_host_status(host_status)
             .context("Image submodule failed during refresh_host_status")?;
@@ -252,16 +268,18 @@ impl Module for StorageModule {
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        TabFile::from_mount_points(
+        let fstab = TabFile::from_mount_points(
             host_status,
             &host_config.storage.mount_points,
             &TabFileSettings {
                 ..Default::default()
             },
         )
-        .context("Failed to serialize mount point configuration for the target OS")?
-        .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
-        .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
+        .context("Failed to serialize mount point configuration for the target OS")?;
+        fstab
+            .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
+            .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
+        trace!("Wrote '{}', contents: '{:?}'", DEFAULT_FSTAB_PATH, fstab);
 
         // TODO: update /etc/repart.d directly for the matching disk, derive
         // from where is the root located
@@ -273,9 +291,6 @@ impl Module for StorageModule {
         raid::create_raid_config(host_status)
             .context("Failed to create mdadm.conf file after RAID creation")?;
 
-        image::configure(host_status, host_config)
-            .context("Image submodule failed during configure")?;
-
         Ok(())
     }
 }
@@ -285,7 +300,11 @@ pub(super) fn initialize_block_devices(
     host_config: &HostConfiguration,
     mount_point: &Path,
 ) -> Result<(), TridentError> {
-    if mount_point.exists() {
+    if mount_point.exists()
+        && mountpoint::check_is_mountpoint(mount_point)
+            .structured(ManagementError::MountPointCheck)?
+    {
+        debug!("Unmounting volumes from earlier runs of Trident");
         if let Err(e) = osutils::mount::umount(mount_point, true) {
             warn!(
                 "Attempt to unmount '{}' returned error: {e}",
@@ -309,8 +328,10 @@ pub(super) fn initialize_block_devices(
             )
         })
         .collect();
+    trace!("Mount points: {:?}", host_status.storage.mount_points);
 
     if host_status.reconcile_state == ReconcileState::CleanInstall {
+        debug!("Initializing block devices");
         raid::stop_pre_existing_raid_arrays(host_config)
             .structured(ManagementError::CleanupRaid)?;
         create_partitions(host_status, host_config)
@@ -346,6 +367,7 @@ pub(super) fn set_host_status_block_device_contents(
     block_device_id: &BlockDeviceId,
     contents: BlockDeviceContents,
 ) -> Result<(), Error> {
+    debug!("Setting block device '{block_device_id}' contents to '{contents:?}'");
     if let Some(disk) = get_disk_mut(host_status, block_device_id) {
         disk.contents = contents;
         return Ok(());
@@ -439,7 +461,7 @@ mod tests {
             SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
-        status::{AbUpdate, AbVolumePair, Storage},
+        status::{AbUpdate, AbVolumePair, Storage, UpdateKind},
     };
     use uuid::Uuid;
 

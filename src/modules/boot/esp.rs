@@ -98,16 +98,13 @@ fn copy_file_artifacts(
     let temp_image = NamedTempFile::new().context("Failed to create a temporary file")?;
     let temp_image_path = temp_image.path().to_path_buf();
 
+    debug!("Extracting ESP image to {}", temp_image_path.display());
+
     // Stream image to the temporary file. destination_size is None since we're writing to a new
     // file and not block device
-    let (computed_sha256, bytes_copied) = stream_image::stream_zstd_image(
-        host_status,
-        reader,
-        &temp_image_path,
-        None,
-        &image.target_id,
-    )
-    .context(format!("Failed to stream ESP image from {}", image_url))?;
+    let (computed_sha256, bytes_copied) =
+        stream_image::stream_zstd_image_internal(reader, &temp_image_path, None)
+            .context(format!("Failed to stream ESP image from {}", image_url))?;
 
     // Create a temporary directory to mount ESP image
     let temp_dir = TempDir::new().context("Failed to create a temporary mount directory")?;
@@ -415,6 +412,11 @@ pub(super) fn update_images(
 ) -> Result<(), Error> {
     // Fetch the list of ESP images that need to be updated/deployed
     for image in get_undeployed_images(host_status, host_config, false) {
+        debug!(
+            "Updating ESP filesystem on block device id '{}'",
+            &image.target_id
+        );
+
         // Parse the URL to determine the download strategy
         let image_url = Url::parse(image.url.as_str())
             .context(format!("Failed to parse image URL '{}'", image.url))?;
@@ -455,6 +457,12 @@ pub(super) fn update_images(
             } else {
                 bail!("Unsupported URL scheme")
             }
+        } else {
+            bail!(
+                "Unsupported image format for ESP partition with id '{}': {:?}",
+                &image.target_id,
+                image.format
+            );
         }
     }
     Ok(())

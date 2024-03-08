@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Error};
-use log::info;
+use log::{debug, info, trace};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -259,6 +259,7 @@ pub(super) fn update_raid_in_host_status(
 pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> Result<(), Error> {
     if !mdstat_present(Path::new("/proc/mdstat"))? {
         // No pre-existing RAID arrays. Nothing to do.
+        trace!("No pre-existing RAID arrays found. Skipping cleanup.");
         return Ok(());
     }
 
@@ -384,6 +385,7 @@ fn mdadm_detail_to_struct(mdadm_output: &str) -> Result<Vec<MdadmDetail>, Error>
 }
 
 fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
+    debug!("Unmounting RAID array: {:?}", raid_path);
     let mut umount_command = Command::new("umount");
     umount_command.arg(raid_path);
 
