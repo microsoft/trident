@@ -17,6 +17,9 @@ from pathlib import Path
 
 from .ssh_node import SshNode
 
+# Load class dependency plug-in
+pytest_plugins = ["functional_tests.depends"]
+
 """Location of the trident repository."""
 TRIDENT_REPO_DIR_PATH = Path(__file__).resolve().parent.parent
 
@@ -33,6 +36,8 @@ REMOTE_ADDR_FILENAME = "remote-addr"
 
 """The name of the file containing the known hosts for SSH connections."""
 KNOWN_HOSTS_FILENAME = "known_hosts"
+
+VM_SSH_NODE_CACHE_KEY = "vm_ssh_node"
 
 
 def pytest_addoption(parser):
@@ -145,6 +150,7 @@ class RustModule(Collector):
             yield node
 
 
+@pytest.mark.depends("test_deploy_vm")
 def run_rust_functional_test(vm, wipe_sdb, crate, module_path, test_case):
     """Runs a rust test on the VM."""
     from functional_tests.tools.runner import RunnerTool
@@ -164,139 +170,6 @@ def wipe_sdb(vm: SshNode):
     vm.execute("sudo wipefs -af /dev/sdb")
 
 
-def disable_phonehome(ssh_node: SshNode):
-    """Disables phonehome in the VM to allow faster rerunning of Trident."""
-    ssh_node.execute("sudo sed -i 's/phonehome: .*//' /etc/trident/config.yaml")
-
-
-def deploy_os(host_config_path: Path, remote_addr_path: Path, installer_iso_path: Path):
-    """Deploys the OS to the VM using netlaunch."""
-    argus_runcmd(
-        [
-            ARGUS_REPO_DIR_PATH / "build" / "netlaunch",
-            "-i",
-            installer_iso_path,
-            "-c",
-            "vm-netlaunch.yaml",
-            "-t",
-            host_config_path,
-            "-l",
-            "-r",
-            remote_addr_path,
-        ]
-    )
-
-
-def setup_testdir(test_dir_path: Path):
-    """Sets up the test directory. If test_dir_path is None, a temporary directory is
-    created instead. Note that if you want to reuse the test environment, it is
-    beneficial to pass a specific directory.
-    """
-    if test_dir_path:
-        test_dir_path = Path(test_dir_path)
-        if test_dir_path.is_dir():
-            # Throw away known hosts from the last time.
-            known_hosts_file = Path(test_dir_path) / KNOWN_HOSTS_FILENAME
-            if known_hosts_file.exists():
-                known_hosts_file.unlink()
-        else:
-            test_dir_path.mkdir(parents=True, exist_ok=True)
-    else:
-        test_dir_path = tempfile.TemporaryDirectory()
-    return test_dir_path
-
-
-def prepare_hostconfig(test_dir_path: Path, ssh_key_path: Path):
-    """Sets up the host configuration file for the VM."""
-    # Read user's public key from ~/.ssh/id_rsa.pub
-    with open(ssh_key_path, "r") as file:
-        pubkey = file.read().strip()
-
-    # Add user's public key to trident-setup.yaml
-    with open(
-        TRIDENT_REPO_DIR_PATH / "functional_tests/trident-setup.yaml", "r"
-    ) as file:
-        trident_setup = yaml.safe_load(file)
-    trident_setup["hostConfiguration"]["osconfig"]["users"][0]["sshKeys"].clear()
-    trident_setup["hostConfiguration"]["osconfig"]["users"][0]["sshKeys"].append(pubkey)
-
-    prepped_host_config_path = test_dir_path / "trident-setup.yaml"
-    with open(prepped_host_config_path, "w") as file:
-        yaml.dump(trident_setup, file)
-
-    return prepped_host_config_path
-
-
-def create_vm(create_params):
-    """Creates a VM with the given parameters, using virt-deploy."""
-    argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "create"] + create_params)
-    argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "run"])
-
-
-def inject_ssh_key(remote_addr_path: Path, known_hosts_path: Path):
-    """# Temporary solution to initialize the known_hosts file until we can inject a
-    predictable key.
-    """
-    with open(remote_addr_path, "r") as file:
-        remote_addr = file.read().strip()
-    for i in range(10):
-        try:
-            with open(known_hosts_path, "w") as file:
-                subprocess.run(["ssh-keyscan", remote_addr], stdout=file, check=True)
-            break
-        except:
-            time.sleep(1)
-
-
-def deploy_vm(
-    test_dir_path: Path,
-    ssh_key_path: Path,
-    known_hosts_path: Path,
-    installer_iso_path: Path,
-) -> SshNode:
-    """# Provision a VM with the given parameters, using virt-deploy to create the VM
-    and netlaunch to deploy the OS.
-    """
-    if not installer_iso_path:
-        argus_runcmd(["make", "build/netlaunch"])
-        argus_runcmd(["make", "build/installer-dev.iso"])
-        installer_iso_path = ARGUS_REPO_DIR_PATH / "build/installer-dev.iso"
-
-    host_config_path = prepare_hostconfig(test_dir_path, ssh_key_path)
-
-    remote_addr_path = test_dir_path / REMOTE_ADDR_FILENAME
-    deploy_os(host_config_path, remote_addr_path, installer_iso_path)
-
-    # Add the VMs SSH key to known_hosts. TODO use a predictable key instead
-    inject_ssh_key(remote_addr_path, known_hosts_path)
-
-    ssh_node = create_ssh_node(remote_addr_path, ssh_key_path, known_hosts_path)
-    disable_phonehome(ssh_node)
-
-    return ssh_node
-
-
-def create_ssh_node(
-    remote_addr_path: Path, ssh_key_path: Path, known_hosts_path: Path
-) -> SshNode:
-    """Creates an SSH node that can be used to interact with the VM."""
-    with open(remote_addr_path, "r") as file:
-        remote_addr = file.read().strip()
-
-    # Remove the .pub suffix from the key path.
-    priv_key = ssh_key_path.with_suffix("")
-    logging.info(f"Using SSH key {priv_key}")
-
-    return SshNode(
-        ".",
-        "log",
-        remote_addr,
-        username=TEST_USER,
-        key_path=priv_key,
-        known_hosts_path=known_hosts_path,
-    )
-
-
 def fetch_code_coverage(ssh_node):
     """Downloads all code coverage files from the VM."""
     ssh_node.execute("sudo chown -R {} .".format(TEST_USER))
@@ -312,6 +185,12 @@ def fetch_code_coverage(ssh_node):
                     / filename,
                 )
     ssh_node.execute("find . -name '*.profraw' -delete")
+
+
+def argus_runcmd(cmd, check=True, **kwargs):
+    """Runs a command in the argus repository directory."""
+    logging.debug(f"Running command: {cmd}")
+    subprocess.run(cmd, check=check, cwd=ARGUS_REPO_DIR_PATH, **kwargs)
 
 
 def upload_test_binaries(build_output_path: Path, force_upload, ssh_node):
@@ -338,79 +217,94 @@ def upload_test_binaries(build_output_path: Path, force_upload, ssh_node):
                 ssh_node.execute("chmod +x tests/{}".format(stripped_name))
 
 
-def argus_runcmd(cmd, check=True, **kwargs):
-    """Runs a command in the argus repository directory."""
-    logging.debug(f"Running command: {cmd}")
-    subprocess.run(cmd, check=check, cwd=ARGUS_REPO_DIR_PATH, **kwargs)
+@pytest.fixture(scope="session")
+def ssh_key_path(request) -> Path:
+    return Path(request.config.getoption("--ssh-key"))
 
 
-@pytest.fixture(scope="package")
-def vm(request) -> SshNode:
-    """Define the VirtDeploy based LibVirt VM as a resource the tests can use."""
+@pytest.fixture(scope="session")
+def ssh_key_public(request) -> Path:
+    with open(request.config.getoption("--ssh-key"), "r") as f:
+        return f.read().strip()
 
-    keep_environment = request.config.getoption("--keep-environment")
-    reuse_environment = request.config.getoption("--reuse-environment")
-    test_dir_path = request.config.getoption("--test-dir")
-    ssh_key_path = request.config.getoption("--ssh-key")
-    build_output = request.config.getoption("--build-output")
-    force_upload = request.config.getoption("--force-upload")
-    redeploy = request.config.getoption("--redeploy")
 
-    installer_iso_path = None
-    if os.environ.get("INSTALLER_ISO_PATH"):
-        installer_iso_path = os.path.abspath(os.environ["INSTALLER_ISO_PATH"])
+@pytest.fixture(scope="session")
+def redeploy(request) -> bool:
+    return bool(request.config.getoption("--redeploy"))
 
-    if (
-        not ARGUS_REPO_DIR_PATH.is_dir()
-        or not (ARGUS_REPO_DIR_PATH / "virt-deploy").is_file()
-    ):
-        raise Exception(
-            "{} is not a argus-toolkit repo directory".format(ARGUS_REPO_DIR_PATH)
-        )
 
-    if not ssh_key_path:
-        raise Exception("Must specify --ssh-key pointing to an existing SSH key")
-    ssh_key_path = Path(ssh_key_path)
-    if not ssh_key_path.is_file():
-        raise Exception("SSH key file does not exist")
+@pytest.fixture(scope="session")
+def reuse_environment(request) -> bool:
+    return bool(request.config.getoption("--reuse-environment"))
 
-    if build_output:
-        build_output = Path(build_output)
-        if not build_output.is_file():
-            raise Exception("Build output file does not exist")
+
+@pytest.fixture(scope="session")
+def test_dir_path(request, reuse_environment) -> Optional[Path]:
+    test_dir_path = request.config.getoption("--test-dir", None)
+    test_dir_path = Path(test_dir_path) if test_dir_path else None
 
     if reuse_environment:
-        if not test_dir_path or not os.path.isdir(test_dir_path):
-            raise Exception(
+        if not test_dir_path or not test_dir_path.is_dir():
+            pytest.skip(
                 "Must specify --test-dir pointing to an existing test directory when using --reuse-environment"
             )
-        test_dir_path = Path(test_dir_path)
+        yield Path(test_dir_path)
     else:
-        test_dir_path = setup_testdir(test_dir_path)
+        # Sets up the test directory. If test_dir_path is None, a temporary
+        # directory is created instead. Note that if you want to reuse the test
+        # environment, it is beneficial to pass a specific directory.
+        if test_dir_path:
+            if test_dir_path.is_dir():
+                # Throw away known hosts from the last time.
+                known_hosts_file = Path(test_dir_path) / KNOWN_HOSTS_FILENAME
+                if known_hosts_file.exists():
+                    known_hosts_file.unlink()
+            else:
+                test_dir_path.mkdir(parents=True, exist_ok=True)
+            yield test_dir_path
+        else:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                yield Path(temp_dir)
 
-    known_hosts_path = test_dir_path / KNOWN_HOSTS_FILENAME
 
-    if reuse_environment:
-        if not known_hosts_path.is_file():
-            raise Exception(
+@pytest.fixture(scope="session")
+def remote_addr_path(test_dir_path) -> Path:
+    return test_dir_path / REMOTE_ADDR_FILENAME
+
+
+@pytest.fixture(scope="session")
+def known_hosts_path(test_dir_path, reuse_environment, redeploy) -> Path:
+    kh = test_dir_path / KNOWN_HOSTS_FILENAME
+    if reuse_environment and not redeploy:
+        if not kh.is_file():
+            pytest.fail(
                 "No known hosts file found in test directory. You might need to recreate the test environment using make functional-test"
             )
-        # Create SSH Node for the existing VM.
-        ssh_node = create_ssh_node(
-            test_dir_path / REMOTE_ADDR_FILENAME, ssh_key_path, known_hosts_path
-        )
-    else:
-        # Create one VM with default flags, cpus, memory, but with two 16GiB disks.
-        create_vm([":::16,16"])
+    return kh
 
-    if not reuse_environment or redeploy:
-        # Deploy OS to VM.
-        ssh_node = deploy_vm(
-            test_dir_path,
-            ssh_key_path,
-            known_hosts_path,
-            installer_iso_path,
-        )
+
+@pytest.fixture(scope="session")
+def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
+    """Define the VirtDeploy based LibVirt VM as a resource the tests can use."""
+    build_output = request.config.getoption("--build-output")
+    force_upload = request.config.getoption("--force-upload")
+    keep_environment = request.config.getoption("--keep-environment")
+
+    ssh_node_address = request.config.cache.get(VM_SSH_NODE_CACHE_KEY, None)
+    if ssh_node_address is None:
+        pytest.skip("VM not setup!")
+
+    priv_key = ssh_key_path.with_suffix("")
+    logging.info(f"Using SSH key {priv_key}")
+
+    ssh_node = SshNode(
+        ".",
+        "log",
+        ssh_node_address,
+        username=TEST_USER,
+        key_path=priv_key,
+        known_hosts_path=known_hosts_path,
+    )
 
     if build_output:
         upload_test_binaries(build_output, force_upload, ssh_node)
@@ -425,5 +319,22 @@ def vm(request) -> SshNode:
         # Skip fixture cleanup.
         return
 
+    request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
+
     # Fixture cleanup.
     argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "create", "--clean"])
+
+
+def pytest_collection_modifyitems(session, config, items: List[pytest.Item]):
+    """Modifies the collection of test items."""
+
+    # Artificially force the setup tests to run first.
+    setup_items = [item for item in items if "test_setup.py" in item.nodeid]
+
+    # Reverse to push them to the front of the list in the order they were added.
+    setup_items.reverse()
+
+    # Remove the setup items from the list and add them back in the front.
+    for item in setup_items:
+        items.remove(item)
+        items.insert(0, item)
