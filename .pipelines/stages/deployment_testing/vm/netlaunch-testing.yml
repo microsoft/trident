@@ -82,7 +82,7 @@ stages:
 
     - bash: |
         set -eux
-        sg libvirt "./virt-deploy create"
+        sg libvirt "./virt-deploy create -d 32,32"
         sg libvirt "./virt-deploy run"
       workingDirectory: $(argusToolkitSourceDirectory)
       displayName: "Running sushy tools for testing deployment with BMC"

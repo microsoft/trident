@@ -5,46 +5,53 @@ hostConfiguration:
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
         partitionTableType: gpt
         partitions:
-          - id: esp
+          - id: esp1
             type: esp
-            size: 1G
-          - id: root
+            size: 100M
+          - id: root-a1
             type: root
-            size: 8G
-          - id: swap-e
-            type: swap
-            size: 1G
+            size: 75G
+          - id: trident
+            type: linux-generic
+            size: 100M
       - id: disk2
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
-        partitions: []
-    encryption:
-      volumes:
-        - id: swap
-          deviceName: swap
-          targetId: swap-e
+        partitions:
+          - id: root-a2
+            type: root
+            size: 75G
+    raid:
+      software:
+        - id: root-a
+          name: root-a
+          level: raid1
+          devices:
+            - root-a1
+            - root-a2
+          metadataVersion: "1.0"
     mountPoints:
       - path: /boot/efi
-        targetId: esp
+        targetId: esp1
         filesystem: vfat
         options: ["umask=0077"]
       - path: /
-        targetId: root
+        targetId: root-a
         filesystem: ext4
         options: ["defaults"]
-      - path: none
-        targetId: swap
-        filesystem: swap
-        options: ["sw"]
+      - path: /var/lib/trident
+        targetId: trident
+        filesystem: ext4
+        options: ["defaults"]
     images:
       - url: file:///trident_cdrom/data/esp.rawzst
         sha256: ignored
         format: raw-zst
-        targetId: esp
+        targetId: esp1
       - url: file:///trident_cdrom/data/root.rawzst
         sha256: ignored
         format: raw-zst
-        targetId: root
+        targetId: root-a
   network:
     ethernets:
       vmeths:
@@ -65,3 +72,4 @@ hostConfiguration:
         servicingType:
           - clean-install
         content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
+

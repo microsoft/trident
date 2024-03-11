@@ -1,12 +1,12 @@
 bareMetal:
   daily:
     - base
+    - raid-big
     - abupdate-on-encrypted-raid
     - abupdate-on-encrypted-partitions
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
-    - raid-small
     - rerun
     - simple
 virtualMachine:

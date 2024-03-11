@@ -11,6 +11,10 @@ hostConfiguration:
           - id: root
             type: root
             size: 8G
+      - id: disk2
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+        partitionTableType: gpt
+        partitions: []
     mountPoints:
       - path: /boot/efi
         targetId: esp

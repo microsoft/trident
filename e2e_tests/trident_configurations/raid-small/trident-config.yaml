@@ -38,6 +38,10 @@ hostConfiguration:
           - id: trident2
             type: linux-generic
             size: 100M
+      - id: disk2
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+        partitionTableType: gpt
+        partitions: []
     raid:
       software:
         - id: root-a
