@@ -8,10 +8,10 @@ use netplan_types::{
 
 use crate::{
     config::{
-        AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption,
-        HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, OsConfig, Partition,
-        PartitionSize, PartitionTableType, PartitionType, Raid, RaidLevel, Script, Scripts,
-        ServicingType, SoftwareRaidArray, SshMode, Storage, User,
+        AbUpdate, AbVolumePair, AdditionalFile, AdoptedPartition, Disk, EncryptedVolume,
+        Encryption, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, OsConfig,
+        Partition, PartitionSize, PartitionTableType, PartitionType, Raid, RaidLevel, Script,
+        Scripts, ServicingType, SoftwareRaidArray, SshMode, Storage, User,
     },
     constants,
 };
@@ -179,6 +179,11 @@ pub fn sample_host_configuration() -> HostConfiguration {
                 name: "my-custom-user".into(),
                 ssh_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
                 ssh_mode: SshMode::KeyOnly,
+                ..Default::default()
+            }],
+            additional_files: vec![AdditionalFile {
+                destination: "/var/config-script.sh".into(),
+                content: Some("echo 'Hello, world!'".into()),
                 ..Default::default()
             }],
         },

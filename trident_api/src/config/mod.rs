@@ -4,7 +4,7 @@ mod trident;
 pub use host::{
     error::InvalidHostConfigurationError,
     management::Management,
-    osconfig::{OsConfig, Password, SshMode, User},
+    osconfig::{AdditionalFile, OsConfig, Password, SshMode, User},
     scripts::{Script, Scripts, ServicingType},
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},
     storage::{

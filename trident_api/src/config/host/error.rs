@@ -17,6 +17,15 @@ pub enum InvalidHostConfigurationError {
     #[error("Script '{0}' has both content and path")]
     ScriptHasBothContentAndPath(String),
 
+    #[error("Added file '{0}' has no content or path")]
+    AdditionalFileHasNoContentOrPath(String),
+
+    #[error("Added file '{0}' has both content and path")]
+    AdditionalFileHasBothContentAndPath(String),
+
+    #[error("Could not parse permissions '{0}' for added file '{1}'")]
+    AdditionalFileInvalidPermissions(String, String),
+
     #[error("Encryption recovery key URL '{url}' has an invalid scheme '{scheme}'")]
     InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },
 

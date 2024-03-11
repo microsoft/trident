@@ -1,6 +1,7 @@
 HostConfiguration
 AbUpdate
 AbVolumePair
+AdditionalFile
 AdoptedPartition
 Disk
 EncryptedVolume

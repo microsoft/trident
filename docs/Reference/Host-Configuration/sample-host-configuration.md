@@ -129,4 +129,7 @@ osconfig:
     sshKeys:
     - <MY_PUBLIC_SSH_KEY>
     sshMode: key-only
+  additionalFiles:
+  - destination: /var/config-script.sh
+    content: echo 'Hello, world!'
 ```

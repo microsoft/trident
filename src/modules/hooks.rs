@@ -1,9 +1,9 @@
-use std::{collections::HashMap, ffi::OsString, path::PathBuf};
+use std::{collections::HashMap, ffi::OsString, os::unix::fs::PermissionsExt, path::PathBuf};
 
 use anyhow::{bail, Context, Error, Ok};
 use log::{debug, info};
 
-use osutils::scripts::ScriptRunner;
+use osutils::{files, scripts::ScriptRunner};
 use trident_api::{
     config::{HostConfiguration, Script},
     constants::DEFAULT_SCRIPT_INTERPRETER,
@@ -12,9 +12,15 @@ use trident_api::{
 
 use crate::modules::Module;
 
+#[derive(Debug)]
+struct StagedFile {
+    contents: Vec<u8>,
+    mode: u32,
+}
+
 #[derive(Default, Debug)]
 pub struct HooksModule {
-    staged_files: HashMap<PathBuf, Vec<u8>>,
+    staged_files: HashMap<PathBuf, StagedFile>,
 }
 impl Module for HooksModule {
     fn name(&self) -> &'static str {
@@ -63,13 +69,18 @@ impl Module for HooksModule {
         {
             if let Some(ref path) = script.path {
                 if script.should_run(&host_status.reconcile_state) {
-                    let content = std::fs::read(path).context(format!(
-                        "Failed to load script '{}' from path '{}'",
-                        script.name,
-                        path.display()
-                    ))?;
-                    self.staged_files.insert(path.to_owned(), content);
+                    self.stage_file(path.to_owned())
+                        .context(format!("Failed to load script '{}'", script.name,))?;
                 }
+            }
+        }
+
+        for file in &host_config.osconfig.additional_files {
+            if let Some(ref path) = file.path {
+                self.stage_file(path.to_owned()).context(format!(
+                    "Failed to load additional file to be placed at '{}'",
+                    file.destination.display(),
+                ))?;
             }
         }
 
@@ -100,6 +111,41 @@ impl Module for HooksModule {
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
+        info!("Adding additional files");
+        for file in &host_config.osconfig.additional_files {
+            let (content, original_mode) = if let Some(ref content) = file.content {
+                (content.as_bytes().to_vec(), None)
+            } else if let Some(ref path) = file.path {
+                let staged_file = self
+                    .staged_files
+                    .get(path)
+                    .context(format!("Failed to find staged file '{}'", path.display()))?;
+                (staged_file.contents.clone(), Some(staged_file.mode))
+            } else {
+                bail!(
+                    "Additional file '{}' has no content or path",
+                    file.destination.display()
+                );
+            };
+
+            let override_mode = file
+                .permissions
+                .as_ref()
+                .map(|p| u32::from_str_radix(p, 8))
+                .transpose()
+                .context("Failed to parse permissions")?;
+
+            // If file permissions are specified in the host configuration, they override everything
+            // else. Otherwise use the original file permissions or fall back to default permissions
+            // of 0664.
+            let mode = override_mode.or(original_mode).unwrap_or(0o664);
+
+            files::write_file(&file.destination, mode, &content).context(format!(
+                "Failed to write additional file '{}'",
+                file.destination.display()
+            ))?;
+        }
+
         info!("Running post-configure scripts");
         host_config
             .scripts
@@ -115,6 +161,22 @@ impl Module for HooksModule {
 }
 
 impl HooksModule {
+    fn stage_file(&mut self, path: PathBuf) -> Result<(), Error> {
+        let contents =
+            std::fs::read(&path).context(format!("Failed to read file '{}'", path.display()))?;
+        let mode = std::fs::metadata(&path)
+            .context(format!(
+                "Failed to read metadata for file '{}'",
+                path.display()
+            ))?
+            .permissions()
+            .mode();
+
+        self.staged_files
+            .insert(path, StagedFile { contents, mode });
+        Ok(())
+    }
+
     fn run_script(&self, script: &Script, host_status: &HostStatus) -> Result<(), Error> {
         // Check if the script should be run for the current reconcile state
         if !script.should_run(&host_status.reconcile_state) {
@@ -140,9 +202,11 @@ impl HooksModule {
         let content = if let Some(ref content) = script.content {
             content.as_bytes()
         } else if let Some(ref path) = script.path {
-            self.staged_files
+            &self
+                .staged_files
                 .get(path)
                 .context(format!("Failed to find staged file {}", path.display()))?
+                .contents
         } else {
             bail!("Script {} has no content or path", script.name);
         };
@@ -202,6 +266,7 @@ fn match_update_kind_env_var(reconcile_state: &ReconcileState) -> OsString {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::{collections::HashMap, path::Path};
 
     use super::*;
@@ -210,6 +275,30 @@ mod tests {
     use trident_api::config::{Scripts, ServicingType};
     use trident_api::constants;
     use trident_api::status::Storage;
+
+    #[test]
+    fn test_stage_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_file = temp_dir.path().join("test-file");
+        let test_content = "test-content";
+        fs::write(&test_file, test_content).unwrap();
+
+        let mut module = HooksModule::default();
+        module
+            .stage_file(test_file.clone())
+            .expect("Failed to stage file");
+        assert_eq!(
+            module.staged_files.get(&test_file).unwrap().contents,
+            test_content.as_bytes()
+        );
+
+        let mut module = HooksModule::default();
+        let result = module.stage_file(PathBuf::from("non-existing-file"));
+        assert!(result.is_err());
+
+        // Cleanup
+        temp_dir.close().unwrap();
+    }
 
     #[test]
     fn test_run_script_success() {
@@ -398,5 +487,84 @@ mod tests {
             "TARGET_ROOT".into() => "/dev/sda".into()
         };
         assert_eq!(script_runner.env_vars, expected_env_vars);
+    }
+
+    #[test]
+    fn test_add_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_file = temp_dir.path().join("test-file");
+        let test_content = "test-content";
+
+        // Content
+        let mut module = HooksModule::default();
+        let mut host_status = HostStatus::default();
+        let host_config = HostConfiguration {
+            osconfig: trident_api::config::OsConfig {
+                additional_files: vec![trident_api::config::AdditionalFile {
+                    destination: test_file.clone(),
+                    content: Some(test_content.into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        module.prepare(&mut host_status, &host_config).unwrap();
+        module.configure(&mut host_status, &host_config).unwrap();
+        assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
+        assert_eq!(
+            fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
+            0o664
+        );
+
+        // Content + permissions
+        let mut module = HooksModule::default();
+        let mut host_status = HostStatus::default();
+        let host_config = HostConfiguration {
+            osconfig: trident_api::config::OsConfig {
+                additional_files: vec![trident_api::config::AdditionalFile {
+                    destination: test_file.clone(),
+                    content: Some(test_content.into()),
+                    permissions: Some("0744".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        module.prepare(&mut host_status, &host_config).unwrap();
+        module.configure(&mut host_status, &host_config).unwrap();
+        assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
+        assert_eq!(
+            fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
+            0o744
+        );
+
+        // File
+        let source_file = temp_dir.path().join("source-file");
+        fs::write(&source_file, "\u{2603}").unwrap();
+        let mut module = HooksModule::default();
+        let mut host_status = HostStatus::default();
+        let host_config = HostConfiguration {
+            osconfig: trident_api::config::OsConfig {
+                additional_files: vec![trident_api::config::AdditionalFile {
+                    destination: test_file.clone(),
+                    path: Some(source_file.clone()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        module.prepare(&mut host_status, &host_config).unwrap();
+        module.configure(&mut host_status, &host_config).unwrap();
+        assert_eq!(fs::read_to_string(&test_file).unwrap(), "\u{2603}");
+        assert_eq!(
+            fs::metadata(&source_file).unwrap().permissions().mode() & 0o777,
+            fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
+        );
+
+        // Cleanup
+        temp_dir.close().unwrap();
     }
 }

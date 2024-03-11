@@ -101,6 +101,34 @@
       },
       "additionalProperties": false
     },
+    "AdditionalFile": {
+      "type": "object",
+      "required": [
+        "destination"
+      ],
+      "properties": {
+        "content": {
+          "description": "The contents of the script. Conflicts with path.",
+          "type": "string",
+          "nullable": true
+        },
+        "destination": {
+          "description": "Location on the target image to place the file.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path to the script file. Conflicts with content.\n\nThe file must be located on the host's filesystem.",
+          "type": "string",
+          "nullable": true
+        },
+        "permissions": {
+          "description": "Permissions to set on the file.\n\nIf not specified, this will default to the permissions of the source file when `path` is used and to 0644 when `content` is used.",
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
     "AdoptedPartition": {
       "description": "Settings to adopt a pre-existing partition.",
       "type": "object",
@@ -360,10 +388,16 @@
       "description": "Configuration for the host OS.",
       "type": "object",
       "properties": {
+        "additionalFiles": {
+          "description": "Additional Files to add to the image.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AdditionalFile"
+          }
+        },
         "users": {
           "title": "Users",
           "description": "Map of users to configure on the host. The key is the username.",
-          "default": [],
           "type": "array",
           "items": {
             "$ref": "#/definitions/User"

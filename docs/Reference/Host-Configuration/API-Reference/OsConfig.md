@@ -10,6 +10,21 @@ Configuration for the host OS.
 
 ## Properties
 
+### `additionalFiles` (optional)
+
+Additional Files to add to the image.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                                 |
+   | -------------- | ------------------------------------- |
+   | Type           | `AdditionalFile`                      |
+   | Link           | [AdditionalFile](./AdditionalFile.md) |
+
 ### `users` (optional)
 
 Map of users to configure on the host. The key is the username.
@@ -17,7 +32,6 @@ Map of users to configure on the host. The key is the username.
 | Characteristic | Value   |
 | -------------- | ------- |
 | Type           | `array` |
-| Default        | `[]`    |
 
 - Items of the array must have the type:
 
