@@ -95,6 +95,19 @@ impl GrubConfig {
             .collect()
     }
 
+    /// Checks if a specific argument is present in the linux command line
+    pub fn contains_linux_command_line_argument(&mut self, key: &str) -> Result<bool, Error> {
+        if self.linux_command_line.is_none() {
+            self.linux_command_line = Some(self.parse_linux_command_line()?);
+        }
+        Ok(self
+            .linux_command_line
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|(k, _)| k == key))
+    }
+
     /// Read a value of an argument from the linux command line in the GRUB
     /// config. If multiple matching keys are present, returns the value of the
     /// last key.
@@ -171,7 +184,12 @@ impl GrubConfig {
         }
 
         self.update_linux_command_line_parsed(key, value)?;
+        self.update_linux_command_line()?;
 
+        Ok(())
+    }
+
+    fn update_linux_command_line(&mut self) -> Result<(), Error> {
         let re = Regex::new(LINUX_COMMAND_LINE_PATTERN)?;
         let captures = re.captures(&self.contents).context(format!(
             "Failed to find linux command line in '{}'",
@@ -192,6 +210,27 @@ impl GrubConfig {
             suffix_match.range(),
             self.serialize_linux_command_line()?.as_str(),
         );
+
+        Ok(())
+    }
+
+    /// Insert a value of an argument into the linux command line in the GRUB
+    /// config, at the end of the command line.
+    pub fn append_linux_command_line_argument(
+        &mut self,
+        key: &str,
+        value: &str,
+    ) -> Result<(), Error> {
+        if self.linux_command_line.is_none() {
+            self.linux_command_line = Some(self.parse_linux_command_line()?);
+        }
+
+        self.linux_command_line
+            .as_mut()
+            .unwrap()
+            .push((key.to_owned(), value.to_owned()));
+
+        self.update_linux_command_line()?;
 
         Ok(())
     }
@@ -536,6 +575,43 @@ mod test {
     }
 
     #[test]
+    fn test_contains_linux_command_line_argument() {
+        let original_content_grub = upstream_grubcfg();
+        let mut grub_config = GrubConfig {
+            path: PathBuf::new(),
+            contents: original_content_grub.to_string(),
+            linux_command_line: None,
+        };
+
+        assert!(grub_config
+            .contains_linux_command_line_argument("roothash")
+            .unwrap());
+
+        // missing value
+        assert!(!grub_config
+            .contains_linux_command_line_argument("timeout")
+            .unwrap());
+
+        // no linux
+        grub_config.contents = r#"
+            set timeout=0
+            set bootprefix=/boot
+            search -n -u 9e6a9d2c-b7fe-4359-ac45-18b505e29d8b -s
+            "#
+        .to_owned();
+        grub_config.linux_command_line = None;
+
+        assert_eq!(
+            grub_config
+                .contains_linux_command_line_argument(r"roothash")
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to find linux command line in ''"
+        );
+    }
+
+    #[test]
     fn test_read_linux_command_line_argument() {
         let original_content_grub = upstream_grubcfg();
         let mut grub_config = GrubConfig {
@@ -572,7 +648,7 @@ mod test {
 
         assert_eq!(
             grub_config
-                .read_linux_command_line_argument(r"roothash=(\w+)")
+                .read_linux_command_line_argument(r"roothash")
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -652,6 +728,147 @@ mod test {
         assert_eq!(
             grub_config
                 .update_linux_command_line_argument(
+                    "roothash",
+                    "9e6a9d2c-b7fe-4359-ac45-18b505e29d8c"
+                )
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to find linux command line in ''"
+        );
+    }
+
+    #[test]
+    fn test_append_linux_command_line_argument() {
+        let original_content_grub = upstream_grubcfg();
+        let mut grub_config = GrubConfig {
+            path: PathBuf::new(),
+            contents: original_content_grub.to_string(),
+            linux_command_line: None,
+        };
+
+        grub_config
+            .append_linux_command_line_argument("roothash", "9e6a9d2c-b7fe-4359-ac45-18b505e29d8c")
+            .unwrap();
+
+        assert_eq!(
+            grub_config.contents,
+            indoc::indoc! { r#"
+                set timeout=0
+                set bootprefix=/boot
+                search -n -u c380c8e5-88ec-4c3e-85bb-aa1e4d667dfc -s
+
+                load_env -f $bootprefix/mariner.cfg
+                if [ -f $bootprefix/mariner-mshv.cfg ]; then
+                        load_env -f $bootprefix/mariner-mshv.cfg
+                fi
+
+                if [ -f  $bootprefix/systemd.cfg ]; then
+                        load_env -f $bootprefix/systemd.cfg
+                else
+                        set systemd_cmdline=net.ifnames=0
+                fi
+                if [ -f $bootprefix/grub2/grubenv ]; then
+                        load_env -f $bootprefix/grub2/grubenv
+                fi
+
+                set rootdevice=PARTUUID=fc7675ee-37ce-471f-9a6c-7e840189b70c
+
+                menuentry "CBL-Mariner" {
+                        linux $bootprefix/$mariner_linux security=selinux selinux=1 rd.auto=1 root=$rootdevice $mariner_cmdline lockdown=integrity sysctl.kernel.unprivileged_bpf_disabled=1 $systemd_cmdline console=tty0 console=ttyS0 $kernelopts debug roothash=4392712ba01368efdf14b05c76f9e4df0d53664630b5d48632ed17a137f39076 roothash=9e6a9d2c-b7fe-4359-ac45-18b505e29d8c
+                        if [ -f $bootprefix/$mariner_initrd ]; then
+                                initrd $bootprefix/$mariner_initrd
+                        fi
+                }
+            "# }
+        );
+
+        // new argument
+        grub_config
+            .append_linux_command_line_argument("foobar", "barfoo")
+            .unwrap();
+
+        assert_eq!(
+            grub_config.contents,
+            indoc::indoc! { r#"
+                set timeout=0
+                set bootprefix=/boot
+                search -n -u c380c8e5-88ec-4c3e-85bb-aa1e4d667dfc -s
+
+                load_env -f $bootprefix/mariner.cfg
+                if [ -f $bootprefix/mariner-mshv.cfg ]; then
+                        load_env -f $bootprefix/mariner-mshv.cfg
+                fi
+
+                if [ -f  $bootprefix/systemd.cfg ]; then
+                        load_env -f $bootprefix/systemd.cfg
+                else
+                        set systemd_cmdline=net.ifnames=0
+                fi
+                if [ -f $bootprefix/grub2/grubenv ]; then
+                        load_env -f $bootprefix/grub2/grubenv
+                fi
+
+                set rootdevice=PARTUUID=fc7675ee-37ce-471f-9a6c-7e840189b70c
+
+                menuentry "CBL-Mariner" {
+                        linux $bootprefix/$mariner_linux security=selinux selinux=1 rd.auto=1 root=$rootdevice $mariner_cmdline lockdown=integrity sysctl.kernel.unprivileged_bpf_disabled=1 $systemd_cmdline console=tty0 console=ttyS0 $kernelopts debug roothash=4392712ba01368efdf14b05c76f9e4df0d53664630b5d48632ed17a137f39076 roothash=9e6a9d2c-b7fe-4359-ac45-18b505e29d8c foobar=barfoo
+                        if [ -f $bootprefix/$mariner_initrd ]; then
+                                initrd $bootprefix/$mariner_initrd
+                        fi
+                }
+            "# }
+        );
+
+        // outside of linux
+        grub_config
+            .append_linux_command_line_argument("timeout", "10")
+            .unwrap();
+
+        assert_eq!(
+            grub_config.contents,
+            indoc::indoc! { r#"
+                set timeout=0
+                set bootprefix=/boot
+                search -n -u c380c8e5-88ec-4c3e-85bb-aa1e4d667dfc -s
+
+                load_env -f $bootprefix/mariner.cfg
+                if [ -f $bootprefix/mariner-mshv.cfg ]; then
+                        load_env -f $bootprefix/mariner-mshv.cfg
+                fi
+
+                if [ -f  $bootprefix/systemd.cfg ]; then
+                        load_env -f $bootprefix/systemd.cfg
+                else
+                        set systemd_cmdline=net.ifnames=0
+                fi
+                if [ -f $bootprefix/grub2/grubenv ]; then
+                        load_env -f $bootprefix/grub2/grubenv
+                fi
+
+                set rootdevice=PARTUUID=fc7675ee-37ce-471f-9a6c-7e840189b70c
+
+                menuentry "CBL-Mariner" {
+                        linux $bootprefix/$mariner_linux security=selinux selinux=1 rd.auto=1 root=$rootdevice $mariner_cmdline lockdown=integrity sysctl.kernel.unprivileged_bpf_disabled=1 $systemd_cmdline console=tty0 console=ttyS0 $kernelopts debug roothash=4392712ba01368efdf14b05c76f9e4df0d53664630b5d48632ed17a137f39076 roothash=9e6a9d2c-b7fe-4359-ac45-18b505e29d8c foobar=barfoo timeout=10
+                        if [ -f $bootprefix/$mariner_initrd ]; then
+                                initrd $bootprefix/$mariner_initrd
+                        fi
+                }
+            "# }
+        );
+
+        // no linux
+        grub_config.contents = r#"
+            set timeout=0
+            set bootprefix=/boot
+            search -n -u 9e6a9d2c-b7fe-4359-ac45-18b505e29d8b -s
+            "#
+        .to_owned();
+        grub_config.linux_command_line = None;
+
+        assert_eq!(
+            grub_config
+                .append_linux_command_line_argument(
                     "roothash",
                     "9e6a9d2c-b7fe-4359-ac45-18b505e29d8c"
                 )
