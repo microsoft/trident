@@ -49,9 +49,18 @@ List of secondary groups to add the user to.
    | -------------- | -------- |
    | Type           | `string` |
 
-### `sshKeys` (optional)
+### `sshMode` (optional)
 
-List of SSH keys to add to the user's authorized keys. **(IN DEVELOPMENT)**
+SSH configuration for the user. **(IN DEVELOPMENT)**
+
+| Characteristic | Value                   |
+| -------------- | ----------------------- |
+| Type           | `SshMode`               |
+| Link           | [SshMode](./SshMode.md) |
+
+### `sshPublicKeys` (optional)
+
+List of SSH keys to add to the user's authorized keys.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -62,15 +71,6 @@ List of SSH keys to add to the user's authorized keys. **(IN DEVELOPMENT)**
    | Characteristic | Value    |
    | -------------- | -------- |
    | Type           | `string` |
-
-### `sshMode` (optional)
-
-SSH configuration for the user. **(IN DEVELOPMENT)**
-
-| Characteristic | Value                   |
-| -------------- | ----------------------- |
-| Type           | `SshMode`               |
-| Link           | [SshMode](./SshMode.md) |
 
 ### `startupCommand` (optional)
 

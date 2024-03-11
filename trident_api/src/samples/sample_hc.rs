@@ -9,9 +9,9 @@ use netplan_types::{
 use crate::{
     config::{
         AbUpdate, AbVolumePair, AdditionalFile, AdoptedPartition, Disk, EncryptedVolume,
-        Encryption, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, OsConfig,
-        Partition, PartitionSize, PartitionTableType, PartitionType, Raid, RaidLevel, Script,
-        Scripts, ServicingType, SoftwareRaidArray, SshMode, Storage, User,
+        Encryption, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, Os, Partition,
+        PartitionSize, PartitionTableType, PartitionType, Raid, RaidLevel, Script, Scripts,
+        ServicingType, SoftwareRaidArray, SshMode, Storage, User,
     },
     constants,
 };
@@ -153,34 +153,34 @@ pub fn sample_host_configuration() -> HostConfiguration {
                 }],
             }),
         },
-        network: Some(NetworkConfig {
-            version: 2,
-            ethernets: Some(HashMap::from([(
-                "vmeths".into(),
-                EthernetConfig {
-                    common_all: Some(CommonPropertiesAllDevices {
-                        dhcp4: Some(true),
-                        ..Default::default()
-                    }),
-                    common_physical: Some(CommonPropertiesPhysicalDeviceType {
-                        r#match: Some(MatchConfig {
-                            name: Some("enp*".into()),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-            )])),
-            ..Default::default()
-        }),
-        osconfig: OsConfig {
+        os: Os {
             users: vec![User {
                 name: "my-custom-user".into(),
-                ssh_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
+                ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
                 ssh_mode: SshMode::KeyOnly,
                 ..Default::default()
             }],
+            network: Some(NetworkConfig {
+                version: 2,
+                ethernets: Some(HashMap::from([(
+                    "vmeths".into(),
+                    EthernetConfig {
+                        common_all: Some(CommonPropertiesAllDevices {
+                            dhcp4: Some(true),
+                            ..Default::default()
+                        }),
+                        common_physical: Some(CommonPropertiesPhysicalDeviceType {
+                            r#match: Some(MatchConfig {
+                                name: Some("enp*".into()),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            }),
             additional_files: vec![AdditionalFile {
                 destination: "/var/config-script.sh".into(),
                 content: Some("echo 'Hello, world!'".into()),
@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(host_configuration.storage.mount_points.len(), 6);
         assert_eq!(host_configuration.storage.images.len(), 2);
         assert!(host_configuration.storage.ab_update.is_some());
-        assert!(host_configuration.network.is_some());
-        assert_eq!(host_configuration.osconfig.users.len(), 1);
+        assert!(host_configuration.os.network.is_some());
+        assert_eq!(host_configuration.os.users.len(), 1);
     }
 }

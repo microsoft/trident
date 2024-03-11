@@ -207,10 +207,10 @@ impl EnvironmentManager {
     fn populate(self, hc: &mut HostConfiguration) {
         // Always populate network_provision so only active devices are present
         // in the provisioning environment
-        hc.network_provision = Some(self.active.get_netplan());
+        hc.management_os.network = Some(self.active.get_netplan());
 
         if !self.inactive.is_empty() {
-            hc.network = Some(self.inactive.get_netplan());
+            hc.os.network = Some(self.inactive.get_netplan());
         }
     }
 }

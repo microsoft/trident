@@ -32,16 +32,16 @@ impl Module for ManagementModule {
         host_config: &HostConfiguration,
         _planned_update: ReconcileState,
     ) -> Result<(), Error> {
-        if host_config.management.disable {
+        if host_config.trident.disable {
             return Ok(());
         }
 
         let datastore_path = host_config
-            .management
+            .trident
             .datastore_path
             .as_deref()
             .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
-        if let Some(ref current_datastore_path) = host_status.management.datastore_path {
+        if let Some(ref current_datastore_path) = host_status.trident.datastore_path {
             ensure!(
                 current_datastore_path == datastore_path,
                 "Datastore path cannot be changed"
@@ -59,25 +59,22 @@ impl Module for ManagementModule {
         host_config: &HostConfiguration,
         mount_path: &Path,
     ) -> Result<(), Error> {
-        if host_config.management.disable {
+        if host_config.trident.disable {
             info!("Not provisioning management module as it is disabled");
             return Ok(());
         }
 
-        host_status.management.datastore_path = Some(
+        host_status.trident.datastore_path = Some(
             host_config
-                .management
+                .trident
                 .datastore_path
                 .as_deref()
                 .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH))
                 .to_owned(),
         );
-        debug!(
-            "Datastore path: {:?}",
-            host_status.management.datastore_path
-        );
+        debug!("Datastore path: {:?}", host_status.trident.datastore_path);
 
-        if host_config.management.self_upgrade {
+        if host_config.trident.self_upgrade {
             info!("Copying Trident binary to runtime OS");
             fs::copy(
                 TRIDENT_BINARY_PATH,
@@ -94,7 +91,7 @@ impl Module for ManagementModule {
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        if host_config.management.disable {
+        if host_config.trident.disable {
             return Ok(());
         }
 
@@ -102,7 +99,7 @@ impl Module for ManagementModule {
             .context("Failed to create trident config directory")?;
 
         let datastore_path = host_status
-            .management
+            .trident
             .datastore_path
             .as_ref()
             .context("Datastore path missing from host status")?;
@@ -125,8 +122,8 @@ pub(super) fn create_trident_config(
 ) -> Result<(), Error> {
     let trident_config = LocalConfigFile::default()
         .with_datastore(datastore_path.to_path_buf())
-        .with_phonehome(host_config.management.phonehome.clone())
-        .with_grpc(if host_config.management.enable_grpc {
+        .with_phonehome(host_config.trident.phonehome.clone())
+        .with_grpc(if host_config.trident.enable_grpc {
             Some(Default::default())
         } else {
             None

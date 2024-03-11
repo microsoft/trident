@@ -14,9 +14,11 @@ pub fn start(
     host_config: Option<&HostConfiguration>,
     wait_on_network: bool,
 ) -> Result<(), Error> {
-    let netconf = override_network
-        .as_ref()
-        .or(host_config.and_then(|hc| hc.network_provision.as_ref().or(hc.network.as_ref())));
+    let netconf =
+        override_network
+            .as_ref()
+            .or(host_config
+                .and_then(|hc| hc.management_os.network.as_ref().or(hc.os.network.as_ref())));
 
     match netconf {
         Some(config) => {

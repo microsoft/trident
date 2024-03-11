@@ -1,4 +1,3 @@
-use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
@@ -7,56 +6,33 @@ use schemars::JsonSchema;
 use crate::is_default;
 
 pub(super) mod error;
-pub(super) mod management;
-pub(super) mod network;
-pub(super) mod osconfig;
+pub(super) mod os;
 pub(super) mod scripts;
 pub(super) mod storage;
+pub(super) mod trident;
 
-use management::Management;
-use osconfig::OsConfig;
+use os::Os;
 use scripts::Scripts;
 use storage::Storage;
+use trident::Trident;
 
 use error::InvalidHostConfigurationError;
+
+use self::os::ManagementOs;
 
 /// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct HostConfiguration {
-    /// The Management configuration controls the installation of the Trident agent onto
-    /// the runtime OS.
+    /// The Trident Management configuration controls the installation of the
+    /// Trident agent onto the runtime OS.
     #[serde(default)]
-    pub management: Management,
+    pub trident: Trident,
 
     /// Describes the storage configuration of the host.
     #[serde(default)]
     pub storage: Storage,
-
-    /// Netplan network configuration for the provisioning OS _ONLY_.
-    ///
-    /// See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
-    ///
-    /// When provided, this configuration will be used to configure the network
-    /// on the provisioning OS. When not provided, the network configuration from
-    /// the runtime OS will be used instead.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(
-        feature = "schemars",
-        schemars(schema_with = "network::schema_helpers::make_placeholder_netplan_schema")
-    )]
-    pub network_provision: Option<NetworkConfig>,
-
-    /// Netplan network configuration for the runtime OS.
-    ///
-    /// See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(
-        feature = "schemars",
-        schemars(schema_with = "network::schema_helpers::make_placeholder_netplan_schema")
-    )]
-    pub network: Option<NetworkConfig>,
 
     /// Optional scripts to be run after different Trident stages have completed.
     #[serde(default, skip_serializing_if = "is_default")]
@@ -64,17 +40,21 @@ pub struct HostConfiguration {
 
     /// OS Configuration for the runtime OS.
     #[serde(default, skip_serializing_if = "is_default")]
-    pub osconfig: OsConfig,
+    pub os: Os,
+
+    /// OS Configuration for the management OS.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub management_os: ManagementOs,
 }
 
 impl HostConfiguration {
     pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
-        let require_root_mount_point = self.management != Management::default()
+        let require_root_mount_point = self.trident != Trident::default()
             || self.scripts != Scripts::default()
-            || self.osconfig != OsConfig::default()
-            || self.network.is_some();
+            || self.os != Os::default()
+            || self.os.network.is_some();
         self.storage.validate(require_root_mount_point)?;
-        self.osconfig.validate()?;
+        self.os.validate()?;
         self.scripts.validate()?;
 
         Ok(())
@@ -82,6 +62,7 @@ impl HostConfiguration {
 
     #[cfg(feature = "schemars")]
     pub fn generate_schema() -> schemars::schema::RootSchema {
+        use schemars::schema::Schema;
         let mut schema =
             crate::schema_helpers::schema_generator().into_root_schema_for::<HostConfiguration>();
 
@@ -92,8 +73,19 @@ impl HostConfiguration {
         // "private" function in the JsonSchema trait) This means we have to
         // manually edit the schema to remove these two fields from the required
         // list.
-        schema.schema.object().required.remove("network");
-        schema.schema.object().required.remove("networkProvision");
+        let remove_network = |schema: &mut schemars::schema::RootSchema, key: &str| {
+            if let Some(Schema::Object(obj)) = schema.definitions.get_mut(key) {
+                obj.object().required.remove("network");
+            } else {
+                panic!(
+                    "Failed to remove 'network' from required fields from definition '{}'. Perhaps the API has changed?",
+                    key
+                );
+            }
+        };
+
+        remove_network(&mut schema, "Os");
+        remove_network(&mut schema, "ManagementOs");
 
         schema
     }

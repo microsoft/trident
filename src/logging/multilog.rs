@@ -51,3 +51,100 @@ impl Log for MultiLogger {
         self.loggers.iter().for_each(|l| l.flush());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    use log::Level;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct TestLogger {
+        enabled: bool,
+        got_logs: Arc<AtomicBool>,
+    }
+
+    impl Log for TestLogger {
+        fn enabled(&self, _: &log::Metadata) -> bool {
+            self.enabled
+        }
+
+        fn log(&self, _: &log::Record) {
+            self.got_logs.store(true, Ordering::Relaxed);
+        }
+
+        fn flush(&self) {
+            // No-op
+        }
+    }
+
+    #[test]
+    fn test_enabled() {
+        let logger1 = Box::new(TestLogger {
+            enabled: false,
+            ..Default::default()
+        });
+        let logger2 = Box::new(TestLogger {
+            enabled: false,
+            ..Default::default()
+        });
+
+        let multi_logger = MultiLogger::new().with_logger(logger1).with_logger(logger2);
+
+        assert!(
+            !multi_logger.enabled(&log::Metadata::builder().level(Level::Error).build()),
+            "Logger should not be enabled"
+        );
+
+        let logger1 = Box::new(TestLogger {
+            enabled: false,
+            ..Default::default()
+        });
+        let logger2 = Box::new(TestLogger {
+            enabled: true,
+            ..Default::default()
+        });
+
+        let multi_logger = MultiLogger::new().with_logger(logger1).with_logger(logger2);
+
+        assert!(
+            multi_logger.enabled(&log::Metadata::builder().level(Level::Error).build()),
+            "Logger should be enabled"
+        );
+    }
+
+    #[test]
+    fn test_filter() {
+        let logger1 = Box::new(TestLogger {
+            enabled: true,
+            ..Default::default()
+        });
+        let logger1_state = logger1.got_logs.clone();
+        let logger2 = Box::new(TestLogger {
+            enabled: false,
+            ..Default::default()
+        });
+        let logger2_state = logger2.got_logs.clone();
+
+        let multi_logger = MultiLogger::new()
+            .with_logger(logger1)
+            .with_logger(logger2)
+            .with_max_level(LevelFilter::Info);
+
+        multi_logger.log(&log::Record::builder().build());
+
+        assert!(
+            logger1_state.load(Ordering::Relaxed),
+            "Logger 1 should have received the log"
+        );
+        assert!(
+            !logger2_state.load(Ordering::Relaxed),
+            "Logger 2 should not have received the log"
+        );
+    }
+}

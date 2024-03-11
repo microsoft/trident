@@ -54,8 +54,8 @@ def prepare_hostconfig(test_dir_path: Path, ssh_pub_key: str):
         TRIDENT_REPO_DIR_PATH / "functional_tests/trident-setup.yaml", "r"
     ) as file:
         trident_setup = yaml.safe_load(file)
-    trident_setup["hostConfiguration"]["osconfig"]["users"][0]["sshKeys"].clear()
-    trident_setup["hostConfiguration"]["osconfig"]["users"][0]["sshKeys"].append(
+    trident_setup["hostConfiguration"]["os"]["users"][0]["sshPublicKeys"].clear()
+    trident_setup["hostConfiguration"]["os"]["users"][0]["sshPublicKeys"].append(
         ssh_pub_key
     )
 

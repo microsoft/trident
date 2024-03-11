@@ -201,7 +201,7 @@ pub(super) fn provision_host(
     )?;
     let datastore_path = state
         .host_status()
-        .management
+        .trident
         .datastore_path
         .clone()
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));

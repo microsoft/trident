@@ -19,7 +19,7 @@ pub struct HostStatus {
     pub reconcile_state: ReconcileState,
 
     #[serde(default)]
-    pub management: Management,
+    pub trident: Trident,
 
     #[serde(default)]
     pub storage: Storage,
@@ -61,7 +61,7 @@ pub enum UpdateKind {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct Management {
+pub struct Trident {
     pub datastore_path: Option<PathBuf>,
 }
 

@@ -1,19 +1,19 @@
 hostConfiguration:
-  management:
+  trident:
     selfUpgrade: true
-  network:
-    ethernets:
-      eths:
-        dhcp4: true
-        match:
-          name: e*
-    version: 2
-  osconfig:
+  os:
+    network:
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+      version: 2
     users:
       - name: testuser
         secondaryGroups:
           - wheel
-        sshKeys: []
+        sshPublicKeys: []
         sshMode: key-only
   scripts:
     postConfigure:

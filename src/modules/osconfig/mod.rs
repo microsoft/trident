@@ -32,7 +32,7 @@ impl Module for OsConfigModule {
     ) -> Result<(), Error> {
         let target_path = mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]);
 
-        if !host_config.osconfig.users.is_empty() && !target_path.exists() {
+        if !host_config.os.users.is_empty() && !target_path.exists() {
             debug!("Copying os modifier binary to runtime OS");
             fs::copy(
                 OS_MODIFIER_BINARY_PATH,
@@ -64,9 +64,8 @@ impl Module for OsConfigModule {
             return Ok(());
         }
 
-        if !host_config.osconfig.users.is_empty() {
-            users::set_up_users(host_config.osconfig.users.clone())
-                .context("Failed to set up users")?;
+        if !host_config.os.users.is_empty() {
+            users::set_up_users(host_config.os.users.clone()).context("Failed to set up users")?;
         }
 
         Ok(())

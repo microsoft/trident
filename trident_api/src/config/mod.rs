@@ -1,10 +1,13 @@
 mod host;
-mod trident;
+mod local;
 
 pub use host::{
     error::InvalidHostConfigurationError,
-    management::Management,
-    osconfig::{AdditionalFile, OsConfig, Password, SshMode, User},
+    os::{
+        additional_files::AdditionalFile,
+        users::{Password, SshMode, User},
+        ManagementOs, Os,
+    },
     scripts::{Script, Scripts, ServicingType},
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},
     storage::{
@@ -12,7 +15,8 @@ pub use host::{
         Disk, EncryptedVolume, Encryption, MountPoint, PartitionTableType, Raid, RaidLevel,
         SoftwareRaidArray, Storage,
     },
+    trident::Trident,
     HostConfiguration,
 };
 
-pub use trident::{HostConfigurationSource, LocalConfigFile, Operations};
+pub use local::{HostConfigurationSource, LocalConfigFile, Operations};

@@ -40,7 +40,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             return;
         };
 
-        hc.osconfig.users.push(User {
+        hc.os.users.push(User {
             name: "root".into(),
             password,
             ..Default::default()

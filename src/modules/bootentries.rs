@@ -30,7 +30,7 @@ pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), 
 
     // Open datastore
     let datastore_path = host_status
-        .management
+        .trident
         .datastore_path
         .as_deref()
         .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));

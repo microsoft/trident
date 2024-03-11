@@ -4,36 +4,19 @@
   "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
   "type": "object",
   "properties": {
-    "management": {
-      "description": "The Management configuration controls the installation of the Trident agent onto the runtime OS.",
-      "default": {
-        "disable": false,
-        "phonehome": null,
-        "selfUpgrade": false
-      },
+    "managementOs": {
+      "description": "OS Configuration for the management OS.",
       "allOf": [
         {
-          "$ref": "#/definitions/Management"
+          "$ref": "#/definitions/ManagementOs"
         }
       ]
     },
-    "network": {
-      "description": "Netplan network configuration for the runtime OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
-      "type": "object",
-      "format": "Netplan YAML",
-      "nullable": true
-    },
-    "networkProvision": {
-      "description": "Netplan network configuration for the provisioning OS _ONLY_.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.\n\nWhen provided, this configuration will be used to configure the network on the provisioning OS. When not provided, the network configuration from the runtime OS will be used instead.",
-      "type": "object",
-      "format": "Netplan YAML",
-      "nullable": true
-    },
-    "osconfig": {
+    "os": {
       "description": "OS Configuration for the runtime OS.",
       "allOf": [
         {
-          "$ref": "#/definitions/OsConfig"
+          "$ref": "#/definitions/Os"
         }
       ]
     },
@@ -51,6 +34,19 @@
       "allOf": [
         {
           "$ref": "#/definitions/Storage"
+        }
+      ]
+    },
+    "trident": {
+      "description": "The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.",
+      "default": {
+        "disable": false,
+        "phonehome": null,
+        "selfUpgrade": false
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/Trident"
         }
       ]
     }
@@ -320,33 +316,15 @@
         }
       ]
     },
-    "Management": {
-      "description": "The Management configuration controls the installation of the Trident agent onto the runtime OS.",
+    "ManagementOs": {
+      "description": "Configuration for the management OS.",
       "type": "object",
       "properties": {
-        "datastorePath": {
-          "description": "Describes where to place the datastore Trident will use to store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.",
-          "type": "string",
+        "network": {
+          "description": "Netplan network configuration for the management OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
+          "type": "object",
+          "format": "Netplan YAML",
           "nullable": true
-        },
-        "disable": {
-          "description": "When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.",
-          "default": false,
-          "type": "boolean"
-        },
-        "enableGrpc": {
-          "description": "Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.",
-          "type": "boolean"
-        },
-        "phonehome": {
-          "description": "URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.",
-          "type": "string",
-          "nullable": true
-        },
-        "selfUpgrade": {
-          "description": "(FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should upgrade itself. If set to `true`, Trident will replicate itself into the runtime OS prior to transitioning. This is useful during development to ensure the matching version of Trident is used. Defaults to `false`.",
-          "default": false,
-          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -384,7 +362,7 @@
       },
       "additionalProperties": false
     },
-    "OsConfig": {
+    "Os": {
       "description": "Configuration for the host OS.",
       "type": "object",
       "properties": {
@@ -395,9 +373,15 @@
             "$ref": "#/definitions/AdditionalFile"
           }
         },
+        "network": {
+          "description": "Netplan network configuration for the runtime OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
+          "type": "object",
+          "format": "Netplan YAML",
+          "nullable": true
+        },
         "users": {
-          "title": "Users",
-          "description": "Map of users to configure on the host. The key is the username.",
+          "description": "Users to configure on the host.",
+          "default": [],
           "type": "array",
           "items": {
             "$ref": "#/definitions/User"
@@ -549,10 +533,10 @@
           "description": "Lock the user's password. (equivalent to `passwd -l`)",
           "type": "object",
           "required": [
-            "mode"
+            "type"
           ],
           "properties": {
-            "mode": {
+            "type": {
               "type": "string",
               "enum": [
                 "locked"
@@ -848,6 +832,37 @@
       },
       "additionalProperties": false
     },
+    "Trident": {
+      "description": "The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.",
+      "type": "object",
+      "properties": {
+        "datastorePath": {
+          "description": "Describes where to place the datastore Trident will use to store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.",
+          "type": "string",
+          "nullable": true
+        },
+        "disable": {
+          "description": "When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.",
+          "default": false,
+          "type": "boolean"
+        },
+        "enableGrpc": {
+          "description": "Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.",
+          "type": "boolean"
+        },
+        "phonehome": {
+          "description": "URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.",
+          "type": "string",
+          "nullable": true
+        },
+        "selfUpgrade": {
+          "description": "(FOR DEBUGGING ONLY) a boolean flag that indicates whether Trident should upgrade itself. If set to `true`, Trident will replicate itself into the runtime OS prior to transitioning. This is useful during development to ensure the matching version of Trident is used. Defaults to `false`.",
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "User": {
       "description": "Configuration for a specific user.",
       "type": "object",
@@ -879,13 +894,6 @@
             "type": "string"
           }
         },
-        "sshKeys": {
-          "description": "List of SSH keys to add to the user's authorized keys. **(IN DEVELOPMENT)**",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "sshMode": {
           "description": "SSH configuration for the user. **(IN DEVELOPMENT)**",
           "allOf": [
@@ -893,6 +901,13 @@
               "$ref": "#/definitions/SshMode"
             }
           ]
+        },
+        "sshPublicKeys": {
+          "description": "List of SSH keys to add to the user's authorized keys.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "startupCommand": {
           "description": "Command to be executed at startup, providing a way to run custom scripts or applications on user login.",

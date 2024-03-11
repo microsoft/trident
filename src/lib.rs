@@ -389,9 +389,9 @@ impl Trident {
         datastore: &mut DataStore,
         mut cmd: HostUpdateCommand,
     ) -> Result<(), TridentError> {
-        if self.config.phonehome.is_some() && cmd.host_config.management.phonehome.is_none() {
+        if self.config.phonehome.is_some() && cmd.host_config.trident.phonehome.is_none() {
             info!("Injecting phonehome into host configuration");
-            cmd.host_config.management.phonehome = self.config.phonehome.clone();
+            cmd.host_config.trident.phonehome = self.config.phonehome.clone();
         }
 
         cmd.host_config

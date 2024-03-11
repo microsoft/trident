@@ -20,7 +20,7 @@ impl Module for NetworkModule {
         _host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        match host_config.network.as_ref() {
+        match host_config.os.network.as_ref() {
             Some(config) => {
                 let config = netplan::render_netplan_yaml(config)
                     .context("failed to render runtime network netplan yaml")?;

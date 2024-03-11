@@ -1,5 +1,5 @@
 .PHONY: all
-all: format check test build-api-docs rpm docker-build build-functional-test coverage
+all: format check test build-api-docs rpm docker-build build-functional-test coverage validate-configs
 
 .PHONY: check
 check:
@@ -197,3 +197,12 @@ generate-functional-test-manifest:
 	rm -rf functional_tests/generated/*
 	cargo build --features=pytest-generator,functional-test
 	target/debug/trident pytest
+
+.PHONY: validate-configs
+validate-configs:
+	@cargo build
+	$(eval DETECTED_HC_FILES := $(shell grep -R 'hostConfiguration:' . --include '*.yaml' --exclude-dir=target --exclude-dir=dev -l))
+	@for file in $(DETECTED_HC_FILES); do \
+		echo "Validating $$file"; \
+		./target/debug/trident validate -c $$file; \
+	done

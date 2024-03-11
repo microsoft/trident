@@ -78,19 +78,19 @@ hostConfiguration:
         sha256: ignored
         format: raw-zst
         targetId: root
-  network:
-    ethernets:
-      vmeths:
-        match:
-          name: enp*
-        dhcp4: true
-    version: 2
-  management:
+  trident:
     selfUpgrade: false
-  osconfig:
+  os:
+    network:
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+      version: 2
     users:
       - name: testing-user
-        sshKeys: []
+        sshPublicKeys: []
         sshMode: key-only
   scripts:
     postConfigure:

@@ -10,48 +10,23 @@ HostConfiguration is the configuration for a host. Trident agent will use this t
 
 ## Properties
 
-### `management` (optional)
+### `managementOs` (optional)
 
-The Management configuration controls the installation of the Trident agent onto the runtime OS.
+OS Configuration for the management OS.
 
-| Characteristic | Value                                                    |
-| -------------- | -------------------------------------------------------- |
-| Type           | `Management`                                             |
-| Default        | `{"disable":false,"phonehome":null,"selfUpgrade":false}` |
-| Link           | [Management](./Management.md)                            |
+| Characteristic | Value                             |
+| -------------- | --------------------------------- |
+| Type           | `ManagementOs`                    |
+| Link           | [ManagementOs](./ManagementOs.md) |
 
-### `networkProvision` (optional)
-
-Netplan network configuration for the provisioning OS _ONLY_.
-
-See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
-
-When provided, this configuration will be used to configure the network on the provisioning OS. When not provided, the network configuration from the runtime OS will be used instead.
-
-| Characteristic | Value          |
-| -------------- | -------------- |
-| Type           | `object`       |
-| Format         | `Netplan YAML` |
-
-### `network` (optional)
-
-Netplan network configuration for the runtime OS.
-
-See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.
-
-| Characteristic | Value          |
-| -------------- | -------------- |
-| Type           | `object`       |
-| Format         | `Netplan YAML` |
-
-### `osconfig` (optional)
+### `os` (optional)
 
 OS Configuration for the runtime OS.
 
-| Characteristic | Value                     |
-| -------------- | ------------------------- |
-| Type           | `OsConfig`                |
-| Link           | [OsConfig](./OsConfig.md) |
+| Characteristic | Value         |
+| -------------- | ------------- |
+| Type           | `Os`          |
+| Link           | [Os](./Os.md) |
 
 ### `scripts` (optional)
 
@@ -71,4 +46,14 @@ Describes the storage configuration of the host.
 | Type           | `Storage`               |
 | Default        | `{}`                    |
 | Link           | [Storage](./Storage.md) |
+
+### `trident` (optional)
+
+The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.
+
+| Characteristic | Value                                                    |
+| -------------- | -------------------------------------------------------- |
+| Type           | `Trident`                                                |
+| Default        | `{"disable":false,"phonehome":null,"selfUpgrade":false}` |
+| Link           | [Trident](./Trident.md)                                  |
 

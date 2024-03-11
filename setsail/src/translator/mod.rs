@@ -17,7 +17,7 @@ pub fn translate(input: ParsedData) -> Result<HostConfiguration, Vec<SetsailErro
     let mut errors: Vec<SetsailError> = Vec::new();
 
     // TODO(6007): remove this dev option
-    hc.management.self_upgrade = true;
+    hc.trident.self_upgrade = true;
 
     // Translation functions
     scripts::translate(&input, &mut hc);

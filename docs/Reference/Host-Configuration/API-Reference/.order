@@ -8,9 +8,9 @@ EncryptedVolume
 Encryption
 Image
 ImageFormat
-Management
+ManagementOs
 MountPoint
-OsConfig
+Os
 Partition
 PartitionTableType
 PartitionType
@@ -23,4 +23,5 @@ ServicingType
 SoftwareRaidArray
 SshMode
 Storage
+Trident
 User

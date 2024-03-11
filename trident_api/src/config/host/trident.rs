@@ -7,12 +7,12 @@ use schemars::JsonSchema;
 
 use crate::is_default;
 
-/// The Management configuration controls the installation of the Trident agent onto
-/// the runtime OS.
+/// The Trident Management configuration controls the installation of the
+/// Trident agent onto the runtime OS.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct Management {
+pub struct Trident {
     /// When set to `true`, prevents Trident from being enabled on the runtime OS.
     /// In that case, the remaining fields are ignored.
     #[serde(default)]

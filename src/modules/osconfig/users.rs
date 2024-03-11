@@ -65,7 +65,7 @@ impl MICUser {
             password_hashed: Some(password_hashed),
             #[cfg(feature = "dangerous-options")]
             password_expires_days: user.dangerous_password_expires_days,
-            ssh_pub_keys: user.ssh_keys,
+            ssh_pub_keys: user.ssh_public_keys,
             primary_group: user.primary_group,
             secondary_groups: user.secondary_groups,
             startup_command: user.startup_command,
@@ -133,7 +133,7 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
         let users_with_ssh_keys = users
             .iter()
             .filter_map(|user| {
-                if !user.ssh_keys.is_empty() {
+                if !user.ssh_public_keys.is_empty() {
                     Some(user.name.as_str())
                 } else {
                     None

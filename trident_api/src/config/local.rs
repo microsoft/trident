@@ -237,7 +237,7 @@ mod tests {
             grpc:
               listenPort: null
             hostConfiguration:
-              management:
+              trident:
                 disable: true
         "#};
 
@@ -254,7 +254,7 @@ mod tests {
     fn test_host_config_source() {
         let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
             hostConfiguration:
-              management:
+              trident:
                 disable: true
         "#})
         .unwrap();
@@ -320,7 +320,7 @@ mod tests {
     fn test_single_host_config_source() {
         let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
             hostConfiguration:
-              management:
+              trident:
                 disable: true
             hostConfigurationFile: /tmp/foo.yaml
         "#})

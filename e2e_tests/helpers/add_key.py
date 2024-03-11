@@ -28,15 +28,13 @@ def add_key(trident_config_path, public_key):
     with open(trident_config_path, "r") as f:
         trident_config = yaml.safe_load(f)
 
-    for index_user in range(
-        len(trident_config["hostConfiguration"]["osconfig"]["users"])
-    ):
+    for index_user in range(len(trident_config["hostConfiguration"]["os"]["users"])):
         if (
-            trident_config["hostConfiguration"]["osconfig"]["users"][index_user]["name"]
+            trident_config["hostConfiguration"]["os"]["users"][index_user]["name"]
             == "testing-user"
         ):
-            trident_config["hostConfiguration"]["osconfig"]["users"][index_user][
-                "sshKeys"
+            trident_config["hostConfiguration"]["os"]["users"][index_user][
+                "sshPublicKeys"
             ].append(public_key)
 
     with open(trident_config_path, "w") as f:

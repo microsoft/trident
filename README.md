@@ -122,9 +122,9 @@ composed of the following sections:
   server to listen for commands. The protocol is described by
   [proto/trident.proto](proto/trident.proto). This only applies to the current
   run of Trident. During provisioning, you can control whether gRPC is enabled
-  on the runtime OS via the `enableGrpc` field within the Management section of
-  the Host Configuration. TODO: implement and document authorization for
-  accessing the gRPC endpoint.
+  on the runtime OS via the `enableGrpc` field within the Trident Management
+  section of the Host Configuration. TODO: implement and document authorization
+  for accessing the gRPC endpoint.
 - **waitForProvisioningNetwork**: USE WITH CAUTION!! IT WILL INCREASE BOOT TIMES
   IF THE NETWORK CONFIGURATION IS NOT PERFECT. (Only affects clean installs)
   When set to `true`, Trident will start `systemd-networkd-wait-online` to wait

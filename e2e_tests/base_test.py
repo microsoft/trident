@@ -211,7 +211,7 @@ def test_users(connection, tridentConfiguration):
     expected_users = list()
     expected_groups = dict()
 
-    for user_info in hostConfiguration["osconfig"]["users"]:
+    for user_info in hostConfiguration["os"]["users"]:
         expected_users.append(user_info["name"])
         if "groups" in user_info:
             for group in user_info["groups"]:

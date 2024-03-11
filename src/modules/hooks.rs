@@ -75,7 +75,7 @@ impl Module for HooksModule {
             }
         }
 
-        for file in &host_config.osconfig.additional_files {
+        for file in &host_config.os.additional_files {
             if let Some(ref path) = file.path {
                 self.stage_file(path.to_owned()).context(format!(
                     "Failed to load additional file to be placed at '{}'",
@@ -112,7 +112,7 @@ impl Module for HooksModule {
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
         info!("Adding additional files");
-        for file in &host_config.osconfig.additional_files {
+        for file in &host_config.os.additional_files {
             let (content, original_mode) = if let Some(ref content) = file.content {
                 (content.as_bytes().to_vec(), None)
             } else if let Some(ref path) = file.path {
@@ -499,7 +499,7 @@ mod tests {
         let mut module = HooksModule::default();
         let mut host_status = HostStatus::default();
         let host_config = HostConfiguration {
-            osconfig: trident_api::config::OsConfig {
+            os: trident_api::config::Os {
                 additional_files: vec![trident_api::config::AdditionalFile {
                     destination: test_file.clone(),
                     content: Some(test_content.into()),
@@ -521,7 +521,7 @@ mod tests {
         let mut module = HooksModule::default();
         let mut host_status = HostStatus::default();
         let host_config = HostConfiguration {
-            osconfig: trident_api::config::OsConfig {
+            os: trident_api::config::Os {
                 additional_files: vec![trident_api::config::AdditionalFile {
                     destination: test_file.clone(),
                     content: Some(test_content.into()),
@@ -546,7 +546,7 @@ mod tests {
         let mut module = HooksModule::default();
         let mut host_status = HostStatus::default();
         let host_config = HostConfiguration {
-            osconfig: trident_api::config::OsConfig {
+            os: trident_api::config::Os {
                 additional_files: vec![trident_api::config::AdditionalFile {
                     destination: test_file.clone(),
                     path: Some(source_file.clone()),

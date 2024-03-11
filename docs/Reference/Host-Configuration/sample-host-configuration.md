@@ -2,7 +2,7 @@
 DO NOT EDIT MANUALLY! -->
 
 ```yaml
-management:
+trident:
   disable: false
   selfUpgrade: false
   phonehome: null
@@ -100,13 +100,6 @@ storage:
     sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
     format: raw-zst
     targetId: root
-network:
-  version: 2
-  ethernets:
-    vmeths:
-      match:
-        name: enp*
-      dhcp4: true
 scripts:
   postProvision:
   - name: sample-provision-script
@@ -123,10 +116,17 @@ scripts:
     logFilePath: /var/log/sample-configure-script.log
     environmentVariables:
       SAMPLE_VARIABLE: sample-variable-value
-osconfig:
+os:
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
   users:
   - name: my-custom-user
-    sshKeys:
+    sshPublicKeys:
     - <MY_PUBLIC_SSH_KEY>
     sshMode: key-only
   additionalFiles:
