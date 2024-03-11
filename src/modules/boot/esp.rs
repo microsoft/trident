@@ -10,7 +10,11 @@ use log::{debug, info};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
-use osutils::{hashing_reader::HashingReader, mount};
+use osutils::{
+    hashing_reader::HashingReader,
+    image_streamer,
+    mount::{self, MountGuard},
+};
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     status::{AbVolumeSelection, BlockDeviceContents, HostStatus},
@@ -31,24 +35,6 @@ use crate::modules::{
     },
     BOOT_ENTRY_A, BOOT_ENTRY_B,
 };
-
-// MountGuard is a helper struct that automatically unmounts a directory when it goes out of scope.
-// It is used to ensure that the ESP image is unmounted even if the function returns early.
-struct MountGuard<'a> {
-    mount_dir: &'a Path,
-}
-
-impl<'a> Drop for MountGuard<'a> {
-    fn drop(&mut self) {
-        if let Err(e) = mount::umount(self.mount_dir, false) {
-            info!(
-                "Failed to unmount directory {}: {}",
-                self.mount_dir.display(),
-                e
-            );
-        }
-    }
-}
 
 /// Performs file-based update of stand-alone ESP volume by copying three boot files into the
 /// correct dir:
@@ -95,7 +81,7 @@ fn copy_file_artifacts(
     // Stream image to the temporary file. destination_size is None since we're writing to a new
     // file and not block device
     let (computed_sha256, bytes_copied) =
-        stream_image::stream_zstd_image_internal(reader, &temp_image_path, None)
+        image_streamer::stream_zstd(reader, &temp_image_path, None)
             .context(format!("Failed to stream ESP image from {}", image_url))?;
 
     // Create a temporary directory to mount ESP image

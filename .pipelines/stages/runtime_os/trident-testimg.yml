@@ -23,9 +23,15 @@ parameters:
   type: string
   default: drop_Trident_BuildTrident
 
+- name: imageName
+  type: string
+
+- name: outputArtifactName
+  type: string
+
 stages:
-- stage: TridentTestImg
-  displayName: Runtime OS Partition Images
+- stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
+  displayName: Runtime OS Partition Images - ${{ parameters.imageName }}
   dependsOn: ${{ parameters.tridentStage }}
 
   jobs:
@@ -38,7 +44,7 @@ stages:
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/test-images/output
-      ob_artifactBaseName: trident-testimg
+      ob_artifactBaseName: ${{ parameters.outputArtifactName }}
       mic_package: DEFAULT
       mic_version: DEFAULT
       baseimg_package: DEFAULT
@@ -67,4 +73,4 @@ stages:
         mic_version: $(mic_version)
         baseimg_package: $(baseimg_package)
         baseimg_version: $(baseimg_version)
-        target: trident-testimage
+        target: ${{ parameters.imageName }}

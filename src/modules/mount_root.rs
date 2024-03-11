@@ -206,28 +206,31 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::modules::storage::image::stream_image;
-
     use super::*;
-    use std::fs::File;
-    use std::io::Read;
-    use std::path::PathBuf;
-    use std::{fs, path::Path};
-    use tempfile::NamedTempFile;
-    use tempfile::TempDir;
+    use pytest_gen::functional_test;
+
+    use std::{
+        fs::{self, File},
+        io::Read,
+        path::{Path, PathBuf},
+    };
 
     use maplit::btreemap;
-    use osutils::hashing_reader::HashingReader;
-    use osutils::partition_types::DiscoverablePartitionType;
-    use osutils::repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker};
-    use osutils::udevadm;
-    use pytest_gen::functional_test;
-    use trident_api::config::PartitionType;
-    use trident_api::error::ErrorKind;
-    use trident_api::status::Storage;
-    use trident_api::status::{BlockDeviceContents, Disk};
-    use trident_api::status::{MountPoint, Partition};
+    use tempfile::{NamedTempFile, TempDir};
     use uuid::Uuid;
+
+    use osutils::{
+        hashing_reader::HashingReader,
+        image_streamer,
+        partition_types::DiscoverablePartitionType,
+        repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
+        udevadm,
+    };
+    use trident_api::{
+        config::PartitionType,
+        error::ErrorKind,
+        status::{BlockDeviceContents, Disk, MountPoint, Partition, Storage},
+    };
 
     const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
     const DISK_BUS_PATH: &str = "/dev/sdb";
@@ -391,7 +394,7 @@ mod functional_test {
                 .context("Failed to open esp image")
                 .unwrap(),
         );
-        stream_image::stream_zstd_image_internal(
+        image_streamer::stream_zstd(
             HashingReader::new(stream),
             Path::new("/dev/sdb1"),
             Some(PART1_SIZE),
@@ -402,12 +405,8 @@ mod functional_test {
                 .context("Failed to open root image")
                 .unwrap(),
         );
-        stream_image::stream_zstd_image_internal(
-            HashingReader::new(stream),
-            Path::new("/dev/sdb2"),
-            None,
-        )
-        .unwrap();
+        image_streamer::stream_zstd(HashingReader::new(stream), Path::new("/dev/sdb2"), None)
+            .unwrap();
 
         // Test recursive mounting
         let mounts2 = mount_new_root(&host_status, root_mount_dir.path()).unwrap();

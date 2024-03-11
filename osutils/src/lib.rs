@@ -8,6 +8,7 @@ pub mod exe;
 pub mod files;
 pub mod grub;
 pub mod hashing_reader;
+pub mod image_streamer;
 pub mod lsblk;
 pub mod lsof;
 pub mod mkfs;

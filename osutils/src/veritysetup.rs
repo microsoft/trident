@@ -41,7 +41,7 @@ pub fn is_present() -> Result<(), Error> {
         .context("Failed to check veritysetup presence")
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct VeritySetupStatus {
     pub type_: String,
     pub status: String,
@@ -56,7 +56,7 @@ pub struct VeritySetupStatus {
     pub hash_device_path: PathBuf,
     pub hash_offset: String,
     pub root_hash: String,
-    pub flags: String,
+    pub flags: Option<String>,
 }
 
 fn parse_veritysetup_status_output(output: &str) -> Result<VeritySetupStatus, Error> {
@@ -156,10 +156,7 @@ fn parse_veritysetup_status_output(output: &str) -> Result<VeritySetupStatus, Er
             .get("root hash")
             .context("Missing 'root hash' in the output of veritysetup status")?
             .to_string(),
-        flags: key_values
-            .get("flags")
-            .context("Missing 'flags' in the output of veritysetup status")?
-            .to_string(),
+        flags: key_values.get("flags").map(|s| s.to_string()),
     };
 
     Ok(verity_setup_status)
@@ -169,7 +166,6 @@ pub fn status(device_name: &str) -> Result<VeritySetupStatus, Error> {
     let output = Command::new("veritysetup")
         .arg("status")
         .arg(device_name)
-        .arg("--verbose")
         .output_and_check()
         .context(format!(
             "Failed to get status of verity device {device_name}",
@@ -234,7 +230,7 @@ mod test {
             status.root_hash,
             "180731f6fd8dbab8042c6d4c2a61b4d7de405f2a405ce9a6cd43cef6819aab7a"
         );
-        assert_eq!(status.flags, "panic_on_corruption");
+        assert_eq!(status.flags, Some("panic_on_corruption".to_string()));
 
         // fail on missing value
         let output = indoc::indoc!(
@@ -416,17 +412,241 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use std::{
+        fs::{self, File},
+        io::Read,
+    };
+
+    use crate::{
+        files,
+        grub::GrubConfig,
+        hashing_reader::HashingReader,
+        image_streamer,
+        mount::{self, MountGuard},
+        mountpoint,
+        partition_types::DiscoverablePartitionType,
+        repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
+        udevadm,
+    };
+
     use super::*;
     use pytest_gen::functional_test;
 
+    fn setup_verity_images() -> PathBuf {
+        let cdrom_mount_path = Path::new("/mnt/trident_cdrom");
+        if !cdrom_mount_path.exists() {
+            files::create_dirs(cdrom_mount_path).unwrap();
+        }
+        if !mountpoint::check_is_mountpoint(cdrom_mount_path).unwrap() {
+            mount::mount("/dev/sr0", cdrom_mount_path, "iso9660", &[]).unwrap();
+        }
+
+        let verity_data_path = cdrom_mount_path.join("data/verity_root.rawzst");
+        assert!(verity_data_path.exists());
+
+        let verity_hash_path = cdrom_mount_path.join("data/verity_roothash.rawzst");
+        assert!(verity_hash_path.exists());
+
+        let boot_path = cdrom_mount_path.join("data/verity_boot.rawzst");
+        assert!(boot_path.exists());
+
+        cdrom_mount_path.to_owned()
+    }
+
+    fn stream_zstd(image: &Path, destination: &Path) -> Result<(), Error> {
+        let stream: Box<dyn Read> = Box::new(File::open(image)?);
+        let reader = HashingReader::new(stream);
+        image_streamer::stream_zstd(reader, destination, None)?;
+
+        Ok(())
+    }
+
+    pub struct VerityGuard<'a> {
+        pub device_name: &'a str,
+    }
+
+    impl<'a> Drop for VerityGuard<'a> {
+        fn drop(&mut self) {
+            close(self.device_name).unwrap();
+        }
+    }
+
     #[functional_test(feature = "helpers")]
     fn test_open_and_close() {
-        // TODO, need to have a valid data volume and verity hash volume to
-        // validate
-        // Tracked by:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6756
+        let cdrom_mount_path = setup_verity_images();
 
-        // TODO add more negative cases around validating incorrect hash
+        let block_device_path = Path::new("/dev/sdb");
+
+        let boot_path = cdrom_mount_path.join("data/verity_boot.rawzst");
+        stream_zstd(boot_path.as_path(), block_device_path).unwrap();
+
+        let root_hash = {
+            let boot_mount_dir = tempfile::tempdir().unwrap();
+            // Mount image to temp dir
+            mount::mount(block_device_path, boot_mount_dir.path(), "ext4", &[]).unwrap();
+
+            // Create a mount guard that will automatically unmount when it goes out of scope
+            let _mount_guard = MountGuard {
+                mount_dir: boot_mount_dir.path(),
+            };
+
+            let mut grub_config =
+                GrubConfig::read(boot_mount_dir.path().join("grub2/grub.cfg")).unwrap();
+            grub_config
+                .read_linux_command_line_argument("roothash")
+                .unwrap()
+        };
+
+        let repart = SystemdRepartInvoker::new(block_device_path, RepartMode::Force)
+            .with_partition_entries(vec![
+                RepartPartitionEntry {
+                    partition_type: DiscoverablePartitionType::Root,
+                    label: None,
+                    size_min_bytes: Some(1024 * 1024 * 1024),
+                    size_max_bytes: None,
+                },
+                RepartPartitionEntry {
+                    partition_type: DiscoverablePartitionType::RootVerity,
+                    label: None,
+                    // When min==max==None, it's a grow partition
+                    size_min_bytes: None,
+                    size_max_bytes: None,
+                },
+            ]);
+
+        repart.execute().unwrap();
+        udevadm::settle().unwrap();
+
+        let verity_data_path = cdrom_mount_path.join("data/verity_root.rawzst");
+        let verity_data_block_device_path = Path::new("/dev/sdb1");
+        stream_zstd(verity_data_path.as_path(), verity_data_block_device_path).unwrap();
+        let verity_hash_path = cdrom_mount_path.join("data/verity_roothash.rawzst");
+        let verity_hash_block_device_path = Path::new("/dev/sdb2");
+        stream_zstd(verity_hash_path.as_path(), verity_hash_block_device_path).unwrap();
+
+        // bad hash
+        assert_eq!(
+            open(
+                verity_data_block_device_path,
+                "verity-test",
+                verity_hash_block_device_path,
+                "foobar",
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
+            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nInvalid root hash string specified.\n\n"
+        );
+
+        let mut expected_status = VeritySetupStatus {
+            type_: "VERITY".to_string(),
+            status: "verified".to_string(),
+            hash_type: 1,
+            data_block_size: 4096,
+            hash_block_size: 4096,
+            hash_name: "sha256".to_string(),
+            salt: "".to_string(), // salt is not deterministic
+            data_device_path: verity_data_block_device_path.to_owned(),
+            size: "".to_string(), // size is not deterministic
+            mode: "readonly".to_string(),
+            hash_device_path: verity_hash_block_device_path.to_owned(),
+            hash_offset: "8 sectors".to_string(),
+            root_hash: root_hash.clone(),
+            flags: None,
+        };
+
+        {
+            // good hash
+            open(
+                verity_data_block_device_path,
+                "verity-test",
+                verity_hash_block_device_path,
+                root_hash.as_str(),
+            )
+            .unwrap();
+            let _verityguard = VerityGuard {
+                device_name: "verity-test",
+            };
+
+            let mut status = status("verity-test").unwrap();
+            status.salt = "".to_string(); // salt is not deterministic
+            status.size = "".to_string(); // size is not deterministic
+            assert_eq!(status, expected_status);
+
+            {
+                let verity_mount_dir = tempfile::tempdir().unwrap();
+                mount::mount(
+                    Path::new("/dev/mapper/verity-test"),
+                    verity_mount_dir.path(),
+                    "ext4",
+                    &["ro".into()],
+                )
+                .unwrap();
+                // Create a mount guard that will automatically unmount when it goes out of scope
+                let _mount_guard = MountGuard {
+                    mount_dir: verity_mount_dir.path(),
+                };
+
+                assert!(verity_mount_dir.path().join("etc").exists());
+                fs::read_to_string(verity_mount_dir.path().join("etc/hostname")).unwrap();
+            }
+        }
+
+        // verify verity checks
+
+        {
+            let root_mount_dir = tempfile::tempdir().unwrap();
+            // Mount image to temp dir
+            mount::mount(
+                verity_data_block_device_path,
+                root_mount_dir.path(),
+                "ext4",
+                &[],
+            )
+            .unwrap();
+
+            // Create a mount guard that will automatically unmount when it goes out of scope
+            let _mount_guard = MountGuard {
+                mount_dir: root_mount_dir.path(),
+            };
+
+            files::write_file(
+                root_mount_dir.path().join("etc/hostname"),
+                0o644,
+                "verity-test\n".as_bytes(),
+            )
+            .unwrap();
+        };
+
+        {
+            open(
+                verity_data_block_device_path,
+                "verity-test",
+                verity_hash_block_device_path,
+                root_hash.as_str(),
+            )
+            .unwrap();
+            let _verityguard = VerityGuard {
+                device_name: "verity-test",
+            };
+
+            let mut status = status("verity-test").unwrap();
+            status.salt = "".to_string(); // salt is not deterministic
+            status.size = "".to_string(); // size is not deterministic
+            expected_status.status = "corrupted".to_string();
+            assert_eq!(status, expected_status);
+
+            {
+                let verity_mount_dir = tempfile::tempdir().unwrap();
+                assert_eq!(mount::mount(
+                    Path::new("/dev/mapper/verity-test"),
+                    verity_mount_dir.path(),
+                    "ext4",
+                    &["ro".into()],
+                )
+                .unwrap_err().root_cause().to_string(), format!("Process output:\nstderr:\nmount: {}: can't read superblock on /dev/mapper/verity-test.\n\n", verity_mount_dir.path().display()));
+            }
+        }
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -444,13 +664,13 @@ mod functional_test {
             open(
                 Path::new("/dev/sda1"),
                 "foobar",
-                Path::new("/dev/sdb"),
+                Path::new("/dev/sda"),
                 "foobar",
             )
             .unwrap_err()
             .root_cause()
             .to_string(),
-            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /dev/sdb is not a valid VERITY device.\n\n"
+            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /dev/sda is not a valid VERITY device.\n\n"
         );
 
         // hash device is not a block device
@@ -467,7 +687,15 @@ mod functional_test {
             "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /etc/passwd is not a valid VERITY device.\n\n"
         );
 
-        // TODO use proper verity device here
+        let cdrom_mount_path = setup_verity_images();
+        stream_zstd(
+            cdrom_mount_path
+                .join("data/verity_roothash.rawzst")
+                .as_path(),
+            Path::new("/dev/sdb"),
+        )
+        .unwrap();
+
         // data device is not a block device
         assert_eq!(
             open(
@@ -479,7 +707,7 @@ mod functional_test {
             .unwrap_err()
             .root_cause()
             .to_string(),
-            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /dev/sdb is not a valid VERITY device.\n\n"
+            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nInvalid root hash string specified.\n\n"
         );
 
         // data device does not exist

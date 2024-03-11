@@ -10,9 +10,6 @@ from pathlib import Path
 
 from .conftest import (
     argus_runcmd,
-    KNOWN_HOSTS_FILENAME,
-    TEST_USER,
-    REMOTE_ADDR_FILENAME,
     ARGUS_REPO_DIR_PATH,
     TRIDENT_REPO_DIR_PATH,
     VM_SSH_NODE_CACHE_KEY,

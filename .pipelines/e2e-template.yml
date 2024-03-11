@@ -115,6 +115,19 @@ stages:
     downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
     tridentPipeline: ${{ parameters.tridentPipelineID }}
     artifactName: ${{ parameters.tridentArtifact }}
+    imageName: trident-testimage
+    outputArtifactName: trident-testimg
+
+- template: stages/runtime_os/trident-testimg.yml
+  parameters:
+    runtimeOSArtifactSource: ${{ parameters.downloadBuildTypeRuntimeOS }}
+    testImagesRepo: ${{ parameters.testImagesRepo }}
+    tridentStage : ${{ parameters.tridentStage }}
+    downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
+    tridentPipeline: ${{ parameters.tridentPipelineID }}
+    artifactName: ${{ parameters.tridentArtifact }}
+    imageName: trident-verity-testimage
+    outputArtifactName: trident-verity-testimage
 
 - template: stages/building_tools/building-tools.yml
   parameters:

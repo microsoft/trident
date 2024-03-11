@@ -1,7 +1,7 @@
 use std::{path::Path, process::Command};
 
 use anyhow::{Context, Error};
-use log::error;
+use log::{error, info};
 
 use crate::exe::RunAndCheck;
 use crate::lsof;
@@ -69,6 +69,24 @@ pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error>
     }
 
     Ok(())
+}
+
+// MountGuard is a helper struct that automatically unmounts a directory when it goes out of scope.
+// It is used to ensure that the ESP image is unmounted even if the function returns early.
+pub struct MountGuard<'a> {
+    pub mount_dir: &'a Path,
+}
+
+impl<'a> Drop for MountGuard<'a> {
+    fn drop(&mut self) {
+        if let Err(e) = umount(self.mount_dir, false) {
+            info!(
+                "Failed to unmount directory {}: {}",
+                self.mount_dir.display(),
+                e
+            );
+        }
+    }
 }
 
 #[cfg(feature = "functional-test")]

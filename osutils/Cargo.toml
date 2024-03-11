@@ -22,6 +22,7 @@ trident_api = { path = "../trident_api" }
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 which = "4.4.2"
 regex = "1.10.2"
+zstd = "0.12.4"
 
 pytest_gen = { path = "../pytest_gen" }
 pytest = { path = "../pytest", optional = true }

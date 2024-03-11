@@ -37,7 +37,8 @@ stages:
     dependsOn:
       - BuildingTools
       - ProvisioningOSTemplate
-      - TridentTestImg
+      - TridentTestImg_trident_testimage
+      - TridentTestImg_trident_verity_testimage
 
     jobs:
       - job: BuildInstallerISO
@@ -68,6 +69,16 @@ stages:
 
           - task: DownloadPipelineArtifact@2
             inputs:
+              buildType: ${{ parameters.downloadBuildTypeRuntimeOS}}
+              project: ECF
+              definition: ${{ parameters.runtimeImagePipeline }}
+              buildVersionToDownload: "latestFromBranch"
+              artifactName: "trident-verity-testimage"
+              branchName: "refs/heads/main"
+              targetPath: "$(System.ArtifactsDirectory)/runtime-verity-image"
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
               buildType: ${{ parameters.downloadBuildTypeProvOS }}
               project: ECF
               definition: ${{ parameters.provOSPipeline }}
@@ -92,10 +103,23 @@ stages:
               set -eux
               mkdir -p $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image
               mkdir -p $(argusToolkitSourceDirectory)/build/installer-iso
+
+              # Boot image
               mv $(System.ArtifactsDirectory)/runtime-image/esp.raw.zst \
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/esp.rawzst
               mv $(System.ArtifactsDirectory)/runtime-image/root.raw.zst \
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/root.rawzst
+
+              # Verity image for functional testing
+              mv $(System.ArtifactsDirectory)/runtime-verity-image/esp.raw.zst \
+                $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_esp.rawzst
+              mv $(System.ArtifactsDirectory)/runtime-verity-image/boot.raw.zst \
+                $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_boot.rawzst
+              mv $(System.ArtifactsDirectory)/runtime-verity-image/root.raw.zst \
+                $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_root.rawzst
+              mv $(System.ArtifactsDirectory)/runtime-verity-image/root-hash.raw.zst \
+                $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_roothash.rawzst
+
               cp  $(System.ArtifactsDirectory)/{provision-template,isogen}/* \
                   $(argusToolkitSourceDirectory)/build/installer-iso-components/
             workingDirectory: $(argusToolkitSourceDirectory)
