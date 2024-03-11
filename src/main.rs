@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
 use log::{error, info, LevelFilter};
 
-use trident::{Logstream, MultiLogger};
+use trident::{BackgroundLog, Logstream, MultiLogger};
 
 use trident_api::error::TridentResultExt;
 
@@ -147,7 +147,6 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
 
     // Set up the multilogger
     MultiLogger::new()
-        .with_max_level(args.verbosity)
         .with_logger(Box::new(
             env_logger::builder()
                 .format_timestamp(None)
@@ -155,6 +154,7 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
                 .build(),
         ))
         .with_logger(logstream.make_logger())
+        .with_logger(BackgroundLog::new("/var/log/trident-full.log").into_logger())
         .init()
         .expect("Logger already registered");
 

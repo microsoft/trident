@@ -29,14 +29,12 @@ use crate::datastore::DataStore;
 use crate::modules::bootentries;
 
 mod datastore;
-mod logstream;
+mod logging;
 mod modules;
-mod multilog;
 mod orchestrate;
 
-pub use logstream::Logstream;
+pub use logging::{background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger};
 pub use modules::network::provisioning::start as start_provisioning_network;
-pub use multilog::MultiLogger;
 pub use orchestrate::OrchestratorConnection;
 
 /// Trident version as provided by environment variables at build time
