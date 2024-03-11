@@ -6,7 +6,6 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use const_format::formatcp;
 use log::{debug, info};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
@@ -21,7 +20,7 @@ use crate::modules::{
     self,
     constants::{
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
-        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, GRUB2_RELATIVE_PATH,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     storage::{
         self,
@@ -30,15 +29,8 @@ use crate::modules::{
             stream_image::{self, GET_MAX_RETRIES, GET_TIMEOUT_SECS},
         },
     },
-    BOOT_ENTRY_A, BOOT_ENTRY_B, UPDATE_ROOT_PATH,
+    BOOT_ENTRY_A, BOOT_ENTRY_B,
 };
-
-// Directory where the GRUB config will be located on the updated volume.
-// TODO: In long term, on the updated volume, the GRUB config will be placed in the same dir as the
-// EFI executables, i.e., as /EFI/azlinuxA/grub.cfg or /EFI/azlinuxB/grub.cfg. Related ADO task:
-// https://dev.azure.com/mariner-org/ECF/_workitems/edit/6540/.
-const GRUB_BOOT_CONFIG_PATH: &str =
-    formatcp!("{ESP_RELATIVE_MOUNT_POINT_PATH}/{GRUB2_RELATIVE_PATH}");
 
 // MountGuard is a helper struct that automatically unmounts a directory when it goes out of scope.
 // It is used to ensure that the ESP image is unmounted even if the function returns early.
@@ -246,34 +238,6 @@ fn copy_boot_files(
                     .context("Failed to convert path to string")?,
             )
             .context("Failed to rename grub-noprefix efi")?;
-        }
-
-        // TODO: In long term, the GRUB config will be placed in the same dir as EFI executables,
-        // when the images will be updated after Mariner 3.0 release. However, now, GRUB config
-        // needs to be copied into /boot/grub2/grub.cfg as well. Related ADO task:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6540.
-        if file_name == GRUB2_CONFIG_FILENAME {
-            let grub_config_path = Path::new(UPDATE_ROOT_PATH)
-                .join(GRUB_BOOT_CONFIG_PATH)
-                .join(file_name);
-
-            // Create directories if they don't exist
-            if let Some(parent) = grub_config_path.parent() {
-                fs::create_dir_all(parent)
-                    .context(format!("Failed to create directory {}", parent.display()))?;
-            }
-
-            info!(
-                "Copying file {} to {}",
-                source_path.display(),
-                grub_config_path.display()
-            );
-
-            fs::copy(&source_path, &grub_config_path).context(format!(
-                "Failed to copy file {} to {}",
-                source_path.display(),
-                grub_config_path.display()
-            ))?;
         }
     }
 
@@ -506,7 +470,7 @@ mod tests {
 
     use trident_api::{
         config::{self, PartitionType},
-        constants::ROOT_MOUNT_POINT_PATH,
+        constants::{ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
         status::{
             AbUpdate, AbVolumePair, Disk, MountPoint, Partition, ReconcileState, Storage,
             UpdateKind,
@@ -791,6 +755,7 @@ mod functional_test {
     use std::io::Write;
 
     use pytest_gen::functional_test;
+    use trident_api::constants::GRUB2_RELATIVE_PATH;
 
     /// Creates mock boot files in temp_mount_dir
     fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf]) {

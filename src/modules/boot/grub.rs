@@ -1,18 +1,18 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Error};
-use log::debug;
+use log::{debug, warn};
 use osutils::{blkid, grub::GrubConfig};
 use trident_api::{
     constants::{
-        BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_RELATIVE_PATH,
-        ROOT_MOUNT_POINT_PATH,
+        BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
+        GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH,
     },
-    status::HostStatus,
+    status::{AbVolumeSelection, HostStatus},
 };
 use uuid::Uuid;
 
-use crate::modules;
+use crate::modules::{self, BOOT_ENTRY_A, BOOT_ENTRY_B};
 
 /// Updates the boot filesystem UUID on the search command inside the GRUB
 /// config.
@@ -93,13 +93,24 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
         "Failed to update GRUB config at path '{}'",
         boot_grub_config_path.display()
     ))?;
+    let esp_efi_dir_path = Path::new(ESP_MOUNT_POINT_PATH).join(ESP_EFI_DIRECTORY);
+    let mut bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_A);
+    //Check if hoststatus has ab_update and update the grub config for the inactive volume
+    if host_status.storage.ab_update.is_some() {
+        match modules::get_ab_update_volume(host_status, false) {
+            Some(AbVolumeSelection::VolumeA) => {}
+            Some(AbVolumeSelection::VolumeB) => {
+                bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_B);
+            }
 
-    let esp_grub_config_path = Path::new(ESP_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
+            None => warn!("Unsupported AB volume selection to update grub config."),
+        }
+    }
 
-    // Update GRUB config on the ESP device (also under /boot)
-    update_grub_config_esp(esp_grub_config_path.as_path(), &boot_uuid).context(format!(
+    let bootentry_dir_config_path = bootentry_dir_path.join(GRUB2_CONFIG_FILENAME);
+    update_grub_config_esp(bootentry_dir_config_path.as_path(), &boot_uuid).context(format!(
         "Failed to update GRUB config at path {}",
-        esp_grub_config_path.display()
+        bootentry_dir_config_path.display()
     ))?;
 
     Ok(())
