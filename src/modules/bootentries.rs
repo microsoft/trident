@@ -89,11 +89,18 @@ fn set_boot_next(host_status: &HostStatus) -> Result<(), Error> {
     let added_entry_number = bootmgr_output
         .get_boot_entry_number(entry_label_new)
         .context("Failed to get boot entry number")?;
-    debug!(
-        "Added entry number: {:?} and setting bootnext to this entry",
-        added_entry_number
-    );
-    efibootmgr::set_boot_next(&added_entry_number).context("Failed to get set `BootNext`")
+    debug!("Added boot entry: {added_entry_number}");
+
+    let mut boot_order = bootmgr_output.get_boot_order()?;
+    boot_order.push(added_entry_number.clone());
+    efibootmgr::modify_boot_order(&boot_order.join(","))
+        .context("Failed to append new entry to boot order")?;
+    debug!("Appended entry to boot order");
+
+    efibootmgr::set_boot_next(&added_entry_number).context("Failed to get set `BootNext`")?;
+    debug!("Set `BootNext` to new entry");
+
+    Ok(())
 }
 
 /// Returns disk path based on partitionType
@@ -703,6 +710,10 @@ mod functional_test {
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let boot_entry_num2 = bootmgr_output2.get_boot_entry_number(entry_label).unwrap();
         assert_eq!(bootmgr_output2.boot_next, boot_entry_num2);
+        assert_eq!(
+            bootmgr_output2.get_boot_order().unwrap().last().unwrap(),
+            &boot_entry_num2
+        );
         efibootmgr::delete_boot_entry(&boot_entry_num2).unwrap();
     }
 
