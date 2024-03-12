@@ -184,8 +184,8 @@ build-functional-test-cc:
 
 .PHONY: functional-test
 functional-test: build-functional-test-cc generate-functional-test-manifest
-	cp ../k8s-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
-	cp ../k8s-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+	cp ../platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
+	cp ../platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
 	python3 -u -m pytest functional_tests/$(FILTER) -v -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload
 
 .PHONY: patch-functional-test

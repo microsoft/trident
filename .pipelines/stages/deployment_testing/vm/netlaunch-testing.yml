@@ -175,7 +175,7 @@ stages:
     - checkout: self
     - checkout: ${{ parameters.tridentRepo }}
     - checkout: ${{ parameters.argusRepo }}
-    - checkout: k8s-tests
+    - checkout: platform-tests
 
     - template: netlaunch-prep.yml
       parameters:

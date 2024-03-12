@@ -49,9 +49,9 @@ parameters:
   type: string
   default: self
 
-- name: k8sTestsRepo
+- name: platformTestsRepo
   type: string
-  default: k8s-tests
+  default: platform-tests
 
 - name: installerISOPipeline
   type: string
@@ -77,16 +77,16 @@ stages:
 
   jobs:
   - template: ../common_tasks/get-tests.yml
-    parameters: 
+    parameters:
       buildPurpose: ${{ parameters.buildPurpose }}
       tridentRepo: ${{ parameters.tridentRepo }}
       deploymentEnvironment: bareMetal
-    
+
   - job: ${{ parameters.jobName }}
     displayName: Run E2E Test
     dependsOn: DefineTests
     timeoutInMinutes: 90
-    pool: 
+    pool:
       type: linux
       name: mariner-hci-aods-conn-1es-pool
       hostArchitecture: amd64
@@ -95,8 +95,8 @@ stages:
       matrix:
         $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
       maxParallel: 1
-    
-    variables:    
+
+    variables:
     - name: TRIDENT_CONFIGURATION_NAME
       value: $(configuration)
 
@@ -122,7 +122,7 @@ stages:
       value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_deployment_log_$(System.JobAttempt)
 
     - name: K8S_SANITY_DIR
-      value: $(Build.SourcesDirectory)/k8s-tests/k8s-sanity
+      value: $(Build.SourcesDirectory)/platform-tests/k8s-sanity
 
     - group: baremetal_controller
 
@@ -130,7 +130,7 @@ stages:
     - checkout: self
     - checkout: ${{ parameters.tridentRepo }}
     - checkout: ${{ parameters.argusRepo }}
-    - checkout: ${{ parameters.k8sTestsRepo}}
+    - checkout: ${{ parameters.platformTestsRepo}}
 
     - template: baremetal-prep.yml
       parameters:
@@ -139,7 +139,7 @@ stages:
         k8sSanityDir: $(K8S_SANITY_DIR)
         isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
         sshKeyFile: $(SSH_KEY_FILE)
-        
+
     - template: ../../common_tasks/install-clamav.yml
 
     - template: ../common_tasks/trident-prep.yml
@@ -147,14 +147,14 @@ stages:
         tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
         tridentConfigPath: $(TRIDENT_CONFIG_PATH)
         updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
-        
+
     - bash: |
         set -xe
 
         # Add poetry to PATH.
         export PATH="$HOME/.local/bin:$PATH"
 
-        baremetal_dir=$(Build.SourcesDirectory)/k8s-tests/bare-metal
+        baremetal_dir=$(Build.SourcesDirectory)/platform-tests/bare-metal
 
         # Create the Lab metadata file
         cd $(K8S_SANITY_DIR)
@@ -178,7 +178,7 @@ stages:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
       displayName: 'Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details'
 
-    - template: k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml@k8s-tests
+    - template: k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml@platform-tests
       parameters:
         jobName: ${{ parameters.jobName }}_$(TRIDENT_CONFIGURATION_NAME)
         bmcUsername: $(baremetal_controller.bmc_username)
@@ -203,10 +203,10 @@ stages:
           # Add poetry to PATH.
           export PATH="$HOME/.local/bin:$PATH"
 
-          cd $(K8S_SANITY_DIR)    
+          cd $(K8S_SANITY_DIR)
 
           # Eject the virtual CD from the BMC and delete the ISO file from the remote store
-          sudo env "PATH=$PATH" poetry run python3 $(Pipeline.Workspace)/s/k8s-tests/bare-metal/scripts/reset.py \
+          sudo env "PATH=$PATH" poetry run python3 $(Pipeline.Workspace)/s/platform-tests/bare-metal/scripts/reset.py \
             --baremetal-config $(echo $DEPLOYMENT_BMC_CONFIG_FILE | tr -d "'") \
             --livecd-httpd-ip ${{ parameters.isoHttpdServerIp }} \
             --livecd-httpd-ssh-key $(httpdPrivKey.secureFilePath) \

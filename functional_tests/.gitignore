@@ -1,4 +1,4 @@
-# Copied from k8s-tests repo
+# Copied from platform-tests repo
 node_interface.py
 ssh_node.py
 

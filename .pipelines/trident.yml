@@ -38,9 +38,9 @@ resources:
       name: argus-toolkit
       ref: refs/heads/main
 
-    - repository: k8s-tests
+    - repository: platform-tests
       type: git
-      name: k8s-tests
+      name: platform-tests
 
     - repository: test-images
       type: git

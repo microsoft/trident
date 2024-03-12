@@ -5,14 +5,14 @@ parameters:
 
   - name: installerISOPipeline
     type: string
-    
-  - name: k8sSanityDir
+
+  - name: platformTestsDir
     type: string
-    default: k8s-tests
+    default: platform-tests
 
   - name: sshKeyFile
     type: string
-  
+
   - name: isoHttpdServerIp
     type: string
 
@@ -61,9 +61,9 @@ steps:
       curl -sSL https://install.python-poetry.org | python3 -
 
       ls -ltr
-      ls -ltr ${{ parameters.k8sSanityDir }}
+      ls -ltr ${{ parameters.platformTestsDir }}
       pwd
-      sudo ${{ parameters.k8sSanityDir }}/pipelines/ubuntu-fix-app-armor.sh
+      sudo ${{ parameters.platformTestsDir }}/pipelines/ubuntu-fix-app-armor.sh
     displayName: "Install dependencies"
 
   - bash: |
@@ -72,7 +72,7 @@ steps:
       ssh-keygen -t ed25519 -f ${{ parameters.sshKeyFile }} -P ""
       chmod 400 ${{ parameters.sshKeyFile }}
       ls -ltr $(Pipeline.Workspace)
-      ls -ltr 
+      ls -ltr
       ls -ltr ~/.ssh/
     displayName: "SSH keygen"
 
@@ -82,7 +82,7 @@ steps:
       # Add poetry to PATH.
       export PATH="$HOME/.local/bin:$PATH"
 
-      cd ${{ parameters.k8sSanityDir }}
+      cd ${{ parameters.platformTestsDir }}
 
       # Use Azure DevOps artifact feed as a proxy for PyPI.
       # This allows ADO to audit the packages used and to search for malware.

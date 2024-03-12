@@ -82,7 +82,7 @@ Functional tests should:
 Functional tests are structured as follows:
 
 - `/functional_tests`: Contains the functional test code, leveraging `pytest`
-  and common SSH interface from `k8s-tests` repo. `pytest` creates the test VM
+  and common SSH interface from `platform-tests` repo. `pytest` creates the test VM
   using is Fixtures concept and while currently only a single VM is created to
   run all the tests, this could be easily extended to support seperate VMs for
   different tests. Most of the time, no changes will be required to this layer
@@ -165,7 +165,7 @@ targets:
   is determined based on `cargo build` output. To note, this will also execute
   all UTs.
 
-To execute the functional tests, ensure that `k8s-tests` and `argus-toolkit` of
+To execute the functional tests, ensure that `platform-tests` and `argus-toolkit` of
 recent version are checked out side by side with the `trident` repo.
 Additionally, the following dependencies are required for the Ubuntu based
 pipelines, so you might need to install them on your development machine as well
@@ -208,8 +208,8 @@ aggregated with the locally produced coverage results.
 
 ### Additional Notes
 
-`functional-test` target depends on `k8s-tests` and `argus-toolkit` repos to be
-checked out side by side with the `trident` repo. This is because `k8s-tests`
+`functional-test` target depends on `platform-tests` and `argus-toolkit` repos to be
+checked out side by side with the `trident` repo. This is because `platform-tests`
 repo contains the common logic to execute test logic over SSH connection and
 `argus-toolkit` repo contains the `netlaunch` and `virt-deploy` binaries, along
 with logic to generate the OS deployment ISO.
@@ -233,7 +233,7 @@ code.
 
 ### Selective Test Execution
 
-The functional test `make` targets support the variable `FILTER`. This is meant to 
+The functional test `make` targets support the variable `FILTER`. This is meant to
 be used to filter the tests that are executed. For example, if you want to execute
 only the tests from a certain rust crate, you can do:
 
