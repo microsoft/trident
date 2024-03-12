@@ -218,24 +218,24 @@ mod functional_test {
             );
         }
 
-        // Re-open the temporary datastore and verify that the reconcile state wasn't retained. Then
+        // Re-open the temporary datastore and verify that the reconcile state was retained. Then
         // rewrite the reconcile state and persist the datastore to a new location.
         {
             let mut datastore = DataStore::open_temporary().unwrap();
-            assert_eq!(datastore.host_status(), &HostStatus::default());
+            assert_eq!(
+                datastore.host_status().reconcile_state,
+                ReconcileState::CleanInstall
+            );
 
             datastore
-                .with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)
+                .with_host_status(|s| s.boot_next = Some("test".to_string()))
                 .unwrap();
             datastore.persist(&datastore_path).unwrap();
         }
 
         // Re-open the persisted datastore and verify that the reconcile state was retained.
         let mut datastore = DataStore::open(&datastore_path).unwrap();
-        assert_eq!(
-            datastore.host_status().reconcile_state,
-            ReconcileState::CleanInstall
-        );
+        assert_eq!(datastore.host_status().boot_next.as_deref(), Some("test"));
 
         // Ensure that the datastore can be closed and re-opened.
         datastore.close();

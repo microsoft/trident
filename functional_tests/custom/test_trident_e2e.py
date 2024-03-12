@@ -46,6 +46,7 @@ def test_trident_get(vm):
     # TODO remove the placeholder logic by patching the template with the actual
     # values, which we can fetch using lsblk, sfdisk and information about the
     # images we put into the HostConfiguraion.
+    del host_status["spec"]
     placeholder = "placeholder"
     host_status["storage"]["disks"]["os"]["uuid"] = placeholder
     for partition in host_status["storage"]["disks"]["os"]["partitions"]:
