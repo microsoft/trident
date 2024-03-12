@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    config::{PartitionType, RaidLevel},
+    config::{HostConfiguration, PartitionType, RaidLevel},
     BlockDeviceId,
 };
 
@@ -16,6 +16,8 @@ use crate::{
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HostStatus {
+    pub spec: HostConfiguration,
+
     pub reconcile_state: ReconcileState,
 
     #[serde(default)]

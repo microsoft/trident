@@ -17,10 +17,6 @@ pub enum InitializationError {
     ParseLocalConfig,
     #[error("Failed connecting to logstream")]
     StartLogstream,
-    #[error("Failed to load datastore from '{path}'")]
-    DatastoreLoad { path: String },
-    #[error("Failed to open datastore")]
-    DatastoreOpen,
     #[error("Failed to get host root path")]
     GetHostRootPath,
     #[error("Trident directed to perform clean install but safety check failed")]
@@ -72,12 +68,16 @@ pub enum DatastoreError {
     OpenDatastore,
     #[error("Failed to initialize datastore")]
     DatastoreInit,
+    #[error("Failed to load datastore from path '{0}'")]
+    DatastoreLoad(PathBuf),
     #[error("Failed re-open temporary datastore")]
     DatastoreReopen,
     #[error("Failed to persist datastore")]
     PersistDatastore,
     #[error("Failed to serialize host status")]
     SerializeHostStatus,
+    #[error("Failed to deserialize host status")]
+    DeserializeHostStatus,
     #[error("Failed to write to datastore")]
     DatastoreWrite,
     #[error("Attempted to write to closed datastore")]

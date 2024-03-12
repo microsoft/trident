@@ -24,6 +24,7 @@ use trident_api::error::{
     ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
     InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt,
 };
+use trident_api::status::{HostStatus, ReconcileState};
 
 use crate::datastore::DataStore;
 use crate::modules::bootentries;
@@ -343,14 +344,7 @@ impl Trident {
     ) -> Result<(), TridentError> {
         info!("Handling commands");
         let mut datastore = match self.config.datastore {
-            Some(ref datastore_path) => {
-                // Load an existing datastore
-                DataStore::open(datastore_path.as_path()).structured(
-                    InitializationError::DatastoreLoad {
-                        path: datastore_path.display().to_string(),
-                    },
-                )?
-            }
+            Some(ref datastore_path) => DataStore::open(datastore_path.as_path())?,
             None => DataStore::open_temporary().message("Failed to open temporary datastore")?,
         };
 
@@ -407,6 +401,15 @@ impl Trident {
         if datastore.is_persistent() {
             modules::update(cmd, datastore).message("Failed to update host")
         } else {
+            if datastore.host_status().spec != cmd.host_config {
+                datastore.with_host_status(|status| {
+                    *status = HostStatus {
+                        spec: cmd.host_config.clone(),
+                        reconcile_state: ReconcileState::CleanInstall,
+                        ..Default::default()
+                    }
+                })?;
+            }
             modules::provision_host(cmd, datastore).message("Failed to provision host")
         }
     }
@@ -414,7 +417,8 @@ impl Trident {
     pub fn retrieve_host_status(&mut self, output_path: &Option<PathBuf>) -> Result<(), Error> {
         let host_status = if let Some(ref datastore_path) = self.config.datastore {
             info!("Opening persistent datastore");
-            DataStore::open(datastore_path.as_path())?
+            DataStore::open(datastore_path.as_path())
+                .unstructured("Failed to open persistent datastore")?
                 .host_status()
                 .clone()
         } else if Path::new(TRIDENT_DATASTORE_REF_PATH).exists() {
@@ -437,13 +441,14 @@ impl Trident {
                 .mount_autodrop(block_device, mount_point.path(), UnmountFlags::DETACH);
 
             let datastore_path = mount_point.path().join(relative_path);
-            DataStore::open(datastore_path.as_path())?
+            DataStore::open(datastore_path.as_path())
+                .unstructured("Failed to datastore from datastoreRef location")?
                 .host_status()
                 .clone()
         } else if Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH).exists() {
             info!("Opening temporary datastore");
             DataStore::open(Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH))
-                .context("Failed to open temporary datastore")?
+                .unstructured("Failed to open temporary datastore")?
                 .host_status()
                 .clone()
         } else {

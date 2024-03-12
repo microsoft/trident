@@ -1,4 +1,3 @@
-use anyhow::{Context, Error};
 use log::info;
 use std::{fs, path::Path};
 use trident_api::{
@@ -17,6 +16,14 @@ pub(crate) struct DataStore {
 impl DataStore {
     pub(crate) fn open_temporary() -> Result<Self, TridentError> {
         let path = Path::new(&TRIDENT_TEMPORARY_DATASTORE_PATH);
+
+        if path.exists() {
+            return Ok(Self {
+                temporary: true,
+                ..Self::open(path)?
+            });
+        }
+
         info!("Creating temporary datastore at {}", path.display());
         Ok(Self {
             db: Some(Self::make_datastore(path)?),
@@ -25,19 +32,23 @@ impl DataStore {
         })
     }
 
-    pub(crate) fn open(path: &Path) -> Result<Self, Error> {
+    pub(crate) fn open(path: &Path) -> Result<Self, TridentError> {
         info!("Loading datastore from {}", path.display());
-        let db = sqlite::open(path)?;
+        let db = sqlite::open(path).structured(ManagementError::Datastore(
+            DatastoreError::DatastoreLoad(path.to_owned()),
+        ))?;
         let host_status = db
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC LIMIT 1")
-            .context("Failed to create host status")?
+            .structured(ManagementError::Datastore(DatastoreError::DatastoreInit))?
             .into_iter()
             .next()
             .transpose()
-            .context("Failed to read host status")?
+            .structured(ManagementError::Datastore(DatastoreError::DatastoreInit))?
             .map(|row| serde_yaml::from_str(row.read::<&str, _>(0)))
             .transpose()
-            .context("Failed to parse saved host status")?
+            .structured(ManagementError::Datastore(
+                DatastoreError::DeserializeHostStatus,
+            ))?
             .unwrap_or_default();
 
         Ok(Self {
@@ -148,6 +159,30 @@ impl DataStore {
     /// any further attempts to use the datastore to fail.
     pub(crate) fn close(&mut self) {
         self.db = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_make_datastore() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+
+        // Create datastore
+        let _ = super::DataStore::make_datastore(&path).unwrap();
+        assert!(path.exists());
+
+        // Reopen datastore
+        let _ = super::DataStore::make_datastore(&path).unwrap();
+        assert!(path.exists());
+
+        // Create datastore in a subdirectory
+        let new_path = temp_dir.path().join("new").join("db.sqlite");
+        let _ = super::DataStore::make_datastore(&new_path).unwrap();
+        assert!(new_path.exists());
+
+        temp_dir.close().unwrap();
     }
 }
 

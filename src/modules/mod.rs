@@ -164,7 +164,6 @@ pub(super) fn provision_host(
 
     info!("Starting provision_host");
     let mut modules = MODULES.lock().unwrap();
-    state.with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)?;
 
     info!("Refreshing host status");
     refresh_host_status(&mut modules, state)?;

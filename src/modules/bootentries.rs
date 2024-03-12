@@ -6,7 +6,7 @@ use osutils::efibootmgr;
 use osutils::efibootmgr::EfiBootManagerOutput;
 use trident_api::config::PartitionType;
 use trident_api::constants::{self, UPDATE_ROOT_PATH};
-use trident_api::error::{InitializationError, ManagementError, ReportError, TridentError};
+use trident_api::error::{ManagementError, ReportError, TridentError, TridentResultExt};
 use trident_api::status::{AbVolumeSelection, HostStatus};
 
 use crate::datastore::DataStore;
@@ -42,9 +42,7 @@ pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), 
             .trim_start_matches(MAIN_SEPARATOR),
     );
     let mut datastore =
-        DataStore::open(&new_path).structured(InitializationError::DatastoreLoad {
-            path: new_path.display().to_string(),
-        })?;
+        DataStore::open(&new_path).message("Failed to open datastore while setting boot_next")?;
 
     // Update host status with BootNext variable
     datastore.with_host_status(|s| {
@@ -156,10 +154,8 @@ fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error
 ///
 // TODO - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807 needs refactoring
 pub fn set_boot_order(datastore_path: &Path) -> Result<(), TridentError> {
-    let mut datastore =
-        DataStore::open(datastore_path).structured(InitializationError::DatastoreLoad {
-            path: datastore_path.display().to_string(),
-        })?;
+    let mut datastore = DataStore::open(datastore_path)
+        .message("Failed to open datastore while setting boot order")?;
     let host_status = datastore.host_status();
 
     let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
