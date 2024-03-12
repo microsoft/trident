@@ -52,19 +52,19 @@ hostConfiguration:
         sha256: ignored
         format: raw-zst
         targetId: root-a
-  network:
-    ethernets:
-      vmeths:
-        match:
-          name: enp*
-        dhcp4: true
-    version: 2
-  management:
+  trident:
     selfUpgrade: false
-  osconfig:
+  os:
+    network:
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+      version: 2
     users:
       - name: testing-user
-        sshKeys: []
+        sshPublicKeys: []
         sshMode: key-only
   scripts:
     postConfigure:
@@ -72,4 +72,3 @@ hostConfiguration:
         servicingType:
           - clean-install
         content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
-
