@@ -29,6 +29,10 @@ impl MultiLogger {
         self
     }
 
+    pub fn add_logger(&mut self, logger: Box<dyn Log>) {
+        self.loggers.push(logger);
+    }
+
     pub fn init(self) -> Result<(), log::SetLoggerError> {
         log::set_max_level(self.max_level);
         log::set_boxed_logger(Box::new(self))

@@ -78,6 +78,9 @@ For any of the commands, you can change logging verbosity from the default
 Note that you can override the configuration path by setting the `--config`
 parameter.
 
+For debugging and troubleshooting, you can [view the full log of
+Trident](./docs/How-To-Guides/View-Trident's-Background-Log.md).
+
 ### Safety check
 
 Trident may destroy user data if run from dev machine or other system that is

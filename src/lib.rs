@@ -61,6 +61,9 @@ pub const TRIDENT_DATASTORE_REF_PATH: &str = "/var/lib/trident/datastore-locatio
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 pub const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
 
+/// Trident background log path.
+pub const TRIDENT_BACKGROUND_LOG_PATH: &str = "/var/log/trident-full.log";
+
 mod protobufs {
     tonic::include_proto!("trident");
 }

@@ -16,7 +16,10 @@ impl BackgroundLog {
         let file = match files::create_file(target.as_ref()) {
             Ok(f) => Some(Mutex::new(f)),
             Err(err) => {
-                eprintln!("Failed to create background log file: {:?}", err);
+                eprintln!(
+                    "Logging setup error: failed to create background log file: {:?}",
+                    err
+                );
                 None
             }
         };

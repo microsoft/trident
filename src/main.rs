@@ -146,17 +146,22 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
     let logstream = Logstream::create();
 
     // Set up the multilogger
-    MultiLogger::new()
+    let mut multilogger = MultiLogger::new()
         .with_logger(Box::new(
             env_logger::builder()
                 .format_timestamp(None)
                 .filter_level(args.verbosity)
                 .build(),
         ))
-        .with_logger(logstream.make_logger())
-        .with_logger(BackgroundLog::new("/var/log/trident-full.log").into_logger())
-        .init()
-        .expect("Logger already registered");
+        .with_logger(logstream.make_logger());
+
+    // Only add the background logger if we're running the main command
+    if matches!(args.command, Commands::Run(_)) {
+        multilogger
+            .add_logger(BackgroundLog::new(trident::TRIDENT_BACKGROUND_LOG_PATH).into_logger());
+    }
+
+    multilogger.init().context("Logger already registered")?;
 
     Ok(logstream)
 }
