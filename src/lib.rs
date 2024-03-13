@@ -14,7 +14,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use osutils::container;
+use osutils::{container, path};
 use setsail::KsTranslator;
 use trident_api::config::{
     HostConfiguration, HostConfigurationSource, InvalidHostConfigurationError, LocalConfigFile,
@@ -123,8 +123,8 @@ impl Trident {
     pub fn new(config_path: Option<PathBuf>, logstream: Logstream) -> Result<Self, TridentError> {
         let config_path = if let Some(path) = config_path {
             path.to_owned()
-        } else if Path::new("/host").join(TRIDENT_LOCAL_CONFIG_PATH).exists() {
-            Path::new("/host").join(TRIDENT_LOCAL_CONFIG_PATH)
+        } else if path::host_relative(TRIDENT_LOCAL_CONFIG_PATH).exists() {
+            path::host_relative(TRIDENT_LOCAL_CONFIG_PATH)
         } else {
             Path::new(TRIDENT_LOCAL_CONFIG_PATH).to_owned()
         };

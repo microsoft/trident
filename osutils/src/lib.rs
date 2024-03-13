@@ -18,6 +18,7 @@ pub mod mount;
 pub mod mountpoint;
 pub mod overlay;
 pub mod partition_types;
+pub mod path;
 pub mod repart;
 pub mod resize2fs;
 pub mod scripts;
