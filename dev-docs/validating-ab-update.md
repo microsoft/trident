@@ -67,10 +67,11 @@ running the A/B update flow with Trident.
    VM using SSH.
 
 5. Download images for upgrading, e.g.:
+   Note: Trident supports images with grub-noprefix rpm, Pls use the latest images for upgrading.
 
    ```bash
-   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/test_image_v2/esp_v2.raw.zst -o esp_v2.raw.zst
-   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/test_image_v2/root_v2.raw.zst -o root_v2.raw.zst
+   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/555555/esp.rawzst -o esp_v2.raw.zst
+   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/555555/root.rawzst -o root_v2.raw.zst
    ```
 
 6. Request an A/B update by applying an edited Trident HostConfig. In the

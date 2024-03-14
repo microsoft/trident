@@ -136,8 +136,10 @@ fn copy_file_artifacts(
         ))?;
     }
 
+    let is_mariner_2_0 =
+        check_mariner_2_0().context("Failed to check if the system is mariner 2.0")?;
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
+    copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files, is_mariner_2_0).context(format!(
         "Failed to copy boot files from directory {} to directory {}",
         temp_mount_dir.display(),
         esp_dir_path.display()
@@ -180,12 +182,22 @@ fn copy_file_artifacts(
     Ok(())
 }
 
+//function to encapsulate the version check
+fn check_mariner_2_0() -> Result<bool, Error> {
+    let version = fs::read_to_string("/etc/mariner-release")
+        .context("Failed to read /etc/mariner-release")?;
+    Ok(version.contains("2.0"))
+}
+
 /// Copies boot files from temp_mount_dir, where image was mounted to, to given dir esp_dir.
 fn copy_boot_files(
     temp_mount_dir: &Path,
     esp_dir: &Path,
     boot_files: Vec<PathBuf>,
+    is_mariner_2_0: bool,
 ) -> Result<(), Error> {
+    // Track whether grub-noprefix.efi is used
+    let mut no_prefix = false;
     // Copy the specified files from temp_mount_path to esp_dir_path
     for boot_file in boot_files.iter() {
         let source_path = temp_mount_dir.join(boot_file);
@@ -224,7 +236,20 @@ fn copy_boot_files(
                     .context("Failed to convert path to string")?,
             )
             .context("Failed to rename grub-noprefix efi")?;
+            no_prefix = true;
         }
+    }
+
+    // Fail if no-prefix is not used on mariner 2.0
+    if !no_prefix {
+        // Check if we are on mariner 2.0
+        if is_mariner_2_0 {
+            bail!("grub-noprefix.efi should be used on mariner 2.0 images for trident");
+        } else {
+            debug!("grub-noprefix.efi is not used and the system is not on mariner 2.0");
+        }
+    } else {
+        info!("grub-noprefix.efi is used");
     }
 
     Ok(())
@@ -767,7 +792,7 @@ mod functional_test {
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir
     #[functional_test(feature = "abupdate")]
-    fn test_copy_boot_files() {
+    fn test_copy_boot_files_without_noprefix_not_mariner_2_0() {
         let temp_mount_dir = TempDir::new().unwrap();
         let esp_dir = TempDir::new().unwrap();
 
@@ -781,7 +806,13 @@ mod functional_test {
         // Call helper func to create mock boot files in temp_mount_dir
         create_boot_files(temp_mount_dir.path(), &file_names);
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
-        copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
+        copy_boot_files(
+            temp_mount_dir.path(),
+            esp_dir.path(),
+            file_names.clone(),
+            false,
+        )
+        .unwrap();
 
         for file_name in file_names {
             // Create full path of source_path
@@ -796,6 +827,34 @@ mod functional_test {
                 destination_path.display()
             );
         }
+    }
+
+    #[functional_test(feature = "abupdate")]
+    fn test_copy_boot_files_without_noprefix_mariner_2_0() {
+        let temp_mount_dir = TempDir::new().unwrap();
+        let esp_dir = TempDir::new().unwrap();
+
+        // Create a list of boot files
+        let file_names = vec![
+            PathBuf::from(GRUB2_CONFIG_FILENAME),
+            PathBuf::from("grubx64.efi"),
+            PathBuf::from("bootx64.efi"),
+        ];
+
+        // Call helper func to create mock boot files in temp_mount_dir
+        create_boot_files(temp_mount_dir.path(), &file_names);
+
+        // returns an error if no-prefix is not used on mariner 2.0
+        assert!(
+            copy_boot_files(
+                temp_mount_dir.path(),
+                esp_dir.path(),
+                file_names.clone(),
+                true
+            )
+            .is_err(),
+            "grub-noprefix.efi should be used on mariner 2.0 images for trident"
+        );
     }
 
     /// Validates that copy_boot_files() correctly copies boot files with grub-noprefix from temp_mount_dir to esp_dir
@@ -814,8 +873,39 @@ mod functional_test {
         // Call helper func to create mock boot files in temp_mount_dir
         create_boot_files(temp_mount_dir.path(), &file_names);
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
-        copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
+        copy_boot_files(
+            temp_mount_dir.path(),
+            esp_dir.path(),
+            file_names.clone(),
+            true,
+        )
+        .unwrap();
 
+        for file_name in file_names.clone() {
+            // Create full path of source_path
+            let source_path = temp_mount_dir.path().join(file_name.clone());
+            // Create full path of destination_path
+            let mut destination_path = esp_dir.path().join(file_name.clone());
+
+            if file_name == PathBuf::from("grubx64-noprefix.efi") {
+                destination_path = esp_dir.path().join("grubx64.efi");
+            }
+
+            assert!(
+                files_are_identical(&source_path, &destination_path),
+                "Files are not identical: {} and {}",
+                source_path.display(),
+                destination_path.display()
+            );
+        }
+
+        copy_boot_files(
+            temp_mount_dir.path(),
+            esp_dir.path(),
+            file_names.clone(),
+            false,
+        )
+        .unwrap();
         for file_name in file_names {
             // Create full path of source_path
             let source_path = temp_mount_dir.path().join(file_name.clone());

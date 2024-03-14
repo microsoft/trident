@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Error};
-use log::{debug, warn};
+use log::debug;
 use osutils::{blkid, grub::GrubConfig};
 use trident_api::{
     constants::{
@@ -103,7 +103,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
                 bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_B);
             }
 
-            None => warn!("Unsupported AB volume selection to update grub config."),
+            None => bail!("Unsupported AB volume selection to update grub config."),
         }
     }
 
