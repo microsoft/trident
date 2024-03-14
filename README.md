@@ -32,6 +32,7 @@ can be leveraged outside of that as well.
     - [TODO: Next Steps](#todo-next-steps)
   - [gRPC Interface](#grpc-interface)
   - [Running from container](#running-from-container)
+  - [Running from Azure VM](#running-from-azure-vm)
   - [Development](#development)
   - [Contributing](#contributing)
   - [Versioning and changelog](#versioning-and-changelog)
@@ -332,6 +333,34 @@ To run Trident using a docker container, run:
 ```bash
 docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run/udev:/run/udev -v /sys:/sys -v /run/systemd:/run/systemd --pid host trident/trident run
 ```
+
+## Running from Azure VM
+
+You can start Trident from an Azure VM, perhaps for testing use case. You will
+need to create Generation 2 VM, as Trident requires UEFI boot. You will also
+want to include additional data disk, where Trident can deploy the
+target/runtime OS to. For simple installations, 16GB disk should be sufficient.
+
+You can boot from Ubuntu and start Trident in a container, you can use Mariner
+gallery image and then you can run Trident natively or from a container. Or you
+can upload your custom provisioning OS image first and boot from that. In either
+case, the starting OS will act as the provisioning OS for Trident.
+
+Please use Trident RPMs from our release page (or build your own) to deploy
+them, if you dont want to build your own container or use a prebuilt
+provisioning OS image. You will really only need the `trident` RPM, along with
+any optional dependencies, depending on the features you are planning to use.
+Then, you need to add your Host Configuration to `/etc/trident/config.yaml` (or
+any other custom location and pass it explicitly to Trident) and invoke `sudo
+trident run` to apply it. Note that you should not include the current OS disk
+into the Host Configuration, only to the data disk (otherwise Trident would try
+to reformat the current OS disk). Also to note, Trident is trying to do its best
+to prevent data loss. As such, the current implementation will not allow to run
+Trident from a non-live OS. To override this, create an empty override file
+`sudo touch /override-trident-safety-check`.
+
+Unless `allowed-operations` are limited, upon completing the deployment, Trident
+will reboot the VM into the new OS.
 
 ## Development
 
