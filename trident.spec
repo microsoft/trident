@@ -9,7 +9,10 @@ BuildRequires:  openssl-devel
 BuildRequires:  rust
 BuildRequires:  systemd-units
 
-Requires:       netplan
+Requires:       e2fsprogs
+Requires:       util-linux
+Requires:       dosfstools
+Requires:       efibootmgr
 
 %description
 Agent for bare metal platform

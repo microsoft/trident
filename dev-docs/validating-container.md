@@ -57,8 +57,8 @@ only tests basics, and one more thorough, with a small workaround.
 5. Download images for upgrading, e.g.:
 
    ```bash
-   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/452619/boot_v452619.raw.zst -o esp.rawzst
-   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/452619/root_v452619.raw.zst -o root.rawzst
+   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/240403/esp.raw.zst -o esp.rawzst
+   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/240403/root.raw.zst -o root.rawzst
    ```
 
 6. Patch the HC to trigger update, with some extra cleanup:
@@ -121,8 +121,8 @@ virt-deploy VM with two disks and patched Trident.
 8. Download images for upgrading, e.g.:
 
    ```bash
-   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/452619/boot_v452619.raw.zst -o esp.rawzst
-   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/452619/root_v452619.raw.zst -o root.rawzst
+   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/240403/esp.raw.zst -o esp.rawzst
+   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/240403/root.raw.zst -o root.rawzst
    ```
 
 9. Patch the HC to trigger update, with some extra cleanup (notice we will be

@@ -19,6 +19,11 @@ can be leveraged outside of that as well.
   - [Contents](#contents)
   - [Docs](#docs)
   - [Getting Started](#getting-started)
+    - [Custom builds](#custom-builds)
+    - [Pre-built artifacts](#pre-built-artifacts)
+    - [Trident Environments](#trident-environments)
+    - [Trident RPMs](#trident-rpms)
+      - [Dependencies](#dependencies)
   - [Running Trident](#running-trident)
     - [Safety check](#safety-check)
   - [Trident Configuration](#trident-configuration)
@@ -49,8 +54,72 @@ Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shar
 
 ## Getting Started
 
-[Deployment
+### Custom builds
+
+If you want to build the bits yourself or leverage any custom build from our pipelines, please follow the [Deployment
 instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/README.md&_a=preview).
+
+### Pre-built artifacts
+
+This is generally more recommended for most users. You can download the latest
+Trident release from the [releases wiki
+page](https://dev.azure.com/mariner-org/ECF/_wiki/wikis/MarinerHCI.wiki/3306/Trident-Release).
+And you can learn more how to integrate it with MIC for building the
+runtime/target image and the provisioning image on the [BareMetal Platform Tools
+wiki
+page](https://dev.azure.com/mariner-org/ECF/_wiki/wikis/MarinerHCI.wiki/3607/BareMetal-Platform-Tools).
+
+### Trident Environments
+
+Trident can be run in two environments:
+
+- Provisioning: Trident is run from the provisioning OS (management OS) to provision the target
+  OS. The provisioning OS is typically a live OS running from a CD or USB stick.
+  It can be also a live OS running from a network boot or from a preprovisioned
+  bootstrap OS.
+
+- Runtime: Trident is run from the target/runtime/application OS to apply and updates.
+
+In both cases, Trident can be manually invoked, started using SystemD or run from a container.
+
+### Trident RPMs
+
+Trident is shipped as an RPM package. There are three main packages:
+
+- `trident`: The main Trident package. It contains the Trident binary.
+- `trident-service`: A SystemD service definition for Trident. This is only
+  optional as you can also run Trident from a Docker container or invoke it
+  directly on demand. This package depends on `trident` package.
+- `trident-provisioning`. A SystemD service definition for Trident to be used
+  during provisioning. This is only optional as you can also run Trident from a
+  Docker container or invoke it directly on demand. This package depends on
+  `trident` package. This starts Trident earlier in the boot process in order to
+  setup networking on the provisioning OS in a way consistent with the
+  provisioning of the target OS (though you can provision different network
+  configuration for the provisioning OS if needed). If you use
+  `trident-provisioning` during provisioning, you will also want to use
+  `trident-service`, as only the latter triggers the actual provisioning.
+
+#### Dependencies
+
+`trident` package has several optional dependencies. These are not enforced, as
+not all customers will need all features. You will need to install these
+dependencies into the OS where Trident is executed: provisioning or target OS if
+running Trident directly on the OS or into the container image.
+
+The following dependencies are optional:
+
+- `netplan`: support for networking configuration. This supports `os.network`
+  and `managementOs.network` sections of Host Configuration.
+- `mdadm`: support for RAID configuration. This supports `storage.raid` section.
+- `cryptsetup`, `tpm2-tools`: support for encrypted volumes. This supports `storage.encrypted`
+  section.
+- `veritysetup`: support for dm-verity. This supports `storage.verity` section.
+
+Trident also depends on more recent version of `systemd` compared to what is
+available in Mariner/Azure Linux 2.0. For evaluation, you can use this
+unsupported SystemD package:
+[systemd-254-3.tar.gz](https://hermesimages.blob.core.windows.net/hermes-test/systemd-254-3.tar.gz).
 
 ## Running Trident
 
