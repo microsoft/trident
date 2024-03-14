@@ -36,7 +36,7 @@ only tests basics, and one more thorough, with a small workaround.
 
 1. Boot the VM with the Provisioning OS using standard `make run-netlaunch`. Do
    not use any password auth in the HC, as the non-dev build of Trident would
-   fail with that HC.
+   fail with that HC. Ensure that you have A/B block present in your Host Configuration.
 2. Log into the VM using SSH.
 3. Stop Trident, install Docker (if not in your runtime OS image already):
 

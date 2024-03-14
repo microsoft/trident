@@ -306,6 +306,8 @@ pub(super) fn update(
         return Ok(());
     };
 
+    info!("Selected update kind: {:?}", update_kind);
+
     info!("Validating host configuration against system state");
     validate_host_config(
         &modules,
