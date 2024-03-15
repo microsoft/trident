@@ -15,7 +15,7 @@ impl MultiLogger {
     pub fn new() -> Self {
         Self {
             loggers: Vec::new(),
-            max_level: LevelFilter::Debug,
+            max_level: LevelFilter::Trace,
         }
     }
 
