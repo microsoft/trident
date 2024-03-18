@@ -11,5 +11,8 @@ steps:
           sudo apt install -y clamav wget
         fi
 
-      sudo wget --recursive --no-parent --no-host-directories --reject "*[^.cvd]" https://packages.microsoft.com/clamav/ -P /var/ib/
+      sudo wget https://packages.microsoft.com/clamav/main.cvd -P /var/lib/clamav/ || [ -f "/var/ib/clamav/main.cvd" ]
+      sudo wget https://packages.microsoft.com/clamav/daily.cvd -P /var/lib/clamav/ || [ -f "/var/ib/clamav/daily.cvd" ]
+      sudo wget https://packages.microsoft.com/clamav/bytecode.cvd -P /var/lib/clamav/ || [ -f "/var/ib/clamav/bytecode.cvd" ]
     displayName: "Install antivirus"
+    continueOnError: true
