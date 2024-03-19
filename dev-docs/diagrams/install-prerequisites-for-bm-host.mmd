@@ -1,0 +1,10 @@
+graph TD
+I0[Call to baremetal-prep.yml] --> I1[Download installer.iso from installerISOPipeline run in the previous stage]
+subgraph baremetal-prep.yml
+    I1 --> I2[Download trident-test-img artifact directory from installerISOPipeline run in the previous stage]
+    I2 --> I3[Download private key to upload runtime OS images to the HTTP Server]
+    I3 --> I4[Install dependencies for running the E2E Tests]
+    I4 --> I5[Create SSH Key for DevOps VM to access BM Host]
+    I5 --> I6[Create poetry environment with requirements for making VM use Redfish APIs to contact BM Host]
+    I6 --> I7[Upload esp.rawzst and root.rawzst manually to the HTTP Server]
+end

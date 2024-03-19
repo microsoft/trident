@@ -278,3 +278,33 @@ End to end tests should:
 - Leverage only the user facing interfaces of Trident.
 - Assume they will not run in parallel to other functions.
 - Handle validation of external events to the execution environment.
+
+### Testing on Baremetal
+
+#### Flowchart to describe steps for tests running on Baremetal
+
+![Overall Flowchart](./diagrams/overall-testing-on-baremetal.png)
+
+#### Install prerequisites for BM Host communication - baremetal-prep.yml
+
+![Prerequisite Installation - BM Host](./diagrams/install-prerequisites-for-bm-host.png)
+
+#### Create prerequisites required for the E2E tests - trident-prep.yml
+
+![Prerequisite Installation - E2E](./diagrams/install-prerequisites-for-e2e-tests.png)
+
+#### Deploy Baremetal Environment - k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml@platform-tests
+
+![Deploy Baremetal Environment](./diagrams/deploy-baremetal-environment.png)
+
+#### Run End-to-End Tests on the BM Host - e2e-test-run.yml
+
+![E2E Test Run](./diagrams/e2e-test-run.png)
+
+#### Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details
+
+![Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details](./diagrams/update-trident-yaml.png)
+
+#### Boot baremetal lab machine - platform-tests/bare-metal/scripts/deploy_with_trident.py
+
+![Boot baremetal lab machine](./diagrams/boot-baremetal-lab-machine.png)

@@ -1,0 +1,41 @@
+graph TD;
+    classDef Red fill:#FF9999,stroke:#333,stroke-width:4px;
+    classDef Amber fill:#FFDEAD,stroke:#333,stroke-width:4px;
+    classDef Green fill:#BDFFA4,stroke:#333,stroke-width:4px;
+    classDef Purple fill:#f9f,stroke:#333,stroke-width:4px;
+    A[Call to platform-tests/bare-metal/scripts/deploy_with_trident.py] --> B[Parse command line arguments];
+    subgraph platform-tests/bare-metal/scripts/deploy_with_trident.py in platform-tests
+        B --> C[Get baremetal configuration];
+        C --> D[Get SSH username and key];
+        C --> E[Get network information];
+        D[Get SSH username and key] --> F[Configure BMC];
+        E[Get IP address] --> F;
+        B --> G[Get installer ISO path];
+        G --> I[Validate ISO URL since path provided is a URL];
+        F --> J[Power on baremetal host];
+        I --> K[Boot host from ISO];
+        J --> K[Boot host from ISO];
+        K --> L0[Establish SSH connection object];
+        L0 --> L1[Set timeout period];
+        L1 --> L2[Attempt to open SSH connection];
+        L2 -->|Success| L3[Log success message];
+        L2 -->|Failure| L4[Log error message];
+        L4 --> L5[Wait for short period of time before retrying];
+        L5 --> L2;
+        L1 -->|Timeout reached| L6[Log error message and raise exception];
+        L3 --> M[Get system logs through redfish];
+        M --> N[Connect to bootstrap node with SSH];
+        N --> O[Print network information];
+        class C,D,E,F,J Amber;
+        class L4,L5,L6 Red;
+        class L3,M,N,O Green;
+        class B,G,I,K,L0,L1,L2 Purple;
+    end
+    O --> P[End];
+subgraph Legend
+    direction LR
+    LE1[Individual code steps in platform-tests repo]
+    LE2[Create Baremetal Configuration file for the BM host]
+    class LE1 Purple;
+    class LE2 Amber;
+end

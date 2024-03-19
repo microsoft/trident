@@ -1,0 +1,26 @@
+graph TD
+A[Start] --> B["BaremetalDeploymentTesting"]
+B --> C0["DefineTests"]
+subgraph Job to get list of tests to execute - DefineTests
+    C0[DefineTests] --> D0[Get List of tests to run]
+    D0 --> E0[Checkout Trident Repo]
+    E0 --> F0[Set List of E2E Tests]
+end
+F0 --> D["Strategy Matrix"]
+subgraph Job to execute the test - trident_baremetal_tests
+    D --> E[Loop for each test from the list of E2E Tests]
+    E --> G[Run E2E Test]
+    subgraph Seperate step for each test in Strategy Matrix
+        G --> H[Checkout Repositories]
+        H --> I[Install prerequisites for BM Host communication - baremetal-prep.yml]
+        I --> J[Create SSH key and install prerequisites required for the E2E tests - trident-prep.yml]
+        J --> K[Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details]
+        K --> L[Deploy Baremetal Environment - k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml]
+        style L fill:#f9f,stroke:#333,stroke-width:4px
+        L --> M[Run End-to-End Tests on the BM Host - e2e-test-run.yml]
+        M --> N[Optional: Delete Generated ISO - platform-tests/bare-metal/scripts/reset.py]
+    end
+    N --> O{More tests?}
+    O -- Yes --> G
+end
+O -- No --> Q[End]

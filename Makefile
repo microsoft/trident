@@ -1,5 +1,5 @@
 .PHONY: all
-all: format check test build-api-docs rpm docker-build build-functional-test coverage validate-configs
+all: format check test build-api-docs rpm docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
 .PHONY: check
 check:
@@ -206,3 +206,14 @@ validate-configs:
 		echo "Validating $$file"; \
 		./target/debug/trident validate -c $$file; \
 	done
+
+.PHONY: generate-mermaid-diagrams
+generate-mermaid-diagrams: mmdc
+	rm -f $(abspath dev-docs/diagrams)/*.png
+	$(MAKE) $(addsuffix .png, $(basename $(wildcard $(abspath dev-docs/diagrams)/*.mmd)))
+
+mmdc:
+	docker pull ghcr.io/mermaid-js/mermaid-cli/mermaid-cli
+
+$(abspath dev-docs/diagrams)/%.png: dev-docs/diagrams/%.mmd
+	docker run --rm -u `id -u`:`id -g` -v $(abspath dev-docs/diagrams):/data minlag/mermaid-cli -i /data/$(notdir $<) -o /data/$(notdir $@)

@@ -1,0 +1,5 @@
+graph TD
+M[Call to e2e-test-run.yml] --> M1[Run E2E Tests with pytest] 
+subgraph e2e-test-run.yml
+    M1 --> M2[Publish test results as JUnit XML]
+end
