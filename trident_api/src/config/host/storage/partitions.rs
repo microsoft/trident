@@ -6,8 +6,7 @@ use uuid::Uuid;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::constants::PARTITION_SIZE_GROW;
-use crate::{is_default, BlockDeviceId};
+use crate::{constants::PARTITION_SIZE_GROW, is_default, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::block_device_id_schema;

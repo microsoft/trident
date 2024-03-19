@@ -1,31 +1,35 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use strum_macros::{Display, EnumString};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
-use url::Url;
 
 use crate::{constants, is_default, BlockDeviceId};
 
-#[cfg(feature = "schemars")]
-use crate::schema_helpers::{block_device_id_list_schema, block_device_id_schema};
+use super::error::InvalidHostConfigurationError;
 
 pub mod blkdev_graph;
+pub mod disks;
+pub mod encryption;
 pub mod imaging;
+pub mod mountpoint;
 pub mod partitions;
+pub mod raid;
 mod serde_hash;
 
-use partitions::{AdoptedPartition, Partition};
-
-use imaging::{AbUpdate, Image};
-
-use self::blkdev_graph::{
-    builder::BlockDeviceGraphBuilder, error::BlockDeviceGraphBuildError, graph::BlockDeviceGraph,
+use self::{
+    blkdev_graph::{
+        builder::BlockDeviceGraphBuilder, error::BlockDeviceGraphBuildError,
+        graph::BlockDeviceGraph,
+    },
+    disks::Disk,
+    encryption::Encryption,
+    imaging::{AbUpdate, Image},
+    mountpoint::MountPoint,
+    partitions::Partition,
+    raid::Raid,
 };
-
-use super::error::InvalidHostConfigurationError;
 
 /// Storage configuration describes the disks of the host that will be used to
 /// store the OS and data. Not all disks of the host need to be captured inside
@@ -57,288 +61,6 @@ pub struct Storage {
     /// A list of images to be written to the host.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<Image>,
-}
-
-/// Per disk configuration.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct Disk {
-    /// A unique identifier for the disk. This is a user defined string that
-    /// allows to link the disk to what is consuming it and also to results in the
-    /// Host Status. The identifier needs to be unique across all types of
-    /// devices, not just disks.
-    ///
-    /// TBD: At the moment, the partition table is created from scratch. In the
-    /// future, it will be possible to consume an existing partition table.
-    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    pub id: BlockDeviceId,
-
-    /// The device path of the disk. Points to the disk device in the host. It is
-    /// recommended to use stable paths, such as the ones under `/dev/disk/by-path/`
-    /// or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).
-    pub device: PathBuf,
-
-    /// The partition table type of the disk. Supported values are: `gpt`.
-    pub partition_table_type: PartitionTableType,
-
-    /// A list of partitions that will be created on the disk.
-    pub partitions: Vec<Partition>,
-
-    /// A list of pre-existing partitions that will be adopted from the disk.
-    ///
-    /// Several options are available to match a partition to adopt. If more
-    /// than one option is specified, ALL the provided criteria will be used to
-    /// match the partition.
-    #[serde(default)]
-    pub adopted_partitions: Vec<AdoptedPartition>,
-}
-
-/// Partition table type. Currently only GPT is supported.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub enum PartitionTableType {
-    /// # GPT
-    ///
-    /// Disk should be formatted with a GUID Partition Table (GPT).
-    #[default]
-    Gpt,
-}
-
-/// Configure encrypted volumes of underlying disk partitions or software
-/// raid arrays.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct Encryption {
-    /// A URL to read the recovery key from.
-    ///
-    /// This parameter allows specifying a local file path to a recovery
-    /// key file via a `file://` URL scheme. The recovery key file serves
-    /// as an essential fallback to recover data should TPM 2.0 automatic
-    /// decryption fail. If not specified, only the TPM 2.0 device will be
-    /// enrolled.
-    ///
-    /// The URL must be non-empty if provided. Other URL schemes are not
-    /// supported at this time.
-    ///
-    /// # Recommended Configuration
-    ///
-    /// It is strongly advised to configure a recovery key file, as it
-    /// plays a pivotal role in data recovery.
-    ///
-    /// # File Format Expectations
-    ///
-    /// The recovery key file must be a binary file without any encoding.
-    /// This direct format ensures compatibility with cryptsetup and
-    /// systemd APIs. Be mindful that all file content, including any
-    /// potential whitespace or newline characters, is considered part of
-    /// the recovery key.
-    ///
-    /// # Security Considerations
-    ///
-    /// Ensuring the recovery key's confidentiality and integrity is
-    /// paramount. Employ secure storage and rigorous access control
-    /// measures. Specifically:
-    ///
-    /// - The file containing the key should only be accessible by the
-    ///   root user and have `0400` permissions set.
-    ///
-    /// - The recovery key should be a minimum of 32 bytes long and should
-    ///   be generated with enough high entropy to defend against brute
-    ///   force or cryptographic attacks targeting on-disk hash values.
-    ///
-    /// # Generating a Recovery Key
-    ///
-    /// One way to create a recovery key file on Linux systems is using
-    /// the `dd` utility:
-    ///
-    /// > Note: The following example is for illustration purposes only.
-    /// > Be sure to generate recovery keys with diligence and attention
-    /// > to security principles. Please adjust the following example
-    /// > according to your own security policies and operational
-    /// > environment to fit your specific security requirements and
-    /// > constraints.
-    ///
-    /// ```sh
-    /// touch ./recovery.key
-    /// chmod 0400 ./recovery.key
-    /// dd if=/dev/random of=./recovery.key bs=1 count=256
-    /// ```
-    ///
-    /// This command generates 256 bytes of random data for the recovery
-    /// key, sourcing entropy from `/dev/random`. Be aware, in
-    /// environments with limited entropy sources, such as certain
-    /// embedded systems, `/dev/random` may not provide sufficient data
-    /// promptly. Alternative entropy sources or methods may be required.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub recovery_key_url: Option<Url>,
-
-    /// The list of LUKS2-encrypted volumes to create.
-    ///
-    /// This parameter is required and must not be empty. Each item is an
-    /// object that will contain the configuration for a given partition
-    /// or RAID array.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub volumes: Vec<EncryptedVolume>,
-}
-
-/// A LUKS2-encrypted volume configuration.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct EncryptedVolume {
-    /// The id of the LUKS-encrypted volumes to create.
-    ///
-    /// This parameter is required. It must be non-empty and unique among
-    /// the ids of all block devices in the host configuration. This
-    /// includes the ids of all disk partitions, encrypted volumes,
-    /// software raid arrays, and a/b upgrade volume pairs.
-    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    pub id: BlockDeviceId,
-
-    /// The name of the device to create under `/dev/mapper` when opening
-    /// the volume.
-    ///
-    /// This parameter is required. It must be a valid file name and
-    /// unique among the list of encrypted volumes.
-    pub device_name: String,
-
-    /// The id of the disk partition or software raid array to encrypt.
-    ///
-    /// This parameter is required. It must be unique among the list of
-    /// encrypted volumes.
-    ///
-    /// If it refers to a disk partition, it must be of a supported type.
-    /// Supported types are all but `root` and `efi`.
-    ///
-    /// If it refers to a software raid array, the first disk partition of
-    /// the software raid array must be of a supported type.
-    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    pub target_id: BlockDeviceId,
-}
-
-/// RAID configuration for a host.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct Raid {
-    /// Individual software raid configurations.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub software: Vec<SoftwareRaidArray>,
-}
-
-/// Software RAID configuration.
-///
-/// The RAID array will be created using the `mdadm` package. During a clean
-/// install, all the existing RAID arrays that are on disks defined in the host
-/// configuration will be unmounted, and stopped.
-///
-/// The RAID arrays that are defined in the host configuration will be created,
-/// and mounted if specified in `mount-points`.
-///
-/// To learn more about RAID, please refer to the [RAID
-/// wiki](https://wiki.archlinux.org/title/RAID)
-///
-/// To learn more about `mdadm`, please refer to the [mdadm
-/// guide](https://raid.wiki.kernel.org/index.php/A_guide_to_mdadm)
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct SoftwareRaidArray {
-    /// A unique identifier for the RAID array.
-    ///
-    /// This is a user defined string that allows to link the RAID array to the
-    /// mount points and also to results in the Host Status. The identifier
-    /// needs to be unique across all types of devices, not just RAID arrays.
-    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    pub id: BlockDeviceId,
-
-    /// Name of the RAID array.
-    ///
-    /// This is used to reference the RAID array on the system. For example,
-    /// `some-raid` will result in `/dev/md/some-raid` on the system.
-    pub name: String,
-
-    /// RAID level.
-    ///
-    /// Supported and tested values are `raid0`, `raid1`.
-    /// Other possible values yet to be tested are: `raid5`, `raid6`, `raid10`.
-    pub level: RaidLevel,
-
-    /// Devices that will be used for the RAID array.
-    ///
-    /// See the reference links for picking the right number of devices. Devices
-    /// are partition ids from the `disks` section.
-    #[cfg_attr(
-        feature = "schemars",
-        schemars(schema_with = "block_device_id_list_schema")
-    )]
-    pub devices: Vec<BlockDeviceId>,
-
-    /// Metadata of the RAID array.
-    ///
-    /// Supported and tested values are `1.0`. Note that this is a string attribute.
-    pub metadata_version: String,
-}
-
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub enum RaidLevel {
-    /// # Striping
-    #[strum(serialize = "0")]
-    Raid0,
-
-    /// # Mirroring
-    #[strum(serialize = "1")]
-    Raid1,
-
-    /// # Striping with parity
-    #[strum(serialize = "5")]
-    Raid5,
-
-    /// # Striping with double parity
-    #[strum(serialize = "6")]
-    Raid6,
-
-    /// # Stripe of mirrors
-    #[strum(serialize = "10")]
-    Raid10,
-}
-
-/// Mount point configuration.
-///
-/// These are used by Trident to update the `/etc/fstab` in the runtime OS to
-/// correctly mount the volumes.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub struct MountPoint {
-    /// The path of the mount point.
-    ///
-    /// This is the path where the volume will be mounted in the runtime OS.
-    /// For `swap` partitions, the path should be `none`.
-    pub path: PathBuf,
-
-    /// The filesystem to be used for this mount point.
-    ///
-    /// This value will be used to format the partition.
-    pub filesystem: String,
-
-    /// A list of options to be used for this mount point.
-    ///
-    /// These will be passed as is to the `/etc/fstab` file.
-    pub options: Vec<String>,
-
-    /// The id of the block device that will be mounted at this mount
-    /// point.
-    ///
-    /// This parameter is required. It must be the ID of a disk partition,
-    /// encrypted volume, software raid array, or a/b update volume pair.
-    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    pub target_id: BlockDeviceId,
 }
 
 impl Storage {
@@ -442,34 +164,11 @@ impl Storage {
     }
 }
 
-impl Encryption {
-    /// Validate the encryption storage configuration.
-    ///
-    /// This function will validate the encryption configuration and
-    /// return an error if the configuration is invalid.
-    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
-        // Encryption recovery key URLs must start with file://
-        if let Some(recovery_key_url) = &self.recovery_key_url {
-            if recovery_key_url.scheme() != "file" {
-                return Err(
-                    InvalidHostConfigurationError::InvalidEncryptionRecoveryKeyUrlScheme {
-                        url: recovery_key_url.to_string(),
-                        scheme: recovery_key_url.scheme().to_string(),
-                    },
-                );
-            }
-        }
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{path::PathBuf, str::FromStr};
 
-    use imaging::{AbVolumePair, ImageFormat, ImageSha256};
-    use partitions::{PartitionSize, PartitionType};
+    use url::Url;
 
     use crate::{
         config::{
@@ -477,6 +176,14 @@ mod tests {
             HostConfiguration,
         },
         constants::ROOT_MOUNT_POINT_PATH,
+    };
+
+    use self::{
+        disks::PartitionTableType,
+        encryption::EncryptedVolume,
+        imaging::{AbVolumePair, ImageFormat, ImageSha256},
+        partitions::{PartitionSize, PartitionType},
+        raid::{RaidLevel, SoftwareRaidArray},
     };
 
     use super::*;
