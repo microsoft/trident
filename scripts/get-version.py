@@ -25,13 +25,13 @@ def get_version(file):
 
 
 parser = argparse.ArgumentParser(
-    description="Return the new version for trident given the date and ID. Format: MAJOR.MINOR.YYYYMMDD-ID"
+    description="Return the new version for trident given the date and ID. Format: MAJOR.MINOR.YYYYMMDDID"
 )
 parser.add_argument(
     "-c",
     "--commit",
     action="store_true",
-    help="Optional flag to use the short commit hash as part of the ID. Format: MAJOR.MINOR.YYYYMMDD.ID-COMMIT",
+    help="Optional flag to use the short commit hash as part of the ID. Format: MAJOR.MINOR.YYYYMMDDID-COMMIT",
 )
 parser.add_argument(
     "BuildNumber", type=str, help="Date and ID (counter) separated by a point."
@@ -52,14 +52,15 @@ match = re.match(r"(\d+)\.(\d+)", args.BuildNumber)
 
 if match:
     date, id = match.groups()
+    id = int(id)
 
     if args.commit:
         short_commit = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"]
         ).decode("ascii")
-        print(f"{version}.{date}.{id}-{short_commit.strip()}")
+        print(f"{version}.{date}{id:02d}-{short_commit.strip()}")
     else:
-        print(f"{version}.{date}-{id}")
+        print(f"{version}.{date}{id:02d}")
 else:
     print(
         "Invalid input. BuildNumber should be a date and ID, for example a counter, separated by a point."

@@ -67,3 +67,4 @@ extends:
       parameters:
         devBuildValidation: true
         buildPurpose: ${{ parameters.buildPurpose }}
+        publishType: ci

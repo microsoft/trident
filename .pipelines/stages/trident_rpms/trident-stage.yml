@@ -1,78 +1,73 @@
 parameters:
-- name: tridentRepo
-  type: string
-  default: self
+  - name: tridentRepo
+    type: string
+    default: self
 
-- name: tridentArtifactSource
-  type: string
-  default: current # If specific, trident won't build and instead the artifact will be downloaded in other stage.
+  - name: tridentArtifactSource
+    type: string
+    default: current # If specific, trident won't build and instead the artifact will be downloaded in other stage.
 
-- name: publishUniversalFeed
-  type: boolean
-  default: false
-
-- name: codeCoverage
-  type: boolean
-  default: true
+  - name: codeCoverage
+    type: boolean
+    default: true
 
 stages:
-- stage: Trident
-  displayName: Trident RPMs
+  - stage: Trident
+    displayName: Trident RPMs
 
-  jobs:
-  - job: TestTrident
-    displayName: Check and Unit Test
-    condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
-    pool:
-      type: linux
+    jobs:
+      - job: TestTrident
+        displayName: Check and Unit Test
+        condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
+        pool:
+          type: linux
 
-    variables:
-      ob_outputDirectory: '$(Build.SourcesDirectory)/trident/out'
+        variables:
+          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
 
-    steps:
-    - checkout: ${{ parameters.tridentRepo }}
+        steps:
+          - checkout: ${{ parameters.tridentRepo }}
 
-    - template: test-build.yml
-      parameters:
-         tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+          - template: test-build.yml
+            parameters:
+              tridentSourceDirectory: $(Build.SourcesDirectory)/trident
 
-  - job: Coverage
-    displayName: Evaluate Unit Test Code Coverage
-    condition: and(eq('${{ parameters.tridentArtifactSource }}', 'current'),eq(${{ parameters.codeCoverage }}, true))
-    pool:
-      type: linux
+      - job: Coverage
+        displayName: Evaluate Unit Test Code Coverage
+        condition: and(eq('${{ parameters.tridentArtifactSource }}', 'current'),eq(${{ parameters.codeCoverage }}, true))
+        pool:
+          type: linux
 
-    variables:
-      ob_outputDirectory: '$(Build.SourcesDirectory)/trident/out'
+        variables:
+          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
 
-    steps:
-    - checkout: ${{ parameters.tridentRepo }}
+        steps:
+          - checkout: ${{ parameters.tridentRepo }}
 
-    - template: ../common_tasks/coverage.yml
-      parameters:
-         tridentSourceDirectory: $(Build.SourcesDirectory)/trident
-         codeCoverageBaseline: 71 # Unit tests
+          - template: ../common_tasks/coverage.yml
+            parameters:
+              tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+              codeCoverageBaseline: 71 # Unit tests
 
-  - job: BuildTrident
-    displayName: Build Release Artifacts
-    condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
-    pool:
-      type: linux
+      - job: BuildTrident
+        displayName: Build Release Artifacts
+        condition: eq('${{ parameters.tridentArtifactSource }}', 'current')
+        pool:
+          type: linux
 
-    variables:
-      ob_outputDirectory: '$(Build.SourcesDirectory)/trident/out'
-      tridentSourceDirectory: $(Build.SourcesDirectory)/trident
-      emu_package_name: ''
-      emu_package_version: ''
+        variables:
+          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
+          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+          emu_package_name: ""
+          emu_package_version: ""
 
-    steps:
-    - checkout: ${{ parameters.tridentRepo }}
+        steps:
+          - checkout: ${{ parameters.tridentRepo }}
 
-    - template: ../common_tasks/download-emu.yml
-      parameters:
-         tridentSourceDirectory: $(Build.SourcesDirectory)/trident
+          - template: ../common_tasks/download-emu.yml
+            parameters:
+              tridentSourceDirectory: $(Build.SourcesDirectory)/trident
 
-    - template: release.yml
-      parameters:
-         tridentSourceDirectory: $(Build.SourcesDirectory)/trident
-         publishUniversalFeed: ${{ parameters.publishUniversalFeed }}
+          - template: release.yml
+            parameters:
+              tridentSourceDirectory: $(Build.SourcesDirectory)/trident

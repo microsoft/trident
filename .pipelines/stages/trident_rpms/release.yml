@@ -3,10 +3,6 @@ parameters:
     type: string
     default: "$(Build.SourcesDirectory)"
 
-  - name: publishUniversalFeed
-    type: boolean
-    default: false
-
   - name: trident_version
     type: string
     default: ""
@@ -14,11 +10,7 @@ parameters:
 steps:
   - script: |
       set -eux
-      INPUT=$(Build.BuildNumber)
-      if [ ${{ parameters.publishUniversalFeed }} == False ]; then
-        INPUT+=" --commit"
-      fi
-      TRIDENT_VERSION=$(python3 ./scripts/get-version.py $(echo "$INPUT"))
+      TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit)
       echo "##vso[task.setvariable variable=trident_version]$TRIDENT_VERSION"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Setting trident version"

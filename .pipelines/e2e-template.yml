@@ -1,161 +1,154 @@
 parameters:
-- name: buildPurpose
-  type: string
-  default: AUTO
-  values:
-  - AUTO
-  - daily
-  - pullrequest
-  - post_merge
-  - validation
+  - name: buildPurpose
+    type: string
+    default: AUTO
+    values:
+      - AUTO
+      - daily
+      - pullrequest
+      - post_merge
+      - validation
 
-- name: argusRepo
-  type: string
-  default: argus-toolkit
+  - name: "publishType"
+    displayName: "Controls whether this is a pre-release or a CI run."
+    type: string
+    default: ci
+    values:
+      - ci
+      - pre
 
-- name: tridentPipelineID
-  type: string
-  default: ''
+  - name: argusRepo
+    type: string
+    default: argus-toolkit
 
-- name: downloadBuildTypeTrident
-  type: string
-  default: current # set to 'specific' to download from tridentPipelineID
+  - name: tridentPipelineID
+    type: string
+    default: ""
 
-- name: tridentArtifact
-  type: string
-  default: 'drop_Trident_BuildTrident'
+  - name: downloadBuildTypeTrident
+    type: string
+    default: current # set to 'specific' to download from tridentPipelineID
 
-- name: tridentRepo
-  type: string
-  default: self
+  - name: tridentArtifact
+    type: string
+    default: "drop_Trident_BuildTrident"
 
-- name: testImagesRepo
-  type: string
-  default: 'test-images'
+  - name: tridentRepo
+    type: string
+    default: self
 
-- name: runtimeImagePipelineID
-  type: string
-  default: ''
+  - name: testImagesRepo
+    type: string
+    default: "test-images"
 
-- name: downloadBuildTypeRuntimeOS
-  type: string
-  default: current # set to 'specific' to download from runtimeImagePipelineID
+  - name: runtimeImagePipelineID
+    type: string
+    default: ""
 
-- name: tridentStage
-  type: string
-  default: Trident # name of the stage where trident is build
+  - name: downloadBuildTypeRuntimeOS
+    type: string
+    default: current # set to 'specific' to download from runtimeImagePipelineID
 
-- name: provOSPipelineID
-  type: string
-  default: ''
+  - name: tridentStage
+    type: string
+    default: Trident # name of the stage where trident is build
 
-- name: downloadBuildTypeProvOS
-  type: string
-  default: current # set to 'specific' to download from provOSPipelineID
+  - name: provOSPipelineID
+    type: string
+    default: ""
 
-- name: isogenPipelineID
-  type: string
-  default: ''
+  - name: downloadBuildTypeProvOS
+    type: string
+    default: current # set to 'specific' to download from provOSPipelineID
 
-- name: downloadBuildTypeIsogen
-  type: string
-  default: current # set to 'specific' to download from isogenPipelineID
+  - name: isogenPipelineID
+    type: string
+    default: ""
 
-- name: installerISOPipelineID
-  type: string
-  default: ''
+  - name: downloadBuildTypeIsogen
+    type: string
+    default: current # set to 'specific' to download from isogenPipelineID
 
-- name: downloadBuildTypeInstallerISO
-  type: string
-  default: current # set to 'specific' to download from installerISOPipelineID
+  - name: installerISOPipelineID
+    type: string
+    default: ""
 
-- name: updateRuntimeOSTrident
-  type: boolean
-  default: false
+  - name: downloadBuildTypeInstallerISO
+    type: string
+    default: current # set to 'specific' to download from installerISOPipelineID
 
-- name: publishUniversalFeed
-  type: boolean
-  default: false
+  - name: updateRuntimeOSTrident
+    type: boolean
+    default: false
 
-- name: devBuildValidation
-  type: boolean
-  default: false
+  - name: devBuildValidation
+    type: boolean
+    default: false
 
-- name: baremetalValidation
-  type: boolean
-  default: false
+  - name: baremetalValidation
+    type: boolean
+    default: false
 
 stages:
-- template: stages/trident_rpms/trident-stage.yml
-  parameters:
-    tridentRepo: ${{ parameters.tridentRepo }}
-    tridentArtifactSource: ${{ parameters.downloadBuildTypeTrident }}
-    publishUniversalFeed: ${{ parameters.publishUniversalFeed }}
-    codeCoverage: false
-
-- ${{ if eq(parameters.devBuildValidation, 'true') }}:
-  - template: stages/validate_makefile/dev-build.yml
+  - template: stages/trident_rpms/trident-stage.yml
     parameters:
       tridentRepo: ${{ parameters.tridentRepo }}
+      tridentArtifactSource: ${{ parameters.downloadBuildTypeTrident }}
+      codeCoverage: false
 
-- template: stages/provisioning_os/prov-os.yml
-  parameters:
-    provOSArtifactSource: ${{ parameters.downloadBuildTypeProvOS }}
-    tridentStage : ${{ parameters.tridentStage }}
-    argusRepo: ${{ parameters.argusRepo }}
-    downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
-    tridentPipeline: ${{ parameters.tridentPipelineID }}
-    artifactName: ${{ parameters.tridentArtifact }}
+  - ${{ if eq(parameters.devBuildValidation, 'true') }}:
+      - template: stages/validate_makefile/dev-build.yml
+        parameters:
+          tridentRepo: ${{ parameters.tridentRepo }}
 
-- template: stages/runtime_os/trident-testimg.yml
-  parameters:
-    runtimeOSArtifactSource: ${{ parameters.downloadBuildTypeRuntimeOS }}
-    testImagesRepo: ${{ parameters.testImagesRepo }}
-    tridentStage : ${{ parameters.tridentStage }}
-    downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
-    tridentPipeline: ${{ parameters.tridentPipelineID }}
-    artifactName: ${{ parameters.tridentArtifact }}
-    imageName: trident-testimage
-    outputArtifactName: trident-testimg
+  - template: stages/provisioning_os/prov-os.yml
+    parameters:
+      provOSArtifactSource: ${{ parameters.downloadBuildTypeProvOS }}
+      tridentStage: ${{ parameters.tridentStage }}
+      argusRepo: ${{ parameters.argusRepo }}
+      downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
+      tridentPipeline: ${{ parameters.tridentPipelineID }}
+      artifactName: ${{ parameters.tridentArtifact }}
 
-- template: stages/runtime_os/trident-testimg.yml
-  parameters:
-    runtimeOSArtifactSource: ${{ parameters.downloadBuildTypeRuntimeOS }}
-    testImagesRepo: ${{ parameters.testImagesRepo }}
-    tridentStage : ${{ parameters.tridentStage }}
-    downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
-    tridentPipeline: ${{ parameters.tridentPipelineID }}
-    artifactName: ${{ parameters.tridentArtifact }}
-    imageName: trident-verity-testimage
-    outputArtifactName: trident-verity-testimage
+  - template: stages/runtime_os/trident-testimg.yml
+    parameters:
+      runtimeOSArtifactSource: ${{ parameters.downloadBuildTypeRuntimeOS }}
+      testImagesRepo: ${{ parameters.testImagesRepo }}
+      tridentStage: ${{ parameters.tridentStage }}
+      downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
+      tridentPipeline: ${{ parameters.tridentPipelineID }}
+      artifactName: ${{ parameters.tridentArtifact }}
+      imageName: trident-testimage
+      outputArtifactName: trident-testimg
 
-- template: stages/building_tools/building-tools.yml
-  parameters:
-    argusRepo: ${{ parameters.argusRepo }}
-    isogenArtifactSource: ${{ parameters.downloadBuildTypeIsogen }}
+  - template: stages/runtime_os/trident-testimg.yml
+    parameters:
+      runtimeOSArtifactSource: ${{ parameters.downloadBuildTypeRuntimeOS }}
+      testImagesRepo: ${{ parameters.testImagesRepo }}
+      tridentStage: ${{ parameters.tridentStage }}
+      downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
+      tridentPipeline: ${{ parameters.tridentPipelineID }}
+      artifactName: ${{ parameters.tridentArtifact }}
+      imageName: trident-verity-testimage
+      outputArtifactName: trident-verity-testimage
 
-- template: stages/installer_iso/installer-iso.yml
-  parameters:
-    installerISOArtifactSource: ${{ parameters.downloadBuildTypeInstallerISO }}
-    argusRepo: ${{ parameters.argusRepo }}
-    downloadBuildTypeRuntimeOS: ${{ parameters.downloadBuildTypeRuntimeOS }}
-    runtimeImagePipeline: ${{ parameters.runtimeImagePipelineID }}
-    downloadBuildTypeProvOS: ${{ parameters.downloadBuildTypeProvOS }}
-    provOSPipeline: ${{ parameters.provOSPipelineID }}
-    downloadBuildTypeIsogen: ${{ parameters.downloadBuildTypeIsogen }}
-    isogenPipeline: ${{ parameters.isogenPipelineID }}
+  - template: stages/building_tools/building-tools.yml
+    parameters:
+      argusRepo: ${{ parameters.argusRepo }}
+      isogenArtifactSource: ${{ parameters.downloadBuildTypeIsogen }}
 
-- template: stages/deployment_testing/vm/netlaunch-testing.yml
-  parameters:
-    buildPurpose: ${{ parameters.buildPurpose }}
-    argusRepo: ${{ parameters.argusRepo }}
-    tridentRepo: ${{ parameters.tridentRepo }}
-    downloadBuildType: ${{ parameters.downloadBuildTypeInstallerISO }}
-    installerISOPipeline: ${{ parameters.installerISOPipelineID }}
-    updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
+  - template: stages/installer_iso/installer-iso.yml
+    parameters:
+      installerISOArtifactSource: ${{ parameters.downloadBuildTypeInstallerISO }}
+      argusRepo: ${{ parameters.argusRepo }}
+      downloadBuildTypeRuntimeOS: ${{ parameters.downloadBuildTypeRuntimeOS }}
+      runtimeImagePipeline: ${{ parameters.runtimeImagePipelineID }}
+      downloadBuildTypeProvOS: ${{ parameters.downloadBuildTypeProvOS }}
+      provOSPipeline: ${{ parameters.provOSPipelineID }}
+      downloadBuildTypeIsogen: ${{ parameters.downloadBuildTypeIsogen }}
+      isogenPipeline: ${{ parameters.isogenPipelineID }}
 
-- ${{ if eq(parameters.baremetalValidation, 'true') }}:
-  - template: stages/deployment_testing/baremetal/baremetal-testing.yml
+  - template: stages/deployment_testing/vm/netlaunch-testing.yml
     parameters:
       buildPurpose: ${{ parameters.buildPurpose }}
       argusRepo: ${{ parameters.argusRepo }}
@@ -164,5 +157,16 @@ stages:
       installerISOPipeline: ${{ parameters.installerISOPipelineID }}
       updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
 
-- ${{ if and(eq(parameters.publishUniversalFeed, 'true'), eq(parameters.baremetalValidation, 'true')) }}:
+  - ${{ if eq(parameters.baremetalValidation, 'true') }}:
+      - template: stages/deployment_testing/baremetal/baremetal-testing.yml
+        parameters:
+          buildPurpose: ${{ parameters.buildPurpose }}
+          argusRepo: ${{ parameters.argusRepo }}
+          tridentRepo: ${{ parameters.tridentRepo }}
+          downloadBuildType: ${{ parameters.downloadBuildTypeInstallerISO }}
+          installerISOPipeline: ${{ parameters.installerISOPipelineID }}
+          updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
+
   - template: stages/publishing/publish.yml
+    parameters:
+      publishType: ${{ parameters.publishType }}
