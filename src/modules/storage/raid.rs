@@ -6,7 +6,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Command,
     str::FromStr,
 };
 use strum_macros::{Display, EnumString};
@@ -57,10 +57,9 @@ fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Result<(), Err
         .arg(format!("--metadata={}", &config.metadata_version));
 
     mdadm_command
-        .output()
-        .context("Failed to run mdadm create")?
-        .check()
-        .context("mdadm exited with an error")?;
+        .run_and_check()
+        .context("Failed to run mdadm create")?;
+
     Ok(())
 }
 
@@ -70,19 +69,20 @@ fn examine() -> Result<String, Error> {
     let mut mdadm_command = Command::new("mdadm");
     mdadm_command.arg("--examine").arg("--scan");
 
-    mdadm_command.output_and_check()
+    mdadm_command
+        .output_and_check()
+        .context("Failed to run mdadm examine")
 }
 
-fn detail() -> Result<Output, Error> {
+fn detail() -> Result<String, Error> {
     info!("Getting RAID array details");
 
     let mut mdadm_command = Command::new("mdadm");
     mdadm_command.arg("--detail").arg("--scan").arg("--verbose");
 
     let output = mdadm_command
-        .output()
+        .output_and_check()
         .context("Failed to run mdadm detail")?;
-    output.check().context("mdadm exited with an error")?;
     Ok(output)
 }
 
@@ -93,10 +93,8 @@ fn stop(raid_array_name: &Path) -> Result<(), Error> {
     mdadm_command.arg("--stop").arg(raid_array_name);
 
     mdadm_command
-        .output()
-        .context("Failed to run mdadm stop")?
-        .check()
-        .context("mdadm exited with an error")?;
+        .run_and_check()
+        .context("Failed to run mdadm stop")?;
 
     Ok(())
 }
@@ -257,8 +255,8 @@ pub(super) fn update_raid_in_host_status(
 }
 
 pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> Result<(), Error> {
-    if !mdstat_present(Path::new("/proc/mdstat"))? {
-        // No pre-existing RAID arrays. Nothing to do.
+    // If there is no mdstat file, there are no pre-existing RAID arrays
+    if !Path::new("/proc/mdstat").exists() {
         trace!("No pre-existing RAID arrays found. Skipping cleanup.");
         return Ok(());
     }
@@ -270,15 +268,15 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
 
     let mdadm_detail_output = detail().context("Failed to get existing RAID details")?;
 
-    let mdadm_detail_output_str = String::from_utf8(mdadm_detail_output.stdout)
-        .context("Failed to convert mdadm output to string")?;
-
-    if mdadm_detail_output_str.is_empty() {
+    if mdadm_detail_output.is_empty() {
+        trace!(
+            "Mdstat file is present however, nothing found in RAID details scan. Skipping cleanup."
+        );
         return Ok(());
     }
 
     let parsed_mdadm_detail =
-        mdadm_detail_to_struct(&mdadm_detail_output_str).context("Failed to parse mdadm detail")?;
+        mdadm_detail_to_struct(&mdadm_detail_output).context("Failed to parse mdadm detail")?;
 
     let trident_disks = super::get_hostconfig_disk_paths(host_config)
         .context("Failed to get disks defined in Host Configuration")?;
@@ -317,17 +315,6 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
     }
 
     Ok(())
-}
-
-fn mdstat_present(mdstat_path: &Path) -> Result<bool, Error> {
-    // mdstat file is present only if there is any RAID on the system
-    if !mdstat_path.exists() {
-        return Ok(false);
-    }
-    let mdstat_contents =
-        osutils::files::read_file_trim(&mdstat_path).context("Failed to read mdstat file")?;
-
-    Ok(mdstat_contents.contains("active raid"))
 }
 
 fn check_if_mdadm_present() -> Result<(), Error> {
@@ -473,11 +460,8 @@ pub(super) fn create_sw_raid_array(
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
     use indoc::indoc;
     use maplit::btreemap;
-    use tempfile::tempdir;
 
     use trident_api::{
         config::PartitionType,
@@ -713,45 +697,5 @@ mod tests {
             get_raid_device_name(raid_device).expect("Failed to get RAID device name");
 
         assert_eq!(device_name, "md127");
-    }
-
-    #[test]
-    fn test_mdstat_present() {
-        let is_mdstat_present = mdstat_present(Path::new("non-existing-path"))
-            .expect("Failed to check if mdstat is present");
-
-        assert!(!is_mdstat_present);
-
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let mdstat_path = temp_dir.path().join("mdstat");
-
-        let mut mdstat_file =
-            std::fs::File::create(&mdstat_path).expect("Failed to create mdstat file");
-
-        let raid_info = indoc!(
-            r#"
-        Personalities : [raid1]
-        md126 : active raid1 sda9[1] sda8[0]
-            51136 blocks super 1.0 [2/2] [UU]
-
-        md127 : active raid1 sda7[1] sda6[0]
-            1048512 blocks super 1.0 [2/2] [UU]
-
-        unused devices: <none>
-        "#
-        );
-
-        mdstat_file
-            .write_all(raid_info.as_bytes())
-            .expect("Failed to write to mdstat file");
-
-        let is_mdstat_present =
-            mdstat_present(&mdstat_path).expect("Failed to check if mdstat is present");
-        assert!(is_mdstat_present);
-
-        // Clean up the temporary directory
-        temp_dir
-            .close()
-            .expect("Failed to close temporary directory");
     }
 }
