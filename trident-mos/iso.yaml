@@ -1,0 +1,20 @@
+SystemConfig:
+  Hostname: trident-mos-testimage
+
+  PackagesInstall:
+    - trident-service
+    - trident-provisioning
+
+  PostInstallScripts:
+  - Path: post-install.sh
+
+Iso:
+  AdditionalFiles:
+    files/config-placeholder.yaml:
+      - Path: /trident-config.yaml
+    ../artifacts/test-image/root.rawzst:
+      - Path: /data/root.rawzst
+    ../artifacts/test-image/esp.rawzst:
+      - Path: /data/esp.rawzst
+  KernelCommandLine:
+    ExtraCommandLine: "console=tty0 console=ttyS0"

@@ -335,9 +335,9 @@ coveragetool
 reports/
 *.cobertura.xml
 
-
-# Added by cargo
 /target
+/bin
+/artifacts
 
 # RPM output
 /trident-*.rpm

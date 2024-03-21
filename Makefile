@@ -90,7 +90,7 @@ clean:
 	rm -rf artifacts/
 	find . -name "*.profraw" -type f -delete
 
-# Locally we generally want to compile in debugging mode to reuse local artifacs.
+# Locally we generally want to compile in debugging mode to reuse local artifacts.
 # On pipelines, though, we compile in release mode. This variable allows us to
 # pass `--release` to cargo build when needed.
 DOCS_RELEASE_BUILD ?= n
@@ -217,3 +217,126 @@ mmdc:
 
 $(abspath dev-docs/diagrams)/%.png: dev-docs/diagrams/%.mmd
 	docker run --rm -u `id -u`:`id -g` -v $(abspath dev-docs/diagrams):/data minlag/mermaid-cli -i /data/$(notdir $<) -o /data/$(notdir $@)
+
+go.sum: go.mod
+	go mod tidy
+
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum
+	mkdir -p bin
+	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
+
+.PHONY: run-netlaunch
+run-netlaunch: input/netlaunch.yaml input/trident.yaml bin/netlaunch bin/trident-mos.iso
+	bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t input/trident.yaml -l -r remote-addr
+
+.PHONY: download-runtime-partition-images
+download-runtime-partition-images:
+	$(eval BRANCH ?= main)
+	$(eval PIPELINE_IMAGES_LAST_RUN := $(shell az pipelines runs list \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--pipeline-ids 2195 \
+		--branch $(BRANCH) \
+		--query-order QueueTimeDesc \
+		--result succeeded \
+		--reason triggered \
+		--top 1 \
+		--query '[0].id'))
+	@echo PIPELINE RUN ID: $(PIPELINE_IMAGES_LAST_RUN)
+	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
+	az pipelines runs artifact download \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--run-id $(PIPELINE_IMAGES_LAST_RUN) \
+		--path $(DOWNLOAD_DIR) \
+		--artifact-name 'trident-testimg'
+
+#   Clean & create artifacts dir
+	rm -rf ./artifacts/test-image
+	mkdir -p ./artifacts/test-image
+#	Extract partition images. The version is dropped and the extension is changed
+#	to .rawzst in case the files are inserted into the ISO filesystem
+# 	instead of the initrd.
+	for file in $(DOWNLOAD_DIR)/*.raw.zst; do \
+		name=$$(basename $$file | cut -d'.' -f1); \
+		mv $$file ./artifacts/test-image/$$name.rawzst; \
+	done
+#	Clean temp dir
+	rm -rf $(DOWNLOAD_DIR)
+
+# Get verity images
+	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
+	az pipelines runs artifact download \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--run-id $(PIPELINE_IMAGES_LAST_RUN) \
+		--path $(DOWNLOAD_DIR) \
+		--artifact-name 'trident-verity-testimage'
+
+#	Extract partition images. The version is dropped and the extension is changed
+#	to .rawzst in case the files are inserted into the ISO filesystem
+# 	instead of the initrd.
+	for file in $(DOWNLOAD_DIR)/*.raw.zst; do \
+		name=$$(basename $$file | cut -d'.' -f1); \
+		mv $$file ./artifacts/test-image/verity_$$name.rawzst; \
+	done
+	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
+#	Clean temp dir
+	rm -rf $(DOWNLOAD_DIR)
+
+BASE_IMAGE_NAME ?= baremetal_vhdx
+BASE_IMAGE_VERSION ?= *
+artifacts/baremetal.vhdx:
+	@mkdir -p artifacts
+	@tempdir=$$(mktemp -d); \
+		result=$$(az artifacts universal download \
+			--organization "https://dev.azure.com/mariner-org/" \
+			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
+			--scope project \
+			--feed "MarinerCoreArtifacts" \
+			--name '$(BASE_IMAGE_NAME)' \
+			--version '$(BASE_IMAGE_VERSION)' \
+			--path $$tempdir) && \
+		mv $$tempdir/*.vhdx artifacts/baremetal.vhdx && \
+		rm -rf $$tempdir && \
+		echo $$result | jq > artifacts/baremetal.vhdx.metadata.json
+
+MIC_PACKAGE_NAME ?= imagecustomizer_preview
+MIC_PACKAGE_VERSION ?= 0.1.0-preview.525339
+artifacts/imagecustomizer:
+	@mkdir -p artifacts
+	@az artifacts universal download \
+	    --organization "https://dev.azure.com/mariner-org/" \
+	    --project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
+	    --scope project \
+	    --feed "MarinerCoreArtifacts" \
+	    --name '$(MIC_PACKAGE_NAME)' \
+	    --version '$(MIC_PACKAGE_VERSION)' \
+	    --path artifacts/
+	@chmod +x artifacts/imagecustomizer
+	@touch artifacts/imagecustomizer
+
+bin/trident-mos.vhdx: artifacts/imagecustomizer artifacts/baremetal.vhdx trident-mos/baseimg.yaml artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+	mkdir -p bin/
+	BUILD_DIR=`mktemp -d`
+	sudo ./artifacts/imagecustomizer \
+	    --log-level=debug \
+	    --rpm-source ./artifacts/systemd \
+	    --build-dir $BUILD_DIR \
+	    --image-file artifacts/baremetal.vhdx \
+	    --output-image-file bin/trident-mos.vhdx \
+	    --config-file trident-mos/baseimg.yaml \
+	    --output-image-format vhdx
+	sudo rm -r artifacts/systemd/repodata
+
+bin/trident-mos.iso: artifacts/imagecustomizer bin/trident-mos.vhdx trident-mos/iso.yaml trident-mos/post-install.sh rpm
+	BUILD_DIR=`mktemp -d`
+	sudo ./artifacts/imagecustomizer \
+	    --log-level=debug \
+	    --rpm-source ./bin/RPMS/x86_64/ \
+	    --build-dir $BUILD_DIR \
+	    --image-file bin/trident-mos.vhdx \
+	    --output-image-file bin/trident-mos.iso \
+	    --config-file trident-mos/iso.yaml \
+	    --output-image-format iso
+	sudo rm -r bin/RPMS/x86_64/repodata
