@@ -19,8 +19,5 @@
   - Install pytest: `pip install pytest`. Ensure you have at least version 7.0 of
     pytest.
 - Change directory to the Trident repository: `cd trident`.
-- (Only for changes to `trident_api`) Download documentation dependencies:
-
-  ```bash
-  make install-json-schema-for-humans
-  ```
+- (Only for changes to `trident_api`) Download documentation dependencies: `make install-json-schema-for-humans`.
+- To collect code coverage, install `grcov`: `cargo install grcov`.
