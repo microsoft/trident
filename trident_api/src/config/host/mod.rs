@@ -56,6 +56,7 @@ impl HostConfiguration {
         self.storage.validate(require_root_mount_point)?;
         self.os.validate()?;
         self.scripts.validate()?;
+        self.management_os.validate()?;
 
         Ok(())
     }

@@ -70,6 +70,20 @@ impl Os {
             file.validate()?;
         }
 
+        if let Some(network) = self.network.as_ref() {
+            network::validate_netplan(network)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl ManagementOs {
+    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+        if let Some(network) = self.network.as_ref() {
+            network::validate_netplan(network)?;
+        }
+
         Ok(())
     }
 }

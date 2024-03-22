@@ -39,4 +39,13 @@ pub enum InvalidHostConfigurationError {
 
     #[error("Mount point '{mount_point_path}' not backed by an image")]
     MountPointNotBackedByImage { mount_point_path: String },
+
+    #[error("The interface name '{0}' is invalid")]
+    InvalidInterfaceName(String),
+
+    #[error("Invalid Netplan version. It should always be '2', but got '{0}'")]
+    InvalidNetplanVersion(u8),
+
+    #[error("Unsupported Netplan renderer: '{0}'")]
+    UnsupportedNetplanRenderer(String),
 }
