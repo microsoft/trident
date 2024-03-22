@@ -338,6 +338,8 @@ reports/
 /target
 /bin
 /artifacts
+/input
+remote-addr
 
 # RPM output
 /trident-*.rpm

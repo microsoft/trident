@@ -41,6 +41,6 @@ stages:
 
     - bash: |
         set -eux
-        make rpm docker-build
+        make bin/trident.tar.gz docker-build validate-configs generate-mermaid-diagrams
       workingDirectory: $(tridentSourceDirectory)
       displayName: Invoke make

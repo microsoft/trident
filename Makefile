@@ -1,5 +1,5 @@
 .PHONY: all
-all: format check test build-api-docs rpm docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
+all: format check test build-api-docs bin/trident.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
 .PHONY: check
 check:
@@ -51,8 +51,8 @@ artifacts/osmodifier:
 		--path artifacts/
 	chmod +x artifacts/osmodifier
 
-.PHONY: rpm
-rpm: artifacts/osmodifier
+# RPM target
+bin/trident.tar.gz: artifacts/osmodifier
 	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
 	docker build --progress plain -t trident/trident-build:latest \
@@ -74,14 +74,8 @@ artifacts/systemd/systemd-254-3.cm2.x86_64.rpm:
 	rm -f ./artifacts/systemd/*.src.rpm ./artifacts/systemd/systemd-debuginfo*.rpm ./artifacts/systemd/systemd-devel-*.rpm
 
 .PHONY: docker-build
-docker-build: artifacts/osmodifier artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
-	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
-	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
-	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest \
-		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
-		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
-		.
+docker-build: bin/trident.tar.gz artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
 .PHONY: clean
 clean:
@@ -284,6 +278,38 @@ download-runtime-partition-images:
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
+.PHONY: copy-runtime-partition-images
+copy-runtime-partition-images: ../test-images/build/trident-testimage/*.raw.zst ../test-images/build/trident-verity-testimage/*.raw.zst
+# 	Check repo is adjacent
+	@test -d ../test-images || { \
+		echo "Test images repo not found in adjacent directory."; \
+		exit 1; \
+	}
+#	Check directory exists
+	@test -d ../test-images/build/trident-testimage || { \
+		echo "Trident images not found in adjacent test-images repo."; \
+		exit 1; \
+	}
+#	Check directory exists
+	@test -d ../test-images/build/trident-verity-testimage || { \
+		echo "Trident images not found in adjacent test-images repo."; \
+		exit 1; \
+	}
+#   Clean & create artifacts dir
+	@rm -rf ./artifacts/test-image
+	@mkdir -p ./artifacts/test-image
+	@for file in ../test-images/build/trident-testimage/*.raw.zst; do \
+		name=$$(basename $$file | cut -d'.' -f1); \
+		cp $$file ./artifacts/test-image/$$name.rawzst; \
+		echo "Copied $$file to ./artifacts/test-image/$$name.rawzst"; \
+	done
+	@for file in ../test-images/build/trident-verity-testimage/*.raw.zst; do \
+		name=$$(basename $$file | cut -d'.' -f1); \
+		cp $$file ./artifacts/test-image/verity_$$name.rawzst; \
+		echo "Copied $$file to ./artifacts/test-image/verity_$$name.rawzst"; \
+	done
+	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
+
 BASE_IMAGE_NAME ?= baremetal_vhdx
 BASE_IMAGE_VERSION ?= *
 artifacts/baremetal.vhdx:
@@ -329,7 +355,7 @@ bin/trident-mos.vhdx: artifacts/imagecustomizer artifacts/baremetal.vhdx trident
 	    --output-image-format vhdx
 	sudo rm -r artifacts/systemd/repodata
 
-bin/trident-mos.iso: artifacts/imagecustomizer bin/trident-mos.vhdx trident-mos/iso.yaml trident-mos/post-install.sh rpm
+bin/trident-mos.iso: artifacts/imagecustomizer bin/trident-mos.vhdx trident-mos/iso.yaml trident-mos/post-install.sh bin/trident.tar.gz
 	BUILD_DIR=`mktemp -d`
 	sudo ./artifacts/imagecustomizer \
 	    --log-level=debug \

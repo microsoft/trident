@@ -2,7 +2,6 @@
 .git
 .pipelines
 .vscode
-bin
 dev
 docs
 target
