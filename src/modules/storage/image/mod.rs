@@ -5,7 +5,7 @@ use log::{debug, info};
 use reqwest::Url;
 use uuid::Uuid;
 
-use osutils::{container, resize2fs, tune2fs};
+use osutils::{container, e2fsck, resize2fs, tune2fs};
 use trident_api::{
     config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
@@ -228,6 +228,12 @@ fn update_image(
             || mount_point.filesystem == "ext2")
             && !mount_point.options.contains(&"ro".into())
         {
+            // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
+            info!("Checking filesystem on block device '{}'", &image.target_id);
+            e2fsck::run(&block_device.path).context(format!(
+                "Failed to check filesystem on block device '{}'",
+                &image.target_id
+            ))?;
             info!("Resizing filesystem on block device '{}'", &image.target_id);
             resize_ext_fs(&block_device.path).context(format!(
                 "Failed to resize filesystem on block device '{}'",
