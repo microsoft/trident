@@ -112,7 +112,7 @@ The following dependencies are optional:
 - `netplan`: support for networking configuration. This supports `os.network`
   and `managementOs.network` sections of Host Configuration.
 - `mdadm`: support for RAID configuration. This supports `storage.raid` section.
-- `cryptsetup`, `tpm2-tools`: support for encrypted volumes. This supports `storage.encrypted`
+- `cryptsetup`, `tpm2-tools`: support for encrypted volumes. This supports `storage.encryption`
   section.
 - `veritysetup`: support for dm-verity. This supports `storage.verity` section.
 

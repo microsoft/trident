@@ -13,6 +13,21 @@ Requires:       e2fsprogs
 Requires:       util-linux
 Requires:       dosfstools
 Requires:       efibootmgr
+Requires:       lsof
+Requires:       systemd >= 254
+
+# Optional dependencies for various optional features
+
+# For network configuration (os.network, managementOs.network)
+Suggests:       netplan        
+# For RAID support (storage.raid)
+Suggests:       mdadm          
+# For encryption support (storage.encryption)
+Suggests:       tpm2-tools     
+Suggests:       cryptsetup
+# For integrity support (storage.verity)     
+Suggests:       veritysetup    
+
 
 %description
 Agent for bare metal platform
