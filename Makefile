@@ -11,6 +11,15 @@ check:
 	cargo clippy --locked --workspace --tests --all-features -- -D warnings 2>&1
 	cargo fmt -- --check
 
+.PHONY: build
+build:
+	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
+	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
+	@OPENSSL_STATIC=1 OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
+	    OPENSSL_INCLUDE_DIR=/usr/include/openssl \
+	    TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+	    cargo build --release
+
 .PHONY: format
 format:
 	cargo fmt
@@ -52,19 +61,19 @@ artifacts/osmodifier:
 	chmod +x artifacts/osmodifier
 
 # RPM target
-bin/trident.tar.gz: artifacts/osmodifier
-	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
-	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
-	docker build --progress plain -t trident/trident-build:latest \
+target/release/trident: build
+bin/trident.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifier target/release/trident
+	@docker build --quiet -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)"\
 		--build-arg RPM_REL="dev.$(GIT_COMMIT)"\
 		.
-	mkdir -p bin/
-	id=$$(docker create trident/trident-build:latest) && \
-	docker cp $$id:/work/trident.tar.gz bin/ && \
-	docker rm -v $$id && \
-	tar xf bin/trident.tar.gz -C bin/
+	@mkdir -p bin/
+	@id=$$(docker create trident/trident-build:latest) && \
+	    docker cp -q $$id:/work/trident.tar.gz bin/ && \
+	    docker rm -v $$id
+	@rm -rf bin/RPMS/x86_64
+	@tar xf bin/trident.tar.gz -C bin/
 
 SYSTEMD_RPM_TAR_URL ?= https://hermesimages.blob.core.windows.net/hermes-test/systemd-254-3.tar.gz
 
@@ -74,7 +83,7 @@ artifacts/systemd/systemd-254-3.cm2.x86_64.rpm:
 	rm -f ./artifacts/systemd/*.src.rpm ./artifacts/systemd/systemd-debuginfo*.rpm ./artifacts/systemd/systemd-devel-*.rpm
 
 .PHONY: docker-build
-docker-build: bin/trident.tar.gz artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+docker-build: Dockerfile.runtime bin/trident.tar.gz artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
 .PHONY: clean
@@ -221,7 +230,7 @@ bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum
 
 .PHONY: run-netlaunch
 run-netlaunch: input/netlaunch.yaml input/trident.yaml bin/netlaunch bin/trident-mos.iso
-	bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t input/trident.yaml -l -r remote-addr
+	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t input/trident.yaml -l -r remote-addr
 
 .PHONY: download-runtime-partition-images
 download-runtime-partition-images:

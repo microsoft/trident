@@ -5,11 +5,11 @@ RUN \
     netplan mdadm tpm2-tools veritysetup cryptsetup && \
     tdnf clean all
 
+COPY artifacts/systemd /systemd
+COPY bin/RPMS/x86_64 /trident
+
 RUN \
-    --mount=type=bind,source=./,target=/trident \
-    tdnf install -y \
-    /trident/artifacts/systemd/*.rpm \
-    /trident/bin/RPMS/x86_64/trident-0*.rpm && \
+    tdnf install -y /systemd/*.rpm /trident/trident-0*.rpm && \
     tdnf clean all
 
 ENV DOCKER_ENVIRONMENT=true
