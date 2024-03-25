@@ -36,7 +36,7 @@ stages:
           ${{ if eq(parameters.publishType, 'ci') }}:
             value: "-ci"
           ${{ if eq(parameters.publishType, 'pre') }}:
-            value: "-preview"
+            value: "-prerelease"
 
         steps:
           - script: echo $(Build.BuildNumber)
