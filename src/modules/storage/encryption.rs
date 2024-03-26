@@ -111,6 +111,14 @@ pub fn provision(
             .run_and_check()
             .context("Encryption requires access to a TPM 2.0 device but one is not accessible")?;
 
+        // Clear the TPM 2.0 device to ensure that it is in a known state.
+        // By clearing the lockout value, this prevents the TPM 2.0 device
+        // from being placed into DA lockout mode due to repeated
+        // successive provisioning attempts.
+        Command::new("tpm2_clear")
+            .run_and_check()
+            .context("Failed to clear TPM 2.0 device")?;
+
         for ev in encryption.volumes.iter() {
             let (target_path, target_content_status, target_size_in_bytes, target_partition_type) =
                 if let Some(partition) = host_status
