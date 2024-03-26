@@ -43,36 +43,13 @@ type NetLaunchConfig struct {
 	}
 }
 
-type Message struct {
-	State   string
-	Message string
-}
-
-type LogEntry struct {
-	Level   LogLevel `json:"level"`
-	Message string   `json:"message"`
-	Target  string   `json:"target"`
-	Module  string   `json:"module"`
-	File    string   `json:"file"`
-	Line    int      `json:"line"`
-}
-
-type LogLevel string
-
-const (
-	LogLevelError LogLevel = "error"
-	LogLevelWarn  LogLevel = "warn"
-	LogLevelInfo  LogLevel = "info"
-	LogLevelDebug LogLevel = "debug"
-	LogLevelTrace LogLevel = "trace"
-)
-
 var netlaunchConfigFile string
 var tridentConfigFile string
 var iso string
 var logstream bool
 var listen_port int16
 var remoteAddressFile string
+var serveFolder string
 
 func patchFile(iso []byte, filename string, contents []byte) error {
 	// Search for magic string
@@ -104,8 +81,11 @@ func patchFile(iso []byte, filename string, contents []byte) error {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "netlaunch",
-	Short: "Launch a network boot",
+	Use: "netlaunch",
+	Short: "Launch a BMC boot\n\n" +
+		"When a trident configuration is passed, the ISO will be patched with the trident configuration.\n" +
+		"Netlaunch supports replacing the string `NETLAUNCH_HOST_ADDRESS` in the trident configuration with the address of the netlaunch server.\n" +
+		"E.g. `NETLAUNCH_HOST_ADDRESS/url/path` will be replaced with `http://<IP>:<port>/url/path`.",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(iso) == 0 {
 			log.Fatal("ISO file not specified")
@@ -153,8 +133,11 @@ var rootCmd = &cobra.Command{
 				log.WithError(err).Fatalf("failed to read trident config")
 			}
 
+			// Replace NETLAUNCH_HOST_ADDRESS with the address of the netlaunch server
+			tridentConfigContentsStr := strings.ReplaceAll(string(tridentConfigContents), "NETLAUNCH_HOST_ADDRESS", "http://"+listen.Addr().String())
+
 			trident := make(map[string]interface{})
-			err = yaml.UnmarshalStrict(tridentConfigContents, &trident)
+			err = yaml.UnmarshalStrict([]byte(tridentConfigContentsStr), &trident)
 			if err != nil {
 				log.WithError(err).Fatalf("failed to unmarshal trident config")
 			}
@@ -196,6 +179,10 @@ var rootCmd = &cobra.Command{
 
 			// Set up listening for logstream
 			phonehome.SetupLogstream()
+		}
+
+		if len(serveFolder) != 0 {
+			http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(serveFolder))))
 		}
 
 		// Start the HTTP server
@@ -251,6 +238,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&logstream, "logstream", "l", false, "Enable log streaming. (Requires --trident || --port)")
 	rootCmd.PersistentFlags().Int16VarP(&listen_port, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
 	rootCmd.PersistentFlags().StringVarP(&remoteAddressFile, "remoteaddress", "r", "", "File for writing remote address of the Trident instance.")
+	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing.")
 	rootCmd.MarkFlagRequired("iso-template")
 	log.SetLevel(log.DebugLevel)

@@ -235,7 +235,7 @@ bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum
 
 .PHONY: run-netlaunch
 run-netlaunch: input/netlaunch.yaml input/trident.yaml bin/netlaunch bin/trident-mos.iso
-	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t input/trident.yaml -l -r remote-addr
+	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t input/trident.yaml -l -r remote-addr -s artifacts/test-image
 
 .PHONY: download-runtime-partition-images
 download-runtime-partition-images:
@@ -356,27 +356,27 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.vhdx: artifacts/imagecustomizer artifacts/baremetal.vhdx trident-mos/baseimg.yaml artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+bin/trident-mos.vhdx: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/baseimg.yaml artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
 	mkdir -p bin/
 	BUILD_DIR=`mktemp -d`
 	sudo ./artifacts/imagecustomizer \
 	    --log-level=debug \
 	    --rpm-source ./artifacts/systemd \
 	    --build-dir $BUILD_DIR \
-	    --image-file artifacts/baremetal.vhdx \
-	    --output-image-file bin/trident-mos.vhdx \
+	    --image-file $< \
+	    --output-image-file $@ \
 	    --config-file trident-mos/baseimg.yaml \
 	    --output-image-format vhdx
 	sudo rm -r artifacts/systemd/repodata
 
-bin/trident-mos.iso: artifacts/imagecustomizer bin/trident-mos.vhdx trident-mos/iso.yaml trident-mos/post-install.sh bin/trident-rpms.tar.gz
-	BUILD_DIR=`mktemp -d`
+bin/trident-mos.iso: bin/trident-mos.vhdx artifacts/imagecustomizer trident-mos/iso.yaml trident-mos/post-install.sh bin/trident-rpms.tar.gz
+	BUILD_DIR=`mktemp -d` && \
 	sudo ./artifacts/imagecustomizer \
 	    --log-level=debug \
 	    --rpm-source ./bin/RPMS/x86_64/ \
-	    --build-dir $BUILD_DIR \
-	    --image-file bin/trident-mos.vhdx \
-	    --output-image-file bin/trident-mos.iso \
+	    --build-dir $$BUILD_DIR \
+	    --image-file $< \
+	    --output-image-file $@ \
 	    --config-file trident-mos/iso.yaml \
 	    --output-image-format iso
 	sudo rm -r bin/RPMS/x86_64/repodata
