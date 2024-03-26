@@ -279,21 +279,19 @@ fn generate_boot_filepaths(
     // the EFI executables, i.e., /EFI/BOOT/grub.cfg. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6452.
     let boot_grub2_grub_path = Path::new(temp_mount_dir).join(GRUB2_CONFIG_RELATIVE_PATH);
-    if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
-        debug!(
-            "Using {GRUB2_CONFIG_FILENAME} from {}",
-            efi_boot_grub_path.display()
-        );
-        paths.push(efi_boot_grub_path);
+
+    let selected_grub_config_path = if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
+        efi_boot_grub_path
     } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
-        debug!(
-            "Using {GRUB2_CONFIG_FILENAME} from {}",
-            boot_grub2_grub_path.display()
-        );
-        paths.push(boot_grub2_grub_path);
+        boot_grub2_grub_path
     } else {
         bail!("Failed to find {GRUB2_CONFIG_FILENAME}");
-    }
+    };
+    debug!(
+        "Using GRUB configuration file '{GRUB2_CONFIG_FILENAME}' from '{}'",
+        selected_grub_config_path.display()
+    );
+    paths.push(selected_grub_config_path);
 
     // Check if grubx64-noprefix.efi exists; otherwise, use grubx64.efi. With the package update
     // to use grub2-efi-binary-noprefix RPM, the EFI executable is installed as
@@ -305,18 +303,19 @@ fn generate_boot_filepaths(
         .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
         .join(format!("grub{}.efi", efi_filename_ending));
 
-    if grub_efi_noprefix_path.exists() && grub_efi_noprefix_path.is_file() {
-        debug!(
-            "Using grub EFI executable from {}",
-            grub_efi_noprefix_path.display()
-        );
-        paths.push(grub_efi_noprefix_path);
-    } else if grub_efi_path.exists() && grub_efi_path.is_file() {
-        debug!("Using grub EFI executable from {}", grub_efi_path.display());
-        paths.push(grub_efi_path);
-    } else {
-        bail!("Failed to find grub EFI executable");
-    }
+    let selected_grub_binary_path =
+        if grub_efi_noprefix_path.exists() && grub_efi_noprefix_path.is_file() {
+            grub_efi_noprefix_path
+        } else if grub_efi_path.exists() && grub_efi_path.is_file() {
+            grub_efi_path
+        } else {
+            bail!("Failed to find GRUB EFI executable");
+        };
+    debug!(
+        "Using GRUB EFI executable from '{}'",
+        selected_grub_binary_path.display()
+    );
+    paths.push(selected_grub_binary_path);
 
     // Construct file names of EFI executables
     let boot_efi_path = Path::new(temp_mount_dir)
@@ -324,11 +323,14 @@ fn generate_boot_filepaths(
         .join(format!("boot{}.efi", efi_filename_ending));
     if !boot_efi_path.exists() {
         bail!(
-            "Failed to find boot EFI executable at path {}",
+            "Failed to find shim EFI executable at path {}",
             boot_efi_path.display()
         );
     }
-    debug!("Using boot EFI executable from {}", boot_efi_path.display());
+    debug!(
+        "Using shim EFI executable from '{}'",
+        boot_efi_path.display()
+    );
     paths.push(boot_efi_path);
 
     Ok(paths)
