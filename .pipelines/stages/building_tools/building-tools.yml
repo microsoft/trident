@@ -1,39 +1,54 @@
 parameters:
-- name: argusRepo
-  type: string
-  default: argus-toolkit
+  - name: argusRepo
+    type: string
+    default: argus-toolkit
 
-- name: isogenArtifactSource
-  type: string
-  default: current # If specific, job won't run and instead the artifact will be downloaded in other stage.
+  - name: buildNetlaunch
+    type: boolean
+    default: true
+
+  - name: buildIsogen
+    type: boolean
+    default: true
 
 stages:
-- stage: BuildingTools
-  displayName: Building Tools
+  - stage: BuildingTools
+    displayName: Building Tools
 
-  jobs:
-  - job: BuildIsogen
-    displayName: Build Isogen
-    condition: eq('${{ parameters.isogenArtifactSource }}', 'current')
-    timeoutInMinutes: 60
-    pool:
-      type: linux
-      name: CAPKV_Pool
-      hostArchitecture: amd64
+    jobs:
+      - job: BuildGoTools
+        displayName: Build Go Tools
+        timeoutInMinutes: 60
+        pool:
+          type: linux
+          name: CAPKV_Pool
+          hostArchitecture: amd64
 
-    variables:
-      argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+        variables:
+          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
 
-      ob_outputDirectory: $(argusToolkitSourceDirectory)/build
-      ob_artifactBaseName: isogen
+          ob_outputDirectory: $(Build.SourcesDirectory)/go-tools
+          ob_artifactBaseName: go-tools
 
-    steps:
-    - checkout: ${{ parameters.argusRepo }}
+        steps:
+          - ${{ if eq(parameters.buildNetlaunch, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/netlaunch
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/netlaunch $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building netlaunch"
 
-    - template: ../common_tasks/install-clamav.yml
-       
-    - bash: |
-        set -eux
-        make build/isogen
-      workingDirectory: $(argusToolkitSourceDirectory)
-      displayName: "Building Isogen tool"
+          - ${{ if eq(parameters.buildIsogen, true) }}:
+              - checkout: ${{ parameters.argusRepo }}
+
+              - template: ../common_tasks/install-clamav.yml
+
+              - bash: |
+                  set -eux
+                  make build/isogen
+                  mkdir -p $(ob_outputDirectory)
+                  mv build/isogen $(ob_outputDirectory)
+                workingDirectory: $(argusToolkitSourceDirectory)
+                displayName: "Building Isogen tool"

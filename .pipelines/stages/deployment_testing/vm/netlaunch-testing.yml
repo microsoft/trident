@@ -91,7 +91,7 @@ stages:
         set -eux
 
         echo "Netlaunch output:" >> ./deployment.log
-        $(argusToolkitSourceDirectory)/build/netlaunch \
+        ./bin/netlaunch \
             --iso $(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso \
             --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
             --trident $(tridentConfigPath)/trident-config.yaml \
@@ -99,7 +99,7 @@ stages:
         2>&1 | tee -a ./deployment.log
         $(tridentSourceDirectory)/e2e_tests/helpers/check_netlaunch.py ./deployment.log || [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]
       timeoutInMinutes: 7
-      workingDirectory: $(argusToolkitSourceDirectory)
+      workingDirectory: $(tridentSourceDirectory)
       displayName: "Run netlaunch for testing"
 
     - bash: |

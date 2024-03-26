@@ -61,14 +61,6 @@ parameters:
     type: string
     default: current # set to 'specific' to download from provOSPipelineID
 
-  - name: isogenPipelineID
-    type: string
-    default: ""
-
-  - name: downloadBuildTypeIsogen
-    type: string
-    default: current # set to 'specific' to download from isogenPipelineID
-
   - name: installerISOPipelineID
     type: string
     default: ""
@@ -133,9 +125,6 @@ stages:
       outputArtifactName: trident-verity-testimage
 
   - template: stages/building_tools/building-tools.yml
-    parameters:
-      argusRepo: ${{ parameters.argusRepo }}
-      isogenArtifactSource: ${{ parameters.downloadBuildTypeIsogen }}
 
   - template: stages/installer_iso/installer-iso.yml
     parameters:
@@ -145,8 +134,6 @@ stages:
       runtimeImagePipeline: ${{ parameters.runtimeImagePipelineID }}
       downloadBuildTypeProvOS: ${{ parameters.downloadBuildTypeProvOS }}
       provOSPipeline: ${{ parameters.provOSPipelineID }}
-      downloadBuildTypeIsogen: ${{ parameters.downloadBuildTypeIsogen }}
-      isogenPipeline: ${{ parameters.isogenPipelineID }}
 
   - template: stages/deployment_testing/vm/netlaunch-testing.yml
     parameters:

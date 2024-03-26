@@ -23,24 +23,6 @@ def create_vm(create_params):
     argus_runcmd([ARGUS_REPO_DIR_PATH / "virt-deploy", "run"])
 
 
-def deploy_os(host_config_path: Path, remote_addr_path: Path, installer_iso_path: Path):
-    """Deploys the OS to the VM using netlaunch."""
-    argus_runcmd(
-        [
-            ARGUS_REPO_DIR_PATH / "build" / "netlaunch",
-            "-i",
-            installer_iso_path,
-            "-c",
-            "vm-netlaunch.yaml",
-            "-t",
-            host_config_path,
-            "-l",
-            "-r",
-            remote_addr_path,
-        ]
-    )
-
-
 def disable_phonehome(ssh_node: SshNode):
     """Disables phonehome in the VM to allow faster rerunning of Trident."""
     ssh_node.execute("sudo sed -i 's/phonehome: .*//' /etc/trident/config.yaml")
@@ -83,7 +65,21 @@ def deploy_vm(
 
     host_config_path = prepare_hostconfig(test_dir_path, ssh_pub_key)
 
-    deploy_os(host_config_path, remote_addr_path, installer_iso_path)
+    subprocess.run(
+        [
+            TRIDENT_REPO_DIR_PATH / "bin" / "netlaunch",
+            "-i",
+            installer_iso_path,
+            "-c",
+            ARGUS_REPO_DIR_PATH / "vm-netlaunch.yaml",
+            "-t",
+            host_config_path,
+            "-l",
+            "-r",
+            remote_addr_path,
+        ],
+        check=True,
+    )
 
     # Temporary solution to initialize the known_hosts file until we can inject
     # a predictable key.

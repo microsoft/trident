@@ -1,25 +1,38 @@
 parameters:
-- name: downloadBuildType
-  type: string
-  default: current
+  - name: downloadBuildType
+    type: string
+    default: current
 
-- name: installerISOPipeline
-  type: string
-  default: ''
+  - name: installerISOPipeline
+    type: string
+    default: ""
 
 steps:
   - template: ../../common_tasks/install-clamav.yml
-  
+
   - task: DownloadPipelineArtifact@2
     inputs:
       buildType: ${{ parameters.downloadBuildType}}
       project: ECF
       definition: ${{ parameters.installerISOPipeline }}
-      buildVersionToDownload: 'latestFromBranch'
-      artifactName: 'installer-iso'
-      patterns: '*/installer.iso'
-      branchName: 'refs/heads/main'
-      targetPath: '$(System.ArtifactsDirectory)/installer-iso'
+      buildVersionToDownload: "latestFromBranch"
+      artifactName: "installer-iso"
+      patterns: "*/installer.iso"
+      branchName: "refs/heads/main"
+      targetPath: "$(System.ArtifactsDirectory)/installer-iso"
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: "go-tools"
+      patterns: "netlaunch"
+      targetPath: "$(Build.SourcesDirectory)/trident/bin/"
+
+  - bash: |
+      set -eux
+
+      chmod +x "$(Build.SourcesDirectory)/trident/bin/netlaunch"
+    displayName: "Make netlaunch executable"
 
   - bash: |
       set -eux
@@ -45,11 +58,4 @@ steps:
       cat << EOF > ~/.config/libvirt/libvirt.conf
       uri_default = "qemu:///system"
       EOF
-    workingDirectory: $(argusToolkitSourceDirectory)
     displayName: "Configure virt-deploy"
-
-  - bash: |
-      set -eux
-      make build/netlaunch
-    displayName: "Build netlaunch"
-    workingDirectory: $(argusToolkitSourceDirectory)

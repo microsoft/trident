@@ -23,10 +23,6 @@ parameters:
     type: string
     default: ""
 
-  - name: downloadBuildTypeIsogen
-    type: string
-    default: current
-
   - name: installerISOArtifactSource
     type: string
     default: current # If specific, job won't run and instead the artifact will be downloaded in other stage.
@@ -90,13 +86,9 @@ stages:
 
           - task: DownloadPipelineArtifact@2
             inputs:
-              buildType: ${{ parameters.downloadBuildTypeIsogen }}
-              project: ECF
-              definition: ${{ parameters.isogenPipeline }}
-              buildVersionToDownload: "latestFromBranch"
-              artifactName: "isogen"
+              buildType: current
+              artifactName: "go-tools"
               patterns: "isogen"
-              branchName: "refs/heads/main"
               targetPath: "$(System.ArtifactsDirectory)/isogen"
 
           - bash: |
@@ -120,7 +112,9 @@ stages:
               mv $(System.ArtifactsDirectory)/runtime-verity-image/root-hash.raw.zst \
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_roothash.rawzst
 
-              cp  $(System.ArtifactsDirectory)/{provision-template,isogen}/* \
+              cp  $(System.ArtifactsDirectory)/provision-template/* \
+                  $(argusToolkitSourceDirectory)/build/installer-iso-components/
+              cp  $(System.ArtifactsDirectory)/isogen/isogen \
                   $(argusToolkitSourceDirectory)/build/installer-iso-components/
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Setting build materials"
