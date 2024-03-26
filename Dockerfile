@@ -6,7 +6,7 @@ WORKDIR /work
 
 COPY trident.spec .
 COPY systemd ./systemd
-COPY target/release/trident ./target/release/trident
+COPY bin/trident ./target/release/trident
 COPY artifacts/osmodifier /usr/src/mariner/SOURCES/osmodifier
 
 ARG TRIDENT_VERSION=dev-build
@@ -19,4 +19,4 @@ RUN \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \
     --define="rpm_rel $RPM_REL" && \
-    tar -czvf trident.tar.gz -C /usr/src/mariner ./RPMS
+    tar -czvf trident-rpms.tar.gz -C /usr/src/mariner ./RPMS

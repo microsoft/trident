@@ -23,7 +23,8 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/trident/out"
 
         steps:
           - checkout: ${{ parameters.tridentRepo }}
@@ -56,10 +57,17 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
-          tridentSourceDirectory: $(Build.SourcesDirectory)/trident
-          emu_package_name: ""
-          emu_package_version: ""
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/trident/out"
+          - name: tridentSourceDirectory
+            value: $(Build.SourcesDirectory)/trident
+          - name: emu_package_name
+            value: ""
+          - name: emu_package_version
+            value: ""
+          - template: common/setup-registries-vars-template.yaml@platform-pipelines
+            parameters:
+              buildType: auto
 
         steps:
           - checkout: ${{ parameters.tridentRepo }}

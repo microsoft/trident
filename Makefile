@@ -1,5 +1,5 @@
 .PHONY: all
-all: format check test build-api-docs bin/trident.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
+all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
 .PHONY: check
 check:
@@ -19,6 +19,8 @@ build:
 	    OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 	    TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 	    cargo build --release
+	mkdir -p bin
+	cp -u target/release/trident bin/
 
 .PHONY: format
 format:
@@ -61,8 +63,8 @@ artifacts/osmodifier:
 	chmod +x artifacts/osmodifier
 
 # RPM target
-target/release/trident: build
-bin/trident.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifier target/release/trident
+bin/trident: build
+bin/trident-rpms.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifier bin/trident
 	@docker build --quiet -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)"\
@@ -70,10 +72,10 @@ bin/trident.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifi
 		.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
-	    docker cp -q $$id:/work/trident.tar.gz bin/ && \
+	    docker cp -q $$id:/work/trident-rpms.tar.gz bin/ && \
 	    docker rm -v $$id
 	@rm -rf bin/RPMS/x86_64
-	@tar xf bin/trident.tar.gz -C bin/
+	@tar xf bin/trident-rpms.tar.gz -C bin/
 
 SYSTEMD_RPM_TAR_URL ?= https://hermesimages.blob.core.windows.net/hermes-test/systemd-254-3.tar.gz
 
@@ -83,7 +85,10 @@ artifacts/systemd/systemd-254-3.cm2.x86_64.rpm:
 	rm -f ./artifacts/systemd/*.src.rpm ./artifacts/systemd/systemd-debuginfo*.rpm ./artifacts/systemd/systemd-devel-*.rpm
 
 .PHONY: docker-build
-docker-build: Dockerfile.runtime bin/trident.tar.gz artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz docker-runtime-build
+
+.PHONY: docker-runtime-build
+docker-runtime-build: artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
 .PHONY: clean
@@ -364,7 +369,7 @@ bin/trident-mos.vhdx: artifacts/imagecustomizer artifacts/baremetal.vhdx trident
 	    --output-image-format vhdx
 	sudo rm -r artifacts/systemd/repodata
 
-bin/trident-mos.iso: artifacts/imagecustomizer bin/trident-mos.vhdx trident-mos/iso.yaml trident-mos/post-install.sh bin/trident.tar.gz
+bin/trident-mos.iso: artifacts/imagecustomizer bin/trident-mos.vhdx trident-mos/iso.yaml trident-mos/post-install.sh bin/trident-rpms.tar.gz
 	BUILD_DIR=`mktemp -d`
 	sudo ./artifacts/imagecustomizer \
 	    --log-level=debug \

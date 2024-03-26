@@ -67,3 +67,26 @@ steps:
       sourceFolder: "/usr/src/mariner/RPMS/x86_64"
       targetFolder: "$(ob_outputDirectory)"
     displayName: Copy RPM file to output
+
+  - template: common/setup-registries-template.yaml@platform-pipelines
+
+  - script: |
+      set -eu
+      
+      mkdir -p bin
+      cp -r /usr/src/mariner/RPMS bin/
+      DOCKER_BUILDKIT=1 make docker-runtime-build
+
+      # ado redacts random strings (like `ecfafoncpriv`). To still be able
+      # to show some useful logs, we replace some parts so that ado does not
+      # exclude them.
+      #
+      echo "container_registry_rw_user    :" $(container_registry_rw_user)
+      echo "container_registry_pub        :" $(echo $(container_registry_pub) | sed 's/afo/___/g')
+      
+      docker login "$(container_registry_pub)" -u "$(container_registry_rw_user)" -p "$(container_registry_rw_pswd)"
+      TAG="$(container_registry_pub)"/trident:$(Build.BuildNumber)
+      docker tag trident/trident:latest $TAG
+      docker push $TAG
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    displayName: Build and publish Docker image
