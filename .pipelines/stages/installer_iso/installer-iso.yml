@@ -35,6 +35,7 @@ stages:
       - ProvisioningOSTemplate
       - TridentTestImg_trident_testimage
       - TridentTestImg_trident_verity_testimage
+      - TridentTestImg_containerhost_testimage
 
     jobs:
       - job: BuildInstallerISO
@@ -75,6 +76,16 @@ stages:
 
           - task: DownloadPipelineArtifact@2
             inputs:
+              buildType: ${{ parameters.downloadBuildTypeRuntimeOS}}
+              project: ECF
+              definition: ${{ parameters.runtimeImagePipeline }}
+              buildVersionToDownload: "latestFromBranch"
+              artifactName: "containerhost-testimage"
+              branchName: "refs/heads/main"
+              targetPath: "$(System.ArtifactsDirectory)/runtime-containerhost-image"
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
               buildType: ${{ parameters.downloadBuildTypeProvOS }}
               project: ECF
               definition: ${{ parameters.provOSPipeline }}
@@ -102,7 +113,7 @@ stages:
               mv $(System.ArtifactsDirectory)/runtime-image/root.raw.zst \
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/root.rawzst
 
-              # Verity image for functional testing
+              # Verity image for functional testing and e2e testing
               mv $(System.ArtifactsDirectory)/runtime-verity-image/esp.raw.zst \
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_esp.rawzst
               mv $(System.ArtifactsDirectory)/runtime-verity-image/boot.raw.zst \
@@ -111,6 +122,12 @@ stages:
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_root.rawzst
               mv $(System.ArtifactsDirectory)/runtime-verity-image/root-hash.raw.zst \
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_roothash.rawzst
+
+              # Containerhost image for e2e testing
+              mv $(System.ArtifactsDirectory)/runtime-containerhost-image/esp.raw.zst \
+                $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/containerhost_esp.rawzst
+              mv $(System.ArtifactsDirectory)/runtime-containerhost-image/root.raw.zst \
+                $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/containerhost_root.rawzst
 
               cp  $(System.ArtifactsDirectory)/provision-template/* \
                   $(argusToolkitSourceDirectory)/build/installer-iso-components/

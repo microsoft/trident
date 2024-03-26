@@ -1,0 +1,18 @@
+SystemConfig:
+  Hostname: trident-containerhost-mos-testimage
+
+  PackagesInstall:
+    - curl
+    - dnf
+    - moby-engine
+    - moby-cli
+    - openssh-server
+    - vim
+
+  AdditionalFiles:
+    files/getty@.service:
+    - Path: /usr/lib/systemd/system/getty@.service
+    files/serial-getty@.service:
+    - Path: /usr/lib/systemd/system/serial-getty@.service
+    files/root.profile:
+    - Path: /root/.profile

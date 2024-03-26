@@ -124,6 +124,17 @@ stages:
       imageName: trident-verity-testimage
       outputArtifactName: trident-verity-testimage
 
+  - template: stages/runtime_os/trident-testimg.yml
+    parameters:
+      runtimeOSArtifactSource: ${{ parameters.downloadBuildTypeRuntimeOS }}
+      testImagesRepo: ${{ parameters.testImagesRepo }}
+      tridentStage: ${{ parameters.tridentStage }}
+      downloadBuildType: ${{ parameters.downloadBuildTypeTrident }}
+      tridentPipeline: ${{ parameters.tridentPipelineID }}
+      artifactName: ${{ parameters.tridentArtifact }}
+      imageName: containerhost-testimage
+      outputArtifactName: containerhost-testimage
+
   - template: stages/building_tools/building-tools.yml
 
   - template: stages/installer_iso/installer-iso.yml

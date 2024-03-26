@@ -380,3 +380,26 @@ bin/trident-mos.iso: bin/trident-mos.vhdx artifacts/imagecustomizer trident-mos/
 	    --config-file trident-mos/iso.yaml \
 	    --output-image-format iso
 	sudo rm -r bin/RPMS/x86_64/repodata
+
+bin/trident-containerhost-mos.vhdx: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/trident-containerhost-baseimg.yaml
+	mkdir -p bin/
+	BUILD_DIR=`mktemp -d`
+	sudo ./artifacts/imagecustomizer \
+	    --log-level=debug \
+	    --build-dir $BUILD_DIR \
+	    --image-file $< \
+	    --output-image-file $@ \
+	    --config-file trident-mos/trident-containerhost-baseimg.yaml \
+	    --output-image-format vhdx
+
+bin/trident-container-mos.iso: bin/trident-containerhost-mos.vhdx artifacts/imagecustomizer trident-mos/trident-containerhost-iso.yaml trident-mos/post-install.sh
+	BUILD_DIR=`mktemp -d`
+	# TODO from pipeline: 
+	# sed 's/CONTAINER_TAG/$(Build.BuildNumber)/' trident-mos/files/trident-container.service.template > trident-mos/files/trident-container.service
+	sudo ./artifacts/imagecustomizer \
+	    --log-level=debug \
+	    --build-dir $BUILD_DIR \
+	    --image-file $< \
+	    --output-image-file $@ \
+	    --config-file trident-mos/trident-containerhost-iso.yaml \
+	    --output-image-format iso
