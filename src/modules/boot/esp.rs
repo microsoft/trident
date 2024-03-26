@@ -1007,8 +1007,7 @@ mod functional_test {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "Failed to find grub EFI executable",
-            "generate_boot_filepaths() should fail if grub EFI executable does not exist"
+            "Failed to find GRUB EFI executable"
         );
 
         // Test case 5: Run generate_boot_filepaths() with a grub EFI executable with noprefix name
@@ -1040,10 +1039,9 @@ mod functional_test {
                 .root_cause()
                 .to_string(),
             format!(
-                "Failed to find boot EFI executable at path {}",
+                "Failed to find shim EFI executable at path {}",
                 boot_efi_path.display()
-            ),
-            "generate_boot_filepaths() should fail if boot EFI executable does not exist"
+            )
         );
     }
 }
