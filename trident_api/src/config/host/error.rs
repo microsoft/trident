@@ -48,4 +48,25 @@ pub enum InvalidHostConfigurationError {
 
     #[error("Unsupported Netplan renderer: '{0}'")]
     UnsupportedNetplanRenderer(String),
+
+    #[error("Only root verity device is supported, but additional verity devices were requested")]
+    UnsupportedVerityDevices,
+
+    #[error("Mount point '{mount_point_path}' not backed by A/B update volume pair")]
+    MountPointNotBackedByAbUpdateVolumePair { mount_point_path: String },
+
+    #[error("Root verity device name is invalid: '{device_name}', expected 'root'")]
+    RootVerityDeviceNameInvalid { device_name: String },
+
+    #[error("Overlay '{overlay_path}' is on a read-only volume '{mount_point_path}'")]
+    OverlayOnReadOnlyVolume {
+        mount_point_path: String,
+        overlay_path: String,
+    },
+
+    #[error("Verity device '{device_name}' not mounted read-only at '{mount_point_path}'")]
+    VerityDeviceReadWrite {
+        device_name: String,
+        mount_point_path: String,
+    },
 }

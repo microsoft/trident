@@ -187,7 +187,6 @@
       "properties": {
         "adoptedPartitions": {
           "description": "A list of pre-existing partitions that will be adopted from the disk.\n\nSeveral options are available to match a partition to adopt. If more than one option is specified, ALL the provided criteria will be used to match the partition.",
-          "default": [],
           "type": "array",
           "items": {
             "$ref": "#/definitions/AdoptedPartition"
@@ -828,6 +827,13 @@
               "$ref": "#/definitions/Raid"
             }
           ]
+        },
+        "verity": {
+          "description": "Verity configuration.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/VerityDevice"
+          }
         }
       },
       "additionalProperties": false
@@ -919,6 +925,35 @@
           "type": "integer",
           "format": "int32",
           "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "VerityDevice": {
+      "description": "Verity configuration for a volume.",
+      "type": "object",
+      "required": [
+        "dataTargetId",
+        "deviceName",
+        "hashTargetId",
+        "id"
+      ],
+      "properties": {
+        "dataTargetId": {
+          "description": "Block device id of the data block device",
+          "type": "string"
+        },
+        "deviceName": {
+          "description": "Name of the verity device, used for the device mapper name",
+          "type": "string"
+        },
+        "hashTargetId": {
+          "description": "Block device id of the hash block device",
+          "type": "string"
+        },
+        "id": {
+          "description": "Block device id of the verity device",
+          "type": "string"
         }
       },
       "additionalProperties": false

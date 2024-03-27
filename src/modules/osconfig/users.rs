@@ -5,16 +5,15 @@ use std::{
 };
 
 use crate::OS_MODIFIER_BINARY_PATH;
-use anyhow::{bail, Context, Error, Ok};
-use log::{debug, trace, warn};
-use osutils::files;
+use anyhow::{bail, Context, Error};
+use log::{debug, warn};
+use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use trident_api::config::{Password, SshMode, User};
 
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";
 const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
-const EMU_LOG_PATH: &str = "/var/log/emu.log";
 
 /// A helper struct to convert user into MIC's user format
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -167,25 +166,13 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
         .context("Failed to write MIC users YAML to temporary file")?;
     tmpfile.flush().context("Failed to flush temporary file")?;
 
-    let emu_log_path = PathBuf::from(EMU_LOG_PATH);
-    let emu_log_file =
-        files::create_file(&emu_log_path).context("Failed to create and open EMU log file")?;
-
     // Invoke os modifier with the user config file
     Command::new(OS_MODIFIER_BINARY_PATH)
         .arg("--config-file")
         .arg(tmpfile.path())
         .arg("--log-level=debug")
-        .stdout(emu_log_file.try_clone()?)
-        .stderr(emu_log_file)
-        .status()
+        .run_and_check()
         .context("Failed to run OS modifier")?;
-
-    if emu_log_path.exists() {
-        let emu_log =
-            std::fs::read_to_string(emu_log_path).context("Failed to read EMU log file")?;
-        trace!("EMU log: '{}'", emu_log);
-    }
 
     Ok(())
 }

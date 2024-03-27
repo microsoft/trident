@@ -62,7 +62,6 @@ Several options are available to match a partition to adopt. If more than one op
 | Characteristic | Value   |
 | -------------- | ------- |
 | Type           | `array` |
-| Default        | `[]`    |
 
 - Items of the array must have the type:
 

@@ -3,6 +3,7 @@ import json
 import os
 import pytest
 import yaml
+import time
 
 
 # A key in the following path and the user name in the hostConfiguration are expected
@@ -46,6 +47,11 @@ def connection(request):
     config = Config(overrides={"connect_kwargs": {"key_filename": RSA_KEY}})
 
     ssh_connection = Connection(host=HOST, user=USERNAME, config=config)
+
+    # Ensure that we can connect
+    ssh_connection.open()
+    ssh_connection.run("hostname")
+
     yield ssh_connection
     ssh_connection.close()
 

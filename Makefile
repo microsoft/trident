@@ -137,10 +137,15 @@ target/trident-api-docs:
 build-api-schema: target/trident-api-docs docbuilder
 	$(DOCBUILDER_BIN) host-config schema -o "$(TRIDENT_API_HC_SCHEMA_GENERATED)"
 
+HC_SAMPLES = basic simple base verity advanced
+TRIDENT_API_HC_SAMPLES := docs/Reference/Host-Configuration/Samples
+
 .PHONY: build-api-docs
 build-api-docs: build-api-schema docbuilder
-	$(DOCBUILDER_BIN) host-config sample -m -o $(TRIDENT_API_HC_EXAMPLE_FILE)
-	@echo Updated sample Host Configuration in $(TRIDENT_API_HC_EXAMPLE_FILE)
+	$(DOCBUILDER_BIN) host-config sample -n base -m -o $(TRIDENT_API_HC_EXAMPLE_FILE)
+	@echo Updated "base" sample Host Configuration in $(TRIDENT_API_HC_EXAMPLE_FILE)
+
+	$(foreach SAMPLE_NAME,$(HC_SAMPLES),$(DOCBUILDER_BIN) host-config sample -n $(SAMPLE_NAME) -o $(TRIDENT_API_HC_SAMPLES)/$(SAMPLE_NAME).yaml &&) true
 
 	cp $(TRIDENT_API_HC_SCHEMA_GENERATED) $(TRIDENT_API_HC_SCHEMA_CHECKED_IN)
 	@echo Updated $(TRIDENT_API_HC_SCHEMA_CHECKED_IN)
@@ -161,8 +166,7 @@ validate-api-schema: build-api-schema docbuilder validate-hc-sample
 .PHONY: validate-hc-sample
 validate-hc-sample: build-api-docs
 	$(eval TMP := $(shell mktemp -d))
-	$(DOCBUILDER_BIN) host-config sample -o $(TMP)/sample-host-configuration.yaml
-	cargo run validate --host-config $(TMP)/sample-host-configuration.yaml
+	$(foreach SAMPLE_NAME,$(HC_SAMPLES),$(DOCBUILDER_BIN) host-config sample -n $(SAMPLE_NAME) -o $(TMP)/$(SAMPLE_NAME).yaml && cargo run validate --host-config $(TMP)/$(SAMPLE_NAME).yaml &&) true
 	rm -rf $(TMP)
 
 .PHONY: build-functional-tests

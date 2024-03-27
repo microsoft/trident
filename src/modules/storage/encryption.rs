@@ -467,6 +467,7 @@ mod tests {
                 ],
                 ..Default::default()
             }],
+            verity: vec![],
             raid: Raid { software: vec![] },
             mount_points: vec![
                 MountPoint {

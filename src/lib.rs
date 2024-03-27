@@ -59,6 +59,8 @@ pub const TRIDENT_DATASTORE_REF_PATH: &str = "/var/lib/trident/datastore-locatio
 
 /// Trident binary path.
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
+
+/// OS Modifier (EMU) binary path.
 pub const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
 
 /// Trident background log path.

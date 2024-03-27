@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs,
-    path::{self, Path, PathBuf},
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -20,60 +20,17 @@ pub(crate) struct TabFile {
 
 pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
-#[derive(Default)]
-pub(crate) struct TabFileSettings<'a> {
-    pub(crate) path_prefix: Option<&'a path::Path>,
-    pub(crate) required_by: Option<&'a path::Path>,
-    pub(crate) read_only: bool,
-}
-
 impl TabFile {
     pub(crate) fn from_mount_points(
         host_status: &HostStatus,
-        mount_points: &Vec<MountPoint>,
-        settings: &TabFileSettings,
+        mount_points: &[MountPoint],
     ) -> Result<Self, Error> {
-        let mut tab_file_lines = Vec::new();
-        let extra_options = settings
-            .required_by
-            .map(|rb| {
-                rb.to_str()
-                    .context(format!("Failed to convert path {:?} to string", rb))
-            })
-            .transpose()?
-            .map(|rb| {
-                vec![
-                    "x-systemd.required-by=".to_owned() + rb,
-                    "x-systemd.before=".to_owned() + rb,
-                ]
-            });
-        for mp in mount_points {
-            if mp.path.starts_with("/") {
-                tab_file_lines.push(Self::mount_point_to_line(
-                    host_status,
-                    mp,
-                    &settings.path_prefix,
-                    &extra_options,
-                    settings.read_only,
-                )?);
-            } else if mp.filesystem == constants::SWAP_FILESYSTEM && !settings.read_only {
-                // systemd does not create swap as a dependency of the
-                // update-fs.target during provisioning OS, so ensure that swap
-                // gets eventually initialized by forcing make_fs to true. Since
-                // this case only handles swap which is initialized from
-                // scratch, no need to worry about growing it.
-                tab_file_lines.push(Self::mount_point_to_line(
-                    host_status,
-                    mp,
-                    &None,
-                    &extra_options,
-                    settings.read_only,
-                )?);
-            }
-        }
-
+        let tab_file_lines: Result<Vec<String>, Error> = mount_points
+            .iter()
+            .map(|mp| mount_point_to_line(host_status, mp))
+            .collect();
         Ok(Self {
-            tab_file_contents: tab_file_lines.join("\n"),
+            tab_file_contents: tab_file_lines?.join("\n"),
         })
     }
 
@@ -83,86 +40,71 @@ impl TabFile {
             .context(format!("Failed to write new {}", tab_file_path.display()))?;
         Ok(())
     }
+}
 
-    /// Based on the given tab file, get the device path for the partition with mount point `path`.
-    pub(crate) fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Error> {
-        let findmnt_output_json = Command::new("findmnt")
-            .arg("--tab-file")
-            .arg(tab_file_path)
-            .arg("--json")
-            .arg("--output")
-            .arg("source,target,fstype,vfs-options,fs-options,freq,passno")
-            .arg("--mountpoint")
-            .arg(path)
-            .output_and_check()
-            .context(format!("Failed to find {:?} in {:?}", path, tab_file_path))?;
-        let map = parse_findmnt_output(findmnt_output_json.as_str())?;
-        if map.len() != 1 {
-            bail!(
-                "Unexpected number of entries in the tab file matching the mount point '{}'",
-                path.display()
-            );
-        }
-
-        let device_path = map.get(path).context(format!(
-            "Failed to find entry in the tab file matching the mount point '{}'",
+/// Based on the given tab file, get the device path for the partition with mount point `path`.
+pub(crate) fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Error> {
+    let findmnt_output_json = Command::new("findmnt")
+        .arg("--tab-file")
+        .arg(tab_file_path)
+        .arg("--json")
+        .arg("--output")
+        .arg("source,target,fstype,vfs-options,fs-options,freq,passno")
+        .arg("--mountpoint")
+        .arg(path)
+        .output_and_check()
+        .context(format!("Failed to find {:?} in {:?}", path, tab_file_path))?;
+    let map = parse_findmnt_output(findmnt_output_json.as_str())?;
+    if map.len() != 1 {
+        bail!(
+            "Unexpected number of entries in the tab file matching the mount point '{}'",
             path.display()
-        ))?;
-
-        Ok(device_path.clone())
+        );
     }
 
-    fn mount_point_to_line(
-        host_status: &HostStatus,
-        mp: &MountPoint,
-        path_prefix: &Option<&path::Path>,
-        extra_options: &Option<Vec<String>>,
-        read_only: bool,
-    ) -> Result<String, Error> {
+    let device_path = map.get(path).context(format!(
+        "Failed to find entry in the tab file matching the mount point '{}'",
+        path.display()
+    ))?;
+
+    Ok(device_path.clone())
+}
+
+fn mount_point_to_line(host_status: &HostStatus, mp: &MountPoint) -> Result<String, Error> {
+    let mount_device_path_str = if mp.filesystem == constants::OVERLAY_FILESYSTEM {
+        "overlay".to_owned()
+    } else {
         let mount_device_path = modules::get_block_device(host_status, &mp.target_id, false)
             .context(format!(
                 "Failed to find block device with id {}",
                 mp.target_id
             ))?
             .path;
-        let mount_device_path_str = mount_device_path.to_str().context(format!(
-            "Failed to convert mount device path {:?} to string",
-            mount_device_path
-        ))?;
-        let mount_path = match path_prefix {
-            Some(prefix) => {
-                if mp.path == Path::new(constants::ROOT_MOUNT_POINT_PATH) {
-                    prefix.to_path_buf()
-                } else {
-                    prefix.join(mp.path.strip_prefix("/")?)
-                }
-            }
-            None => mp.path.clone(),
-        };
-        let mount_path_str = mount_path.to_str().context(format!(
-            "Failed to convert mount path {:?} to string",
-            mount_path
-        ))?;
-        let filesystem = &mp.filesystem;
-        let mut options = mp.options.clone();
-        if read_only && !options.contains(&"ro".to_owned()) {
-            options.push("ro".to_owned());
-        }
-        if let Some(extra_options) = extra_options {
-            options.extend(extra_options.iter().cloned());
-        }
-        let options_str = options.join(",");
-        let dump = 0;
-        let fsck_pass = match mp.path.to_string_lossy().as_ref() {
-            "none" => 0,                           // swap is not checked
-            constants::ROOT_MOUNT_POINT_PATH => 1, // root is checked first
-            _ => 2,                                // all other filesystems are checked after root
-        };
+        mount_device_path
+            .to_str()
+            .context(format!(
+                "Failed to convert mount device path {:?} to string",
+                mount_device_path
+            ))?
+            .to_owned()
+    };
 
-        Ok(format!(
-            "{mount_device_path_str} {mount_path_str} {filesystem} {options_str} {dump} {fsck_pass}",
-        ))
-    }
+    let mount_path_str = mp.path.to_str().context(format!(
+        "Failed to convert mount path {:?} to string",
+        mp.path
+    ))?;
+    let filesystem = &mp.filesystem;
+    let options_str = mp.options.join(",");
+    let dump = 0;
+    let fsck_pass = match mp.path.to_string_lossy().as_ref() {
+        "none" => 0,                           // swap is not checked
+        constants::ROOT_MOUNT_POINT_PATH => 1, // root is checked first
+        _ => 2,                                // all other filesystems are checked after root
+    };
+
+    Ok(format!(
+        "{mount_device_path_str} {mount_path_str} {filesystem} {options_str} {dump} {fsck_pass}",
+    ))
 }
 
 fn parse_findmnt_output(findmnt_output: &str) -> Result<HashMap<PathBuf, PathBuf>, Error> {
@@ -194,6 +136,8 @@ fn parse_findmnt_entry(entry: &Value) -> Result<(PathBuf, PathBuf), Error> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::{
         collections::HashMap,
         io::Write,
@@ -217,8 +161,6 @@ mod tests {
             ReconcileState, Storage as StorageStatus,
         },
     };
-
-    use crate::modules::storage::tabfile::{TabFile, TabFileSettings};
 
     fn get_host_status() -> HostStatus {
         HostStatus {
@@ -286,7 +228,7 @@ mod tests {
         let host_status = get_host_status();
 
         assert_eq!(
-            TabFile::mount_point_to_line(
+            mount_point_to_line(
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from("/boot/efi"),
@@ -294,34 +236,9 @@ mod tests {
                     options: vec!["umask=0077".to_owned()],
                     target_id: "efi".to_owned(),
                 },
-                &None,
-                &None,
-                false
             )
             .unwrap(),
             "/dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2"
-        );
-    }
-
-    /// Validates /etc/fstab line generation logic. Read-only.
-    #[test]
-    fn test_mount_point_to_line_readonly() {
-        let host_status = get_host_status();
-        assert_eq!(
-            TabFile::mount_point_to_line(
-                &host_status,
-                &MountPoint {
-                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
-                    filesystem: "ext4".to_owned(),
-                    options: vec!["errors=remount-ro".to_owned()],
-                    target_id: "root".to_owned(),
-                },
-                &None,
-                &None,
-                true,
-            )
-            .unwrap(),
-            "/dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro,ro 0 1"
         );
     }
 
@@ -330,7 +247,7 @@ mod tests {
     fn test_mount_point_to_line_options() {
         let host_status = get_host_status();
         assert_eq!(
-            TabFile::mount_point_to_line(
+            mount_point_to_line(
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
@@ -338,9 +255,6 @@ mod tests {
                     options: vec!["errors=remount-ro".to_owned()],
                     target_id: "root".to_owned(),
                 },
-                &None,
-                &None,
-                false
             )
             .unwrap(),
             "/dev/disk/by-partlabel/osp2 / vfat errors=remount-ro 0 1"
@@ -352,7 +266,7 @@ mod tests {
     fn test_mount_point_to_line_multiple_options() {
         let host_status = get_host_status();
         assert_eq!(
-            TabFile::mount_point_to_line(
+            mount_point_to_line(
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from("/home"),
@@ -360,9 +274,6 @@ mod tests {
                     options: vec!["defaults".to_owned(), "x-systemd.makefs".to_owned()],
                     target_id: "home".to_owned(),
                 },
-                &None,
-                &None,
-                false
             )
             .unwrap(),
             "/dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2"
@@ -374,7 +285,7 @@ mod tests {
     fn test_mount_point_to_line_missing_id() {
         let host_status = get_host_status();
         assert_eq!(
-            TabFile::mount_point_to_line(
+            mount_point_to_line(
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from("/random"),
@@ -382,9 +293,6 @@ mod tests {
                     options: vec![],
                     target_id: "foobar".to_owned(),
                 },
-                &None,
-                &None,
-                false
             )
             .unwrap_err()
             .root_cause()
@@ -398,7 +306,7 @@ mod tests {
     fn test_mount_point_to_line_swap() {
         let host_status = get_host_status();
         assert_eq!(
-            TabFile::mount_point_to_line(
+            mount_point_to_line(
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from("none"),
@@ -406,77 +314,39 @@ mod tests {
                     options: vec!["sw".to_owned()],
                     target_id: "swap".to_owned(),
                 },
-                &None,
-                &None,
-                false
             )
             .unwrap(),
             "/dev/disk/by-partlabel/swap none swap sw 0 0"
         );
     }
 
-    /// Validates /etc/fstab line generation logic. No prefix for swap.
+    /// Validates /etc/fstab line generation logic. Overlay.
     #[test]
-    fn test_mount_point_to_line_swap_prefix() {
+    fn test_mount_point_to_line_overlay() {
         let host_status = get_host_status();
         assert_eq!(
-            TabFile::mount_point_to_line(
+            mount_point_to_line(
                 &host_status,
                 &MountPoint {
-                    path: PathBuf::from("none"),
-                    filesystem: "swap".to_owned(),
-                    options: vec!["sw".to_owned()],
-                    target_id: "swap".to_owned(),
+                    path: PathBuf::from("/etc"),
+                    filesystem: "overlay".to_owned(),
+                    options: vec![
+                        "lowerdir=/etc".into(),
+                        "upperdir=/var/lib/trident-overlay/etc/upper".into(),
+                        "workdir=/var/lib/trident-overlay/etc/work".into(),
+                        "ro".into()
+                    ],
+                    target_id: "".to_owned(),
                 },
-                &Some(Path::new("/mnt")),
-                &Some(vec!["foobar".to_owned()]),
-                false
-            )
-            .unwrap_err()
-            .root_cause()
-            .to_string(),
-            "prefix not found"
-        );
-    }
-
-    /// Validates /etc/fstab line generation logic. Extra options.
-    #[test]
-    fn test_mount_point_to_line_extra_options() {
-        let host_status = get_host_status();
-        assert_eq!(
-            TabFile::mount_point_to_line(
-                &host_status,
-                &MountPoint {
-                    path: PathBuf::from("/home"),
-                    filesystem: "ext4".to_owned(),
-                    options: vec!["defaults".to_owned()],
-                    target_id: "home".to_owned(),
-                },
-                &Some(Path::new("/mnt")),
-                &Some(vec!["foobar".to_owned()]),
-                false
             )
             .unwrap(),
-            "/dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,foobar 0 2"
+            "overlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2"
         );
     }
 
     #[test]
     fn test_from_mount_points() {
         let expected_fstab = indoc! {r#"
-            /dev/disk/by-partlabel/osp1 /mnt/boot/efi vfat umask=0077,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
-            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
-            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
-            /dev/disk/by-partlabel/swap none swap sw,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 0
-        "#};
-
-        let expected_fstab3 = indoc! {r#"
-            /dev/disk/by-partlabel/osp1 /mnt/boot/efi vfat umask=0077,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
-            /dev/disk/by-partlabel/osp2 /mnt ext4 errors=remount-ro,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 1
-            /dev/disk/by-partlabel/osp3 /mnt/home ext4 defaults,x-systemd.makefs,ro,x-systemd.required-by=update-fs.target,x-systemd.before=update-fs.target 0 2
-        "#};
-
-        let expected_fstab2 = indoc! {r#"
             /dev/disk/by-partlabel/osp1 /boot/efi vfat umask=0077 0 2
             /dev/disk/by-partlabel/osp2 / ext4 errors=remount-ro 0 1
             /dev/disk/by-partlabel/osp3 /home ext4 defaults,x-systemd.makefs 0 2
@@ -628,49 +498,30 @@ mod tests {
         };
 
         assert_eq!(
-            TabFile::from_mount_points(
-                &host_status,
-                &host_config.storage.mount_points,
-                &TabFileSettings {
-                    path_prefix: Some(Path::new("/mnt")),
-                    required_by: Some(Path::new("update-fs.target")),
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-            .tab_file_contents
+            TabFile::from_mount_points(&host_status, &host_config.storage.mount_points)
+                .unwrap()
+                .tab_file_contents
                 + "\n",
             expected_fstab
         );
 
+        let mut mount_points = host_config.storage.mount_points;
+        mount_points.push(MountPoint {
+            filesystem: "overlay".to_owned(),
+            options: vec![
+                "lowerdir=/mnt".to_owned(),
+                "upperdir=/mnt/newroot".to_owned(),
+                "workdir=/mnt/work".to_owned(),
+            ],
+            path: PathBuf::from("/foo"),
+            target_id: "".to_owned(),
+        });
         assert_eq!(
-            TabFile::from_mount_points(
-                &host_status,
-                &host_config.storage.mount_points,
-                &TabFileSettings {
-                    path_prefix: Some(Path::new("/mnt")),
-                    required_by: Some(Path::new("update-fs.target")),
-                    read_only: true,
-                }
-            )
-            .unwrap()
-            .tab_file_contents
+            TabFile::from_mount_points(&host_status, &mount_points)
+                .unwrap()
+                .tab_file_contents
                 + "\n",
-            expected_fstab3
-        );
-
-        assert_eq!(
-            TabFile::from_mount_points(
-                &host_status,
-                &host_config.storage.mount_points,
-                &TabFileSettings {
-                    ..Default::default()
-                }
-            )
-            .unwrap()
-            .tab_file_contents
-                + "\n",
-            expected_fstab2
+            format!("{expected_fstab}overlay /foo overlay lowerdir=/mnt,upperdir=/mnt/newroot,workdir=/mnt/work 0 2\n")
         );
     }
 
@@ -689,25 +540,23 @@ mod tests {
         tmpfile.flush().unwrap();
 
         assert_eq!(
-            TabFile::get_device_path(tmpfile.path(), Path::new(constants::ESP_MOUNT_POINT_PATH))
-                .unwrap(),
+            get_device_path(tmpfile.path(), Path::new(constants::ESP_MOUNT_POINT_PATH)).unwrap(),
             PathBuf::from("/dev/sda1")
         );
 
         assert_eq!(
-            TabFile::get_device_path(tmpfile.path(), Path::new(constants::ROOT_MOUNT_POINT_PATH))
-                .unwrap(),
+            get_device_path(tmpfile.path(), Path::new(constants::ROOT_MOUNT_POINT_PATH)).unwrap(),
             PathBuf::from("/dev/sda2")
         );
 
         assert_eq!(
-            TabFile::get_device_path(tmpfile.path(), Path::new("/random")).unwrap(),
+            get_device_path(tmpfile.path(), Path::new("/random")).unwrap(),
             PathBuf::from("/dev/sdb1")
         );
 
         // non-existing mount point
         assert_eq!(
-            TabFile::get_device_path(tmpfile.path(), Path::new("/foobar"))
+            get_device_path(tmpfile.path(), Path::new("/foobar"))
                 .err()
                 .unwrap()
                 .to_string(),
@@ -716,7 +565,7 @@ mod tests {
 
         // non-existing input file
         assert_eq!(
-            TabFile::get_device_path(Path::new("/does-not-exist"), Path::new("/foobar"))
+            get_device_path(Path::new("/does-not-exist"), Path::new("/foobar"))
                 .err()
                 .unwrap()
                 .to_string(),
@@ -729,7 +578,7 @@ mod tests {
 
         // malformed input file
         assert_eq!(
-            TabFile::get_device_path(tmpfile.path(), Path::new("/foobar"))
+            get_device_path(tmpfile.path(), Path::new("/foobar"))
                 .err()
                 .unwrap()
                 .to_string(),
@@ -744,7 +593,7 @@ mod tests {
 
         // pick the latter
         assert_eq!(
-            TabFile::get_device_path(tmpfile.path(), Path::new("/random")).unwrap(),
+            get_device_path(tmpfile.path(), Path::new("/random")).unwrap(),
             PathBuf::from("/dev/sdb1q")
         );
     }

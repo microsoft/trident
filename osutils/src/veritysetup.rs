@@ -412,6 +412,9 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
+    use pytest_gen::functional_test;
+
     use std::{
         fs::{self, File},
         io::Read,
@@ -429,11 +432,8 @@ mod functional_test {
         udevadm,
     };
 
-    use super::*;
-    use pytest_gen::functional_test;
-
     fn setup_verity_images() -> PathBuf {
-        let cdrom_mount_path = Path::new("/mnt/trident_cdrom");
+        let cdrom_mount_path = Path::new("/mnt/cdrom");
         if !cdrom_mount_path.exists() {
             files::create_dirs(cdrom_mount_path).unwrap();
         }

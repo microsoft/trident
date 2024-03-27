@@ -8,12 +8,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::{
         AbVolumePair, Disk, EncryptedVolume, Image, MountPoint, Partition, SoftwareRaidArray,
+        VerityDevice,
     },
     BlockDeviceId,
 };
-
-#[cfg(feature = "verity-preview")]
-use crate::config::VerityDevice;
 
 /// Enum for supported block device types
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -84,7 +82,6 @@ pub enum HostConfigBlockDevice<'a> {
     /// An encrypted volume
     EncryptedVolume(&'a EncryptedVolume),
 
-    #[cfg(feature = "verity-preview")]
     /// A verity device
     VerityDevice(&'a VerityDevice),
 }
@@ -176,7 +173,6 @@ impl HostConfigBlockDevice<'_> {
             HostConfigBlockDevice::RaidArray(_) => BlkDevKind::RaidArray,
             HostConfigBlockDevice::ABVolume(_) => BlkDevKind::ABVolume,
             HostConfigBlockDevice::EncryptedVolume(_) => BlkDevKind::EncryptedVolume,
-            #[cfg(feature = "verity-preview")]
             HostConfigBlockDevice::VerityDevice(_) => BlkDevKind::VerityDevice,
         }
     }
@@ -225,7 +221,6 @@ impl HostConfigBlockDevice<'_> {
         }
     }
 
-    #[cfg(feature = "verity-preview")]
     #[allow(dead_code)]
     pub(super) fn unwrap_verity_device(&self) -> Result<&VerityDevice, Error> {
         if let HostConfigBlockDevice::VerityDevice(verity_device) = self {

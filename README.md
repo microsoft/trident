@@ -35,9 +35,10 @@ can be leveraged outside of that as well.
   - [A/B Update](#ab-update)
     - [Getting Started with A/B Update](#getting-started-with-ab-update)
     - [TODO: Next Steps](#todo-next-steps)
-  - [gRPC Interface](#grpc-interface)
+  - [dm-verity Support](#dm-verity-support)
   - [Running from container](#running-from-container)
   - [Running from Azure VM](#running-from-azure-vm)
+  - [gRPC Interface](#grpc-interface)
   - [Development](#development)
   - [Contributing](#contributing)
   - [Versioning and changelog](#versioning-and-changelog)
@@ -241,8 +242,9 @@ The raw JSON Schema for Host configuration is here:
 
 ### Sample
 
-An example Host Configuration YAML file is available here:
-[sample-host-configuration](docs/Reference/Host-Configuration/sample-host-configuration.md)
+An example Host Configuration YAML MD file is available here:
+[sample-host-configuration](docs/Reference/Host-Configuration/sample-host-configuration.md).
+Additional raw YAML configuration samples are available in [Samples](docs/Reference/Host-Configuration/Samples).
 
 ### Validator
 
@@ -349,35 +351,44 @@ volume pairs have been correctly updated and that the correct block devices
 have been mounted at the designated mountpoints.
 
 ### TODO: Next Steps
+
 In the future iterations, Trident will support the following additional
 features:
 
-- File-based A/B upgrade of the stand-alone ESP partition.
-- Firmware reboot to complete the A/B update. Currently, the basic e2e A/B
-update flow is only successful when using kexec to reboot the system after the
-update.
-- Rollback to the old valid OS image, in case of an interrupted or failed A/B
-update.
 - Decoupling of the A/B update into two steps: StageUpdate, which is the update
 of the image, and Update, which includes the changes required to complete the
 update and the reboot itself.
 - Ability to select the reboot type for the next reboot, either kexec or
 firmware reboot.
 
-## gRPC Interface
+## dm-verity Support
 
-If enabled, Trident will start a gRPC server to listen for commands. You can
-interact with this server using the [evans gRPC
-client](https://github.com/ktr0731/evans). Once installed, you can issue a gRPC
-via the following commands:
+Please review [API Documentation](#documentation) for low level details.
 
-```bash
-# Generate command.json from input/hc.yaml
-jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: "update | transition" }' > command.json
+Specifically, you need to include `verity` under `storage` in
+`HostConfiguration`. Currently, only `root` verity is supported (`deviceName`
+needs to be `root` and the verity block device needs to be mounted at `/`).
+Mount point needs to point to the verity block device, not the underlying data
+block device. It also needs to be mounted read only.
 
-# Issue gRPC request and pretty print the output as it is streamed back
-evans --host <target-ip-adddress> --proto path/to/trident/proto/trident.proto cli call --file command.json UpdateHost | jq -r .status
-```
+When you choose to use verity, you will also need to ensure that:
+
+- Trident datastore is stored on a separate read/write volume, that is not part
+  of A/B update. By default, the datastore is stored in `/var/lib/trident`.
+- `/var/lib/trident-overlay` (fixed path at the moment) is a mount point for
+  another read/write volume. If you are also using A/B update blocks, this R/W
+  volume needs to be passed through A/B block as well. This is used by Trident
+  to store the configuration it generates for the target OS (it holds and
+  overlay that gets mounted read only at `/etc`).
+- You might also include `/var/lib` and `/var/log` RW volumes in order to allow
+  for base services to write to disk. These can be redirected as part of MIC
+  image constructions. Alternatively, you can redirect `/var` to a writable
+  volume.
+- Note that SSH will not start if `/etc/ssh` is read only. You can update SSH
+  config or mount an overlay using a script included by MIC.
+- If you use A/B update blocks, the recommended approach is to put any RW
+  volumes behind A/B update blocks, to ensure clean separation between A/B
+  instances.
 
 ## Running from container
 
@@ -405,6 +416,8 @@ docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/li
 
 ## Running from Azure VM
 
+Please note, while this has been manually tested, it is not generally supported.
+
 You can start Trident from an Azure VM, perhaps for testing use case. You will
 need to create Generation 2 VM, as Trident requires UEFI boot. You will also
 want to include additional data disk, where Trident can deploy the
@@ -430,6 +443,24 @@ Trident from a non-live OS. To override this, create an empty override file
 
 Unless `allowed-operations` are limited, upon completing the deployment, Trident
 will reboot the VM into the new OS.
+
+## gRPC Interface
+
+Please note, gRPC interface is in an early preview, does not support
+authentication and is not generally yet supported.
+
+If enabled, Trident will start a gRPC server to listen for commands. You can
+interact with this server using the [evans gRPC
+client](https://github.com/ktr0731/evans). Once installed, you can issue a gRPC
+via the following commands:
+
+```bash
+# Generate command.json from input/hc.yaml
+jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: "update | transition" }' > command.json
+
+# Issue gRPC request and pretty print the output as it is streamed back
+evans --host <target-ip-adddress> --proto path/to/trident/proto/trident.proto cli call --file command.json UpdateHost | jq -r .status
+```
 
 ## Development
 

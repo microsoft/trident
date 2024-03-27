@@ -118,8 +118,8 @@ pub enum ManagementError {
     ChrootExit,
     #[error("Failed to unmount special directory")]
     ChrootUnmountSpecial,
-    #[error("Failed to mount overlay")]
-    MountOverlay,
+    #[error("Failed to mount overlay '{target}'")]
+    MountOverlay { target: PathBuf },
     #[error("Failed to unmount overlay")]
     UnmountOverlay,
     #[error("Failed to update host")]
@@ -152,10 +152,14 @@ pub enum ManagementError {
     ModifyBootOrder,
     #[error("Failed to clean up pre-existing RAID arrays")]
     CleanupRaid,
+    #[error("Failed to clean up pre-existing Verity devices")]
+    CleanupVerity,
     #[error("Failed to create disk partitions")]
     CreatePartitions,
     #[error("Failed to create software RAID")]
     CreateRaid,
+    #[error("Failed to setup verity devices")]
+    CreateVerity,
     #[error("Failed to create encrypted volumes")]
     CreateEncryptedVolumes,
     #[error("Failed to deploy images")]
@@ -166,6 +170,10 @@ pub enum ManagementError {
     RebootTimeout,
     #[error("Failed to check mount point")]
     MountPointCheck,
+    #[error("Failed parse non-Unicode path '{path}'")]
+    PathIsNotUnicode { path: PathBuf },
+    #[error("Failed to create directory '{dir}'")]
+    CreateDirectory { dir: PathBuf },
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]

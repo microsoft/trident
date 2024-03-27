@@ -65,6 +65,10 @@ enum HostConfigCommands {
         /// Output file
         #[clap(short, long)]
         output: Option<PathBuf>,
+
+        /// Name
+        #[clap(short, long)]
+        name: String,
     },
 }
 
@@ -105,8 +109,12 @@ fn main() -> Result<(), Error> {
             HostConfigCommands::Schema { output } => {
                 host_config::print_schema(output).context("Failed to print schema")
             }
-            HostConfigCommands::Sample { markdown, output } => {
-                host_config::print_sample(output, markdown).context("Failed to print sample")
+            HostConfigCommands::Sample {
+                markdown,
+                output,
+                name,
+            } => {
+                host_config::print_sample(name, output, markdown).context("Failed to print sample")
             }
         },
     }

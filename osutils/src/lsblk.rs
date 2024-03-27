@@ -26,6 +26,7 @@ pub struct BlockDevice {
     #[serde(rename = "pkname")]
     pub parent_kernel_name: Option<PathBuf>,
     pub children: Option<Vec<BlockDevice>>,
+    pub mountpoints: Vec<Option<String>>,
 }
 
 pub fn run(device_path: impl AsRef<Path>) -> Result<Vec<BlockDevice>, Error> {
@@ -264,6 +265,7 @@ mod tests {
             part_uuid: None,
             size: 512110190592,
             parent_kernel_name: None,
+            mountpoints: vec![None],
             children: Some(vec![
                 BlockDevice {
                     name: "/dev/nvme0n1p1".into(),
@@ -275,6 +277,7 @@ mod tests {
                     size: 536870912,
                     parent_kernel_name: Some(PathBuf::from("/dev/nvme0n1")),
                     children: None,
+                    mountpoints: vec![Some("/boot/efi".into())],
                 },
                 BlockDevice {
                     name: "/dev/nvme0n1p2".into(),
@@ -286,6 +289,10 @@ mod tests {
                     size: 511571918848,
                     parent_kernel_name: Some(PathBuf::from("/dev/nvme0n1")),
                     children: None,
+                    mountpoints: vec![
+                        Some("/var/snap/firefox/common/host-hunspell".into()),
+                        Some("/".into()),
+                    ],
                 },
             ]),
         }];

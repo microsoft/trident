@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use status::{BlockDeviceContents, BlockDeviceInfo, EncryptedVolume, Partition, RaidArray};
+use status::{
+    BlockDeviceContents, BlockDeviceInfo, EncryptedVolume, Partition, RaidArray, VerityDevice,
+};
 
 pub mod config;
 pub mod constants;
@@ -26,6 +28,16 @@ impl EncryptedVolume {
             format!("/dev/mapper/{}", self.device_name).into(),
             self.size,
             self.contents.clone(),
+        )
+    }
+}
+
+impl VerityDevice {
+    pub fn to_block_device(&self) -> BlockDeviceInfo {
+        BlockDeviceInfo::new(
+            format!("/dev/mapper/{}", self.device_name).into(),
+            0,
+            BlockDeviceContents::Initialized,
         )
     }
 }

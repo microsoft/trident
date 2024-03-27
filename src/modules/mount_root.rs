@@ -180,6 +180,7 @@ mod test {
                 encrypted_volumes: btreemap! {},
                 ab_update: None,
                 root_device_path: None,
+                verity_devices: Default::default(),
             },
             ..Default::default()
         };
@@ -221,7 +222,7 @@ mod functional_test {
 
     use osutils::{
         hashing_reader::HashingReader,
-        image_streamer,
+        image_streamer, mountpoint,
         partition_types::DiscoverablePartitionType,
         repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
         udevadm,
@@ -260,8 +261,12 @@ mod functional_test {
         // Mount point
         let mount_point = Path::new("/mnt/cdrom");
 
+        if mountpoint::check_is_mountpoint(mount_point).unwrap() {
+            mount::umount(mount_point, false).unwrap();
+        }
+
         // Create the mount point directory if it doesn't exist yet
-        // fs::create_dir_all(mount_point).unwrap();
+        fs::create_dir_all(mount_point).unwrap();
 
         let host_status = HostStatus {
             storage: Storage {
@@ -299,6 +304,7 @@ mod functional_test {
                 encrypted_volumes: Default::default(),
                 ab_update: None,
                 root_device_path: None,
+                verity_devices: Default::default(),
             },
             ..Default::default()
         };
@@ -376,6 +382,7 @@ mod functional_test {
                 encrypted_volumes: Default::default(),
                 ab_update: None,
                 root_device_path: None,
+                verity_devices: Default::default(),
             },
             ..Default::default()
         };
@@ -507,6 +514,7 @@ mod functional_test {
                 encrypted_volumes: Default::default(),
                 ab_update: None,
                 root_device_path: None,
+                verity_devices: Default::default(),
             },
             ..Default::default()
         };
@@ -611,6 +619,7 @@ mod functional_test {
                 encrypted_volumes: Default::default(),
                 ab_update: None,
                 root_device_path: None,
+                verity_devices: Default::default(),
             },
             ..Default::default()
         };

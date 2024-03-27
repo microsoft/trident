@@ -8,8 +8,7 @@ use trident_api::{
     status::{HostStatus, ReconcileState, UpdateKind},
 };
 
-use crate::modules::Module;
-use crate::OS_MODIFIER_BINARY_PATH;
+use crate::{modules::Module, OS_MODIFIER_BINARY_PATH};
 
 mod users;
 
@@ -34,11 +33,8 @@ impl Module for OsConfigModule {
 
         if !host_config.os.users.is_empty() && !target_path.exists() {
             debug!("Copying os modifier binary to runtime OS");
-            fs::copy(
-                OS_MODIFIER_BINARY_PATH,
-                mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]),
-            )
-            .context("Failed to copy os modifier binary to runtime OS")?;
+            fs::copy(OS_MODIFIER_BINARY_PATH, target_path)
+                .context("Failed to copy os modifier binary to runtime OS")?;
         }
 
         Ok(())

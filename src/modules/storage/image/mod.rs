@@ -17,7 +17,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::modules::{self, storage::tabfile::TabFile};
+use crate::modules::{self, storage::tabfile};
 
 pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
@@ -382,7 +382,7 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
     };
     // update root_device_path of the active root volume
     host_status.storage.root_device_path = Some(
-        TabFile::get_device_path(Path::new("/proc/mounts"), root_mount_path.as_path())
+        tabfile::get_device_path(Path::new("/proc/mounts"), root_mount_path.as_path())
             .context("Failed to find root mount point")?,
     );
     debug!(

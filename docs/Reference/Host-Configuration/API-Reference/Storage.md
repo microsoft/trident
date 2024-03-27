@@ -82,3 +82,18 @@ RAID configuration.
 | Type           | `Raid`            |
 | Link           | [Raid](./Raid.md) |
 
+### `verity` (optional)
+
+Verity configuration.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                             |
+   | -------------- | --------------------------------- |
+   | Type           | `VerityDevice`                    |
+   | Link           | [VerityDevice](./VerityDevice.md) |
+

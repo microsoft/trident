@@ -52,7 +52,6 @@ impl<'a> HostConfigBlockDevice<'a> {
             HostConfigBlockDevice::RaidArray(_) => (),
             HostConfigBlockDevice::ABVolume(_) => (),
             HostConfigBlockDevice::EncryptedVolume(_) => (),
-            #[cfg(feature = "verity-preview")]
             HostConfigBlockDevice::VerityDevice(_) => (),
         }
 
@@ -214,7 +213,6 @@ impl<'a> HostConfigBlockDevice<'a> {
             HostConfigBlockDevice::EncryptedVolume(enc_vol) => {
                 Some(vec![("deviceName", enc_vol.device_name.as_bytes())])
             }
-            #[cfg(feature = "verity-preview")]
             HostConfigBlockDevice::VerityDevice(verity_device) => {
                 Some(vec![("name", verity_device.device_name.as_bytes())])
             }

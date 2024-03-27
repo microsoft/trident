@@ -16,6 +16,7 @@ pub use host::{
         mountpoint::MountPoint,
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
+        verity::VerityDevice,
         Storage,
     },
     trident::Trident,

@@ -276,8 +276,8 @@ mod test {
     use std::collections::BTreeMap;
 
     use crate::config::{
-        host::storage::blkdev_graph::types::BlkDevKind, AbVolumePair, Image, ImageFormat,
-        ImageSha256, SoftwareRaidArray,
+        host::storage::{blkdev_graph::types::BlkDevKind, VerityDevice},
+        AbVolumePair, Image, ImageFormat, ImageSha256, SoftwareRaidArray,
     };
 
     use super::*;
@@ -370,7 +370,6 @@ mod test {
             dependents: vec![],
         };
 
-        #[cfg(feature = "verity-preview")]
         let verity = VerityDevice {
             id: "verity".into(),
             device_name: "verity".into(),
@@ -378,7 +377,6 @@ mod test {
             hash_target_id: "part_root_verity".into(),
         };
 
-        #[cfg(feature = "verity-preview")]
         let verity1 = BlkDevNode {
             id: "verity1".into(),
             kind: BlkDevKind::VerityDevice,
@@ -389,56 +387,36 @@ mod test {
             dependents: vec![],
         };
 
-        let verity1 = BlkDevNode {
-            id: "verity1".into(),
-            kind: BlkDevKind::VerityDevice,
-            targets: vec!["part_root".into(), "part_root_verity".into()],
-            host_config_ref: HostConfigBlockDevice::Partition(&part_root),
-            mount_points: vec![],
-            image: None,
-            dependents: vec![],
-        };
-
-        check_targets(
-            &verity1,
-            &[&part_root_node, &part_root_verity_node],
-            &BlockDeviceGraph {
-                nodes: BTreeMap::new(),
-            },
-        )
-        .unwrap();
+        check_targets_image(&verity1, &[&part_root_node, &part_root_verity_node]).unwrap();
 
         assert_eq!(
-            check_targets(
+            check_targets_image(
                 &verity1,
                 &[&part_root_node_no_image, &part_root_verity_node],
-                &BlockDeviceGraph { nodes: BTreeMap::new() }
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' points to a block device that has not been initialized with an image"
+            "Block device 'part_root' is not initialized using image, which is required for verity device 'verity1' to work"
         );
 
         assert_eq!(
-            check_targets(
+            check_targets_image(
                 &verity1,
                 &[&part_root_node, &part_root_verity_node_no_image],
-                &BlockDeviceGraph { nodes: BTreeMap::new() }
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' points to a block device that has not been initialized with an image"
+            "Block device 'part_root_verity' is not initialized using image, which is required for verity device 'verity1' to work"
         );
 
         assert_eq!(
-            check_targets(
+            check_targets_image(
                 &verity1,
                 &[&part_root_node_no_image, &part_root_verity_node_no_image],
-                &BlockDeviceGraph { nodes: BTreeMap::new() }
             )
             .unwrap_err()
             .to_string(),
-            "Verity device 'verity1' points to a block device that has not been initialized with an image"
+            "Block device 'part_root' is not initialized using image, which is required for verity device 'verity1' to work"
         );
     }
 
@@ -759,7 +737,6 @@ mod test {
             dependents: vec![],
         };
 
-        #[cfg(feature = "verity-preview")]
         let verity = VerityDevice {
             id: "verity".into(),
             device_name: "verity".into(),
@@ -767,22 +744,11 @@ mod test {
             hash_target_id: "part_root_verity".into(),
         };
 
-        #[cfg(feature = "verity-preview")]
         let verity1 = BlkDevNode {
             id: "verity1".into(),
             kind: BlkDevKind::VerityDevice,
             targets: vec![],
             host_config_ref: HostConfigBlockDevice::VerityDevice(&verity),
-            mount_points: vec![],
-            image: None,
-            dependents: vec![],
-        };
-
-        let verity1 = BlkDevNode {
-            id: "verity1".into(),
-            kind: BlkDevKind::VerityDevice,
-            targets: vec![],
-            host_config_ref: HostConfigBlockDevice::Partition(&part_esp),
             mount_points: vec![],
             image: None,
             dependents: vec![],

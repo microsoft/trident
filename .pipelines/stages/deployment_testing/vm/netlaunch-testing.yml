@@ -98,6 +98,10 @@ stages:
             --logstream \
         2>&1 | tee -a ./deployment.log
         $(tridentSourceDirectory)/e2e_tests/helpers/check_netlaunch.py ./deployment.log || [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]
+
+        sudo virsh list
+        sudo virsh dumpxml virtdeploy-vm-0
+
       timeoutInMinutes: 7
       workingDirectory: $(tridentSourceDirectory)
       displayName: "Run netlaunch for testing"
@@ -158,9 +162,17 @@ stages:
         tridentConfigPath: $(tridentConfigPath)
         tridentSourceDirectory: $(tridentSourceDirectory)
 
+    - bash: |
+        set -eux
+        sudo virsh shutdown virtdeploy-vm-0
+        sudo cp /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-0-volume.qcow2 $(ob_outputDirectory)/
+      workingDirectory: $(tridentSourceDirectory)
+      condition: failed()
+      displayName: "Publish OS disk"
+
   - job: FunctionalTests
     displayName: Functional Tests
-    timeoutInMinutes: 30
+    timeoutInMinutes: 45
     pool:
       type: linux
       name: CAPKV_Pool

@@ -25,13 +25,14 @@ use trident_api::{
 
 use osutils::{chroot, container, exe::RunAndCheck, mkinitrd};
 
-use crate::{datastore::DataStore, protobufs::HostStatusState, TRIDENT_DATASTORE_REF_PATH};
 use crate::{
+    datastore::DataStore,
     modules::{
         boot::BootModule, hooks::HooksModule, management::ManagementModule, network::NetworkModule,
         osconfig::OsConfigModule, storage::StorageModule,
     },
-    HostUpdateCommand,
+    protobufs::HostStatusState,
+    HostUpdateCommand, TRIDENT_DATASTORE_REF_PATH,
 };
 
 // Trident modules
@@ -44,8 +45,9 @@ pub mod storage;
 
 // Helper modules
 pub mod bootentries;
-pub mod kexec;
-pub mod mount_root;
+mod etc_overlay;
+mod kexec;
+mod mount_root;
 
 /// Bootentry name for A images
 const BOOT_ENTRY_A: &str = "AZLA";
@@ -60,6 +62,10 @@ const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 
 trait Module: Send {
     fn name(&self) -> &'static str;
+
+    fn writable_etc_overlay(&self) -> bool {
+        true
+    }
 
     // // TODO: Implement dependencies
     // fn dependencies(&self) -> &'static [&'static str];
@@ -205,7 +211,7 @@ pub(super) fn provision_host(
         .clone()
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
 
-    info!("Entering /mnt/newroot chroot");
+    info!("Entering '{}' chroot", new_root_path.display());
     let chroot = chroot::enter_update_chroot(new_root_path).message("Failed to enter chroot")?;
     let mut root_device_path = None;
 
@@ -221,7 +227,12 @@ pub(super) fn provision_host(
             )?;
 
             info!("Running configure");
-            configure(&mut modules, state, host_config)?;
+            configure(
+                &mut modules,
+                state,
+                host_config,
+                ReconcileState::CleanInstall,
+            )?;
 
             info!("Regenerating initrd");
             regenerate_initrd()?;
@@ -250,6 +261,7 @@ pub(super) fn provision_host(
     let root_device_path =
         root_device_path.structured(InternalError::Internal("Failed to get root block device"))?;
 
+    info!("Root device path: {:#?}", root_device_path);
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
         info!("Unmounting /mnt/newroot");
@@ -307,14 +319,10 @@ pub(super) fn update(
     };
 
     info!("Selected update kind: {:?}", update_kind);
+    let reconcile_state = ReconcileState::UpdateInProgress(update_kind);
 
     info!("Validating host configuration against system state");
-    validate_host_config(
-        &modules,
-        state,
-        host_config,
-        ReconcileState::UpdateInProgress(update_kind),
-    )?;
+    validate_host_config(&modules, state, host_config, reconcile_state)?;
 
     if !allowed_operations.contains(Operations::Update) {
         info!("Update not requested, skipping");
@@ -332,8 +340,7 @@ pub(super) fn update(
             ));
         }
     }
-    state
-        .with_host_status(|s| s.reconcile_state = ReconcileState::UpdateInProgress(update_kind))?;
+    state.with_host_status(|s| s.reconcile_state = reconcile_state)?;
 
     info!("Running prepare");
     prepare(&mut modules, state, host_config)?;
@@ -346,12 +353,13 @@ pub(super) fn update(
 
         info!("Running provision");
         provision(&mut modules, state, host_config, new_root_path)?;
-        info!("Entering /mnt/newroot chroot");
+
+        info!("Entering '{}' chroot", new_root_path.display());
         chroot::enter_update_chroot(new_root_path)
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
-                configure(&mut modules, state, host_config)?;
+                configure(&mut modules, state, host_config, reconcile_state)?;
 
                 info!("Regenerating initrd");
                 regenerate_initrd()
@@ -361,7 +369,7 @@ pub(super) fn update(
         Some(mounts)
     } else {
         info!("Running configure");
-        configure(&mut modules, state, host_config)?;
+        configure(&mut modules, state, host_config, reconcile_state)?;
 
         info!("Regenerating initrd");
         regenerate_initrd()?;
@@ -462,6 +470,17 @@ fn get_encrypted_volume(
         .map(|e| e.to_block_device())
 }
 
+fn get_verity_device(
+    host_status: &HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Option<BlockDeviceInfo> {
+    host_status
+        .storage
+        .verity_devices
+        .get(block_device_id)
+        .map(|e| e.to_block_device())
+}
+
 /// Returns a block device info for a block device referenced by the
 /// `block_device_id`. If the volume is part of an AB Volume Pair and active is
 /// true it returns the active volume, and if active is false it returns the
@@ -476,6 +495,7 @@ fn get_block_device(
         .or_else(|| get_ab_volume(host_status, block_device_id, active))
         .or_else(|| get_raid_array(host_status, block_device_id))
         .or_else(|| get_encrypted_volume(host_status, block_device_id))
+        .or_else(|| get_verity_device(host_status, block_device_id))
 }
 
 /// Returns a block device info for a volume from the given AB Volume Pair. If
@@ -618,8 +638,21 @@ fn provision(
     host_config: &HostConfiguration,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
+    // If verity is present, it means that we are currently doing root
+    // verity. For now, we can assume that /etc is readonly, so we setup
+    // a writable overlay for it.
+    let use_overlay = !host_config.storage.verity.is_empty();
+
     for module in modules {
         debug!("Starting stage 'Provision' for module '{}'", module.name());
+        let _etc_overlay_mount = if use_overlay {
+            Some(etc_overlay::create(
+                Path::new("/"),
+                module.writable_etc_overlay(),
+            )?)
+        } else {
+            None
+        };
         state.try_with_host_status(|host_status| {
             module
                 .provision(host_status, host_config, new_root_path)
@@ -651,9 +684,26 @@ fn configure(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
+    planned_update: ReconcileState,
 ) -> Result<(), TridentError> {
+    // If verity is present, it means that we are currently doing root
+    // verity. For now, we can assume that /etc is readonly, so we setup
+    // a writable overlay for it.
+    let use_overlay = !host_config.storage.verity.is_empty()
+        && (planned_update == ReconcileState::CleanInstall
+            || planned_update == ReconcileState::UpdateInProgress(UpdateKind::AbUpdate));
+
     for module in modules {
         debug!("Starting stage 'Configure' for module '{}'", module.name());
+        // unmount on drop
+        let _etc_overlay_mount = if use_overlay {
+            Some(etc_overlay::create(
+                Path::new("/"),
+                module.writable_etc_overlay(),
+            )?)
+        } else {
+            None
+        };
         state.try_with_host_status(|s| {
             module
                 .configure(s, host_config)

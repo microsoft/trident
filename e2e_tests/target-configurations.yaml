@@ -4,49 +4,59 @@ bareMetal:
     - raid-big
     - abupdate-on-encrypted-raid
     - abupdate-on-encrypted-partitions
+    - abupdate-with-verity
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
     - rerun
     - simple
+    - verity
 virtualMachine:
   daily:
     - base
     - abupdate-on-encrypted-raid
     - abupdate-on-encrypted-partitions
+    - abupdate-with-verity
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
     - raid-small
     - rerun
     - simple
+    - verity
   post_merge:
     - base
     - abupdate-on-encrypted-raid
     - abupdate-on-encrypted-partitions
+    - abupdate-with-verity
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
     - raid-small
     - rerun
     - simple
+    - verity
   pullrequest:
     - base
     - abupdate-on-encrypted-raid
     - abupdate-on-encrypted-partitions
+    - abupdate-with-verity
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
     - raid-small
     - rerun
     - simple
+    - verity
   validation:
     - base
     - abupdate-on-encrypted-raid
     - abupdate-on-encrypted-partitions
+    - abupdate-with-verity
     - encrypted-partition
     - encrypted-raid
     - encrypted-swap
     - raid-small
     - rerun
     - simple
+    - verity

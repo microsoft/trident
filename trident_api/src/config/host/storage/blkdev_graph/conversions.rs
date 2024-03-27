@@ -2,10 +2,8 @@
 
 use crate::config::{
     AbVolumePair, Disk, EncryptedVolume, Image, ImageFormat, Partition, SoftwareRaidArray,
+    VerityDevice,
 };
-
-#[cfg(feature = "verity-preview")]
-use crate::config::VerityDevice;
 
 use super::types::{BlkDevNode, BlkDevReferrerKind, HostConfigBlockDevice};
 
@@ -60,7 +58,6 @@ where
     }
 }
 
-#[cfg(feature = "verity-preview")]
 /// Get a BlkDevNode from a VerityDevice reference
 impl<'a, 'b> From<&'a VerityDevice> for BlkDevNode<'b>
 where

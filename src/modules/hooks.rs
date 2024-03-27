@@ -27,8 +27,8 @@ impl Module for HooksModule {
         "hooks"
     }
 
-    fn refresh_host_status(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
-        Ok(())
+    fn writable_etc_overlay(&self) -> bool {
+        false
     }
 
     fn validate_host_config(

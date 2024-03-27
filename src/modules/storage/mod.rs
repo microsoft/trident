@@ -15,6 +15,7 @@ use osutils::{
 };
 use trident_api::{
     config::{HostConfiguration, PartitionSize, PartitionType},
+    constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
     status::{
         self, AbVolumeSelection, BlockDeviceContents, Disk, EncryptedVolume, HostStatus, Partition,
@@ -25,14 +26,14 @@ use trident_api::{
 
 use crate::modules::{self, Module};
 
+use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
+
 mod encryption;
 mod filesystem;
 pub mod image;
 mod raid;
 pub mod tabfile;
-
-use tabfile::TabFileSettings;
-use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
+mod verity;
 
 fn create_partitions(
     host_status: &mut HostStatus,
@@ -263,23 +264,25 @@ impl Module for StorageModule {
         None
     }
 
+    fn provision(
+        &mut self,
+        _host_status: &mut HostStatus,
+        host_config: &HostConfiguration,
+        mount_point: &Path,
+    ) -> Result<(), Error> {
+        verity::validate_compatibility(host_config, mount_point)
+    }
+
     fn configure(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
-        let fstab = TabFile::from_mount_points(
+        generate_fstab(
+            host_config,
             host_status,
-            &host_config.storage.mount_points,
-            &TabFileSettings {
-                ..Default::default()
-            },
-        )
-        .context("Failed to serialize mount point configuration for the target OS")?;
-        fstab
-            .write(Path::new(tabfile::DEFAULT_FSTAB_PATH))
-            .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
-        trace!("Wrote '{}', contents: '{:?}'", DEFAULT_FSTAB_PATH, fstab);
+            Path::new(tabfile::DEFAULT_FSTAB_PATH),
+        )?;
 
         // TODO: update /etc/repart.d directly for the matching disk, derive
         // from where is the root located
@@ -291,8 +294,36 @@ impl Module for StorageModule {
         raid::create_raid_config(host_status)
             .context("Failed to create mdadm.conf file after RAID creation")?;
 
+        // update paths for root verity devices in a grub config
+        verity::update_root_verity_in_grub_config(
+            host_status,
+            host_config,
+            Path::new(ROOT_MOUNT_POINT_PATH),
+        )
+        .context("Failed to update GRUB config file after Verity creation")?;
+
         Ok(())
     }
+}
+
+/// Create a tabfile that captures all the desired
+/// mountpoints as per Host Configuration
+fn generate_fstab(
+    host_config: &HostConfiguration,
+    host_status: &HostStatus,
+    path: &Path,
+) -> Result<(), Error> {
+    let mut mount_points = host_config.storage.mount_points.clone();
+    if !host_config.storage.verity.is_empty() {
+        mount_points.push(verity::create_etc_overlay_mount_point());
+    }
+    let fstab = TabFile::from_mount_points(host_status, &mount_points)
+        .context("Failed to serialize mount point configuration for the target OS")?;
+    fstab
+        .write(path)
+        .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
+    trace!("Wrote '{}', contents: '{:?}'", DEFAULT_FSTAB_PATH, fstab);
+    Ok(())
 }
 
 pub(super) fn initialize_block_devices(
@@ -334,6 +365,8 @@ pub(super) fn initialize_block_devices(
         debug!("Initializing block devices");
         raid::stop_pre_existing_raid_arrays(host_config)
             .structured(ManagementError::CleanupRaid)?;
+        verity::stop_pre_existing_verity_devices(host_config)
+            .structured(ManagementError::CleanupVerity)?;
         create_partitions(host_status, host_config)
             .structured(ManagementError::CreatePartitions)?;
         raid::create_sw_raid(host_status, host_config).structured(ManagementError::CreateRaid)?;
@@ -344,6 +377,11 @@ pub(super) fn initialize_block_devices(
     image::provision(host_status, host_config).structured(ManagementError::DeployImages)?;
     filesystem::create_filesystems(host_config, host_status)
         .structured(ManagementError::CreateFilesystems)?;
+
+    // Assumes that images are already in place (data and hash), so that it can
+    // assemble the verity devices.
+    verity::setup_verity_devices(host_config, host_status)
+        .structured(ManagementError::CreateVerity)?;
 
     Ok(())
 }
@@ -456,9 +494,9 @@ mod tests {
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
-            Disk as DiskConfig, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint,
-            Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
-            SoftwareRaidArray, Storage as StorageConfig,
+            self, Disk as DiskConfig, HostConfiguration, Image, ImageFormat, ImageSha256,
+            MountPoint, Partition as PartitionConfig, PartitionSize, PartitionType, Raid,
+            RaidLevel, SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
         status::{AbUpdate, AbVolumePair, Storage, UpdateKind},
@@ -535,6 +573,7 @@ mod tests {
                         devices: vec!["part3".to_owned(), "part4".to_owned()],
                     }],
                 },
+                verity: vec![],
                 mount_points: vec![MountPoint {
                     filesystem: "ext4".to_owned(),
                     options: vec![],
@@ -911,6 +950,82 @@ mod tests {
             BlockDeviceContents::Initialized
         );
     }
+
+    #[test]
+    fn test_generate_fstab() {
+        let expected_contents = "/part1 / ext4  0 1";
+        let temp_tabfile = tempfile::NamedTempFile::new().unwrap();
+        // passing dummy file
+        assert_eq!(
+            generate_fstab(
+                &get_host_config(&temp_tabfile),
+                &HostStatus {
+                    ..Default::default()
+                },
+                temp_tabfile.path(),
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
+            "Failed to find block device with id part1"
+        );
+
+        generate_fstab(
+            &get_host_config(&temp_tabfile),
+            &HostStatus {
+                storage: Storage {
+                    disks: btreemap! {
+                        "disk1".into() => Disk {
+                            partitions: vec![Partition { id: "part1".into(), path: PathBuf::from("/part1"), start: 0, end: 1, ty: PartitionType::Root, contents: BlockDeviceContents::Unknown, uuid: Uuid::new_v4() }],
+                            ..Default::default()
+                        }
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            temp_tabfile.path(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(temp_tabfile.path()).unwrap(),
+            expected_contents,
+        );
+
+        // test with verity enabled
+
+        let expected_contents = "/part1 / ext4  0 1\noverlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2";
+
+        let mut hc = get_host_config(&temp_tabfile);
+        hc.storage.verity = vec![config::VerityDevice {
+            device_name: "".into(),
+            id: "".into(),
+            data_target_id: "".into(),
+            hash_target_id: "".into(),
+        }];
+
+        generate_fstab(
+            &hc,
+            &HostStatus {
+                storage: Storage {
+                    disks: btreemap! {
+                        "disk1".into() => Disk {
+                            partitions: vec![Partition { id: "part1".into(), path: PathBuf::from("/part1"), start: 0, end: 1, ty: PartitionType::Root, contents: BlockDeviceContents::Unknown, uuid: Uuid::new_v4() }],
+                            ..Default::default()
+                        }
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            temp_tabfile.path(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(temp_tabfile.path()).unwrap(),
+            expected_contents,
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -918,6 +1033,7 @@ mod tests {
 mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
+
     use trident_api::config::{Disk, Storage};
 
     #[functional_test]

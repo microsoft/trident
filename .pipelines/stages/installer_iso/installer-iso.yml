@@ -122,6 +122,8 @@ stages:
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_root.rawzst
               mv $(System.ArtifactsDirectory)/runtime-verity-image/root-hash.raw.zst \
                 $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_roothash.rawzst
+              mv $(System.ArtifactsDirectory)/runtime-verity-image/var.raw.zst \
+                $(argusToolkitSourceDirectory)/build/installer-iso-components/runtime-image/verity_var.rawzst
 
               # Containerhost image for e2e testing
               mv $(System.ArtifactsDirectory)/runtime-containerhost-image/esp.raw.zst \

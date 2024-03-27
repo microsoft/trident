@@ -81,6 +81,9 @@ pub struct Storage {
     pub encrypted_volumes: BTreeMap<BlockDeviceId, EncryptedVolume>,
 
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub verity_devices: BTreeMap<BlockDeviceId, VerityDevice>,
+
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mount_points: BTreeMap<PathBuf, MountPoint>,
 
     /// A/B update status.
@@ -165,6 +168,17 @@ pub struct EncryptedVolume {
 
     /// The contents of the encrypted volume.
     pub contents: BlockDeviceContents,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct VerityDevice {
+    /// The name of the device created under `/dev/mapper` when opening
+    /// the volume.
+    pub device_name: String,
+
+    /// Root hash of the verity device.
+    pub root_hash: String,
 }
 
 // Status of a raid array.
@@ -707,11 +721,36 @@ mod tests {
     }
 
     #[test]
-    fn test_get_filesystem_match_efi_returns_vfat() {
+    fn test_get_filesystem_single_mount_point_id_match_returns_filesystem() {
         let storage = Storage {
             disks: BTreeMap::new(),
             raid_arrays: BTreeMap::new(),
             encrypted_volumes: BTreeMap::new(),
+            verity_devices: BTreeMap::new(),
+            mount_points: btreemap! {
+                PathBuf::from("/") => MountPoint {
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+            },
+            ab_update: Some(AbUpdate {
+                volume_pairs: BTreeMap::new(),
+                active_volume: None,
+            }),
+            root_device_path: None,
+        };
+
+        assert_eq!(storage.get_filesystem(&"root".into()).unwrap(), "ext4");
+    }
+
+    #[test]
+    fn test_get_filesystem_three_mount_points_id_match_returns_filesystem() {
+        let storage = Storage {
+            disks: BTreeMap::new(),
+            raid_arrays: BTreeMap::new(),
+            encrypted_volumes: BTreeMap::new(),
+            verity_devices: BTreeMap::new(),
             mount_points: btreemap! {
                 PathBuf::from("/") => MountPoint {
                     target_id: "root".into(),
@@ -745,6 +784,7 @@ mod tests {
             disks: BTreeMap::new(),
             raid_arrays: BTreeMap::new(),
             encrypted_volumes: BTreeMap::new(),
+            verity_devices: BTreeMap::new(),
             mount_points: btreemap! {
                 PathBuf::from("/") => MountPoint {
                     target_id: "root".into(),
@@ -778,6 +818,7 @@ mod tests {
             disks: BTreeMap::new(),
             raid_arrays: BTreeMap::new(),
             encrypted_volumes: BTreeMap::new(),
+            verity_devices: BTreeMap::new(),
             mount_points: btreemap! {
                 PathBuf::from("/") => MountPoint {
                     target_id: "root".into(),
@@ -811,6 +852,7 @@ mod tests {
             disks: BTreeMap::new(),
             raid_arrays: BTreeMap::new(),
             encrypted_volumes: BTreeMap::new(),
+            verity_devices: BTreeMap::new(),
             mount_points: btreemap! {
                 PathBuf::from("/") => MountPoint {
                     target_id: "root".into(),
@@ -849,6 +891,7 @@ mod tests {
             disks: BTreeMap::new(),
             raid_arrays: BTreeMap::new(),
             encrypted_volumes: BTreeMap::new(),
+            verity_devices: BTreeMap::new(),
             mount_points: btreemap! {
                 PathBuf::from("/") => MountPoint {
                     target_id: "root".into(),

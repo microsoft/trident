@@ -483,26 +483,28 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::TRIDENT_TEMPORARY_DATASTORE_PATH;
-
     use super::*;
-    use maplit::btreemap;
-    use tempfile::TempDir;
-    use trident_api::{
-        constants::{ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
-        status::{AbUpdate, AbVolumePair, Partition, ReconcileState, UpdateKind},
-    };
-
-    use uuid::Uuid;
-
-    use osutils::efibootmgr::{self, EfiBootManagerOutput};
     use pytest_gen::functional_test;
 
     use std::{
         fs::{create_dir_all, File},
         iter::Iterator,
     };
-    use trident_api::status::{BlockDeviceContents, Disk, Storage};
+
+    use maplit::btreemap;
+    use tempfile::TempDir;
+    use uuid::Uuid;
+
+    use osutils::efibootmgr::{self, EfiBootManagerOutput};
+    use trident_api::{
+        constants::{ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+        status::{
+            AbUpdate, AbVolumePair, BlockDeviceContents, Disk, Partition, ReconcileState, Storage,
+            UpdateKind,
+        },
+    };
+
+    use crate::TRIDENT_TEMPORARY_DATASTORE_PATH;
 
     #[allow(dead_code)]
     fn delete_boot_next() {

@@ -92,6 +92,8 @@ impl<'a> Drop for MountGuard<'a> {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use crate::mountpoint;
+
     use super::*;
     use std::{fs, path::Path};
     use tempfile::NamedTempFile;
@@ -105,6 +107,10 @@ mod functional_test {
         let device = Path::new("/dev/sr0");
         // Mount point
         let mount_point = Path::new("/mnt/cdrom");
+
+        if mountpoint::check_is_mountpoint(mount_point).unwrap() {
+            umount(mount_point, false).unwrap();
+        }
 
         // Create the mount point directory if it doesn't exist yet
         fs::create_dir_all(mount_point).unwrap();

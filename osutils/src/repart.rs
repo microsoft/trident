@@ -569,6 +569,7 @@ mod functional_test {
             part_uuid: None,
             size: DISK_SIZE,
             parent_kernel_name: None,
+            mountpoints: vec![None],
             children: Some(vec![
                 BlockDevice {
                     name: "/dev/sdb1".into(),
@@ -578,6 +579,7 @@ mod functional_test {
                     size: part1.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
                     children: None,
+                    mountpoints: vec![None],
                 },
                 BlockDevice {
                     name: "/dev/sdb2".into(),
@@ -587,6 +589,7 @@ mod functional_test {
                     size: part2.size,
                     parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
                     children: None,
+                    mountpoints: vec![None],
                 },
             ]),
         }];

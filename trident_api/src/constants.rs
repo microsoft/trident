@@ -14,6 +14,9 @@ pub const IMAGE_SHA256_CHECKSUM_IGNORED: &str = "ignored";
 /// Name of the swap filesystem.
 pub const SWAP_FILESYSTEM: &str = "swap";
 
+/// Name of the overlay filesystem.
+pub const OVERLAY_FILESYSTEM: &str = "overlay";
+
 /// None/null mount point.
 pub const NONE_MOUNT_POINT: &str = "none";
 
@@ -79,3 +82,22 @@ pub const ESP_RELATIVE_MOUNT_POINT_PATH: &str = formatcp!("{BOOT_DIRECTORY}/{ROO
 /// ESP volume mount point path (/boot/efi).
 pub const ESP_MOUNT_POINT_PATH: &str =
     formatcp!("{ROOT_MOUNT_POINT_PATH}{ESP_RELATIVE_MOUNT_POINT_PATH}");
+
+/// Hardcoded path to the location to store backing of the /etc overlayfs.
+/// Expected to be on top of A/B update volume pair. Relative to root mount point.
+pub const TRIDENT_OVERLAY_RELATIVE_PATH: &str = "var/lib/trident-overlay";
+
+/// Hardcoded path to the location to store backing of the /etc overlayfs.
+/// Expected to be on top of A/B update volume pair.
+pub const TRIDENT_OVERLAY_PATH: &str = formatcp!("/{TRIDENT_OVERLAY_RELATIVE_PATH}");
+
+// /etc overlay related path constants
+
+/// Lower directory relative path (etc).
+pub const TRIDENT_OVERLAY_LOWER_RELATIVE_PATH: &str = "etc";
+
+/// Work directory relative path (work).
+pub const TRIDENT_OVERLAY_WORK_RELATIVE_PATH: &str = "etc/work";
+
+/// Upper directory relative path (upper).
+pub const TRIDENT_OVERLAY_UPPER_RELATIVE_PATH: &str = "etc/upper";
