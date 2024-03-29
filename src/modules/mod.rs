@@ -17,9 +17,7 @@ use trident_api::{
         DatastoreError, InitializationError, InternalError, InvalidInputError, ManagementError,
         ModuleError, ReportError, TridentError, TridentResultExt,
     },
-    status::{
-        AbVolumeSelection, BlockDeviceInfo, HostStatus, Partition, ReconcileState, UpdateKind,
-    },
+    status::{AbVolumeSelection, BlockDeviceInfo, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
 
@@ -95,11 +93,7 @@ trait Module: Send {
     }
 
     /// Perform non-destructive preparations for an update.
-    fn prepare(
-        &mut self,
-        _host_status: &mut HostStatus,
-        _host_config: &HostConfiguration,
-    ) -> Result<(), Error> {
+    fn prepare(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
         Ok(())
     }
 
@@ -139,7 +133,7 @@ lazy_static::lazy_static! {
     ]);
 }
 
-pub(super) fn provision_host(
+pub(super) fn clean_install(
     command: HostUpdateCommand,
     state: &mut DataStore,
 ) -> Result<(), TridentError> {
@@ -192,7 +186,7 @@ pub(super) fn provision_host(
     }
 
     info!("Running prepare");
-    prepare(&mut modules, state, host_config)?;
+    prepare(&mut modules, state)?;
 
     info!("Preparing storage to mount new root");
     let new_root_path = Path::new(UPDATE_ROOT_PATH);
@@ -340,10 +334,13 @@ pub(super) fn update(
             ));
         }
     }
-    state.with_host_status(|s| s.reconcile_state = reconcile_state)?;
+    state.with_host_status(|s| {
+        s.reconcile_state = reconcile_state;
+        s.spec = host_config.clone();
+    })?;
 
     info!("Running prepare");
-    prepare(&mut modules, state, host_config)?;
+    prepare(&mut modules, state)?;
 
     let new_root_path = Path::new(UPDATE_ROOT_PATH);
 
@@ -421,64 +418,10 @@ pub(super) fn update(
 /// Using the / mount point, figure out what should be used as a root block device.
 fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
     host_status
+        .spec
         .storage
-        .mount_points
-        .get(Path::new(constants::ROOT_MOUNT_POINT_PATH))
+        .path_to_mount_point(Path::new(constants::ROOT_MOUNT_POINT_PATH))
         .and_then(|m| Some(get_block_device(host_status, &m.target_id, false)?.path))
-}
-
-fn get_disk(host_status: &HostStatus, block_device_id: &BlockDeviceId) -> Option<BlockDeviceInfo> {
-    host_status
-        .storage
-        .disks
-        .get(block_device_id)
-        .map(|d| d.to_block_device())
-}
-
-fn get_partition(
-    host_status: &HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<BlockDeviceInfo> {
-    host_status
-        .storage
-        .disks
-        .iter()
-        .flat_map(|(_block_device_id, disk)| &disk.partitions)
-        .find(|p| p.id == *block_device_id)
-        .map(Partition::to_block_device)
-}
-
-fn get_raid_array(
-    host_status: &HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<BlockDeviceInfo> {
-    host_status
-        .storage
-        .raid_arrays
-        .get(block_device_id)
-        .map(|r| r.to_block_device())
-}
-
-fn get_encrypted_volume(
-    host_status: &HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<BlockDeviceInfo> {
-    host_status
-        .storage
-        .encrypted_volumes
-        .get(block_device_id)
-        .map(|e| e.to_block_device())
-}
-
-fn get_verity_device(
-    host_status: &HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<BlockDeviceInfo> {
-    host_status
-        .storage
-        .verity_devices
-        .get(block_device_id)
-        .map(|e| e.to_block_device())
 }
 
 /// Returns a block device info for a block device referenced by the
@@ -490,12 +433,12 @@ fn get_block_device(
     block_device_id: &BlockDeviceId,
     active: bool,
 ) -> Option<BlockDeviceInfo> {
-    get_disk(host_status, block_device_id)
-        .or_else(|| get_partition(host_status, block_device_id))
+    host_status
+        .storage
+        .block_devices
+        .get(block_device_id)
+        .cloned()
         .or_else(|| get_ab_volume(host_status, block_device_id, active))
-        .or_else(|| get_raid_array(host_status, block_device_id))
-        .or_else(|| get_encrypted_volume(host_status, block_device_id))
-        .or_else(|| get_verity_device(host_status, block_device_id))
 }
 
 /// Returns a block device info for a volume from the given AB Volume Pair. If
@@ -519,16 +462,16 @@ fn get_ab_volume_block_device_id(
     block_device_id: &BlockDeviceId,
     active: bool,
 ) -> Option<BlockDeviceId> {
-    if let Some(ab_update) = &host_status.storage.ab_update {
+    if let Some(ab_update) = &host_status.spec.storage.ab_update {
         let ab_volume = ab_update
             .volume_pairs
             .iter()
-            .find(|v| v.0 == block_device_id);
+            .find(|v| &v.id == block_device_id);
         if let Some(v) = ab_volume {
             // TODO https://dev.azure.com/mariner-org/ECF/_workitems/edit/6808- should we support esp as part of abVolume?
             return get_ab_update_volume(host_status, active).map(|selection| match selection {
-                AbVolumeSelection::VolumeA => v.1.volume_a_id.clone(),
-                AbVolumeSelection::VolumeB => v.1.volume_b_id.clone(),
+                AbVolumeSelection::VolumeA => v.volume_a_id.clone(),
+                AbVolumeSelection::VolumeB => v.volume_b_id.clone(),
             });
         }
     }
@@ -545,16 +488,14 @@ fn get_ab_update_volume(host_status: &HostStatus, active: bool) -> Option<AbVolu
         ReconcileState::UpdateInProgress(UpdateKind::HotPatch)
         | ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)
         | ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => {
-            host_status.storage.ab_update.as_ref()?.active_volume
+            host_status.storage.ab_active_volume
         }
         ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
             if active {
-                host_status.storage.ab_update.as_ref()?.active_volume
+                host_status.storage.ab_active_volume
             } else {
                 Some(
-                    if host_status.storage.ab_update.as_ref()?.active_volume
-                        == Some(AbVolumeSelection::VolumeA)
-                    {
+                    if host_status.storage.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
                         AbVolumeSelection::VolumeB
                     } else {
                         AbVolumeSelection::VolumeA
@@ -565,7 +506,7 @@ fn get_ab_update_volume(host_status: &HostStatus, active: bool) -> Option<AbVolu
         ReconcileState::UpdateInProgress(UpdateKind::Incompatible) => None,
         ReconcileState::Ready => {
             if active {
-                host_status.storage.ab_update.as_ref()?.active_volume
+                host_status.storage.ab_active_volume
             } else {
                 None
             }
@@ -613,16 +554,12 @@ fn validate_host_config(
     Ok(())
 }
 
-fn prepare(
-    modules: &mut [Box<dyn Module>],
-    state: &mut DataStore,
-    host_config: &HostConfiguration,
-) -> Result<(), TridentError> {
+fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(), TridentError> {
     for module in modules {
         debug!("Starting stage 'Prepare' for module '{}'", module.name());
         state.try_with_host_status(|s| {
             module
-                .prepare(s, host_config)
+                .prepare(s)
                 .structured(ManagementError::from(ModuleError::Prepare {
                     name: module.name(),
                 }))
@@ -783,15 +720,13 @@ fn transition(
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
 
     use maplit::btreemap;
-    use uuid::Uuid;
 
     use trident_api::{
-        config::PartitionType,
+        config::{self, AbUpdate, AbVolumePair, Disk, Partition, PartitionSize, PartitionType},
         constants,
-        status::{AbUpdate, AbVolumePair, BlockDeviceContents, Disk, MountPoint, Storage},
+        status::{BlockDeviceContents, Storage},
     };
 
     use super::*;
@@ -799,45 +734,59 @@ mod test {
     #[test]
     fn test_get_root_block_device_path() {
         let host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "foo".into() => Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                        path: PathBuf::from("/dev/sda"),
-                        capacity: 10,
-                        contents: BlockDeviceContents::Initialized,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "foo".to_owned(),
+                        device: PathBuf::from("/dev/sda"),
                         partitions: vec![
                             Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000001u128),
-                                path: PathBuf::from("/dev/sda1"),
-                                id: "boot".into(),
-                                start: 1,
-                                end: 3,
-                                ty: PartitionType::Esp,
-                                contents: BlockDeviceContents::Initialized,
+                                id: "boot".to_owned(),
+                                size: PartitionSize::Fixed(2),
+                                partition_type: PartitionType::Esp,
                             },
                             Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000002u128),
-                                path: PathBuf::from("/dev/sda2"),
-                                id: "root".into(),
-                                start: 4,
-                                end: 10,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Initialized,
+                                id: "root".to_owned(),
+                                size: PartitionSize::Fixed(7),
+                                partition_type: PartitionType::Root,
                             },
                         ],
-                    },
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            target_id: "boot".to_owned(),
+                            filesystem: "fat32".to_owned(),
+                            options: vec![],
+                            path: PathBuf::from("/boot"),
+                        },
+                        config::MountPoint {
+                            target_id: "root".to_owned(),
+                            filesystem: "ext4".to_owned(),
+                            options: vec![],
+                            path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
+                        },
+                    ],
+                    ..Default::default()
                 },
-                mount_points: btreemap! {
-                    PathBuf::from("/boot") => MountPoint {
-                        target_id: "boot".to_owned(),
-                        filesystem: "fat32".to_owned(),
-                        options: vec![],
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "foo".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda"),
+                        size: 10,
+                        contents: BlockDeviceContents::Initialized,
                     },
-                    PathBuf::from(constants::ROOT_MOUNT_POINT_PATH) => MountPoint {
-                        target_id: "root".to_owned(),
-                        filesystem: "ext4".to_owned(),
-                        options: vec![],
+                    "boot".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda1"),
+                        size: 2,
+                        contents: BlockDeviceContents::Initialized,
+                    },
+                    "root".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda2"),
+                        size: 6,
+                        contents: BlockDeviceContents::Initialized,
                     },
                 },
                 ..Default::default()
@@ -857,66 +806,77 @@ mod test {
     #[test]
     fn test_get_block_device_for_update() {
         let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![
+                        Disk {
+                            id: "os".to_owned(),
+                            device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            partitions: vec![
+                                Partition {
+                                    id: "efi".to_owned(),
+                                    size: PartitionSize::Fixed(100),
+                                    partition_type: PartitionType::Esp,
+                                },
+                                Partition {
+                                    id: "root".to_owned(),
+                                    size: PartitionSize::Fixed(900),
+                                    partition_type: PartitionType::Root,
+                                },
+                                Partition {
+                                    id: "rootb".to_owned(),
+                                    size: PartitionSize::Fixed(9000),
+                                    partition_type: PartitionType::Root,
+                                },
+                            ],
+                            ..Default::default()
+                        },
+                        Disk {
+                            id: "data".to_owned(),
+                            device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                            partitions: vec![],
+                            ..Default::default()
+                        },
+                    ],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "osab".to_string(),
+                            volume_a_id: "root".to_string(),
+                            volume_b_id: "rootb".to_string(),
+                        }],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             storage: Storage {
-                disks: btreemap! {
-                    "os".to_owned() => Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
+                block_devices: btreemap! {
+                    "os".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        capacity: 0,
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000001u128,
-                                ),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                id: "efi".into(),
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                contents: BlockDeviceContents::Unknown,
-                            },
-                            Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000002u128,
-                                ),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                id: "root".into(),
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
-                            },
-                            Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                id: "rootb".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
-                            },
-                        ],
                     },
-                    "data".into() => Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        capacity: 1000,
+                    "efi".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
+                    },
+                    "root".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 900,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "rootb".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 9000,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "data".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
-                ab_update: Some(AbUpdate {
-                    volume_pairs: btreemap! {
-                        "osab".to_owned() => AbVolumePair {
-                            volume_a_id: "root".to_owned(),
-                            volume_b_id: "rootb".to_owned(),
-                        },
-                    },
-                    ..Default::default()
-                }),
                 ..Default::default()
             },
             reconcile_state: ReconcileState::CleanInstall,
@@ -967,12 +927,7 @@ mod test {
                 contents: BlockDeviceContents::Unknown,
             }
         );
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
             super::get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
             BlockDeviceInfo {
@@ -1023,11 +978,13 @@ mod test {
     /// Validates logic for determining which A/B volume to use
     fn test_get_ab_update_volume(active: bool) -> HostStatus {
         let mut host_status = HostStatus {
-            storage: Storage {
-                ab_update: Some(AbUpdate {
-                    volume_pairs: BTreeMap::new(),
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: Vec::new(),
+                    }),
                     ..Default::default()
-                }),
+                },
                 ..Default::default()
             },
             reconcile_state: ReconcileState::CleanInstall,
@@ -1040,24 +997,14 @@ mod test {
             Some(AbVolumeSelection::VolumeA)
         );
 
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
         assert_eq!(
             get_ab_update_volume(&host_status, active),
             Some(AbVolumeSelection::VolumeA)
         );
 
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
 
         assert_eq!(
             get_ab_update_volume(&host_status, active),
@@ -1077,12 +1024,7 @@ mod test {
             Some(AbVolumeSelection::VolumeB)
         );
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot);
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
             get_ab_update_volume(&host_status, active),
             Some(AbVolumeSelection::VolumeA)
@@ -1111,12 +1053,7 @@ mod test {
             get_ab_update_volume(&host_status, false),
             Some(AbVolumeSelection::VolumeB)
         );
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_ab_update_volume(&host_status, false),
             Some(AbVolumeSelection::VolumeA)
@@ -1141,82 +1078,10 @@ mod test {
             get_ab_update_volume(&host_status, true),
             Some(AbVolumeSelection::VolumeA)
         );
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_ab_update_volume(&host_status, true),
             Some(AbVolumeSelection::VolumeB)
-        );
-    }
-
-    /// Validates logic for querying disks and partitions.
-    #[test]
-    fn test_get_disk_partition() {
-        let host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "os".to_owned() => Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000001u128),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                id: "efi".into(),
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                contents: BlockDeviceContents::Unknown,
-                            },
-                            Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000002u128),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                id: "root".into(),
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
-                            },
-                            Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                id: "rootb".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
-                            },
-                        ],
-                    },
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        assert_eq!(
-            get_disk(&host_status, &"os".to_owned()).unwrap(),
-            BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                size: 0,
-                contents: BlockDeviceContents::Unknown,
-            }
-        );
-        assert_eq!(get_disk(&host_status, &"efi".to_owned()), None);
-        assert_eq!(get_partition(&host_status, &"os".to_owned()), None);
-        assert_eq!(
-            get_partition(&host_status, &"efi".to_owned()),
-            Some(BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                size: 0,
-                contents: BlockDeviceContents::Unknown,
-            })
         );
     }
 }

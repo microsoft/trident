@@ -184,18 +184,26 @@ pub(super) fn record_datastore_location(
 ) -> Result<(), TridentError> {
     info!("Recording datastore location");
     let (device, relative_path) = host_status
+        .spec
         .storage
         .get_mount_point_and_relative_path(datastore_path)
         .structured(ManagementError::from(
             DatastoreError::RecordDatastoreLocation,
         ))?;
-    let Some(partition) = &host_status.storage.get_partition_ref(&device.target_id) else {
+    let Some(partition) = &host_status.spec.storage.get_partition(&device.target_id) else {
         // TODO(6623, 6624): Handle datastore being on RAID arrays or encrypted volumes.
         warn!("Datastore is not on a partition, cannot record location");
         return Ok(());
     };
+    let device = host_status
+        .storage
+        .block_devices
+        .get(&partition.id)
+        .structured(ManagementError::from(
+            DatastoreError::RecordDatastoreLocation,
+        ))?;
     datastore_ref
-        .write_all(partition.path.as_os_str().as_bytes())
+        .write_all(device.path.as_os_str().as_bytes())
         .structured(ManagementError::from(
             DatastoreError::RecordDatastoreLocation,
         ))?;
@@ -397,67 +405,82 @@ mod functional_test {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
     use trident_api::{
-        config::PartitionType,
-        status::{BlockDeviceContents, Disk, MountPoint, Partition, Storage},
+        config::{self, Disk, Partition, PartitionSize, PartitionType},
+        status::{BlockDeviceContents, BlockDeviceInfo, Storage},
     };
-    use uuid::Uuid;
 
     #[functional_test]
     fn test_record_datastore_location() {
         let host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".into(),
+                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
                         partitions: vec![
                             Partition {
                                 id: "efi".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/a"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::Fixed(100),
                             },
                             Partition {
                                 id: "root".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/b"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
                             Partition {
                                 id: "var".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/c"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(10000),
                             },
                         ],
-                    },
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            path: PathBuf::from("/"),
+                            target_id: "root".to_string(),
+                            filesystem: "ext4".to_string(),
+                            options: vec![],
+                        },
+                        config::MountPoint {
+                            path: PathBuf::from("/var"),
+                            target_id: "var".to_string(),
+                            filesystem: "ext4".to_string(),
+                            options: vec![],
+                        },
+                        config::MountPoint {
+                            path: PathBuf::from("/boot/efi"),
+                            target_id: "efi".to_string(),
+                            filesystem: "vfat".to_string(),
+                            options: vec![],
+                        },
+                    ],
+                    ..Default::default()
                 },
-                mount_points: btreemap! {
-                    PathBuf::from("/") => MountPoint {
-                        target_id: "root".into(),
-                        filesystem: "ext4".into(),
-                        options: vec![],
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "foo".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/c"),
+                        size: 10000,
+                        contents: BlockDeviceContents::Unknown,
                     },
-                    PathBuf::from("/var") => MountPoint {
-                        target_id: "var".into(),
-                        filesystem: "ext4".into(),
-                        options: vec![],
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/a"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
                     },
-                    PathBuf::from("/boot/efi") => MountPoint {
-                        target_id: "efi".into(),
-                        filesystem: "vfat".into(),
-                        options: vec![],
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/b"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "var".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/c"),
+                        size: 10000,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()

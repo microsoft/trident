@@ -415,7 +415,7 @@ impl Trident {
                     }
                 })?;
             }
-            modules::provision_host(cmd, datastore).message("Failed to provision host")
+            modules::clean_install(cmd, datastore).message("Failed to provision host")
         }
     }
 
@@ -494,76 +494,12 @@ fn open_firewall_for_grpc() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use trident_api::{
-        config::{MountPoint, PartitionType, Storage},
+        config::{MountPoint, Storage},
         constants,
-        status::{BlockDeviceContents, BlockDeviceInfo, Disk, Partition},
     };
 
     use super::*;
     use std::path::PathBuf;
-
-    /// Validates that the `to_block_device` function works as expected for
-    /// disks and partitions.
-    #[test]
-    fn test_to_block_device() {
-        let mut disk = Disk {
-            path: PathBuf::from("/dev/disk/by-bus/foobar"),
-            uuid: uuid::Uuid::nil(),
-            capacity: 0,
-            contents: BlockDeviceContents::Unknown,
-            partitions: vec![],
-        };
-
-        assert_eq!(
-            &disk.to_block_device(),
-            &BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                size: 0,
-                contents: BlockDeviceContents::Unknown,
-            }
-        );
-
-        disk.capacity = 1234567890;
-
-        assert_eq!(
-            &disk.to_block_device(),
-            &BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                size: 1234567890,
-                contents: BlockDeviceContents::Unknown,
-            }
-        );
-
-        let mut partition = Partition {
-            id: "efi".to_owned(),
-            path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-            contents: BlockDeviceContents::Unknown,
-            start: 0,
-            end: 0,
-            ty: PartitionType::Esp,
-            uuid: uuid::Uuid::nil(),
-        };
-
-        assert_eq!(
-            &partition.to_block_device(),
-            &BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                size: 0,
-                contents: BlockDeviceContents::Unknown,
-            }
-        );
-
-        partition.start = 123;
-        partition.end = 456;
-        assert_eq!(
-            &partition.to_block_device(),
-            &BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                size: 333,
-                contents: BlockDeviceContents::Unknown,
-            }
-        );
-    }
 
     #[test]
     fn test_get_host_configuration() {

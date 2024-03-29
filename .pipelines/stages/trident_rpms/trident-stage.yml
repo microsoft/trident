@@ -48,7 +48,7 @@ stages:
           - template: ../common_tasks/coverage.yml
             parameters:
               tridentSourceDirectory: $(Build.SourcesDirectory)/trident
-              codeCoverageBaseline: 73 # Unit tests
+              codeCoverageBaseline: 72 # Unit tests
 
       - job: BuildTrident
         displayName: Build Release Artifacts

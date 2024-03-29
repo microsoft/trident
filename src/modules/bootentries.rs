@@ -115,14 +115,16 @@ fn get_first_partition_of_type(
     partition_ty: PartitionType,
 ) -> Result<PathBuf, Error> {
     return host_status
+        .spec
         .storage
         .disks
-        .values()
+        .iter()
         .find_map(|disk| {
             disk.partitions
                 .iter()
-                .find(|partition| partition.ty == partition_ty)
-                .map(|_| disk.to_block_device().path.clone())
+                .find(|partition| partition.partition_type == partition_ty)
+                .and_then(|_| host_status.storage.block_devices.get(&disk.id))
+                .map(|block_device| block_device.path.clone())
         })
         .context("Failed to find disk path");
 }
@@ -239,17 +241,16 @@ fn update_efi_boot_order(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, path::PathBuf};
+    use std::{path::PathBuf, str::FromStr};
 
     use maplit::btreemap;
     use osutils::efibootmgr::EfiBootEntry;
     use trident_api::{
-        config::PartitionType,
-        status::{
-            AbUpdate, BlockDeviceContents, Disk, Partition, ReconcileState, Storage, UpdateKind,
+        config::{
+            self, AbUpdate, Disk, HostConfiguration, Partition, PartitionSize, PartitionType,
         },
+        status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage, UpdateKind},
     };
-    use uuid::Uuid;
 
     use super::*;
 
@@ -257,11 +258,13 @@ mod tests {
     #[test]
     fn test_get_label_and_path() {
         let mut host_status = HostStatus {
-            storage: Storage {
-                ab_update: Some(AbUpdate {
-                    volume_pairs: BTreeMap::new(),
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: Vec::new(),
+                    }),
                     ..Default::default()
-                }),
+                },
                 ..Default::default()
             },
             reconcile_state: ReconcileState::CleanInstall,
@@ -283,12 +286,7 @@ mod tests {
         // Test that UpdateInProgress(HostPatch, NormalUpdate, UpdateAndReboot)
         // will always use the active volume for updates
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_label_and_path(&host_status).unwrap(),
             (
@@ -310,44 +308,55 @@ mod tests {
     fn test_get_first_partition_of_type() {
         let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/sda"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
                         partitions: vec![
                             Partition {
                                 id: "efi".to_string(),
-                                path: PathBuf::from("/dev/sda1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("1M").unwrap(),
                             },
                             Partition {
                                 id: "root-a".to_string(),
-                                path: PathBuf::from("/dev/sda2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
                             },
                             Partition {
                                 id: "root-b".to_string(),
-                                path: PathBuf::from("/dev/sda3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            }
-
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
                         ],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
                     },
+                    "efi".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-a".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-b".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    }
                 },
                 ..Default::default()
             },
@@ -483,28 +492,26 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use crate::TRIDENT_TEMPORARY_DATASTORE_PATH;
+
     use super::*;
+    use maplit::btreemap;
+    use tempfile::TempDir;
+    use trident_api::{
+        config::{self, AbUpdate, AbVolumePair, Disk, HostConfiguration, Partition, PartitionSize},
+        constants::{ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+        status::{BlockDeviceInfo, ReconcileState, UpdateKind},
+    };
+
+    use osutils::efibootmgr::{self, EfiBootManagerOutput};
     use pytest_gen::functional_test;
 
     use std::{
         fs::{create_dir_all, File},
         iter::Iterator,
+        str::FromStr,
     };
-
-    use maplit::btreemap;
-    use tempfile::TempDir;
-    use uuid::Uuid;
-
-    use osutils::efibootmgr::{self, EfiBootManagerOutput};
-    use trident_api::{
-        constants::{ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
-        status::{
-            AbUpdate, AbVolumePair, BlockDeviceContents, Disk, Partition, ReconcileState, Storage,
-            UpdateKind,
-        },
-    };
-
-    use crate::TRIDENT_TEMPORARY_DATASTORE_PATH;
+    use trident_api::status::{BlockDeviceContents, Storage};
 
     #[allow(dead_code)]
     fn delete_boot_next() {
@@ -730,55 +737,63 @@ mod functional_test {
     fn test_set_boot_entries() {
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/sda"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
                         partitions: vec![
                             Partition {
                                 id: "efi".to_string(),
-                                path: PathBuf::from("/dev/sda1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("1M").unwrap(),
                             },
                             Partition {
                                 id: "root-a".to_string(),
-                                path: PathBuf::from("/dev/sda2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
                             },
                             Partition {
                                 id: "root-b".to_string(),
-                                path: PathBuf::from("/dev/sda3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
                             },
-
                         ],
-                    },
-
-                },
-                ab_update: Some(AbUpdate {
-                    volume_pairs: btreemap! {
-                        "root".to_string() => AbVolumePair {
+                        ..Default::default()
+                    }],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "root".to_string(),
                             volume_a_id: "root-a".to_string(),
                             volume_b_id: "root-b".to_string(),
-                        },
-                    },
+                        }],
+                    }),
                     ..Default::default()
-                }),
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "efi".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-a".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-b".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    }
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -787,12 +802,7 @@ mod functional_test {
         // For cleanInstall add A partition entry
         test_helper_set_boot_entries(BOOT_ENTRY_A, &host_status);
 
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
 
         test_helper_set_boot_entries(BOOT_ENTRY_A, &host_status);
 

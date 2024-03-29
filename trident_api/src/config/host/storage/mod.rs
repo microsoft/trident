@@ -301,6 +301,55 @@ impl Storage {
             .filter(|mp| path.starts_with(&mp.path))
             .max_by_key(|mp| mp.path.as_os_str().len())
     }
+
+    /// Returns the mount point and relative path for a given path.
+    ///
+    /// The mount point is the closest parent directory of the path that is a
+    /// mount point. The relative path is the path relative to the mount point.
+    pub fn get_mount_point_and_relative_path<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> Option<(&MountPoint, &Path)> {
+        self.mount_points
+            .iter()
+            .filter(|mp| path.starts_with(&mp.path))
+            .max_by_key(|mp| mp.path.components().count())
+            .and_then(|mp| Some((mp, path.strip_prefix(&mp.path).ok()?)))
+    }
+
+    /// This function returns the filesystem of the mount point targetting
+    /// the given block device id or, if part of an A/B update volume
+    /// pair, the mount point targetting the A/B update volume pair it is
+    /// apart of.
+    ///
+    /// If no such mount point exists, None is returned.
+    ///
+    /// Block device IDs that are part of RAID arrays or verity devices
+    /// are not supported. In such cases, None is returned.
+    pub fn get_filesystem(&self, bdid: &BlockDeviceId) -> Option<&String> {
+        // Recursive case: Check if the block device is part of an A/B
+        // update volume pair, and if so, return the filesystem of A/B
+        // update volume part itself.
+        if let Some(ab_update) = &self.ab_update {
+            if let Some(pair) = ab_update
+                .volume_pairs
+                .iter()
+                .find(|p| p.volume_a_id == *bdid || p.volume_b_id == *bdid)
+            {
+                return self.get_filesystem(&pair.id);
+            }
+        }
+
+        // Base case: Check if the block device is directly mounted, and
+        // if so, return the filesystem of the mount point.
+        self.mount_points.iter().find_map(|mp| {
+            if mp.target_id == *bdid {
+                Some(&mp.filesystem)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1887,5 +1936,284 @@ mod tests {
             .storage
             .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
             .is_none());
+    }
+
+    #[test]
+    fn test_get_mount_point_and_relative_path() {
+        let host_config = HostConfiguration {
+            storage: Storage {
+                mount_points: vec![
+                    MountPoint {
+                        path: PathBuf::from("/"),
+                        target_id: "root".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: PathBuf::from("/boot"),
+                        target_id: "boot".into(),
+                        filesystem: "ext4".into(),
+                        options: vec![],
+                    },
+                    MountPoint {
+                        path: PathBuf::from("/boot/efi"),
+                        target_id: "efi".into(),
+                        filesystem: "vfat".into(),
+                        options: vec![],
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            host_config
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/")),
+            Some((
+                &MountPoint {
+                    path: PathBuf::from("/"),
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                Path::new("")
+            ))
+        );
+
+        assert_eq!(
+            host_config
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi.cfg")),
+            Some((
+                &MountPoint {
+                    path: PathBuf::from("/boot"),
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                Path::new("efi.cfg")
+            ))
+        );
+
+        assert_eq!(
+            host_config
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi")),
+            Some((
+                &MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+                Path::new("")
+            ))
+        );
+
+        assert_eq!(
+            host_config
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/")),
+            Some((
+                &MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+                Path::new("")
+            ))
+        );
+
+        assert_eq!(
+            host_config
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/foobar")),
+            Some((
+                &MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+                Path::new("foobar")
+            ))
+        );
+
+        assert_eq!(
+            host_config
+                .storage
+                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/foobar/")),
+            Some((
+                &MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+                Path::new("foobar")
+            ))
+        );
+    }
+
+    #[test]
+    fn test_get_filesystem_match_efi_returns_vfat() {
+        let storage = Storage {
+            mount_points: vec![
+                MountPoint {
+                    path: PathBuf::from("/"),
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot"),
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+            ],
+            ..Default::default()
+        };
+
+        assert_eq!(storage.get_filesystem(&"efi".into()).unwrap(), "vfat");
+    }
+
+    #[test]
+    fn test_get_filesystem_match_root_returns_ext4() {
+        let storage = Storage {
+            mount_points: vec![
+                MountPoint {
+                    path: PathBuf::from("/"),
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot"),
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+            ],
+            ..Default::default()
+        };
+
+        assert_eq!(storage.get_filesystem(&"root".into()).unwrap(), "ext4");
+    }
+
+    #[test]
+    fn test_get_filesystem_no_match_returns_none() {
+        let storage = Storage {
+            mount_points: vec![
+                MountPoint {
+                    path: PathBuf::from("/"),
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot"),
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+            ],
+            ..Default::default()
+        };
+
+        assert!(storage.get_filesystem(&"srv".into()).is_none());
+    }
+
+    #[test]
+    fn test_get_filesystem_match_ab_root_by_pair_id_returns_ext4() {
+        let storage = Storage {
+            mount_points: vec![
+                MountPoint {
+                    path: PathBuf::from("/"),
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot"),
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+            ],
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![AbVolumePair {
+                    id: "root".into(),
+                    volume_a_id: "root-a".into(),
+                    volume_b_id: "root-b".into(),
+                }],
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(storage.get_filesystem(&"root".into()).unwrap(), "ext4");
+    }
+
+    #[test]
+    fn test_get_filesystem_match_ab_root_by_vol_a_id_returns_ext4() {
+        let storage = Storage {
+            mount_points: vec![
+                MountPoint {
+                    path: PathBuf::from("/"),
+                    target_id: "root".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot"),
+                    target_id: "boot".into(),
+                    filesystem: "ext4".into(),
+                    options: vec![],
+                },
+                MountPoint {
+                    path: PathBuf::from("/boot/efi"),
+                    target_id: "efi".into(),
+                    filesystem: "vfat".into(),
+                    options: vec![],
+                },
+            ],
+            ab_update: Some(AbUpdate {
+                volume_pairs: vec![AbVolumePair {
+                    id: "root".into(),
+                    volume_a_id: "root-a".into(),
+                    volume_b_id: "root-b".into(),
+                }],
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(storage.get_filesystem(&"root-a".into()).unwrap(), "ext4");
     }
 }

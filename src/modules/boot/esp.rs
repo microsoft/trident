@@ -463,12 +463,14 @@ fn get_undeployed_images<'a>(
         .filter(|image| {
             // Check if image's target_id corresponds to a PartitionType::Esp
             host_status
+                .spec
                 .storage
                 .disks
                 .iter()
-                .flat_map(|(_block_device_id, disk)| &disk.partitions)
+                .flat_map(|disk| &disk.partitions)
                 .any(|partition| {
-                    partition.id == image.target_id && partition.ty == PartitionType::Esp
+                    partition.id == image.target_id
+                        && partition.partition_type == PartitionType::Esp
                 })
         })
         .collect()
@@ -479,15 +481,11 @@ mod tests {
     use super::*;
 
     use maplit::btreemap;
-    use uuid::Uuid;
 
     use trident_api::{
-        config::{self, PartitionType},
+        config::{self, AbUpdate, AbVolumePair, PartitionSize, PartitionType},
         constants::{ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
-        status::{
-            AbUpdate, AbVolumePair, Disk, MountPoint, Partition, ReconcileState, Storage,
-            UpdateKind,
-        },
+        status::{BlockDeviceInfo, ReconcileState, Storage, UpdateKind},
     };
 
     /// Validates that generate_arch_str() returns the correct string based on target architecture
@@ -518,63 +516,69 @@ mod tests {
     fn test_generate_esp_dir_path() {
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![config::Disk {
+                        id: "os".to_owned(),
                         partitions: vec![
-                            Partition {
+                            config::Partition {
                                 id: "efi".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
+                            config::Partition {
                                 id: "root".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
+                            config::Partition {
                                 id: "rootb".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
                         ],
-                    },
-                    "data".into() => Disk {
+                        ..Default::default()
+                    }],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "osab".to_string(),
+                            volume_a_id: "root".to_string(),
+                            volume_b_id: "rootb".to_string(),
+                        }],
+                    }),
+
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 1000,
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
+                    },
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "rootb".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "data".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
-                ab_update: Some(AbUpdate {
-                    active_volume: None,
-                    volume_pairs: btreemap! {
-                        "osab".to_owned() => AbVolumePair {
-                            volume_a_id: "root".to_owned(),
-                            volume_b_id: "rootb".to_owned(),
-                        },
-                    },
-                }),
                 ..Default::default()
             },
             ..Default::default()
@@ -593,12 +597,7 @@ mod tests {
         // /boot/efi/EFI/azlinuxB
         // Modify host_status to set active_volume to volume A
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert!(
             generate_efi_bin_base_dir_path(&host_status, Path::new(UPDATE_ROOT_PATH))
                 .unwrap()
@@ -609,12 +608,7 @@ mod tests {
         // Test case 3: If volume B is currently active, generate_esp_dir_path() should return
         // /boot/efi/EFI/azlinuxA
         // Modify host_status to set active_volume to volume B
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert!(
             generate_efi_bin_base_dir_path(&host_status, Path::new(UPDATE_ROOT_PATH))
                 .unwrap()
@@ -630,92 +624,82 @@ mod tests {
         // Initialize a HostStatus object with ESP and root partitions
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "foo".to_string() => Disk {
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        path: PathBuf::from("/dev/sda"),
-                        capacity: 10,
-                        contents: BlockDeviceContents::Initialized,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![config::Disk {
+                        id: "foo".to_string(),
                         partitions: vec![
-                            Partition {
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000001")
-                                    .unwrap(),
-                                path: PathBuf::from("/dev/sda1"),
+                            config::Partition {
                                 id: "esp".to_string(),
-                                start: 1,
-                                end: 3,
-                                ty: PartitionType::Esp,
-                                contents: BlockDeviceContents::Image {
-                                    url: "http://example.com/esp_1.img".to_string(),
-                                    sha256: "esp_sha256_1".to_string(),
-                                    length: 100,
-                                },
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000002")
-                                    .unwrap(),
-                                path: PathBuf::from("/dev/sda2"),
+                            config::Partition {
                                 id: "root".to_string(),
-                                start: 4,
-                                end: 10,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Image {
-                                    url: "http://example.com/root_1.img".to_string(),
-                                    sha256: "root_sha256_1".to_string(),
-                                    length: 100,
-                                },
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
                         ],
-                    },
-                },
-                mount_points: btreemap! {
-                    PathBuf::from("/boot") => MountPoint {
-                        target_id: "esp".to_string(),
-                        filesystem: "fat32".to_string(),
-                        options: vec![],
-                    },
-                    PathBuf::from(ROOT_MOUNT_POINT_PATH) => MountPoint {
-                        target_id: "root".to_string(),
-                        filesystem: "ext4".to_string(),
-                        options: vec![],
-                    },
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            path: PathBuf::from("/boot"),
+                            target_id: "esp".to_string(),
+                            filesystem: "fat32".to_string(),
+                            options: vec![],
+                        },
+                        config::MountPoint {
+                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                            target_id: "root".to_string(),
+                            filesystem: "ext4".to_string(),
+                            options: vec![],
+                        },
+                    ],
+                    images: vec![
+                        Image {
+                            url: "http://example.com/esp_1.img".to_string(),
+                            target_id: "esp".to_string(),
+                            format: ImageFormat::RawZst,
+                            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                        },
+                        Image {
+                            url: "http://example.com/root_1.img".to_string(),
+                            target_id: "root".to_string(),
+                            format: ImageFormat::RawZst,
+                            sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+                        },
+                    ],
+                    ..Default::default()
                 },
                 ..Default::default()
             },
-            ..Default::default()
-        };
-
-        let mut host_config = HostConfiguration {
-            storage: config::Storage {
-                mount_points: vec![
-                    config::MountPoint {
-                        path: PathBuf::from("/boot"),
-                        target_id: "esp".to_string(),
-                        filesystem: "fat32".to_string(),
-                        options: vec![],
+            storage: Storage {
+                block_devices: btreemap! {
+                    "foo".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda"),
+                        size: 10,
+                        contents: BlockDeviceContents::Initialized,
                     },
-                    config::MountPoint {
-                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                        target_id: "root".to_string(),
-                        filesystem: "ext4".to_string(),
-                        options: vec![],
+                    "esp".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda1"),
+                        size: 3,
+                        contents: BlockDeviceContents::Image {
+                            url: "http://example.com/esp_1.img".to_string(),
+                            sha256: "esp_sha256_1".to_string(),
+                            length: 100,
+                        },
                     },
-                ],
-                images: vec![
-                    Image {
-                        url: "http://example.com/esp_1.img".to_string(),
-                        target_id: "esp".to_string(),
-                        format: ImageFormat::RawZst,
-                        sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                    "root".to_string() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda2"),
+                        size: 7,
+                        contents: BlockDeviceContents::Image {
+                            url: "http://example.com/root_1.img".to_string(),
+                            sha256: "root_sha256_1".to_string(),
+                            length: 100,
+                        },
                     },
-                    Image {
-                        url: "http://example.com/root_2.img".to_string(),
-                        target_id: "root".to_string(),
-                        format: ImageFormat::RawZst,
-                        sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
-                    },
-                ],
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -723,16 +707,17 @@ mod tests {
 
         // Test case 1: ESP partition does not need to be updated
         assert_eq!(
-            get_undeployed_images(&host_status, &host_config, false),
+            get_undeployed_images(&host_status, &host_status.spec, false),
             Vec::<&Image>::new(),
             "Incorrectly identified ESP partition as needing an update"
         );
 
         // Test case 2: ESP partition needs to be updated
-        host_config.storage.images[0].sha256 = ImageSha256::Checksum("esp_sha256_2".to_string());
-        host_config.storage.images[0].url = "http://example.com/esp_2.img".to_string();
+        host_status.spec.storage.images[0].sha256 =
+            ImageSha256::Checksum("esp_sha256_2".to_string());
+        host_status.spec.storage.images[0].url = "http://example.com/esp_2.img".to_string();
         assert_eq!(
-            get_undeployed_images(&host_status, &host_config, false),
+            get_undeployed_images(&host_status, &host_status.spec, false),
             vec![&Image {
                 url: "http://example.com/esp_2.img".to_string(),
                 target_id: "esp".to_string(),
@@ -745,16 +730,18 @@ mod tests {
         // Test case 3: Change PartitionType of ESP partition to swap, so func
         // get_undeployed_esp() should return an empty vector
         host_status
+            .spec
             .storage
             .disks
-            .get_mut("foo")
+            .iter_mut()
+            .find(|d| d.id == "foo")
             .unwrap()
             .partitions
             .get_mut(0)
             .unwrap()
-            .ty = PartitionType::Swap;
+            .partition_type = PartitionType::Swap;
         assert_eq!(
-            get_undeployed_images(&host_status, &host_config, false),
+            get_undeployed_images(&host_status, &host_status.spec, false),
             Vec::<&Image>::new(),
             "Incorrectly identified ESP partition as needing an update"
         );

@@ -48,16 +48,14 @@ def test_trident_get(vm):
     # images we put into the HostConfiguraion.
     del host_status["spec"]
     placeholder = "placeholder"
-    host_status["storage"]["disks"]["os"]["uuid"] = placeholder
-    for partition in host_status["storage"]["disks"]["os"]["partitions"]:
-        partition["uuid"] = placeholder
-        partition["path"] = placeholder
+    for id, block_device in host_status["storage"]["blockDevices"].items():
+        block_device["path"] = placeholder
         if (
-            isinstance(partition["contents"], dict)
-            and "sha256" in partition["contents"]
+            isinstance(block_device["contents"], dict)
+            and "sha256" in block_device["contents"]
         ):
-            partition["contents"]["sha256"] = placeholder
-            partition["contents"]["length"] = placeholder
+            block_device["contents"]["sha256"] = placeholder
+            block_device["contents"]["length"] = placeholder
     with open(
         TRIDENT_REPO_DIR_PATH / "functional_tests/host-status-template.yaml", "r"
     ) as file:

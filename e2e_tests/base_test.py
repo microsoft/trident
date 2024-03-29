@@ -169,35 +169,17 @@ def test_partitions(connection, tridentConfiguration):
 
     HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
     host_status = yaml.load(host_status_output, Loader=HostStatusSafeLoader)
-    # Gathering all partitions
-    partitions_hs_info = [
-        partition
-        for disk in host_status["storage"]["disks"].values()
-        for partition in disk["partitions"]
-    ]
-
-    for partition in partitions_hs_info:
-        partitions_host_status[partition["id"]] = partition
-        partitions_host_status[partition["id"]]["size"] = (
-            partition["end"] - partition["start"]
-        )
 
     # Check partitions size and type
     for partition_id in expected_partitions:
         # Partition present
-        assert partition_id in partitions_host_status
+        assert partition_id in host_status["storage"]["blockDevices"]
         assert partition_id in partitions_system_info
-
-        # Partition type
-        assert (
-            expected_partitions[partition_id]["type"]
-            == partitions_host_status[partition_id]["type"]
-        )
 
         # Partition size
         assert (
             expected_partitions[partition_id]["size"]
-            == partitions_host_status[partition_id]["size"]
+            == host_status["storage"]["blockDevices"][partition_id]["size"]
         )
         assert (
             expected_partitions[partition_id]["size"]

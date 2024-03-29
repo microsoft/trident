@@ -62,6 +62,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
 
     // Find the block device which holds /boot
     let boot_mount_point = host_status
+        .spec
         .storage
         .path_to_mount_point(Path::new(BOOT_MOUNT_POINT_PATH))
         .context("Failed to find mount point for boot block device")?;
@@ -96,7 +97,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     let esp_efi_dir_path = Path::new(ESP_MOUNT_POINT_PATH).join(ESP_EFI_DIRECTORY);
     let mut bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_A);
     //Check if hoststatus has ab_update and update the grub config for the inactive volume
-    if host_status.storage.ab_update.is_some() {
+    if host_status.spec.storage.ab_update.is_some() {
         match modules::get_ab_update_volume(host_status, false) {
             Some(AbVolumeSelection::VolumeA) => {}
             Some(AbVolumeSelection::VolumeB) => {
@@ -243,13 +244,12 @@ mod functional_test {
     };
     use std::path::PathBuf;
     use trident_api::{
-        config::PartitionType,
-        status::{
-            AbUpdate, AbVolumePair, BlockDeviceContents, Disk, MountPoint, Partition,
-            ReconcileState, Storage,
+        config::{
+            self, AbUpdate, AbVolumePair, Disk, HostConfiguration, MountPoint, Partition,
+            PartitionSize, PartitionType,
         },
+        status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage},
     };
-    use uuid::Uuid;
 
     const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
     const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
@@ -475,53 +475,64 @@ mod functional_test {
     fn test_update_grub_root_standalone_partition() {
         test_execute_and_resulting_layout();
         let mut host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "foo".into() => Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 10,
-                        contents: BlockDeviceContents::Initialized,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "foo".into(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
                             Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
-                                path: PathBuf::from("/dev/sdb1"),
                                 id: "boot".into(),
-                                start: 1,
-                                end: 3,
-                                ty: PartitionType::Esp,
-                                contents: BlockDeviceContents::Initialized,
+                                size: PartitionSize::Fixed(2),
+                                partition_type: PartitionType::Esp,
                             },
                             Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000005u128),
-                                path: PathBuf::from("/dev/sdb2"),
                                 id: "root".into(),
-                                start: 4,
-                                end: 10,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Initialized,
+                                size: PartitionSize::Fixed(8),
+                                partition_type: PartitionType::Root,
                             },
                         ],
-                    },
-
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        MountPoint {
+                            path: PathBuf::from("/boot"),
+                            target_id: "boot".to_owned(),
+                            filesystem: "fat32".to_owned(),
+                            options: vec![],
+                        },
+                        MountPoint {
+                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                            target_id: "root".to_string(),
+                            filesystem: "ext4".to_string(),
+                            options: vec![],
+                        },
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                        "foo".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/dev/sdb"),
+                            size: 10,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "boot".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/dev/sdb1"),
+                            size: 2,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "root".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/dev/sdb2"),
+                            size: 8,
+                            contents: BlockDeviceContents::Initialized,
+                        },
                 },
                 ..Default::default()
             },
             ..Default::default()
-        };
-
-        // Add mount points
-        host_status.storage.mount_points = btreemap! {
-            PathBuf::from("/boot") => MountPoint {
-                target_id: "boot".to_owned(),
-                filesystem: "fat32".to_owned(),
-                options: vec![],
-            },
-            PathBuf::from(ROOT_MOUNT_POINT_PATH) => MountPoint {
-                target_id: "root".to_string(),
-                filesystem: "ext4".to_string(),
-                options: vec![],
-            },
         };
 
         let root_device_path = PathBuf::from("/dev/sdb2");
@@ -534,18 +545,13 @@ mod functional_test {
         );
 
         // original test
-        host_status
-            .storage
-            .mount_points
-            .remove(&PathBuf::from("/boot"));
-        host_status.storage.mount_points.insert(
-            PathBuf::from("/esp"),
-            MountPoint {
-                target_id: "boot".to_owned(),
-                filesystem: "fat32".to_owned(),
-                options: vec![],
-            },
-        );
+        host_status.spec.storage.mount_points.remove(0);
+        host_status.spec.storage.mount_points.push(MountPoint {
+            path: PathBuf::from("/esp"),
+            target_id: "boot".to_owned(),
+            filesystem: "fat32".to_owned(),
+            options: vec![],
+        });
 
         update_configs(&host_status).unwrap();
     }
@@ -554,72 +560,83 @@ mod functional_test {
     /// This functions tests update_grub by setting up root as an ab volume partition.
     fn test_update_grub_root_abvolume() {
         test_execute_and_resulting_layout();
-        let mut host_status = HostStatus {
+        let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/sdb"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".into(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
                             Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/sdb1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
+                                id: "efi".into(),
+                                size: PartitionSize::Fixed(1),
+                                partition_type: PartitionType::Esp,
                             },
                             Partition {
-                                id: "root-a".to_string(),
-                                path: PathBuf::from("/dev/sdb2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                                id: "root-a".into(),
+                                size: PartitionSize::Fixed(9),
+                                partition_type: PartitionType::Root,
                             },
                             Partition {
-                                id: "root-b".to_string(),
-                                path: PathBuf::from("/dev/sdb3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                                id: "root-b".into(),
+                                size: PartitionSize::Fixed(9),
+                                partition_type: PartitionType::Root,
                             },
                         ],
-                    },
-                },
-                ab_update: Some(AbUpdate {
-                    volume_pairs: btreemap! {
-                        "root".to_string() => AbVolumePair {
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        MountPoint {
+                            path: PathBuf::from("/efi"),
+                            target_id: "boot".to_owned(),
+                            filesystem: "fat32".to_owned(),
+                            options: vec![],
+                        },
+                        MountPoint {
+                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                            target_id: "root".to_string(),
+                            filesystem: "ext4".to_string(),
+                            options: vec![],
+                        },
+                    ],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "root".to_string(),
                             volume_a_id: "root-a".to_string(),
                             volume_b_id: "root-b".to_string(),
-                        },
-                    },
+                        }],
+                    }),
                     ..Default::default()
-                }),
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap![
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb"),
+                        size: 10,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb1"),
+                        size: 1,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-a".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb2"),
+                        size: 9,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-b".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb3"),
+                        size: 9,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                ],
                 ..Default::default()
             },
             ..Default::default()
-        };
-
-        // Add mount points
-        host_status.storage.mount_points = btreemap! {
-            PathBuf::from("/efi") => MountPoint {
-                target_id: "boot".to_owned(),
-                filesystem: "fat32".to_owned(),
-                options: vec![],
-            },
-            PathBuf::from(ROOT_MOUNT_POINT_PATH) => MountPoint {
-                target_id: "root".to_string(),
-                filesystem: "ext4".to_string(),
-                options: vec![],
-            },
         };
 
         let root_device_path = PathBuf::from("/dev/sdb2");
@@ -631,49 +648,57 @@ mod functional_test {
     /// This functions tests update_grub by setting up root on a standalone partition and setting root uuid empty so that the function bails on root_uuid being empty.
     fn test_update_grub_root_uuid_empty() {
         test_execute_and_resulting_layout();
-        let mut host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "foo".into() => Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 10,
-                        contents: BlockDeviceContents::Initialized,
+        let host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "foo".into(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
                             Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
-                                path: PathBuf::from("/dev/sdb1"),
                                 id: "boot".into(),
-                                start: 1,
-                                end: 3,
-                                ty: PartitionType::Esp,
-                                contents: BlockDeviceContents::Initialized,
+                                size: PartitionSize::Fixed(2),
+                                partition_type: PartitionType::Esp,
                             },
                             Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000005u128),
-                                path: PathBuf::from("/dev/sdb2"),
                                 id: "root".into(),
-                                start: 4,
-                                end: 10,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Initialized,
+                                size: PartitionSize::Fixed(8),
+                                partition_type: PartitionType::Root,
                             },
                         ],
-                    },
-
+                        ..Default::default()
+                    }],
+                    mount_points: vec![MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                        "foo".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/dev/sdb"),
+                            size: 10,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "boot".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/dev/sdb1"),
+                            size: 2,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "root".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/dev/sdb2"),
+                            size: 8,
+                            contents: BlockDeviceContents::Initialized,
+                        },
                 },
                 ..Default::default()
             },
             ..Default::default()
-        };
-
-        // Add root mount point
-        host_status.storage.mount_points = btreemap! {
-                   PathBuf::from(ROOT_MOUNT_POINT_PATH) => MountPoint {
-                    target_id: "root".to_string(),
-                    filesystem: "ext4".to_string(),
-                    options: vec![],
-                },
         };
 
         let result = update_configs(&host_status);
@@ -687,49 +712,57 @@ mod functional_test {
     /// This functions tests update_grub by setting up root path empty so that the function bails on root path being None.
     fn test_update_grub_root_path_empty() {
         test_execute_and_resulting_layout();
-        let mut host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "foo".into() => Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 10,
-                        contents: BlockDeviceContents::Initialized,
+        let host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "foo".into(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
                             Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
-                                path: PathBuf::from("/dev/sdb1"),
                                 id: "boot".into(),
-                                start: 1,
-                                end: 3,
-                                ty: PartitionType::Esp,
-                                contents: BlockDeviceContents::Initialized,
+                                size: PartitionSize::Fixed(2),
+                                partition_type: PartitionType::Esp,
                             },
                             Partition {
-                                uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000005u128),
-                                path: PathBuf::from(""),
                                 id: "root".into(),
-                                start: 4,
-                                end: 10,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Initialized,
+                                size: PartitionSize::Fixed(8),
+                                partition_type: PartitionType::Root,
                             },
                         ],
-                    },
-
+                        ..Default::default()
+                    }],
+                    mount_points: vec![MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        target_id: "root".to_string(),
+                        filesystem: "ext4".to_string(),
+                        options: vec![],
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                        "foo".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/dev/sdb"),
+                            size: 10,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "boot".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/dev/sdb1"),
+                            size: 2,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "root".into() => BlockDeviceInfo {
+                            path: PathBuf::from(""),
+                            size: 8,
+                            contents: BlockDeviceContents::Initialized,
+                        },
                 },
                 ..Default::default()
             },
             ..Default::default()
-        };
-
-        // Add root mount point
-        host_status.storage.mount_points = btreemap! {
-                   PathBuf::from(ROOT_MOUNT_POINT_PATH) => MountPoint {
-                    target_id: "root".to_string(),
-                    filesystem: "ext4".to_string(),
-                    options: vec![],
-                },
         };
 
         let result = update_configs(&host_status);

@@ -8,7 +8,6 @@ use log::{debug, info};
 use osutils::{mkfs, mkswap};
 use rayon::prelude::*;
 use trident_api::{
-    config::HostConfiguration,
     status::{BlockDeviceContents, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
@@ -23,12 +22,9 @@ use super::image;
 /// block devices with assigned mount points and for A/B update, also devices
 /// the inactive block devices, that are part of A/B volume pairs, to make sure
 /// they are reinitialized when needed.
-pub(super) fn create_filesystems(
-    host_config: &HostConfiguration,
-    host_status: &mut HostStatus,
-) -> Result<(), Error> {
+pub(super) fn create_filesystems(host_status: &mut HostStatus) -> Result<(), Error> {
     debug!("Creating filesystems on block devices");
-    get_block_devices_to_initialize(host_config, host_status)
+    get_block_devices_to_initialize(host_status)
         .par_iter()
         .map(|(block_device_id, device_path, filesystem)| {
             info!(
@@ -63,11 +59,11 @@ pub(super) fn create_filesystems(
 /// Returns a tuple of the block device id, info to update and filesystem to
 /// deploy on it.
 fn get_block_devices_to_initialize(
-    host_config: &HostConfiguration,
     host_status: &HostStatus,
 ) -> Vec<(BlockDeviceId, PathBuf, String)> {
     // Fetch the list of block devices initialized by images
-    let requested_image_block_device_ids: HashSet<&BlockDeviceId> = host_config
+    let requested_image_block_device_ids: HashSet<&BlockDeviceId> = host_status
+        .spec
         .storage
         .images
         .iter()
@@ -76,7 +72,8 @@ fn get_block_devices_to_initialize(
 
     // Filter mount points out if they point to block devices that are
     // initialized by images
-    let candidates = host_config
+    let candidates = host_status
+        .spec
         .storage
         .mount_points
         .iter()
@@ -86,7 +83,7 @@ fn get_block_devices_to_initialize(
             // If this is Clean Install, we need to special case ESP and
             // initialize it here
                 || (host_status.reconcile_state == ReconcileState::CleanInstall
-                    && image::is_esp(host_status, &mount_point.target_id))
+                    && image::is_esp(&host_status.spec, &mount_point.target_id))
         });
 
     // Select mount points that have been uninitialized or in case of A/B
@@ -99,13 +96,15 @@ fn get_block_devices_to_initialize(
         })
         .filter_map(|(mount_point, block_device_info)| {
             let ab_volume_pair = host_status
+                .spec
                 .storage
                 .ab_update
                 .as_ref()
                 .map(|ab_update| {
                     ab_update
                         .volume_pairs
-                        .contains_key(mount_point.target_id.as_str())
+                        .iter()
+                        .any(|p| p.id == mount_point.target_id)
                 })
                 .unwrap_or(false);
 
@@ -177,13 +176,12 @@ mod test {
     use maplit::btreemap;
     use trident_api::{
         config::{
-            self, Image, ImageFormat, ImageSha256, MountPoint, PartitionType,
-            Storage as StorageConfig,
+            self, AbUpdate, AbVolumePair, Disk, HostConfiguration, Image, ImageFormat, ImageSha256,
+            MountPoint, Partition, PartitionSize, PartitionType, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
-        status::{AbUpdate, AbVolumePair, AbVolumeSelection, Disk, Partition, Storage},
+        status::{AbVolumeSelection, BlockDeviceInfo, Storage},
     };
-    use uuid::Uuid;
 
     use super::*;
 
@@ -191,107 +189,100 @@ mod test {
     /// list of block devices that need to be initialized.
     #[test]
     fn test_get_block_devices_to_initialize() {
-        // Setup HostConfiguration where image is requested for volume pair with id root
-        let host_config_golden = HostConfiguration {
-            storage: StorageConfig {
-                mount_points: vec![
-                    MountPoint {
-                        path: PathBuf::from("/boot/efi"),
-                        target_id: "esp".to_string(),
-                        filesystem: "fat32".to_string(),
-                        options: vec![],
-                    },
-                    MountPoint {
-                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                        target_id: "root".to_string(),
-                        filesystem: "ext4".to_string(),
-                        options: vec![],
-                    },
-                ],
-                images: vec![Image {
-                    url: "http://example.com/root_3.img".to_string(),
-                    target_id: "root".to_string(),
-                    format: ImageFormat::RawZst,
-                    sha256: ImageSha256::Checksum("root_sha256_3".to_string()),
-                }],
-                ab_update: Some(config::AbUpdate {
-                    volume_pairs: vec![config::AbVolumePair {
-                        id: "root".into(),
-                        volume_a_id: "root-a".into(),
-                        volume_b_id: "root-b".into(),
-                    }],
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        // Setup HostStatus
+        // Setup HostStatus where image is requested for volume pair with id root
         let host_status_golden = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: StorageConfig {
+                    disks: vec![Disk {
+                        id: "os".to_owned(),
+                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
                         partitions: vec![
                             Partition {
                                 id: "esp".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Image {
-                                    url: "http://example.com/esp_1.img".to_string(),
-                                    sha256: "esp_sha256_1".to_string(),
-                                    length: 100,
-                                },
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                size: PartitionSize::Fixed(100),
+                                partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root-a".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Image {
-                                    url: "http://example.com/root_1.img".to_string(),
-                                    sha256: "root_sha256_1".to_string(),
-                                    length: 100,
-                                },
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                size: PartitionSize::Fixed(1000),
+                                partition_type: PartitionType::Root,
                             },
                             Partition {
                                 id: "root-b".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Image {
-                                    url: "http://example.com/root_2.img".to_string(),
-                                    sha256: "root_sha256_2".to_string(),
-                                    length: 100,
-                                },
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                size: PartitionSize::Fixed(10000),
+                                partition_type: PartitionType::Root,
                             },
                         ],
-                    },
-                },
-                ab_update: Some(AbUpdate {
-                    active_volume: None,
-                    volume_pairs: btreemap! {
-                        "root".to_owned() =>
-                        AbVolumePair {
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        MountPoint {
+                            path: PathBuf::from("/boot/efi"),
+                            target_id: "esp".to_string(),
+                            filesystem: "fat32".to_string(),
+                            options: vec![],
+                        },
+                        MountPoint {
+                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                            target_id: "root".to_string(),
+                            filesystem: "ext4".to_string(),
+                            options: vec![],
+                        },
+                    ],
+                    images: vec![Image {
+                        url: "http://example.com/root_3.img".to_string(),
+                        target_id: "root".to_string(),
+                        format: ImageFormat::RawZst,
+                        sha256: ImageSha256::Checksum("root_sha256_3".to_string()),
+                    }],
+                    ab_update: Some(config::AbUpdate {
+                        volume_pairs: vec![config::AbVolumePair {
+                            id: "root".into(),
                             volume_a_id: "root-a".into(),
                             volume_b_id: "root-b".into(),
+                        }],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "esp".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 100,
+                        contents: BlockDeviceContents::Image {
+                            url: "http://example.com/esp_1.img".to_string(),
+                            sha256: "esp_sha256_1".to_string(),
+                            length: 100,
                         },
                     },
-                }),
+                    "root-a".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Image {
+                            url: "http://example.com/root_1.img".to_string(),
+                            sha256: "root_sha256_1".to_string(),
+                            length: 100,
+                        },
+                    },
+                    "root-b".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 10000,
+                        contents: BlockDeviceContents::Image {
+                            url: "http://example.com/root_2.img".to_string(),
+                            sha256: "root_sha256_2".to_string(),
+                            length: 100,
+                        },
+                    },
+
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -300,7 +291,7 @@ mod test {
         // Test case 1: Running get_block_devices_to_initialize() with host's status set to CleanInstall
         // should return an empty vector, as all block devices have been already initialized
         assert_eq!(
-            get_block_devices_to_initialize(&host_config_golden, &host_status_golden),
+            get_block_devices_to_initialize(&host_status_golden),
             Vec::<(BlockDeviceId, PathBuf, String)>::new(),
             "Failed to determine that no block devices should be initialized on CleanInstall"
         );
@@ -309,12 +300,16 @@ mod test {
         // and some devices uninitialized or zeroed, should not return empty
         // vector
         let mut host_status = host_status_golden.clone();
-        host_status.storage.disks.get_mut("os").unwrap().partitions[0].contents =
-            BlockDeviceContents::Unknown;
+        host_status
+            .storage
+            .block_devices
+            .get_mut("esp")
+            .unwrap()
+            .contents = BlockDeviceContents::Unknown;
         // Only one should be returned, because the A/B volume pair is
         // initialized by an image
         assert_eq!(
-            get_block_devices_to_initialize(&host_config_golden, &host_status),
+            get_block_devices_to_initialize(&host_status),
             vec![(
                 "esp".to_owned(),
                 PathBuf::from("/dev/disk/by-partlabel/osp1"),
@@ -326,14 +321,22 @@ mod test {
         // Test case 2b: Running get_block_devices_to_initialize() with host's status set to CleanInstall
         // and some devices uninitialized or zeroed, should not return empty
         // vector
-        host_status.storage.disks.get_mut("os").unwrap().partitions[1].contents =
-            BlockDeviceContents::Zeroed;
-        host_status.storage.disks.get_mut("os").unwrap().partitions[2].contents =
-            BlockDeviceContents::Zeroed;
+        host_status
+            .storage
+            .block_devices
+            .get_mut("root-a")
+            .unwrap()
+            .contents = BlockDeviceContents::Zeroed;
+        host_status
+            .storage
+            .block_devices
+            .get_mut("root-b")
+            .unwrap()
+            .contents = BlockDeviceContents::Zeroed;
         // Only one should be returned, because the A/B volume pair is
         // initialized by an image
         assert_eq!(
-            get_block_devices_to_initialize(&host_config_golden, &host_status),
+            get_block_devices_to_initialize(&host_status),
             vec![(
                 "esp".to_owned(),
                 PathBuf::from("/dev/disk/by-partlabel/osp1"),
@@ -345,10 +348,10 @@ mod test {
         // Test case 3: Running get_block_devices_to_initialize() with host's status set to CleanInstall
         // and some devices uninitialized or zeroed, should not return empty
         // vector
-        let mut host_config = host_config_golden.clone();
-        host_config.storage.images.clear();
+        host_status.spec = host_status_golden.spec.clone();
+        host_status.spec.storage.images.clear();
         assert_eq!(
-            get_block_devices_to_initialize(&host_config, &host_status),
+            get_block_devices_to_initialize(&host_status),
             vec![
                 (
                     "esp".to_owned(),
@@ -368,32 +371,18 @@ mod test {
         // Running get_block_devices_to_initialize() when there is an image requested for A/B volume pair with
         // id root should return an empty vector
         let mut host_status = host_status_golden.clone();
-        let mut host_config = host_config_golden.clone();
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
-        host_status.storage.ab_update = Some(AbUpdate {
-            active_volume: Some(AbVolumeSelection::VolumeA),
-            volume_pairs: [(
-                "root".to_string(),
-                AbVolumePair {
-                    volume_a_id: "root-a".to_string(),
-                    volume_b_id: "root-b".to_string(),
-                },
-            )]
-            .iter()
-            .map(|p| {
-                (
-                    p.0.clone(),
-                    AbVolumePair {
-                        volume_a_id: p.1.volume_a_id.clone(),
-                        volume_b_id: p.1.volume_b_id.clone(),
-                    },
-                )
-            })
-            .collect(),
+        host_status.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![AbVolumePair {
+                id: "root".to_string(),
+                volume_a_id: "root-a".to_string(),
+                volume_b_id: "root-b".to_string(),
+            }],
         });
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
         assert_eq!(
-                get_block_devices_to_initialize(&host_config, &host_status),
+                get_block_devices_to_initialize(&host_status),
                 Vec::<(BlockDeviceId, PathBuf, String)>::new(),
                 "Failed to determine that no volumes should be reinitialized when images for all A/B volume pairs are requested"
             );
@@ -401,7 +390,7 @@ mod test {
         // Test case 5: Remove image for target_id root from HostStatus. Running
         // get_volumes_to_reinitialize() should now return a vector containing the target_id of the volume
         // pair with id root
-        host_config.storage.images = vec![];
+        host_status.spec.storage.images = vec![];
 
         let expected_path_rootb = PathBuf::from("/dev/disk/by-partlabel/osp3");
 
@@ -413,18 +402,13 @@ mod test {
         )];
 
         assert_eq!(
-                get_block_devices_to_initialize(&host_config, &host_status),
+                get_block_devices_to_initialize(&host_status),
                 expected_volume_rootb,
                 "Failed to determine that volume root-b should be reinitialized when image for A/B volume pair root is missing and active volume is A"
             );
 
         // Test case 4: Set active volume to B. Now, vector is expected to contain "root-a"
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
 
         let expected_path_roota = PathBuf::from("/dev/disk/by-partlabel/osp2");
 
@@ -435,7 +419,7 @@ mod test {
         )];
 
         assert_eq!(
-                get_block_devices_to_initialize(&host_config, &host_status),
+                get_block_devices_to_initialize(&host_status),
                 expected_volume_roota,
                 "Failed to determine that volume root-1 should be reinitialized when image for A/B volume pair root is missing and active volume is B"
             );

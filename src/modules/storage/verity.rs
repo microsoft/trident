@@ -18,7 +18,7 @@ use trident_api::{
         TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_PATH,
         TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
-    status::{HostStatus, VerityDevice},
+    status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
 
@@ -84,7 +84,7 @@ fn setup_root_verity_device(
     host_config: &HostConfiguration,
     host_status: &HostStatus,
     root_verity_device: &config::VerityDevice,
-) -> Result<(BlockDeviceId, VerityDevice), Error> {
+) -> Result<(BlockDeviceId, BlockDeviceInfo), Error> {
     // Extract the root hash from GRUB config
     let root_hash = get_root_verity_root_hash(host_config, host_status)?;
 
@@ -119,9 +119,10 @@ fn setup_root_verity_device(
     }
     Ok((
         root_verity_device.id.clone(),
-        VerityDevice {
-            device_name: root_verity_device.device_name.clone(),
-            root_hash: root_hash.clone(),
+        BlockDeviceInfo {
+            path: PathBuf::from(format!("/dev/mapper/{}", root_verity_device.device_name)),
+            contents: BlockDeviceContents::Initialized,
+            size: 0, // TODO: https://dev.azure.com/mariner-org/ECF/_workitems/edit/7319/
         },
     ))
 }
@@ -180,10 +181,9 @@ pub(super) fn setup_verity_devices(
         setup_root_verity_device(host_config, host_status, root_verity_device)?;
 
     // Update the host status
-    host_status.storage.verity_devices.clear();
     host_status
         .storage
-        .verity_devices
+        .block_devices
         .insert(id, verity_device_status);
 
     Ok(())
@@ -405,14 +405,13 @@ pub(super) fn validate_compatibility(
 mod test {
     use super::*;
 
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, str::FromStr};
 
     use indoc;
     use maplit::btreemap;
-    use uuid::Uuid;
 
     use trident_api::{
-        config::{PartitionType, Storage},
+        config::{Disk, Partition, PartitionSize, PartitionType, Storage},
         status::{self, BlockDeviceContents},
     };
 
@@ -530,59 +529,60 @@ mod test {
         };
 
         let host_status = HostStatus {
-            storage: status::Storage {
-                disks: btreemap! {
-                    "sdb".to_owned() => status::Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "sdb".into(),
+                        device: "/dev/sdb".into(),
                         partitions: vec![
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000001u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb1"),
+                            Partition {
                                 id: "boot".into(),
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Xbootldr,
-                                contents: BlockDeviceContents::Unknown,
+                                size: PartitionSize::from_str("1M").unwrap(),
+                                partition_type: PartitionType::Xbootldr,
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000002u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb2"),
+                            Partition {
                                 id: "root".into(),
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                                partition_type: PartitionType::Root,
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb3"),
+                            Partition {
                                 id: "root-hash".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::RootVerity,
-                                contents: BlockDeviceContents::Unknown,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                                partition_type: PartitionType::RootVerity,
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb4"),
+                            Partition {
                                 id: "overlay".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::LinuxGeneric,
-                                contents: BlockDeviceContents::Unknown,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                                partition_type: PartitionType::LinuxGeneric,
                             },
                         ],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: status::Storage {
+                block_devices: btreemap! {
+                    "sdb".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-hash".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "overlay".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb4"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -659,12 +659,18 @@ mod test {
         // test no overlay device
         let mut host_status_no_overlay = host_status.clone();
         host_status_no_overlay
+            .spec
             .storage
             .disks
-            .get_mut("sdb")
+            .iter_mut()
+            .find(|d| d.id == "sdb")
             .unwrap()
             .partitions
             .retain(|p| p.id != "overlay");
+        host_status_no_overlay
+            .storage
+            .block_devices
+            .remove("overlay");
         assert_eq!(
             get_verity_related_device_paths(
                 &host_status_no_overlay,
@@ -691,7 +697,6 @@ mod functional_test {
     };
 
     use maplit::btreemap;
-    use uuid::Uuid;
 
     use osutils::{
         files,
@@ -704,7 +709,7 @@ mod functional_test {
         udevadm,
     };
     use trident_api::{
-        config::{PartitionType, Storage, VerityDevice},
+        config::{Disk, Partition, PartitionSize, PartitionType, Storage, VerityDevice},
         status::{self, BlockDeviceContents},
     };
 
@@ -903,70 +908,70 @@ mod functional_test {
     fn test_get_root_verity_root_hash() {
         let expected_root_hash = setup_verity_volumes();
 
-        let host_config = HostConfiguration {
-            storage: Storage {
-                mount_points: vec![
-                    config::MountPoint {
-                        path: PathBuf::from("/boot"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "boot".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                    config::MountPoint {
-                        path: PathBuf::from("/"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "root".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                ],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let host_status = HostStatus {
-            storage: status::Storage {
-                disks: btreemap! {
-                    "sdb".to_owned() => status::Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "sdb".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000001u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb1"),
-                                id: "boot".into(),
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Xbootldr,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "boot".to_string(),
+                                partition_type: PartitionType::Xbootldr,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000002u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb2"),
-                                id: "root".into(),
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb3"),
-                                id: "root-verity".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::RootVerity,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root-verity".to_string(),
+                                partition_type: PartitionType::RootVerity,
+                                size: PartitionSize::Fixed(100),
                             },
                         ],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            path: PathBuf::from("/boot"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "boot".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                        config::MountPoint {
+                            path: PathBuf::from("/"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "root".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: status::Storage {
+                block_devices: btreemap! {
+                    "sdb".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb"),
+                        size: 300,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb1"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb2"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-verity".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb3"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -975,33 +980,40 @@ mod functional_test {
         };
 
         assert_eq!(
-            get_root_verity_root_hash(&host_config, &host_status).unwrap(),
+            get_root_verity_root_hash(&host_status.spec, &host_status).unwrap(),
             expected_root_hash
         );
 
         // test failure on missing boot partition in config/status
-        let mut host_config_no_boot = host_config.clone();
-        host_config_no_boot
+        let mut host_status_no_boot_mount = host_status.clone();
+        host_status_no_boot_mount
+            .spec
             .storage
             .mount_points
             .retain(|mp| mp.path != PathBuf::from("/boot"));
         assert_eq!(
-            get_root_verity_root_hash(&host_config_no_boot, &host_status)
+            get_root_verity_root_hash(&host_status_no_boot_mount.spec, &host_status_no_boot_mount)
                 .unwrap_err()
                 .to_string(),
             "Cannot find boot volume"
         );
 
-        let mut host_status_no_boot = host_status.clone();
-        host_status_no_boot
+        let mut host_status_no_boot_part = host_status.clone();
+        host_status_no_boot_part
+            .spec
             .storage
             .disks
-            .get_mut("sdb")
+            .iter_mut()
+            .find(|d| d.id == "sdb")
             .unwrap()
             .partitions
             .retain(|p| p.id != "boot");
+        host_status_no_boot_part
+            .storage
+            .block_devices
+            .remove("boot");
         assert_eq!(
-            get_root_verity_root_hash(&host_config, &host_status_no_boot)
+            get_root_verity_root_hash(&host_status_no_boot_part.spec, &host_status_no_boot_part)
                 .unwrap_err()
                 .to_string(),
             "Failed to find boot device boot"
@@ -1028,7 +1040,7 @@ mod functional_test {
             files::write_file(grub_config_path, 0o644, grub_config.as_bytes()).unwrap();
         }
 
-        assert!(get_root_verity_root_hash(&host_config, &host_status)
+        assert!(get_root_verity_root_hash(&host_status.spec, &host_status)
             .unwrap_err()
             .to_string()
             .starts_with("Failed to find 'roothash' on linux command line in '"));
@@ -1036,7 +1048,7 @@ mod functional_test {
 
     #[functional_test]
     fn test_setup_root_verity_device() {
-        let expected_root_hash = setup_verity_volumes();
+        let _expected_root_hash = setup_verity_volumes();
 
         let verity_device_path = Path::new("/dev/mapper/root");
         if verity_device_path.exists() {
@@ -1045,87 +1057,86 @@ mod functional_test {
 
         assert!(!verity_device_path.exists());
 
-        let host_config = HostConfiguration {
-            storage: Storage {
-                mount_points: vec![
-                    config::MountPoint {
-                        path: PathBuf::from("/var/lib/trident-overlay"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "overlay".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                    config::MountPoint {
-                        path: PathBuf::from("/boot"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "boot".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                ],
-                verity: vec![config::VerityDevice {
-                    id: "root-verity".into(),
-                    device_name: "root".into(),
-                    data_target_id: "root".into(),
-                    hash_target_id: "root-hash".into(),
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let host_status = HostStatus {
-            storage: status::Storage {
-                disks: btreemap! {
-                    "sdb".to_owned() => status::Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "sdb".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000001u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb1"),
-                                id: "boot".into(),
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Xbootldr,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "boot".to_string(),
+                                partition_type: PartitionType::Xbootldr,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000002u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb3"),
-                                id: "root".into(),
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root-hash".to_string(),
+                                partition_type: PartitionType::RootVerity,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb2"),
-                                id: "root-hash".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::RootVerity,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb4"),
-                                id: "overlay".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::LinuxGeneric,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "overlay".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: PartitionSize::Fixed(100),
                             },
                         ],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            path: PathBuf::from("/var/lib/trident-overlay"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "overlay".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                        config::MountPoint {
+                            path: PathBuf::from("/boot"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "boot".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                    ],
+                    verity: vec![config::VerityDevice {
+                        id: "root-verity".into(),
+                        device_name: "root".into(),
+                        data_target_id: "root".into(),
+                        hash_target_id: "root-hash".into(),
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: status::Storage {
+                block_devices: btreemap! {
+                    "sdb".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb"),
+                        size: 300,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb1"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-hash".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb2"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb3"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "overlay".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb4"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -1135,9 +1146,9 @@ mod functional_test {
 
         {
             let (bdi, vd) = setup_root_verity_device(
-                &host_config,
+                &host_status.spec,
                 &host_status,
-                &host_config.storage.verity[0],
+                &host_status.spec.storage.verity[0],
             )
             .unwrap();
             let _verityguard = VerityGuard {
@@ -1147,9 +1158,10 @@ mod functional_test {
             assert!(verity_device_path.exists());
             assert_eq!(
                 vd,
-                status::VerityDevice {
-                    device_name: "root".into(),
-                    root_hash: expected_root_hash
+                BlockDeviceInfo {
+                    path: PathBuf::from("/dev/mapper/root"),
+                    size: 0,
+                    contents: BlockDeviceContents::Initialized,
                 }
             );
         }
@@ -1181,9 +1193,13 @@ mod functional_test {
         }
 
         assert_eq!(
-            setup_root_verity_device(&host_config, &host_status, &host_config.storage.verity[0])
-                .unwrap_err()
-                .to_string(),
+            setup_root_verity_device(
+                &host_status.spec,
+                &host_status,
+                &host_status.spec.storage.verity[0]
+            )
+            .unwrap_err()
+            .to_string(),
             "Failed to activate verity device 'root', status: 'corrupted'"
         );
         assert!(!verity_device_path.exists());
@@ -1192,14 +1208,13 @@ mod functional_test {
     #[functional_test]
     fn test_setup_verity_devices() {
         // test no verity devices
-        let host_config = HostConfiguration::default();
         let mut host_status = HostStatus::default();
-        setup_verity_devices(&host_config, &mut host_status).unwrap();
+        setup_verity_devices(&Default::default(), &mut host_status).unwrap();
 
-        assert!(host_status.storage.verity_devices.is_empty());
+        assert!(host_status.storage.block_devices.is_empty());
 
         // test root verity device
-        let expected_root_hash = setup_verity_volumes();
+        let _expected_root_hash = setup_verity_volumes();
 
         let verity_device_path = Path::new("/dev/mapper/root");
         if verity_device_path.exists() {
@@ -1208,87 +1223,86 @@ mod functional_test {
 
         assert!(!verity_device_path.exists());
 
-        let host_config = HostConfiguration {
-            storage: Storage {
-                mount_points: vec![
-                    config::MountPoint {
-                        path: PathBuf::from("/var/lib/trident-overlay"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "overlay".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                    config::MountPoint {
-                        path: PathBuf::from("/boot"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "boot".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                ],
-                verity: vec![config::VerityDevice {
-                    id: "root-verity".into(),
-                    device_name: "root".into(),
-                    data_target_id: "root".into(),
-                    hash_target_id: "root-hash".into(),
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let host_status_golden = HostStatus {
-            storage: status::Storage {
-                disks: btreemap! {
-                    "sdb".to_owned() => status::Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "sdb".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000001u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb1"),
-                                id: "boot".into(),
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Xbootldr,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "boot".to_string(),
+                                partition_type: PartitionType::Xbootldr,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000002u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb3"),
-                                id: "root".into(),
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root-hash".to_string(),
+                                partition_type: PartitionType::RootVerity,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb2"),
-                                id: "root-hash".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::RootVerity,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb4"),
-                                id: "overlay".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::LinuxGeneric,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "overlay".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: PartitionSize::Fixed(100),
                             },
                         ],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            path: PathBuf::from("/var/lib/trident-overlay"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "overlay".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                        config::MountPoint {
+                            path: PathBuf::from("/boot"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "boot".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                    ],
+                    verity: vec![config::VerityDevice {
+                        id: "root-verity".into(),
+                        device_name: "root".into(),
+                        data_target_id: "root".into(),
+                        hash_target_id: "root-hash".into(),
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: status::Storage {
+                block_devices: btreemap! {
+                    "sdb".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb"),
+                        size: 300,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb1"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-hash".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb2"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb3"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "overlay".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb4"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -1298,22 +1312,23 @@ mod functional_test {
 
         {
             let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&host_config, &mut host_status).unwrap();
+            setup_verity_devices(&host_status_golden.spec, &mut host_status).unwrap();
             let _verityguard = VerityGuard {
                 device_name: "root",
             };
             assert!(verity_device_path.exists());
-            assert_eq!(host_status.storage.verity_devices.len(), 1);
+            assert_eq!(host_status.storage.block_devices.len(), 6);
             let verity_device = host_status
                 .storage
-                .verity_devices
+                .block_devices
                 .get("root-verity")
                 .unwrap();
             assert_eq!(
                 verity_device,
-                &status::VerityDevice {
-                    device_name: "root".into(),
-                    root_hash: expected_root_hash
+                &BlockDeviceInfo {
+                    path: PathBuf::from("/dev/mapper/root"),
+                    size: 0,
+                    contents: BlockDeviceContents::Initialized,
                 }
             );
         }
@@ -1346,13 +1361,17 @@ mod functional_test {
 
         let mut host_status = host_status_golden.clone();
         assert_eq!(
-            setup_verity_devices(&host_config, &mut host_status)
+            setup_verity_devices(&host_status_golden.spec, &mut host_status)
                 .unwrap_err()
                 .to_string(),
             "Failed to activate verity device 'root', status: 'corrupted'"
         );
         assert!(!verity_device_path.exists());
-        assert_eq!(host_status.storage.verity_devices.len(), 0);
+        assert_eq!(host_status.storage.block_devices.len(), 5);
+        assert_eq!(
+            host_status.storage.block_devices,
+            host_status_golden.storage.block_devices
+        );
     }
 
     #[functional_test]
@@ -1361,7 +1380,6 @@ mod functional_test {
 
         // no change
         {
-            let host_config = HostConfiguration::default();
             let host_status = HostStatus::default();
 
             let mount_dir = tempfile::tempdir().unwrap();
@@ -1382,7 +1400,7 @@ mod functional_test {
             let grub_config_path = boot_path.join("grub2/grub.cfg");
             let grub_config_original = fs::read_to_string(&grub_config_path).unwrap();
 
-            update_root_verity_in_grub_config(&host_status, &host_config, mount_dir.path())
+            update_root_verity_in_grub_config(&host_status, &host_status.spec, mount_dir.path())
                 .unwrap();
 
             let grub_config_updated = fs::read_to_string(grub_config_path).unwrap();
@@ -1390,87 +1408,86 @@ mod functional_test {
         }
 
         // updated
-        let host_config = HostConfiguration {
-            storage: Storage {
-                mount_points: vec![
-                    config::MountPoint {
-                        path: PathBuf::from("/var/lib/trident-overlay"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "overlay".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                    config::MountPoint {
-                        path: PathBuf::from("/boot"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "boot".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                ],
-                verity: vec![config::VerityDevice {
-                    id: "root-verity".into(),
-                    device_name: "root".into(),
-                    data_target_id: "root".into(),
-                    hash_target_id: "root-hash".into(),
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let host_status = HostStatus {
-            storage: status::Storage {
-                disks: btreemap! {
-                    "sdb".to_owned() => status::Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "sdb".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000001u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb1"),
-                                id: "boot".into(),
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Xbootldr,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "boot".to_string(),
+                                partition_type: PartitionType::Xbootldr,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000002u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb3"),
-                                id: "root".into(),
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root-hash".to_string(),
+                                partition_type: PartitionType::RootVerity,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb2"),
-                                id: "root-hash".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::RootVerity,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb4"),
-                                id: "overlay".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::LinuxGeneric,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "overlay".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: PartitionSize::Fixed(100),
                             },
                         ],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            path: PathBuf::from("/var/lib/trident-overlay"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "overlay".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                        config::MountPoint {
+                            path: PathBuf::from("/boot"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "boot".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                    ],
+                    verity: vec![config::VerityDevice {
+                        id: "root-verity".into(),
+                        device_name: "root".into(),
+                        data_target_id: "root".into(),
+                        hash_target_id: "root-hash".into(),
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: status::Storage {
+                block_devices: btreemap! {
+                    "sdb".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb"),
+                        size: 300,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb1"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-hash".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb2"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb3"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "overlay".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb4"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -1494,7 +1511,7 @@ mod functional_test {
                 mount_dir: boot_path.as_path(),
             };
 
-            update_root_verity_in_grub_config(&host_status, &host_config, mount_dir.path())
+            update_root_verity_in_grub_config(&host_status, &host_status.spec, mount_dir.path())
                 .unwrap();
 
             let grub_config_path = boot_path.join("grub2/grub.cfg");
@@ -1548,7 +1565,7 @@ mod functional_test {
             grub_config = grub_config.replace("systemd.verity_root_data", "foobar");
             files::write_file(grub_config_path, 0o644, grub_config.as_bytes()).unwrap();
 
-            assert_eq!(update_root_verity_in_grub_config(&host_status, &host_config, mount_dir.path())
+            assert_eq!(update_root_verity_in_grub_config(&host_status, &host_status.spec, mount_dir.path())
                 .unwrap_err().root_cause().to_string(), format!("Unable to find systemd.verity_root_data on linux command line in '{}/boot/grub2/grub.cfg'", mount_dir.path().display()));
         }
     }
@@ -1556,94 +1573,86 @@ mod functional_test {
     #[functional_test]
     fn test_stop_pre_existing_verity_devices() {
         setup_verity_volumes();
-        let host_config = HostConfiguration {
-            storage: Storage {
-                disks: vec![config::Disk {
-                    id: "foo".into(),
-                    device: PathBuf::from("/dev/sdb"),
-                    partitions: vec![],
-                    partition_table_type: config::PartitionTableType::Gpt,
-                    adopted_partitions: vec![],
-                }],
-                mount_points: vec![
-                    config::MountPoint {
-                        path: PathBuf::from("/var/lib/trident-overlay"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "overlay".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                    config::MountPoint {
-                        path: PathBuf::from("/boot"),
-                        filesystem: "ext4".to_string(),
-                        target_id: "boot".to_string(),
-                        options: vec!["defaults".to_string()],
-                    },
-                ],
-                verity: vec![config::VerityDevice {
-                    id: "root-verity".into(),
-                    device_name: "root".into(),
-                    data_target_id: "root".into(),
-                    hash_target_id: "root-hash".into(),
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let host_status_golden = HostStatus {
-            storage: status::Storage {
-                disks: btreemap! {
-                    "sdb".to_owned() => status::Disk {
-                        uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-                        path: PathBuf::from("/dev/sdb"),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "sdb".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
                         partitions: vec![
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000001u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb1"),
-                                id: "boot".into(),
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Xbootldr,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "boot".to_string(),
+                                partition_type: PartitionType::Xbootldr,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000002u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb3"),
-                                id: "root".into(),
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root-hash".to_string(),
+                                partition_type: PartitionType::RootVerity,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb2"),
-                                id: "root-hash".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::RootVerity,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "root".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(100),
                             },
-                            status::Partition {
-                                uuid: Uuid::from_u128(
-                                    0x00000000_0000_0000_0000_000000000003u128,
-                                ),
-                                path: PathBuf::from("/dev/sdb4"),
-                                id: "overlay".into(),
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::LinuxGeneric,
-                                contents: BlockDeviceContents::Unknown,
+                            Partition {
+                                id: "overlay".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: PartitionSize::Fixed(100),
                             },
                         ],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            path: PathBuf::from("/var/lib/trident-overlay"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "overlay".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                        config::MountPoint {
+                            path: PathBuf::from("/boot"),
+                            filesystem: "ext4".to_string(),
+                            target_id: "boot".to_string(),
+                            options: vec!["defaults".to_string()],
+                        },
+                    ],
+                    verity: vec![config::VerityDevice {
+                        id: "root-verity".into(),
+                        device_name: "root".into(),
+                        data_target_id: "root".into(),
+                        hash_target_id: "root-hash".into(),
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: status::Storage {
+                block_devices: btreemap! {
+                    "foo".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb"),
+                        size: 300,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb1"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-hash".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb2"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb3"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "overlay".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb4"),
+                        size: 100,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -1654,21 +1663,21 @@ mod functional_test {
         // nothing mounted
         let verity_root_path = Path::new("/dev/mapper/root");
         assert!(!verity_root_path.exists());
-        stop_pre_existing_verity_devices(&host_config).unwrap();
+        stop_pre_existing_verity_devices(&host_status_golden.spec).unwrap();
 
         // root verity opened
         {
             let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&host_config, &mut host_status).unwrap();
+            setup_verity_devices(&host_status_golden.spec, &mut host_status).unwrap();
             assert!(verity_root_path.exists());
-            stop_pre_existing_verity_devices(&host_config).unwrap();
+            stop_pre_existing_verity_devices(&host_status.spec).unwrap();
             assert!(!verity_root_path.exists());
         }
 
         // root verity opened & mounted
         {
             let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&host_config, &mut host_status).unwrap();
+            setup_verity_devices(&host_status_golden.spec, &mut host_status).unwrap();
             assert!(verity_root_path.exists());
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(
@@ -1683,7 +1692,7 @@ mod functional_test {
             let _mount_guard = MountGuard {
                 mount_dir: mount_dir.path(),
             };
-            stop_pre_existing_verity_devices(&host_config).unwrap();
+            stop_pre_existing_verity_devices(&host_status.spec).unwrap();
             assert!(!mountpoint::check_is_mountpoint(mount_dir.path()).unwrap());
             assert!(!verity_root_path.exists());
         }

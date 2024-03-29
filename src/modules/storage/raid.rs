@@ -11,10 +11,9 @@ use std::{
 use strum_macros::{Display, EnumString};
 use trident_api::{
     config::{HostConfiguration, PartitionType, RaidLevel, SoftwareRaidArray},
-    status::{self, BlockDeviceContents, HostStatus, RaidArrayStatus, RaidType},
+    status::{self, BlockDeviceContents, HostStatus},
     BlockDeviceId,
 };
-use uuid::Uuid;
 
 use osutils::{block_devices, exe::OutputChecker, mdadm, udevadm};
 
@@ -89,8 +88,12 @@ pub(super) fn get_raid_details(
     let raid_path = PathBuf::from(format!("/dev/md/{}", raid_array_name));
     let device_paths =
         get_device_paths(host_status, devices).context("Failed to get device paths")?;
-    let first_device: &status::Partition = get_partition_by_id(host_status, &devices[0])?;
-    let first_device_type: PartitionType = first_device.ty;
+    let first_device = host_status
+        .spec
+        .storage
+        .get_partition(&devices[0])
+        .context("Failed to get partition")?;
+    let first_device_type: PartitionType = first_device.partition_type;
     let component_size = osutils::files::read_file_trim(&md_folder.join("component_size"))?;
 
     // TODO(6331): fins a better way to get the size of the RAID array
@@ -123,39 +126,25 @@ fn get_raid_device_name(raid_device: &Path) -> Result<String, Error> {
     Ok(device_name.to_string())
 }
 
-pub(super) fn get_device_paths(
+fn get_device_paths(
     host_status: &HostStatus,
-    devices: &Vec<BlockDeviceId>,
+    devices: &[BlockDeviceId],
 ) -> Result<Vec<PathBuf>, Error> {
-    let mut device_paths = Vec::new();
-
-    for device_id in devices {
-        let partition = get_partition_by_id(host_status, device_id)?;
-        let path = partition.path.clone();
-        device_paths.push(path);
-    }
-
-    Ok(device_paths)
-}
-
-// function to get partition by id from host status
-fn get_partition_by_id<'a>(
-    host_status: &'a HostStatus,
-    partition_id: &str,
-) -> Result<&'a status::Partition, Error> {
-    for disk in host_status.storage.disks.values() {
-        for partition in &disk.partitions {
-            if partition.id == partition_id {
-                return Ok(partition);
-            }
-        }
-    }
-
-    bail!("Failed to find partition with id '{partition_id}'")
+    devices
+        .iter()
+        .map(|device_id| {
+            host_status
+                .storage
+                .block_devices
+                .get(device_id)
+                .map(|block_device| block_device.path.clone())
+                .context(format!("Failed to find block device with id '{device_id}'"))
+        })
+        .collect()
 }
 
 pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> {
-    if !host_status.storage.raid_arrays.is_empty() {
+    if !host_status.spec.storage.raid.software.is_empty() {
         info!("Creating mdadm config file");
         let output = mdadm::examine().context("Failed to examine RAID arrays")?;
         let mdadm_config_file_path = "/etc/mdadm/mdadm.conf";
@@ -169,39 +158,43 @@ pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> 
 
 // Create a new RaidArray and add it to the host status
 pub(super) fn add_to_host_status(host_status: &mut HostStatus, raid_details: RaidDetail) {
-    let new_raid_array = status::RaidArray {
-        device_paths: raid_details.devices,
-        partition_type: raid_details.partition_type,
-        name: raid_details.name.clone(),
-        level: raid_details.level,
-        status: RaidArrayStatus::Created,
-        array_size: raid_details.size,
-        ty: RaidType::Software,
-        path: raid_details.path,
-        uuid: Uuid::parse_str(&raid_details.uuid).unwrap(),
-        contents: status::BlockDeviceContents::Unknown,
-    };
+    // let new_raid_array = status::RaidArray {
+    //     device_paths: raid_details.devices,
+    //     partition_type: raid_details.partition_type,
+    //     name: raid_details.name.clone(),
+    //     level: raid_details.level,
+    //     status: RaidArrayStatus::Created,
+    //     array_size: raid_details.size,
+    //     ty: RaidType::Software,
+    //     path: raid_details.path,
+    //     uuid: Uuid::parse_str(&raid_details.uuid).unwrap(),
+    //     contents: status::BlockDeviceContents::Unknown,
+    // };
 
-    host_status
-        .storage
-        .raid_arrays
-        .insert(raid_details.id.clone(), new_raid_array);
+    // TODO: Track more details in HS
+    host_status.storage.block_devices.insert(
+        raid_details.id.clone(),
+        status::BlockDeviceInfo {
+            path: raid_details.path.clone(),
+            size: raid_details.size,
+            contents: status::BlockDeviceContents::Unknown,
+        },
+    );
 }
 
 // Update a RaidArray by ID
 pub(super) fn update_raid_in_host_status(
     host_status: &mut HostStatus,
     id: &str,
-    status: RaidArrayStatus,
     contents: status::BlockDeviceContents,
 ) -> Result<(), Error> {
     let raid_array = host_status
         .storage
-        .raid_arrays
+        .block_devices
         .get_mut(id)
         .context(format!("Failed to update the RAID array: {id}"))?;
 
-    raid_array.status = status;
+    // TODO: Also track status
     raid_array.contents = contents;
 
     Ok(())
@@ -327,7 +320,6 @@ pub(super) fn create_sw_raid(
             update_raid_in_host_status(
                 host_status,
                 &software_raid_config.id,
-                RaidArrayStatus::Ready,
                 status::BlockDeviceContents::Unknown,
             )
             .context(format!(
@@ -378,11 +370,8 @@ mod tests {
     use maplit::btreemap;
 
     use trident_api::{
-        config::PartitionType,
-        status::{
-            BlockDeviceContents, Disk as DiskStatus, Partition as PartitionStatus, RaidArray,
-            ReconcileState, Storage as StorageStatus,
-        },
+        config::{Disk, Partition, PartitionSize, PartitionType, Storage},
+        status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage as StorageStatus},
     };
 
     use super::*;
@@ -391,45 +380,55 @@ mod tests {
     fn test_get_device_paths() {
         let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: StorageStatus {
-                disks: btreemap! {
-                    "os".into() => DiskStatus {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
                         partitions: vec![
-                            PartitionStatus {
+                            Partition {
                                 id: "boot".to_string(),
-                                path: PathBuf::from("/dev/sda1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                size: PartitionSize::Fixed(1000),
+                                partition_type: PartitionType::Esp,
                             },
-                            PartitionStatus {
+                            Partition {
                                 id: "root".to_string(),
-                                path: PathBuf::from("/dev/sda2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                size: PartitionSize::Fixed(1000),
+                                partition_type: PartitionType::Root,
                             },
-                            PartitionStatus {
+                            Partition {
                                 id: "home".to_string(),
-                                path: PathBuf::from("/dev/sda3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::LinuxGeneric,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
+                                size: PartitionSize::Grow,
+                                partition_type: PartitionType::LinuxGeneric,
                             },
                         ],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: StorageStatus {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "home".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -438,7 +437,7 @@ mod tests {
         };
 
         let result: Result<Vec<PathBuf>, Error> =
-            get_device_paths(&host_status, &vec!["boot".to_string(), "root".to_string()]);
+            get_device_paths(&host_status, &["boot".to_string(), "root".to_string()]);
 
         assert!(result.is_ok());
 
@@ -449,10 +448,8 @@ mod tests {
 
         assert_eq!(device_paths, expected_paths);
 
-        let result: Result<Vec<PathBuf>, Error> = get_device_paths(
-            &host_status,
-            &vec!["boot2".to_string(), "root2".to_string()],
-        );
+        let result: Result<Vec<PathBuf>, Error> =
+            get_device_paths(&host_status, &["boot2".to_string(), "root2".to_string()]);
         assert!(result.is_err());
     }
 
@@ -478,7 +475,7 @@ mod tests {
 
         assert!(host_status
             .storage
-            .raid_arrays
+            .block_devices
             .contains_key(&raid_details.id));
     }
 
@@ -486,41 +483,24 @@ mod tests {
     fn test_update_raid_status() {
         let host_status = &mut HostStatus::default();
 
-        host_status.storage.raid_arrays.insert(
+        host_status.storage.block_devices.insert(
             "some_raid".to_string(),
-            RaidArray {
-                device_paths: vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sdb1")],
-                partition_type: PartitionType::LinuxGeneric,
-                name: "raid1".to_string(),
-                level: RaidLevel::Raid1,
-                status: RaidArrayStatus::Created,
-                array_size: 12345,
-                ty: RaidType::Software,
+            BlockDeviceInfo {
                 path: PathBuf::from("/dev/md/some_raid"),
-                uuid: Uuid::parse_str("5ddca66e-2a11-4b5c-ab97-5c5158ab10b8").unwrap(),
-                contents: status::BlockDeviceContents::Unknown,
+                size: 12345,
+                contents: BlockDeviceContents::Unknown,
             },
         );
 
         let _ = update_raid_in_host_status(
             host_status,
             "some_raid",
-            RaidArrayStatus::Ready,
             status::BlockDeviceContents::Initialized,
         );
         assert_eq!(
             host_status
                 .storage
-                .raid_arrays
-                .get("some_raid")
-                .unwrap()
-                .status,
-            RaidArrayStatus::Ready
-        );
-        assert_eq!(
-            host_status
-                .storage
-                .raid_arrays
+                .block_devices
                 .get("some_raid")
                 .unwrap()
                 .contents,

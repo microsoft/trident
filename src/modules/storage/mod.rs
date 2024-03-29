@@ -18,8 +18,7 @@ use trident_api::{
     constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
     status::{
-        self, AbVolumeSelection, BlockDeviceContents, Disk, EncryptedVolume, HostStatus, Partition,
-        RaidArray, ReconcileState, UpdateKind,
+        self, AbVolumeSelection, BlockDeviceContents, HostStatus, ReconcileState, UpdateKind,
     },
     BlockDeviceId,
 };
@@ -109,22 +108,15 @@ fn create_partitions(
             disk.id
         ))?;
 
-        host_status.storage.disks.insert(
+        // TODO: Track uuid from `disk_information.id`. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7321/
+        host_status.storage.block_devices.insert(
             disk.id.clone(),
-            status::Disk {
-                uuid: disk_information.id,
+            status::BlockDeviceInfo {
                 path: disk_bus_path.clone(),
-                partitions: Vec::new(),
-                capacity: disk_information.capacity,
+                size: disk_information.capacity,
                 contents: BlockDeviceContents::Unknown,
             },
         );
-
-        let disk_status = host_status
-            .storage
-            .disks
-            .get_mut(&disk.id)
-            .context(format!("Failed to find disk {} in host status", disk.id))?;
 
         for (index, partition) in disk.partitions.iter().enumerate() {
             let partition_uuid = created_partitions[index].uuid;
@@ -141,20 +133,24 @@ fn create_partitions(
                 );
             }
 
-            let start = created_partitions[index].start;
+            // TODO: also store start and UUID.
             let size = created_partitions[index].size;
-            disk_status.partitions.push(status::Partition {
-                id: partition.id.clone(),
-                path: part_path,
-                start,
-                end: start + size,
-                ty: partition.partition_type,
-                contents: BlockDeviceContents::Unknown,
-                uuid: partition_uuid,
-            });
+            host_status.storage.block_devices.insert(
+                partition.id.clone(),
+                status::BlockDeviceInfo {
+                    path: part_path.clone(),
+                    size,
+                    contents: BlockDeviceContents::Unknown,
+                },
+            );
         }
 
-        disk_status.contents = status::BlockDeviceContents::Initialized;
+        host_status
+            .storage
+            .block_devices
+            .get_mut(&disk.id)
+            .context(format!("Failed to find disk {} in host status", disk.id))?
+            .contents = status::BlockDeviceContents::Initialized;
     }
     Ok(())
 }
@@ -183,21 +179,21 @@ impl Module for StorageModule {
     }
 
     fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
-        // Remove disks that no longer exist.
-        let original_disks = host_status.storage.disks.clone();
+        // Remove block devices that no longer exist.
+        let original_block_devices = host_status.storage.block_devices.clone();
         host_status
             .storage
-            .disks
-            .retain(|_id, disk| disk.path.exists());
+            .block_devices
+            .retain(|_id, block_device| block_device.path.exists());
 
-        let removed_disks = original_disks
+        let removed_block_devices = original_block_devices
             .keys()
-            .filter(|id| !host_status.storage.disks.contains_key(*id))
+            .filter(|id| !host_status.storage.block_devices.contains_key(*id))
             .collect::<Vec<_>>();
-        if !removed_disks.is_empty() {
+        if !removed_block_devices.is_empty() {
             info!(
-                "Removed disks that no longer exist from status: {}",
-                removed_disks
+                "Removed block devices that no longer exist from status: {}",
+                removed_block_devices
                     .iter()
                     .map(|id| id.as_str())
                     .collect::<Vec<_>>()
@@ -237,11 +233,14 @@ impl Module for StorageModule {
             }
         }
 
-        // If Trident is performing an A/B update, validate that every undeployed image inside
-        // HostConfiguration targets either the ESP partition or an A/B volume pair. An invalid HC
-        // should be rejected since Trident cannot overwrite the image on a volume that is shared
-        // between A and B.
         if planned_update != ReconcileState::CleanInstall {
+            // TODO: validate that block devices naming is consistent with the current state
+            // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
+
+            // If Trident is performing an A/B update, validate that every undeployed image inside
+            // HostConfiguration targets either the ESP partition or an A/B volume pair. An invalid HC
+            // should be rejected since Trident cannot overwrite the image on a volume that is shared
+            // between A and B.
             image::validate_undeployed_images(host_status, host_config)
                 .context("Validation of host configuration failed: HC requests update of images that cannot be overwritten")?;
         }
@@ -344,22 +343,7 @@ pub(super) fn initialize_block_devices(
         }
     }
 
-    host_status.storage.mount_points = host_config
-        .storage
-        .mount_points
-        .iter()
-        .map(|mount_point| {
-            (
-                mount_point.path.clone(),
-                status::MountPoint {
-                    target_id: mount_point.target_id.clone(),
-                    filesystem: mount_point.filesystem.clone(),
-                    options: mount_point.options.clone(),
-                },
-            )
-        })
-        .collect();
-    trace!("Mount points: {:?}", host_status.storage.mount_points);
+    trace!("Mount points: {:?}", host_config.storage.mount_points);
 
     if host_status.reconcile_state == ReconcileState::CleanInstall {
         debug!("Initializing block devices");
@@ -375,8 +359,7 @@ pub(super) fn initialize_block_devices(
     }
 
     image::provision(host_status, host_config).structured(ManagementError::DeployImages)?;
-    filesystem::create_filesystems(host_config, host_status)
-        .structured(ManagementError::CreateFilesystems)?;
+    filesystem::create_filesystems(host_status).structured(ManagementError::CreateFilesystems)?;
 
     // Assumes that images are already in place (data and hash), so that it can
     // assemble the verity devices.
@@ -406,18 +389,17 @@ pub(super) fn set_host_status_block_device_contents(
     contents: BlockDeviceContents,
 ) -> Result<(), Error> {
     debug!("Setting block device '{block_device_id}' contents to '{contents:?}'");
-    if let Some(disk) = get_disk_mut(host_status, block_device_id) {
+    if let Some(disk) = host_status.storage.block_devices.get_mut(block_device_id) {
         disk.contents = contents;
         return Ok(());
     }
 
-    if let Some(partition) = get_partition_mut(host_status, block_device_id) {
-        partition.contents = contents;
-        return Ok(());
-    }
-
-    if let Some(ab_update) = &host_status.storage.ab_update {
-        if let Some(ab_volume_pair) = ab_update.volume_pairs.get(block_device_id) {
+    if let Some(ab_update) = &host_status.spec.storage.ab_update {
+        if let Some(ab_volume_pair) = ab_update
+            .volume_pairs
+            .iter()
+            .find(|p| &p.id == block_device_id)
+        {
             let target_id = match modules::get_ab_update_volume(host_status, false) {
                 Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
                 Some(AbVolumeSelection::VolumeB) => Some(&ab_volume_pair.volume_b_id),
@@ -433,53 +415,7 @@ pub(super) fn set_host_status_block_device_contents(
         }
     }
 
-    if let Some(raid) = get_raid_mut(host_status, block_device_id) {
-        raid.contents = contents;
-        return Ok(());
-    }
-
-    if let Some(encrypted_volume) = get_encrypted_volume_mut(host_status, block_device_id) {
-        encrypted_volume.contents = contents;
-        return Ok(());
-    }
-
     anyhow::bail!("No block device with id '{}' found", block_device_id);
-}
-
-fn get_disk_mut<'a>(
-    host_status: &'a mut HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<&'a mut Disk> {
-    host_status.storage.disks.get_mut(block_device_id)
-}
-
-fn get_partition_mut<'a>(
-    host_status: &'a mut HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<&'a mut Partition> {
-    host_status
-        .storage
-        .disks
-        .iter_mut()
-        .flat_map(|(_block_device_id, disk)| &mut disk.partitions)
-        .find(|p| p.id == *block_device_id)
-}
-
-fn get_raid_mut<'a>(
-    host_status: &'a mut HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<&'a mut RaidArray> {
-    host_status.storage.raid_arrays.get_mut(block_device_id)
-}
-
-fn get_encrypted_volume_mut<'a>(
-    host_status: &'a mut HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<&'a mut EncryptedVolume> {
-    host_status
-        .storage
-        .encrypted_volumes
-        .get_mut(block_device_id)
 }
 
 #[cfg(test)]
@@ -494,14 +430,13 @@ mod tests {
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
-            self, Disk as DiskConfig, HostConfiguration, Image, ImageFormat, ImageSha256,
-            MountPoint, Partition as PartitionConfig, PartitionSize, PartitionType, Raid,
-            RaidLevel, SoftwareRaidArray, Storage as StorageConfig,
+            self, AbUpdate, AbVolumePair, Disk as DiskConfig, HostConfiguration, Image,
+            ImageFormat, ImageSha256, MountPoint, Partition as PartitionConfig, PartitionSize,
+            PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
-        status::{AbUpdate, AbVolumePair, Storage, UpdateKind},
+        status::{BlockDeviceInfo, Storage, UpdateKind},
     };
-    use uuid::Uuid;
 
     use super::*;
 
@@ -662,63 +597,48 @@ mod tests {
     fn test_set_host_status_block_device_contents() {
         let mut host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "osab".to_string(),
+                            volume_a_id: "root".to_string(),
+                            volume_b_id: "rootb".to_string(),
+                        }],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 0,
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "efi".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                            },
-                            Partition {
-                                id: "root".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                            },
-                            Partition {
-                                id: "rootb".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                            },
-                        ],
                     },
-                    "data".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 1000,
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 900,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "rootb".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 9000,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "data".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
-                ab_update: Some(AbUpdate {
-                    active_volume: None,
-                    volume_pairs: btreemap! {
-                        "osab".to_owned() => AbVolumePair {
-                            volume_a_id: "root".to_owned(),
-                            volume_b_id: "rootb".to_owned(),
-                        },
-                    },
-                }),
+                ab_active_volume: None,
                 ..Default::default()
             },
             ..Default::default()
@@ -726,7 +646,7 @@ mod tests {
         assert_eq!(
             host_status
                 .storage
-                .disks
+                .block_devices
                 .get(&"os".to_owned())
                 .unwrap()
                 .contents,
@@ -735,23 +655,8 @@ mod tests {
         assert_eq!(
             host_status
                 .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .partitions
-                .first()
-                .unwrap()
-                .contents,
-            BlockDeviceContents::Unknown
-        );
-        assert_eq!(
-            host_status
-                .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .partitions
-                .get(1)
+                .block_devices
+                .get(&"root".to_owned())
                 .unwrap()
                 .contents,
             BlockDeviceContents::Unknown
@@ -764,7 +669,7 @@ mod tests {
         assert_eq!(
             host_status
                 .storage
-                .disks
+                .block_devices
                 .get(&"os".to_owned())
                 .unwrap()
                 .contents,
@@ -781,11 +686,8 @@ mod tests {
         assert_eq!(
             host_status
                 .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .partitions
-                .first()
+                .block_devices
+                .get(&"efi".to_owned())
                 .unwrap()
                 .contents,
             contents.clone()
@@ -801,11 +703,8 @@ mod tests {
         assert_eq!(
             host_status
                 .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .partitions
-                .get(1)
+                .block_devices
+                .get(&"root".to_owned())
                 .unwrap()
                 .contents,
             contents.clone()
@@ -822,22 +721,14 @@ mod tests {
         assert_eq!(
             host_status
                 .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .partitions
-                .get(1)
+                .block_devices
+                .get(&"root".to_owned())
                 .unwrap()
                 .contents,
             contents.clone()
         );
 
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
         set_host_status_block_device_contents(
             &mut host_status,
@@ -848,11 +739,8 @@ mod tests {
         assert_eq!(
             host_status
                 .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .partitions
-                .get(2)
+                .block_devices
+                .get(&"root".to_owned())
                 .unwrap()
                 .contents,
             contents.clone()
@@ -865,89 +753,9 @@ mod tests {
                 &"foorbar".to_owned(),
                 contents.clone()
             )
-            .err()
-            .unwrap()
+            .unwrap_err()
             .to_string(),
             "No block device with id 'foorbar' found"
-        );
-    }
-
-    /// Validates logic for querying disks and partitions.
-    #[test]
-    fn test_get_disk_partition_mut() {
-        let mut host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "efi".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                            },
-                            Partition {
-                                id: "root".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                            },
-                            Partition {
-                                id: "rootb".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                            },
-                        ],
-                    },
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let disk_mut = get_disk_mut(&mut host_status, &"os".to_owned());
-        disk_mut.unwrap().contents = BlockDeviceContents::Zeroed;
-        assert_eq!(
-            host_status
-                .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .contents,
-            BlockDeviceContents::Zeroed
-        );
-
-        let partition_mut = get_partition_mut(&mut host_status, &"efi".to_owned());
-        partition_mut.unwrap().contents = BlockDeviceContents::Initialized;
-        assert_eq!(
-            host_status
-                .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .partitions
-                .first()
-                .unwrap()
-                .contents,
-            BlockDeviceContents::Initialized
         );
     }
 
@@ -973,12 +781,28 @@ mod tests {
         generate_fstab(
             &get_host_config(&temp_tabfile),
             &HostStatus {
-                storage: Storage {
-                    disks: btreemap! {
-                        "disk1".into() => Disk {
-                            partitions: vec![Partition { id: "part1".into(), path: PathBuf::from("/part1"), start: 0, end: 1, ty: PartitionType::Root, contents: BlockDeviceContents::Unknown, uuid: Uuid::new_v4() }],
+                spec: HostConfiguration {
+                    storage: config::Storage {
+                        disks: vec![DiskConfig {
+                            id: "disk1".into(),
+                            partitions: vec![PartitionConfig {
+                                id: "part1".into(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1),
+                            }],
                             ..Default::default()
-                        }
+                        }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                storage: Storage {
+                    block_devices: btreemap! {
+                        "part1".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/part1"),
+                            size: 1,
+                            contents: BlockDeviceContents::Unknown,
+                        },
                     },
                     ..Default::default()
                 },
@@ -1007,12 +831,28 @@ mod tests {
         generate_fstab(
             &hc,
             &HostStatus {
-                storage: Storage {
-                    disks: btreemap! {
-                        "disk1".into() => Disk {
-                            partitions: vec![Partition { id: "part1".into(), path: PathBuf::from("/part1"), start: 0, end: 1, ty: PartitionType::Root, contents: BlockDeviceContents::Unknown, uuid: Uuid::new_v4() }],
+                spec: HostConfiguration {
+                    storage: config::Storage {
+                        disks: vec![DiskConfig {
+                            id: "disk1".into(),
+                            partitions: vec![PartitionConfig {
+                                id: "part1".into(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1),
+                            }],
                             ..Default::default()
-                        }
+                        }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                storage: Storage {
+                    block_devices: btreemap! {
+                        "part1".into() => BlockDeviceInfo {
+                            path: PathBuf::from("/part1"),
+                            size: 1,
+                            contents: BlockDeviceContents::Unknown,
+                        },
                     },
                     ..Default::default()
                 },

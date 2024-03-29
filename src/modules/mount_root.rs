@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -7,6 +8,7 @@ use anyhow::{bail, Context, Error};
 use log::{error, info};
 use osutils::{files, lsof, mount};
 use trident_api::{
+    config::MountPoint,
     constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
     status::HostStatus,
@@ -39,18 +41,26 @@ pub(super) fn unmount_new_root(
     res
 }
 
+/// Returns an ordered map of mount points to their corresponding MountPoint objects.
+fn mount_points_map(host_status: &HostStatus) -> BTreeMap<&Path, &MountPoint> {
+    host_status
+        .spec
+        .storage
+        .mount_points
+        .iter()
+        .map(|mp| (&*mp.path, mp))
+        .filter(|(path, _)| path.to_str() != Some("none"))
+        .collect::<BTreeMap<_, _>>()
+}
+
 pub(super) fn mount_new_root(
     host_status: &HostStatus,
     root_mount_path: &Path,
 ) -> Result<Vec<PathBuf>, TridentError> {
     info!("Mounting new root filesystems");
 
-    // Paths are ordered alphabetically, so we can mount them in the right order
-    host_status
-        .storage
-        .mount_points
+    mount_points_map(host_status)
         .iter()
-        .filter(|(path, _)| path.to_str() != Some("none"))
         .map(|(path, mp)| {
             let target_path =
                 root_mount_path.join(path.strip_prefix(ROOT_MOUNT_POINT_PATH).context(format!(
@@ -121,73 +131,55 @@ pub(super) fn mount_new_root(
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
-
-    use maplit::btreemap;
-    use trident_api::status::{MountPoint, Storage};
+    use trident_api::config::{HostConfiguration, MountPoint, Storage};
 
     use super::*;
 
     #[test]
     fn test_mount_point_ordering() {
         let host_status = HostStatus {
-            storage: Storage {
-                mount_points: vec![
-                    (
-                        PathBuf::from("/mnt/boot/efi"),
+            spec: HostConfiguration {
+                storage: Storage {
+                    mount_points: vec![
                         MountPoint {
+                            path: PathBuf::from("/mnt/boot/efi"),
                             target_id: "sda3".to_string(),
                             filesystem: "vfat".to_string(),
                             options: vec![],
                         },
-                    ),
-                    (
-                        PathBuf::from("/mnt"),
                         MountPoint {
+                            path: PathBuf::from("/mnt"),
                             target_id: "sda1".to_string(),
                             filesystem: "ext4".to_string(),
                             options: vec![],
                         },
-                    ),
-                    (
-                        PathBuf::from("/a"),
                         MountPoint {
+                            path: PathBuf::from("/a"),
                             target_id: "sda1".to_string(),
                             filesystem: "ext4".to_string(),
                             options: vec![],
                         },
-                    ),
-                    (
-                        PathBuf::from("/"),
                         MountPoint {
+                            path: PathBuf::from("/"),
                             target_id: "sda1".to_string(),
                             filesystem: "ext4".to_string(),
                             options: vec![],
                         },
-                    ),
-                    (
-                        PathBuf::from("/mnt/boot"),
                         MountPoint {
+                            path: PathBuf::from("/mnt/boot"),
                             target_id: "sda2".to_string(),
                             filesystem: "ext4".to_string(),
                             options: vec![],
                         },
-                    ),
-                ]
-                .into_iter()
-                .collect(),
-                disks: btreemap! {},
-                raid_arrays: btreemap! {},
-                encrypted_volumes: btreemap! {},
-                ab_update: None,
-                root_device_path: None,
-                verity_devices: Default::default(),
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
             },
             ..Default::default()
         };
 
-        let paths = host_status
-            .storage
-            .mount_points
+        let paths = mount_points_map(&host_status)
             .keys()
             .cloned()
             .collect::<Vec<_>>();
@@ -218,7 +210,6 @@ mod functional_test {
 
     use maplit::btreemap;
     use tempfile::{NamedTempFile, TempDir};
-    use uuid::Uuid;
 
     use osutils::{
         hashing_reader::HashingReader,
@@ -228,9 +219,9 @@ mod functional_test {
         udevadm,
     };
     use trident_api::{
-        config::PartitionType,
+        config::{self, Disk, HostConfiguration, Partition, PartitionSize, PartitionType},
         error::ErrorKind,
-        status::{BlockDeviceContents, Disk, MountPoint, Partition, Storage},
+        status::{BlockDeviceContents, BlockDeviceInfo, Storage},
     };
 
     const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
@@ -269,42 +260,42 @@ mod functional_test {
         fs::create_dir_all(mount_point).unwrap();
 
         let host_status = HostStatus {
-            storage: Storage {
-                mount_points: vec![(
-                    PathBuf::from("/"),
-                    MountPoint {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: PathBuf::from("/dev/sr"),
+                        partitions: vec![Partition {
+                            id: "sr0".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::Fixed(0),
+                        }],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![config::MountPoint {
+                        path: PathBuf::from("/"),
                         target_id: "sr0".to_string(),
                         filesystem: "iso9660".to_string(),
                         options: vec!["ro".into()],
-                    },
-                )]
-                .into_iter()
-                .collect(),
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/sr"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "sr0".to_string(),
-                                path: PathBuf::from("/dev/sr0"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
-                            },
-                        ]
-                    }
-
+                    }],
+                    ..Default::default()
                 },
-                raid_arrays: Default::default(),
-                encrypted_volumes: Default::default(),
-                ab_update: None,
-                root_device_path: None,
-                verity_devices: Default::default(),
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sr"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "sr0".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sr0"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    }
+                },
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -328,61 +319,62 @@ mod functional_test {
         let root_mount_dir = tempfile::tempdir().unwrap();
 
         let host_status = HostStatus {
-            storage: Storage {
-                mount_points: vec![
-                    (
-                        PathBuf::from("/"),
-                        MountPoint {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_string(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::Fixed(0),
+                            },
+                            Partition {
+                                id: "root".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(0),
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![
+                        config::MountPoint {
+                            path: PathBuf::from("/"),
                             target_id: "root".to_string(),
                             filesystem: "ext4".to_string(),
                             options: vec!["defaults".into()],
                         },
-                    ),
-                    (
-                        PathBuf::from("/boot/efi"),
-                        MountPoint {
+                        config::MountPoint {
+                            path: PathBuf::from("/boot/efi"),
                             target_id: "esp".to_string(),
                             filesystem: "vfat".to_string(),
                             options: vec!["umask=0077".into()],
                         },
-                    ),
-                ]
-                .into_iter()
-                .collect(),
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/sdb"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "esp".to_string(),
-                                path: PathBuf::from("/dev/sdb1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "root".to_string(),
-                                path: PathBuf::from("/dev/sdb2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            },
-                        ]
-                    }
-
+                    ],
+                    ..Default::default()
                 },
-                raid_arrays: Default::default(),
-                encrypted_volumes: Default::default(),
-                ab_update: None,
-                root_device_path: None,
-                verity_devices: Default::default(),
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "esp".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sdb2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    }
+                },
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -479,42 +471,42 @@ mod functional_test {
 
         // bad mount path
         let mut host_status = HostStatus {
-            storage: Storage {
-                mount_points: vec![(
-                    PathBuf::from("foobar"),
-                    MountPoint {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: PathBuf::from("/dev/sr"),
+                        partitions: vec![Partition {
+                            id: "sr0".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::Fixed(0),
+                        }],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![config::MountPoint {
+                        path: PathBuf::from("foobar"),
                         target_id: "sr0".to_string(),
                         filesystem: "iso9660".to_string(),
-                        options: vec!["bad-option".into()],
-                    },
-                )]
-                .into_iter()
-                .collect(),
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/sr"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "sr0".to_string(),
-                                path: PathBuf::from("/dev/sr0"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
-                            },
-                        ]
-                    }
-
+                        options: vec!["bad-options".into()],
+                    }],
+                    ..Default::default()
                 },
-                raid_arrays: Default::default(),
-                encrypted_volumes: Default::default(),
-                ab_update: None,
-                root_device_path: None,
-                verity_devices: Default::default(),
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sr"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "sr0".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sr0"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    }
+                },
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -527,15 +519,9 @@ mod functional_test {
         );
 
         // bad root path
-        let value = host_status
-            .storage
-            .mount_points
-            .remove(&PathBuf::from("foobar"))
-            .unwrap();
-        host_status
-            .storage
-            .mount_points
-            .insert(PathBuf::from("/"), value);
+        let mut value = host_status.spec.storage.mount_points.remove(0);
+        value.path = PathBuf::from("/");
+        host_status.spec.storage.mount_points.push(value);
         let temp_file = NamedTempFile::new().unwrap();
 
         assert_eq!(
@@ -585,41 +571,42 @@ mod functional_test {
         let temp_mount_dir = TempDir::new().unwrap();
 
         let host_status = HostStatus {
-            storage: Storage {
-                mount_points: vec![(
-                    PathBuf::from("/"),
-                    MountPoint {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: PathBuf::from("/dev/sr"),
+                        partitions: vec![Partition {
+                            id: "sr0".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: PartitionSize::Fixed(0),
+                        }],
+                        ..Default::default()
+                    }],
+                    mount_points: vec![config::MountPoint {
+                        path: PathBuf::from("/"),
                         target_id: "sr0".to_string(),
                         filesystem: "iso9660".to_string(),
                         options: vec!["ro".into()],
-                    },
-                )]
-                .into_iter()
-                .collect(),
-                disks: btreemap! {
-                    "os".into() => Disk {
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/sr"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "sr0".to_string(),
-                                path: PathBuf::from("/dev/sr0"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
-                            },
-                        ]
+                    },
+                    "sr0".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sr0"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
                     }
                 },
-                raid_arrays: Default::default(),
-                encrypted_volumes: Default::default(),
-                ab_update: None,
-                root_device_path: None,
-                verity_devices: Default::default(),
+                ..Default::default()
             },
             ..Default::default()
         };

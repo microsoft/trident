@@ -31,7 +31,7 @@ use osutils::{
 };
 use trident_api::{
     config::{Image, ImageSha256, PartitionType},
-    status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, Partition},
+    status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
 
@@ -468,8 +468,21 @@ fn get_partition_path(
     block_device_id: &BlockDeviceId,
 ) -> Result<String, Error> {
     // Fetch BlockDeviceInfo of partition based on its id
-    let part_block_device_info = modules::get_partition(host_status, block_device_id)
+    let part_block_device_info = host_status
+        .storage
+        .block_devices
+        .get(block_device_id)
         .context(format!("No partition with id '{block_device_id}' found"))?;
+
+    // Ensure block device is a partition
+    let _ = host_status
+        .spec
+        .storage
+        .get_partition(block_device_id)
+        .context(format!(
+            "Block device with id '{block_device_id}' is not a partition"
+        ))?;
+
     // Fetch partition path and convert to string
     let partition_path = part_block_device_info.path.to_str().context(format!(
         "Failed to convert partition path '{}' to string",
@@ -499,13 +512,13 @@ fn get_parent_disk(
     partition_id: &BlockDeviceId,
 ) -> Option<BlockDeviceInfo> {
     // Iterate over all the disks in host_status
-    for disk in host_status.storage.disks.values() {
+    for disk in host_status.spec.storage.disks.iter() {
         // Iterate over the partitions of the disk
         for partition in &disk.partitions {
             // Check if the partition id matches the given BlockDeviceId
             if &partition.id == partition_id {
                 // Return Disk object if match found
-                return Some(disk.to_block_device());
+                return host_status.storage.block_devices.get(&disk.id).cloned();
             }
         }
     }
@@ -519,11 +532,11 @@ fn get_partition_type(
     partition_id: &str,
 ) -> Result<PartitionType, Error> {
     // Iterate through all disks and partitions
-    for disk in host_status.storage.disks.values() {
+    for disk in host_status.spec.storage.disks.iter() {
         for partition in &disk.partitions {
             if partition.id == partition_id {
                 // Directly return the type of partition
-                return Ok(partition.ty);
+                return Ok(partition.partition_type);
             }
         }
     }
@@ -540,13 +553,13 @@ fn get_update_partition_id(
     // Iterate through storage.ab-update.volume-pairs and return the correct volume-id, i.e. id of
     // partition to be updated; when UpdateKind is AbUpdate, get_ab_update_volume() already returns
     // the inactive AbVolumeSelection, i.e. the one to be updated
-    if let Some(ab_update) = &host_status.storage.ab_update {
+    if let Some(ab_update) = &host_status.spec.storage.ab_update {
         // Call helper func from lib.rs, which returns AbVolumeSelection to be updated in this A/B
         // update, either VolumeA or VolumeB, depending on which volume is active now
         let volume_selection: AbVolumeSelection = modules::get_ab_update_volume(host_status, false)
             .context("Failed to determine which A/B volume is currently inactive")?;
         // Fetch volume pair for the target_id
-        if let Some(volume_pair) = ab_update.volume_pairs.get(target_id) {
+        if let Some(volume_pair) = ab_update.volume_pairs.iter().find(|p| &p.id == target_id) {
             return match volume_selection {
                 AbVolumeSelection::VolumeA => Ok(volume_pair.volume_a_id.clone()),
                 AbVolumeSelection::VolumeB => Ok(volume_pair.volume_b_id.clone()),
@@ -820,49 +833,14 @@ pub(super) fn deploy(
     Ok(())
 }
 
-/// Returns a reference to Partition corresponding to block_device_id.
-fn get_partition_ref<'a>(
-    host_status: &'a HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<&'a Partition> {
-    host_status
-        .storage
-        .disks
-        .iter()
-        .flat_map(|(_block_device_id, disk)| &disk.partitions)
-        .find(|p| p.id == *block_device_id)
-}
-
-/// Returns a reference to the Partition object within an A/B volume pair that corresponds to the
-/// inactive partition, or the one to be updated.
-pub(super) fn get_ab_volume_partition<'a>(
-    host_status: &'a HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<&'a Partition> {
-    if let Some(ab_update) = &host_status.storage.ab_update {
-        let ab_volume = ab_update
-            .volume_pairs
-            .iter()
-            .find(|v| v.0 == block_device_id);
-        if let Some(v) = ab_volume {
-            return modules::get_ab_update_volume(host_status, false).and_then(|selection| {
-                match selection {
-                    AbVolumeSelection::VolumeA => get_partition_ref(host_status, &v.1.volume_a_id),
-                    AbVolumeSelection::VolumeB => get_partition_ref(host_status, &v.1.volume_b_id),
-                }
-            });
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use maplit::btreemap;
-    use uuid::Uuid;
 
-    use trident_api::status::{AbUpdate, AbVolumePair, Disk, ReconcileState, Storage, UpdateKind};
+    use trident_api::{
+        config::{self, AbUpdate, AbVolumePair, HostConfiguration, PartitionSize},
+        status::{ReconcileState, Storage, UpdateKind},
+    };
 
     // Import everything from the parent module
     use super::*;
@@ -982,60 +960,68 @@ mod tests {
     /// inactive, or to be updated, based on target_id of the Image object.
     fn test_get_update_partition_id() {
         let mut host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![config::Disk {
+                        id: "os".to_owned(),
                         partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "efi".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
-                                id: "root".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "root".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
-                                id: "rootb".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "rootb".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
                         ],
-                    },
-                    "data".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
-                    },
-                },
-                ab_update: Some(AbUpdate {
-                    volume_pairs: btreemap! {
-                        "osab".to_string() => AbVolumePair {
+                        ..Default::default()
+                    }],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "osab".to_string(),
                             volume_a_id: "root".to_string(),
                             volume_b_id: "rootb".to_string(),
-                        },
-                    },
+                        }],
+                    }),
                     ..Default::default()
-                }),
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "rootb".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "data".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                },
                 ..Default::default()
             },
             reconcile_state: ReconcileState::CleanInstall,
@@ -1043,12 +1029,7 @@ mod tests {
         };
 
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
         // Scenario 1: Target ID matches with an entry and active volume is VolumeA
         match get_update_partition_id(&host_status, &"osab".to_string()) {
@@ -1065,54 +1046,59 @@ mod tests {
 
         // Scenario 3: Switch active-volume to VolumeB and verify
         host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         match get_update_partition_id(&host_status, &"osab".to_string()) {
             Ok(volume_id) => assert_eq!(volume_id, "root"),
             Err(e) => panic!("Unexpected error: {}", e),
         }
 
         let host_status2 = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![config::Disk {
+                        id: "os".to_owned(),
                         partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "efi".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
-                                id: "root".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "root".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
                         ],
-                    },
-                    "data".into() => Disk {
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 1000,
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
+                    },
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "data".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
+
                 ..Default::default()
             },
             reconcile_state: ReconcileState::CleanInstall,
@@ -1132,60 +1118,69 @@ mod tests {
     #[test]
     fn test_get_partition_type() {
         let host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![config::Disk {
+                        id: "os".to_owned(),
                         partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "efi".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
-                                id: "root".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "root".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
-                                id: "rootb".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "rootb".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
                         ],
-                    },
-                    "data".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
-                    },
-                },
-                ab_update: Some(AbUpdate {
-                    volume_pairs: btreemap! {
-                        "osab".to_string() => AbVolumePair {
+                        ..Default::default()
+                    }],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "osab".to_string(),
                             volume_a_id: "root".to_string(),
                             volume_b_id: "rootb".to_string(),
-                        },
+                        }],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
                     },
-                    active_volume: Some(AbVolumeSelection::VolumeA),
-                }),
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "rootb".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "data".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                },
+                ab_active_volume: Some(AbVolumeSelection::VolumeA),
                 ..Default::default()
             },
             ..Default::default()
@@ -1208,21 +1203,35 @@ mod tests {
         // Scenario 3: No partitions available
         let host_status2 = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![
+                        config::Disk {
+                            id: "os".to_owned(),
+                            partitions: vec![],
+                            ..Default::default()
+                        },
+                        config::Disk {
+                            id: "data".to_owned(),
+                            partitions: vec![],
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
                     },
-                    "data".into() => Disk {
+                    "data".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 1000,
+                        size: 1000,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
                     },
                 },
                 ..Default::default()
@@ -1238,60 +1247,68 @@ mod tests {
     fn test_get_parent_disk() {
         let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![config::Disk {
+                        id: "os".to_owned(),
                         partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "efi".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
-                                id: "root".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "root".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
-                            Partition {
-                                id: "rootb".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
+                            config::Partition {
+                                id: "rootb".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::Fixed(1000),
                             },
                         ],
-                    },
-                    "data".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
-                    },
-                },
-                ab_update: Some(AbUpdate {
-                    volume_pairs: btreemap! {
-                        "osab".to_string() => AbVolumePair {
+                        ..Default::default()
+                    }],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "osab".to_string(),
                             volume_a_id: "root".to_string(),
                             volume_b_id: "rootb".to_string(),
-                        },
-                    },
+                        }],
+                    }),
                     ..Default::default()
-                }),
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "rootb".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "data".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 1000,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -1299,194 +1316,10 @@ mod tests {
 
         // Case 1: Partition ID is valid
         assert_eq!(
-            get_parent_disk(&host_status, &"root".to_string()).unwrap(),
-            host_status
-                .storage
-                .disks
-                .get(&"os".to_owned())
-                .unwrap()
-                .to_block_device()
+            &get_parent_disk(&host_status, &"root".to_string()).unwrap(),
+            host_status.storage.block_devices.get("os").unwrap()
         );
         // Case 2: Partition ID is invalid
         assert_eq!(get_parent_disk(&host_status, &"invalid".to_string()), None);
-    }
-
-    /// Validates logic for querying disks and partitions.
-    #[test]
-    fn test_get_partition_ref() {
-        let host_status = HostStatus {
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "root".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "rootb".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            },
-                        ],
-                    },
-                },
-                ..Default::default()
-            },
-            reconcile_state: ReconcileState::CleanInstall,
-            ..Default::default()
-        };
-
-        // New assertions for get_partition_ref
-        assert_eq!(get_partition_ref(&host_status, &"os".to_owned()), None);
-        assert_eq!(
-            get_partition_ref(&host_status, &"efi".to_owned()).map(|p| &p.path),
-            Some(&PathBuf::from("/dev/disk/by-partlabel/osp1"))
-        );
-    }
-
-    /// Validates that get_ab_volume_partition() correctly returns the id of
-    /// the active partition inside of an ab-volume pair.
-    #[test]
-    fn test_get_ab_volume_partition() {
-        // Setting up the sample host_status
-        let mut host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
-            storage: Storage {
-                disks: btreemap! {
-                    "os".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Esp,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "root-a".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 100,
-                                end: 1000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            },
-                            Partition {
-                                id: "root-b".to_string(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 1000,
-                                end: 10000,
-                                ty: PartitionType::Root,
-                                uuid: Uuid::nil(),
-                            },
-                        ],
-                    },
-                    "data".into() => Disk {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::nil(),
-                        capacity: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                        partitions: vec![],
-                    },
-                },
-                ab_update: Some(AbUpdate {
-                    volume_pairs: btreemap! {
-                        "root".to_string() => AbVolumePair {
-                            volume_a_id: "root-a".to_string(),
-                            volume_b_id: "root-b".to_string(),
-                        },
-                    },
-                    active_volume: Some(AbVolumeSelection::VolumeA),
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        // 1. Test when the active volume is VolumeA
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeA);
-
-        // Declare a new Partition object corresponding to the inactive
-        // partition root-b
-        let partition_root_b = Partition {
-            id: "root-b".to_owned(),
-            path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-            contents: BlockDeviceContents::Unknown,
-            start: 1000,
-            end: 10000,
-            ty: PartitionType::Root,
-            uuid: uuid::Uuid::nil(),
-        };
-
-        assert_eq!(
-            get_ab_volume_partition(&host_status, &"root".to_owned()),
-            Some(&partition_root_b)
-        );
-
-        // 2. Test when the active volume is VolumeB
-        host_status
-            .storage
-            .ab_update
-            .as_mut()
-            .unwrap()
-            .active_volume = Some(AbVolumeSelection::VolumeB);
-
-        // Declare a new Partition object
-        let partition_root_a = Partition {
-            id: "root-a".to_owned(),
-            path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-            contents: BlockDeviceContents::Unknown,
-            start: 100,
-            end: 1000,
-            ty: PartitionType::Root,
-            uuid: uuid::Uuid::nil(),
-        };
-
-        assert_eq!(
-            get_ab_volume_partition(&host_status, &"root".to_owned()),
-            Some(&partition_root_a)
-        );
-
-        // 3. Test with an ID that doesn't match any volume pair
-        assert_eq!(
-            get_ab_volume_partition(&host_status, &"nonexistent".to_owned()),
-            None
-        );
     }
 }

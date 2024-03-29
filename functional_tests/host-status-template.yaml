@@ -2,79 +2,36 @@ reconcileState: ready
 trident:
   datastorePath: /var/lib/trident/datastore.sqlite
 storage:
-  disks:
+  blockDevices:
     os:
-      uuid: placeholder
-      path: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-      capacity: 17178803712
-      partitions:
-        - id: esp
-          path: placeholder
-          start: 1048576
-          end: 53477376
-          type: esp
-          contents: !image
-            sha256: placeholder
-            length: placeholder
-            url: file:///trident_cdrom/data/esp.rawzst
-          uuid: placeholder
-        - id: root-a
-          path: placeholder
-          start: 53477376
-          end: 5422186496
-          type: root
-          contents: !image
-            sha256: placeholder
-            length: placeholder
-            url: file:///trident_cdrom/data/root.rawzst
-          uuid: placeholder
-        - id: root-b
-          path: placeholder
-          start: 5422186496
-          end: 7569670144
-          type: root
-          contents: unknown
-          uuid: placeholder
-        - id: swap
-          path: placeholder
-          start: 7569670144
-          end: 9717153792
-          type: swap
-          contents: initialized
-          uuid: placeholder
-        - id: trident
-          path: placeholder
-          start: 9717153792
-          end: 9822011392
-          type: linux-generic
-          contents: initialized
-          uuid: placeholder
+      path: placeholder
+      size: 17178803712
       contents: initialized
-  mountPoints:
-    /boot/efi:
-      targetId: esp
-      filesystem: vfat
-      options:
-        - umask=0077
-    /:
-      targetId: root
-      filesystem: ext4
-      options:
-        - defaults
-    none:
-      targetId: swap
-      filesystem: swap
-      options:
-        - sw
-    /var/lib/trident:
-      targetId: trident
-      filesystem: ext4
-      options:
-        - defaults
-  abUpdate:
-    volumePairs:
-      root:
-        volumeAId: root-a
-        volumeBId: root-b
-    activeVolume: volume-a
+    esp:
+      path: placeholder
+      size: 52428800
+      contents: !image
+        sha256: placeholder
+        length: placeholder
+        url: file:///trident_cdrom/data/esp.rawzst
+    root-a:
+      path: placeholder
+      size: 5368709120
+      contents: !image
+        sha256: placeholder
+        length: placeholder
+        url: file:///trident_cdrom/data/root.rawzst
+    root-b:
+      path: placeholder
+      size: 2147483648
+      contents: unknown
+    swap:
+      path: placeholder
+      size: 2147483648
+      contents: initialized
+    trident:
+      path: placeholder
+      size: 104857600
+      contents: initialized
+  abActiveVolume: volume-a
   rootDevicePath: /dev/sda2

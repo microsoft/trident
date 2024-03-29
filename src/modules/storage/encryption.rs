@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use trident_api::{
-    config::{HostConfiguration, PartitionType},
-    status::{BlockDeviceContents, HostStatus},
+    config::{HostConfiguration, Partition, PartitionType},
+    status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
+    BlockDeviceId,
 };
 
 const LUKS_HEADER_SEGMENT_KEY: &str = "0";
@@ -120,85 +121,63 @@ pub fn provision(
             .context("Failed to clear TPM 2.0 device")?;
 
         for ev in encryption.volumes.iter() {
-            let (target_path, target_content_status, target_size_in_bytes, target_partition_type) =
-                if let Some(partition) = host_status
-                    .storage
-                    .disks
-                    .iter_mut()
-                    .flat_map(|(_, disk)| disk.partitions.iter_mut())
-                    .find(|partition: &&mut trident_api::status::Partition| {
-                        partition.id == ev.target_id
-                    })
-                {
-                    info!(
-                        "Encrypting underlying partition target '{}' ({}) of encrypted volume '{}'",
-                        ev.target_id,
-                        partition.path.display(),
-                        ev.id
-                    );
+            // Get the block device indicated by target_id if it is a partition, or the first
+            // partition of target_id if it is a RAID array. Or return an error if target_id is
+            // neither a partition nor a RAID array.
+            let partition = get_first_backing_partition(host_status, &ev.target_id).context(format!(
+                "Underlying target of encrypted volume '{}' is not a partition or software RAID array",
+                ev.id
+            ))?;
 
-                    (
-                        partition.path.clone(),
-                        &mut partition.contents,
-                        partition.end - partition.start,
-                        partition.ty,
-                    )
-                } else if let Some(array) = host_status.storage.raid_arrays.get_mut(&ev.target_id) {
-                    info!(
-                        "Encrypting underlying software RAID array target '{}' ({}) of encrypted volume '{}'",
-                        ev.target_id,
-                        array.path.display(),
-                        ev.id
-                    );
+            // TODO: Print the kind of block device that target_id points to. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7323/
+            info!(
+                "Encrypting underlying target '{}' of encrypted volume '{}' of type '{}'",
+                ev.target_id,
+                ev.id,
+                partition.partition_type.to_sdrepart_part_type()
+            );
 
-                    (
-                        array.path.clone(),
-                        &mut array.contents,
-                        array.array_size,
-                        array.partition_type,
-                    )
-                } else {
-                    bail!(format!(
-                        "Underlying target '{}' of encrypted volume '{}' is not a partition or software RAID array",
-                        ev.target_id,
-                        ev.id
-                    ))
-                };
+            // Set the content status of the target to unknown since we are about to encrypt the
+            // block device and this may fail.
+            let target = host_status
+                .storage
+                .block_devices
+                .get_mut(&ev.target_id)
+                .context(format!(
+                    "Failed to find block device information for target of encrypted volume '{}'",
+                    ev.id
+                ))?;
 
-            // Set the content status of the target to unknown since we
-            // are about to encrypt the block device and this may fail.
-            *target_content_status = BlockDeviceContents::Unknown;
+            target.contents = BlockDeviceContents::Unknown;
 
-            encrypt_and_open_target(&target_path, &ev.device_name, &key_file_path).context(
+            encrypt_and_open_target(&target.path, &ev.device_name, &key_file_path).context(
                 format!(
                     "Failed to encrypt and open target '{}' ({}) as {} for volume '{}'",
-                    target_path.display(),
+                    target.path.display(),
                     ev.target_id,
                     ev.device_name,
                     ev.id
                 ),
             )?;
 
-            // Set the content status of the target to initialized since
-            // the block device now contains a valid LUKS volume.
-            *target_content_status = BlockDeviceContents::Initialized;
+            // Set the content status of the target to initialized since the block device now
+            // contains a valid LUKS volume.
+            target.contents = BlockDeviceContents::Initialized;
 
             let header_offset_in_bytes: u64 =
-                get_luks_header_offset(&target_path).context(format!(
+                get_luks_header_offset(&target.path).context(format!(
                     "Failed to get LUKS header offset for target '{}'",
-                    target_path.display()
+                    target.path.display()
                 ))?;
 
-            // Add a representation of the created volume in the host
-            // status. The content status is unknown since it is new and
-            // there isn't even an empty filesystem on it yet.
-            host_status.storage.encrypted_volumes.insert(
+            // Add a representation of the created volume in the host status. The content status is
+            // unknown since it is new and there isn't even an empty filesystem on it yet.
+            let size = target.size - header_offset_in_bytes;
+            host_status.storage.block_devices.insert(
                 ev.id.clone(),
-                trident_api::status::EncryptedVolume {
-                    device_name: ev.device_name.clone(),
-                    target_path,
-                    partition_type: target_partition_type,
-                    size: target_size_in_bytes - header_offset_in_bytes,
+                BlockDeviceInfo {
+                    path: Path::new("/dev/mapper").join(&ev.device_name),
+                    size,
                     contents: BlockDeviceContents::Unknown,
                 },
             );
@@ -376,12 +355,21 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
     let path: PathBuf = PathBuf::from(CRYPTTAB_PATH);
     let mut contents: String = String::new();
 
-    for (_id, ev) in host_status.storage.encrypted_volumes.iter() {
-        info!(
-            "Adding crypttab entry for volume '{}' ({})",
-            ev.device_name,
-            ev.target_path.display()
-        );
+    let Some(ref encryption) = host_status.spec.storage.encryption else {
+        return Ok(());
+    };
+
+    for ev in encryption.volumes.iter() {
+        let backing_partition = get_first_backing_partition(host_status, &ev.target_id).context(format!(
+            "Underlying target '{}' of encrypted volume '{}' is not a partition or software RAID array",
+            ev.target_id,
+            ev.id
+        ))?;
+        let target_path = &host_status.storage.block_devices.get(&ev.target_id).context(format!(
+            "Failed to find block device information for underlying target '{}' of encrypted volume '{}'",
+            ev.target_id,
+            ev.id
+        ))?.path;
 
         // An encrypted swap device is special-cased in the crypttab due
         // to the unique nature and requirements of swap spaces in a Linux
@@ -396,19 +384,20 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
         // Since the key that is used to open the swap deivce is
         // immediately discarded, this process also ensures that data left
         // in swap isn't recoverable after a reboot, enhancing security.
-        match ev.partition_type {
-            PartitionType::Swap => contents.push_str(&format!(
+        if backing_partition.partition_type == PartitionType::Swap {
+            contents.push_str(&format!(
                 "{}\t{}\t{}\tluks,swap\n",
                 ev.device_name,
-                ev.target_path.display(),
+                target_path.display(),
                 "/dev/random"
-            )),
-            _ => contents.push_str(&format!(
+            ));
+        } else {
+            contents.push_str(&format!(
                 "{}\t{}\t{}\tluks,tpm2-device=auto\n",
                 ev.device_name,
-                ev.target_path.display(),
+                target_path.display(),
                 "none"
-            )),
+            ));
         }
     }
 
@@ -426,6 +415,40 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
     Ok(())
 }
 
+/// Returns the first partition that backs the given block device, or Err if the block device ID
+/// does not correspond to a partition or software RAID array.
+fn get_first_backing_partition<'a>(
+    host_status: &'a HostStatus,
+    block_device_id: &BlockDeviceId,
+) -> Result<&'a Partition, Error> {
+    if let Some(partition) = host_status.spec.storage.get_partition(block_device_id) {
+        Ok(partition)
+    } else if let Some(array) = host_status
+        .spec
+        .storage
+        .raid
+        .software
+        .iter()
+        .find(|r| &r.id == block_device_id)
+    {
+        let partition_id = array
+            .devices
+            .first()
+            .context(format!("RAID array '{}' has no partitions", array.id))?;
+
+        host_status
+            .spec
+            .storage
+            .get_partition(partition_id)
+            .context(format!(
+                "RAID array '{}' doesn't reference partition",
+                block_device_id
+            ))
+    } else {
+        bail!("Block device '{block_device_id}' is not a partition or RAID array")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{os::unix::fs::PermissionsExt, str::FromStr};
@@ -433,7 +456,7 @@ mod tests {
     use trident_api::{
         config::{
             Disk, EncryptedVolume, Encryption, Image, ImageFormat, ImageSha256, MountPoint,
-            Partition, PartitionSize, Raid, Storage,
+            Partition, PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
         },
         constants,
     };
@@ -442,6 +465,68 @@ mod tests {
     use crate::modules::storage::tests::get_recovery_key_file;
 
     use super::*;
+
+    #[test]
+    fn test_get_first_backing_partition() {
+        let host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_owned(),
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_owned(),
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "root".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("8G").unwrap(),
+                            },
+                            Partition {
+                                id: "rootb".to_owned(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("8G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    raid: Raid {
+                        software: vec![SoftwareRaidArray {
+                            id: "root-raid1".to_owned(),
+                            devices: vec!["root".to_string(), "rootb".to_string()],
+                            name: "raid1".to_string(),
+                            level: RaidLevel::Raid1,
+                            metadata_version: "1".to_string(),
+                        }],
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            get_first_backing_partition(&host_status, &"esp".to_owned()).unwrap(),
+            &host_status.spec.storage.disks[0].partitions[0]
+        );
+        assert_eq!(
+            get_first_backing_partition(&host_status, &"root".to_owned()).unwrap(),
+            &host_status.spec.storage.disks[0].partitions[1]
+        );
+        assert_eq!(
+            get_first_backing_partition(&host_status, &"rootb".to_owned()).unwrap(),
+            &host_status.spec.storage.disks[0].partitions[2]
+        );
+        assert_eq!(
+            get_first_backing_partition(&host_status, &"root-raid1".to_owned()).unwrap(),
+            &host_status.spec.storage.disks[0].partitions[1]
+        );
+        get_first_backing_partition(&host_status, &"os".to_owned()).unwrap_err();
+        get_first_backing_partition(&host_status, &"non-existant".to_owned()).unwrap_err();
+    }
 
     fn get_storage(recovery_key_file: &tempfile::NamedTempFile) -> Storage {
         Storage {

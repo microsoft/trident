@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-use status::{
-    BlockDeviceContents, BlockDeviceInfo, EncryptedVolume, Partition, RaidArray, VerityDevice,
-};
+use status::{BlockDeviceContents, BlockDeviceInfo};
 
 pub mod config;
 pub mod constants;
@@ -11,42 +9,6 @@ pub mod status;
 
 /// Identifier for a block device. Needs to be unique across all types of devices.
 pub type BlockDeviceId = String;
-
-impl Partition {
-    pub fn to_block_device(&self) -> BlockDeviceInfo {
-        BlockDeviceInfo::new(
-            self.path.clone(),
-            self.end - self.start,
-            self.contents.clone(),
-        )
-    }
-}
-
-impl EncryptedVolume {
-    pub fn to_block_device(&self) -> BlockDeviceInfo {
-        BlockDeviceInfo::new(
-            format!("/dev/mapper/{}", self.device_name).into(),
-            self.size,
-            self.contents.clone(),
-        )
-    }
-}
-
-impl VerityDevice {
-    pub fn to_block_device(&self) -> BlockDeviceInfo {
-        BlockDeviceInfo::new(
-            format!("/dev/mapper/{}", self.device_name).into(),
-            0,
-            BlockDeviceContents::Initialized,
-        )
-    }
-}
-
-impl RaidArray {
-    pub fn to_block_device(&self) -> BlockDeviceInfo {
-        BlockDeviceInfo::new(self.path.clone(), self.array_size, self.contents.clone())
-    }
-}
 
 impl BlockDeviceInfo {
     pub fn new(path: PathBuf, size: u64, contents: BlockDeviceContents) -> Self {

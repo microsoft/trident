@@ -148,7 +148,6 @@ mod tests {
     use indoc::indoc;
     use maplit::btreemap;
     use tempfile::NamedTempFile;
-    use uuid::Uuid;
 
     use trident_api::{
         config::{
@@ -157,63 +156,78 @@ mod tests {
         },
         constants,
         status::{
-            BlockDeviceContents, Disk as DiskStatus, HostStatus, Partition as PartitionStatus,
-            ReconcileState, Storage as StorageStatus,
+            BlockDeviceContents, BlockDeviceInfo, HostStatus, ReconcileState,
+            Storage as StorageStatus,
         },
     };
 
     fn get_host_status() -> HostStatus {
         HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
-            storage: StorageStatus {
-                disks: btreemap! {
-                    "os".into() => DiskStatus {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 0,
-                        contents: BlockDeviceContents::Unknown,
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_owned(),
+                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        partition_table_type: PartitionTableType::Gpt,
                         partitions: vec![
-                            PartitionStatus {
+                            Partition {
                                 id: "efi".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: trident_api::status::BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                                ty: PartitionType::Esp,
+                                partition_type: PartitionType::Esp,
+                                size: PartitionSize::from_str("100M").unwrap(),
                             },
-                            PartitionStatus {
+                            Partition {
                                 id: "root".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: trident_api::status::BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                                ty: PartitionType::Root,
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
                             },
-                            PartitionStatus {
+                            Partition {
                                 id: "home".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: trident_api::status::BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                                ty: PartitionType::Home,
+                                partition_type: PartitionType::Home,
+                                size: PartitionSize::from_str("10G").unwrap(),
                             },
-                            PartitionStatus {
+                            Partition {
                                 id: "swap".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/swap"),
-                                contents: trident_api::status::BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                                ty: PartitionType::Swap,
+                                partition_type: PartitionType::Swap,
+                                size: PartitionSize::from_str("1G").unwrap(),
                             },
                         ],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: StorageStatus {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Image {
+                            sha256: "2cb228bc3bbbc2174585327b255a7196075559ecd0c49bf710dfd5432af8f9ec".to_owned(),
+                            length: 738484224,
+                            url: "file:///root.raw.zst".to_owned(),
+                        },
+                    },
+                    "home".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "swap".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/swap"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -436,60 +450,37 @@ mod tests {
 
         let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
+            spec: host_config.clone(),
             storage: StorageStatus {
-                disks: btreemap! {
-                    "os".into() => DiskStatus {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
-                        capacity: 0,
+                        size: 0,
                         contents: BlockDeviceContents::Unknown,
-                        partitions: vec![
-                            PartitionStatus {
-                                id: "efi".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                                ty: PartitionType::Esp,
-                            },
-                            PartitionStatus {
-                                id: "root".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                                contents: BlockDeviceContents::Image {
-                                    sha256: "2cb228bc3bbbc2174585327b255a7196075559ecd0c49bf710dfd5432af8f9ec"
-                                        .to_owned(),
-                                    length: 738484224,
-                                    url: "file:///root.raw.zst".to_owned(),
-                                },
-                                start: 0,
-                                end: 0,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                                ty: PartitionType::Root,
-                            },
-                            PartitionStatus {
-                                id: "home".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                                ty: PartitionType::Home,
-                            },
-                            PartitionStatus {
-                                id: "swap".to_owned(),
-                                path: PathBuf::from("/dev/disk/by-partlabel/swap"),
-                                contents: BlockDeviceContents::Unknown,
-                                start: 0,
-                                end: 0,
-                                ty: PartitionType::Swap,
-                                uuid: Uuid::parse_str("00000000-0000-0000-0000-000000000000")
-                                    .unwrap(),
-                            },
-                        ],
+                    },
+                    "efi".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Image {
+                            sha256: "2cb228bc3bbbc2174585327b255a7196075559ecd0c49bf710dfd5432af8f9ec".to_owned(),
+                            length: 738484224,
+                            url: "file:///root.raw.zst".to_owned(),
+                        },
+                    },
+                    "home".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "swap".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/swap"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
