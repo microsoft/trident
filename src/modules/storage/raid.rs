@@ -57,7 +57,6 @@ pub(super) struct RaidDetail {
     pub id: BlockDeviceId,
     pub name: String,
     pub path: PathBuf,
-    pub symlink_path: PathBuf,
     pub devices: Vec<PathBuf>,
     pub partition_type: PartitionType,
     pub uuid: String,
@@ -103,7 +102,6 @@ pub(super) fn get_raid_details(
         id: raid_id.clone(),
         name: raid_array_name.clone(),
         path: raid_path,
-        symlink_path: raid_device.to_path_buf(),
         devices: device_paths.clone(),
         partition_type: first_device_type,
         uuid: raid_uuid,
@@ -120,7 +118,7 @@ pub(super) fn get_raid_details(
 fn get_raid_device_name(raid_device: &Path) -> Result<String, Error> {
     let device_name = match raid_device.file_name().and_then(|os_str| os_str.to_str()) {
         Some(name) => name,
-        None => bail!("Invalid RAID symlink path"),
+        None => bail!("Invalid RAID device absolute path"),
     };
 
     Ok(device_name.to_string())
@@ -225,11 +223,11 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
         .context("Failed to get disks defined in Host Configuration")?;
 
     for raid_array in mdadm_detail {
-        let raid_symlink = raid_array
+        let raid_device_resolved_path = raid_array
             .raid_path
             .clone()
             .canonicalize()
-            .context("Failed to get existing RAID symlink")?;
+            .context("Failed to get existing RAID device resolved path")?;
 
         let mut raid_disks = HashSet::new();
 
@@ -253,7 +251,7 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
             "Failed to stop RAID array '{}'",
             raid_array.raid_path.display()
         ))? {
-            unmount_and_stop(&raid_symlink)?;
+            unmount_and_stop(&raid_device_resolved_path)?;
         }
     }
 
@@ -341,11 +339,17 @@ pub(super) fn create_sw_raid_array(
 
     let raid_device = &PathBuf::from(format!("/dev/md/{}", &config.name));
 
-    let raid_symlink_path = raid_device
-        .canonicalize()
-        .context("Unable to find RAID device symlink after RAID creation")?;
+    // Wait for symlink to appear. Kernel creates /dev/mdXX and udev crates symlink (raid_device)
+    udevadm::wait(raid_device).context(format!(
+        "Failed waiting for RAID device '{}' to appear",
+        raid_device.display()
+    ))?;
 
-    let raid_details = get_raid_details(&raid_symlink_path, config.clone(), host_status)
+    let raid_device_resolved_path = raid_device
+        .canonicalize()
+        .context("Unable to find RAID device resolved path after RAID creation")?;
+
+    let raid_details = get_raid_details(&raid_device_resolved_path, config.clone(), host_status)
         .context("Failed to read RAID details after creation")?;
 
     add_to_host_status(host_status, raid_details.clone());
@@ -459,7 +463,6 @@ mod tests {
             id: "some_raid".to_string(),
             name: "raid1".to_string(),
             path: PathBuf::from("/dev/md/some_raid"),
-            symlink_path: PathBuf::from("/dev/md127"),
             devices: vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sdb1")],
             partition_type: PartitionType::LinuxGeneric,
             uuid: "00000000-0000-0000-0000-000000000000".to_string(),
