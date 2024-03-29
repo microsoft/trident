@@ -3,8 +3,8 @@ graph TD;
     classDef Amber fill:#FFDEAD,stroke:#333,stroke-width:4px;
     classDef Green fill:#BDFFA4,stroke:#333,stroke-width:4px;
     classDef Purple fill:#f9f,stroke:#333,stroke-width:4px;
-    A[Call to platform-tests/bare-metal/scripts/deploy_with_trident.py] --> B[Parse command line arguments];
-    subgraph platform-tests/bare-metal/scripts/deploy_with_trident.py in platform-tests
+    A[Call to .pipelines/stages/deployment_testing/deploy_on_bm.py] --> B[Parse command line arguments];
+    subgraph .pipelines/stages/deployment_testing/deploy_on_bm.py in trident
         B --> C[Get baremetal configuration];
         C --> D[Get SSH username and key];
         C --> E[Get network information];
@@ -29,12 +29,12 @@ graph TD;
         class C,D,E,F,J Amber;
         class L4,L5,L6 Red;
         class L3,M,N,O Green;
-        class B,G,I,K,L0,L1,L2 Purple;
+        class I,K,L0,L2 Purple;
     end
     O --> P[End];
 subgraph Legend
     direction LR
-    LE1[Individual code steps in platform-tests repo]
+    LE1[Library function code in platform-tests repo]
     LE2[Create Baremetal Configuration file for the BM host]
     class LE1 Purple;
     class LE2 Amber;

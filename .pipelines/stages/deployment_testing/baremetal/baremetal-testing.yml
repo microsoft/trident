@@ -148,37 +148,16 @@ stages:
         tridentConfigPath: $(TRIDENT_CONFIG_PATH)
         updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
 
-    - bash: |
-        set -xe
+    - template: baremetal-update-trident-host-config.yml
+      parameters:
+        tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+        isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
+        oamIp: ${{ parameters.oamIp }}
+        sshKeyFile: $(SSH_KEY_FILE)
+        interfaceForOamIp: ${{ parameters.interfaceForOamIp }}
+        tridentConfigFile: $(TRIDENT_CONFIG_FILE)
 
-        # Add poetry to PATH.
-        export PATH="$HOME/.local/bin:$PATH"
-
-        baremetal_dir=$(Build.SourcesDirectory)/platform-tests/bare-metal
-
-        # Create the Lab metadata file
-        cd $(K8S_SANITY_DIR)
-
-        # Use Azure DevOps artifact feed as a proxy for PyPI.
-        # This allows ADO to audit the packages used and to search for malware.
-        sudo env "PATH=$PATH" poetry config -- http-basic.ado build "$SYSTEM_ACCESSTOKEN"
-
-        # Provision poetry venv.
-        sudo env "PATH=$PATH" make setup-baremetal-provisioning
-
-        # Run script to update the trident.yaml file
-        sudo env "PATH=$PATH" poetry run python3 $baremetal_dir/scripts/update_trident_host_config.py \
-              --trident-yaml $(TRIDENT_CONFIG_FILE) \
-              --iso-httpd-ip ${{ parameters.isoHttpdServerIp }} \
-              --oam-ip ${{ parameters.oamIp }} \
-              --ssh-pub-key $(SSH_KEY_FILE).pub  \
-              --interface-name ${{ parameters.interfaceForOamIp }}
-        cat $(TRIDENT_CONFIG_FILE)
-      env:
-        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-      displayName: 'Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details'
-
-    - template: k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml@platform-tests
+    - template: baremetal-deploy.yml
       parameters:
         jobName: ${{ parameters.jobName }}_$(TRIDENT_CONFIGURATION_NAME)
         bmcUsername: $(baremetal_controller.bmc_username)

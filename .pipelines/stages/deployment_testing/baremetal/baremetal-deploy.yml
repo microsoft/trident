@@ -1,0 +1,196 @@
+parameters:
+- name: jobName
+  type: string
+  default: 'trident_baremetal_deploy'
+
+- name: bmcUsername
+  type: string
+
+- name: bmcPassword
+  type: string
+
+- name: httpProxy
+  type: string
+  default: 'http://172.16.1.10:3128'
+
+- name: noProxy
+  type: string
+  default: '10.96.0.0/12,10.244.0.0/16,172.27.254.0/24,.svc,127.0.0.1,localhost'
+
+- name: isoHttpdServerIp
+  type: string
+  default: '10.248.0.4'
+
+- name: bmcIp
+  type: string
+  default: '10.8.3.19'
+
+- name: oamIp
+  type: string
+  default: '10.8.4.50'
+
+- name: oamMacAddress
+  type: string
+  default: 'c8:4b:d6:7a:73:c6'
+
+- name: argusToolkitOfficialPipeline
+  type: string
+  default: argus-toolkit-Official
+
+- name: argusToolkitDir
+  type: string
+
+- name: k8sSanityDir
+  type: string
+
+- name: argusToolkitOfficialDir
+  type: string
+  default: argus-toolkit-Official
+
+- name: hostConfigYaml
+  type: string
+
+- name: sshKeyFile
+  type: string
+
+- name: createInstallerIso
+  type: boolean
+  default: true
+
+- name: installerIsoDirectory
+  type: string
+
+steps:
+- bash: |
+    set -xe
+    mkdir -p ${{ parameters.argusToolkitDir }}/input
+    cp ${{ parameters.hostConfigYaml }} ${{ parameters.argusToolkitDir }}/input/trident.yaml
+  displayName: 'Copy Trident YAML to input directory'
+
+- bash: |
+    set -xe
+
+    # Add poetry to PATH.
+    export PATH="$HOME/.local/bin:$PATH"
+    sudo apt install -y acl
+    setfacl --help
+    cd ${{ parameters.argusToolkitDir }}
+    ls -ltr
+    mkdir -p input
+    mkdir -p artifacts
+    mkdir -p artifacts/test-image
+    # TODO: From the discussion in the Daily Sync ups, I believe the Trident code expects
+    # TODO: a test-image directory to be present with some file inside it.
+    # TODO: In order to satisfy the requirements, I have provided the test-image directory
+    # TODO: with a random file inside it. We need to remove this file once this is sorted out.
+    cat << EOF >  artifacts/test-image/sample.txt
+    sample file
+    EOF
+    ls -ltr ${{ parameters.argusToolkitOfficialDir }}/drop_Trident_BuildTrident/
+    mv ${{ parameters.argusToolkitOfficialDir }}/drop_Trident_BuildTrident input/
+    mkdir -p build
+    ls -ltr artifacts/test-image/
+    mv ${{ parameters.argusToolkitOfficialDir }}/installer-iso/installer-iso-components/provision-template.iso input/
+    ls -ltr input/
+    sleep 5
+    make build/installer-dev.iso
+    ls -ltr build/
+    mv build/installer-dev.iso build/installer.iso
+  condition: eq(${{ parameters.createInstallerIso }}, true)
+  displayName: 'Create installer.iso'
+
+- bash: |
+    set -xe
+
+    # Add poetry to PATH.
+    export PATH="$HOME/.local/bin:$PATH"
+
+    cd ${{ parameters.argusToolkitDir }}
+    ls -ltr
+    chmod 777 patch.py
+    ls -ltr patch.py
+    cat input/trident.yaml
+    ls -ltr input/
+    ./patch.py ${{ parameters.installerIsoDirectory }}/installer.iso installer-patched.iso input/trident.yaml
+    patched_iso=$(pwd)/installer-patched.iso
+    echo "##vso[task.setvariable variable=PATCHED_INSTALLER_ISO]$patched_iso"
+    ls -ltr
+  displayName: 'Create patched Installer.iso'
+
+# Uncomment in case you want to use netlaunch to boot as opposed to using deploy.py script
+# - bash: |
+#     set -xe
+
+#     # Add poetry to PATH.
+#     export PATH="$HOME/.local/bin:$PATH"
+#     cd ${{ parameters.argusToolkitDir }}
+#     ls -ltr
+#     mkdir -p input
+#     make build/netlaunch
+#     ls -ltr build/
+#   displayName: 'Create netlaunch binary'
+
+# Uncomment in case you want to use netlaunch to boot as opposed to using deploy.py script
+# - bash: |
+#     set -xe
+
+#     # Add poetry to PATH.
+#     export PATH="$HOME/.local/bin:$PATH"
+#     cd ${{ parameters.argusToolkitDir }}
+
+#     # Generate livecd iso and boot the baremetal lab machine
+#     ./build/netlaunch \
+#         -c input/netlaunch.yaml \
+#         -i installer-patched.iso \
+#   displayName: 'Boot baremetal lab machine'
+
+# Comment in case you want to run netlaunch to boot the baremetal lab machine
+# Common piece of code which is used across all BM pipelines. Unnecessary to duplicate specifically in trident repo.
+- bash: |
+    set -xe
+
+    # Add poetry to PATH.
+    export PATH="$HOME/.local/bin:$PATH"
+
+    baremetal_dir=$(Pipeline.Workspace)/s/platform-tests/bare-metal
+
+    # Create the Lab metadata file
+    cd ${{ parameters.k8sSanityDir }}
+    bmc_config_file=${{ parameters.k8sSanityDir }}/bmc_config
+    sudo env "PATH=$PATH" poetry run python3 $baremetal_dir/scripts/create_baremetal_config.py \
+          --baremetal-config-template $baremetal_dir/lab-metadata/aods-lab/aods-template.yaml \
+          --bmc-ip ${{ parameters.bmcIp }} \
+          --bmc-username ${{ parameters.bmcUsername }} \
+          --bmc-password ${{ parameters.bmcPassword }} \
+          --oam-mac-address ${{ parameters.oamMacAddress }} \
+          --oam-ip ${{ parameters.oamIp }} \
+          --ssh-key ${{ parameters.sshKeyFile }} \
+          -o $bmc_config_file
+
+    echo "##vso[task.setvariable variable=DEPLOYMENT_BMC_CONFIG_FILE]$bmc_config_file"
+  displayName: 'Create BMC Config file specific to pass to deploy.py script'
+
+- bash: |
+    set -xe
+
+    # Add poetry to PATH.
+    export PATH="$HOME/.local/bin:$PATH"
+
+    cd ${{ parameters.k8sSanityDir }}
+
+    chmod 400 $(httpdPrivKey.secureFilePath)
+    DEPLOYMENT_BMC_CONFIG_FILE=$(echo $DEPLOYMENT_BMC_CONFIG_FILE | tr -d "'")
+    PATCHED_INSTALLER_ISO=$(echo $PATCHED_INSTALLER_ISO | tr -d "'")
+    echo $DEPLOYMENT_BMC_CONFIG_FILE
+    echo $PATCHED_INSTALLER_ISO
+    sleep 5
+
+    # Boot the baremetal lab machine
+    sudo env "PATH=$PATH" poetry run $(Pipeline.Workspace)/s/trident/.pipelines/stages/deployment_testing/baremetal/deploy_on_bm.py \
+      --trident-yaml ${{ parameters.argusToolkitDir }}/input/trident.yaml \
+      --installer-iso $PATCHED_INSTALLER_ISO \
+      --baremetal-config $DEPLOYMENT_BMC_CONFIG_FILE \
+      --proxy ${{ parameters.httpProxy }} \
+      --trident-httpd-ip ${{ parameters.isoHttpdServerIp }} \
+      --trident-httpd-ssh-key $(httpdPrivKey.secureFilePath)
+  displayName: 'Boot baremetal lab machine'

@@ -2,9 +2,8 @@ graph TD;
     classDef Red fill:#FF9999,stroke:#333,stroke-width:4px;
     classDef Amber fill:#FFDEAD,stroke:#333,stroke-width:4px;
     classDef Green fill:#BDFFA4,stroke:#333,stroke-width:4px;
-    classDef Purple fill:#f9f,stroke:#333,stroke-width:4px;
-    A[Call to platform-tests/bare-metal/scripts/update_trident_config.py] --> B[Parse command line arguments];
-    subgraph platform-tests/bare-metal/scripts/update_trident_config.py in platform-tests
+    A[Call to .pipelines/stages/update_host_config/baremetal/update_host_config.py] --> B[Parse command line arguments];
+    subgraph .pipelines/stages/update_host_config/baremetal/update_host_config.py in trident
       B --> C[Adding OAM IP to Ethernet Interface  - eno*]
       C --> D[Setting DHCP4 Configuration - dhcp4:true];
       subgraph Updating os disks in trident.yaml
@@ -26,15 +25,12 @@ graph TD;
       class D,E,F Amber;
       class G,H,I,J,K Green;
       class L,M Red;
-      class B,C,N Purple;
     end
     subgraph Legend
         direction LR
-        LE1[Individual code steps in platform-tests repo]
         LE2[Updating OS Disks in trident.yaml]
         LE3[Updating image paths in trident.yaml]
         LE4[Adding mariner_user username to trident.yaml]
-        class LE1 Purple;
         class LE2 Amber;
         class LE3 Green;
         class LE4 Red;

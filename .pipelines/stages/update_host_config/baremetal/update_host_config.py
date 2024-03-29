@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+# Copyright (c) Microsoft Corporation.
+
+import argparse
+from os.path import basename
+from pathlib import Path
+import urllib
+import yaml
+
+import logging
+
+
+def update_trident_host_config(
+    trident_yaml_content, iso_httpd_ip, oam_ip, ssh_pub_key, interface_name
+):
+    logging.info("Updating host config section of trident.yaml")
+    logging.info("iso_httpd_ip: %s", iso_httpd_ip)
+    logging.info("oam_ip: %s", oam_ip)
+    host_configuration = trident_yaml_content.get("hostConfiguration")
+    os = host_configuration.setdefault("os", {})
+    network = os.setdefault("network", {})
+    ethernets = network.setdefault("ethernets", {})
+    eno_interface = ethernets.setdefault(interface_name, {})
+    eno_interface.setdefault("addresses", []).append(oam_ip + "/23")
+    eno_interface["dhcp4"] = True
+
+    logging.info("Updating os disks device in trident.yaml")
+    disks = host_configuration.get("storage", {}).get("disks", [])
+    for disk in disks:
+        if disk["id"] == "os":
+            disk["device"] = "/dev/sda"
+        elif disk["id"] == "disk2":
+            disk["device"] = "/dev/sdb"
+
+    logging.info("Updating image paths in trident.yaml")
+    images = host_configuration.get("storage").get("images")
+    if images:
+        for image in images:
+            parsed_url = urllib.parse.urlparse(image["url"])
+            if parsed_url.scheme == "file":
+                image_name = parsed_url.path.rsplit("/", 1)[-1]
+                image["url"] = "file:///" + image_name
+                image["url"] = image["url"].replace(
+                    "file:///", "http://" + iso_httpd_ip + "/isodir/hermes-image/"
+                )
+
+    logging.info("Updating mariner_user in trident.yaml")
+    users = os.setdefault("users", [])
+    users.append(
+        {"name": "mariner_user", "sshPublicKeys": [ssh_pub_key], "sshMode": "key-only"}
+    )
+
+    logging.info(
+        "Final trident_yaml content post all the updates: %s", trident_yaml_content
+    )
+
+
+def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--trident-yaml",
+        required=True,
+        help="Path to the trident.yaml to use for provisioning",
+    )
+    parser.add_argument(
+        "--iso-httpd-ip", required=True, help="IP address of the HTTP server."
+    )
+    parser.add_argument(
+        "--oam-ip", required=True, help="IP address of the OAM interface."
+    )
+    parser.add_argument(
+        "--ssh-pub-key", required=True, help="SSH public key to use for provisioning."
+    )
+    parser.add_argument(
+        "--interface-name",
+        default="eno8303",
+        help="Interface Name that needs the IP assigned. Default: eno8303",
+    )
+    args = parser.parse_args()
+    with open(args.ssh_pub_key) as f:
+        ssh_pub_key_content = f.read()
+
+    with open(args.trident_yaml) as f:
+        trident_yaml_content = yaml.safe_load(f)
+
+    update_trident_host_config(
+        trident_yaml_content,
+        args.iso_httpd_ip,
+        args.oam_ip,
+        ssh_pub_key_content.strip().strip("\n"),
+        args.interface_name,
+    )
+    with open(args.trident_yaml, "w") as f:
+        yaml.dump(trident_yaml_content, f, default_flow_style=False)
+
+
+if __name__ == "__main__":
+    main()

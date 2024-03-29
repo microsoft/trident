@@ -15,7 +15,7 @@ more details in the following sections.
     - [Additional Notes](#additional-notes)
     - [Selective Test Execution](#selective-test-execution)
   - [E2E Tests](#e2e-tests)
-
+  - [Testing on Baremetal](#testing-on-baremetal)
 
 ## Unit Tests
 
@@ -293,7 +293,7 @@ End to end tests should:
 
 ![Prerequisite Installation - E2E](./diagrams/install-prerequisites-for-e2e-tests.png)
 
-#### Deploy Baremetal Environment - k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml@platform-tests
+#### Deploy Baremetal Environment - baremetal-deploy.yml
 
 ![Deploy Baremetal Environment](./diagrams/deploy-baremetal-environment.png)
 
@@ -301,10 +301,10 @@ End to end tests should:
 
 ![E2E Test Run](./diagrams/e2e-test-run.png)
 
-#### Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details
+#### Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details - baremetal-update-trident-host-config.yml
 
 ![Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details](./diagrams/update-trident-yaml.png)
 
-#### Boot baremetal lab machine - platform-tests/bare-metal/scripts/deploy_with_trident.py
+#### Boot baremetal lab machine - .pipelines/stages/deployment_testing/deploy_on_bm.py
 
 ![Boot baremetal lab machine](./diagrams/boot-baremetal-lab-machine.png)

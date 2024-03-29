@@ -1,4 +1,10 @@
 graph TD
+classDef Purple fill:#f9f,stroke:#333,stroke-width:4px;
+subgraph Legend
+    direction LR
+    LE1[Code in platform-tests repo]
+    class LE1 Purple;
+end
 A[Start] --> B["BaremetalDeploymentTesting"]
 B --> C0["DefineTests"]
 subgraph Job to get list of tests to execute - DefineTests
@@ -14,11 +20,11 @@ subgraph Job to execute the test - trident_baremetal_tests
         G --> H[Checkout Repositories]
         H --> I[Install prerequisites for BM Host communication - baremetal-prep.yml]
         I --> J[Create SSH key and install prerequisites required for the E2E tests - trident-prep.yml]
-        J --> K[Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details]
-        K --> L[Deploy Baremetal Environment - k8s-sanity/pipelines/trident-baremetal-deploy-template.yaml]
-        style L fill:#f9f,stroke:#333,stroke-width:4px
+        J --> K[Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details - baremetal-update-trident-host-config.yml]
+        K --> L[Deploy Baremetal Environment - baremetal-deploy.yml]
         L --> M[Run End-to-End Tests on the BM Host - e2e-test-run.yml]
         M --> N[Optional: Delete Generated ISO - platform-tests/bare-metal/scripts/reset.py]
+        style N fill:#f9f,stroke:#333,stroke-width:4px
     end
     N --> O{More tests?}
     O -- Yes --> G
