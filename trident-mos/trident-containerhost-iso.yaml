@@ -2,10 +2,10 @@ SystemConfig:
   Hostname: trident-containerhost-mos-testimage
 
   PostInstallScripts:
-  - Path: post-install.sh
+    - Path: post-install.sh
 
   AdditionalFiles:
-    files/trident-container.service: 
+    files/trident-container.service:
       - Path: /usr/lib/systemd/system/trident.service
 
   Services:
@@ -17,4 +17,4 @@ Iso:
     files/config-placeholder.yaml:
       - Path: /trident-config.yaml
   KernelCommandLine:
-    ExtraCommandLine: "console=tty0 console=ttyS0"
+    ExtraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"

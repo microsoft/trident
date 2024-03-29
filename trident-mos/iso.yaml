@@ -13,4 +13,4 @@ Iso:
     files/config-placeholder.yaml:
       - Path: /trident-config.yaml
   KernelCommandLine:
-    ExtraCommandLine: "console=tty0 console=ttyS0"
+    ExtraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
