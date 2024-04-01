@@ -21,6 +21,10 @@ pytest_plugins = ["functional_tests.depends"]
 """Location of the trident repository."""
 TRIDENT_REPO_DIR_PATH = Path(__file__).resolve().parent.parent
 
+NETLAUNCH_BIN_REL_PATH = Path("bin/netlaunch")
+
+NETLAUNCH_BIN_PATH = TRIDENT_REPO_DIR_PATH / NETLAUNCH_BIN_REL_PATH
+
 """Location of the argus-toolkit repository."""
 ARGUS_REPO_DIR_PATH = Path(__file__).resolve().parent.parent.parent / "argus-toolkit"
 
@@ -185,10 +189,21 @@ def fetch_code_coverage(ssh_node):
     ssh_node.execute("find . -name '*.profraw' -delete")
 
 
+def trident_runcmd(cmd, check=True, **kwargs):
+    """Runs a command in the trident repository directory."""
+    logging.debug(f"Running command: {cmd}")
+    subprocess.run(cmd, check=check, cwd=TRIDENT_REPO_DIR_PATH, **kwargs)
+
+
 def argus_runcmd(cmd, check=True, **kwargs):
     """Runs a command in the argus repository directory."""
     logging.debug(f"Running command: {cmd}")
     subprocess.run(cmd, check=check, cwd=ARGUS_REPO_DIR_PATH, **kwargs)
+
+
+def build_netlaunch():
+    """Builds the netlaunch binary with make."""
+    trident_runcmd(["make", NETLAUNCH_BIN_REL_PATH])
 
 
 def upload_test_binaries(build_output_path: Path, force_upload, ssh_node):

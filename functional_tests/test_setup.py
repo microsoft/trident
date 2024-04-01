@@ -10,8 +10,10 @@ from pathlib import Path
 
 from .conftest import (
     argus_runcmd,
+    build_netlaunch,
     ARGUS_REPO_DIR_PATH,
     TRIDENT_REPO_DIR_PATH,
+    NETLAUNCH_BIN_PATH,
     VM_SSH_NODE_CACHE_KEY,
 )
 from .ssh_node import SshNode
@@ -59,15 +61,17 @@ def deploy_vm(
     and netlaunch to deploy the OS. Returns the ip address of the VM.
     """
     if not installer_iso_path:
-        argus_runcmd(["make", "build/netlaunch"])
         argus_runcmd(["make", "build/installer-dev.iso"])
         installer_iso_path = ARGUS_REPO_DIR_PATH / "build/installer-dev.iso"
+
+    # Build netlaunch if it doesn't exist.
+    build_netlaunch()
 
     host_config_path = prepare_hostconfig(test_dir_path, ssh_pub_key)
 
     subprocess.run(
         [
-            TRIDENT_REPO_DIR_PATH / "bin" / "netlaunch",
+            NETLAUNCH_BIN_PATH,
             "-i",
             installer_iso_path,
             "-c",
