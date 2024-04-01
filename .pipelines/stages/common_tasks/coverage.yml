@@ -53,7 +53,7 @@ steps:
       COVERAGE=`jq .coveragePercent target/coverage/covdir`
       BASELINE=${{ parameters.codeCoverageBaseline }}
       if (( $(echo "$COVERAGE < $BASELINE" | bc -l) )); then
-        echo "Coverage is $COVERAGE, which is less than $BASELINE% set as the baseline"
+        echo "##vso[task.logissue type=error]Coverage is $COVERAGE, which is less than $BASELINE% set as the baseline."
         exit 1
       fi
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
