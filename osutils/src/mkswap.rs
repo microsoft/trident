@@ -15,23 +15,19 @@ pub fn run(device_path: &Path) -> Result<(), Error> {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
     use pytest_gen::functional_test;
 
-    use crate::mkfs;
-
-    use super::*;
+    use crate::{
+        mkfs,
+        testutils::repart::{self, TEST_DISK_DEVICE_PATH},
+    };
 
     /// This function wipes the /dev/sdb device and ensures the /mnt
     /// directory exists.
     fn setup_test() {
         // Just zero-out the metadata so this is a fast operation.
-        Command::new("dd")
-            .arg("if=/dev/zero")
-            .arg("of=/dev/sdb")
-            .arg("bs=1M")
-            .arg("count=1")
-            .run_and_check()
-            .unwrap();
+        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
         if !Path::new("/mnt").exists() {
             Command::new("mkdir").arg("/mnt").run_and_check().unwrap();
         }
@@ -43,28 +39,28 @@ mod functional_test {
 
         // run() on a zeroed block device should prepare it as a swap volume. It
         // should be mountable and writable.
-        super::run(Path::new("/dev/sdb")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
                 .arg("FSTYPE")
-                .arg("/dev/sdb")
+                .arg(TEST_DISK_DEVICE_PATH)
                 .output_and_check()
                 .unwrap(),
             "swap\n"
         );
         Command::new("swapon")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .run_and_check()
             .unwrap();
         Command::new("swapoff")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .run_and_check()
             .unwrap();
 
         assert_eq!(
             Command::new("swapoff")
-                .arg("/dev/sdb")
+                .arg(TEST_DISK_DEVICE_PATH)
                 .run_and_check()
                 .unwrap_err()
                 .root_cause()
@@ -74,32 +70,32 @@ mod functional_test {
 
         // run() on a formatted block device with a different filesystem
         // should reformat it as a swap.
-        mkfs::run(Path::new("/dev/sdb"), &String::from("ext3")).unwrap();
+        mkfs::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext3")).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
                 .arg("FSTYPE")
-                .arg("/dev/sdb")
+                .arg(TEST_DISK_DEVICE_PATH)
                 .output_and_check()
                 .unwrap(),
             "ext3\n"
         );
-        super::run(Path::new("/dev/sdb")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
                 .arg("FSTYPE")
-                .arg("/dev/sdb")
+                .arg(TEST_DISK_DEVICE_PATH)
                 .output_and_check()
                 .unwrap(),
             "swap\n"
         );
         Command::new("swapon")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .run_and_check()
             .unwrap();
         Command::new("swapoff")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .run_and_check()
             .unwrap();
     }

@@ -55,6 +55,7 @@ osutils = { path = "osutils" }
 
 [dev-dependencies]
 indoc = "2"
+osutils = { path = "osutils", features = ["test-utilities"] }
 
 
 [features]
@@ -62,7 +63,6 @@ dangerous-options = ["trident_api/dangerous-options"]
 sysupdate = ["trident_api/sysupdate"]
 functional-test = ["pytest", "osutils/functional-test"]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
-
 
 [workspace]
 members = [

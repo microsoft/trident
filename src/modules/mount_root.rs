@@ -75,32 +75,10 @@ pub(super) fn mount_new_root(
                 target_path.display()
             );
 
-            if target_path.exists() {
-                if !target_path.is_dir() {
-                    bail!(
-                        "Mount path '{}' for block device '{}' is not a directory",
-                        target_path.display(),
-                        mp.target_id
-                    );
-                }
-                if let Ok(entries) = fs::read_dir(&target_path) {
-                    if entries.count() > 0 {
-                        bail!(
-                            "Mount path '{}' for block device '{}' is not empty",
-                            target_path.display(),
-                            mp.target_id
-                        );
-                    }
-                }
-            } else {
-                // TODO handle read only filesystems, especially for the root
-                // mount (will be done as part of the verity enablement)
-                files::create_dirs(&target_path).context(format!(
-                    "Failed to create mount path '{}' for block device '{}'",
-                    target_path.display(),
-                    mp.target_id
-                ))?;
-            }
+            ensure_mount_directory(&target_path).context(format!(
+                "Failed to prepare mount directory for block device '{}'",
+                mp.target_id
+            ))?;
 
             let device_path = modules::get_block_device(host_status, &mp.target_id, false)
                 .context(format!(
@@ -128,9 +106,30 @@ pub(super) fn mount_new_root(
         .structured(ManagementError::MountNewroot)
 }
 
+pub(super) fn ensure_mount_directory(target_path: &Path) -> Result<(), Error> {
+    if target_path.exists() {
+        if !target_path.is_dir() {
+            bail!("Mount path '{}' is not a directory", target_path.display());
+        }
+        if let Ok(entries) = fs::read_dir(target_path) {
+            if entries.count() > 0 {
+                bail!("Mount path '{}' is not empty", target_path.display());
+            }
+        }
+    } else {
+        files::create_dirs(target_path).context(format!(
+            "Failed to create mount path '{}'",
+            target_path.display()
+        ))?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
+    use std::{fs::File, path::PathBuf};
+    use tempfile::TempDir;
     use trident_api::config::{HostConfiguration, MountPoint, Storage};
 
     use super::*;
@@ -194,12 +193,50 @@ mod test {
             ]
         );
     }
+
+    #[test]
+    fn test_ensure_mount_directory() {
+        let temp_mount_dir = TempDir::new().unwrap();
+
+        // Test case 1: Ensure a directory that exists and is empty
+        ensure_mount_directory(temp_mount_dir.path()).unwrap();
+
+        // Test case 2: Ensure a directory that does not exist
+        let temp_mount_point_dir = temp_mount_dir.path().join("temp_dir");
+        ensure_mount_directory(temp_mount_point_dir.as_path()).unwrap();
+        assert!(temp_mount_point_dir.exists());
+
+        // Test case 3: Ensure a directory that exists and is not empty
+        assert_eq!(
+            ensure_mount_directory(temp_mount_dir.path())
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Mount path '{}' is not empty",
+                temp_mount_dir.path().display()
+            )
+        );
+
+        // Test case 4: Ensure a file path does not work
+        let temp_mount_point_file = temp_mount_dir.path().join("temp_file");
+        File::create(&temp_mount_point_file).unwrap();
+        assert_eq!(
+            ensure_mount_directory(temp_mount_point_file.as_path())
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Mount path '{}' is not a directory",
+                temp_mount_point_file.display()
+            )
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+    use const_format::formatcp;
     use pytest_gen::functional_test;
 
     use std::{
@@ -214,8 +251,10 @@ mod functional_test {
     use osutils::{
         hashing_reader::HashingReader,
         image_streamer, mountpoint,
-        partition_types::DiscoverablePartitionType,
-        repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
+        repart::{RepartMode, SystemdRepartInvoker},
+        testutils::repart::{
+            self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, PART1_SIZE, TEST_DISK_DEVICE_PATH,
+        },
         udevadm,
     };
     use trident_api::{
@@ -224,33 +263,12 @@ mod functional_test {
         status::{BlockDeviceContents, BlockDeviceInfo, Storage},
     };
 
-    const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
-    const DISK_BUS_PATH: &str = "/dev/sdb";
-
-    fn generate_partition_definition() -> Vec<RepartPartitionEntry> {
-        vec![
-            RepartPartitionEntry {
-                partition_type: DiscoverablePartitionType::Esp,
-                label: None,
-                size_min_bytes: Some(PART1_SIZE),
-                size_max_bytes: Some(PART1_SIZE),
-            },
-            RepartPartitionEntry {
-                partition_type: DiscoverablePartitionType::LinuxGeneric,
-                label: None,
-                // When min==max==None, it's a grow partition
-                size_min_bytes: None,
-                size_max_bytes: None,
-            },
-        ]
-    }
-
     #[functional_test(feature = "helpers")]
     fn test_mount_and_umount() {
         // CDROM device to be mounted
-        let device = Path::new("/dev/sr0");
+        let device = Path::new(CDROM_DEVICE_PATH);
         // Mount point
-        let mount_point = Path::new("/mnt/cdrom");
+        let mount_point = Path::new(CDROM_MOUNT_PATH);
 
         if mountpoint::check_is_mountpoint(mount_point).unwrap() {
             mount::umount(mount_point, false).unwrap();
@@ -290,7 +308,7 @@ mod functional_test {
                         contents: BlockDeviceContents::Unknown,
                     },
                     "sr0".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sr0"),
+                        path: PathBuf::from(CDROM_DEVICE_PATH),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     }
@@ -323,7 +341,7 @@ mod functional_test {
                 storage: config::Storage {
                     disks: vec![Disk {
                         id: "os".to_string(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "esp".to_string(),
@@ -359,17 +377,17 @@ mod functional_test {
             storage: Storage {
                 block_devices: btreemap! {
                     "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb"),
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "esp".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb1"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb2"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     }
@@ -379,9 +397,9 @@ mod functional_test {
             ..Default::default()
         };
 
-        // Partition /dev/sdb
-        let partition_definition = generate_partition_definition();
-        let disk_bus_path = PathBuf::from(DISK_BUS_PATH);
+        // Partition test drive
+        let partition_definition = repart::generate_partition_definition_esp_generic();
+        let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
         let repart = SystemdRepartInvoker::new(disk_bus_path, RepartMode::Force)
             .with_partition_entries(partition_definition.clone());
         let _ = repart.execute().unwrap();
@@ -395,7 +413,7 @@ mod functional_test {
         );
         image_streamer::stream_zstd(
             HashingReader::new(stream),
-            Path::new("/dev/sdb1"),
+            Path::new(format!("{TEST_DISK_DEVICE_PATH}1").as_str()),
             Some(PART1_SIZE),
         )
         .unwrap();
@@ -404,8 +422,12 @@ mod functional_test {
                 .context("Failed to open root image")
                 .unwrap(),
         );
-        image_streamer::stream_zstd(HashingReader::new(stream), Path::new("/dev/sdb2"), None)
-            .unwrap();
+        image_streamer::stream_zstd(
+            HashingReader::new(stream),
+            Path::new(format!("{TEST_DISK_DEVICE_PATH}2").as_str()),
+            None,
+        )
+        .unwrap();
 
         // Test recursive mounting
         let mounts2 = mount_new_root(&host_status, root_mount_dir.path()).unwrap();
@@ -501,7 +523,7 @@ mod functional_test {
                         contents: BlockDeviceContents::Unknown,
                     },
                     "sr0".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sr0"),
+                        path: PathBuf::from(CDROM_DEVICE_PATH),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     }

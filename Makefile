@@ -1,3 +1,7 @@
+# Path to the trident configuration file for validate and run-netlaunch
+# targets.
+TRIDENT_CONFIG ?= input/trident.yaml
+
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
@@ -18,7 +22,7 @@ build:
 	@OPENSSL_STATIC=1 OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 	    OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 	    TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-	    cargo build --release
+	    cargo build --release --features dangerous-options
 	mkdir -p bin
 	cp -u target/release/trident bin/
 
@@ -237,9 +241,13 @@ bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum
 	mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
+.PHONY: validate
+validate: $(TRIDENT_CONFIG) bin/trident
+	bin/trident validate -c $(TRIDENT_CONFIG)
+
 .PHONY: run-netlaunch
-run-netlaunch: input/netlaunch.yaml input/trident.yaml bin/netlaunch bin/trident-mos.iso
-	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t input/trident.yaml -l -r remote-addr -s artifacts/test-image
+run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso
+	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 .PHONY: download-runtime-partition-images
 download-runtime-partition-images:
@@ -398,7 +406,7 @@ bin/trident-containerhost-mos.vhdx: artifacts/baremetal.vhdx artifacts/imagecust
 
 bin/trident-container-mos.iso: bin/trident-containerhost-mos.vhdx artifacts/imagecustomizer trident-mos/trident-containerhost-iso.yaml trident-mos/post-install.sh
 	BUILD_DIR=`mktemp -d`
-	# TODO from pipeline: 
+	# TODO from pipeline:
 	# sed 's/CONTAINER_TAG/$(Build.BuildNumber)/' trident-mos/files/trident-container.service.template > trident-mos/files/trident-container.service
 	sudo ./artifacts/imagecustomizer \
 	    --log-level=debug \

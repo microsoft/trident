@@ -18,7 +18,7 @@ mod functional_test {
     use pytest_gen::functional_test;
     use sys_mount::{MountFlags, UnmountFlags};
 
-    use crate::{lsblk, mkfs};
+    use crate::{lsblk, mkfs, testutils::repart::TEST_DISK_DEVICE_PATH};
 
     use super::*;
 
@@ -41,10 +41,8 @@ mod functional_test {
                 .mount_autodrop(block_device_path, mount_point.path(), UnmountFlags::DETACH);
 
             // Confirm initialize size
-            let devices = lsblk::run(block_device_path).unwrap();
-            assert_eq!(devices.len(), 1);
-            let device = &devices[0];
-            assert_eq!(device.fssize, Some(before_blocks.into()));
+            let block_device = lsblk::run(block_device_path).unwrap();
+            assert_eq!(block_device.fssize, Some(before_blocks.into()));
         }
 
         // Run resize2fs to resize the filesystem
@@ -60,29 +58,42 @@ mod functional_test {
                 .mount_autodrop(block_device_path, mount_point.path(), UnmountFlags::DETACH);
 
             // Validate resize
-            let devices = lsblk::run(block_device_path).unwrap();
-            assert_eq!(devices.len(), 1);
-            let device = &devices[0];
-            assert_eq!(device.fssize, Some(after_blocks.into()));
+            let block_device = lsblk::run(block_device_path).unwrap();
+            assert_eq!(block_device.fssize, Some(after_blocks.into()));
         }
     }
 
     /// Validates that run() correctly resizes the filesystem.
     #[functional_test(feature = "helpers")]
     fn test_resize2fs_ext4_run() {
-        create_and_resize_filesystem(Path::new("/dev/sdb"), "ext4", "8383488", "16518332416");
+        create_and_resize_filesystem(
+            Path::new(TEST_DISK_DEVICE_PATH),
+            "ext4",
+            "8383488",
+            "16518332416",
+        );
     }
 
     /// Validates that run() correctly resizes the filesystem.
     #[functional_test(feature = "helpers")]
     fn test_resize2fs_ext3_run() {
-        create_and_resize_filesystem(Path::new("/dev/sdb"), "ext3", "8463360", "16519315456");
+        create_and_resize_filesystem(
+            Path::new(TEST_DISK_DEVICE_PATH),
+            "ext3",
+            "8463360",
+            "16519315456",
+        );
     }
 
     /// Validates that run() correctly resizes the filesystem.
     #[functional_test(feature = "helpers")]
     fn test_resize2fs_ext2_run() {
-        create_and_resize_filesystem(Path::new("/dev/sdb"), "ext2", "9511936", "16520364032");
+        create_and_resize_filesystem(
+            Path::new(TEST_DISK_DEVICE_PATH),
+            "ext2",
+            "9511936",
+            "16520364032",
+        );
     }
 
     /// Validates that run() correctly handles negative cases.

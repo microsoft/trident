@@ -500,40 +500,21 @@ mod functional_test {
     use pytest_gen::functional_test;
 
     use crate::lsblk::{self, BlockDevice};
+    use crate::testutils::repart::{
+        self, DISK_SIZE, OS_DISK_DEVICE_PATH, PART1_SIZE, TEST_DISK_DEVICE_PATH,
+    };
     use crate::udevadm;
 
     use super::*;
 
-    const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
-    const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
-    const DISK_BUS_PATH: &str = "/dev/sdb";
-
-    fn generate_partition_definition() -> Vec<RepartPartitionEntry> {
-        vec![
-            RepartPartitionEntry {
-                partition_type: DiscoverablePartitionType::Esp,
-                label: None,
-                size_min_bytes: Some(PART1_SIZE),
-                size_max_bytes: Some(PART1_SIZE),
-            },
-            RepartPartitionEntry {
-                partition_type: DiscoverablePartitionType::LinuxGeneric,
-                label: None,
-                // When min==max==None, it's a grow partition
-                size_min_bytes: None,
-                size_max_bytes: None,
-            },
-        ]
-    }
-
     #[functional_test(feature = "helpers")]
     fn test_execute_and_resulting_layout() {
-        let unchanged_disk_bus_path = PathBuf::from("/dev/sda");
+        let unchanged_disk_bus_path = PathBuf::from(OS_DISK_DEVICE_PATH);
         let unchanged_block_device_list = lsblk::run(&unchanged_disk_bus_path).unwrap();
 
-        let partition_definition = generate_partition_definition();
+        let partition_definition = repart::generate_partition_definition_esp_generic();
 
-        let disk_bus_path = PathBuf::from(DISK_BUS_PATH);
+        let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
 
         let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartMode::Force)
             .with_partition_entries(partition_definition.clone());
@@ -562,8 +543,8 @@ mod functional_test {
             unchanged_block_device_list_after
         );
 
-        let expected_block_device_list = vec![BlockDevice {
-            name: "/dev/sdb".into(),
+        let expected_block_device = BlockDevice {
+            name: TEST_DISK_DEVICE_PATH.into(),
             fstype: None,
             fssize: None,
             part_uuid: None,
@@ -572,37 +553,37 @@ mod functional_test {
             mountpoints: vec![None],
             children: Some(vec![
                 BlockDevice {
-                    name: "/dev/sdb1".into(),
+                    name: format!("{TEST_DISK_DEVICE_PATH}1"),
                     fstype: None,
                     fssize: None,
                     part_uuid: Some(part1.uuid),
                     size: part1.size,
-                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                     children: None,
                     mountpoints: vec![None],
                 },
                 BlockDevice {
-                    name: "/dev/sdb2".into(),
+                    name: format!("{TEST_DISK_DEVICE_PATH}2"),
                     fstype: None,
                     fssize: None,
                     part_uuid: Some(part2.uuid),
                     size: part2.size,
-                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                     children: None,
                     mountpoints: vec![None],
                 },
             ]),
-        }];
+        };
 
-        let block_device_list = lsblk::run(&disk_bus_path).unwrap();
-        assert_eq!(expected_block_device_list, block_device_list);
+        let block_device = lsblk::run(&disk_bus_path).unwrap();
+        assert_eq!(expected_block_device, block_device);
     }
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_execute_fails_on_non_block_device() {
         // Test that we can repartition /dev/null
         let repart = SystemdRepartInvoker::new("/dev/null", RepartMode::Force)
-            .with_partition_entries(generate_partition_definition());
+            .with_partition_entries(repart::generate_partition_definition_esp_generic());
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/null: Block device required\n\n");
     }
 
@@ -610,18 +591,18 @@ mod functional_test {
     fn test_execute_fails_on_missing_block_device() {
         // Test that we can repartition a non-existing device
         let repart = SystemdRepartInvoker::new("/dev/does-not-exist", RepartMode::Force)
-            .with_partition_entries(generate_partition_definition());
+            .with_partition_entries(repart::generate_partition_definition_esp_generic());
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/does-not-exist: No such file or directory\n\n");
     }
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_execute_fails_if_partition_size_too_large() {
         // Test that asking for too much space fails
-        let mut partition_definition = generate_partition_definition();
+        let mut partition_definition = repart::generate_partition_definition_esp_generic();
         // Make the second partition too big
         partition_definition[1].size_min_bytes = Some(DISK_SIZE);
         partition_definition[1].size_max_bytes = Some(DISK_SIZE);
-        let disk_bus_path = PathBuf::from(DISK_BUS_PATH);
+        let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
         let repart = SystemdRepartInvoker::new(disk_bus_path, RepartMode::Force)
             .with_partition_entries(partition_definition);
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nCan't fit requested partitions into available free space (15.9G), refusing.\nAutomatically determined minimal disk image size as 16.0G, current image size is 16.0G.\n\n");

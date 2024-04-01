@@ -21,14 +21,15 @@ pub fn run(fs_uuid: &Uuid, block_device_path: &Path) -> Result<(), Error> {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
     use pytest_gen::functional_test;
 
-    use super::*;
+    use crate::testutils::repart::TEST_DISK_DEVICE_PATH;
 
     /// Validates that run() correctly assigns a new UUID to the filesystem.
     #[functional_test(feature = "helpers")]
     fn test_tune2fs_run() {
-        let block_device_path = Path::new("/dev/sdb");
+        let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
         // Create a new ext4 filesystem on /dev/sdb
         crate::mkfs::run(block_device_path, "ext4").unwrap();
 

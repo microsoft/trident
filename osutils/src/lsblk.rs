@@ -3,8 +3,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{Context, Error};
-use log::warn;
+use anyhow::{bail, Context, Error};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,7 +28,7 @@ pub struct BlockDevice {
     pub mountpoints: Vec<Option<String>>,
 }
 
-pub fn run(device_path: impl AsRef<Path>) -> Result<Vec<BlockDevice>, Error> {
+pub fn run(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
     let result = Command::new("lsblk")
         .arg("--json")
         .arg("--path")
@@ -39,12 +38,17 @@ pub fn run(device_path: impl AsRef<Path>) -> Result<Vec<BlockDevice>, Error> {
         .output_and_check()
         .context("Failed to execute lsblk")?;
 
-    let parsed = parse_lsblk_output(result.as_str());
-    if parsed.is_err() {
-        warn!("lsblk output: {}", result);
+    let parsed = parse_lsblk_output(result.as_str())?;
+
+    if parsed.len() != 1 {
+        bail!(
+            "Unexpected number of block devices returned for device '{}': {}",
+            device_path.as_ref().display(),
+            parsed.len()
+        );
     }
 
-    parsed
+    Ok(parsed[0].clone())
 }
 
 fn parse_lsblk_output(output: &str) -> Result<Vec<BlockDevice>, Error> {
@@ -312,11 +316,10 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_run_success() {
-        let block_device_list = super::run(Path::new("/dev/sda")).unwrap();
+        let block_device = super::run(Path::new("/dev/sda")).unwrap();
 
-        assert_eq!(block_device_list.len(), 1);
-        assert_eq!(block_device_list[0].name, "/dev/sda");
-        assert_eq!(block_device_list[0].children.as_ref().unwrap().len(), 5);
+        assert_eq!(block_device.name, "/dev/sda");
+        assert_eq!(block_device.children.as_ref().unwrap().len(), 5);
     }
 
     #[functional_test(feature = "helpers", negative = true)]

@@ -434,7 +434,13 @@ mod functional_test {
 
     use std::process::Command;
 
-    use osutils::{exe::RunAndCheck, lsblk, mount};
+    use const_format::formatcp;
+
+    use osutils::{
+        exe::RunAndCheck,
+        lsblk, mount,
+        testutils::repart::{self, TEST_DISK_DEVICE_PATH},
+    };
 
     #[functional_test(feature = "helpers")]
     /// Validates that initialize_block_device() correctly initializes a block device by formatting it
@@ -443,23 +449,17 @@ mod functional_test {
         // Test case 1: Running initialize_block_device() on a valid block device to format as ext4.
         // First, zero out the metadata of the volume. Use /dev/sdb since cannot rely on
         // /dev/sdb2 being present.
-        Command::new("dd")
-            .arg("if=/dev/zero")
-            .arg("of=/dev/sdb")
-            .arg("bs=1M")
-            .arg("count=1")
-            .output_and_check()
-            .unwrap();
+        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 
         // Run initialize_block_device() to format to ext4 filesystem
-        create_filesystem_on_block_device(Path::new("/dev/sdb"), "ext4").unwrap();
+        create_filesystem_on_block_device(Path::new(TEST_DISK_DEVICE_PATH), "ext4").unwrap();
 
         // Confirm that /dev/sdb has been reformatted to ext4
-        let block_device_list = lsblk::run(Path::new("/dev/sdb")).unwrap();
+        let block_device = lsblk::run(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 
         // Find the current FS on /dev/sdb
         assert_eq!(
-            block_device_list[0].fstype.as_ref().unwrap(),
+            block_device.fstype.as_ref().unwrap(),
             "ext4",
             "Filesystem type on /dev/sdb is not ext4"
         );
@@ -472,7 +472,7 @@ mod functional_test {
             .unwrap();
 
         mount::mount(
-            Path::new("/dev/sdb"),
+            Path::new(TEST_DISK_DEVICE_PATH),
             Path::new("/mnt/sdb"),
             "ext4",
             &["defaults".into()],
@@ -486,15 +486,12 @@ mod functional_test {
     #[functional_test(feature = "helpers", negative = true)]
     fn test_create_filesystem_on_block_device_negative() {
         // Just zero-out the metadata so this is a fast operation.
-        Command::new("dd")
-            .arg("if=/dev/zero")
-            .arg("of=/dev/sdb")
-            .arg("bs=1M")
-            .arg("count=1")
-            .run_and_check()
-            .unwrap();
+        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 
-        let result = create_filesystem_on_block_device(Path::new("/dev/sdb2"), "ext4");
+        let result = create_filesystem_on_block_device(
+            Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            "ext4",
+        );
 
         assert_eq!(
                 result.unwrap_err().root_cause().to_string(),

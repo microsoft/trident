@@ -4,12 +4,12 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use log::info;
+use log::{debug, error, info};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use trident_api::config::RaidLevel;
 
-use crate::exe::RunAndCheck;
+use crate::{exe::RunAndCheck, lsblk};
 
 pub fn create(
     raid_path: &PathBuf,
@@ -30,9 +30,7 @@ pub fn create(
 
     mdadm_command
         .run_and_check()
-        .context("Failed to run mdadm create")?;
-
-    Ok(())
+        .context("Failed to run mdadm create")
 }
 
 pub fn examine() -> Result<String, Error> {
@@ -52,9 +50,27 @@ pub fn stop(raid_array_name: &Path) -> Result<(), Error> {
     let mut mdadm_command = Command::new("mdadm");
     mdadm_command.arg("--stop").arg(raid_array_name);
 
-    mdadm_command
+    let res = mdadm_command
         .run_and_check()
-        .context("Failed to run mdadm stop")?;
+        .context("Failed to run mdadm stop");
+
+    if let Err(e) = res {
+        // If stop returns an error, do best effort to log what is holding the
+        // block device
+        let block_device = lsblk::run(raid_array_name);
+        if let Ok(block_device) = block_device {
+            error!(
+                "Failed to stop {:?}: active children: {:?}, active mount points: {:?}",
+                raid_array_name, block_device.children, block_device.mountpoints
+            );
+        }
+
+        // Propagate the original unmount error
+        return Err(e.context(format!(
+            "Failed to stop RAID array {:?}",
+            raid_array_name.display()
+        )));
+    }
 
     Ok(())
 }
@@ -67,8 +83,8 @@ pub struct MdadmDetail {
     pub devices: Vec<PathBuf>,
 }
 
-pub fn detail() -> Result<Vec<MdadmDetail>, Error> {
-    info!("Getting RAID array details");
+pub fn details() -> Result<Vec<MdadmDetail>, Error> {
+    debug!("Getting details for all RAID arrays");
 
     let mut mdadm_command = Command::new("mdadm");
     mdadm_command.arg("--detail").arg("--scan").arg("--verbose");
@@ -77,10 +93,31 @@ pub fn detail() -> Result<Vec<MdadmDetail>, Error> {
         .output_and_check()
         .context("Failed to run mdadm detail")?;
 
+    mdadm_detail_to_struct(&output).context("Failed to parse mdadm detail")
+}
+
+pub fn detail(raid_array: &Path) -> Result<MdadmDetail, Error> {
+    debug!("Getting RAID array details for '{:?}'", raid_array);
+
+    let mut mdadm_command = Command::new("mdadm");
+    mdadm_command
+        .arg("--detail")
+        .arg("--scan")
+        .arg("--verbose")
+        .arg(raid_array);
+
+    let output = mdadm_command
+        .output_and_check()
+        .context("Failed to run mdadm detail")?;
+
     let structured_output =
         mdadm_detail_to_struct(&output).context("Failed to parse mdadm detail")?;
 
-    Ok(structured_output)
+    if structured_output.len() != 1 {
+        return Err(anyhow::anyhow!("Failed to get RAID array details"));
+    }
+
+    Ok(structured_output[0].clone())
 }
 
 fn mdadm_detail_to_struct(mdadm_output: &str) -> Result<Vec<MdadmDetail>, Error> {

@@ -8,13 +8,19 @@ hostConfiguration:
           - id: esp
             type: esp
             size: 1G
-          - id: root
+          - id: root-a
+            type: root
+            size: 8G
+          - id: root-b
             type: root
             size: 8G
           - id: web-a-e
             type: linux-generic
             size: 1G
           - id: web-b-e
+            type: linux-generic
+            size: 1G
+          - id: trident
             type: linux-generic
             size: 1G
       - id: disk2
@@ -34,6 +40,9 @@ hostConfiguration:
         - id: web
           volumeAId: web-a
           volumeBId: web-b
+        - id: root
+          volumeAId: root-a
+          volumeBId: root-b
     mountPoints:
       - path: /boot/efi
         targetId: esp
@@ -45,6 +54,10 @@ hostConfiguration:
         options: ["defaults"]
       - path: /web
         targetId: web
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /var/lib/trident
+        targetId: trident
         filesystem: ext4
         options: ["defaults"]
     images:

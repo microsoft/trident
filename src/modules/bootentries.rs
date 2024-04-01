@@ -6,7 +6,7 @@ use log::{debug, info};
 use osutils::efibootmgr;
 use osutils::efibootmgr::EfiBootManagerOutput;
 use trident_api::config::PartitionType;
-use trident_api::constants::{self, UPDATE_ROOT_PATH};
+use trident_api::constants;
 use trident_api::error::{ManagementError, ReportError, TridentError, TridentResultExt};
 use trident_api::status::{AbVolumeSelection, HostStatus};
 
@@ -22,8 +22,11 @@ use super::BOOT64_EFI;
 /// Then it retrieves the output of `efibootmgr` to get information about boot manager entries.
 /// After that, it opens the datastore to update the host status with the retrieved boot next variable.
 ///
-pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), TridentError> {
-    set_boot_next(host_status).structured(ManagementError::SetBootNext)?;
+pub fn call_set_boot_next_and_update_hs(
+    host_status: &HostStatus,
+    new_root_path: &Path,
+) -> Result<(), TridentError> {
+    set_boot_next(host_status, new_root_path).structured(ManagementError::SetBootNext)?;
 
     // Get the output of efibootmgr
     let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
@@ -36,7 +39,7 @@ pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), 
         .as_deref()
         .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
     debug!("Opening datastore at path: {}", datastore_path.display());
-    let new_path = Path::new(UPDATE_ROOT_PATH).join(
+    let new_path = new_root_path.join(
         datastore_path
             .to_str()
             .unwrap()
@@ -63,7 +66,7 @@ pub fn call_set_boot_next_and_update_hs(host_status: &HostStatus) -> Result<(), 
 
 /// Creates a boot entry for the updated AB partition and sets the `BootNext` variable to
 /// boot from the updated partition on next boot.
-fn set_boot_next(host_status: &HostStatus) -> Result<(), Error> {
+fn set_boot_next(host_status: &HostStatus, new_root_path: &Path) -> Result<(), Error> {
     let (entry_label_new, bootloader_path_new) =
         get_label_and_path(host_status).context("Failed to get label and path")?;
     let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
@@ -81,8 +84,13 @@ fn set_boot_next(host_status: &HostStatus) -> Result<(), Error> {
     let disk_path = get_first_partition_of_type(host_status, PartitionType::Esp)
         .context("Failed to fetch esp disk path ")?;
     debug!("Disk path of first esp partition {:?}", disk_path);
-    efibootmgr::create_boot_entry(entry_label_new, disk_path, bootloader_path_new)
-        .context("Failed to add boot entry")?;
+    efibootmgr::create_boot_entry(
+        entry_label_new,
+        disk_path,
+        bootloader_path_new,
+        new_root_path,
+    )
+    .context("Failed to add boot entry")?;
     let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
 
     let added_entry_number = bootmgr_output
@@ -503,7 +511,10 @@ mod functional_test {
         status::{BlockDeviceInfo, ReconcileState, UpdateKind},
     };
 
-    use osutils::efibootmgr::{self, EfiBootManagerOutput};
+    use osutils::{
+        efibootmgr::{self, EfiBootManagerOutput},
+        testutils::repart::OS_DISK_DEVICE_PATH,
+    };
     use pytest_gen::functional_test;
 
     use std::{
@@ -525,9 +536,28 @@ mod functional_test {
 
     fn set_some_boot_entries() {
         // Create new boot entries for testing
-        efibootmgr::create_boot_entry("TestBoot1", "/dev/sda", "/EFI/AZLA/bootx64.efi").unwrap();
-        efibootmgr::create_boot_entry("TestBoot2", "/dev/sda", "/EFI/AZLA/bootx64.efi").unwrap();
-        efibootmgr::create_boot_entry("TestBoot3", "/dev/sda", "/EFI/AZLA/bootx64.efi").unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        efibootmgr::create_boot_entry(
+            "TestBoot1",
+            OS_DISK_DEVICE_PATH,
+            "/EFI/AZLA/bootx64.efi",
+            tempdir.path(),
+        )
+        .unwrap();
+        efibootmgr::create_boot_entry(
+            "TestBoot2",
+            OS_DISK_DEVICE_PATH,
+            "/EFI/AZLA/bootx64.efi",
+            tempdir.path(),
+        )
+        .unwrap();
+        efibootmgr::create_boot_entry(
+            "TestBoot3",
+            OS_DISK_DEVICE_PATH,
+            "/EFI/AZLA/bootx64.efi",
+            tempdir.path(),
+        )
+        .unwrap();
         let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries().unwrap();
 
         let _entry_number1 = bootmgr_output.get_boot_entry_number("TestBoot1").unwrap();
@@ -718,7 +748,8 @@ mod functional_test {
             let boot_entry_num1 = bootmgr_output1.get_boot_entry_number(entry_label).unwrap();
             efibootmgr::delete_boot_entry(&boot_entry_num1).unwrap();
         }
-        set_boot_next(host_status).unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        set_boot_next(host_status, tempdir.path()).unwrap();
         let bootmgr_output2: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let boot_entry_num2 = bootmgr_output2.get_boot_entry_number(entry_label).unwrap();
@@ -774,7 +805,7 @@ mod functional_test {
             storage: Storage {
                 block_devices: btreemap! {
                     "os".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda"),
+                        path: PathBuf::from(OS_DISK_DEVICE_PATH),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     },

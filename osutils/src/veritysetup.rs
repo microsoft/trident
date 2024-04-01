@@ -5,8 +5,10 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use log::error;
+use trident_api::constants::DEV_MAPPER_PATH;
 
-use crate::exe::RunAndCheck;
+use crate::{exe::RunAndCheck, lsblk};
 
 pub fn open(
     data_device_path: impl AsRef<Path>,
@@ -23,7 +25,7 @@ pub fn open(
         .arg("--verbose")
         .run_and_check()
         .context(format!("Failed to open verity device {}", device_name))?;
-    let dm_verity_root_path = Path::new("/dev/mapper").join(device_name);
+    let dm_verity_root_path = Path::new(DEV_MAPPER_PATH).join(device_name);
     if !dm_verity_root_path.exists() {
         bail!(
             "Verity device {} does not exist",
@@ -175,12 +177,29 @@ pub fn status(device_name: &str) -> Result<VeritySetupStatus, Error> {
 }
 
 pub fn close(device_name: &str) -> Result<(), Error> {
-    Command::new("veritysetup")
+    let res = Command::new("veritysetup")
         .arg("close")
         .arg(device_name)
         .arg("--verbose")
         .run_and_check()
-        .context(format!("Failed to close verity device {}", device_name))
+        .context(format!("Failed to close verity device {}", device_name));
+
+    if let Err(e) = res {
+        // If close returns an error, do best effort to log what is holding the
+        // block device
+        let block_device = lsblk::run(Path::new(DEV_MAPPER_PATH).join(device_name));
+        if let Ok(block_device) = block_device {
+            error!(
+                "Failed to close {}: active children: {:?}, active mount points: {:?}",
+                device_name, block_device.children, block_device.mountpoints
+            );
+        }
+
+        // Propagate the original unmount error
+        return Err(e.context(format!("Failed to close verity device {}", device_name)));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -413,72 +432,36 @@ mod test {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+    use const_format::formatcp;
     use pytest_gen::functional_test;
 
-    use std::{
-        fs::{self, File},
-        io::Read,
-    };
+    use std::fs;
 
     use crate::{
         files,
         grub::GrubConfig,
-        hashing_reader::HashingReader,
-        image_streamer,
         mount::{self, MountGuard},
-        mountpoint,
         partition_types::DiscoverablePartitionType,
         repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
+        testutils::{
+            image,
+            repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
+            verity::{
+                self, VerityGuard, VERITY_ROOT_BOOT_IMAGE_PATH, VERITY_ROOT_DATA_IMAGE_PATH,
+                VERITY_ROOT_HASH_IMAGE_PATH,
+            },
+        },
         udevadm,
     };
 
-    fn setup_verity_images() -> PathBuf {
-        let cdrom_mount_path = Path::new("/mnt/cdrom");
-        if !cdrom_mount_path.exists() {
-            files::create_dirs(cdrom_mount_path).unwrap();
-        }
-        if !mountpoint::check_is_mountpoint(cdrom_mount_path).unwrap() {
-            mount::mount("/dev/sr0", cdrom_mount_path, "iso9660", &[]).unwrap();
-        }
-
-        let verity_data_path = cdrom_mount_path.join("data/verity_root.rawzst");
-        assert!(verity_data_path.exists());
-
-        let verity_hash_path = cdrom_mount_path.join("data/verity_roothash.rawzst");
-        assert!(verity_hash_path.exists());
-
-        let boot_path = cdrom_mount_path.join("data/verity_boot.rawzst");
-        assert!(boot_path.exists());
-
-        cdrom_mount_path.to_owned()
-    }
-
-    fn stream_zstd(image: &Path, destination: &Path) -> Result<(), Error> {
-        let stream: Box<dyn Read> = Box::new(File::open(image)?);
-        let reader = HashingReader::new(stream);
-        image_streamer::stream_zstd(reader, destination, None)?;
-
-        Ok(())
-    }
-
-    pub struct VerityGuard<'a> {
-        pub device_name: &'a str,
-    }
-
-    impl<'a> Drop for VerityGuard<'a> {
-        fn drop(&mut self) {
-            close(self.device_name).unwrap();
-        }
-    }
-
     #[functional_test(feature = "helpers")]
     fn test_open_and_close() {
-        let cdrom_mount_path = setup_verity_images();
+        let cdrom_mount_path = verity::setup_verity_images();
 
-        let block_device_path = Path::new("/dev/sdb");
+        let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
 
-        let boot_path = cdrom_mount_path.join("data/verity_boot.rawzst");
-        stream_zstd(boot_path.as_path(), block_device_path).unwrap();
+        let boot_path = cdrom_mount_path.join(VERITY_ROOT_BOOT_IMAGE_PATH);
+        image::stream_zstd(boot_path.as_path(), block_device_path).unwrap();
 
         let root_hash = {
             let boot_mount_dir = tempfile::tempdir().unwrap();
@@ -517,12 +500,12 @@ mod functional_test {
         repart.execute().unwrap();
         udevadm::settle().unwrap();
 
-        let verity_data_path = cdrom_mount_path.join("data/verity_root.rawzst");
-        let verity_data_block_device_path = Path::new("/dev/sdb1");
-        stream_zstd(verity_data_path.as_path(), verity_data_block_device_path).unwrap();
-        let verity_hash_path = cdrom_mount_path.join("data/verity_roothash.rawzst");
-        let verity_hash_block_device_path = Path::new("/dev/sdb2");
-        stream_zstd(verity_hash_path.as_path(), verity_hash_block_device_path).unwrap();
+        let verity_data_path = cdrom_mount_path.join(VERITY_ROOT_DATA_IMAGE_PATH);
+        let verity_data_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1"));
+        image::stream_zstd(verity_data_path.as_path(), verity_data_block_device_path).unwrap();
+        let verity_hash_path = cdrom_mount_path.join(VERITY_ROOT_HASH_IMAGE_PATH);
+        let verity_hash_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
+        image::stream_zstd(verity_hash_path.as_path(), verity_hash_block_device_path).unwrap();
 
         // bad hash
         assert_eq!(
@@ -576,7 +559,7 @@ mod functional_test {
             {
                 let verity_mount_dir = tempfile::tempdir().unwrap();
                 mount::mount(
-                    Path::new("/dev/mapper/verity-test"),
+                    Path::new(DEV_MAPPER_PATH).join("verity-test"),
                     verity_mount_dir.path(),
                     "ext4",
                     &["ro".into()],
@@ -639,7 +622,7 @@ mod functional_test {
             {
                 let verity_mount_dir = tempfile::tempdir().unwrap();
                 assert_eq!(mount::mount(
-                    Path::new("/dev/mapper/verity-test"),
+                    Path::new(DEV_MAPPER_PATH).join("verity-test"),
                     verity_mount_dir.path(),
                     "ext4",
                     &["ro".into()],
@@ -664,7 +647,7 @@ mod functional_test {
             open(
                 Path::new("/dev/sda1"),
                 "foobar",
-                Path::new("/dev/sda"),
+                Path::new(OS_DISK_DEVICE_PATH),
                 "foobar",
             )
             .unwrap_err()
@@ -687,12 +670,10 @@ mod functional_test {
             "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /etc/passwd is not a valid VERITY device.\n\n"
         );
 
-        let cdrom_mount_path = setup_verity_images();
-        stream_zstd(
-            cdrom_mount_path
-                .join("data/verity_roothash.rawzst")
-                .as_path(),
-            Path::new("/dev/sdb"),
+        let cdrom_mount_path = verity::setup_verity_images();
+        image::stream_zstd(
+            cdrom_mount_path.join(VERITY_ROOT_HASH_IMAGE_PATH).as_path(),
+            Path::new(TEST_DISK_DEVICE_PATH),
         )
         .unwrap();
 
@@ -701,7 +682,7 @@ mod functional_test {
             open(
                 Path::new("/etc/passwd"),
                 "foobar",
-                Path::new("/dev/sdb"),
+                Path::new(TEST_DISK_DEVICE_PATH),
                 "foobar",
             )
             .unwrap_err()

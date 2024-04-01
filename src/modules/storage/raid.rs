@@ -198,6 +198,41 @@ pub(super) fn update_raid_in_host_status(
     Ok(())
 }
 
+pub(super) fn get_raid_disks(raid_array: &Path) -> Result<HashSet<PathBuf>, Error> {
+    // If there is no mdstat file, there are no pre-existing RAID arrays
+    if !Path::new("/proc/mdstat").exists() {
+        trace!("No pre-existing RAID arrays found. Skipping cleanup.");
+        return Ok(HashSet::new());
+    }
+
+    // Check if mdadm is present, we need it to stop RAID arrays.
+    check_if_mdadm_present().context(
+        "Failed to clean up pre-existing RAID arrays. Mdadm is required for RAID operations",
+    )?;
+
+    let mdadm_detail = mdadm::detail(raid_array).context("Failed to get existing RAID details")?;
+    get_raid_disks_internal(&mdadm_detail)
+}
+
+fn get_raid_disks_internal(mdadm_detail: &mdadm::MdadmDetail) -> Result<HashSet<PathBuf>, Error> {
+    let raid_disks = mdadm_detail
+        .clone()
+        .devices
+        .into_iter()
+        .map(|device| {
+            block_devices::get_disk_for_partition(&device).with_context(|| {
+                format!(
+                    "Failed to get disk for partition in an existing RAID: {:?}",
+                    mdadm_detail.raid_path
+                )
+            })
+        })
+        .collect::<Result<HashSet<_>, Error>>()
+        .context("Failed to get RAID disks")?;
+
+    Ok(raid_disks)
+}
+
 pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> Result<(), Error> {
     // If there is no mdstat file, there are no pre-existing RAID arrays
     if !Path::new("/proc/mdstat").exists() {
@@ -210,7 +245,9 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
         "Failed to clean up pre-existing RAID arrays. Mdadm is required for RAID operations",
     )?;
 
-    let mdadm_detail = mdadm::detail().context("Failed to get existing RAID details")?;
+    debug!("Attempting to stop pre-existing RAID arrays");
+
+    let mdadm_detail = mdadm::details().context("Failed to get existing RAID details")?;
 
     if mdadm_detail.is_empty() {
         trace!(
@@ -229,20 +266,7 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
             .canonicalize()
             .context("Failed to get existing RAID device resolved path")?;
 
-        let mut raid_disks = HashSet::new();
-
-        for device in &raid_array.devices {
-            let disk = block_devices::get_disk_for_partition(&PathBuf::from(device)).with_context(
-                || {
-                    format!(
-                        "Failed to get disk for partition in an existing RAID: {:?}",
-                        raid_array.raid_path
-                    )
-                },
-            )?;
-
-            raid_disks.insert(disk);
-        }
+        let raid_disks = get_raid_disks_internal(&raid_array)?;
         if block_devices::can_stop_pre_existing_device(
             &raid_disks,
             &trident_disks.iter().cloned().collect::<HashSet<_>>(),

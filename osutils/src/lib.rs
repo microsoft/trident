@@ -29,6 +29,9 @@ pub mod tune2fs;
 pub mod udevadm;
 pub mod veritysetup;
 
+#[cfg(any(test, feature = "test-utilities"))]
+pub mod testutils;
+
 pub(crate) mod crate_private {
     pub trait Sealed {}
 }

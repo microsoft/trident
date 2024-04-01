@@ -235,15 +235,3 @@ hostConfiguration:
       servicingType:
       - clean-install
       - ab-update
-    postProvision:
-      - name: fail-on-the-first-run-to-force-rerun
-        servicingType:
-          - all
-        interpreter: /usr/bin/python3
-        content: |
-          import sys
-          import os.path
-          if not os.path.isfile("/already-run"):
-            f = open('/already-run', 'x')
-            f.close()
-            sys.exit(1)

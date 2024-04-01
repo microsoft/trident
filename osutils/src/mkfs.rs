@@ -29,29 +29,25 @@ pub(super) fn run_blocks(device_path: &Path, filesystem: &str, blocks: u64) -> R
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
     use pytest_gen::functional_test;
+
     use sys_mount::{MountFlags, UnmountFlags};
 
-    use super::*;
+    use crate::testutils::repart::{self, TEST_DISK_DEVICE_PATH};
 
     /// This function wipes the /dev/sdb device and ensures the /mnt
     /// directory exists.
     fn setup_test() {
         // Just zero-out the metadata so this is a fast operation.
-        Command::new("dd")
-            .arg("if=/dev/zero")
-            .arg("of=/dev/sdb")
-            .arg("bs=1M")
-            .arg("count=1")
-            .run_and_check()
-            .unwrap();
+        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
         if !Path::new("/mnt").exists() {
             Command::new("mkdir").arg("/mnt").run_and_check().unwrap();
         }
     }
 
     fn test_filesystem(filesystem: &str) {
-        let block_device_path = Path::new("/dev/sdb");
+        let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
 
         super::run(block_device_path, filesystem).unwrap();
 
@@ -77,18 +73,18 @@ mod functional_test {
 
         // run() on a zeroed block device should format it with the
         // specified filesystem. It should be mountable and writable.
-        super::run(Path::new("/dev/sdb"), &String::from("ext4")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext4")).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
                 .arg("FSTYPE")
-                .arg("/dev/sdb")
+                .arg(TEST_DISK_DEVICE_PATH)
                 .output_and_check()
                 .unwrap(),
             "ext4\n"
         );
         Command::new("mount")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
@@ -101,18 +97,18 @@ mod functional_test {
         // run() on a formatted block device with a different filesystem
         // should format it with the new filesystem and clear the device
         // contents.
-        super::run(Path::new("/dev/sdb"), &String::from("ext3")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext3")).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
                 .arg("FSTYPE")
-                .arg("/dev/sdb")
+                .arg(TEST_DISK_DEVICE_PATH)
                 .output_and_check()
                 .unwrap(),
             "ext3\n"
         );
         Command::new("mount")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
@@ -126,18 +122,18 @@ mod functional_test {
         // run() on a formatted block device with the same filesystem
         // should not change the filesystem but should again clear the
         // device contents.
-        super::run(Path::new("/dev/sdb"), &String::from("ext3")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext3")).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
                 .arg("FSTYPE")
-                .arg("/dev/sdb")
+                .arg(TEST_DISK_DEVICE_PATH)
                 .output_and_check()
                 .unwrap(),
             "ext3\n"
         );
         Command::new("mount")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
@@ -154,9 +150,9 @@ mod functional_test {
         setup_test();
 
         // Create a file on the block device to ensure it's not empty.
-        super::run(Path::new("/dev/sdb"), &String::from("ext4")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext4")).unwrap();
         Command::new("mount")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
@@ -168,9 +164,9 @@ mod functional_test {
 
         // run() using filesystem 'foo' that mkfs doesn't recognize should
         // fail and not clear the device contents.
-        assert!(super::run(Path::new("/dev/sdb"), &String::from("foo")).is_err());
+        assert!(super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("foo")).is_err());
         Command::new("mount")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
@@ -181,7 +177,7 @@ mod functional_test {
         // fail and again not clear the device contents.
         assert!(super::run(Path::new("/dev/foo"), &String::from("ext3")).is_err());
         Command::new("mount")
-            .arg("/dev/sdb")
+            .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();

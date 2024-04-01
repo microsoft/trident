@@ -1,20 +1,22 @@
 use std::{
     collections::HashSet,
+    fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
-use anyhow::{Context, Error};
+use anyhow::{bail, Context, Error};
 use const_format::formatcp;
 use log::debug;
-use osutils::{block_devices, grub::GrubConfig, lsblk, mount, veritysetup};
+use osutils::{block_devices, exe::RunAndCheck, grub::GrubConfig, lsblk, mount, veritysetup};
 use sys_mount::{FilesystemType, Mount, MountFlags, UnmountFlags};
 use tempfile::TempDir;
 
 use trident_api::{
     config::{self, HostConfiguration, MountPoint},
     constants::{
-        BOOT_MOUNT_POINT_PATH, BOOT_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
-        GRUB2_CONFIG_RELATIVE_PATH, GRUB2_DIRECTORY, ROOT_MOUNT_POINT_PATH,
+        BOOT_MOUNT_POINT_PATH, BOOT_RELATIVE_MOUNT_POINT_PATH, DEV_MAPPER_PATH,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, GRUB2_DIRECTORY, ROOT_MOUNT_POINT_PATH,
         TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_PATH,
         TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
@@ -23,6 +25,8 @@ use trident_api::{
 };
 
 use crate::modules;
+
+use super::raid;
 
 const GRUB_CONFIG_PATH: &str = formatcp!("{}/{}", GRUB2_DIRECTORY, GRUB2_CONFIG_FILENAME);
 
@@ -79,6 +83,41 @@ pub(super) fn create_etc_overlay_mount_point() -> MountPoint {
     }
 }
 
+pub(super) fn get_updated_device_name(device_name: &str) -> String {
+    format!("{}_new", device_name)
+}
+
+pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
+    let machine_id_path = new_root_path.join("etc/machine-id");
+    if machine_id_path.exists() {
+        fs::remove_file(&machine_id_path).context(format!(
+            "Failed to remove existing machine-id file at '{}'",
+            machine_id_path.display()
+        ))?;
+    }
+    Command::new("systemd-firstboot")
+        .arg("--root")
+        .arg(new_root_path)
+        .arg("--setup-machine-id")
+        .run_and_check()
+        .context("Failed to generate machine-id")?;
+
+    Ok(())
+}
+
+pub(super) fn configure_device_names(host_status: &mut HostStatus) -> Result<(), Error> {
+    for vd in &host_status.spec.storage.verity {
+        host_status
+            .storage
+            .block_devices
+            .get_mut(&vd.id)
+            .context(format!("Failed to find verity device '{}'", vd.id))?
+            .path = Path::new(DEV_MAPPER_PATH).join(&vd.device_name);
+    }
+
+    Ok(())
+}
+
 /// Setup the root verity device
 fn setup_root_verity_device(
     host_config: &HostConfiguration,
@@ -92,23 +131,25 @@ fn setup_root_verity_device(
     let (verity_data_path, verity_hash_path, _) =
         get_verity_related_device_paths(host_status, host_config, root_verity_device)?;
 
+    let updated_device_name = get_updated_device_name(&root_verity_device.device_name);
+
     // Setup the verity device
     veritysetup::open(
         verity_data_path,
-        &root_verity_device.device_name,
+        updated_device_name.as_str(),
         verity_hash_path,
         root_hash.as_str(),
     )?;
 
-    let status = veritysetup::status(&root_verity_device.device_name);
+    let status = veritysetup::status(updated_device_name.as_str());
     match status {
         Err(e) => {
-            veritysetup::close(&root_verity_device.device_name)?;
+            veritysetup::close(updated_device_name.as_str())?;
             return Err(e);
         }
         Ok(status) => {
             if status.status != "verified" {
-                veritysetup::close(&root_verity_device.device_name)?;
+                veritysetup::close(updated_device_name.as_str())?;
                 return Err(anyhow::anyhow!(
                     "Failed to activate verity device '{}', status: '{}'",
                     root_verity_device.device_name,
@@ -120,7 +161,7 @@ fn setup_root_verity_device(
     Ok((
         root_verity_device.id.clone(),
         BlockDeviceInfo {
-            path: PathBuf::from(format!("/dev/mapper/{}", root_verity_device.device_name)),
+            path: Path::new(DEV_MAPPER_PATH).join(updated_device_name),
             contents: BlockDeviceContents::Initialized,
             size: 0, // TODO: https://dev.azure.com/mariner-org/ECF/_workitems/edit/7319/
         },
@@ -312,7 +353,10 @@ pub(super) fn stop_pre_existing_verity_devices(
         return Ok(());
     }
 
-    let root_verity_device_path = Path::new("/dev/mapper/root");
+    debug!("Attempting to stop pre-existing verity devices");
+
+    let updated_device_name = get_updated_device_name("root");
+    let root_verity_device_path = Path::new(DEV_MAPPER_PATH).join(&updated_device_name);
 
     // Check if the root verity device is present
     if !root_verity_device_path.exists() {
@@ -321,27 +365,37 @@ pub(super) fn stop_pre_existing_verity_devices(
 
     veritysetup::is_present().context("Unable to deactivate pre-existing dm-verity volumes.")?;
 
-    let root_verity_device_status =
-        veritysetup::status("root").context("Failed to get status of root verity device")?;
+    let root_verity_device_status = veritysetup::status(&updated_device_name)
+        .context("Failed to get status of root verity device")?;
     let hc_disks = super::get_hostconfig_disk_paths(host_config)
         .context("Failed to get disks defined in Host Configuration")?;
-    let mut verity_disks = HashSet::new();
-    verity_disks.insert(
-        block_devices::get_disk_for_partition(root_verity_device_status.data_device_path.as_path())
-            .context(format!(
-                "Failed to get disk for partition '{:?}'",
-                root_verity_device_status.data_device_path
-            ))?
-            .canonicalize()?,
-    );
-    verity_disks.insert(
-        block_devices::get_disk_for_partition(root_verity_device_status.hash_device_path.as_path())
-            .context(format!(
-                "Failed to get disk for partition '{:?}'",
-                root_verity_device_status.data_device_path
-            ))?
-            .canonicalize()?,
-    );
+    let verity_disks = [
+        root_verity_device_status.data_device_path,
+        root_verity_device_status.hash_device_path,
+    ]
+    .map(|device_path| {
+        if let Ok(disk_path) = block_devices::get_disk_for_partition(device_path.as_path()) {
+            [disk_path.canonicalize().context(format!(
+                "Failed to find the device path '{:?}'",
+                device_path
+            ))]
+            .into_iter()
+            .collect::<Result<Vec<PathBuf>, Error>>()
+        } else if let Ok(disk_paths) = raid::get_raid_disks(&device_path) {
+            Ok(disk_paths.into_iter().collect::<Vec<_>>())
+        } else {
+            bail!(
+                "Failed to find the disk path for the device path '{:?}'",
+                device_path
+            )
+        }
+    })
+    .into_iter()
+    .collect::<Result<Vec<Vec<PathBuf>>, Error>>()
+    .context("Failed to get verity disks")?
+    .into_iter()
+    .flatten()
+    .collect::<HashSet<_>>();
 
     if block_devices::can_stop_pre_existing_device(
         &verity_disks,
@@ -351,21 +405,22 @@ pub(super) fn stop_pre_existing_verity_devices(
         "Failed to stop verity device '{}'",
         root_verity_device_path.display()
     ))? {
-        let result = lsblk::run(root_verity_device_path)?;
-        if result.len() != 1 {
-            return Err(anyhow::anyhow!(
-                "Expected exactly one block device for verity device '{}', found {}",
-                root_verity_device_path.display(),
-                result.len()
-            ));
-        }
-        let mount_points = &result[0].mountpoints;
+        let block_device = lsblk::run(&root_verity_device_path)?;
+        debug!(
+            "Unmounting any mounted partitions on verity device '{}'",
+            root_verity_device_path.display()
+        );
+        let mount_points = block_device.mountpoints;
         if !mount_points.is_empty() {
             for mount_point in mount_points.iter().flatten() {
                 mount::umount(mount_point, true)?;
             }
         }
-        veritysetup::close("root").context("Failed to close root verity device")?;
+        debug!(
+            "Deactivating verity device '{}'",
+            root_verity_device_path.display()
+        );
+        veritysetup::close(&updated_device_name).context("Failed to close root verity device")?;
     }
 
     Ok(())
@@ -378,7 +433,7 @@ pub(super) fn stop_pre_existing_verity_devices(
 pub(super) fn validate_compatibility(
     host_config: &HostConfiguration,
     new_root: &Path,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     if check_verity_enabled(new_root.join(GRUB2_CONFIG_RELATIVE_PATH).as_path())? {
         // If verity is enabled, we need to ensure that the verity definition is present in the
         // host configuration; API checks ensure that root verity is present
@@ -388,6 +443,8 @@ pub(super) fn validate_compatibility(
                 "Verity is enabled for the root image, but no verity definition is present in the Host Configuration"
             ));
         }
+
+        Ok(true)
     } else {
         // If verity is not enabled, we need to ensure that the verity definition is not present in
         // the host configuration.
@@ -396,9 +453,9 @@ pub(super) fn validate_compatibility(
                 "Verity is not enabled for the root image, but a verity definition is present in the Host Configuration"
             ));
         }
-    }
 
-    Ok(())
+        Ok(false)
+    }
 }
 
 #[cfg(test)]
@@ -410,6 +467,7 @@ mod test {
     use indoc;
     use maplit::btreemap;
 
+    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use trident_api::{
         config::{Disk, Partition, PartitionSize, PartitionType, Storage},
         status::{self, BlockDeviceContents},
@@ -533,7 +591,7 @@ mod test {
                 storage: Storage {
                     disks: vec![Disk {
                         id: "sdb".into(),
-                        device: "/dev/sdb".into(),
+                        device: TEST_DISK_DEVICE_PATH.into(),
                         partitions: vec![
                             Partition {
                                 id: "boot".into(),
@@ -565,22 +623,22 @@ mod test {
             storage: status::Storage {
                 block_devices: btreemap! {
                     "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb"),
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb2"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb3"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb4"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     },
@@ -682,6 +740,95 @@ mod test {
             "Failed to find overlay device overlay"
         );
     }
+
+    #[test]
+    fn test_configure_device_names() {
+        let mut host_status = HostStatus {
+            spec: config::HostConfiguration {
+                storage: config::Storage {
+                    verity: vec![
+                        config::VerityDevice {
+                            id: "root".into(),
+                            device_name: "root".into(),
+                            data_target_id: "root".into(),
+                            hash_target_id: "root".into(),
+                        },
+                        config::VerityDevice {
+                            id: "boot".into(),
+                            device_name: "boot".into(),
+                            data_target_id: "boot".into(),
+                            hash_target_id: "boot".into(),
+                        },
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: status::Storage {
+                block_devices: btreemap! {
+                    "root".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda1"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot".to_owned() => status::BlockDeviceInfo {
+                        path: PathBuf::from("/dev/sda2"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        configure_device_names(&mut host_status).unwrap();
+
+        assert_eq!(
+            host_status
+                .spec
+                .storage
+                .verity
+                .iter()
+                .find(|vd| vd.id == "root")
+                .unwrap()
+                .device_name,
+            "root"
+        );
+        assert_eq!(
+            host_status
+                .spec
+                .storage
+                .verity
+                .iter()
+                .find(|vd| vd.id == "boot")
+                .unwrap()
+                .device_name,
+            "boot"
+        );
+
+        // test non-existing device
+        let mut host_status_no_device = host_status.clone();
+        host_status_no_device
+            .spec
+            .storage
+            .verity
+            .get_mut(0)
+            .unwrap()
+            .id = "non-existing".into();
+        assert_eq!(
+            configure_device_names(&mut host_status_no_device)
+                .unwrap_err()
+                .to_string(),
+            "Failed to find verity device 'non-existing'"
+        );
+    }
+
+    #[test]
+    fn test_get_updated_device_name() {
+        assert_eq!(get_updated_device_name("root"), "root_new");
+        assert_eq!(get_updated_device_name("foo"), "foo_new");
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -690,23 +837,18 @@ mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
 
-    use std::{
-        fs::{self, read_to_string, File},
-        io::Read,
-        path::PathBuf,
-    };
+    use std::{fs, path::PathBuf};
 
     use maplit::btreemap;
 
     use osutils::{
         files,
-        hashing_reader::HashingReader,
-        image_streamer,
         mount::{self, MountGuard},
         mountpoint,
-        partition_types::DiscoverablePartitionType,
-        repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
-        udevadm,
+        testutils::{
+            repart::TEST_DISK_DEVICE_PATH,
+            verity::{self, VerityGuard},
+        },
     };
     use trident_api::{
         config::{Disk, Partition, PartitionSize, PartitionType, Storage, VerityDevice},
@@ -801,119 +943,16 @@ mod functional_test {
         );
     }
 
-    fn setup_verity_images() -> PathBuf {
-        let cdrom_mount_path = Path::new("/mnt/cdrom");
-        if !cdrom_mount_path.exists() {
-            files::create_dirs(cdrom_mount_path).unwrap();
-        }
-        if !mountpoint::check_is_mountpoint(cdrom_mount_path).unwrap() {
-            mount::mount("/dev/sr0", cdrom_mount_path, "iso9660", &[]).unwrap();
-        }
-
-        let verity_data_path = cdrom_mount_path.join("data/verity_root.rawzst");
-        assert!(verity_data_path.exists());
-
-        let verity_hash_path = cdrom_mount_path.join("data/verity_roothash.rawzst");
-        assert!(verity_hash_path.exists());
-
-        let boot_path = cdrom_mount_path.join("data/verity_boot.rawzst");
-        assert!(boot_path.exists());
-
-        cdrom_mount_path.to_owned()
-    }
-
-    fn stream_zstd(image: &Path, destination: &Path) -> Result<(), Error> {
-        let stream: Box<dyn Read> = Box::new(File::open(image)?);
-        let reader = HashingReader::new(stream);
-        image_streamer::stream_zstd(reader, destination, None)?;
-
-        Ok(())
-    }
-
-    pub struct VerityGuard<'a> {
-        pub device_name: &'a str,
-    }
-
-    impl<'a> Drop for VerityGuard<'a> {
-        fn drop(&mut self) {
-            veritysetup::close(self.device_name).unwrap();
-        }
-    }
-
-    fn setup_verity_volumes() -> String {
-        let cdrom_mount_path = setup_verity_images();
-
-        let block_device_path = Path::new("/dev/sdb");
-
-        let boot_path = cdrom_mount_path.join("data/verity_boot.rawzst");
-        stream_zstd(boot_path.as_path(), block_device_path).unwrap();
-
-        let expected_root_hash = {
-            let boot_mount_dir = tempfile::tempdir().unwrap();
-            // Mount image to temp dir
-            mount::mount(block_device_path, boot_mount_dir.path(), "ext4", &[]).unwrap();
-
-            // Create a mount guard that will automatically unmount when it goes out of scope
-            let _mount_guard = MountGuard {
-                mount_dir: boot_mount_dir.path(),
-            };
-
-            let mut grub_config =
-                GrubConfig::read(boot_mount_dir.path().join("grub2/grub.cfg")).unwrap();
-            grub_config
-                .read_linux_command_line_argument("roothash")
-                .unwrap()
-        };
-
-        let repart = SystemdRepartInvoker::new(block_device_path, RepartMode::Force)
-            .with_partition_entries(vec![
-                RepartPartitionEntry {
-                    partition_type: DiscoverablePartitionType::Xbootldr,
-                    label: None,
-                    size_min_bytes: Some(1024 * 1024 * 1024),
-                    size_max_bytes: None,
-                },
-                RepartPartitionEntry {
-                    partition_type: DiscoverablePartitionType::RootVerity,
-                    label: None,
-                    size_min_bytes: Some(1024 * 1024 * 1024),
-                    size_max_bytes: None,
-                },
-                RepartPartitionEntry {
-                    partition_type: DiscoverablePartitionType::Root,
-                    label: None,
-                    // When min==max==None, it's a grow partition
-                    size_min_bytes: None,
-                    size_max_bytes: None,
-                },
-            ]);
-
-        repart.execute().unwrap();
-        udevadm::settle().unwrap();
-
-        let verity_data_path = cdrom_mount_path.join("data/verity_root.rawzst");
-        let verity_data_block_device_path = Path::new("/dev/sdb3");
-        stream_zstd(verity_data_path.as_path(), verity_data_block_device_path).unwrap();
-        let verity_hash_path = cdrom_mount_path.join("data/verity_roothash.rawzst");
-        let verity_hash_block_device_path = Path::new("/dev/sdb2");
-        stream_zstd(verity_hash_path.as_path(), verity_hash_block_device_path).unwrap();
-        let verity_boot_path = cdrom_mount_path.join("data/verity_boot.rawzst");
-        let verity_boot_block_device_path = Path::new("/dev/sdb1");
-        stream_zstd(verity_boot_path.as_path(), verity_boot_block_device_path).unwrap();
-
-        expected_root_hash
-    }
-
     #[functional_test]
     fn test_get_root_verity_root_hash() {
-        let expected_root_hash = setup_verity_volumes();
+        let expected_root_hash = verity::setup_verity_volumes();
 
         let host_status = HostStatus {
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
                         id: "sdb".to_string(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "boot".to_string(),
@@ -954,22 +993,22 @@ mod functional_test {
             storage: status::Storage {
                 block_devices: btreemap! {
                     "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb"),
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         size: 300,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb1"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb2"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root-verity".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb3"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
@@ -1023,7 +1062,7 @@ mod functional_test {
         {
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(
-                Path::new("/dev/sdb1"),
+                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 mount_dir.path(),
                 "ext4",
                 &["defaults".into()],
@@ -1035,7 +1074,7 @@ mod functional_test {
             };
 
             let grub_config_path = mount_dir.path().join("grub2/grub.cfg");
-            let grub_config = read_to_string(&grub_config_path).unwrap();
+            let grub_config = fs::read_to_string(&grub_config_path).unwrap();
             let grub_config = grub_config.replace("roothash", "foobar");
             files::write_file(grub_config_path, 0o644, grub_config.as_bytes()).unwrap();
         }
@@ -1048,11 +1087,11 @@ mod functional_test {
 
     #[functional_test]
     fn test_setup_root_verity_device() {
-        let _expected_root_hash = setup_verity_volumes();
+        let _expected_root_hash = verity::setup_verity_volumes();
 
-        let verity_device_path = Path::new("/dev/mapper/root");
+        let verity_device_path = Path::new(DEV_MAPPER_PATH).join("root_new");
         if verity_device_path.exists() {
-            veritysetup::close("root").unwrap();
+            veritysetup::close("root_new").unwrap();
         }
 
         assert!(!verity_device_path.exists());
@@ -1062,7 +1101,7 @@ mod functional_test {
                 storage: Storage {
                     disks: vec![Disk {
                         id: "sdb".to_string(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "boot".to_string(),
@@ -1114,27 +1153,27 @@ mod functional_test {
             storage: status::Storage {
                 block_devices: btreemap! {
                     "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb"),
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         size: 300,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb1"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb2"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb3"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb4"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
@@ -1152,14 +1191,14 @@ mod functional_test {
             )
             .unwrap();
             let _verityguard = VerityGuard {
-                device_name: "root",
+                device_name: "root_new",
             };
             assert_eq!(bdi, "root-verity");
             assert!(verity_device_path.exists());
             assert_eq!(
                 vd,
                 BlockDeviceInfo {
-                    path: PathBuf::from("/dev/mapper/root"),
+                    path: PathBuf::from(DEV_MAPPER_PATH).join("root_new"),
                     size: 0,
                     contents: BlockDeviceContents::Initialized,
                 }
@@ -1170,7 +1209,7 @@ mod functional_test {
         {
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(
-                Path::new("/dev/sdb1"),
+                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 mount_dir.path(),
                 "ext4",
                 &["defaults".into()],
@@ -1214,11 +1253,11 @@ mod functional_test {
         assert!(host_status.storage.block_devices.is_empty());
 
         // test root verity device
-        let _expected_root_hash = setup_verity_volumes();
+        let _expected_root_hash = verity::setup_verity_volumes();
 
-        let verity_device_path = Path::new("/dev/mapper/root");
+        let verity_device_path = Path::new(DEV_MAPPER_PATH).join("root_new");
         if verity_device_path.exists() {
-            veritysetup::close("root").unwrap();
+            veritysetup::close("root_new").unwrap();
         }
 
         assert!(!verity_device_path.exists());
@@ -1228,7 +1267,7 @@ mod functional_test {
                 storage: Storage {
                     disks: vec![Disk {
                         id: "sdb".to_string(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "boot".to_string(),
@@ -1280,27 +1319,27 @@ mod functional_test {
             storage: status::Storage {
                 block_devices: btreemap! {
                     "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb"),
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         size: 300,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb1"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb2"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb3"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb4"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
@@ -1314,7 +1353,7 @@ mod functional_test {
             let mut host_status = host_status_golden.clone();
             setup_verity_devices(&host_status_golden.spec, &mut host_status).unwrap();
             let _verityguard = VerityGuard {
-                device_name: "root",
+                device_name: "root_new",
             };
             assert!(verity_device_path.exists());
             assert_eq!(host_status.storage.block_devices.len(), 6);
@@ -1326,7 +1365,7 @@ mod functional_test {
             assert_eq!(
                 verity_device,
                 &BlockDeviceInfo {
-                    path: PathBuf::from("/dev/mapper/root"),
+                    path: PathBuf::from(DEV_MAPPER_PATH).join("root_new"),
                     size: 0,
                     contents: BlockDeviceContents::Initialized,
                 }
@@ -1337,7 +1376,7 @@ mod functional_test {
         {
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(
-                Path::new("/dev/sdb1"),
+                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 mount_dir.path(),
                 "ext4",
                 &["defaults".into()],
@@ -1376,7 +1415,7 @@ mod functional_test {
 
     #[functional_test]
     fn test_update_root_verity_in_grub_config() {
-        setup_verity_volumes();
+        verity::setup_verity_volumes();
 
         // no change
         {
@@ -1386,7 +1425,7 @@ mod functional_test {
             let boot_path = mount_dir.path().join("boot");
             files::create_dirs(&boot_path).unwrap();
             mount::mount(
-                Path::new("/dev/sdb1"),
+                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 &boot_path,
                 "ext4",
                 &["defaults".into()],
@@ -1413,7 +1452,7 @@ mod functional_test {
                 storage: Storage {
                     disks: vec![Disk {
                         id: "sdb".to_string(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "boot".to_string(),
@@ -1465,27 +1504,27 @@ mod functional_test {
             storage: status::Storage {
                 block_devices: btreemap! {
                     "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb"),
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         size: 300,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb1"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb2"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb3"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb4"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
@@ -1500,7 +1539,7 @@ mod functional_test {
             let boot_path = mount_dir.path().join("boot");
             files::create_dirs(&boot_path).unwrap();
             mount::mount(
-                Path::new("/dev/sdb1"),
+                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 &boot_path,
                 "ext4",
                 &["defaults".into()],
@@ -1521,13 +1560,13 @@ mod functional_test {
                 grub_config
                     .read_linux_command_line_argument("systemd.verity_root_data")
                     .unwrap(),
-                "/dev/sdb3"
+                formatcp!("{TEST_DISK_DEVICE_PATH}3")
             );
             assert_eq!(
                 grub_config
                     .read_linux_command_line_argument("systemd.verity_root_hash")
                     .unwrap(),
-                "/dev/sdb2"
+                formatcp!("{TEST_DISK_DEVICE_PATH}2")
             );
             assert_eq!(
                 grub_config
@@ -1539,7 +1578,7 @@ mod functional_test {
                 grub_config
                     .read_linux_command_line_argument("rd.overlayfs_persistent_volume")
                     .unwrap(),
-                "/dev/sdb4"
+                formatcp!("{TEST_DISK_DEVICE_PATH}4")
             );
         }
 
@@ -1549,7 +1588,7 @@ mod functional_test {
             let boot_path = mount_dir.path().join("boot");
             files::create_dirs(&boot_path).unwrap();
             mount::mount(
-                Path::new("/dev/sdb1"),
+                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 &boot_path,
                 "ext4",
                 &["defaults".into()],
@@ -1572,13 +1611,13 @@ mod functional_test {
 
     #[functional_test]
     fn test_stop_pre_existing_verity_devices() {
-        setup_verity_volumes();
+        verity::setup_verity_volumes();
         let host_status_golden = HostStatus {
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
                         id: "sdb".to_string(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "boot".to_string(),
@@ -1630,27 +1669,27 @@ mod functional_test {
             storage: status::Storage {
                 block_devices: btreemap! {
                     "foo".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb"),
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         size: 300,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb1"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb2"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb3"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb4"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                         size: 100,
                         contents: BlockDeviceContents::Unknown,
                     },
@@ -1661,7 +1700,7 @@ mod functional_test {
         };
 
         // nothing mounted
-        let verity_root_path = Path::new("/dev/mapper/root");
+        let verity_root_path = Path::new(DEV_MAPPER_PATH).join("root_new");
         assert!(!verity_root_path.exists());
         stop_pre_existing_verity_devices(&host_status_golden.spec).unwrap();
 
@@ -1681,7 +1720,7 @@ mod functional_test {
             assert!(verity_root_path.exists());
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(
-                verity_root_path,
+                &verity_root_path,
                 mount_dir.path(),
                 "ext4",
                 &["defaults".into(), "ro".into()],
@@ -1698,5 +1737,22 @@ mod functional_test {
         }
 
         // TODO add across disks test
+    }
+
+    #[functional_test]
+    fn test_create_machine_id() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let machine_id_path = root_dir.path().join("etc/machine-id");
+        create_machine_id(root_dir.path()).unwrap();
+        assert!(machine_id_path.exists());
+        let machine_id = fs::read_to_string(&machine_id_path).unwrap();
+        assert_eq!(machine_id.trim().len(), 32);
+
+        create_machine_id(root_dir.path()).unwrap();
+        assert!(machine_id_path.exists());
+        let machine_id2 = fs::read_to_string(machine_id_path).unwrap();
+        assert_eq!(machine_id2.trim().len(), 32);
+
+        assert_ne!(machine_id, machine_id2);
     }
 }

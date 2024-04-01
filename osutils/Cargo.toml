@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.75", features = ["backtrace"] }
 configparser = { version = "3.0.2", features = ["indexmap"] }
+const_format = "0.2.32"
 duct = "0.13.6"
 indoc = "2.0.3"
 inventory = "0.3.14"
@@ -34,5 +35,6 @@ strum = "0.25.0"
 strum_macros = "0.25.0"
 
 [features]
-functional-test = ["pytest"]
+functional-test = ["pytest", "test-utilities"]
 pytest-generator = ["pytest"]
+test-utilities = []

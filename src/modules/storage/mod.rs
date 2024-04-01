@@ -269,7 +269,12 @@ impl Module for StorageModule {
         host_config: &HostConfiguration,
         mount_point: &Path,
     ) -> Result<(), Error> {
-        verity::validate_compatibility(host_config, mount_point)
+        if verity::validate_compatibility(host_config, mount_point)? {
+            debug!("Verity devices are compatible with the current system");
+            verity::create_machine_id(mount_point)?;
+        }
+
+        Ok(())
     }
 
     fn configure(
@@ -277,6 +282,9 @@ impl Module for StorageModule {
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<(), Error> {
+        verity::configure_device_names(host_status)
+            .context("Failed to finalize device names for Verity devices")?;
+
         generate_fstab(
             host_config,
             host_status,
@@ -347,10 +355,11 @@ pub(super) fn initialize_block_devices(
 
     if host_status.reconcile_state == ReconcileState::CleanInstall {
         debug!("Initializing block devices");
-        raid::stop_pre_existing_raid_arrays(host_config)
-            .structured(ManagementError::CleanupRaid)?;
+        // Stop verity before RAID, as verity can sit on top of RAID
         verity::stop_pre_existing_verity_devices(host_config)
             .structured(ManagementError::CleanupVerity)?;
+        raid::stop_pre_existing_raid_arrays(host_config)
+            .structured(ManagementError::CleanupRaid)?;
         create_partitions(host_status, host_config)
             .structured(ManagementError::CreatePartitions)?;
         raid::create_sw_raid(host_status, host_config).structured(ManagementError::CreateRaid)?;
@@ -874,6 +883,7 @@ mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
 
+    use osutils::testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH};
     use trident_api::config::{Disk, Storage};
 
     #[functional_test]
@@ -900,7 +910,10 @@ mod functional_test {
         let disks = get_hostconfig_disk_paths(&host_config).unwrap();
         assert_eq!(
             disks,
-            vec![PathBuf::from("/dev/sda"), PathBuf::from("/dev/sdb")]
+            vec![
+                PathBuf::from(OS_DISK_DEVICE_PATH),
+                PathBuf::from(TEST_DISK_DEVICE_PATH)
+            ]
         );
 
         // fail on missing disk

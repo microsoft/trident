@@ -15,6 +15,7 @@ use tempfile::NamedTempFile;
 
 use trident_api::{
     config::{HostConfiguration, Partition, PartitionType},
+    constants::DEV_MAPPER_PATH,
     status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
@@ -176,7 +177,7 @@ pub fn provision(
             host_status.storage.block_devices.insert(
                 ev.id.clone(),
                 BlockDeviceInfo {
-                    path: Path::new("/dev/mapper").join(&ev.device_name),
+                    path: Path::new(DEV_MAPPER_PATH).join(&ev.device_name),
                     size,
                     contents: BlockDeviceContents::Unknown,
                 },
@@ -196,6 +197,7 @@ fn encrypt_and_open_target(
     device_name: &String,
     key_file: &Path,
 ) -> Result<(), Error> {
+    // TODO: move to osutils
     Command::new("cryptsetup")
         .arg("reencrypt")
         .arg("--encrypt")

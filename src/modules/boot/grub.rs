@@ -234,15 +234,18 @@ mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
 
+    use std::path::PathBuf;
+
+    use const_format::formatcp;
     use maplit::btreemap;
+
     use osutils::{
         lsblk::{self, BlockDevice},
         mkfs,
-        partition_types::DiscoverablePartitionType,
-        repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
+        repart::{RepartMode, SystemdRepartInvoker},
+        testutils::repart::{self, DISK_SIZE, PART1_SIZE, PART2_SIZE, TEST_DISK_DEVICE_PATH},
         udevadm,
     };
-    use std::path::PathBuf;
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk, HostConfiguration, MountPoint, Partition,
@@ -251,39 +254,10 @@ mod functional_test {
         status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage},
     };
 
-    const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
-    const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
-    const DISK_BUS_PATH: &str = "/dev/sdb";
-    const PART2_SIZE: u64 = 2 * 1024 * 1024 * 1024; // 2 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
-
-    fn generate_partition_definition() -> Vec<RepartPartitionEntry> {
-        vec![
-            RepartPartitionEntry {
-                partition_type: DiscoverablePartitionType::Esp,
-                label: None,
-                size_min_bytes: Some(PART1_SIZE),
-                size_max_bytes: Some(PART1_SIZE),
-            },
-            RepartPartitionEntry {
-                partition_type: DiscoverablePartitionType::Root,
-                label: None,
-                size_min_bytes: Some(PART2_SIZE),
-                size_max_bytes: Some(PART2_SIZE),
-            },
-            RepartPartitionEntry {
-                partition_type: DiscoverablePartitionType::LinuxGeneric,
-                label: None,
-                // When min==max==None, it's a grow partition
-                size_min_bytes: None,
-                size_max_bytes: None,
-            },
-        ]
-    }
-
     pub fn test_execute_and_resulting_layout() {
-        let partition_definition = generate_partition_definition();
+        let partition_definition = repart::generate_partition_definition_esp_root_generic();
 
-        let disk_bus_path = PathBuf::from(DISK_BUS_PATH);
+        let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
 
         let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartMode::Force)
             .with_partition_entries(partition_definition.clone());
@@ -311,8 +285,8 @@ mod functional_test {
 
         udevadm::settle().unwrap();
 
-        let expected_block_device_list = vec![BlockDevice {
-            name: "/dev/sdb".into(),
+        let expected_block_device = BlockDevice {
+            name: TEST_DISK_DEVICE_PATH.into(),
             fstype: None,
             fssize: None,
             part_uuid: None,
@@ -321,40 +295,40 @@ mod functional_test {
             mountpoints: vec![None],
             children: Some(vec![
                 BlockDevice {
-                    name: "/dev/sdb1".into(),
+                    name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
                     fstype: None,
                     fssize: None,
                     part_uuid: Some(part1.uuid),
                     size: part1.size,
-                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                     children: None,
                     mountpoints: vec![None],
                 },
                 BlockDevice {
-                    name: "/dev/sdb2".into(),
+                    name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
                     fstype: None,
                     fssize: None,
                     part_uuid: Some(part2.uuid),
                     size: part2.size,
-                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                     children: None,
                     mountpoints: vec![None],
                 },
                 BlockDevice {
-                    name: "/dev/sdb3".into(),
+                    name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
                     fstype: None,
                     fssize: None,
                     part_uuid: Some(part3.uuid),
                     size: part3.size,
-                    parent_kernel_name: Some(PathBuf::from("/dev/sdb")),
+                    parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                     children: None,
                     mountpoints: vec![None],
                 },
             ]),
-        }];
+        };
 
-        let block_device_list = lsblk::run(&disk_bus_path).unwrap();
-        assert_eq!(expected_block_device_list, block_device_list);
+        let block_device = lsblk::run(&disk_bus_path).unwrap();
+        assert_eq!(expected_block_device, block_device);
     }
 
     // Disabled as it breaks other FTs (depends on /dev/sda), task to fix: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6828
@@ -479,7 +453,7 @@ mod functional_test {
                 storage: config::Storage {
                     disks: vec![Disk {
                         id: "foo".into(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "boot".into(),
@@ -515,17 +489,17 @@ mod functional_test {
             storage: Storage {
                 block_devices: btreemap! {
                         "foo".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/dev/sdb"),
+                            path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                             size: 10,
                             contents: BlockDeviceContents::Initialized,
                         },
                         "boot".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/dev/sdb1"),
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                             size: 2,
                             contents: BlockDeviceContents::Initialized,
                         },
                         "root".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/dev/sdb2"),
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                             size: 8,
                             contents: BlockDeviceContents::Initialized,
                         },
@@ -535,7 +509,7 @@ mod functional_test {
             ..Default::default()
         };
 
-        let root_device_path = PathBuf::from("/dev/sdb2");
+        let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
         mkfs::run(&root_device_path, "ext4").unwrap();
 
         // fail on unsupported filesystem
@@ -566,7 +540,7 @@ mod functional_test {
                 storage: config::Storage {
                     disks: vec![Disk {
                         id: "os".into(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "efi".into(),
@@ -614,22 +588,22 @@ mod functional_test {
             storage: Storage {
                 block_devices: btreemap![
                     "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb"),
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         size: 10,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb1"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                         size: 1,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root-a".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb2"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                         size: 9,
                         contents: BlockDeviceContents::Unknown,
                     },
                     "root-b".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sdb3"),
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                         size: 9,
                         contents: BlockDeviceContents::Unknown,
                     },
@@ -639,7 +613,7 @@ mod functional_test {
             ..Default::default()
         };
 
-        let root_device_path = PathBuf::from("/dev/sdb2");
+        let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
         mkfs::run(&root_device_path, "ext4").unwrap();
         update_configs(&host_status).unwrap();
     }
@@ -653,7 +627,7 @@ mod functional_test {
                 storage: config::Storage {
                     disks: vec![Disk {
                         id: "foo".into(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "boot".into(),
@@ -681,17 +655,17 @@ mod functional_test {
             storage: Storage {
                 block_devices: btreemap! {
                         "foo".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/dev/sdb"),
+                            path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                             size: 10,
                             contents: BlockDeviceContents::Initialized,
                         },
                         "boot".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/dev/sdb1"),
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                             size: 2,
                             contents: BlockDeviceContents::Initialized,
                         },
                         "root".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/dev/sdb2"),
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                             size: 8,
                             contents: BlockDeviceContents::Initialized,
                         },
@@ -717,7 +691,7 @@ mod functional_test {
                 storage: config::Storage {
                     disks: vec![Disk {
                         id: "foo".into(),
-                        device: PathBuf::from("/dev/sdb"),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
                         partitions: vec![
                             Partition {
                                 id: "boot".into(),
@@ -745,12 +719,12 @@ mod functional_test {
             storage: Storage {
                 block_devices: btreemap! {
                         "foo".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/dev/sdb"),
+                            path: PathBuf::from(TEST_DISK_DEVICE_PATH),
                             size: 10,
                             contents: BlockDeviceContents::Initialized,
                         },
                         "boot".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/dev/sdb1"),
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                             size: 2,
                             contents: BlockDeviceContents::Initialized,
                         },

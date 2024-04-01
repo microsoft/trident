@@ -91,6 +91,10 @@ pub const TRIDENT_OVERLAY_RELATIVE_PATH: &str = "var/lib/trident-overlay";
 /// Expected to be on top of A/B update volume pair.
 pub const TRIDENT_OVERLAY_PATH: &str = formatcp!("/{TRIDENT_OVERLAY_RELATIVE_PATH}");
 
+/// The path to the root of the freshly deployed (from provisioning OS) or
+/// updated OS (from runtime OS). To be used when /mnt/newroot is not available.
+pub const UPDATE_ROOT_FALLBACK_PATH: &str = formatcp!("{TRIDENT_OVERLAY_PATH}/newroot");
+
 // /etc overlay related path constants
 
 /// Lower directory relative path (etc).
@@ -101,3 +105,6 @@ pub const TRIDENT_OVERLAY_WORK_RELATIVE_PATH: &str = "etc/work";
 
 /// Upper directory relative path (upper).
 pub const TRIDENT_OVERLAY_UPPER_RELATIVE_PATH: &str = "etc/upper";
+
+/// Dev Mapper path
+pub const DEV_MAPPER_PATH: &str = "/dev/mapper";

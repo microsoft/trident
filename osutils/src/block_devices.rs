@@ -27,22 +27,17 @@ pub fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBu
 
 /// Get the canonicalized path of a disk for a given partition
 pub fn get_disk_for_partition(partition: &Path) -> Result<PathBuf, Error> {
-    let partition_block_device_list =
+    let partition_block_device =
         lsblk::run(partition).context("Failed to get partition metadata")?;
-    if partition_block_device_list.len() != 1 {
-        bail!(
-            "Failed to get disk for partition: {:?}, unexpected number of results returned",
-            partition
-        );
-    }
 
-    let parent_kernel_name = &partition_block_device_list[0]
-        .parent_kernel_name
-        .as_ref()
-        .context(format!(
-            "Failed to get disk for partition: {:?}, pk_name not found",
-            partition
-        ))?;
+    let parent_kernel_name =
+        &partition_block_device
+            .parent_kernel_name
+            .as_ref()
+            .context(format!(
+                "Failed to get disk for partition: {:?}, pk_name not found",
+                partition
+            ))?;
 
     Ok(PathBuf::from(parent_kernel_name))
 }

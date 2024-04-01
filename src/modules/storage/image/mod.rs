@@ -1,13 +1,13 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
 use reqwest::Url;
 use uuid::Uuid;
 
-use osutils::{container, e2fsck, resize2fs, tune2fs};
+use osutils::{container, e2fsck, resize2fs, tune2fs, veritysetup};
 use trident_api::{
-    config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
+    config::{AbUpdate, HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::TridentResultExt,
     status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, ReconcileState},
@@ -15,6 +15,8 @@ use trident_api::{
 };
 
 use crate::modules::{self, storage::tabfile};
+
+use super::verity;
 
 pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
@@ -350,7 +352,20 @@ pub(crate) fn get_undeployed_images<'a>(
 }
 
 pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Error> {
-    // If running in a container, look for the host root mount point
+    update_root_device_path(host_status)?;
+
+    // if a/b update is enabled
+    if host_status.spec.storage.ab_update.is_some()
+        && host_status.reconcile_state != ReconcileState::CleanInstall
+    {
+        debug!("A/B update is enabled");
+        update_active_volume(host_status)?;
+    }
+
+    Ok(())
+}
+
+fn update_root_device_path(host_status: &mut HostStatus) -> Result<(), Error> {
     let root_mount_path = if container::is_running_in_container()
         .unstructured("Failed to determine wheter running in a container")?
     {
@@ -358,7 +373,6 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
     } else {
         Path::new(ROOT_MOUNT_POINT_PATH).to_path_buf()
     };
-    // update root_device_path of the active root volume
     host_status.storage.root_device_path = Some(
         tabfile::get_device_path(Path::new("/proc/mounts"), root_mount_path.as_path())
             .context("Failed to find root mount point")?,
@@ -367,68 +381,136 @@ pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Er
         "Using root device path: {:?}",
         host_status.storage.root_device_path
     );
-
-    if let Some((volume_a_path, volume_b_path)) = get_root_ab_volumes(host_status) {
-        // update the active volume in the a/b scheme based on what
-        // is the current root volume
-        let root_device_path = host_status
-            .storage
-            .root_device_path
-            .as_ref()
-            .context("No root device")?;
-
-        // TODO: better error handling if canonicalize fails
-        host_status.storage.ab_active_volume = if &volume_a_path.canonicalize()? == root_device_path
-        {
-            Some(AbVolumeSelection::VolumeA)
-        } else if &volume_b_path.canonicalize()? == root_device_path {
-            Some(AbVolumeSelection::VolumeB)
-        } else {
-            // To prevent data loss, abort if we cannot find the
-            // matching root volume outside of clean install
-            if host_status.reconcile_state != ReconcileState::CleanInstall {
-                bail!("No matching root volume found");
-            }
-            None
-        };
-        debug!("Active volume: {:?}", host_status.storage.ab_active_volume);
-    } else {
-        host_status.storage.ab_active_volume = None;
-    }
-
     Ok(())
 }
 
-fn get_root_ab_volumes(host_status: &HostStatus) -> Option<(&Path, &Path)> {
-    // if a/b update is enabled
-    let ab_update = &host_status.spec.storage.ab_update.as_ref()?;
+fn update_active_volume(host_status: &mut HostStatus) -> Result<(), Error> {
+    let ab_update = &host_status
+        .spec
+        .storage
+        .ab_update
+        .as_ref()
+        .context("No A/B update found")?;
 
-    // and mount points have a reference to root volume
     let root_device_id = host_status
         .spec
         .storage
         .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
-        .map(|m| &m.target_id)?;
+        .map(|m| &m.target_id)
+        .context("No mount point for root volume found")?;
+    debug!("Root device id: {:?}", root_device_id);
 
-    // and one of the a/b update volumes points to the root volume
+    let ((volume_a_path, volume_b_path), root_device_path) =
+        if let Some(root_verity_device) = host_status.storage.block_devices.get(root_device_id) {
+            debug!("Root verity device: {:?}", root_verity_device);
+            get_verity_data_volume_pair_paths(host_status, ab_update, root_device_id)
+                .context("Failed to find root verity data volume pair")?
+        } else {
+            get_plain_volume_pair_paths(host_status, ab_update, root_device_id)
+                .context("Failed to find root volume pair")?
+        };
+
+    host_status.storage.ab_active_volume = if volume_a_path
+        .canonicalize()
+        .context(format!("Failed to find path '{}'", volume_a_path.display()))?
+        == root_device_path
+    {
+        debug!("Active volume is A");
+        Some(AbVolumeSelection::VolumeA)
+    } else if volume_b_path
+        .canonicalize()
+        .context(format!("Failed to find path '{}'", volume_a_path.display()))?
+        == root_device_path
+    {
+        debug!("Active volume is B");
+        Some(AbVolumeSelection::VolumeB)
+    } else {
+        debug!("Unrecognized active volume");
+        // To prevent data loss, abort if we cannot find the
+        // matching root volume outside of clean install
+        if host_status.reconcile_state != ReconcileState::CleanInstall {
+            bail!("No matching root volume found");
+        }
+        None
+    };
+
+    debug!("Active volume: {:?}", host_status.storage.ab_active_volume);
+
+    Ok(())
+}
+
+fn get_plain_volume_pair_paths(
+    host_status: &HostStatus,
+    ab_update: &AbUpdate,
+    root_device_id: &String,
+) -> Result<((PathBuf, PathBuf), PathBuf), Error> {
     let root_device_pair = ab_update
         .volume_pairs
         .iter()
-        .find(|p| &p.id == root_device_id)?;
+        .find(|p| &p.id == root_device_id)
+        .context("No volume pair for root volume found")?;
+    debug!("Root device pair: {:?}", root_device_pair);
 
-    // and both volumes are initialized
     let volume_a_path = &host_status
         .storage
         .block_devices
-        .get(&root_device_pair.volume_a_id)?
+        .get(&root_device_pair.volume_a_id)
+        .context("Failed to get block device for volume A")?
         .path;
     let volume_b_path = &host_status
         .storage
         .block_devices
-        .get(&root_device_pair.volume_b_id)?
+        .get(&root_device_pair.volume_b_id)
+        .context("Failed to get block device for volume B")?
         .path;
 
-    Some((volume_a_path, volume_b_path))
+    let root_device_path = host_status
+        .storage
+        .root_device_path
+        .clone()
+        .context("No root device path found")?;
+    debug!("Root device path: {:?}", root_device_path);
+
+    Ok((
+        (volume_a_path.clone(), volume_b_path.clone()),
+        root_device_path,
+    ))
+}
+
+fn get_verity_data_volume_pair_paths(
+    host_status: &HostStatus,
+    ab_update: &AbUpdate,
+    root_device_id: &String,
+) -> Result<((PathBuf, PathBuf), PathBuf), Error> {
+    let root_verity_device_config = host_status
+        .spec
+        .storage
+        .verity
+        .iter()
+        .find(|vd| &vd.id == root_device_id)
+        .context("Failed to find root verity device config")?;
+    let root_data_device_pair = ab_update
+        .volume_pairs
+        .iter()
+        .find(|vp| vp.id == root_verity_device_config.data_target_id)
+        .context("No volume pair for root data device found")?;
+    let volume_a_path =
+        modules::get_block_device(host_status, &root_data_device_pair.volume_a_id, false)
+            .context("Failed to get block device for data volume A")?
+            .path;
+    let volume_b_path =
+        modules::get_block_device(host_status, &root_data_device_pair.volume_b_id, false)
+            .context("Failed to get block device for data volume B")?
+            .path;
+    let root_verity_status = veritysetup::status(
+        verity::get_updated_device_name(&root_verity_device_config.device_name).as_str(),
+    )
+    .context("Failed to get verity status")?;
+
+    Ok((
+        (volume_a_path, volume_b_path),
+        root_verity_status.data_device_path,
+    ))
 }
 
 pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfiguration) -> bool {
@@ -1182,14 +1264,29 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+    use const_format::formatcp;
     use pytest_gen::functional_test;
 
-    use osutils::{blkid, mkfs};
+    use std::path::PathBuf;
+
+    use maplit::btreemap;
+
+    use osutils::{
+        blkid, mkfs,
+        testutils::{
+            repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
+            verity::{self, VerityGuard},
+        },
+    };
+    use trident_api::{
+        config::{self, AbVolumePair, Disk, MountPoint, Partition},
+        status::Storage,
+    };
 
     /// Validates that run() correctly assigns a new UUID to the filesystem.
     #[functional_test(feature = "helpers")]
     fn test_update_fs_uuid() {
-        let block_device_path = Path::new("/dev/sdb");
+        let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
         // Create a new ext4 filesystem on /dev/sdb
         mkfs::run(block_device_path, "ext4").unwrap();
 
@@ -1201,5 +1298,639 @@ mod functional_test {
 
         // Assert that the UUIDs match
         assert_eq!(fs_uuid, new_uuid);
+    }
+
+    #[functional_test]
+    fn test_update_root_device_path() {
+        let mut host_status = HostStatus {
+            ..Default::default()
+        };
+
+        update_root_device_path(&mut host_status).unwrap();
+        assert_eq!(
+            host_status.storage.root_device_path,
+            Some(PathBuf::from("/dev/sda2"))
+        );
+    }
+
+    #[functional_test]
+    fn test_get_plain_volume_pair_paths() {
+        let mut host_status = HostStatus {
+            storage: Storage {
+                ab_active_volume: Some(AbVolumeSelection::VolumeA),
+                ..Default::default()
+            },
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "root".to_string(),
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        }],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            get_plain_volume_pair_paths(
+                &host_status,
+                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &"root".to_string()
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
+            "Failed to get block device for volume A"
+        );
+
+        host_status.spec.storage.disks = vec![Disk {
+            id: "os".to_owned(),
+            device: PathBuf::from("/dev/sda"),
+            partition_table_type: config::PartitionTableType::Gpt,
+            adopted_partitions: vec![],
+            partitions: vec![Partition {
+                id: "root-a".to_owned(),
+                partition_type: PartitionType::Root,
+                size: config::PartitionSize::Fixed(100),
+            }],
+        }];
+        host_status.storage.block_devices.insert(
+            "root-a".to_string(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/sda1"),
+                size: 100,
+                contents: BlockDeviceContents::Initialized,
+            },
+        );
+
+        assert_eq!(
+            get_plain_volume_pair_paths(
+                &host_status,
+                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &"root".to_string()
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
+            "Failed to get block device for volume B"
+        );
+
+        host_status
+            .spec
+            .storage
+            .disks
+            .iter_mut()
+            .find(|d| d.id == "os")
+            .unwrap()
+            .partitions
+            .push(Partition {
+                id: "root-b".to_owned(),
+                partition_type: PartitionType::Root,
+                size: config::PartitionSize::Fixed(100),
+            });
+        host_status.storage.block_devices.insert(
+            "root-b".to_string(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/sda2"),
+                size: 100,
+                contents: BlockDeviceContents::Initialized,
+            },
+        );
+
+        assert_eq!(
+            get_plain_volume_pair_paths(
+                &host_status,
+                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &"root".to_string()
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
+            "No root device path found"
+        );
+
+        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda"));
+
+        assert_eq!(
+            get_plain_volume_pair_paths(
+                &host_status,
+                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &"root".to_string()
+            )
+            .unwrap(),
+            (
+                (PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")),
+                PathBuf::from("/dev/sda")
+            )
+        );
+
+        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda1"));
+
+        assert_eq!(
+            get_plain_volume_pair_paths(
+                &host_status,
+                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &"root".to_string()
+            )
+            .unwrap(),
+            (
+                (PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")),
+                PathBuf::from("/dev/sda1")
+            )
+        );
+
+        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda2"));
+
+        assert_eq!(
+            get_plain_volume_pair_paths(
+                &host_status,
+                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &"root".to_string()
+            )
+            .unwrap(),
+            (
+                (PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")),
+                PathBuf::from("/dev/sda2")
+            )
+        );
+    }
+
+    #[functional_test]
+    fn test_get_verity_data_volume_pair_paths() {
+        let mut ab_update = AbUpdate {
+            volume_pairs: vec![],
+        };
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    ab_update: Some(ab_update.clone()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to find root verity device config"
+        );
+
+        host_status.spec = HostConfiguration {
+            storage: config::Storage {
+                verity: vec![config::VerityDevice {
+                    id: "root-id".to_string(),
+                    device_name: "root".to_string(),
+                    data_target_id: "root-data".to_string(),
+                    hash_target_id: "root-hash".to_string(),
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No volume pair for root data device found"
+        );
+
+        ab_update.volume_pairs = vec![
+            AbVolumePair {
+                id: "root-data".to_string(),
+                volume_a_id: "root-data-a".to_string(),
+                volume_b_id: "root-data-b".to_string(),
+            },
+            AbVolumePair {
+                id: "root-hash".to_string(),
+                volume_a_id: "root-hash-a".to_string(),
+                volume_b_id: "root-hash-b".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to get block device for data volume A"
+        );
+
+        host_status.spec.storage.disks = vec![Disk {
+            id: "os".into(),
+            device: PathBuf::from("/dev/sda"),
+            partition_table_type: config::PartitionTableType::Gpt,
+            adopted_partitions: vec![],
+            partitions: vec![Partition {
+                id: "root-data-a".to_owned(),
+                partition_type: PartitionType::Root,
+                size: config::PartitionSize::Fixed(100),
+            }],
+        }];
+        host_status.storage.block_devices.insert(
+            "root-data-a".to_string(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/sda1"),
+                size: 100,
+                contents: BlockDeviceContents::Initialized,
+            },
+        );
+
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to get block device for data volume B"
+        );
+
+        host_status.spec.storage.disks[0]
+            .partitions
+            .push(Partition {
+                id: "root-data-b".to_owned(),
+                partition_type: PartitionType::Root,
+                size: config::PartitionSize::Fixed(100),
+            });
+        host_status.storage.block_devices.insert(
+            "root-data-b".to_string(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/sda2"),
+                size: 100,
+                contents: BlockDeviceContents::Initialized,
+            },
+        );
+
+        let _ = veritysetup::close("root");
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Process output:\nstdout:\n/dev/mapper/root_new is inactive.\n\n"
+        );
+
+        // now try the same, against actual verity volumes
+        let expected_root_hash = verity::setup_verity_volumes();
+
+        let verity_device_path = Path::new("/dev/mapper/root_new");
+        if verity_device_path.exists() {
+            veritysetup::close("root_new").unwrap();
+        }
+
+        let host_status = HostStatus {
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".into() => BlockDeviceInfo {
+                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot".into() => BlockDeviceInfo {
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-data-a".into() => BlockDeviceInfo {
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-hash-a".into() => BlockDeviceInfo {
+                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "boot2".into() => BlockDeviceInfo {
+                        path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-data-b".into() => BlockDeviceInfo {
+                        path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root-hash-b".into() => BlockDeviceInfo {
+                        path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                    "root".into() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/mapper/root"),
+                        size: 0,
+                        contents: BlockDeviceContents::Unknown,
+                    },
+                },
+                ab_active_volume: Some(AbVolumeSelection::VolumeA),
+                ..Default::default()
+            },
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    verity: vec![config::VerityDevice {
+                        id: "root-id".to_string(),
+                        device_name: "root".to_string(),
+                        data_target_id: "root-data".to_string(),
+                        hash_target_id: "root-hash".to_string(),
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Process output:\nstdout:\n/dev/mapper/root_new is inactive.\n\n"
+        );
+
+        // now open the verity and we should get further
+        veritysetup::open(
+            formatcp!("{TEST_DISK_DEVICE_PATH}3"),
+            "root_new",
+            formatcp!("{TEST_DISK_DEVICE_PATH}2"),
+            &expected_root_hash,
+        )
+        .unwrap();
+        let _verityguard = VerityGuard {
+            device_name: "root_new",
+        };
+
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+                .unwrap(),
+            (
+                (
+                    PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                    PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                ),
+                PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
+            )
+        );
+
+        // confirm that B is returned as well
+        ab_update.volume_pairs[0].volume_a_id = "root-data-b".to_string();
+        ab_update.volume_pairs[0].volume_b_id = "root-data-a".to_string();
+
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+                .unwrap(),
+            (
+                (
+                    PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                    PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                ),
+                PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
+            )
+        );
+    }
+
+    #[functional_test]
+    fn test_update_active_volume() {
+        // Missing ab_update
+        let mut host_status = HostStatus {
+            ..Default::default()
+        };
+        assert_eq!(
+            update_active_volume(&mut host_status)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No A/B update found"
+        );
+
+        // Missing root mount point
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![AbVolumePair {
+                id: "rootq".to_string(),
+                volume_a_id: "root-a".to_string(),
+                volume_b_id: "root-b".to_string(),
+            }],
+        });
+
+        assert_eq!(
+            update_active_volume(&mut host_status)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No mount point for root volume found"
+        );
+
+        // Missing volume pair for root mount point
+        host_status.spec.storage.mount_points = vec![MountPoint {
+            target_id: "root".to_string(),
+            filesystem: "ext4".to_string(),
+            options: vec![],
+            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+        }];
+
+        assert_eq!(
+            update_active_volume(&mut host_status)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No volume pair for root volume found"
+        );
+
+        // Missing block device for volume A
+        host_status.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![AbVolumePair {
+                id: "root".to_string(),
+                volume_a_id: "root-a".to_string(),
+                volume_b_id: "root-b".to_string(),
+            }],
+        });
+
+        assert_eq!(
+            update_active_volume(&mut host_status)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to get block device for volume A"
+        );
+
+        // Missing block device for volume B
+        host_status.storage.block_devices = btreemap! {
+            "root-a".to_owned() => BlockDeviceInfo {
+                path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}15")),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            },
+        };
+
+        assert_eq!(
+            update_active_volume(&mut host_status)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to get block device for volume B"
+        );
+
+        // Missing root device path
+        host_status.storage.block_devices.insert(
+            "root-b".to_owned(),
+            BlockDeviceInfo {
+                path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            },
+        );
+
+        assert_eq!(
+            update_active_volume(&mut host_status)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No root device path found"
+        );
+
+        // Volume A path cannot be resolved
+        host_status.storage.root_device_path =
+            Some(PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")));
+
+        assert_eq!(
+            update_active_volume(&mut host_status)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No such file or directory (os error 2)"
+        );
+
+        // A or B paths do not match the root volume path
+        host_status
+            .storage
+            .block_devices
+            .get_mut("root-a")
+            .unwrap()
+            .path = PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
+
+        assert_eq!(
+            update_active_volume(&mut host_status)
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "No matching root volume found"
+        );
+
+        // None when clean install
+        host_status.reconcile_state = ReconcileState::CleanInstall;
+
+        update_active_volume(&mut host_status).unwrap();
+        assert_eq!(host_status.storage.ab_active_volume, None);
+
+        // Volume A is the root device path
+        host_status.storage.root_device_path =
+            Some(PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")));
+        update_active_volume(&mut host_status).unwrap();
+        assert_eq!(
+            host_status.storage.ab_active_volume,
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        // Volume B is the root device path
+        host_status.storage.root_device_path =
+            Some(PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")));
+        update_active_volume(&mut host_status).unwrap();
+        assert_eq!(
+            host_status.storage.ab_active_volume,
+            Some(AbVolumeSelection::VolumeB)
+        );
+
+        // verity tests
+        let expected_root_hash = verity::setup_verity_volumes();
+
+        let verity_device_path = Path::new("/dev/mapper/root_new");
+        if verity_device_path.exists() {
+            veritysetup::close("root_new").unwrap();
+        }
+        veritysetup::open(
+            formatcp!("{TEST_DISK_DEVICE_PATH}3"),
+            "root_new",
+            formatcp!("{TEST_DISK_DEVICE_PATH}2"),
+            &expected_root_hash,
+        )
+        .unwrap();
+        let _verityguard = VerityGuard {
+            device_name: "root_new",
+        };
+
+        host_status.storage.block_devices = btreemap! {
+            "root-a".to_owned() => BlockDeviceInfo {
+                path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            },
+            "root-b".to_owned() => BlockDeviceInfo {
+                path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            },
+        };
+        host_status.storage.root_device_path =
+            Some(PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")));
+
+        update_active_volume(&mut host_status).unwrap();
+        assert_eq!(
+            host_status.storage.ab_active_volume,
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        host_status.storage.root_device_path =
+            Some(PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")));
+
+        update_active_volume(&mut host_status).unwrap();
+        assert_eq!(
+            host_status.storage.ab_active_volume,
+            Some(AbVolumeSelection::VolumeB)
+        );
+
+        host_status.storage.block_devices.insert(
+            "root".to_string(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/mapper/root"),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            },
+        );
+        host_status.spec.storage.verity = vec![config::VerityDevice {
+            id: "root".to_string(),
+            device_name: "root".to_string(),
+            data_target_id: "root-data".to_string(),
+            hash_target_id: "root-hash".to_string(),
+        }];
+        host_status.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![
+                AbVolumePair {
+                    id: "root-data".to_string(),
+                    volume_a_id: "root-a".to_string(),
+                    volume_b_id: "root-b".to_string(),
+                },
+                AbVolumePair {
+                    id: "root-hash".to_string(),
+                    volume_a_id: "root-hash-a".to_string(),
+                    volume_b_id: "root-hash-b".to_string(),
+                },
+            ],
+        });
+
+        update_active_volume(&mut host_status).unwrap();
+        assert_eq!(
+            host_status.storage.ab_active_volume,
+            Some(AbVolumeSelection::VolumeA)
+        );
     }
 }

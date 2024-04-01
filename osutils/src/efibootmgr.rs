@@ -1,6 +1,6 @@
 use std::{
     ffi::OsStr,
-    path::{Path, PathBuf, MAIN_SEPARATOR},
+    path::{Path, MAIN_SEPARATOR},
     process::Command,
 };
 
@@ -8,9 +8,7 @@ use crate::exe::RunAndCheck;
 use anyhow::{bail, Context, Error};
 use regex::Regex;
 
-use trident_api::constants::{
-    ESP_MOUNT_POINT_PATH, ESP_RELATIVE_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
-};
+use trident_api::constants::{ESP_MOUNT_POINT_PATH, ESP_RELATIVE_MOUNT_POINT_PATH};
 
 /// Represents an entry in the EFI Boot Manager.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -137,6 +135,7 @@ pub fn create_boot_entry(
     entry_label: impl AsRef<OsStr>,
     disk_path: impl AsRef<Path>,
     bootloader_path: impl AsRef<Path>,
+    new_root_path: impl AsRef<Path>,
 ) -> Result<(), Error> {
     // Check if disk path is valid
     if !disk_path.as_ref().exists() {
@@ -147,7 +146,7 @@ pub fn create_boot_entry(
     }
     // Check if the path exists in root mount point
     let mut valid = is_valid_bootloader_path(
-        ESP_MOUNT_POINT_PATH,
+        Path::new(ESP_MOUNT_POINT_PATH),
         bootloader_path.as_ref().to_str().context(format!(
             "Failed to convert bootloader path '{}' to str",
             entry_label.as_ref().to_string_lossy()
@@ -157,7 +156,10 @@ pub fn create_boot_entry(
     if !valid {
         // Check if the path exists in new root mount point as we should support creating boot entry in new root mount point before transition.
         valid = is_valid_bootloader_path(
-            &format!("{}/{}", UPDATE_ROOT_PATH, ESP_RELATIVE_MOUNT_POINT_PATH),
+            new_root_path
+                .as_ref()
+                .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                .as_path(),
             bootloader_path.as_ref().to_str().context(format!(
                 "Failed to convert bootloader path {} to str",
                 bootloader_path.as_ref().to_string_lossy(),
@@ -241,9 +243,8 @@ pub fn delete_boot_entry(entry_number: &str) -> Result<(), Error> {
         .context("Failed to delete boot entry through efibootmgr")
 }
 
-fn is_valid_bootloader_path(esp_path: &str, bootloader_path: &str) -> bool {
-    let full_path =
-        PathBuf::from(esp_path).join(bootloader_path.trim_start_matches(MAIN_SEPARATOR));
+fn is_valid_bootloader_path(esp_path: &Path, bootloader_path: &str) -> bool {
+    let full_path = esp_path.join(bootloader_path.trim_start_matches(MAIN_SEPARATOR));
 
     full_path.exists() && full_path.is_file()
 }
@@ -341,10 +342,7 @@ mod tests {
         let mut file = File::create(bootloader_path).unwrap();
         writeln!(file, "EFI").unwrap();
 
-        assert!(is_valid_bootloader_path(
-            esp_path.to_str().unwrap(),
-            bootloader_file_name
-        ));
+        assert!(is_valid_bootloader_path(esp_path, bootloader_file_name));
     }
 
     #[test]
@@ -353,10 +351,7 @@ mod tests {
         let esp_path = temp_dir.path();
         let bootloader_file_name = "nonexistent.efi";
 
-        assert!(!is_valid_bootloader_path(
-            esp_path.to_str().unwrap(),
-            bootloader_file_name
-        ));
+        assert!(!is_valid_bootloader_path(esp_path, bootloader_file_name));
     }
 
     #[test]
@@ -368,10 +363,7 @@ mod tests {
 
         fs::create_dir(bootloader_path).unwrap();
 
-        assert!(!is_valid_bootloader_path(
-            esp_path.to_str().unwrap(),
-            bootloader_dir_name
-        ));
+        assert!(!is_valid_bootloader_path(esp_path, bootloader_dir_name));
     }
 }
 
@@ -381,11 +373,16 @@ mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
 
+    use const_format::formatcp;
+    use tempfile;
+
+    use crate::testutils::repart::OS_DISK_DEVICE_PATH;
+
     #[functional_test(feature = "helpers")]
     fn test_efi_bootmgr_pass() {
         // Define the boot entry label, disk path and bootloader path
         let entry_label = "TestBoot1";
-        let disk_path = "/dev/sda1";
+        let disk_path = formatcp!("{OS_DISK_DEVICE_PATH}1");
         let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
 
         // Get the initial boot order
@@ -394,7 +391,8 @@ mod functional_test {
         let boot_order_initial = bootmgr_output_initial.get_boot_order().unwrap();
 
         // Create a boot entry
-        create_boot_entry(entry_label, disk_path, bootloader_path).unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
         let bootmgr_output1 = list_and_parse_bootmgr_entries().unwrap();
 
         // Get the boot entry number of the boot entry that is created above
@@ -435,11 +433,12 @@ mod functional_test {
     fn test_efi_bootmgr_delete_boot_next_fail() {
         // Define the boot entry label, disk path and bootloader path
         let entry_label = "TestBoot1";
-        let disk_path = "/dev/sda1";
+        let disk_path = formatcp!("{OS_DISK_DEVICE_PATH}1");
         let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
 
         // Create a boot entry
-        create_boot_entry(entry_label, disk_path, bootloader_path).unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
         let bootmgr_output1 = list_and_parse_bootmgr_entries().unwrap();
 
         // Get the boot entry number of the boot entry that is created above
@@ -472,14 +471,15 @@ mod functional_test {
         // Create a boot entry TestBoot1
         // Define the boot entry label, disk path and bootloader path
         let entry_label = "TestBoot1";
-        let disk_path = "/dev/sda1";
+        let disk_path = formatcp!("{OS_DISK_DEVICE_PATH}1");
         let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
 
         // Create a boot entry
-        create_boot_entry(entry_label, disk_path, bootloader_path).unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
 
         // Creating a boot entry with the same label should fail
-        let result = create_boot_entry(entry_label, disk_path, bootloader_path);
+        let result = create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path());
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
             format!(
@@ -492,7 +492,12 @@ mod functional_test {
         // Try creating an entry with invalid bootloader path
         let bootloader_path_invalid: &Path = Path::new(r"/doesnotexist/bootx64.efi");
         // Creating a boot entry with invalid bootloader path should fail
-        let result = create_boot_entry(entry_label, disk_path, bootloader_path_invalid);
+        let result = create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path_invalid,
+            tempdir.path(),
+        );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
             format!(
@@ -505,7 +510,12 @@ mod functional_test {
         // Try creating an entry with invalid disk path
         let disk_path_invalid = "/dev/abc";
         // Creating a boot entry with invalid disk path should fail
-        let result = create_boot_entry(entry_label, disk_path_invalid, bootloader_path);
+        let result = create_boot_entry(
+            entry_label,
+            disk_path_invalid,
+            bootloader_path,
+            tempdir.path(),
+        );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
             format!("Disk path '{}' does not exist", disk_path_invalid),

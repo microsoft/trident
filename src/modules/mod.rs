@@ -12,7 +12,7 @@ use log::{debug, error, info};
 
 use trident_api::{
     config::{HostConfiguration, Operations},
-    constants::{self, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
+    constants::{self, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH},
     error::{
         DatastoreError, InitializationError, InternalError, InvalidInputError, ManagementError,
         ModuleError, ReportError, TridentError, TridentResultExt,
@@ -189,11 +189,10 @@ pub(super) fn clean_install(
     prepare(&mut modules, state)?;
 
     info!("Preparing storage to mount new root");
-    let new_root_path = Path::new(UPDATE_ROOT_PATH);
-    let mounts = initialize_new_root(state, host_config, new_root_path)?;
+    let (new_root_path, mounts) = initialize_new_root(state, host_config)?;
 
     info!("Running provision");
-    provision(&mut modules, state, host_config, new_root_path)?;
+    provision(&mut modules, state, host_config, new_root_path.as_path())?;
 
     let datastore_ref = File::create(TRIDENT_DATASTORE_REF_PATH).structured(
         ManagementError::from(DatastoreError::CreateDatastoreRefFile),
@@ -206,7 +205,8 @@ pub(super) fn clean_install(
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
 
     info!("Entering '{}' chroot", new_root_path.display());
-    let chroot = chroot::enter_update_chroot(new_root_path).message("Failed to enter chroot")?;
+    let chroot =
+        chroot::enter_update_chroot(new_root_path.as_path()).message("Failed to enter chroot")?;
     let mut root_device_path = None;
 
     chroot
@@ -220,16 +220,18 @@ pub(super) fn clean_install(
                 datastore_ref,
             )?;
 
-            info!("Running configure");
-            configure(
-                &mut modules,
-                state,
-                host_config,
-                ReconcileState::CleanInstall,
-            )?;
+            // If verity is present, it means that we are currently doing root
+            // verity. For now, we can assume that /etc is readonly, so we setup
+            // a writable overlay for it.
+            let use_overlay = !host_config.storage.verity.is_empty();
 
-            info!("Regenerating initrd");
-            regenerate_initrd()?;
+            info!("Running configure");
+            configure(&mut modules, state, host_config, use_overlay)?;
+
+            {
+                info!("Regenerating initrd");
+                regenerate_initrd(use_overlay)?;
+            }
 
             root_device_path = Some(
                 get_root_block_device_path(state.host_status())
@@ -258,11 +260,15 @@ pub(super) fn clean_install(
     info!("Root device path: {:#?}", root_device_path);
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
-        info!("Unmounting /mnt/newroot");
-        mount_root::unmount_new_root(mounts, new_root_path)?;
+        info!("Unmounting '{}'", new_root_path.display());
+        mount_root::unmount_new_root(mounts, new_root_path.as_path())?;
     } else {
         info!("Performing transition");
-        transition(new_root_path, &root_device_path, state.host_status())?;
+        transition(
+            new_root_path.as_path(),
+            &root_device_path,
+            state.host_status(),
+        )?;
     }
 
     Ok(())
@@ -342,36 +348,39 @@ pub(super) fn update(
     info!("Running prepare");
     prepare(&mut modules, state)?;
 
-    let new_root_path = Path::new(UPDATE_ROOT_PATH);
-
-    let mounts = if let UpdateKind::AbUpdate = update_kind {
+    let (new_root_path, mounts) = if let UpdateKind::AbUpdate = update_kind {
         info!("Preparing storage to mount new root");
-        let mounts = initialize_new_root(state, host_config, new_root_path)?;
+        let (new_root_path, mounts) = initialize_new_root(state, host_config)?;
 
         info!("Running provision");
-        provision(&mut modules, state, host_config, new_root_path)?;
+        provision(&mut modules, state, host_config, new_root_path.as_path())?;
+
+        // If verity is present, it means that we are currently doing root
+        // verity. For now, we can assume that /etc is readonly, so we setup
+        // a writable overlay for it.
+        let use_overlay = !host_config.storage.verity.is_empty();
 
         info!("Entering '{}' chroot", new_root_path.display());
-        chroot::enter_update_chroot(new_root_path)
+        chroot::enter_update_chroot(new_root_path.as_path())
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
-                configure(&mut modules, state, host_config, reconcile_state)?;
+                configure(&mut modules, state, host_config, use_overlay)?;
 
                 info!("Regenerating initrd");
-                regenerate_initrd()
+                regenerate_initrd(use_overlay)
             })
             .message("Failed to execute in chroot")?;
 
-        Some(mounts)
+        (new_root_path, Some(mounts))
     } else {
         info!("Running configure");
-        configure(&mut modules, state, host_config, reconcile_state)?;
+        configure(&mut modules, state, host_config, false)?;
 
         info!("Regenerating initrd");
-        regenerate_initrd()?;
+        regenerate_initrd(false)?;
 
-        None
+        (PathBuf::from(ROOT_MOUNT_POINT_PATH), None)
     };
 
     if let Some(sender) = sender {
@@ -392,7 +401,7 @@ pub(super) fn update(
             if !allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
                 if let Some(mounts) = mounts {
-                    mount_root::unmount_new_root(mounts, new_root_path)?;
+                    mount_root::unmount_new_root(mounts, new_root_path.as_path())?;
                 }
                 return Ok(());
             }
@@ -400,7 +409,11 @@ pub(super) fn update(
             info!("Closing datastore");
             state.close();
             info!("Performing transition");
-            transition(new_root_path, &root_block_device_path, state.host_status())?;
+            transition(
+                new_root_path.as_path(),
+                &root_block_device_path,
+                state.host_status(),
+            )?;
 
             Ok(())
         }
@@ -584,7 +597,7 @@ fn provision(
         debug!("Starting stage 'Provision' for module '{}'", module.name());
         let _etc_overlay_mount = if use_overlay {
             Some(etc_overlay::create(
-                Path::new("/"),
+                Path::new(new_root_path),
                 module.writable_etc_overlay(),
             )?)
         } else {
@@ -606,30 +619,27 @@ fn provision(
 fn initialize_new_root(
     state: &mut DataStore,
     host_config: &HostConfiguration,
-    new_root_path: &Path,
-) -> Result<Vec<PathBuf>, TridentError> {
+) -> Result<(PathBuf, Vec<PathBuf>), TridentError> {
+    let mut new_root_path = Path::new(UPDATE_ROOT_PATH);
+    if mount_root::ensure_mount_directory(new_root_path).is_err() {
+        new_root_path = Path::new(UPDATE_ROOT_FALLBACK_PATH);
+    }
+
     state.try_with_host_status(|host_status| {
         storage::initialize_block_devices(host_status, host_config, new_root_path)
     })?;
     let mounts = state.try_with_host_status(|host_status| {
         mount_root::mount_new_root(host_status, new_root_path)
     })?;
-    Ok(mounts)
+    Ok((new_root_path.to_owned(), mounts))
 }
 
 fn configure(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
-    planned_update: ReconcileState,
+    use_overlay: bool,
 ) -> Result<(), TridentError> {
-    // If verity is present, it means that we are currently doing root
-    // verity. For now, we can assume that /etc is readonly, so we setup
-    // a writable overlay for it.
-    let use_overlay = !host_config.storage.verity.is_empty()
-        && (planned_update == ReconcileState::CleanInstall
-            || planned_update == ReconcileState::UpdateInProgress(UpdateKind::AbUpdate));
-
     for module in modules {
         debug!("Starting stage 'Configure' for module '{}'", module.name());
         // unmount on drop
@@ -655,13 +665,19 @@ fn configure(
 }
 
 /// Regenerates the initrd for the host, using host-specific configuration.
-fn regenerate_initrd() -> Result<(), TridentError> {
+fn regenerate_initrd(use_overlay: bool) -> Result<(), TridentError> {
     // We could autodetect configurations on the fly, but for more predictable
     // behavior and speedier subsequent boots, we will regenerate the host-specific initrd
     // here.
 
     // At the moment, this is needed for RAID, encryption, adding a root
     // password into initrd and to update the hardcoded UUID of the ESP.
+
+    let _etc_overlay_mount = if use_overlay {
+        Some(etc_overlay::create(Path::new("/"), false)?)
+    } else {
+        None
+    };
 
     mkinitrd::execute()
 }
@@ -684,7 +700,7 @@ pub fn reboot() -> Result<(), TridentError> {
 }
 
 fn transition(
-    _mount_path: &Path,
+    new_root_path: &Path,
     _root_block_device_path: &Path,
     host_status: &HostStatus,
 ) -> Result<(), TridentError> {
@@ -700,7 +716,7 @@ fn transition(
     // TODO - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/ delete boot entries
     // TODO - set_boot_entries only if ABUpdate is in state AbUpdateStaged/ CleanInstall
     // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
-    bootentries::call_set_boot_next_and_update_hs(host_status)?;
+    bootentries::call_set_boot_next_and_update_hs(host_status, new_root_path)?;
     //TODO - update ABUpdate state to AbUpdateFinalized
     // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
 
@@ -709,7 +725,7 @@ fn transition(
     // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
     // info!("Performing soft reboot");
     // storage::image::kexec(
-    //     mount_path,
+    //     new_root_path,
     //     &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
     // )
     // .structured(ManagementError::Kexec)
