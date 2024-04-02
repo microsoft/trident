@@ -69,7 +69,11 @@ trait Module: Send {
     // fn dependencies(&self) -> &'static [&'static str];
 
     /// Refresh the host status.
-    fn refresh_host_status(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
+    fn refresh_host_status(
+        &mut self,
+        _host_status: &mut HostStatus,
+        _clean_install: bool,
+    ) -> Result<(), Error> {
         Ok(())
     }
 
@@ -166,7 +170,7 @@ pub(super) fn clean_install(
     let mut modules = MODULES.lock().unwrap();
 
     info!("Refreshing host status");
-    refresh_host_status(&mut modules, state)?;
+    refresh_host_status(&mut modules, state, true)?;
 
     info!("Validating host configuration against system state");
     validate_host_config(&modules, state, host_config, ReconcileState::CleanInstall)?;
@@ -279,7 +283,7 @@ pub(super) fn update(
     let mut modules = MODULES.lock().unwrap();
 
     info!("Refreshing host status");
-    refresh_host_status(&mut modules, state)?;
+    refresh_host_status(&mut modules, state, false)?;
     if let Some(ref mut sender) = sender {
         sender
             .send(Ok(HostStatusState {
@@ -517,12 +521,13 @@ fn get_ab_update_volume(host_status: &HostStatus, active: bool) -> Option<AbVolu
 fn refresh_host_status(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
+    clean_install: bool,
 ) -> Result<(), TridentError> {
     for module in modules {
         debug!("Starting stage 'Refresh' for module '{}'", module.name());
         state.try_with_host_status(|s| {
             module
-                .refresh_host_status(s)
+                .refresh_host_status(s, clean_install)
                 .structured(ManagementError::from(ModuleError::RefreshHostStatus {
                     name: module.name(),
                 }))

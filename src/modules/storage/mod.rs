@@ -178,7 +178,11 @@ impl Module for StorageModule {
         "storage"
     }
 
-    fn refresh_host_status(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
+    fn refresh_host_status(
+        &mut self,
+        host_status: &mut HostStatus,
+        clean_install: bool,
+    ) -> Result<(), Error> {
         // Remove block devices that no longer exist.
         let original_block_devices = host_status.storage.block_devices.clone();
         host_status
@@ -201,7 +205,7 @@ impl Module for StorageModule {
             );
         }
 
-        image::refresh_host_status(host_status)
+        image::refresh_host_status(host_status, clean_install)
             .context("Image submodule failed during refresh_host_status")?;
 
         Ok(())

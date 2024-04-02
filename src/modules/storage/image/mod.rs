@@ -349,15 +349,18 @@ pub(crate) fn get_undeployed_images<'a>(
         .collect()
 }
 
-pub(super) fn refresh_host_status(host_status: &mut HostStatus) -> Result<(), Error> {
+pub(super) fn refresh_host_status(
+    host_status: &mut HostStatus,
+    clean_install: bool,
+) -> Result<(), Error> {
     update_root_device_path(host_status)?;
 
     // if a/b update is enabled
-    if host_status.spec.storage.ab_update.is_some()
-        && host_status.reconcile_state != ReconcileState::CleanInstall
-    {
+    if host_status.spec.storage.ab_update.is_some() && !clean_install {
         debug!("A/B update is enabled");
         update_active_volume(host_status)?;
+    } else {
+        host_status.storage.ab_active_volume = None;
     }
 
     Ok(())
