@@ -1,0 +1,35 @@
+# TRIDENT PIPELINE SELECTOR
+# This template is used to select the pipeline to run based on the targetStage
+# parameter.
+# All pipeline definitions should route through here.
+
+parameters:
+  - name: targetStage
+    type: string
+    default: ""
+    values:
+      - "pr"
+      - "ci"
+      - "pre"
+      - "rel"
+    displayName: "Stage to run"
+
+stages:
+  - ${{ if eq(parameters.targetStage, 'pr') }}:
+      - template: pr-template.yml
+
+  - ${{ if eq(parameters.targetStage, 'ci') }}:
+      - template: e2e-template.yml
+        parameters:
+          stageType: ci
+
+  - ${{ if eq(parameters.targetStage, 'pre') }}:
+      - template: e2e-template.yml
+        parameters:
+          buildPurpose: daily
+          stageType: pre
+
+  - ${{ if eq(parameters.targetStage, 'rel') }}:
+      - template: e2e-template.yml
+        parameters:
+          stageType: rel

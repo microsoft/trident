@@ -1,0 +1,27 @@
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)"
+
+steps:
+  - script: |
+      set -eux
+      emu_package_name=$(grep 'EMU_PACKAGE_NAME ?= [^ ]*' \
+                        ./Makefile | \
+                        sed 's/EMU_PACKAGE_NAME ?= //')
+      echo "##vso[task.setvariable variable=emu_package_name]$emu_package_name"
+
+      emu_package_version=$(grep 'EMU_PACKAGE_VERSION ?= [^ ]*' \
+                            ./Makefile | \
+                            sed 's/EMU_PACKAGE_VERSION ?= //')
+      echo "##vso[task.setvariable variable=emu_package_version]$emu_package_version"
+    displayName: 'Extract and Set EMU Package Variables'
+
+  - task: UniversalPackages@0
+    displayName: 'Download EMU'
+    inputs:
+      command: 'download'
+      downloadDirectory: './artifacts'
+      vstsFeed: 'mariner/MarinerCoreArtifacts'
+      vstsFeedPackage: '$(emu_package_name)'
+      vstsPackageVersion: '$(emu_package_version)'

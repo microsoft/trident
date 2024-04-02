@@ -1,0 +1,175 @@
+parameters:
+  - name: httpProxy
+    type: string
+    default: "http://172.16.1.10:3128"
+
+  - name: noProxy
+    type: string
+    default: "10.96.0.0/12,10.244.0.0/16,172.27.254.0/24,.svc,127.0.0.1,localhost"
+
+  - name: isoHttpdServerIp
+    type: string
+    default: "10.248.0.4"
+
+  - name: bmcIp
+    type: string
+    default: "10.8.3.18"
+
+  - name: oamIp
+    type: string
+    default: "10.8.4.70"
+
+  - name: interfaceForOamIp
+    type: string
+    default: "eno8303"
+
+  - name: oamMacAddress
+    type: string
+    default: "c8:4b:d6:7a:73:c6"
+
+  - name: jobName
+    type: string
+    default: trident_baremetal_tests
+
+  - name: buildPurpose
+    type: string
+    default: "daily"
+    values:
+      - AUTO
+      - daily
+      - pullrequest
+      - post_merge
+      - validation
+
+  - name: updateRuntimeOSTrident
+    type: boolean
+    default: false
+
+  - name: deleteIsoOnCleanup
+    displayName: Delete ISO from HTTP server
+    type: boolean
+    default: true
+
+stages:
+  - stage: BaremetalDeploymentTesting
+    displayName: Baremetal Deployment Testing
+    dependsOn: InstallerISO
+
+    jobs:
+      - template: ../common_tasks/get-tests.yml
+        parameters:
+          buildPurpose: ${{ parameters.buildPurpose }}
+          deploymentEnvironment: bareMetal
+
+      - job: ${{ parameters.jobName }}
+        displayName: Run E2E Test
+        dependsOn: DefineTests
+        timeoutInMinutes: 90
+        pool:
+          type: linux
+          name: mariner-hci-aods-conn-1es-pool
+          hostArchitecture: amd64
+
+        strategy:
+          matrix: $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
+          maxParallel: 1
+
+        variables:
+          - name: TRIDENT_CONFIGURATION_NAME
+            value: $(configuration)
+
+          - name: TRIDENT_SOURCE_DIR
+            value: $(Build.SourcesDirectory)
+
+          - name: ARGUS_TOOLKIT_DIR
+            value: $(Build.SourcesDirectory)/argus-toolkit
+
+          - name: TRIDENT_CONFIG_PATH
+            value: $(TRIDENT_SOURCE_DIR)/e2e_tests/trident_configurations/$(TRIDENT_CONFIGURATION_NAME)
+
+          - name: TRIDENT_CONFIG_FILE
+            value: $(TRIDENT_CONFIG_PATH)/trident-config.yaml
+
+          - name: SSH_KEY_FILE
+            value: $(Pipeline.Workspace)/ssh-key
+
+          - name: ob_outputDirectory
+            value: $(Build.SourcesDirectory)/build
+
+          - name: ob_artifactBaseName
+            value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_deployment_log_$(System.JobAttempt)
+
+          - name: K8S_SANITY_DIR
+            value: $(Build.SourcesDirectory)/platform-tests/k8s-sanity
+
+          - group: baremetal_controller
+
+        steps:
+          - checkout: argus-toolkit
+          - checkout: platform-tests
+
+          - template: baremetal-prep.yml
+            parameters:
+              k8sSanityDir: $(K8S_SANITY_DIR)
+              isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
+              sshKeyFile: $(SSH_KEY_FILE)
+
+          - template: ../../common_tasks/install-clamav.yml
+
+          - template: ../common_tasks/trident-prep.yml
+            parameters:
+              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
+
+          - template: baremetal-update-trident-host-config.yml
+            parameters:
+              isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
+              oamIp: ${{ parameters.oamIp }}
+              sshKeyFile: $(SSH_KEY_FILE)
+              interfaceForOamIp: ${{ parameters.interfaceForOamIp }}
+              tridentConfigFile: $(TRIDENT_CONFIG_FILE)
+
+          - template: baremetal-deploy.yml
+            parameters:
+              jobName: ${{ parameters.jobName }}_$(TRIDENT_CONFIGURATION_NAME)
+              bmcUsername: $(baremetal_controller.bmc_username)
+              bmcPassword: $(baremetal_controller.bmc_password)
+              bmcIp: ${{ parameters.bmcIp }}
+              oamIp: ${{ parameters.oamIp }}
+              oamMacAddress: ${{ parameters.oamMacAddress }}
+              isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
+              noProxy: ${{ parameters.noProxy }}
+              httpProxy: ${{ parameters.httpProxy }}
+              argusToolkitDir: $(ARGUS_TOOLKIT_DIR)
+              k8sSanityDir: $(K8S_SANITY_DIR)
+              hostConfigYaml: $(TRIDENT_CONFIG_FILE)
+              sshKeyFile: $(SSH_KEY_FILE)
+              createInstallerIso: false
+              installerIsoDirectory: $(System.ArtifactsDirectory)/installer-iso/installer-iso
+
+          - ${{ if parameters.deleteIsoOnCleanup }}:
+              - bash: |
+                  set -xe
+
+                  # Add poetry to PATH.
+                  export PATH="$HOME/.local/bin:$PATH"
+
+                  cd $(K8S_SANITY_DIR)
+
+                  # Eject the virtual CD from the BMC and delete the ISO file from the remote store
+                  sudo env "PATH=$PATH" poetry run python3 $(Pipeline.Workspace)/s/platform-tests/bare-metal/scripts/reset.py \
+                    --baremetal-config $(echo $DEPLOYMENT_BMC_CONFIG_FILE | tr -d "'") \
+                    --livecd-httpd-ip ${{ parameters.isoHttpdServerIp }} \
+                    --livecd-httpd-ssh-key $(httpdPrivKey.secureFilePath) \
+                    --iso-filename $(basename $(echo $PATCHED_INSTALLER_ISO | tr -d "'"))
+
+                condition: always()
+                displayName: "Delete generated ISO"
+
+          - template: ../common_tasks/e2e-test-run.yml
+            parameters:
+              buildPurpose: ${{ parameters.buildPurpose }}
+              deploymentEnvironment: bareMetal
+              tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
+              hostIp: ${{ parameters.oamIp }}
+              tridentConfigPath: $(TRIDENT_CONFIG_PATH)

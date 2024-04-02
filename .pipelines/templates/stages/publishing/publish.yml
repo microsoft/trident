@@ -1,0 +1,101 @@
+parameters:
+  - name: "feed"
+    displayName: "Target feed to publish to"
+    type: string
+    default: ECF/Trident
+
+  - name: "stageType"
+    displayName: "Controls whether this is a pre-release or a CI run."
+    type: string
+    default: ci
+    values:
+      - ci
+      - pre
+
+stages:
+  - stage: Publishing
+    dependsOn:
+      - Trident
+      - InstallerISO
+      - ProvisioningOSTemplate
+      - ${{ if eq(parameters.stageType, 'pre') }}:
+          - DeploymentTesting
+          - BaremetalDeploymentTesting
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
+
+    jobs:
+      - job: Publishing
+        displayName: Publish Trident RPMs and Provisioning OS Template ISO to Universal Packages
+        pool:
+          type: linux
+
+        variables:
+          - template: ../../feed-staging-vars.yml
+          - name: ob_outputDirectory
+            value: $(Build.SourcesDirectory)/build
+          - name: "artifactSuffix"
+            ${{ if eq(parameters.stageType, 'ci') }}:
+              value: "${{ variables.stage_ci_suffix }}"
+            ${{ if eq(parameters.stageType, 'pre') }}:
+              value: "${{ variables.stage_pre_suffix }}"
+
+        steps:
+          - script: echo $(Build.BuildNumber)
+            displayName: "Print Trident Version"
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              patterns: |
+                *.iso
+              targetPath: $(Pipeline.Workspace)/provision-template-iso
+              artifactName: provisioning-os-template
+            displayName: "Download Provision Template ISO"
+
+          - task: UniversalPackages@0
+            displayName: "Publish provision-template-iso Universal Package"
+            inputs:
+              command: publish
+              vstsFeedPublish: ${{ parameters.feed }}
+              vstsFeedPackagePublish: "provision-template-iso${{ variables.artifactSuffix }}"
+              publishDirectory: "$(Pipeline.Workspace)/provision-template-iso"
+              versionPublish: $(Build.BuildNumber)
+              versionOption: custom
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              patterns: |
+                pxe-artifacts.zip
+              targetPath: $(Pipeline.Workspace)/pxe-artifacts
+              artifactName: installer-iso
+            displayName: "Download PXE artifacts"
+
+          - task: UniversalPackages@0
+            displayName: "Publish pxe-artifacts Universal Package"
+            inputs:
+              command: publish
+              vstsFeedPublish: ${{ parameters.feed }}
+              vstsFeedPackagePublish: "pxe-artifacts-preview${{ variables.artifactSuffix }}"
+              publishDirectory: "$(Pipeline.Workspace)/pxe-artifacts"
+              versionPublish: $(Build.BuildNumber)
+              versionOption: custom
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              patterns: |
+                *.rpm
+              targetPath: $(Pipeline.Workspace)/rpms
+              artifactName: trident-binaries
+            displayName: "Download Trident RPMs"
+
+          - task: UniversalPackages@0
+            displayName: "Publish rpms Universal Package"
+            inputs:
+              command: publish
+              vstsFeedPublish: ${{ parameters.feed }}
+              vstsFeedPackagePublish: "${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}"
+              publishDirectory: "$(Pipeline.Workspace)/rpms"
+              versionPublish: $(Build.BuildNumber)
+              versionOption: custom

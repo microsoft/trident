@@ -1,0 +1,53 @@
+parameters:
+  - name: "stageType"
+    displayName: "Controls whether this is a pre-release or a CI run."
+    type: string
+    default: ci
+    values:
+      - ci
+      - pre
+      - rel
+
+stages:
+  - template: stages/trident_rpms/trident-stage.yml
+    parameters:
+      stageType: ${{ parameters.stageType }}
+      tridentArtifactName: trident-binaries
+      codeCoverage: false
+
+  - ${{ if eq(parameters.stageType, 'ci') }}:
+      - template: stages/validate_makefile/dev-build.yml
+
+  - template: stages/provisioning_os/prov-os.yml
+
+  - template: stages/runtime_os/trident-testimg.yml
+    parameters:
+      imageName: trident-testimage
+      outputArtifactName: trident-testimg
+
+  - template: stages/runtime_os/trident-testimg.yml
+    parameters:
+      imageName: trident-verity-testimage
+      outputArtifactName: trident-verity-testimage
+
+  - template: stages/runtime_os/trident-testimg.yml
+    parameters:
+      imageName: containerhost-testimage
+      outputArtifactName: containerhost-testimage
+
+  - template: stages/building_tools/building-tools.yml
+
+  - template: stages/installer_iso/installer-iso.yml
+
+  - template: stages/deployment_testing/vm/netlaunch-testing.yml
+    parameters:
+      buildPurpose: post_merge
+
+  - ${{ if eq(parameters.stageType, 'pre') }}:
+      - template: stages/deployment_testing/baremetal/baremetal-testing.yml
+        parameters:
+          buildPurpose: daily
+
+  - template: stages/publishing/publish.yml
+    parameters:
+      stageType: ${{ parameters.stageType }}

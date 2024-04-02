@@ -1,0 +1,52 @@
+parameters:
+  - name: executeUnitTests
+    type: boolean
+    default: true
+
+  - name: codeCoverageBaseline
+    type: number
+    default: 80
+
+  - name: installNativeDependencies
+    type: boolean
+    default: true
+
+  - name: rustup
+    type: boolean
+    default: true
+
+steps:
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel bc
+    displayName: Install native dependencies
+    condition: eq(${{ parameters.installNativeDependencies }}, true)
+
+  - ${{ if eq(parameters.rustup, 'true') }}:
+    - template: rustup.yml
+
+  - script: cargo install grcov --locked
+    displayName: Install grcov
+
+  - script: make ut-coverage
+    displayName: Collect code coverage
+    condition: eq(${{ parameters.executeUnitTests }}, true)
+
+  - script: make coverage-report
+    displayName: Generate code coverage report
+
+  - task: PublishCodeCoverageResults@2
+    inputs:
+      summaryFileLocation: ./target/coverage/cobertura.xml
+      #pathToSources: # string. Path to Source files.
+      #reportDirectory: # string. Report directory.
+      #additionalCodeCoverageFiles: # string. Additional files.
+      #failIfCoverageEmpty: false # boolean. Fail when code coverage results are missing. Default: false.
+
+  - script: |
+      set -eux
+      COVERAGE=`jq .coveragePercent target/coverage/covdir`
+      BASELINE=${{ parameters.codeCoverageBaseline }}
+      if (( $(echo "$COVERAGE < $BASELINE" | bc -l) )); then
+        echo "##vso[task.logissue type=error]Coverage is $COVERAGE, which is less than $BASELINE% set as the baseline."
+        exit 1
+      fi
+    displayName: Assert coverage is above baseline

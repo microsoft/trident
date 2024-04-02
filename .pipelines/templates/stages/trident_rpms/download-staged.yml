@@ -1,0 +1,49 @@
+parameters:
+  - name: tridentArtifactName
+    type: string
+
+  - name: "stageType"
+    displayName: "Controls whether this is a pre-release or a release run."
+    type: string
+    values:
+      - pre
+      - rel
+
+stages:
+  - stage: Trident
+    displayName: Trident RPMs (Download)
+
+    jobs:
+      - job: DownloadTrident
+        displayName: Download Trident
+        pool:
+          type: linux
+
+        variables:
+          # Control the name of the artifact where trident binaries are stored
+          - name: ob_artifactBaseName
+            value: ${{ parameters.tridentArtifactName }}
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/out"
+
+          - template: ../../feed-staging-vars.yml
+
+          # Set the download artifact suffix to be that of the *previous* stage
+          - name: downloadArtifactSuffix
+            ${{ if eq(parameters.stageType, 'pre') }}:
+              value: ${{ variables.stage_ci_suffix }}
+            ${{ if eq(parameters.stageType, 'rel') }}:
+              value: ${{ variables.stage_pre_suffix }}
+
+        steps:
+          - template: ../common_tasks/download-universal-artifact.yml
+            parameters:
+              packageName: ${{ variables.rpmsPackageBaseName }}${{ variables.downloadArtifactSuffix }}
+              downloadLocation: $(ob_outputDirectory)
+              outputVersionVariable: trident_version
+
+          - task: onebranch.pipeline.version@1
+            displayName: "Set build number"
+            inputs:
+              system: "Custom"
+              customVersion: $(trident_version)

@@ -1,0 +1,29 @@
+parameters:
+  - name: "stageType"
+    displayName: "Controls whether this is a pre-release or a CI run."
+    type: string
+    values:
+      - pr
+      - ci
+      - pre
+      - rel
+
+  - name: codeCoverage
+    type: boolean
+    default: true
+
+  - name: tridentArtifactName
+    type: string
+
+stages:
+  - ${{ if or(eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'ci')) }}:
+    - template: build-source.yml
+      parameters:
+        tridentArtifactName: ${{ parameters.tridentArtifactName }}
+        codeCoverage: ${{ parameters.codeCoverage }}
+
+  - ${{ else }}:
+    - template: download-staged.yml
+      parameters:
+        tridentArtifactName: ${{ parameters.tridentArtifactName }}
+        stageType: ${{ parameters.stageType }}

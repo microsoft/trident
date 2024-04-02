@@ -6,4 +6,11 @@
     "[python]": {
         "editor.defaultFormatter": "ms-python.black-formatter",
     },
+    "files.associations": {
+        ".pipelines/*.yml": "azure-pipelines"
+    },
+    "[azure-pipelines]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "prettier.tabWidth": 2,
+    },
 }

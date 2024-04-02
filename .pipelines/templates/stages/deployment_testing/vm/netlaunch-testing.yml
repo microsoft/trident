@@ -1,0 +1,201 @@
+parameters:
+  - name: buildPurpose
+    type: string
+    default: "AUTO"
+    values:
+      - AUTO
+      - daily
+      - pullrequest
+      - post_merge
+      - validation
+
+  - name: updateRuntimeOSTrident
+    type: boolean
+    default: false
+
+stages:
+  - stage: DeploymentTesting
+    displayName: Deployment Testing
+    dependsOn: InstallerISO
+
+    jobs:
+      - template: ../common_tasks/get-tests.yml
+        parameters:
+          buildPurpose: ${{ parameters.buildPurpose }}
+          deploymentEnvironment: virtualMachine
+
+      - job: Testing
+        dependsOn: DefineTests
+        timeoutInMinutes: 20
+        pool:
+          type: linux
+          name: CAPKV_Pool
+          hostArchitecture: amd64
+
+        strategy:
+          matrix: $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
+
+        variables:
+          buildPurpose: $[ dependencies.DefineTests.outputs['setBuildPurpose.buildPurpose'] ]
+          tridentConfigurationName: $(configuration)
+
+          tridentSourceDirectory: $(Build.SourcesDirectory)
+          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+
+          tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(tridentConfigurationName)
+          ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
+          ob_artifactBaseName: $(tridentConfigurationName)_deployment_log_$(System.JobAttempt)
+
+        steps:
+          - checkout: argus-toolkit
+
+          - template: netlaunch-prep.yml
+
+          - template: ../common_tasks/trident-prep.yml
+            parameters:
+              tridentSourceDirectory: $(tridentSourceDirectory)
+              tridentConfigPath: $(tridentConfigPath)
+              updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
+
+          - bash: |
+              set -eux
+              sg libvirt "./virt-deploy create -d 32,32"
+              sg libvirt "./virt-deploy run"
+            workingDirectory: $(argusToolkitSourceDirectory)
+            displayName: "Running sushy tools for testing deployment with BMC"
+
+          - bash: |
+              set -eux
+
+              echo "Netlaunch output:" >> ./deployment.log
+              ./bin/netlaunch \
+                  --iso $(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso \
+                  --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
+                  --trident $(tridentConfigPath)/trident-config.yaml \
+                  --logstream \
+              2>&1 | tee -a ./deployment.log
+              $(tridentSourceDirectory)/e2e_tests/helpers/check_netlaunch.py ./deployment.log || [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]
+
+              sudo virsh list
+              sudo virsh dumpxml virtdeploy-vm-0
+
+            timeoutInMinutes: 7
+            workingDirectory: $(tridentSourceDirectory)
+            displayName: "Run netlaunch for testing"
+
+          - bash: |
+              set -eux
+              echo -e '\n\n\n' >> ./deployment.log
+              printf '%.0s-' {1..90} >> ./deployment.log
+              echo -e '\n\n\n' >> ./deployment.log
+
+              vm_name="$(jq .virtualmachines[0].name ./virt-deploy-metadata.json)"
+              log=$(eval echo /tmp/"$vm_name"-serial0.log)
+
+              until [ -f "$log" ]
+              do
+                  sleep 0.1
+              done
+
+              echo "$log": | tee -a ./deployment.log
+              sudo tail -f -n +1 "$log" | tee -a ./deployment.log &
+              PID=$!
+
+              if [ "$(Agent.JobStatus)" != "Canceled" ]; then
+                while true
+                do
+                  if tail ./deployment.log | grep -v "localhost login:" | grep -P -m 1 "^[a-zA-Z0-9_-]+ login:"
+                  then
+                      kill $PID
+                      break
+                  else
+                      sleep 0.5
+                  fi
+                done
+                echo "Successful Runtime OS deployment"
+              fi
+            timeoutInMinutes: 5
+            condition: succeededOrFailed()
+            workingDirectory: $(argusToolkitSourceDirectory)
+            displayName: "Check Runtime OS deployment"
+
+          - bash: |
+              set -eux
+              if [[ -f $(argusToolkitSourceDirectory)/deployment.log ]]; then
+                mkdir -p deployment_logs
+                sudo cp $(argusToolkitSourceDirectory)/deployment.log \
+                            $(ob_outputDirectory)/deployment.log
+              fi
+            workingDirectory: $(tridentSourceDirectory)
+            condition: succeededOrFailed()
+            displayName: "Publish deployment.log"
+
+          - template: ../common_tasks/e2e-test-run.yml
+            parameters:
+              buildPurpose: $(buildPurpose)
+              deploymentEnvironment: virtualMachine
+              tridentConfigurationName: $(tridentConfigurationName)
+              hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              tridentConfigPath: $(tridentConfigPath)
+
+          - bash: |
+              set -eux
+              sudo virsh shutdown virtdeploy-vm-0
+              sudo cp /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-0-volume.qcow2 $(ob_outputDirectory)/
+            workingDirectory: $(tridentSourceDirectory)
+            condition: failed()
+            displayName: "Publish OS disk"
+
+      - job: FunctionalTests
+        displayName: Functional Tests
+        timeoutInMinutes: 45
+        pool:
+          type: linux
+          name: CAPKV_Pool
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+
+        steps:
+          - checkout: argus-toolkit
+          - checkout: platform-tests
+
+          - template: netlaunch-prep.yml
+
+          - bash: |
+              set -eux
+
+              sudo apt install -y protobuf-compiler clang-7 bc
+              sudo apt remove python3-openssl
+              pip install pytest assertpy paramiko pyopenssl
+              ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
+            displayName: Install dependencies
+
+          - template: ../../common_tasks/rustup.yml
+
+          - bash: |
+              set -eux
+
+              sg libvirt "make functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso PLATFORM_TESTS_DIR=platform-tests ARGUS_TOOLKIT_PATH=argus-toolkit"
+            displayName: Execute Functional Tests
+
+          - template: ../../common_tasks/coverage.yml
+            parameters:
+              codeCoverageBaseline: 79 # Unit + functional tests
+              executeUnitTests: true
+              installNativeDependencies: false
+              rustup: false
+
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
+
+          - bash: |
+              set -eux
+
+              sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
+            displayName: Rerun Functional Tests

@@ -1,0 +1,9 @@
+variables:
+  - name: stage_ci_suffix
+    value: '-ci'
+  - name: stage_pre_suffix
+    value: '-prerelease'
+  - name: stage_rel_suffix
+    value: ''
+  - name: rpmsPackageBaseName
+    value: 'rpms'

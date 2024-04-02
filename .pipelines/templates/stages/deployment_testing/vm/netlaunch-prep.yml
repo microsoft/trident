@@ -1,0 +1,62 @@
+steps:
+  - template: ../../common_tasks/install-clamav.yml
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download installer-iso/installer.iso"
+    inputs:
+      buildType: current
+      artifactName: "installer-iso"
+      patterns: "*/installer.iso"
+      targetPath: "$(System.ArtifactsDirectory)/installer-iso"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download go-tools/netlaunch"
+    inputs:
+      buildType: current
+      artifactName: "go-tools"
+      patterns: "netlaunch"
+      targetPath: "$(Build.SourcesDirectory)/bin/"
+
+  - bash: |
+      set -eux
+
+      # Print OS version:
+      cat /etc/os-release
+
+      echo "Context:"
+      pwd
+      ls -la
+    displayName: "Print pipeline context"
+
+  - bash: |
+      set -eux
+
+      chmod +x "$(Build.SourcesDirectory)/bin/netlaunch"
+    displayName: "Make netlaunch executable"
+
+  - bash: |
+      set -eux
+
+       # Install swtpm:
+      if grep UBUNTU_CODENAME=focal /etc/os-release -q; then
+          sudo add-apt-repository ppa:stefanberger/swtpm-focal -y
+          sudo apt-get update
+      fi
+    displayName: "Install SWTPM PPA on Ubuntu 20.04"
+
+  - bash: |
+      set -eux
+
+      sudo apt-get install -y swtpm swtpm-tools
+
+      curl -fsSL https://get.docker.com | sudo bash
+      sudo NEEDRESTART_MODE=a apt-get install -y virt-manager qemu-efi python3-libvirt ovmf openssl python3-netifaces python3-docker python3-bcrypt python3-jinja2
+
+      sudo usermod -aG docker $USER
+      sudo usermod -a -G libvirt $USER
+
+      mkdir -p ~/.config/libvirt
+      cat << EOF > ~/.config/libvirt/libvirt.conf
+      uri_default = "qemu:///system"
+      EOF
+    displayName: "Configure virt-deploy"

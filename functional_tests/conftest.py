@@ -25,8 +25,17 @@ NETLAUNCH_BIN_REL_PATH = Path("bin/netlaunch")
 
 NETLAUNCH_BIN_PATH = TRIDENT_REPO_DIR_PATH / NETLAUNCH_BIN_REL_PATH
 
+
+def __get_argus_toolkit_path():
+    """Returns the path to the argus-toolkit repository."""
+    envvar = os.environ.get("ARGUS_TOOLKIT_PATH", None)
+    if envvar:
+        return Path(envvar).resolve()
+    return Path(__file__).resolve().parent.parent.parent / "argus-toolkit"
+
+
 """Location of the argus-toolkit repository."""
-ARGUS_REPO_DIR_PATH = Path(__file__).resolve().parent.parent.parent / "argus-toolkit"
+ARGUS_REPO_DIR_PATH = __get_argus_toolkit_path()
 
 """The user to use for SSH connections to the VM.
 Needs to be in sync with the

@@ -1,0 +1,59 @@
+# Download the latest version of a package from the Trident feed.
+
+parameters:
+  - name: packageName
+    type: string
+    displayName: "Name of the package to download"
+
+  - name: downloadLocation
+    type: string
+    displayName: "Location to download the package to"
+
+  - name: outputVersionVariable
+    type: string
+    displayName: "Output variable containing the version of the downloaded package"
+
+  - name: feedName
+    type: string
+    displayName: "Name of the feed to download the package from"
+    default: "Trident"
+
+steps:
+  - task: AzureCLI@2
+    displayName: "Getting latest version of ${{ parameters.packageName }} from Trident feed"
+    inputs:
+      azureSubscription: CoreOS_ECF_Kubernetes_dev (b8a0db63-c5fa-4198-8e2a-f9d6ff52465e)
+      scriptType: "bash"
+      workingDirectory: $(Build.SourcesDirectory)
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -eux
+        
+        LATEST_VERSION=$(./scripts/get-packages.py \
+            -f '${{ parameters.packageName }}' \
+            --feed '${{ parameters.feedName }}' \
+            | jq -r '.[0].latestVersion')
+
+        echo "Downloading version $LATEST_VERSION of ${{ parameters.packageName }}"
+
+        # Set the desired variable to the latest version
+        echo "##vso[task.setvariable variable=${{ parameters.outputVersionVariable }}]$LATEST_VERSION"
+
+        mkdir -p ${{ parameters.downloadLocation }}
+        az artifacts universal download \
+          --organization "https://dev.azure.com/mariner-org/" \
+          --project "2311650c-e79e-4301-b4d2-96543fdd84ff" \
+          --scope project \
+          --feed "Trident" \
+          --name "${{ parameters.packageName }}" \
+          --version "$LATEST_VERSION" \
+          --path ${{ parameters.downloadLocation }}
+
+  - task: UniversalPackages@0
+    displayName: "Downloading ${{ parameters.packageName }} version $(${{ parameters.outputVersionVariable }})"
+    inputs:
+      command: 'download'
+      downloadDirectory: '${{ parameters.downloadLocation }}'
+      vstsFeed: 'ECF/${{ parameters.feedName }}'
+      vstsFeedPackage: '${{ parameters.packageName }}'
+      vstsPackageVersion: '$(${{ parameters.outputVersionVariable }})'

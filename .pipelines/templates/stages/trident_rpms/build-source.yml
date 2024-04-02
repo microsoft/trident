@@ -1,0 +1,61 @@
+parameters:
+  - name: tridentArtifactName
+    type: string
+
+  - name: codeCoverage
+    type: boolean
+    default: true
+
+stages:
+  - stage: Trident
+    displayName: Trident RPMs (Build)
+
+    jobs:
+      - job: TestTrident
+        displayName: Check and Unit Test
+        pool:
+          type: linux
+
+        variables:
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/trident/out"
+
+        steps:
+          - template: test-build.yml
+
+      - job: Coverage
+        displayName: Evaluate Unit Test Code Coverage
+        condition: eq(${{ parameters.codeCoverage }}, true)
+        pool:
+          type: linux
+
+        variables:
+          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
+
+        steps:
+          - template: ../common_tasks/coverage.yml
+            parameters:
+              codeCoverageBaseline: 71 # Unit tests
+
+      - job: BuildTrident
+        displayName: Build Release Artifacts
+        pool:
+          type: linux
+
+        variables:
+          # Control the name of the artifact where trident binaries are stored
+          - name: ob_artifactBaseName
+            value: ${{ parameters.tridentArtifactName }}
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/out"
+          - name: emu_package_name
+            value: ""
+          - name: emu_package_version
+            value: ""
+          - template: common/setup-registries-vars-template.yaml@platform-pipelines
+            parameters:
+              buildType: auto
+
+        steps:
+          - template: ../common_tasks/download-emu.yml
+          - template: release.yml

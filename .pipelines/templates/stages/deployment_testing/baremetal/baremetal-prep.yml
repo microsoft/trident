@@ -1,0 +1,112 @@
+parameters:
+  - name: k8sSanityDir
+    type: string
+    default: platform-tests
+
+  - name: sshKeyFile
+    type: string
+
+  - name: isoHttpdServerIp
+    type: string
+
+steps:
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: "installer-iso"
+      patterns: "*/installer.iso"
+      targetPath: "$(System.ArtifactsDirectory)/installer-iso"
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: "trident-testimg"
+      targetPath: "$(System.ArtifactsDirectory)/trident-testimg"
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: ${{ parameters.downloadBuildType}}
+      project: ECF
+      definition: ${{ parameters.installerISOPipeline }}
+      buildVersionToDownload: "latest"
+      artifactName: "trident-verity-testimage"
+      branchName: "refs/heads/main"
+      targetPath: "$(System.ArtifactsDirectory)/trident-verity-testimage"
+
+  - task: DownloadSecureFile@1
+    name: httpdPrivKey
+    displayName: "Download aods-livecd-iso-http-store-privkey"
+    inputs:
+      secureFile: "aods-livecd-iso-http-store-privkey"
+
+  - bash: |
+      set -xe
+
+      # Install packages.
+      sudo apt update
+      sudo apt install -y qemu qemu-kvm qemu-utils libvirt-daemon-system libvirt-dev ovmf \
+        libgirepository1.0-dev python3-venv python3-dev openssh-client ncat libcairo2-dev \
+        acl protobuf-compiler
+      sudo snap install multipass yq
+      setfacl --help
+
+      sudo systemctl enable --now libvirtd
+
+      # Install poetry
+      curl -sSL https://install.python-poetry.org | python3 -
+
+      ls -ltr
+      ls -ltr ${{ parameters.k8sSanityDir }}
+      pwd
+      sudo ${{ parameters.k8sSanityDir }}/pipelines/ubuntu-fix-app-armor.sh
+    displayName: "Install dependencies"
+
+  - bash: |
+      set -eux
+      rm -rf ${{ parameters.sshKeyFile }}
+      ssh-keygen -t ed25519 -f ${{ parameters.sshKeyFile }} -P ""
+      chmod 400 ${{ parameters.sshKeyFile }}
+      ls -ltr $(Pipeline.Workspace)
+      ls -ltr
+      ls -ltr ~/.ssh/
+    displayName: "SSH keygen"
+
+  - bash: |
+      set -xeu
+
+      # Add poetry to PATH.
+      export PATH="$HOME/.local/bin:$PATH"
+
+      cd ${{ parameters.k8sSanityDir }}
+
+      # Use Azure DevOps artifact feed as a proxy for PyPI.
+      # This allows ADO to audit the packages used and to search for malware.
+      sudo env "PATH=$PATH" poetry source add --priority=default ado https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/Mariner-HCI-Build-Dependencies-Feed/pypi/simple
+      sudo env "PATH=$PATH" poetry config -- http-basic.ado build "$SYSTEM_ACCESSTOKEN"
+
+      # Provision poetry venv.
+      sudo env "PATH=$PATH" make setup-baremetal-provisioning
+
+      # Create local registry
+      sudo env "PATH=$PATH" poetry run python3 ./pipelines/local-registry.py create
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    displayName: "Test setup"
+
+  - bash: |
+      set -xe
+
+      # Add poetry to PATH.x
+      export PATH="$HOME/.local/bin:$PATH"
+      ls -ltr $(System.ArtifactsDirectory)
+      ls -ltr $(System.ArtifactsDirectory)/trident-testimg
+      ls -ltr $(System.ArtifactsDirectory)/trident-verity-testimage
+      chmod 600 $(httpdPrivKey.secureFilePath)
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-testimg/esp.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/esp.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-testimg/root.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/root.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/esp.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_esp.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/root.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_root.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/root-hash.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_roothash.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/boot.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_boot.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/var.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_var.rawzst
+    displayName: "Upload runtime images manually to the HTTP Server"

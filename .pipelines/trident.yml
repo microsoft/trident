@@ -12,19 +12,7 @@ trigger:
   batch: true
   branches:
     include:
-    - main
-
-parameters:
-- name: buildPurpose
-  type: string
-  default: 'AUTO'
-  displayName: Purpose/Testing level for the E2E trident pipeline
-  values:
-  - AUTO
-  - daily
-  - pullrequest
-  - post_merge
-  - validation
+      - main
 
 resources:
   repositories:
@@ -68,8 +56,6 @@ extends:
       EnableCDPxPAT: false
 
     stages:
-    - template: e2e-template.yml
-      parameters:
-        devBuildValidation: true
-        buildPurpose: ${{ parameters.buildPurpose }}
-        publishType: ci
+      - template: templates/pipeline-selector.yml
+        parameters:
+          targetStage: ci

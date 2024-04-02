@@ -1,0 +1,11 @@
+stages:
+  - template: stages/trident_rpms/trident-stage.yml
+    parameters:
+      stageType: pr
+      tridentArtifactName: trident-binaries
+  - template: stages/validate_makefile/dev-build.yml
+  - template: stages/building_tools/building-tools.yml
+    parameters:
+      # Skip ISOGEN because that gets pulled from argus-toolkit. We don't want
+      # to do that in the PR build.
+      buildIsogen: false
