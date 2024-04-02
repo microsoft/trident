@@ -17,7 +17,7 @@ pub fn create(
     metadata_version: &String,
     device_paths: Vec<PathBuf>,
 ) -> Result<(), Error> {
-    info!("Creating RAID array '{:?}'", &raid_path);
+    info!("Creating RAID array '{}'", &raid_path.display());
 
     let mut mdadm_command = Command::new("mdadm");
     mdadm_command
@@ -45,7 +45,7 @@ pub fn examine() -> Result<String, Error> {
 }
 
 pub fn stop(raid_array_name: &Path) -> Result<(), Error> {
-    info!("Stopping RAID array: {:?}", raid_array_name);
+    info!("Stopping RAID array: {}", raid_array_name.display());
 
     let mut mdadm_command = Command::new("mdadm");
     mdadm_command.arg("--stop").arg(raid_array_name);
@@ -60,14 +60,16 @@ pub fn stop(raid_array_name: &Path) -> Result<(), Error> {
         let block_device = lsblk::run(raid_array_name);
         if let Ok(block_device) = block_device {
             error!(
-                "Failed to stop {:?}: active children: {:?}, active mount points: {:?}",
-                raid_array_name, block_device.children, block_device.mountpoints
+                "Failed to stop {}: active children: {:?}, active mount points: {:?}",
+                raid_array_name.display(),
+                block_device.children,
+                block_device.mountpoints
             );
         }
 
         // Propagate the original unmount error
         return Err(e.context(format!(
-            "Failed to stop RAID array {:?}",
+            "Failed to stop RAID array {}",
             raid_array_name.display()
         )));
     }
@@ -97,7 +99,7 @@ pub fn details() -> Result<Vec<MdadmDetail>, Error> {
 }
 
 pub fn detail(raid_array: &Path) -> Result<MdadmDetail, Error> {
-    debug!("Getting RAID array details for '{:?}'", raid_array);
+    debug!("Getting RAID array details for '{}'", raid_array.display());
 
     let mut mdadm_command = Command::new("mdadm");
     mdadm_command

@@ -349,7 +349,7 @@ impl Trident {
     ) -> Result<(), TridentError> {
         info!("Handling commands");
         let mut datastore = match self.config.datastore {
-            Some(ref datastore_path) => DataStore::open(datastore_path.as_path())?,
+            Some(ref datastore_path) => DataStore::open(datastore_path)?,
             None => DataStore::open_temporary().message("Failed to open temporary datastore")?,
         };
 
@@ -377,7 +377,7 @@ impl Trident {
         // TODO -  https://dev.azure.com/mariner-org/ECF/_workitems/edit/6814
         if let Some(ref datastore_path) = self.config.datastore {
             info!("Setting boot order");
-            bootentries::set_boot_order(datastore_path.as_path())?;
+            bootentries::set_boot_order(datastore_path)?;
         }
 
         Ok(())
@@ -422,7 +422,7 @@ impl Trident {
     pub fn retrieve_host_status(&mut self, output_path: &Option<PathBuf>) -> Result<(), Error> {
         let host_status = if let Some(ref datastore_path) = self.config.datastore {
             info!("Opening persistent datastore");
-            DataStore::open(datastore_path.as_path())
+            DataStore::open(datastore_path)
                 .unstructured("Failed to open persistent datastore")?
                 .host_status()
                 .clone()
@@ -446,7 +446,7 @@ impl Trident {
                 .mount_autodrop(block_device, mount_point.path(), UnmountFlags::DETACH);
 
             let datastore_path = mount_point.path().join(relative_path);
-            DataStore::open(datastore_path.as_path())
+            DataStore::open(&datastore_path)
                 .unstructured("Failed to datastore from datastoreRef location")?
                 .host_status()
                 .clone()

@@ -1892,7 +1892,7 @@ mod tests {
         };
         let mount_point = host_config
             .storage
-            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
             .unwrap();
         assert_eq!(mount_point.target_id, "part1");
 
@@ -1901,32 +1901,25 @@ mod tests {
             filesystem: "ext4".to_owned(),
             options: vec![],
             target_id: "part2".to_owned(),
-            path: PathBuf::from(ROOT_MOUNT_POINT_PATH)
-                .join("boot")
-                .as_path()
-                .into(),
+            path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
         });
 
         let mount_point = host_config
             .storage
-            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
             .unwrap();
         assert_eq!(mount_point.target_id, "part2");
 
         // validate longer paths
         let mount_point = host_config
             .storage
-            .path_to_mount_point(
-                Path::new(ROOT_MOUNT_POINT_PATH)
-                    .join("boot/foo/bar")
-                    .as_path(),
-            )
+            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot/foo/bar"))
             .unwrap();
         assert_eq!(mount_point.target_id, "part2");
 
         let mount_point = host_config
             .storage
-            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar").as_path())
+            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar"))
             .unwrap();
         assert_eq!(mount_point.target_id, "part1");
 
@@ -1934,7 +1927,7 @@ mod tests {
         host_config.storage.mount_points.clear();
         assert!(host_config
             .storage
-            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH).join("boot").as_path())
+            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
             .is_none());
     }
 

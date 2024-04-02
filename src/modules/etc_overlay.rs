@@ -63,7 +63,7 @@ pub(super) fn create(
             )
             .as_str(),
         )
-        .mount_autodrop("overlay", target_path.as_path(), UnmountFlags::empty())
+        .mount_autodrop("overlay", &target_path, UnmountFlags::empty())
         .structured(ManagementError::MountOverlay {
             target: target_path,
         })?;

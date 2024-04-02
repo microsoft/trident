@@ -1,10 +1,11 @@
+use std::fs;
 use std::{path::Path, process::Command};
 
-use anyhow::{Context, Error};
+use anyhow::{bail, Context, Error};
 use log::{error, info};
 
 use crate::exe::RunAndCheck;
-use crate::lsof;
+use crate::{files, lsof};
 
 /// Mounts file or block device in path to a dir mount_dir.
 pub fn mount(
@@ -86,6 +87,73 @@ impl<'a> Drop for MountGuard<'a> {
                 e
             );
         }
+    }
+}
+
+/// Ensure that the target_path is a suitable path for a mount point
+pub fn ensure_mount_directory(target_path: &Path) -> Result<(), Error> {
+    if target_path.exists() {
+        if !target_path.is_dir() {
+            bail!("Mount path '{}' is not a directory", target_path.display());
+        }
+        if let Ok(entries) = fs::read_dir(target_path) {
+            if entries.count() > 0 {
+                bail!("Mount path '{}' is not empty", target_path.display());
+            }
+        }
+    } else {
+        files::create_dirs(target_path).context(format!(
+            "Failed to create mount path '{}'",
+            target_path.display()
+        ))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use std::fs::File;
+
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_ensure_mount_directory() {
+        let temp_mount_dir = TempDir::new().unwrap();
+
+        // Test case 1: Ensure a directory that exists and is empty
+        ensure_mount_directory(temp_mount_dir.path()).unwrap();
+
+        // Test case 2: Ensure a directory that does not exist
+        let temp_mount_point_dir = temp_mount_dir.path().join("temp_dir");
+        ensure_mount_directory(&temp_mount_point_dir).unwrap();
+        assert!(temp_mount_point_dir.exists());
+
+        // Test case 3: Ensure a directory that exists and is not empty
+        assert_eq!(
+            ensure_mount_directory(temp_mount_dir.path())
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Mount path '{}' is not empty",
+                temp_mount_dir.path().display()
+            )
+        );
+
+        // Test case 4: Ensure a file path does not work
+        let temp_mount_point_file = temp_mount_dir.path().join("temp_file");
+        File::create(&temp_mount_point_file).unwrap();
+        assert_eq!(
+            ensure_mount_directory(&temp_mount_point_file)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Mount path '{}' is not a directory",
+                temp_mount_point_file.display()
+            )
+        );
     }
 }
 

@@ -68,6 +68,9 @@ hostConfiguration:
           - id: var
             type: linux-generic
             size: 1G
+          - id: run
+            type: linux-generic
+            size: 1G
       - id: disk2
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
@@ -185,6 +188,10 @@ hostConfiguration:
         targetId: var
         filesystem: ext4
         options: ["defaults"]
+      - path: /run
+        targetId: run
+        filesystem: ext4
+        options: ["defaults"]
     images:
       - url: file:///trident_cdrom/data/verity_esp.rawzst
         sha256: ignored
@@ -214,13 +221,13 @@ hostConfiguration:
   trident:
     selfUpgrade: false
   os:
-    # network:
-    #   ethernets:
-    #     vmeths:
-    #       match:
-    #         name: enp*
-    #       dhcp4: true
-    #   version: 2
+    network:
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+      version: 2
     users:
       - name: testing-user
         secondaryGroups: [wheel]

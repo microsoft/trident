@@ -613,10 +613,10 @@ mod functional_test {
         datastore.persist(&datastore_path).unwrap();
         datastore.close();
 
-        set_boot_order(datastore_path.as_path()).unwrap();
+        set_boot_order(&datastore_path).unwrap();
 
         // We clear the boot_next variable in set_boot_order, check if it is cleared.
-        let datastore1 = DataStore::open(datastore_path.as_path()).unwrap();
+        let datastore1 = DataStore::open(&datastore_path).unwrap();
         let host_status: &HostStatus = datastore1.host_status();
 
         // Check if boot_next is cleared
@@ -678,8 +678,8 @@ mod functional_test {
         datastore.persist(&datastore_path).unwrap();
         datastore.close();
 
-        set_boot_order(datastore_path.as_path()).unwrap();
-        let datastore1 = DataStore::open(datastore_path.as_path()).unwrap();
+        set_boot_order(&datastore_path).unwrap();
+        let datastore1 = DataStore::open(&datastore_path).unwrap();
         let host_status = datastore1.host_status();
 
         // Check if boot_next is cleared
@@ -723,8 +723,8 @@ mod functional_test {
         datastore.persist(&datastore_path).unwrap();
         datastore.close();
 
-        set_boot_order(datastore_path.as_path()).unwrap();
-        let datastore1 = DataStore::open(datastore_path.as_path()).unwrap();
+        set_boot_order(&datastore_path).unwrap();
+        let datastore1 = DataStore::open(&datastore_path).unwrap();
         let host_status = datastore1.host_status();
 
         // Check if boot_next of host_status is not modified

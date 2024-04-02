@@ -199,7 +199,7 @@ fn get_root_verity_root_hash(
         )?;
 
     // Extract the root hash from the GRUB config
-    let mut grub_config = GrubConfig::read(boot_mount_dir.path().join(GRUB_CONFIG_PATH).as_path())?;
+    let mut grub_config = GrubConfig::read(boot_mount_dir.path().join(GRUB_CONFIG_PATH))?;
     grub_config.check_linux_command_line_count()?;
     let root_hash = grub_config.read_linux_command_line_argument("roothash")?;
 
@@ -291,8 +291,7 @@ pub(super) fn update_root_verity_in_grub_config(
     let mut grub_config = GrubConfig::read(
         root_mount_path
             .join(BOOT_RELATIVE_MOUNT_POINT_PATH)
-            .join(GRUB_CONFIG_PATH)
-            .as_path(),
+            .join(GRUB_CONFIG_PATH),
     )?;
 
     // Ensure there is only one linux command line
@@ -374,7 +373,7 @@ pub(super) fn stop_pre_existing_verity_devices(
         root_verity_device_status.hash_device_path,
     ]
     .map(|device_path| {
-        if let Ok(disk_path) = block_devices::get_disk_for_partition(device_path.as_path()) {
+        if let Ok(disk_path) = block_devices::get_disk_for_partition(&device_path) {
             [disk_path.canonicalize().context(format!(
                 "Failed to find the device path '{:?}'",
                 device_path
@@ -430,11 +429,14 @@ pub(super) fn stop_pre_existing_verity_devices(
 /// configuration contains a verity definition as well. And vice-versa, ensure
 /// that if verity is not enabled in the root filesystem, the host configuration
 /// does not contain a verity configuration.
+/// Returns true if verity is enabled, false if not enabled and error if there
+/// is some indication of misconfiguration (e.g. images are verity enabled, but
+/// HC is not and vice-versa).
 pub(super) fn validate_compatibility(
     host_config: &HostConfiguration,
     new_root: &Path,
 ) -> Result<bool, Error> {
-    if check_verity_enabled(new_root.join(GRUB2_CONFIG_RELATIVE_PATH).as_path())? {
+    if check_verity_enabled(&new_root.join(GRUB2_CONFIG_RELATIVE_PATH))? {
         // If verity is enabled, we need to ensure that the verity definition is present in the
         // host configuration; API checks ensure that root verity is present
         // and correctly populated.
@@ -444,6 +446,8 @@ pub(super) fn validate_compatibility(
             ));
         }
 
+        // The input configuration (HC+images) are correctly configured for
+        // verity scenarios.
         Ok(true)
     } else {
         // If verity is not enabled, we need to ensure that the verity definition is not present in
@@ -454,6 +458,8 @@ pub(super) fn validate_compatibility(
             ));
         }
 
+        // The input configuration (HC+images) do not expect verity scenarios
+        // and are not attempting to use it.
         Ok(false)
     }
 }
@@ -1433,7 +1439,7 @@ mod functional_test {
             .unwrap();
             // Create a mount guard that will automatically unmount when it goes out of scope
             let _mount_guard = MountGuard {
-                mount_dir: boot_path.as_path(),
+                mount_dir: &boot_path,
             };
 
             let grub_config_path = boot_path.join("grub2/grub.cfg");
@@ -1547,7 +1553,7 @@ mod functional_test {
             .unwrap();
             // Create a mount guard that will automatically unmount when it goes out of scope
             let _mount_guard = MountGuard {
-                mount_dir: boot_path.as_path(),
+                mount_dir: &boot_path,
             };
 
             update_root_verity_in_grub_config(&host_status, &host_status.spec, mount_dir.path())
@@ -1596,7 +1602,7 @@ mod functional_test {
             .unwrap();
             // Create a mount guard that will automatically unmount when it goes out of scope
             let _mount_guard = MountGuard {
-                mount_dir: boot_path.as_path(),
+                mount_dir: &boot_path,
             };
 
             let grub_config_path = boot_path.join("grub2/grub.cfg");

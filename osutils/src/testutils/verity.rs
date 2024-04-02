@@ -58,7 +58,7 @@ pub fn setup_verity_volumes() -> String {
     let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
 
     let boot_path = cdrom_mount_path.join(VERITY_ROOT_BOOT_IMAGE_PATH);
-    image::stream_zstd(boot_path.as_path(), block_device_path).unwrap();
+    image::stream_zstd(&boot_path, block_device_path).unwrap();
 
     let expected_root_hash = {
         let boot_mount_dir = tempfile::tempdir().unwrap();
@@ -85,13 +85,13 @@ pub fn setup_verity_volumes() -> String {
 
     let verity_data_path = cdrom_mount_path.join(VERITY_ROOT_DATA_IMAGE_PATH);
     let verity_data_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}3"));
-    image::stream_zstd(verity_data_path.as_path(), verity_data_block_device_path).unwrap();
+    image::stream_zstd(&verity_data_path, verity_data_block_device_path).unwrap();
     let verity_hash_path = cdrom_mount_path.join(VERITY_ROOT_HASH_IMAGE_PATH);
     let verity_hash_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
-    image::stream_zstd(verity_hash_path.as_path(), verity_hash_block_device_path).unwrap();
+    image::stream_zstd(&verity_hash_path, verity_hash_block_device_path).unwrap();
     let verity_boot_path = cdrom_mount_path.join(VERITY_ROOT_BOOT_IMAGE_PATH);
     let verity_boot_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1"));
-    image::stream_zstd(verity_boot_path.as_path(), verity_boot_block_device_path).unwrap();
+    image::stream_zstd(&verity_boot_path, verity_boot_block_device_path).unwrap();
 
     expected_root_hash
 }

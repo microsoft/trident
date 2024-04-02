@@ -21,7 +21,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::{chroot, container, exe::RunAndCheck, mkinitrd};
+use osutils::{chroot, container, exe::RunAndCheck, mkinitrd, mount};
 
 use crate::{
     datastore::DataStore,
@@ -192,7 +192,7 @@ pub(super) fn clean_install(
     let (new_root_path, mounts) = initialize_new_root(state, host_config)?;
 
     info!("Running provision");
-    provision(&mut modules, state, host_config, new_root_path.as_path())?;
+    provision(&mut modules, state, host_config, &new_root_path)?;
 
     let datastore_ref = File::create(TRIDENT_DATASTORE_REF_PATH).structured(
         ManagementError::from(DatastoreError::CreateDatastoreRefFile),
@@ -205,8 +205,7 @@ pub(super) fn clean_install(
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
 
     info!("Entering '{}' chroot", new_root_path.display());
-    let chroot =
-        chroot::enter_update_chroot(new_root_path.as_path()).message("Failed to enter chroot")?;
+    let chroot = chroot::enter_update_chroot(&new_root_path).message("Failed to enter chroot")?;
     let mut root_device_path = None;
 
     chroot
@@ -228,10 +227,7 @@ pub(super) fn clean_install(
             info!("Running configure");
             configure(&mut modules, state, host_config, use_overlay)?;
 
-            {
-                info!("Regenerating initrd");
-                regenerate_initrd(use_overlay)?;
-            }
+            regenerate_initrd(use_overlay)?;
 
             root_device_path = Some(
                 get_root_block_device_path(state.host_status())
@@ -261,14 +257,10 @@ pub(super) fn clean_install(
     if !allowed_operations.contains(Operations::Transition) {
         info!("Transition not requested, skipping transition");
         info!("Unmounting '{}'", new_root_path.display());
-        mount_root::unmount_new_root(mounts, new_root_path.as_path())?;
+        mount_root::unmount_new_root(mounts, &new_root_path)?;
     } else {
         info!("Performing transition");
-        transition(
-            new_root_path.as_path(),
-            &root_device_path,
-            state.host_status(),
-        )?;
+        transition(&new_root_path, &root_device_path, state.host_status())?;
     }
 
     Ok(())
@@ -353,7 +345,7 @@ pub(super) fn update(
         let (new_root_path, mounts) = initialize_new_root(state, host_config)?;
 
         info!("Running provision");
-        provision(&mut modules, state, host_config, new_root_path.as_path())?;
+        provision(&mut modules, state, host_config, &new_root_path)?;
 
         // If verity is present, it means that we are currently doing root
         // verity. For now, we can assume that /etc is readonly, so we setup
@@ -361,13 +353,12 @@ pub(super) fn update(
         let use_overlay = !host_config.storage.verity.is_empty();
 
         info!("Entering '{}' chroot", new_root_path.display());
-        chroot::enter_update_chroot(new_root_path.as_path())
+        chroot::enter_update_chroot(&new_root_path)
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
                 configure(&mut modules, state, host_config, use_overlay)?;
 
-                info!("Regenerating initrd");
                 regenerate_initrd(use_overlay)
             })
             .message("Failed to execute in chroot")?;
@@ -377,7 +368,6 @@ pub(super) fn update(
         info!("Running configure");
         configure(&mut modules, state, host_config, false)?;
 
-        info!("Regenerating initrd");
         regenerate_initrd(false)?;
 
         (PathBuf::from(ROOT_MOUNT_POINT_PATH), None)
@@ -401,7 +391,7 @@ pub(super) fn update(
             if !allowed_operations.contains(Operations::Transition) {
                 info!("Transition not requested, skipping transition");
                 if let Some(mounts) = mounts {
-                    mount_root::unmount_new_root(mounts, new_root_path.as_path())?;
+                    mount_root::unmount_new_root(mounts, &new_root_path)?;
                 }
                 return Ok(());
             }
@@ -409,11 +399,7 @@ pub(super) fn update(
             info!("Closing datastore");
             state.close();
             info!("Performing transition");
-            transition(
-                new_root_path.as_path(),
-                &root_block_device_path,
-                state.host_status(),
-            )?;
+            transition(&new_root_path, &root_block_device_path, state.host_status())?;
 
             Ok(())
         }
@@ -621,7 +607,7 @@ fn initialize_new_root(
     host_config: &HostConfiguration,
 ) -> Result<(PathBuf, Vec<PathBuf>), TridentError> {
     let mut new_root_path = Path::new(UPDATE_ROOT_PATH);
-    if mount_root::ensure_mount_directory(new_root_path).is_err() {
+    if mount::ensure_mount_directory(new_root_path).is_err() {
         new_root_path = Path::new(UPDATE_ROOT_FALLBACK_PATH);
     }
 
@@ -679,6 +665,7 @@ fn regenerate_initrd(use_overlay: bool) -> Result<(), TridentError> {
         None
     };
 
+    info!("Regenerating initrd");
     mkinitrd::execute()
 }
 

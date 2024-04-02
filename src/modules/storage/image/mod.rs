@@ -16,8 +16,6 @@ use trident_api::{
 
 use crate::modules::{self, storage::tabfile};
 
-use super::verity;
-
 pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
 mod systemd_sysupdate;
@@ -50,8 +48,8 @@ fn update_images(
             ))?;
 
         // Parse the URL to determine the download strategy
-        let image_url = Url::parse(image.url.as_str())
-            .context(format!("Failed to parse image URL '{}'", image.url))?;
+        let image_url =
+            Url::parse(&image.url).context(format!("Failed to parse image URL '{}'", image.url))?;
 
         if image_url.scheme() == "file" {
             match image.format {
@@ -66,8 +64,8 @@ fn update_images(
                     systemd_sysupdate::deploy(
                         image,
                         host_status,
-                        Some(directory.as_path()),
-                        Some(filename.as_str()),
+                        Some(&directory),
+                        Some(&filename),
                         Some(&computed_sha256),
                     )
                     .context(format!(
@@ -374,7 +372,7 @@ fn update_root_device_path(host_status: &mut HostStatus) -> Result<(), Error> {
         Path::new(ROOT_MOUNT_POINT_PATH).to_path_buf()
     };
     host_status.storage.root_device_path = Some(
-        tabfile::get_device_path(Path::new("/proc/mounts"), root_mount_path.as_path())
+        tabfile::get_device_path(Path::new("/proc/mounts"), &root_mount_path)
             .context("Failed to find root mount point")?,
     );
     debug!(
@@ -410,6 +408,7 @@ fn update_active_volume(host_status: &mut HostStatus) -> Result<(), Error> {
                 .context("Failed to find root volume pair")?
         };
 
+    // TODO: better error handling if canonicalize fails, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7320/
     host_status.storage.ab_active_volume = if volume_a_path
         .canonicalize()
         .context(format!("Failed to find path '{}'", volume_a_path.display()))?
@@ -442,7 +441,7 @@ fn update_active_volume(host_status: &mut HostStatus) -> Result<(), Error> {
 fn get_plain_volume_pair_paths(
     host_status: &HostStatus,
     ab_update: &AbUpdate,
-    root_device_id: &String,
+    root_device_id: &BlockDeviceId,
 ) -> Result<((PathBuf, PathBuf), PathBuf), Error> {
     let root_device_pair = ab_update
         .volume_pairs
@@ -480,7 +479,7 @@ fn get_plain_volume_pair_paths(
 fn get_verity_data_volume_pair_paths(
     host_status: &HostStatus,
     ab_update: &AbUpdate,
-    root_device_id: &String,
+    root_device_id: &BlockDeviceId,
 ) -> Result<((PathBuf, PathBuf), PathBuf), Error> {
     let root_verity_device_config = host_status
         .spec
@@ -502,10 +501,8 @@ fn get_verity_data_volume_pair_paths(
         modules::get_block_device(host_status, &root_data_device_pair.volume_b_id, false)
             .context("Failed to get block device for data volume B")?
             .path;
-    let root_verity_status = veritysetup::status(
-        verity::get_updated_device_name(&root_verity_device_config.device_name).as_str(),
-    )
-    .context("Failed to get verity status")?;
+    let root_verity_status = veritysetup::status(&root_verity_device_config.device_name)
+        .context("Failed to get verity status")?;
 
     Ok((
         (volume_a_path, volume_b_path),
@@ -1576,15 +1573,15 @@ mod functional_test {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "Process output:\nstdout:\n/dev/mapper/root_new is inactive.\n\n"
+            "Process output:\nstdout:\n/dev/mapper/root is inactive.\n\n"
         );
 
         // now try the same, against actual verity volumes
         let expected_root_hash = verity::setup_verity_volumes();
 
-        let verity_device_path = Path::new("/dev/mapper/root_new");
+        let verity_device_path = Path::new("/dev/mapper/root");
         if verity_device_path.exists() {
-            veritysetup::close("root_new").unwrap();
+            veritysetup::close("root").unwrap();
         }
 
         let host_status = HostStatus {
@@ -1654,19 +1651,19 @@ mod functional_test {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "Process output:\nstdout:\n/dev/mapper/root_new is inactive.\n\n"
+            "Process output:\nstdout:\n/dev/mapper/root is inactive.\n\n"
         );
 
         // now open the verity and we should get further
         veritysetup::open(
             formatcp!("{TEST_DISK_DEVICE_PATH}3"),
-            "root_new",
+            "root",
             formatcp!("{TEST_DISK_DEVICE_PATH}2"),
             &expected_root_hash,
         )
         .unwrap();
         let _verityguard = VerityGuard {
-            device_name: "root_new",
+            device_name: "root",
         };
 
         assert_eq!(
@@ -1853,19 +1850,19 @@ mod functional_test {
         // verity tests
         let expected_root_hash = verity::setup_verity_volumes();
 
-        let verity_device_path = Path::new("/dev/mapper/root_new");
+        let verity_device_path = Path::new("/dev/mapper/root");
         if verity_device_path.exists() {
-            veritysetup::close("root_new").unwrap();
+            veritysetup::close("root").unwrap();
         }
         veritysetup::open(
             formatcp!("{TEST_DISK_DEVICE_PATH}3"),
-            "root_new",
+            "root",
             formatcp!("{TEST_DISK_DEVICE_PATH}2"),
             &expected_root_hash,
         )
         .unwrap();
         let _verityguard = VerityGuard {
-            device_name: "root_new",
+            device_name: "root",
         };
 
         host_status.storage.block_devices = btreemap! {

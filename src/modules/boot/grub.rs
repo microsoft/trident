@@ -81,19 +81,16 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
         modules::get_block_device(host_status, boot_block_device_id, false)
             .context("Failed to find boot block device")?;
 
-    let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_info.path.as_path())?;
+    let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_info.path)?;
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
 
     // Update GRUB config on the boot device (volume holding /boot)
-    update_grub_config_boot(
-        boot_grub_config_path.as_path(),
-        &boot_uuid,
-        &root_device_path,
-    )
-    .context(format!(
-        "Failed to update GRUB config at path '{}'",
-        boot_grub_config_path.display()
-    ))?;
+    update_grub_config_boot(&boot_grub_config_path, &boot_uuid, &root_device_path).context(
+        format!(
+            "Failed to update GRUB config at path '{}'",
+            boot_grub_config_path.display()
+        ),
+    )?;
     let esp_efi_dir_path = Path::new(ESP_MOUNT_POINT_PATH).join(ESP_EFI_DIRECTORY);
     let mut bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_A);
     //Check if hoststatus has ab_update and update the grub config for the inactive volume
@@ -109,7 +106,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     }
 
     let bootentry_dir_config_path = bootentry_dir_path.join(GRUB2_CONFIG_FILENAME);
-    update_grub_config_esp(bootentry_dir_config_path.as_path(), &boot_uuid).context(format!(
+    update_grub_config_esp(&bootentry_dir_config_path, &boot_uuid).context(format!(
         "Failed to update GRUB config at path {}",
         bootentry_dir_config_path.display()
     ))?;
