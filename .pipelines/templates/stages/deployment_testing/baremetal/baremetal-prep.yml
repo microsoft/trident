@@ -25,10 +25,7 @@ steps:
 
   - task: DownloadPipelineArtifact@2
     inputs:
-      buildType: ${{ parameters.downloadBuildType}}
-      project: ECF
-      definition: ${{ parameters.installerISOPipeline }}
-      buildVersionToDownload: "latest"
+      buildType: current
       artifactName: "trident-verity-testimage"
       branchName: "refs/heads/main"
       targetPath: "$(System.ArtifactsDirectory)/trident-verity-testimage"
