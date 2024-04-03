@@ -18,9 +18,10 @@ The filesystem to be used for this mount point.
 
 This value will be used to format the partition.
 
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
+| Characteristic | Value                                 |
+| -------------- | ------------------------------------- |
+| Type           | `FileSystemType`                      |
+| Link           | [FileSystemType](./FileSystemType.md) |
 
 ### `options` **<span style="color:orange;">(required)</span>**
 

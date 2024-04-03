@@ -157,8 +157,11 @@ build-api-docs: build-api-schema docbuilder
 	$(DOCBUILDER_BIN) host-config markdown $(TRIDENT_API_HC_MARKDOWN_DIR) --devops-wiki
 	@echo Wrote Markdown docs to $(TRIDENT_API_HC_MARKDOWN_DIR)
 
+# This target is meant to be used by CI to ensure that the API schema is up to date.
+# It compares the generated schema with the checked-in schema.
+# Please do not modify for local use. :)
 .PHONY: validate-api-schema
-validate-api-schema: build-api-schema docbuilder validate-hc-sample
+validate-api-schema: build-api-schema docbuilder
 	@echo ""
 	@echo "Validating Trident API schema..."
 	@diff $(TRIDENT_API_HC_SCHEMA_CHECKED_IN) $(TRIDENT_API_HC_SCHEMA_GENERATED) || { \

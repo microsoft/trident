@@ -6,6 +6,7 @@ AdoptedPartition
 Disk
 EncryptedVolume
 Encryption
+FileSystemType
 Image
 ImageFormat
 ManagementOs

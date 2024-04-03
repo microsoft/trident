@@ -268,6 +268,53 @@
       },
       "additionalProperties": false
     },
+    "FileSystemType": {
+      "description": "File system types.",
+      "oneOf": [
+        {
+          "title": "Ext4 file system",
+          "type": "string",
+          "enum": [
+            "ext4"
+          ]
+        },
+        {
+          "title": "XFS file system",
+          "type": "string",
+          "enum": [
+            "xfs"
+          ]
+        },
+        {
+          "title": "Vfat file system",
+          "type": "string",
+          "enum": [
+            "vfat"
+          ]
+        },
+        {
+          "title": "Swap partition",
+          "type": "string",
+          "enum": [
+            "swap"
+          ]
+        },
+        {
+          "title": "ISO9660 file system",
+          "type": "string",
+          "enum": [
+            "iso9660"
+          ]
+        },
+        {
+          "description": "Overlay file system",
+          "type": "string",
+          "enum": [
+            "overlay"
+          ]
+        }
+      ]
+    },
     "Image": {
       "description": "Per image configuration.",
       "type": "object",
@@ -340,7 +387,11 @@
       "properties": {
         "filesystem": {
           "description": "The filesystem to be used for this mount point.\n\nThis value will be used to format the partition.",
-          "type": "string"
+          "allOf": [
+            {
+              "$ref": "#/definitions/FileSystemType"
+            }
+          ]
         },
         "options": {
           "description": "A list of options to be used for this mount point.\n\nThese will be passed as is to the `/etc/fstab` file.",
