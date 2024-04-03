@@ -42,6 +42,20 @@ pub fn mount(
     Ok(())
 }
 
+/// Create a bind mount that exposes mount_dir as an alias of path.
+pub fn bind_mount(path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result<(), Error> {
+    Command::new("mount")
+        .arg("--bind")
+        .arg(path.as_ref())
+        .arg(mount_dir.as_ref())
+        .run_and_check()
+        .context(format!(
+            "Failed to mount {} as a bind mount for {}",
+            path.as_ref().display(),
+            mount_dir.as_ref().display(),
+        ))
+}
+
 /// Unmounts given directory mount_dir.
 pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error> {
     let mut cmd = Command::new("umount");
@@ -354,6 +368,32 @@ mod functional_test {
             umount_result_2.unwrap_err().root_cause().to_string(),
             "Process output:\nstderr:\numount: /path/to/non/existent/directory: no mount point specified.\n\n",
             "Unmounting a non-existent directory should fail"
+        );
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_bind_mount() {
+        let temp_mount_dir = TempDir::new().unwrap();
+        let temp_mount_dir_2 = TempDir::new().unwrap();
+        bind_mount(temp_mount_dir.path(), temp_mount_dir_2.path()).unwrap();
+
+        fs::write(temp_mount_dir_2.path().join("test_file"), "test").unwrap();
+        assert_eq!(
+            fs::read_to_string(temp_mount_dir.path().join("test_file")).unwrap(),
+            "test"
+        );
+
+        fs::write(temp_mount_dir.path().join("test_file2"), "test2").unwrap();
+        umount(temp_mount_dir_2.path(), false).unwrap();
+        assert!(!temp_mount_dir_2.path().join("test_file").exists());
+        assert!(!temp_mount_dir_2.path().join("test_file2").exists());
+        assert_eq!(
+            fs::read_to_string(temp_mount_dir.path().join("test_file")).unwrap(),
+            "test"
+        );
+        assert_eq!(
+            fs::read_to_string(temp_mount_dir.path().join("test_file2")).unwrap(),
+            "test2"
         );
     }
 }
