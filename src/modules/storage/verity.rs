@@ -8,10 +8,13 @@ use std::{
 use anyhow::{bail, Context, Error};
 use const_format::formatcp;
 use log::debug;
-use osutils::{block_devices, exe::RunAndCheck, grub::GrubConfig, lsblk, mount, veritysetup};
-use sys_mount::{FilesystemType, Mount, MountFlags, UnmountFlags};
+use sys_mount::{Mount, MountFlags, UnmountFlags};
 use tempfile::TempDir;
 
+use osutils::{
+    block_devices, exe::RunAndCheck, filesystems::MountFileSystemType, grub::GrubConfig, lsblk,
+    mount, veritysetup,
+};
 use trident_api::{
     config::{self, HostConfiguration, MountPoint},
     constants::{
@@ -71,7 +74,7 @@ pub(super) fn create_etc_overlay_mount_point() -> MountPoint {
     // inject the /etc overlay used for verity setups
     debug!("Creating /etc overlay mount point for verity setups");
     MountPoint {
-        filesystem: "overlay".to_owned(),
+        filesystem: config::FileSystemType::Overlay,
         options: vec![
             format!("lowerdir=/{TRIDENT_OVERLAY_LOWER_RELATIVE_PATH}"),
             format!("upperdir={TRIDENT_OVERLAY_PATH}/{TRIDENT_OVERLAY_UPPER_RELATIVE_PATH}"),
@@ -190,7 +193,14 @@ fn get_root_verity_root_hash(
     // Mount the boot device temporarily to fetch the GRUB config
     let boot_mount_dir = TempDir::new().context("Failed to create temporary directory")?;
     let _boot_mount = Mount::builder()
-        .fstype(FilesystemType::from(boot_mount_point.filesystem.as_str()))
+        .fstype(
+            MountFileSystemType::from_api_type(boot_mount_point.filesystem).with_context(|| {
+                format!(
+                    "Failed to convert filesystem type for boot mount point '{}'",
+                    boot_mount_point.path.display()
+                )
+            })?,
+        )
         .flags(MountFlags::RDONLY)
         .mount_autodrop(
             boot_device_path,
@@ -475,7 +485,7 @@ mod test {
 
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use trident_api::{
-        config::{Disk, Partition, PartitionSize, PartitionType, Storage},
+        config::{Disk, FileSystemType, Partition, PartitionSize, PartitionType, Storage},
         status::{self, BlockDeviceContents},
     };
 
@@ -512,7 +522,7 @@ mod test {
             create_etc_overlay_mount_point(),
             MountPoint {
                 path: PathBuf::from("/etc"),
-                filesystem: "overlay".into(),
+                filesystem: FileSystemType::Overlay,
                 options: vec![
                     "lowerdir=/etc".into(),
                     "upperdir=/var/lib/trident-overlay/etc/upper".into(),
@@ -577,7 +587,7 @@ mod test {
             storage: Storage {
                 mount_points: vec![config::MountPoint {
                     path: PathBuf::from("/var/lib/trident-overlay"),
-                    filesystem: "ext4".to_string(),
+                    filesystem: FileSystemType::Ext4,
                     target_id: "overlay".to_string(),
                     options: vec!["defaults".to_string()],
                 }],
@@ -849,6 +859,7 @@ mod functional_test {
 
     use osutils::{
         files,
+        filesystems::MountFileSystemType,
         mount::{self, MountGuard},
         mountpoint,
         testutils::{
@@ -857,7 +868,9 @@ mod functional_test {
         },
     };
     use trident_api::{
-        config::{Disk, Partition, PartitionSize, PartitionType, Storage, VerityDevice},
+        config::{
+            Disk, FileSystemType, Partition, PartitionSize, PartitionType, Storage, VerityDevice,
+        },
         status::{self, BlockDeviceContents},
     };
 
@@ -981,13 +994,13 @@ mod functional_test {
                     mount_points: vec![
                         config::MountPoint {
                             path: PathBuf::from("/boot"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                         config::MountPoint {
                             path: PathBuf::from("/"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "root".to_string(),
                             options: vec!["defaults".to_string()],
                         },
@@ -1070,7 +1083,7 @@ mod functional_test {
             mount::mount(
                 Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 mount_dir.path(),
-                "ext4",
+                MountFileSystemType::Ext4,
                 &["defaults".into()],
             )
             .unwrap();
@@ -1135,13 +1148,13 @@ mod functional_test {
                     mount_points: vec![
                         config::MountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                         config::MountPoint {
                             path: PathBuf::from("/boot"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
@@ -1217,7 +1230,7 @@ mod functional_test {
             mount::mount(
                 Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 mount_dir.path(),
-                "ext4",
+                MountFileSystemType::Ext4,
                 &["defaults".into()],
             )
             .unwrap();
@@ -1301,13 +1314,13 @@ mod functional_test {
                     mount_points: vec![
                         config::MountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                         config::MountPoint {
                             path: PathBuf::from("/boot"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
@@ -1384,7 +1397,7 @@ mod functional_test {
             mount::mount(
                 Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 mount_dir.path(),
-                "ext4",
+                MountFileSystemType::Ext4,
                 &["defaults".into()],
             )
             .unwrap();
@@ -1433,7 +1446,7 @@ mod functional_test {
             mount::mount(
                 Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 &boot_path,
-                "ext4",
+                MountFileSystemType::Ext4,
                 &["defaults".into()],
             )
             .unwrap();
@@ -1486,13 +1499,13 @@ mod functional_test {
                     mount_points: vec![
                         config::MountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                         config::MountPoint {
                             path: PathBuf::from("/boot"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
@@ -1547,7 +1560,7 @@ mod functional_test {
             mount::mount(
                 Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 &boot_path,
-                "ext4",
+                MountFileSystemType::Ext4,
                 &["defaults".into()],
             )
             .unwrap();
@@ -1596,7 +1609,7 @@ mod functional_test {
             mount::mount(
                 Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 &boot_path,
-                "ext4",
+                MountFileSystemType::Ext4,
                 &["defaults".into()],
             )
             .unwrap();
@@ -1651,13 +1664,13 @@ mod functional_test {
                     mount_points: vec![
                         config::MountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                         config::MountPoint {
                             path: PathBuf::from("/boot"),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
@@ -1728,7 +1741,7 @@ mod functional_test {
             mount::mount(
                 &verity_root_path,
                 mount_dir.path(),
-                "ext4",
+                MountFileSystemType::Ext4,
                 &["defaults".into(), "ro".into()],
             )
             .unwrap();

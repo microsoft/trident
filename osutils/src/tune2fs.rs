@@ -24,14 +24,14 @@ mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
 
-    use crate::testutils::repart::TEST_DISK_DEVICE_PATH;
+    use crate::{filesystems::MkfsFileSystemType, testutils::repart::TEST_DISK_DEVICE_PATH};
 
     /// Validates that run() correctly assigns a new UUID to the filesystem.
     #[functional_test(feature = "helpers")]
     fn test_tune2fs_run() {
         let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
         // Create a new ext4 filesystem on /dev/sdb
-        crate::mkfs::run(block_device_path, "ext4").unwrap();
+        crate::mkfs::run(block_device_path, MkfsFileSystemType::Ext4).unwrap();
 
         // Run tune2fs to assign a new UUID to the filesystem
         let new_uuid = Uuid::new_v4();

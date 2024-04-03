@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::error;
+
 use trident_api::constants::DEV_MAPPER_PATH;
 
 use crate::{exe::RunAndCheck, lsblk};
@@ -439,6 +440,7 @@ mod functional_test {
 
     use crate::{
         files,
+        filesystems::MountFileSystemType,
         grub::GrubConfig,
         mount::{self, MountGuard},
         partition_types::DiscoverablePartitionType,
@@ -466,7 +468,13 @@ mod functional_test {
         let root_hash = {
             let boot_mount_dir = tempfile::tempdir().unwrap();
             // Mount image to temp dir
-            mount::mount(block_device_path, boot_mount_dir.path(), "ext4", &[]).unwrap();
+            mount::mount(
+                block_device_path,
+                boot_mount_dir.path(),
+                MountFileSystemType::Ext4,
+                &[],
+            )
+            .unwrap();
 
             // Create a mount guard that will automatically unmount when it goes out of scope
             let _mount_guard = MountGuard {
@@ -561,7 +569,7 @@ mod functional_test {
                 mount::mount(
                     Path::new(DEV_MAPPER_PATH).join("verity-test"),
                     verity_mount_dir.path(),
-                    "ext4",
+                    MountFileSystemType::Ext4,
                     &["ro".into()],
                 )
                 .unwrap();
@@ -583,7 +591,7 @@ mod functional_test {
             mount::mount(
                 verity_data_block_device_path,
                 root_mount_dir.path(),
-                "ext4",
+                MountFileSystemType::Ext4,
                 &[],
             )
             .unwrap();
@@ -624,7 +632,7 @@ mod functional_test {
                 assert_eq!(mount::mount(
                     Path::new(DEV_MAPPER_PATH).join("verity-test"),
                     verity_mount_dir.path(),
-                    "ext4",
+                    MountFileSystemType::Ext4,
                     &["ro".into()],
                 )
                 .unwrap_err().root_cause().to_string(), format!("Process output:\nstderr:\nmount: {}: can't read superblock on /dev/mapper/verity-test.\n\n", verity_mount_dir.path().display()));

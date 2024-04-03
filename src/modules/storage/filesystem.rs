@@ -5,9 +5,10 @@ use std::{
 
 use anyhow::{Context, Error};
 use log::{debug, info};
-use osutils::{mkfs, mkswap};
+use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
 use rayon::prelude::*;
 use trident_api::{
+    config::FileSystemType,
     status::{BlockDeviceContents, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
@@ -31,7 +32,7 @@ pub(super) fn create_filesystems(host_status: &mut HostStatus) -> Result<(), Err
                 "Creating '{}' filesystem on block device '{:?}'",
                 filesystem, block_device_id
             );
-            create_filesystem_on_block_device(device_path, filesystem).context(format!(
+            create_filesystem_on_block_device(device_path, *filesystem).context(format!(
                 "Failed to create filesystem '{}' on block device '{}'",
                 filesystem, block_device_id
             ))?;
@@ -60,7 +61,7 @@ pub(super) fn create_filesystems(host_status: &mut HostStatus) -> Result<(), Err
 /// deploy on it.
 fn get_block_devices_to_initialize(
     host_status: &HostStatus,
-) -> Vec<(BlockDeviceId, PathBuf, String)> {
+) -> Vec<(BlockDeviceId, PathBuf, FileSystemType)> {
     // Fetch the list of block devices initialized by images
     let requested_image_block_device_ids: HashSet<&BlockDeviceId> = host_status
         .spec
@@ -116,7 +117,7 @@ fn get_block_devices_to_initialize(
                 return Some((
                     mount_point.target_id.clone(),
                     block_device_info.path,
-                    mount_point.filesystem.clone(),
+                    mount_point.filesystem,
                     ab_volume_pair,
                 ));
             }
@@ -128,7 +129,7 @@ fn get_block_devices_to_initialize(
                 return Some((
                     mount_point.target_id.clone(),
                     block_device_info.path,
-                    mount_point.filesystem.clone(),
+                    mount_point.filesystem,
                     ab_volume_pair,
                 ));
             }
@@ -157,15 +158,23 @@ fn get_block_devices_to_initialize(
 }
 
 /// Initialize a filesystem on the block device.
-fn create_filesystem_on_block_device(device_path: &Path, filesystem: &str) -> Result<(), Error> {
+fn create_filesystem_on_block_device(
+    device_path: &Path,
+    filesystem: FileSystemType,
+) -> Result<(), Error> {
     debug!(
         "Creating '{filesystem}' filesystem on block device {:?}",
         device_path
     );
-    if filesystem == "swap" {
+    if filesystem == FileSystemType::Swap {
         mkswap::run(device_path).context("Failed to create swap space")
     } else {
-        mkfs::run(device_path, filesystem).context("Failed to create filesystem")
+        mkfs::run(
+            device_path,
+            MkfsFileSystemType::from_api_type(filesystem)
+                .context("Swap should be handled separately")?,
+        )
+        .context("Failed to create filesystem")
     }
 }
 
@@ -220,13 +229,13 @@ mod test {
                         MountPoint {
                             path: PathBuf::from("/boot/efi"),
                             target_id: "esp".to_string(),
-                            filesystem: "fat32".to_string(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
@@ -292,7 +301,7 @@ mod test {
         // should return an empty vector, as all block devices have been already initialized
         assert_eq!(
             get_block_devices_to_initialize(&host_status_golden),
-            Vec::<(BlockDeviceId, PathBuf, String)>::new(),
+            Vec::<(BlockDeviceId, PathBuf, FileSystemType)>::new(),
             "Failed to determine that no block devices should be initialized on CleanInstall"
         );
 
@@ -313,7 +322,7 @@ mod test {
             vec![(
                 "esp".to_owned(),
                 PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                "fat32".to_owned()
+                FileSystemType::Vfat,
             )],
             "Failed to determine which block devices should be initialized on CleanInstall"
         );
@@ -340,7 +349,7 @@ mod test {
             vec![(
                 "esp".to_owned(),
                 PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                "fat32".to_owned()
+                FileSystemType::Vfat,
             )],
             "Failed to determine which block devices should be initialized on CleanInstall"
         );
@@ -356,12 +365,12 @@ mod test {
                 (
                     "esp".to_owned(),
                     PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "fat32".to_owned()
+                    FileSystemType::Vfat,
                 ),
                 (
                     "root-a".to_owned(),
                     PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "ext4".to_owned()
+                    FileSystemType::Ext4,
                 )
             ],
             "Failed to determine which block devices should be initialized on CleanInstall"
@@ -383,7 +392,7 @@ mod test {
 
         assert_eq!(
                 get_block_devices_to_initialize(&host_status),
-                Vec::<(BlockDeviceId, PathBuf, String)>::new(),
+                Vec::<(BlockDeviceId, PathBuf, FileSystemType)>::new(),
                 "Failed to determine that no volumes should be reinitialized when images for all A/B volume pairs are requested"
             );
 
@@ -398,7 +407,7 @@ mod test {
         let expected_volume_rootb = vec![(
             "root-b".to_owned(),
             expected_path_rootb.clone(),
-            "ext4".to_owned(),
+            FileSystemType::Ext4,
         )];
 
         assert_eq!(
@@ -415,7 +424,7 @@ mod test {
         let expected_volume_roota = vec![(
             "root-a".to_owned(),
             expected_path_roota.clone(),
-            "ext4".to_owned(),
+            FileSystemType::Ext4,
         )];
 
         assert_eq!(
@@ -438,6 +447,7 @@ mod functional_test {
 
     use osutils::{
         exe::RunAndCheck,
+        filesystems::MountFileSystemType,
         lsblk, mount,
         testutils::repart::{self, TEST_DISK_DEVICE_PATH},
     };
@@ -452,7 +462,8 @@ mod functional_test {
         repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 
         // Run initialize_block_device() to format to ext4 filesystem
-        create_filesystem_on_block_device(Path::new(TEST_DISK_DEVICE_PATH), "ext4").unwrap();
+        create_filesystem_on_block_device(Path::new(TEST_DISK_DEVICE_PATH), FileSystemType::Ext4)
+            .unwrap();
 
         // Confirm that /dev/sdb has been reformatted to ext4
         let block_device = lsblk::run(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
@@ -474,7 +485,7 @@ mod functional_test {
         mount::mount(
             Path::new(TEST_DISK_DEVICE_PATH),
             Path::new("/mnt/sdb"),
-            "ext4",
+            MountFileSystemType::Ext4,
             &["defaults".into()],
         )
         .unwrap();
@@ -490,7 +501,7 @@ mod functional_test {
 
         let result = create_filesystem_on_block_device(
             Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            "ext4",
+            FileSystemType::Ext4,
         );
 
         assert_eq!(

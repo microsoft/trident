@@ -80,7 +80,7 @@ mod tests {
 
     use crate::config::{
         host::storage::blkdev_graph::types::{BlkDevKind, HostConfigBlockDevice},
-        Image, ImageFormat, ImageSha256, MountPoint, Partition, PartitionType,
+        FileSystemType, Image, ImageFormat, ImageSha256, MountPoint, Partition, PartitionType,
     };
 
     use super::*;
@@ -110,7 +110,7 @@ mod tests {
         };
         let mount_point = MountPoint {
             path: PathBuf::from("/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-123"),
-            filesystem: "barfoo".into(),
+            filesystem: FileSystemType::Ext4,
             target_id: "foobar".into(),
             options: vec![],
         };
@@ -127,7 +127,7 @@ mod tests {
         };
         let mount_point2 = MountPoint {
             path: PathBuf::from("/var/lib/kubelet/pods/123/volumes/kubernetes.io~csi/pvc-456"),
-            filesystem: "barfoo".into(),
+            filesystem: FileSystemType::Ext4,
             target_id: "foobar".into(),
             options: vec![],
         };

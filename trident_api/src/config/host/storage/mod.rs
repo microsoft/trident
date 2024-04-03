@@ -30,7 +30,7 @@ use self::{
     disks::Disk,
     encryption::Encryption,
     imaging::{AbUpdate, Image},
-    mountpoint::MountPoint,
+    mountpoint::{FileSystemType, MountPoint},
     partitions::Partition,
     raid::Raid,
     verity::VerityDevice,
@@ -326,7 +326,7 @@ impl Storage {
     ///
     /// Block device IDs that are part of RAID arrays or verity devices
     /// are not supported. In such cases, None is returned.
-    pub fn get_filesystem(&self, bdid: &BlockDeviceId) -> Option<&String> {
+    pub fn get_filesystem(&self, bdid: &BlockDeviceId) -> Option<FileSystemType> {
         // Recursive case: Check if the block device is part of an A/B
         // update volume pair, and if so, return the filesystem of A/B
         // update volume part itself.
@@ -344,7 +344,7 @@ impl Storage {
         // if so, return the filesystem of the mount point.
         self.mount_points.iter().find_map(|mp| {
             if mp.target_id == *bdid {
-                Some(&mp.filesystem)
+                Some(mp.filesystem)
             } else {
                 None
             }
@@ -370,6 +370,7 @@ mod tests {
         disks::PartitionTableType,
         encryption::EncryptedVolume,
         imaging::{AbVolumePair, ImageFormat, ImageSha256},
+        mountpoint::FileSystemType,
         partitions::{PartitionSize, PartitionType},
         raid::{RaidLevel, SoftwareRaidArray},
     };
@@ -464,37 +465,37 @@ mod tests {
             mount_points: vec![
                 MountPoint {
                     path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: Vec::new(),
                     target_id: "root".to_owned(),
                 },
                 MountPoint {
                     path: PathBuf::from("/boot/efi"),
-                    filesystem: "vfat".to_owned(),
+                    filesystem: FileSystemType::Vfat,
                     options: Vec::new(),
                     target_id: "esp".to_owned(),
                 },
                 MountPoint {
                     path: PathBuf::from("/mnt"),
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: Vec::new(),
                     target_id: "mnt".to_owned(),
                 },
                 MountPoint {
                     path: PathBuf::from("/srv"),
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: Vec::new(),
                     target_id: "srv".to_owned(),
                 },
                 MountPoint {
                     path: PathBuf::from("/boot"),
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: Vec::new(),
                     target_id: "boot".to_owned(),
                 },
                 MountPoint {
                     path: PathBuf::from(TRIDENT_OVERLAY_PATH),
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: Vec::new(),
                     target_id: "overlay".to_owned(),
                 },
@@ -648,13 +649,13 @@ mod tests {
             ],
             mount_points: vec![
                 MountPoint {
-                    filesystem: "ext4".to_string(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "disk1-partition2".to_string(),
                     path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                 },
                 MountPoint {
-                    filesystem: "ext4".to_string(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "disk1-partition1".to_string(),
                     path: PathBuf::from("/boot/efi"),
@@ -688,13 +689,13 @@ mod tests {
             }),
             mount_points: vec![
                 MountPoint {
-                    filesystem: "ext4".to_string(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "ab-update-volume-pair".to_string(),
                     path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                 },
                 MountPoint {
-                    filesystem: "ext4".to_string(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "disk1-partition1".to_string(),
                     path: PathBuf::from("/boot/efi"),
@@ -831,13 +832,13 @@ mod tests {
             },
             mount_points: vec![
                 MountPoint {
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "ab1".to_owned(),
                     path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                 },
                 MountPoint {
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "part1".to_owned(),
                     path: PathBuf::from("/boot/efi"),
@@ -1130,7 +1131,7 @@ mod tests {
             });
         storage.mount_points.push(MountPoint {
             path: PathBuf::from("/alt"),
-            filesystem: "ext4".to_owned(),
+            filesystem: FileSystemType::Ext4,
             options: Vec::new(),
             target_id: "alt".to_owned(),
         });
@@ -1405,7 +1406,7 @@ mod tests {
             });
         storage.mount_points.push(MountPoint {
             path: PathBuf::from("/alt"),
-            filesystem: "ext4".to_owned(),
+            filesystem: FileSystemType::Ext4,
             options: Vec::new(),
             target_id: "alt".to_owned(),
         });
@@ -1867,7 +1868,7 @@ mod tests {
                     }],
                 },
                 mount_points: vec![MountPoint {
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "part1".to_owned(),
                     path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -1898,7 +1899,7 @@ mod tests {
 
         // ensure to pick the longest prefix
         host_config.storage.mount_points.push(MountPoint {
-            filesystem: "ext4".to_owned(),
+            filesystem: FileSystemType::Ext4,
             options: vec![],
             target_id: "part2".to_owned(),
             path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
@@ -1939,19 +1940,19 @@ mod tests {
                     MountPoint {
                         path: PathBuf::from("/"),
                         target_id: "root".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                     MountPoint {
                         path: PathBuf::from("/boot"),
                         target_id: "boot".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                     MountPoint {
                         path: PathBuf::from("/boot/efi"),
                         target_id: "efi".into(),
-                        filesystem: "vfat".into(),
+                        filesystem: FileSystemType::Vfat,
                         options: vec![],
                     },
                 ],
@@ -1968,7 +1969,7 @@ mod tests {
                 &MountPoint {
                     path: PathBuf::from("/"),
                     target_id: "root".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 Path::new("")
@@ -1983,7 +1984,7 @@ mod tests {
                 &MountPoint {
                     path: PathBuf::from("/boot"),
                     target_id: "boot".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 Path::new("efi.cfg")
@@ -1998,7 +1999,7 @@ mod tests {
                 &MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
                 Path::new("")
@@ -2013,7 +2014,7 @@ mod tests {
                 &MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
                 Path::new("")
@@ -2028,7 +2029,7 @@ mod tests {
                 &MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
                 Path::new("foobar")
@@ -2043,7 +2044,7 @@ mod tests {
                 &MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
                 Path::new("foobar")
@@ -2058,26 +2059,29 @@ mod tests {
                 MountPoint {
                     path: PathBuf::from("/"),
                     target_id: "root".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot"),
                     target_id: "boot".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
             ],
             ..Default::default()
         };
 
-        assert_eq!(storage.get_filesystem(&"efi".into()).unwrap(), "vfat");
+        assert_eq!(
+            storage.get_filesystem(&"efi".into()).unwrap(),
+            FileSystemType::Vfat
+        );
     }
 
     #[test]
@@ -2087,26 +2091,29 @@ mod tests {
                 MountPoint {
                     path: PathBuf::from("/"),
                     target_id: "root".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot"),
                     target_id: "boot".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
             ],
             ..Default::default()
         };
 
-        assert_eq!(storage.get_filesystem(&"root".into()).unwrap(), "ext4");
+        assert_eq!(
+            storage.get_filesystem(&"root".into()).unwrap(),
+            FileSystemType::Ext4
+        );
     }
 
     #[test]
@@ -2116,19 +2123,19 @@ mod tests {
                 MountPoint {
                     path: PathBuf::from("/"),
                     target_id: "root".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot"),
                     target_id: "boot".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
             ],
@@ -2145,19 +2152,19 @@ mod tests {
                 MountPoint {
                     path: PathBuf::from("/"),
                     target_id: "root".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot"),
                     target_id: "boot".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
             ],
@@ -2171,7 +2178,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(storage.get_filesystem(&"root".into()).unwrap(), "ext4");
+        assert_eq!(
+            storage.get_filesystem(&"root".into()).unwrap(),
+            FileSystemType::Ext4
+        );
     }
 
     #[test]
@@ -2181,19 +2191,19 @@ mod tests {
                 MountPoint {
                     path: PathBuf::from("/"),
                     target_id: "root".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot"),
                     target_id: "boot".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 },
                 MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "efi".into(),
-                    filesystem: "vfat".into(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec![],
                 },
             ],
@@ -2207,6 +2217,9 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(storage.get_filesystem(&"root-a".into()).unwrap(), "ext4");
+        assert_eq!(
+            storage.get_filesystem(&"root-a".into()).unwrap(),
+            FileSystemType::Ext4
+        );
     }
 }

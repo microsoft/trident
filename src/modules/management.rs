@@ -226,7 +226,7 @@ pub(super) fn record_datastore_location(
 #[cfg(test)]
 mod tests {
     use trident_api::{
-        config::{AbUpdate, MountPoint, Storage},
+        config::{AbUpdate, FileSystemType, MountPoint, Storage},
         constants,
     };
 
@@ -239,7 +239,7 @@ mod tests {
                 mount_points: vec![MountPoint {
                     path: constants::ROOT_MOUNT_POINT_PATH.into(),
                     target_id: "sda1".into(),
-                    filesystem: "ext4".into(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 }],
                 ..Default::default()
@@ -261,13 +261,13 @@ mod tests {
                     MountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                     MountPoint {
                         path: "/bar".into(),
                         target_id: "sda2".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                 ],
@@ -284,13 +284,13 @@ mod tests {
                     MountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                     MountPoint {
                         path: "/bar".into(),
                         target_id: "sda2".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                 ],
@@ -321,13 +321,13 @@ mod tests {
                     MountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                     MountPoint {
                         path: "/bar".into(),
                         target_id: "sda2".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                 ],
@@ -358,13 +358,13 @@ mod tests {
                     MountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                     MountPoint {
                         path: "/bar".into(),
                         target_id: "sda2".into(),
-                        filesystem: "ext4".into(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
                 ],
@@ -405,7 +405,7 @@ mod functional_test {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
     use trident_api::{
-        config::{self, Disk, Partition, PartitionSize, PartitionType},
+        config::{self, Disk, FileSystemType, Partition, PartitionSize, PartitionType},
         status::{BlockDeviceContents, BlockDeviceInfo, Storage},
     };
 
@@ -440,19 +440,19 @@ mod functional_test {
                         config::MountPoint {
                             path: PathBuf::from("/"),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                         config::MountPoint {
                             path: PathBuf::from("/var"),
                             target_id: "var".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                         config::MountPoint {
                             path: PathBuf::from("/boot/efi"),
                             target_id: "efi".to_string(),
-                            filesystem: "vfat".to_string(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                     ],

@@ -2,8 +2,8 @@ use std::path::Path;
 use std::{collections::HashMap, path::PathBuf};
 
 use trident_api::config::{
-    Disk, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, Partition, PartitionSize,
-    PartitionTableType, PartitionType,
+    Disk, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint,
+    Partition, PartitionSize, PartitionTableType, PartitionType,
 };
 
 use crate::commands::partition::{FsType, PartitionMount};
@@ -97,11 +97,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
                     continue;
                 }
             },
-            filesystem: match part.fstype {
-                FsType::Efi => &FsType::Vfat,
-                ref s => s,
-            }
-            .to_string(),
+            filesystem: part.fstype.into(),
             options: part.fsoptions.clone(),
             target_id: partition_id.clone(),
         });
@@ -121,6 +117,17 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
     hc.storage.disks = disks.into_values().collect();
     hc.storage.mount_points = mount_points;
     hc.storage.images = images;
+}
+
+impl From<FsType> for FileSystemType {
+    fn from(value: FsType) -> Self {
+        match value {
+            FsType::Ext4 => FileSystemType::Ext4,
+            FsType::Vfat => FileSystemType::Vfat,
+            FsType::Efi => FileSystemType::Vfat,
+            FsType::Swap => FileSystemType::Swap,
+        }
+    }
 }
 
 fn path_to_partition_type(value: &Path) -> PartitionType {

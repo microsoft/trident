@@ -19,6 +19,7 @@ mod functional_test {
     use pytest_gen::functional_test;
 
     use crate::{
+        filesystems::MkfsFileSystemType,
         mkfs,
         testutils::repart::{self, TEST_DISK_DEVICE_PATH},
     };
@@ -70,7 +71,7 @@ mod functional_test {
 
         // run() on a formatted block device with a different filesystem
         // should reformat it as a swap.
-        mkfs::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext3")).unwrap();
+        mkfs::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext3).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")

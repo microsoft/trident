@@ -11,6 +11,7 @@ use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
+    filesystems::MountFileSystemType,
     hashing_reader::HashingReader,
     image_streamer,
     mount::{self, MountGuard},
@@ -92,7 +93,7 @@ fn copy_file_artifacts(
     mount::mount(
         &temp_image_path,
         temp_mount_dir,
-        "vfat",
+        MountFileSystemType::Vfat,
         &["umask=0077".into()],
     )
     .context(format!(
@@ -646,13 +647,13 @@ mod tests {
                         config::MountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "esp".to_string(),
-                            filesystem: "fat32".to_string(),
+                            filesystem: config::FileSystemType::Vfat,
                             options: vec![],
                         },
                         config::MountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: config::FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],

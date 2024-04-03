@@ -732,7 +732,10 @@ mod test {
     use maplit::btreemap;
 
     use trident_api::{
-        config::{self, AbUpdate, AbVolumePair, Disk, Partition, PartitionSize, PartitionType},
+        config::{
+            self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionSize,
+            PartitionType,
+        },
         constants,
         status::{BlockDeviceContents, Storage},
     };
@@ -764,13 +767,13 @@ mod test {
                     mount_points: vec![
                         config::MountPoint {
                             target_id: "boot".to_owned(),
-                            filesystem: "fat32".to_owned(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                             path: PathBuf::from("/boot"),
                         },
                         config::MountPoint {
                             target_id: "root".to_owned(),
-                            filesystem: "ext4".to_owned(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                             path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                         },

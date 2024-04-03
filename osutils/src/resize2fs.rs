@@ -18,13 +18,15 @@ mod functional_test {
     use pytest_gen::functional_test;
     use sys_mount::{MountFlags, UnmountFlags};
 
-    use crate::{lsblk, mkfs, testutils::repart::TEST_DISK_DEVICE_PATH};
+    use crate::{
+        filesystems::MkfsFileSystemType, lsblk, mkfs, testutils::repart::TEST_DISK_DEVICE_PATH,
+    };
 
     use super::*;
 
     fn create_and_resize_filesystem(
         block_device_path: &Path,
-        filesystem: &str,
+        filesystem: MkfsFileSystemType,
         before_blocks: &str,
         after_blocks: &str,
     ) {
@@ -68,7 +70,7 @@ mod functional_test {
     fn test_resize2fs_ext4_run() {
         create_and_resize_filesystem(
             Path::new(TEST_DISK_DEVICE_PATH),
-            "ext4",
+            MkfsFileSystemType::Ext4,
             "8383488",
             "16518332416",
         );
@@ -79,7 +81,7 @@ mod functional_test {
     fn test_resize2fs_ext3_run() {
         create_and_resize_filesystem(
             Path::new(TEST_DISK_DEVICE_PATH),
-            "ext3",
+            MkfsFileSystemType::Ext3,
             "8463360",
             "16519315456",
         );
@@ -90,7 +92,7 @@ mod functional_test {
     fn test_resize2fs_ext2_run() {
         create_and_resize_filesystem(
             Path::new(TEST_DISK_DEVICE_PATH),
-            "ext2",
+            MkfsFileSystemType::Ext2,
             "9511936",
             "16520364032",
         );
@@ -140,7 +142,7 @@ mod functional_test {
         ));
 
         // Fail on unsupported FS
-        mkfs::run(Path::new(&loop_device_path), "vfat").unwrap();
+        mkfs::run(Path::new(&loop_device_path), MkfsFileSystemType::Vfat).unwrap();
         assert!(
             run(Path::new(&loop_device_path))
                 .unwrap_err()

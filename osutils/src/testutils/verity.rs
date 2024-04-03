@@ -4,6 +4,7 @@ use const_format::formatcp;
 
 use crate::{
     files,
+    filesystems::MountFileSystemType,
     grub::GrubConfig,
     mount::{self, MountGuard},
     mountpoint,
@@ -37,7 +38,13 @@ pub fn setup_verity_images() -> PathBuf {
         files::create_dirs(cdrom_mount_path).unwrap();
     }
     if !mountpoint::check_is_mountpoint(cdrom_mount_path).unwrap() {
-        mount::mount(CDROM_DEVICE_PATH, cdrom_mount_path, "iso9660", &[]).unwrap();
+        mount::mount(
+            CDROM_DEVICE_PATH,
+            cdrom_mount_path,
+            MountFileSystemType::Iso9660,
+            &[],
+        )
+        .unwrap();
     }
 
     let verity_data_path = cdrom_mount_path.join(VERITY_ROOT_DATA_IMAGE_PATH);
@@ -63,7 +70,13 @@ pub fn setup_verity_volumes() -> String {
     let expected_root_hash = {
         let boot_mount_dir = tempfile::tempdir().unwrap();
         // Mount image to temp dir
-        mount::mount(block_device_path, boot_mount_dir.path(), "ext4", &[]).unwrap();
+        mount::mount(
+            block_device_path,
+            boot_mount_dir.path(),
+            MountFileSystemType::Ext4,
+            &[],
+        )
+        .unwrap();
 
         // Create a mount guard that will automatically unmount when it goes out of scope
         let _mount_guard = MountGuard {

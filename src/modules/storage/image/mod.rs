@@ -221,11 +221,7 @@ fn update_image(
         .iter()
         .find(|mp| mp.target_id == image.target_id);
     if let Some(mount_point) = mount_point {
-        if (mount_point.filesystem == "ext4"
-            || mount_point.filesystem == "ext3"
-            || mount_point.filesystem == "ext2")
-            && !mount_point.options.contains(&"ro".into())
-        {
+        if mount_point.filesystem.is_ext() && !mount_point.options.contains(&"ro".into()) {
             // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
             info!("Checking filesystem on block device '{}'", &image.target_id);
             e2fsck::run(&block_device.path).context(format!(
@@ -580,8 +576,8 @@ mod tests {
 
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, Disk, ImageSha256, MountPoint, Partition, PartitionSize,
-            PartitionType, Storage as StorageConfig,
+            AbUpdate, AbVolumePair, Disk, FileSystemType, ImageSha256, MountPoint, Partition,
+            PartitionSize, PartitionType, Storage as StorageConfig,
         },
         status::{Storage, UpdateKind},
     };
@@ -598,13 +594,13 @@ mod tests {
                         MountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "boot".to_string(),
-                            filesystem: "fat32".to_string(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
@@ -760,13 +756,13 @@ mod tests {
                         MountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "boot".to_string(),
-                            filesystem: "fat32".to_string(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
@@ -960,13 +956,13 @@ mod tests {
                         MountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "boot".to_string(),
-                            filesystem: "fat32".to_string(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
@@ -1035,13 +1031,13 @@ mod tests {
                         MountPoint {
                             path: PathBuf::from("/esp"),
                             target_id: "esp".to_string(),
-                            filesystem: "fat32".to_string(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
@@ -1272,14 +1268,16 @@ mod functional_test {
     use maplit::btreemap;
 
     use osutils::{
-        blkid, mkfs,
+        blkid,
+        filesystems::MkfsFileSystemType,
+        mkfs,
         testutils::{
             repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
             verity::{self, VerityGuard},
         },
     };
     use trident_api::{
-        config::{self, AbVolumePair, Disk, MountPoint, Partition},
+        config::{self, AbVolumePair, Disk, FileSystemType, MountPoint, Partition},
         status::Storage,
     };
 
@@ -1288,7 +1286,7 @@ mod functional_test {
     fn test_update_fs_uuid() {
         let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
         // Create a new ext4 filesystem on /dev/sdb
-        mkfs::run(block_device_path, "ext4").unwrap();
+        mkfs::run(block_device_path, MkfsFileSystemType::Ext4).unwrap();
 
         let new_uuid = update_fs_uuid(block_device_path).unwrap();
 
@@ -1733,7 +1731,7 @@ mod functional_test {
         // Missing volume pair for root mount point
         host_status.spec.storage.mount_points = vec![MountPoint {
             target_id: "root".to_string(),
-            filesystem: "ext4".to_string(),
+            filesystem: FileSystemType::Ext4,
             options: vec![],
             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
         }];

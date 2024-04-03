@@ -136,7 +136,7 @@ impl std::fmt::Display for PartitionMount {
     }
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
 pub enum FsType {
     /// Ext4 filesystem

@@ -9,7 +9,11 @@ use anyhow::{bail, Context, Error};
 use osutils::exe::RunAndCheck;
 use serde_json::Value;
 
-use trident_api::{config::MountPoint, constants, status::HostStatus};
+use trident_api::{
+    config::{FileSystemType, MountPoint},
+    constants,
+    status::HostStatus,
+};
 
 use crate::modules;
 
@@ -71,7 +75,7 @@ pub(crate) fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathB
 }
 
 fn mount_point_to_line(host_status: &HostStatus, mp: &MountPoint) -> Result<String, Error> {
-    let mount_device_path_str = if mp.filesystem == constants::OVERLAY_FILESYSTEM {
+    let mount_device_path_str = if mp.filesystem == FileSystemType::Overlay {
         "overlay".to_owned()
     } else {
         let mount_device_path = modules::get_block_device(host_status, &mp.target_id, false)
@@ -151,10 +155,10 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint, Partition,
-            PartitionSize, PartitionTableType, PartitionType, Storage,
+            Disk, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint,
+            Partition, PartitionSize, PartitionTableType, PartitionType, Storage,
         },
-        constants,
+        constants::{self, SWAP_MOUNT_POINT},
         status::{
             BlockDeviceContents, BlockDeviceInfo, HostStatus, ReconcileState,
             Storage as StorageStatus,
@@ -246,7 +250,7 @@ mod tests {
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from("/boot/efi"),
-                    filesystem: "vfat".to_owned(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec!["umask=0077".to_owned()],
                     target_id: "efi".to_owned(),
                 },
@@ -265,7 +269,7 @@ mod tests {
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
-                    filesystem: "vfat".to_owned(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec!["errors=remount-ro".to_owned()],
                     target_id: "root".to_owned(),
                 },
@@ -284,7 +288,7 @@ mod tests {
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from("/home"),
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec!["defaults".to_owned(), "x-systemd.makefs".to_owned()],
                     target_id: "home".to_owned(),
                 },
@@ -303,7 +307,7 @@ mod tests {
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from("/random"),
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "foobar".to_owned(),
                 },
@@ -323,8 +327,8 @@ mod tests {
             mount_point_to_line(
                 &host_status,
                 &MountPoint {
-                    path: PathBuf::from("none"),
-                    filesystem: "swap".to_owned(),
+                    path: PathBuf::from(SWAP_MOUNT_POINT),
+                    filesystem: FileSystemType::Swap,
                     options: vec!["sw".to_owned()],
                     target_id: "swap".to_owned(),
                 },
@@ -343,7 +347,7 @@ mod tests {
                 &host_status,
                 &MountPoint {
                     path: PathBuf::from("/etc"),
-                    filesystem: "overlay".to_owned(),
+                    filesystem: FileSystemType::Overlay,
                     options: vec![
                         "lowerdir=/etc".into(),
                         "upperdir=/var/lib/trident-overlay/etc/upper".into(),
@@ -420,25 +424,25 @@ mod tests {
                 mount_points: vec![
                     MountPoint {
                         path: PathBuf::from("/boot/efi"),
-                        filesystem: "vfat".to_owned(),
+                        filesystem: FileSystemType::Vfat,
                         options: vec!["umask=0077".to_owned()],
                         target_id: "efi".to_owned(),
                     },
                     MountPoint {
                         path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
-                        filesystem: "ext4".to_owned(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec!["errors=remount-ro".to_owned()],
                         target_id: "root".to_owned(),
                     },
                     MountPoint {
                         path: PathBuf::from("/home"),
-                        filesystem: "ext4".to_owned(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec!["defaults".to_owned(), "x-systemd.makefs".to_owned()],
                         target_id: "home".to_owned(),
                     },
                     MountPoint {
-                        path: PathBuf::from("none"),
-                        filesystem: "swap".to_owned(),
+                        path: PathBuf::from(SWAP_MOUNT_POINT),
+                        filesystem: FileSystemType::Swap,
                         options: vec!["sw".to_owned()],
                         target_id: "swap".to_owned(),
                     },
@@ -498,7 +502,7 @@ mod tests {
 
         let mut mount_points = host_config.storage.mount_points;
         mount_points.push(MountPoint {
-            filesystem: "overlay".to_owned(),
+            filesystem: FileSystemType::Overlay,
             options: vec![
                 "lowerdir=/mnt".to_owned(),
                 "upperdir=/mnt/newroot".to_owned(),

@@ -49,8 +49,8 @@ pub(super) mod types;
 mod tests {
     use crate::{
         config::{
-            AbVolumePair, Disk, EncryptedVolume, Image, ImageFormat, ImageSha256, MountPoint,
-            Partition, PartitionSize, PartitionTableType, PartitionType, RaidLevel,
+            AbVolumePair, Disk, EncryptedVolume, FileSystemType, Image, ImageFormat, ImageSha256,
+            MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType, RaidLevel,
             SoftwareRaidArray,
         },
         constants,
@@ -117,7 +117,7 @@ mod tests {
         let mount_point = MountPoint {
             path: constants::ROOT_MOUNT_POINT_PATH.into(),
             target_id: "partition6".into(),
-            filesystem: "ext4".into(),
+            filesystem: FileSystemType::Ext4,
             options: Vec::new(),
         };
         builder.add_mount_point(&mount_point);

@@ -20,14 +20,17 @@ mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
 
-    use crate::testutils::repart::{self, TEST_DISK_DEVICE_PATH};
+    use crate::{
+        filesystems::MkfsFileSystemType,
+        testutils::repart::{self, TEST_DISK_DEVICE_PATH},
+    };
 
     /// Validates that run() correctly checks the file system on the block device.
     #[functional_test(feature = "helpers")]
     fn test_e2fsck_run() {
         let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
         // Create a new ext4 filesystem on /dev/sdb
-        crate::mkfs::run(block_device_path, "ext4").unwrap();
+        crate::mkfs::run(block_device_path, MkfsFileSystemType::Ext4).unwrap();
 
         // Run e2fsck to check the filesystem
         run(block_device_path).unwrap();
@@ -50,7 +53,7 @@ mod functional_test {
         // Test case 2: Run e2fsck on a corrupted file system
         let block_device_path_corrupted = Path::new(TEST_DISK_DEVICE_PATH);
         // Create a new ext4 filesystem on /dev/sdc
-        crate::mkfs::run(block_device_path_corrupted, "ext4").unwrap();
+        crate::mkfs::run(block_device_path_corrupted, MkfsFileSystemType::Ext4).unwrap();
         // Corrupt the filesystem
         repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 

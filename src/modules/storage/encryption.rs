@@ -457,8 +457,9 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, EncryptedVolume, Encryption, Image, ImageFormat, ImageSha256, MountPoint,
-            Partition, PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
+            Disk, EncryptedVolume, Encryption, FileSystemType, Image, ImageFormat, ImageSha256,
+            MountPoint, Partition, PartitionSize, PartitionType, Raid, RaidLevel,
+            SoftwareRaidArray, Storage,
         },
         constants,
     };
@@ -560,19 +561,19 @@ mod tests {
                 MountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "esp".to_string(),
-                    filesystem: "fat32".to_string(),
+                    filesystem: FileSystemType::Vfat,
                     options: vec!["defaults".to_owned()],
                 },
                 MountPoint {
                     path: constants::ROOT_MOUNT_POINT_PATH.into(),
                     target_id: "root".to_string(),
-                    filesystem: "ext4".to_string(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec!["defaults".to_owned()],
                 },
                 MountPoint {
                     path: PathBuf::from("/srv"),
                     target_id: "srv".to_string(),
-                    filesystem: "ext4".to_string(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec!["defaults".to_owned()],
                 },
             ],

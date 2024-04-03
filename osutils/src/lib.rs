@@ -6,6 +6,7 @@ pub mod e2fsck;
 pub mod efibootmgr;
 pub mod exe;
 pub mod files;
+pub mod filesystems;
 pub mod grub;
 pub mod hashing_reader;
 pub mod image_streamer;

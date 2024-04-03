@@ -4,14 +4,13 @@ use std::{path::Path, process::Command};
 use anyhow::{bail, Context, Error};
 use log::{error, info};
 
-use crate::exe::RunAndCheck;
-use crate::{files, lsof};
+use crate::{exe::RunAndCheck, files, filesystems::MountFileSystemType, lsof};
 
 /// Mounts file or block device in path to a dir mount_dir.
 pub fn mount(
     path: impl AsRef<Path>,
     mount_dir: impl AsRef<Path>,
-    filesystem: &str,
+    filesystem: MountFileSystemType,
     options: &[String],
 ) -> Result<(), Error> {
     let mut options = options.to_owned();
@@ -30,7 +29,7 @@ pub fn mount(
     // Execute the mount command
     command
         .arg("-t")
-        .arg(filesystem)
+        .arg(filesystem.name())
         .arg(path.as_ref())
         .arg(mount_dir.as_ref())
         .run_and_check()
@@ -184,7 +183,7 @@ mod functional_test {
         fs::create_dir_all(mount_point).unwrap();
 
         // Test mount_file function
-        mount(device, mount_point, "iso9660", &[]).unwrap();
+        mount(device, mount_point, MountFileSystemType::Iso9660, &[]).unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
         // otherwise, use the device path itself
@@ -214,11 +213,23 @@ mod functional_test {
     fn test_recursive_unmount() {
         let tmp_mount = Path::new("/mnt/tmpfs");
         fs::create_dir_all(tmp_mount).unwrap();
-        mount("tmpfs", tmp_mount, "tmpfs", &["size=1M".into()]).unwrap();
+        mount(
+            "tmpfs",
+            tmp_mount,
+            MountFileSystemType::Tmpfs,
+            &["size=1M".into()],
+        )
+        .unwrap();
 
         let cdrom_mount = tmp_mount.join("cdrom");
         fs::create_dir_all(&cdrom_mount).unwrap();
-        mount(Path::new("/dev/sr0"), &cdrom_mount, "auto", &[]).unwrap();
+        mount(
+            Path::new("/dev/sr0"),
+            &cdrom_mount,
+            MountFileSystemType::Auto,
+            &[],
+        )
+        .unwrap();
 
         umount(tmp_mount, true).unwrap();
         assert!(!cdrom_mount.exists());
@@ -231,7 +242,7 @@ mod functional_test {
         mount(
             "tmpfs",
             tmp_mount,
-            "tmpfs",
+            MountFileSystemType::Tmpfs,
             &["size=1M".into(), "ro".into()],
         )
         .unwrap();
@@ -291,7 +302,7 @@ mod functional_test {
         let mount_result_1 = mount(
             "/path/to/non/existent/file",
             temp_mount_dir.path(),
-            "auto",
+            MountFileSystemType::Auto,
             &[],
         );
         assert_eq!(
@@ -310,7 +321,7 @@ mod functional_test {
         let mount_result_2 = mount(
             temp_file.path(),
             "/path/to/non/existent/directory",
-            "auto",
+            MountFileSystemType::Auto,
             &[],
         );
         assert_eq!(

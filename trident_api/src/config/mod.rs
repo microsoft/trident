@@ -13,7 +13,7 @@ pub use host::{
     storage::{
         disks::{Disk, PartitionTableType},
         encryption::{EncryptedVolume, Encryption},
-        mountpoint::MountPoint,
+        mountpoint::{FileSystemType, MountPoint},
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
         verity::VerityDevice,

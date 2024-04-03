@@ -64,6 +64,8 @@ pub enum ImageFormat {
     /// Raw filesystem image with zstd compression.
     RawZst,
 
+    /// # Raw Lzma Compressed
+    ///
     /// Raw filesystem image with lzma compression, required by
     /// systemd-sysupdate.
     #[cfg(feature = "sysupdate")]

@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Error};
 use log::debug;
 use osutils::{blkid, grub::GrubConfig};
 use trident_api::{
+    config::FileSystemType,
     constants::{
         BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
         GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH,
@@ -69,13 +70,14 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     // get_filesystem_uuid expects a filesystem that uses UUIDs, so limiting to
     // ext4 for now
     // TODO: improve supported filesystems validation in API: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6853
-    if boot_mount_point.filesystem != "ext4" {
+    if boot_mount_point.filesystem != FileSystemType::Ext4 {
         bail!(
             "Unsupported filesystem type for block device '{}': {}",
             boot_mount_point.target_id,
             boot_mount_point.filesystem
         );
     }
+
     let boot_block_device_id = &boot_mount_point.target_id;
     let boot_block_device_info =
         modules::get_block_device(host_status, boot_block_device_id, false)
@@ -237,6 +239,7 @@ mod functional_test {
     use maplit::btreemap;
 
     use osutils::{
+        filesystems::MkfsFileSystemType,
         lsblk::{self, BlockDevice},
         mkfs,
         repart::{RepartMode, SystemdRepartInvoker},
@@ -427,12 +430,12 @@ mod functional_test {
     //     host_status.storage.mount_points = btreemap! {
     //         PathBuf::from("/boot") => MountPoint {
     //             target_id: "boot1".to_owned(),
-    //             filesystem: "fat32".to_owned(),
+    //             filesystem: MountFileSystemType::Vfat,
     //             options: vec![],
     //         },
     //         PathBuf::from(ROOT_MOUNT_POINT_PATH) => MountPoint {
     //             target_id: raid_array.id.clone(),
-    //             filesystem: "ext4".to_owned(),
+    //             filesystem: MountFileSystemType::Vfat,
     //             options: vec![],
     //         },
     //     };
@@ -469,13 +472,13 @@ mod functional_test {
                         MountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "boot".to_owned(),
-                            filesystem: "fat32".to_owned(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
@@ -507,12 +510,12 @@ mod functional_test {
         };
 
         let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
-        mkfs::run(&root_device_path, "ext4").unwrap();
+        mkfs::run(&root_device_path, MkfsFileSystemType::Ext4).unwrap();
 
         // fail on unsupported filesystem
         assert_eq!(
             update_configs(&host_status).unwrap_err().to_string(),
-            "Unsupported filesystem type for block device 'boot': fat32"
+            "Unsupported filesystem type for block device 'boot': vfat"
         );
 
         // original test
@@ -520,7 +523,7 @@ mod functional_test {
         host_status.spec.storage.mount_points.push(MountPoint {
             path: PathBuf::from("/esp"),
             target_id: "boot".to_owned(),
-            filesystem: "fat32".to_owned(),
+            filesystem: FileSystemType::Vfat,
             options: vec![],
         });
 
@@ -561,13 +564,13 @@ mod functional_test {
                         MountPoint {
                             path: PathBuf::from("/efi"),
                             target_id: "boot".to_owned(),
-                            filesystem: "fat32".to_owned(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
@@ -611,7 +614,7 @@ mod functional_test {
         };
 
         let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
-        mkfs::run(&root_device_path, "ext4").unwrap();
+        mkfs::run(&root_device_path, MkfsFileSystemType::Ext4).unwrap();
         update_configs(&host_status).unwrap();
     }
 
@@ -642,7 +645,7 @@ mod functional_test {
                     mount_points: vec![MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         target_id: "root".to_string(),
-                        filesystem: "ext4".to_string(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     }],
                     ..Default::default()
@@ -706,7 +709,7 @@ mod functional_test {
                     mount_points: vec![MountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         target_id: "root".to_string(),
-                        filesystem: "ext4".to_string(),
+                        filesystem: FileSystemType::Ext4,
                         options: vec![],
                     }],
                     ..Default::default()

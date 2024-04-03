@@ -443,9 +443,10 @@ mod tests {
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk as DiskConfig, HostConfiguration, Image,
-            ImageFormat, ImageSha256, MountPoint, Partition as PartitionConfig, PartitionSize,
-            PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage as StorageConfig,
+            self, AbUpdate, AbVolumePair, Disk as DiskConfig, FileSystemType, HostConfiguration,
+            Image, ImageFormat, ImageSha256, MountPoint, Partition as PartitionConfig,
+            PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray,
+            Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
         status::{BlockDeviceInfo, Storage, UpdateKind},
@@ -523,7 +524,7 @@ mod tests {
                 },
                 verity: vec![],
                 mount_points: vec![MountPoint {
-                    filesystem: "ext4".to_owned(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "part1".to_owned(),
                     path: PathBuf::from(ROOT_MOUNT_POINT_PATH),

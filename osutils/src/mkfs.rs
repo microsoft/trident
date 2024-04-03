@@ -2,12 +2,12 @@ use std::{path::Path, process::Command};
 
 use anyhow::{Context, Error};
 
-use crate::exe::RunAndCheck;
+use crate::{exe::RunAndCheck, filesystems::MkfsFileSystemType};
 
-pub fn run(device_path: &Path, filesystem: &str) -> Result<(), Error> {
+pub fn run(device_path: &Path, filesystem: MkfsFileSystemType) -> Result<(), Error> {
     Command::new("mkfs")
         .arg("--type")
-        .arg(filesystem)
+        .arg(filesystem.name())
         .arg(device_path)
         .run_and_check()
         .context("Failed to execute mkfs")
@@ -16,10 +16,14 @@ pub fn run(device_path: &Path, filesystem: &str) -> Result<(), Error> {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 /// Helper function to create a filesystem that is smaller than the full device size
-pub(super) fn run_blocks(device_path: &Path, filesystem: &str, blocks: u64) -> Result<(), Error> {
+pub(super) fn run_blocks(
+    device_path: &Path,
+    filesystem: MkfsFileSystemType,
+    blocks: u64,
+) -> Result<(), Error> {
     Command::new("mkfs")
         .arg("--type")
-        .arg(filesystem)
+        .arg(filesystem.name())
         .arg(device_path)
         .arg(format!("{blocks}"))
         .run_and_check()
@@ -46,7 +50,7 @@ mod functional_test {
         }
     }
 
-    fn test_filesystem(filesystem: &str) {
+    fn test_filesystem(filesystem: MkfsFileSystemType) {
         let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
 
         super::run(block_device_path, filesystem).unwrap();
@@ -61,10 +65,10 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_supported_filesystems() {
-        test_filesystem("ext2");
-        test_filesystem("ext3");
-        test_filesystem("ext4");
-        test_filesystem("vfat");
+        test_filesystem(MkfsFileSystemType::Ext2);
+        test_filesystem(MkfsFileSystemType::Ext3);
+        test_filesystem(MkfsFileSystemType::Ext4);
+        test_filesystem(MkfsFileSystemType::Vfat);
     }
 
     #[functional_test(feature = "helpers")]
@@ -73,7 +77,7 @@ mod functional_test {
 
         // run() on a zeroed block device should format it with the
         // specified filesystem. It should be mountable and writable.
-        super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext4")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext4).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
@@ -97,7 +101,7 @@ mod functional_test {
         // run() on a formatted block device with a different filesystem
         // should format it with the new filesystem and clear the device
         // contents.
-        super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext3")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext3).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
@@ -122,7 +126,7 @@ mod functional_test {
         // run() on a formatted block device with the same filesystem
         // should not change the filesystem but should again clear the
         // device contents.
-        super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext3")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext3).unwrap();
         assert_eq!(
             Command::new("lsblk")
                 .arg("-no")
@@ -150,7 +154,7 @@ mod functional_test {
         setup_test();
 
         // Create a file on the block device to ensure it's not empty.
-        super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("ext4")).unwrap();
+        super::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext4).unwrap();
         Command::new("mount")
             .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
@@ -162,20 +166,9 @@ mod functional_test {
             .unwrap();
         Command::new("umount").arg("/mnt").run_and_check().unwrap();
 
-        // run() using filesystem 'foo' that mkfs doesn't recognize should
-        // fail and not clear the device contents.
-        assert!(super::run(Path::new(TEST_DISK_DEVICE_PATH), &String::from("foo")).is_err());
-        Command::new("mount")
-            .arg(TEST_DISK_DEVICE_PATH)
-            .arg("/mnt")
-            .run_and_check()
-            .unwrap();
-        assert!(Path::new("/mnt/test").exists());
-        Command::new("umount").arg("/mnt").run_and_check().unwrap();
-
         // run() using device '/dev/foo' that doesn't exist should also
         // fail and again not clear the device contents.
-        assert!(super::run(Path::new("/dev/foo"), &String::from("ext3")).is_err());
+        assert!(super::run(Path::new("/dev/foo"), MkfsFileSystemType::Ext3).is_err());
         Command::new("mount")
             .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")

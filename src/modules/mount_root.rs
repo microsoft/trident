@@ -5,7 +5,8 @@ use std::{
 
 use anyhow::{Context, Error};
 use log::{error, info};
-use osutils::{lsof, mount};
+
+use osutils::{filesystems::MountFileSystemType, lsof, mount};
 use trident_api::{
     config::MountPoint,
     constants::ROOT_MOUNT_POINT_PATH,
@@ -89,7 +90,10 @@ pub(super) fn mount_new_root(
             mount::mount(
                 &device_path,
                 &target_path,
-                mp.filesystem.as_str(),
+                MountFileSystemType::from_api_type(mp.filesystem).context(format!(
+                    "Filesystem type of block device '{}' is not valid for mounting: '{}'",
+                    mp.target_id, mp.filesystem,
+                ))?,
                 &mp.options,
             )
             .context(format!(
@@ -110,7 +114,7 @@ mod test {
     use super::*;
 
     use std::path::PathBuf;
-    use trident_api::config::{HostConfiguration, MountPoint, Storage};
+    use trident_api::config::{FileSystemType, HostConfiguration, MountPoint, Storage};
 
     #[test]
     fn test_mount_point_ordering() {
@@ -121,31 +125,31 @@ mod test {
                         MountPoint {
                             path: PathBuf::from("/mnt/boot/efi"),
                             target_id: "sda3".to_string(),
-                            filesystem: "vfat".to_string(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from("/mnt"),
                             target_id: "sda1".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from("/a"),
                             target_id: "sda1".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from("/"),
                             target_id: "sda1".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                         MountPoint {
                             path: PathBuf::from("/mnt/boot"),
                             target_id: "sda2".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
@@ -199,7 +203,9 @@ mod functional_test {
         udevadm,
     };
     use trident_api::{
-        config::{self, Disk, HostConfiguration, Partition, PartitionSize, PartitionType},
+        config::{
+            self, Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionType,
+        },
         error::ErrorKind,
         status::{BlockDeviceContents, BlockDeviceInfo, Storage},
     };
@@ -234,7 +240,7 @@ mod functional_test {
                     mount_points: vec![config::MountPoint {
                         path: PathBuf::from("/"),
                         target_id: "sr0".to_string(),
-                        filesystem: "iso9660".to_string(),
+                        filesystem: FileSystemType::Iso9660,
                         options: vec!["ro".into()],
                     }],
                     ..Default::default()
@@ -301,13 +307,13 @@ mod functional_test {
                         config::MountPoint {
                             path: PathBuf::from("/"),
                             target_id: "root".to_string(),
-                            filesystem: "ext4".to_string(),
+                            filesystem: FileSystemType::Ext4,
                             options: vec!["defaults".into()],
                         },
                         config::MountPoint {
                             path: PathBuf::from("/boot/efi"),
                             target_id: "esp".to_string(),
-                            filesystem: "vfat".to_string(),
+                            filesystem: FileSystemType::Vfat,
                             options: vec!["umask=0077".into()],
                         },
                     ],
@@ -449,7 +455,7 @@ mod functional_test {
                     mount_points: vec![config::MountPoint {
                         path: PathBuf::from("foobar"),
                         target_id: "sr0".to_string(),
-                        filesystem: "iso9660".to_string(),
+                        filesystem: FileSystemType::Iso9660,
                         options: vec!["bad-options".into()],
                     }],
                     ..Default::default()
@@ -549,7 +555,7 @@ mod functional_test {
                     mount_points: vec![config::MountPoint {
                         path: PathBuf::from("/"),
                         target_id: "sr0".to_string(),
-                        filesystem: "iso9660".to_string(),
+                        filesystem: FileSystemType::Iso9660,
                         options: vec!["ro".into()],
                     }],
                     ..Default::default()

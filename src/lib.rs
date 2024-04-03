@@ -494,7 +494,7 @@ fn open_firewall_for_grpc() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use trident_api::{
-        config::{MountPoint, Storage},
+        config::{FileSystemType, MountPoint, Storage},
         constants,
     };
 
@@ -521,7 +521,7 @@ mod tests {
                 mount_points: vec![MountPoint {
                     path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                     target_id: "sda1".to_string(),
-                    filesystem: "ext4".to_string(),
+                    filesystem: FileSystemType::Ext4,
                     options: vec![],
                 }],
                 ..Default::default()
