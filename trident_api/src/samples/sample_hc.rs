@@ -1000,6 +1000,7 @@ mod tests {
     #[test]
     fn test_build_basic_host_configuration() {
         let host_configuration = sample_host_configuration("basic").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 1);
         assert!(&host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
@@ -1014,6 +1015,7 @@ mod tests {
     #[test]
     fn test_build_simple_host_configuration() {
         let host_configuration = sample_host_configuration("simple").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 1);
         assert!(&host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
@@ -1028,6 +1030,7 @@ mod tests {
     #[test]
     fn test_build_base_host_configuration() {
         let host_configuration = sample_host_configuration("base").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 1);
 
         assert!(host_configuration.storage.encryption.is_some());
@@ -1047,6 +1050,7 @@ mod tests {
     #[test]
     fn test_build_verity_host_configuration() {
         let host_configuration = sample_host_configuration("verity").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 1);
         assert!(host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
@@ -1061,6 +1065,7 @@ mod tests {
     #[test]
     fn test_build_advanced_host_configuration() {
         let host_configuration = sample_host_configuration("advanced").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 2);
 
         assert!(host_configuration.storage.encryption.is_some());

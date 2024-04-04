@@ -170,12 +170,6 @@ validate-api-schema: build-api-schema docbuilder
 	}
 	@echo "Trident API Schema is OK!"
 
-.PHONY: validate-hc-sample
-validate-hc-sample: build-api-docs
-	$(eval TMP := $(shell mktemp -d))
-	$(foreach SAMPLE_NAME,$(HC_SAMPLES),$(DOCBUILDER_BIN) host-config sample -n $(SAMPLE_NAME) -o $(TMP)/$(SAMPLE_NAME).yaml && cargo run validate --host-config $(TMP)/$(SAMPLE_NAME).yaml &&) true
-	rm -rf $(TMP)
-
 .PHONY: build-functional-tests
 build-functional-test:
 	cargo build --tests --features functional-test --all
