@@ -24,7 +24,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0".into(),
+                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: vec![
                         Partition {
@@ -82,7 +82,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0".into(),
+                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: vec![
                         Partition {
@@ -167,6 +167,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
                     content: Some(
                         "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
                     ),
+                    permissions: Some("0755".into()),
                     ..Default::default()
                 }],
             },
@@ -196,7 +197,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0".into(),
+                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: vec![
                         Partition {
@@ -243,7 +244,10 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
                     adopted_partitions: vec![],
                 }],
                 encryption: Some(Encryption {
-                    recovery_key_url: Some(Url::parse("file:///recovery.key").unwrap()),
+                    recovery_key_url: Some(
+                        Url::parse("file:///trident_cdrom/data/recovery.key").unwrap(),
+                    ),
+
                     volumes: vec![EncryptedVolume {
                         id: "srv".to_string(),
                         device_name: "luks-srv".to_string(),
@@ -359,6 +363,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
                     content: Some(
                         "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
                     ),
+                    permissions: Some("0755".into()),
                     ..Default::default()
                 }],
             },
@@ -388,7 +393,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0".into(),
+                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: vec![
                         Partition {
@@ -535,6 +540,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
                     content: Some(
                         "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
                     ),
+                    permissions: Some("0755".into()),
                     ..Default::default()
                 }],
             },
@@ -565,7 +571,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
                 disks: vec![
                     Disk {
                         id: "disk1".to_string(),
-                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1".into(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
                         partition_table_type: PartitionTableType::Gpt,
                         partitions: vec![
                             Partition {
@@ -639,7 +645,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
                     },
                     Disk {
                         id: "disk2".to_string(),
-                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-3".into(),
                         partition_table_type: PartitionTableType::Gpt,
                         partitions: vec![
                             Partition {
@@ -954,6 +960,7 @@ pub fn sample_host_configuration(name: &str) -> Result<HostConfiguration, Error>
                     AdditionalFile {
                         destination: "/var/config-script.sh".into(),
                         content: Some("echo 'Hello, world!'".into()),
+                        permissions: Some("0755".into()),
                         ..Default::default()
                     },
                     AdditionalFile {

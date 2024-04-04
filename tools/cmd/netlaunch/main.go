@@ -128,9 +128,10 @@ var rootCmd = &cobra.Command{
 
 		// If we have a trident config file, we need to patch it into the ISO.
 		if len(tridentConfigFile) != 0 {
+			log.Info("Using Trident config file: ", tridentConfigFile)
 			tridentConfigContents, err := os.ReadFile(tridentConfigFile)
 			if err != nil {
-				log.WithError(err).Fatalf("failed to read trident config")
+				log.WithError(err).Fatalf("failed to read Trident config")
 			}
 
 			// Replace NETLAUNCH_HOST_ADDRESS with the address of the netlaunch server
@@ -139,7 +140,7 @@ var rootCmd = &cobra.Command{
 			trident := make(map[string]interface{})
 			err = yaml.UnmarshalStrict([]byte(tridentConfigContentsStr), &trident)
 			if err != nil {
-				log.WithError(err).Fatalf("failed to unmarshal trident config")
+				log.WithError(err).Fatalf("failed to unmarshal Trident config")
 			}
 
 			trident["phonehome"] = fmt.Sprintf("http://%s/phonehome", listen.Addr().String())

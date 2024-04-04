@@ -9,7 +9,7 @@ trident:
 storage:
   disks:
   - id: os
-    device: /dev/disk/by-path/pci-0000:00:1f.2-ata-1.0
+    device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2.0
     partitionTableType: gpt
     partitions:
     - id: esp
@@ -37,7 +37,7 @@ storage:
       type: linux-generic
       size: 1G
   encryption:
-    recoveryKeyUrl: file:///recovery.key
+    recoveryKeyUrl: file:///trident_cdrom/data/recovery.key
     volumes:
     - id: srv
       deviceName: luks-srv
@@ -128,4 +128,5 @@ os:
   additionalFiles:
   - destination: /var/config-script.sh
     content: 'echo ''Running from newly deployed chroot: $SAMPLE_VARIABLE'''
+    permissions: '0755'
 ```
