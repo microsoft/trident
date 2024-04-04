@@ -130,6 +130,34 @@ stages:
             condition: succeededOrFailed()
             displayName: "Publish deployment.log"
 
+          - script: |
+                set -eux
+                configFile="$(tridentConfigPath)/trident-config.yaml"
+                abupdateExists=$(sudo yq e '.hostConfiguration.storage.abUpdate != null' "$configFile")
+                verityExists=$(sudo yq e '.hostConfiguration.storage.verity != null'  "$configFile")
+                if [ "$abupdateExists" == true ] && [ "$verityExists" == true ]; then
+                  echo "##vso[task.setvariable variable=shouldDownloadVerityImages]true"
+                elif [ "$abupdateExists" == true ]; then
+                  echo "##vso[task.setvariable variable=shouldDownloadTestImages]true"
+                fi
+            displayName: 'Check Conditions for Download'
+    
+          - task: DownloadPipelineArtifact@2
+            condition:  and(succeeded(), eq(variables['shouldDownloadTestImages'], 'true'))
+            inputs:
+              buildType: current
+              artifactName: "trident-testimg"
+              branchName: "refs/heads/main"
+              targetPath: "$(System.ArtifactsDirectory)/trident-testimg" 
+
+          - task: DownloadPipelineArtifact@2
+            condition:  and(succeeded(), eq(variables['shouldDownloadVerityImages'], 'true'))
+            inputs:
+              buildType: current
+              artifactName: "trident-verity-testimage"
+              branchName: "refs/heads/main"
+              targetPath: "$(System.ArtifactsDirectory)/trident-verity-testimage"       
+
           - template: ../common_tasks/e2e-test-run.yml
             parameters:
               buildPurpose: $(buildPurpose)
