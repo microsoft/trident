@@ -1,5 +1,26 @@
 /*
 Copyright © 2023 Microsoft Corporation
+
+netlisten: A tool to listen for phonehome and logstream requests from Trident.
+
+CLI usage: netlisten -p <port>
+
+Instructions:
+Pick a port to listen on. This port will be used for both phonehome and logstream requests.
+
+Populate the phonehome and netlisten urls in the Trident config file with the address of
+the machine running netlisten.
+
+Example:
+
+```yaml
+phonehome: http://<netlisten_address>:<port>/phonehome
+logstream: http://<netlisten_address>:<port>/logstream
+```
+
+Start the netlisten server by running `netlisten -p <port>`.
+Then start the provisioning using the patched trident config file.
+
 */
 package main
 

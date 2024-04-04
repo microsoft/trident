@@ -249,6 +249,10 @@ bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum
 	mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
+bin/netlisten: tools/cmd/netlisten/* tools/go.sum
+	mkdir -p bin
+	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
+
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
 	bin/trident validate -c $(TRIDENT_CONFIG)

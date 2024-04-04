@@ -3,6 +3,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: buildNetlisten
+    type: boolean
+    default: true
+
   - name: buildIsogen
     type: boolean
     default: true
@@ -35,6 +39,15 @@ stages:
                   mv bin/netlaunch $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
                 displayName: "Building netlaunch"
+          
+          - ${{ if eq(parameters.buildNetlaunch, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/netlisten
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/netlisten $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building netlisten"
 
           - ${{ if eq(parameters.buildIsogen, true) }}:
               - checkout: argus-toolkit
