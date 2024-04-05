@@ -31,10 +31,22 @@ steps:
  
   - bash: |
       set -eux
+      sshKeyPath="$(Build.SourcesDirectory)/e2e_tests/helpers/key"
+      # Check SSH connection and wait for 2 minutes if it fails
+      for i in {1..24}; do
+        ssh -q -o "StrictHostKeyChecking=no" -i "$sshKeyPath" testing-user@${{ parameters.hostIp }} exit
+        SSH_EXIT_CODE=$?
+        if [ $SSH_EXIT_CODE -eq 0 ]; then
+          echo "SSH connection successful. VM is up and running."
+            break
+        else
+            echo "SSH connection failed. Waiting for 5 seconds before retrying..."
+            sleep 5
+        fi
+      done
       ls -ltr $(System.ArtifactsDirectory)
       verityExists=$(sudo yq e '.hostConfiguration.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      abupdateExists=$(sudo yq e '.hostConfiguration.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      sshKeyPath="$(Build.SourcesDirectory)/e2e_tests/helpers/key"
+      abupdateExists=$(sudo yq e '.hostConfiguration.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml") 
       if [ "$verityExists" == true ] && [ "$abupdateExists" == true ]; then
           artifactsDirectory="$(System.ArtifactsDirectory)/trident-verity-testimage"
           destinationDirectory="/run"
