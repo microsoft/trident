@@ -10,8 +10,9 @@ import (
 )
 
 type OrchestratorMessage struct {
-	State   string
-	Message string
+	State       string
+	Message     string
+	Host_Status string
 }
 
 func SetupPhoneHomeServer(done chan<- bool, remoteAddressFile string) {
@@ -41,8 +42,12 @@ func SetupPhoneHomeServer(done chan<- bool, remoteAddressFile string) {
 			}
 		}
 
+		if message.Host_Status != "" {
+			log.Infof("Host Status:\n%s", message.Host_Status)
+		}
+
 		if message.State == "failed" {
-			log.Fatalf("Trident failed to deploy Runtime OS with message:\n%s", message.Message)
+			log.Fatalf("Trident failed to deploy Runtime OS with error:\n%s", message.Message)
 		}
 
 		log.WithField("state", message.State).Info(message.Message)

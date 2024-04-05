@@ -67,13 +67,20 @@ stages:
           - bash: |
               set -eux
 
-              echo "Netlaunch output:" >> ./deployment.log
+              # rerun is expected to fail
+              [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ] || set -o pipefail
+
+              echo "Netlaunch output:" > ./deployment.log
               ./bin/netlaunch \
                   --iso $(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso \
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --logstream \
               2>&1 | tee -a ./deployment.log
+
+              mkdir -p $(ob_outputDirectory)
+              cp ./deployment.log $(ob_outputDirectory)/deployment-netlaunch.log
+
               $(tridentSourceDirectory)/e2e_tests/helpers/check_netlaunch.py ./deployment.log || [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]
 
               sudo virsh list
@@ -122,7 +129,7 @@ stages:
           - bash: |
               set -eux
               if [[ -f $(argusToolkitSourceDirectory)/deployment.log ]]; then
-                mkdir -p deployment_logs
+                mkdir -p $(ob_outputDirectory)
                 sudo cp $(argusToolkitSourceDirectory)/deployment.log \
                             $(ob_outputDirectory)/deployment.log
               fi
@@ -141,14 +148,14 @@ stages:
                   echo "##vso[task.setvariable variable=shouldDownloadTestImages]true"
                 fi
             displayName: 'Check Conditions for Download'
-    
+
           - task: DownloadPipelineArtifact@2
             condition:  and(succeeded(), eq(variables['shouldDownloadTestImages'], 'true'))
             inputs:
               buildType: current
               artifactName: "trident-testimg"
               branchName: "refs/heads/main"
-              targetPath: "$(System.ArtifactsDirectory)/trident-testimg" 
+              targetPath: "$(System.ArtifactsDirectory)/trident-testimg"
 
           - task: DownloadPipelineArtifact@2
             condition:  and(succeeded(), eq(variables['shouldDownloadVerityImages'], 'true'))
@@ -156,7 +163,7 @@ stages:
               buildType: current
               artifactName: "trident-verity-testimage"
               branchName: "refs/heads/main"
-              targetPath: "$(System.ArtifactsDirectory)/trident-verity-testimage"       
+              targetPath: "$(System.ArtifactsDirectory)/trident-verity-testimage"
 
           - template: ../common_tasks/e2e-test-run.yml
             parameters:

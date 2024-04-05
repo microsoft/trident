@@ -9,6 +9,7 @@ if len(sys.argv) < 1:
 
 template = r"""
 .*\n
+.*Using\s+Trident\s+config\s+file: .+\n
 .*Listening\.\.\.\s+address="\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}"\n
 .*(")?ISO\s+deployed!(")?\s*\n
 .*(")?Waiting\s+for\s+phone\s+home\.\.\.\s*(")?\n
@@ -16,6 +17,7 @@ template = r"""
 .*(")?Trident\s+started\s+\(connection\s+attempt\s+\d+\)(")?\s+state=started\n
 (.*\n)*
 .*(")?Trident\s+started\s+\(connection\s+attempt\s+\d+\)(")?\s+state=started\n
+.*(")?Host\s+Status:\\nspec:\\n.*\\n"\n
 .*(")?provisioning\s+succeeded(")?\s+state=succeeded\s*
 """
 

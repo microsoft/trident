@@ -142,7 +142,7 @@ target/trident-api-docs:
 build-api-schema: target/trident-api-docs docbuilder
 	$(DOCBUILDER_BIN) host-config schema -o "$(TRIDENT_API_HC_SCHEMA_GENERATED)"
 
-HC_SAMPLES = basic simple base verity advanced
+HC_SAMPLES = basic simple base verity advanced raid encryption
 TRIDENT_API_HC_SAMPLES := docs/Reference/Host-Configuration/Samples
 
 .PHONY: build-api-docs
@@ -240,11 +240,11 @@ $(abspath dev-docs/diagrams)/%.png: dev-docs/diagrams/%.mmd
 go.sum: go.mod
 	go mod tidy
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/phonehome/*
 	mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
-bin/netlisten: tools/cmd/netlisten/* tools/go.sum
+bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/phonehome/*
 	mkdir -p bin
 	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
 
@@ -273,7 +273,7 @@ run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-
 .PHONY: run-netlaunch-sample
 run-netlaunch-sample: build-api-docs
 	$(eval TMP := $(shell mktemp))
-	yq '.os.users += {"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only"} | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | .storage.images[].sha256 = "ignored" | {"hostConfiguration": .}' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
+	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | .storage.images[].sha256 = "ignored" | {"hostConfiguration": .}' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
 	TRIDENT_CONFIG=$(TMP) make run-netlaunch
 
 .PHONY: download-runtime-partition-images

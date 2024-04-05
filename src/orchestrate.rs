@@ -13,6 +13,7 @@ enum State {
 struct Message {
     state: State,
     message: String,
+    host_status: Option<String>,
 }
 
 pub struct OrchestratorConnection {
@@ -32,6 +33,7 @@ impl OrchestratorConnection {
                     serde_json::to_vec(&Message {
                         state: State::Started,
                         message: format!("Trident started (connection attempt {i})"),
+                        host_status: None,
                     })
                     .unwrap(),
                 )
@@ -59,18 +61,20 @@ impl OrchestratorConnection {
         }
     }
 
-    pub fn report_error(&self, message: String) {
+    pub fn report_error(&self, error: String, host_status: Option<String>) {
         self.send_message(Message {
             state: State::Failed,
-            message,
+            message: error,
+            host_status,
         });
     }
 
-    pub fn report_success(&self) {
+    pub fn report_success(&self, host_status: Option<String>) {
         info!("Reporting provisioning succeeded");
         self.send_message(Message {
             state: State::Succeeded,
             message: "provisioning succeeded".to_string(),
+            host_status,
         })
     }
 }

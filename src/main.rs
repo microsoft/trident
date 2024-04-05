@@ -30,6 +30,10 @@ struct GetArgs {
     /// Path to save the resulting HostStatus
     #[clap(short, long)]
     status: Option<PathBuf>,
+
+    /// Path to save an eventual fatal error
+    #[clap(short, long)]
+    error: Option<PathBuf>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -104,9 +108,7 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
 
         match &args.command {
             Commands::Run(args) => {
-                let res = trident
-                    .run()
-                    .unstructured("Failed to execute Trident run command");
+                let res = trident.run();
 
                 // return HostStatus if requested
                 if args.status.is_some() {
@@ -118,7 +120,20 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
                     }
                 }
 
-                res?;
+                // return error if requested
+                if let Some(error_path) = args.error.as_ref() {
+                    if let Err(e) = &res {
+                        // error fails to serialize, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7420/
+                        if let Err(e2) = std::fs::write(
+                            error_path,
+                            serde_yaml::to_string(&e).unwrap_or("".into()),
+                        ) {
+                            error!("Failed to write error to file: {e2}");
+                        }
+                    }
+                }
+
+                res.unstructured("Failed to execute Trident run command")?;
             }
             Commands::StartNetwork => trident
                 .start_network()

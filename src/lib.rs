@@ -153,7 +153,7 @@ impl Trident {
                     .filter(|l| reqwest::Url::parse(l).is_ok())
                 {
                     if let Some(o) = OrchestratorConnection::new(url.to_string()) {
-                        o.report_error(format!("{e:?}"))
+                        o.report_error(format!("{e:?}"), None)
                     }
                 }
                 return Err(e);
@@ -324,7 +324,7 @@ impl Trident {
 
             // Notify orchestrator that we are ready to receive commands.
             if let Some(ref orchestrator) = orchestrator {
-                orchestrator.report_success()
+                orchestrator.report_success(None)
             }
         } else {
             // If no gRPC connection details were provided, drop the sender side of the channel.
@@ -333,10 +333,13 @@ impl Trident {
             drop(sender);
         }
 
-        self.handle_commands(receiver, &orchestrator)?;
+        let host_status = self.handle_commands(receiver, &orchestrator)?;
 
         if let Some(ref orchestrator) = orchestrator {
-            orchestrator.report_success()
+            orchestrator.report_success(Some(
+                serde_yaml::to_string(&host_status)
+                    .unwrap_or("Failed to serialize host status".into()),
+            ))
         }
 
         Ok(())
@@ -346,7 +349,7 @@ impl Trident {
         &mut self,
         mut receiver: mpsc::Receiver<HostUpdateCommand>,
         orchestrator: &Option<OrchestratorConnection>,
-    ) -> Result<(), TridentError> {
+    ) -> Result<HostStatus, TridentError> {
         info!("Handling commands");
         let mut datastore = match self.config.datastore {
             Some(ref datastore_path) => DataStore::open(datastore_path)?,
@@ -361,7 +364,13 @@ impl Trident {
 
             if let Err(e) = self.handle_command(&mut datastore, cmd) {
                 if let Some(ref orchestrator) = *orchestrator {
-                    orchestrator.report_error(format!("{e:?}"));
+                    orchestrator.report_error(
+                        format!("{e:?}"),
+                        Some(
+                            serde_yaml::to_string(&datastore.host_status())
+                                .unwrap_or("Failed to serialize host status".into()),
+                        ),
+                    );
                 }
                 if has_sender {
                     // TODO: report the error back to the sender and then
@@ -380,7 +389,7 @@ impl Trident {
             bootentries::set_boot_order(datastore_path)?;
         }
 
-        Ok(())
+        Ok(datastore.host_status().clone())
     }
 
     fn handle_command(
