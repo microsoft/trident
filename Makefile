@@ -253,7 +253,7 @@ validate: $(TRIDENT_CONFIG) bin/trident
 	bin/trident validate -c $(TRIDENT_CONFIG)
 
 .PHONY: run-netlaunch
-run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso
+run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso validate
 	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 # This target leverages the samples that are automatically generated as part of
