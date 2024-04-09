@@ -47,6 +47,7 @@ impl MountFileSystemType {
             FileSystemType::Vfat => MountFileSystemType::Vfat,
             FileSystemType::Iso9660 => MountFileSystemType::Iso9660,
             FileSystemType::Overlay => MountFileSystemType::Overlay,
+            FileSystemType::Tmpfs => MountFileSystemType::Tmpfs,
             FileSystemType::Swap => {
                 bail!("'swap' FS type cannot be used for mounting")
             }
@@ -83,7 +84,10 @@ impl MkfsFileSystemType {
             FileSystemType::Ext4 => Self::Ext4,
             FileSystemType::Xfs => Self::Xfs,
             FileSystemType::Vfat => Self::Vfat,
-            FileSystemType::Swap | FileSystemType::Iso9660 | FileSystemType::Overlay => {
+            FileSystemType::Swap
+            | FileSystemType::Iso9660
+            | FileSystemType::Overlay
+            | FileSystemType::Tmpfs => {
                 bail!(
                     "'{}' filesystem type cannot be used for creating new filesystems",
                     api_type

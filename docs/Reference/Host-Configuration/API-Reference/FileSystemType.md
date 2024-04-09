@@ -45,12 +45,19 @@ File system types.
 | Type           | `string`  |
 | Value          | `iso9660` |
 
-### variant-6
-
-Overlay file system
+### Overlay file system
 
 | Characteristic | Value     |
 | -------------- | --------- |
 | Type           | `string`  |
 | Value          | `overlay` |
+
+### Tmpfs
+
+[Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `tmpfs`  |
 

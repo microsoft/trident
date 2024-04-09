@@ -307,10 +307,18 @@
           ]
         },
         {
-          "description": "Overlay file system",
+          "title": "Overlay file system",
           "type": "string",
           "enum": [
             "overlay"
+          ]
+        },
+        {
+          "title": "Tmpfs",
+          "description": "[Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)",
+          "type": "string",
+          "enum": [
+            "tmpfs"
           ]
         }
       ]

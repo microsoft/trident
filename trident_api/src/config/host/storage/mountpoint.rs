@@ -66,8 +66,13 @@ pub enum FileSystemType {
     /// # ISO9660 file system
     Iso9660,
 
-    /// Overlay file system
+    /// # Overlay file system
     Overlay,
+
+    /// # Tmpfs
+    ///
+    /// [Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)
+    Tmpfs,
 }
 
 impl Display for FileSystemType {
@@ -93,7 +98,8 @@ impl FileSystemType {
             | FileSystemType::Vfat
             | FileSystemType::Swap
             | FileSystemType::Iso9660
-            | FileSystemType::Overlay => false,
+            | FileSystemType::Overlay
+            | FileSystemType::Tmpfs => false,
         }
     }
 }
