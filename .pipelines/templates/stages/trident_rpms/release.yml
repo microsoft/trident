@@ -11,29 +11,15 @@ steps:
       system: "Custom"
       customVersion: $(trident_version)
 
-  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
-    displayName: Install native dependencies
-
-  - script: |
-      export TRIDENT_VERSION=$(trident_version)
-      cargo build --locked --release 2>&1
-      test "$(./target/release/trident --version)" = "trident $TRIDENT_VERSION"
-      exit $?
-    displayName: Build Release
-
-  - task: CopyFiles@2
-    inputs:
-      sourceFolder: "./target/release"
-      targetFolder: "$(ob_outputDirectory)"
-      contents: "*"
-    displayName: Copy files to output
-
   - task: CopyFiles@2
     inputs:
       sourceFolder: "./artifacts"
       targetFolder: "/usr/src/mariner/SOURCES"
       contents: "*"
     displayName: Copy EMU to SOURCES
+
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust p7zip p7zip-plugins zstd
+    displayName: Install native dependencies
 
   - script: |
       set -eux
@@ -55,6 +41,9 @@ steps:
       sourceFolder: "/usr/src/mariner/RPMS/x86_64"
       targetFolder: "$(ob_outputDirectory)"
     displayName: Copy RPM file to output
+
+  - script: ./scripts/extract-binary.sh /usr/src/mariner/RPMS/x86_64 $(ob_outputDirectory)
+    displayName: Extract Trident binary
 
   - template: common/setup-registries-template.yaml@platform-pipelines
 

@@ -42,6 +42,9 @@ stages:
               downloadLocation: $(ob_outputDirectory)
               outputVersionVariable: trident_version
 
+          - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
+            displayName: Extract Trident binary
+
           - task: onebranch.pipeline.version@1
             displayName: "Set build number"
             inputs:
