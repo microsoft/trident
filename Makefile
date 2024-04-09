@@ -25,7 +25,6 @@ build:
 	    TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 	    cargo build --release --features dangerous-options
 	mkdir -p bin
-	cp -u target/release/trident bin/
 
 .PHONY: format
 format:
@@ -69,6 +68,8 @@ artifacts/osmodifier:
 
 # RPM target
 bin/trident: build
+	cp -u target/release/trident bin/
+
 bin/trident-rpms.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifier bin/trident
 	@docker build --quiet -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
