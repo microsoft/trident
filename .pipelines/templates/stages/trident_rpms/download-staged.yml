@@ -36,6 +36,9 @@ stages:
               value: ${{ variables.stage_pre_suffix }}
 
         steps:
+          - script: sudo tdnf install -y p7zip p7zip-plugins zstd
+            displayName: Install native dependencies to extract trident binary
+
           - template: ../common_tasks/download-universal-artifact.yml
             parameters:
               packageName: ${{ variables.rpmsPackageBaseName }}${{ variables.downloadArtifactSuffix }}
