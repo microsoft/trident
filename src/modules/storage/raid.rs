@@ -301,7 +301,7 @@ struct MdadmDetail {
     devices: Vec<PathBuf>,
 }
 
-fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
+pub fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
     debug!("Unmounting RAID array: {:?}", raid_path);
     let mut umount_command = Command::new("umount");
     umount_command.arg(raid_path);
@@ -354,7 +354,7 @@ pub(super) fn create_sw_raid(
     Ok(())
 }
 
-pub(super) fn create_sw_raid_array(
+pub fn create_sw_raid_array(
     host_status: &mut HostStatus,
     config: &SoftwareRaidArray,
 ) -> Result<(), Error> {

@@ -30,7 +30,7 @@ use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
 mod encryption;
 mod filesystem;
 pub mod image;
-mod raid;
+pub mod raid;
 pub mod tabfile;
 mod verity;
 

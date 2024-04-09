@@ -237,7 +237,7 @@ mod functional_test {
 
     use const_format::formatcp;
     use maplit::btreemap;
-
+    use modules::storage::raid::create_sw_raid_array;
     use osutils::{
         filesystems::MkfsFileSystemType,
         lsblk::{self, BlockDevice},
@@ -249,22 +249,31 @@ mod functional_test {
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk, HostConfiguration, MountPoint, Partition,
-            PartitionSize, PartitionType,
+            PartitionSize, PartitionType, RaidLevel, SoftwareRaidArray,
         },
         status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage},
     };
 
-    pub fn test_execute_and_resulting_layout() {
-        let partition_definition = repart::generate_partition_definition_esp_root_generic();
-
+    pub fn test_execute_and_resulting_layout(is_single_disk_raid: bool) {
         let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
+
+        let mut partition_definition = repart::generate_partition_definition_esp_root_generic();
+        if is_single_disk_raid {
+            partition_definition =
+                repart::generate_partition_definition_esp_root_raid_single_disk();
+        }
 
         let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartMode::Force)
             .with_partition_entries(partition_definition.clone());
 
         let partitions = repart.execute().unwrap();
+        udevadm::settle().unwrap();
 
-        assert_eq!(partitions.len(), 3);
+        if is_single_disk_raid {
+            assert_eq!(partitions.len(), 4);
+        } else {
+            assert_eq!(partitions.len(), 3);
+        }
 
         let part1 = &partitions[0];
         let part1_start = 1024 * 1024;
@@ -276,178 +285,245 @@ mod functional_test {
         assert_eq!(part2.start, part2_start);
         assert_eq!(part2.size, PART2_SIZE);
 
-        let part3 = &partitions[2];
-        assert_eq!(part3.start, part2_start + PART2_SIZE);
-        assert_eq!(
-            part3.size,
-            16 * 1024 * 1024 * 1024 - part1_start - PART1_SIZE - PART2_SIZE - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
-        );
+        if is_single_disk_raid {
+            let part3 = &partitions[2];
+            let part3_start = part2_start + PART2_SIZE;
+            assert_eq!(part3.start, part3_start);
+            assert_eq!(part3.size, PART2_SIZE);
 
-        udevadm::settle().unwrap();
+            let part4 = &partitions[3];
+            assert_eq!(part4.start, part3_start + PART2_SIZE);
+            assert_eq!(
+                part4.size,
+                16 * 1024 * 1024 * 1024 - part1_start - PART1_SIZE - 2 * PART2_SIZE - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
+            );
 
-        let expected_block_device = BlockDevice {
-            name: TEST_DISK_DEVICE_PATH.into(),
-            fstype: None,
-            fssize: None,
-            part_uuid: None,
-            size: DISK_SIZE,
-            parent_kernel_name: None,
-            mountpoints: vec![None],
-            children: Some(vec![
-                BlockDevice {
-                    name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
-                    fstype: None,
-                    fssize: None,
-                    part_uuid: Some(part1.uuid),
-                    size: part1.size,
-                    parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                    children: None,
-                    mountpoints: vec![None],
-                },
-                BlockDevice {
-                    name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
-                    fstype: None,
-                    fssize: None,
-                    part_uuid: Some(part2.uuid),
-                    size: part2.size,
-                    parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                    children: None,
-                    mountpoints: vec![None],
-                },
-                BlockDevice {
-                    name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
-                    fstype: None,
-                    fssize: None,
-                    part_uuid: Some(part3.uuid),
-                    size: part3.size,
-                    parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                    children: None,
-                    mountpoints: vec![None],
-                },
-            ]),
-        };
+            let expected_block_device = BlockDevice {
+                name: TEST_DISK_DEVICE_PATH.into(),
+                fstype: None,
+                fssize: None,
+                part_uuid: None,
+                size: DISK_SIZE,
+                parent_kernel_name: None,
+                mountpoints: vec![None],
+                children: Some(vec![
+                    BlockDevice {
+                        name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
+                        fstype: None,
+                        fssize: None,
+                        part_uuid: Some(part1.uuid),
+                        size: part1.size,
+                        parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
+                        children: None,
+                        mountpoints: vec![None],
+                    },
+                    BlockDevice {
+                        name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
+                        fstype: None,
+                        fssize: None,
+                        part_uuid: Some(part2.uuid),
+                        size: part2.size,
+                        parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
+                        children: None,
+                        mountpoints: vec![None],
+                    },
+                    BlockDevice {
+                        name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
+                        fstype: None,
+                        fssize: None,
+                        part_uuid: Some(part3.uuid),
+                        size: part3.size,
+                        parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
+                        children: None,
+                        mountpoints: vec![None],
+                    },
+                    BlockDevice {
+                        name: formatcp!("{TEST_DISK_DEVICE_PATH}4").into(),
+                        fstype: None,
+                        fssize: None,
+                        part_uuid: Some(part4.uuid),
+                        size: part4.size,
+                        parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
+                        children: None,
+                        mountpoints: vec![None],
+                    },
+                ]),
+            };
 
-        let block_device = lsblk::run(&disk_bus_path).unwrap();
-        assert_eq!(expected_block_device, block_device);
+            let block_device = lsblk::run(&disk_bus_path).unwrap();
+            assert_eq!(expected_block_device, block_device);
+        } else {
+            let part3 = &partitions[2];
+            assert_eq!(part3.start, part2_start + PART2_SIZE);
+            assert_eq!(
+                part3.size,
+                16 * 1024 * 1024 * 1024 - part1_start - PART1_SIZE - PART2_SIZE - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
+            );
+
+            udevadm::settle().unwrap();
+
+            let expected_block_device = BlockDevice {
+                name: TEST_DISK_DEVICE_PATH.into(),
+                fstype: None,
+                fssize: None,
+                part_uuid: None,
+                size: DISK_SIZE,
+                parent_kernel_name: None,
+                mountpoints: vec![None],
+                children: Some(vec![
+                    BlockDevice {
+                        name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
+                        fstype: None,
+                        fssize: None,
+                        part_uuid: Some(part1.uuid),
+                        size: part1.size,
+                        parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
+                        children: None,
+                        mountpoints: vec![None],
+                    },
+                    BlockDevice {
+                        name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
+                        fstype: None,
+                        fssize: None,
+                        part_uuid: Some(part2.uuid),
+                        size: part2.size,
+                        parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
+                        children: None,
+                        mountpoints: vec![None],
+                    },
+                    BlockDevice {
+                        name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
+                        fstype: None,
+                        fssize: None,
+                        part_uuid: Some(part3.uuid),
+                        size: part3.size,
+                        parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
+                        children: None,
+                        mountpoints: vec![None],
+                    },
+                ]),
+            };
+
+            let block_device = lsblk::run(&disk_bus_path).unwrap();
+            assert_eq!(expected_block_device, block_device);
+        }
     }
 
-    // Disabled as it breaks other FTs (depends on /dev/sda), task to fix: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6828
-    // #[functional_test(feature = "helpers")]
-    // /// This functions tests update_grub by setting up root on a raid array.
-    // fn test_update_grub_root_raided() {
-    //     test_execute_and_resulting_layout();
-    //     let mut host_status = HostStatus {
-    //         storage: Storage {
-    //             disks: btreemap! {
-    //                 "foo".into() => Disk {
-    //                     uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128),
-    //                     path: PathBuf::from("/dev/sda"),
-    //                     capacity: 10,
-    //                     contents: BlockDeviceContents::Initialized,
-    //                     partitions: vec![
-    //                         Partition {
-    //                             uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000001u128),
-    //                             path: PathBuf::from("/dev/sda1"),
-    //                             id: "boot1".into(),
-    //                             start: 1,
-    //                             end: 3,
-    //                             ty: PartitionType::Esp,
-    //                             contents: BlockDeviceContents::Initialized,
-    //                         },
-    //                         Partition {
-    //                             uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000002u128),
-    //                             path: PathBuf::from("/dev/sda3"),
-    //                             id: "root1".into(),
-    //                             start: 4,
-    //                             end: 10,
-    //                             ty: PartitionType::Root,
-    //                             contents: BlockDeviceContents::Initialized,
-    //                         },
-    //                     ],
-    //                 },
-    //                 "foo1".into() => Disk {
-    //                     uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000003u128),
-    //                     path: PathBuf::from("/dev/sdb"),
-    //                     capacity: 10,
-    //                     contents: BlockDeviceContents::Initialized,
-    //                     partitions: vec![
-    //                         Partition {
-    //                             uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000004u128),
-    //                             path: PathBuf::from("/dev/sdb1"),
-    //                             id: "boot2".into(),
-    //                             start: 1,
-    //                             end: 3,
-    //                             ty: PartitionType::Esp,
-    //                             contents: BlockDeviceContents::Initialized,
-    //                         },
-    //                         Partition {
-    //                             uuid: Uuid::from_u128(0x00000000_0000_0000_0000_000000000005u128),
-    //                             path: PathBuf::from("/dev/sdb2"),
-    //                             id: "root2".into(),
-    //                             start: 4,
-    //                             end: 10,
-    //                             ty: PartitionType::Root,
-    //                             contents: BlockDeviceContents::Initialized,
-    //                         },
-    //                     ],
-    //                 },
+    #[functional_test(feature = "helpers")]
+    /// This functions tests update_grub by setting up root on a raid array.
+    fn test_update_grub_root_raided() {
+        test_execute_and_resulting_layout(true);
 
-    //             },
-    //             ..Default::default()
-    //         },
-    //         ..Default::default()
-    //     };
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "foo".into(),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        partitions: vec![
+                            Partition {
+                                id: "boot1".into(),
+                                size: PartitionSize::Fixed(2),
+                                partition_type: PartitionType::Esp,
+                            },
+                            Partition {
+                                id: "root1".into(),
+                                size: PartitionSize::Fixed(8),
+                                partition_type: PartitionType::Root,
+                            },
+                            Partition {
+                                id: "root2".into(),
+                                size: PartitionSize::Fixed(8),
+                                partition_type: PartitionType::Root,
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                        "foo".into() => BlockDeviceInfo {
+                            path: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                            size: 10,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "boot1".into() => BlockDeviceInfo {
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                            size: 2,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "root1".into() => BlockDeviceInfo {
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                            size: 8,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "root2".into() => BlockDeviceInfo {
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                            size: 8,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-    //     // Create a raid array
-    //     let raid_array = SoftwareRaidArray {
-    //         id: "raid_array".into(),
-    //         name: "md0".into(),
-    //         devices: vec!["root1".to_string(), "root2".to_string()],
-    //         level: RaidLevel::Raid1,
-    //         metadata_version: "1.2".into(),
-    //     };
-    //     raid::create_sw_raid_array(&mut host_status, &raid_array).unwrap();
-    //     let root_device_path = PathBuf::from(format!("/dev/md/{}", &raid_array.name));
-    //     let result = test_update_grub_root_raided_internal(
-    //         &mut host_status,
-    //         &raid_array,
-    //         root_device_path.as_path(),
-    //     );
-    //     // Unmount and stop the raid array
-    //     raid::unmount_and_stop(&root_device_path).unwrap();
-    //     result.unwrap();
-    // }
+        // Create a raid array
+        let raid_array = SoftwareRaidArray {
+            id: "raid_array".into(),
+            name: "md0".into(),
+            devices: vec!["root1".to_string(), "root2".to_string()],
+            level: RaidLevel::Raid1,
+            metadata_version: "1.2".into(),
+        };
+        create_sw_raid_array(&mut host_status, &raid_array).unwrap();
+        let root_device_path = PathBuf::from(format!("/dev/md/{}", &raid_array.name));
+        let result = test_update_grub_root_raided_internal(
+            &mut host_status,
+            &raid_array,
+            root_device_path.as_path(),
+        );
+        // Unmount and stop the raid array
+        modules::storage::raid::unmount_and_stop(&root_device_path).unwrap();
+        result.unwrap();
+    }
 
-    // fn test_update_grub_root_raided_internal(
-    //     host_status: &mut HostStatus,
-    //     raid_array: &SoftwareRaidArray,
-    //     root_device_path: &Path,
-    // ) -> Result<(), Error> {
-    //     // Make this as Root device
-    //     host_status.storage.root_device_path = Some(root_device_path.to_owned());
+    fn test_update_grub_root_raided_internal(
+        host_status: &mut HostStatus,
+        raid_array: &SoftwareRaidArray,
+        root_device_path: &Path,
+    ) -> Result<(), Error> {
+        // Make this as Root device
+        host_status.storage.root_device_path = Some(root_device_path.to_owned());
 
-    //     // Add mount points
-    //     host_status.storage.mount_points = btreemap! {
-    //         PathBuf::from("/boot") => MountPoint {
-    //             target_id: "boot1".to_owned(),
-    //             filesystem: MountFileSystemType::Vfat,
-    //             options: vec![],
-    //         },
-    //         PathBuf::from(ROOT_MOUNT_POINT_PATH) => MountPoint {
-    //             target_id: raid_array.id.clone(),
-    //             filesystem: MountFileSystemType::Vfat,
-    //             options: vec![],
-    //         },
-    //     };
-    //     mkfs(root_device_path);
+        host_status.spec.storage.mount_points.push(MountPoint {
+            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+            target_id: raid_array.id.clone(),
+            filesystem: FileSystemType::Ext4,
+            options: vec![],
+        });
 
-    //     update_grub_configs(host_status)
-    // }
+        host_status.storage.block_devices.insert(
+            raid_array.id.clone(),
+            BlockDeviceInfo {
+                path: root_device_path.to_owned(),
+                size: 16,
+                contents: BlockDeviceContents::Initialized,
+            },
+        );
+
+        mkfs::run(root_device_path, MkfsFileSystemType::Ext4).unwrap();
+
+        update_configs(host_status)
+    }
 
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root on a standalone partition.
     fn test_update_grub_root_standalone_partition() {
-        test_execute_and_resulting_layout();
+        test_execute_and_resulting_layout(false);
         let mut host_status = HostStatus {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -533,7 +609,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root as an ab volume partition.
     fn test_update_grub_root_abvolume() {
-        test_execute_and_resulting_layout();
+        test_execute_and_resulting_layout(false);
         let host_status = HostStatus {
             reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
@@ -621,7 +697,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root on a standalone partition and setting root uuid empty so that the function bails on root_uuid being empty.
     fn test_update_grub_root_uuid_empty() {
-        test_execute_and_resulting_layout();
+        test_execute_and_resulting_layout(false);
         let host_status = HostStatus {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -685,7 +761,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root path empty so that the function bails on root path being None.
     fn test_update_grub_root_path_empty() {
-        test_execute_and_resulting_layout();
+        test_execute_and_resulting_layout(false);
         let host_status = HostStatus {
             spec: HostConfiguration {
                 storage: config::Storage {

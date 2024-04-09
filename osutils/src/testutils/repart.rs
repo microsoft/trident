@@ -81,6 +81,36 @@ pub fn generate_partition_definition_boot_root_verity() -> Vec<RepartPartitionEn
     ]
 }
 
+pub fn generate_partition_definition_esp_root_raid_single_disk() -> Vec<RepartPartitionEntry> {
+    vec![
+        RepartPartitionEntry {
+            partition_type: DiscoverablePartitionType::Esp,
+            label: None,
+            size_min_bytes: Some(PART1_SIZE),
+            size_max_bytes: Some(PART1_SIZE),
+        },
+        RepartPartitionEntry {
+            partition_type: DiscoverablePartitionType::Root,
+            label: None,
+            size_min_bytes: Some(PART2_SIZE),
+            size_max_bytes: Some(PART2_SIZE),
+        },
+        RepartPartitionEntry {
+            partition_type: DiscoverablePartitionType::Root,
+            label: None,
+            size_min_bytes: Some(PART2_SIZE),
+            size_max_bytes: Some(PART2_SIZE),
+        },
+        RepartPartitionEntry {
+            partition_type: DiscoverablePartitionType::LinuxGeneric,
+            label: None,
+            // When min==max==None, it's a grow partition
+            size_min_bytes: None,
+            size_max_bytes: None,
+        },
+    ]
+}
+
 pub fn clear_disk(disk_path: &Path) -> Result<(), Error> {
     Command::new("dd")
         .arg("if=/dev/zero")
