@@ -13,14 +13,14 @@ storage:
       contents: !image
         sha256: placeholder
         length: placeholder
-        url: file:///trident_cdrom/data/esp.rawzst
+        url: placeholder
     root-a:
       path: placeholder
       size: 5368709120
       contents: !image
         sha256: placeholder
         length: placeholder
-        url: file:///trident_cdrom/data/root.rawzst
+        url: placeholder
     root-b:
       path: placeholder
       size: 2147483648

@@ -6,8 +6,8 @@ parameters:
   type: string
 
 stages:
-- stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
-  displayName: Runtime OS Partition Images - ${{ parameters.imageName }}
+- stage: TridentTestImg_${{ replace(parameters.outputArtifactName, '-', '_') }}
+  displayName: Build ${{ parameters.outputArtifactName }}
   dependsOn: Trident
 
   jobs:

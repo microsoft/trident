@@ -20,7 +20,6 @@ logstream: http://<netlisten_address>:<port>/logstream
 
 Start the netlisten server by running `netlisten -p <port>`.
 Then start the provisioning using the patched trident config file.
-
 */
 package main
 
@@ -59,7 +58,7 @@ var rootCmd = &cobra.Command{
 		server := &http.Server{}
 
 		// Set up listening for phonehome
-		phonehome.SetupPhoneHomeServer(done, "")
+		phonehome.SetupPhoneHomeServer(done, "", false)
 		// Set up listening for logstream
 		phonehome.SetupLogstream()
 

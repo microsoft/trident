@@ -354,7 +354,7 @@ mod functional_test {
 
         // Image partitions on /dev/sdb
         let stream: Box<dyn Read> = Box::new(
-            File::open(mount_point.join("data/esp.rawzst"))
+            File::open("/data/esp.rawzst")
                 .context("Failed to open esp image")
                 .unwrap(),
         );
@@ -365,7 +365,7 @@ mod functional_test {
         )
         .unwrap();
         let stream: Box<dyn Read> = Box::new(
-            File::open(mount_point.join("data/root.rawzst"))
+            File::open("/data/root.rawzst")
                 .context("Failed to open root image")
                 .unwrap(),
         );

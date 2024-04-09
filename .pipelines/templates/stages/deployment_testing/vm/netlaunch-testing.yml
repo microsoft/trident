@@ -16,7 +16,13 @@ parameters:
 stages:
   - stage: DeploymentTesting
     displayName: Deployment Testing
-    dependsOn: InstallerISO
+    dependsOn:
+      - BuildingTools
+      - TridentTestImg_trident_installer_testimage
+      - TridentTestImg_trident_testimage
+      - TridentTestImg_trident_verity_testimage
+      - TridentTestImg_containerhost_testimage
+
 
     jobs:
       - template: ../common_tasks/get-tests.yml
@@ -68,14 +74,18 @@ stages:
               set -eux
 
               # rerun is expected to fail
-              [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ] || set -o pipefail
+              IGNORE_FAILURE_FLAG=""
+              if [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]; then
+                IGNORE_FAILURE_FLAG="--ignore-failure"
+              fi
 
               echo "Netlaunch output:" > ./deployment.log
               ./bin/netlaunch \
-                  --iso $(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso \
+                  --iso $(System.ArtifactsDirectory)/trident-installer-testimage.iso \
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
-                  --logstream \
+                  --servefolder ./artifacts/test-image \
+                  --logstream $IGNORE_FAILURE_FLAG \
               2>&1 | tee -a ./deployment.log
 
               mkdir -p $(ob_outputDirectory)
@@ -137,34 +147,6 @@ stages:
             condition: succeededOrFailed()
             displayName: "Publish deployment.log"
 
-          - script: |
-                set -eux
-                configFile="$(tridentConfigPath)/trident-config.yaml"
-                abupdateExists=$(sudo yq e '.hostConfiguration.storage.abUpdate != null' "$configFile")
-                verityExists=$(sudo yq e '.hostConfiguration.storage.verity != null'  "$configFile")
-                if [ "$abupdateExists" == true ] && [ "$verityExists" == true ]; then
-                  echo "##vso[task.setvariable variable=shouldDownloadVerityImages]true"
-                elif [ "$abupdateExists" == true ]; then
-                  echo "##vso[task.setvariable variable=shouldDownloadTestImages]true"
-                fi
-            displayName: 'Check Conditions for Download'
-
-          - task: DownloadPipelineArtifact@2
-            condition:  and(succeeded(), eq(variables['shouldDownloadTestImages'], 'true'))
-            inputs:
-              buildType: current
-              artifactName: "trident-testimg"
-              branchName: "refs/heads/main"
-              targetPath: "$(System.ArtifactsDirectory)/trident-testimg"
-
-          - task: DownloadPipelineArtifact@2
-            condition:  and(succeeded(), eq(variables['shouldDownloadVerityImages'], 'true'))
-            inputs:
-              buildType: current
-              artifactName: "trident-verity-testimage"
-              branchName: "refs/heads/main"
-              targetPath: "$(System.ArtifactsDirectory)/trident-verity-testimage"
-
           - template: ../common_tasks/e2e-test-run.yml
             parameters:
               buildPurpose: $(buildPurpose)
@@ -213,7 +195,7 @@ stages:
           - bash: |
               set -eux
 
-              sg libvirt "make functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso PLATFORM_TESTS_DIR=platform-tests ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimage.iso PLATFORM_TESTS_DIR=platform-tests ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
           - template: ../../common_tasks/coverage.yml
@@ -232,5 +214,5 @@ stages:
           - bash: |
               set -eux
 
-              sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/installer-iso/installer-iso/installer.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimg.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Rerun Functional Tests

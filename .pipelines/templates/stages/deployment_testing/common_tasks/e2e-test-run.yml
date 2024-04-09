@@ -28,15 +28,14 @@ steps:
       sudo pip3 install pytest
       sudo pip3 install fabric
     displayName: "Installing dependencies for E2E tests"
- 
+
   - bash: |
       set -eux
       sshKeyPath="$(Build.SourcesDirectory)/e2e_tests/helpers/key"
+      ls -l "$sshKeyPath"
       # Check SSH connection and wait for 2 minutes if it fails
       for i in {1..24}; do
-        ssh -q -o "StrictHostKeyChecking=no" -i "$sshKeyPath" testing-user@${{ parameters.hostIp }} exit
-        SSH_EXIT_CODE=$?
-        if [ $SSH_EXIT_CODE -eq 0 ]; then
+        if ssh -q -o "StrictHostKeyChecking=no" -i "$sshKeyPath" testing-user@${{ parameters.hostIp }} exit; then
           echo "SSH connection successful. VM is up and running."
             break
         else
@@ -44,27 +43,7 @@ steps:
             sleep 5
         fi
       done
-      ls -ltr $(System.ArtifactsDirectory)
-      verityExists=$(sudo yq e '.hostConfiguration.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      abupdateExists=$(sudo yq e '.hostConfiguration.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml") 
-      if [ "$verityExists" == true ] && [ "$abupdateExists" == true ]; then
-          artifactsDirectory="$(System.ArtifactsDirectory)/trident-verity-testimage"
-          destinationDirectory="/run"
-          ssh -o StrictHostKeyChecking=no -i "$sshKeyPath" testing-user@${{ parameters.hostIp }} "sudo chown testing-user:testing-user $destinationDirectory && sudo chmod 755 $destinationDirectory"
-          scp -o StrictHostKeyChecking=no -i "$sshKeyPath" "$artifactsDirectory/boot.raw.zst" testing-user@${{ parameters.hostIp }}:"$destinationDirectory/boot_v2.rawzst"
-          scp -o StrictHostKeyChecking=no -i "$sshKeyPath" "$artifactsDirectory/esp.raw.zst" testing-user@${{ parameters.hostIp }}:"$destinationDirectory/esp_v2.rawzst"
-          scp -o StrictHostKeyChecking=no -i "$sshKeyPath" "$artifactsDirectory/root.raw.zst" testing-user@${{ parameters.hostIp }}:"$destinationDirectory/root_v2.rawzst"
-          scp -o StrictHostKeyChecking=no -i "$sshKeyPath" "$artifactsDirectory/root-hash.raw.zst" testing-user@${{ parameters.hostIp }}:"$destinationDirectory/root-hash_v2.rawzst"
-          scp -o StrictHostKeyChecking=no -i "$sshKeyPath" "$artifactsDirectory/var.raw.zst" testing-user@${{ parameters.hostIp }}:"$destinationDirectory/var_v2.rawzst"
-      elif [ "$abupdateExists" == true ]; then
-          artifactsDirectory="$(System.ArtifactsDirectory)/trident-testimg"
-          destinationDirectory="/abupdate"
-          ssh -o StrictHostKeyChecking=no -i "$sshKeyPath" testing-user@${{ parameters.hostIp }} "sudo mkdir -p $destinationDirectory"
-          ssh -o StrictHostKeyChecking=no -i "$sshKeyPath" testing-user@${{ parameters.hostIp }} "sudo chown testing-user:testing-user $destinationDirectory && sudo chmod 755 $destinationDirectory"
-          scp -o StrictHostKeyChecking=no -i "$sshKeyPath" "$artifactsDirectory/esp.raw.zst" testing-user@${{ parameters.hostIp }}:"$destinationDirectory/esp_v2.rawzst"
-          scp -o StrictHostKeyChecking=no -i "$sshKeyPath" "$artifactsDirectory/root.raw.zst" testing-user@${{ parameters.hostIp }}:"$destinationDirectory/root_v2.rawzst"
-      fi
-    displayName: "Copy runtime images to VM for AB update test" 
+    displayName: "Check SSH connection"
 
   - bash: |
       set -eux

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .conftest import (
     argus_runcmd,
+    trident_runcmd,
     build_netlaunch,
     ARGUS_REPO_DIR_PATH,
     TRIDENT_REPO_DIR_PATH,
@@ -61,15 +62,16 @@ def deploy_vm(
     and netlaunch to deploy the OS. Returns the ip address of the VM.
     """
     if not installer_iso_path:
-        argus_runcmd(["make", "build/installer-dev.iso"])
-        installer_iso_path = ARGUS_REPO_DIR_PATH / "build/installer-dev.iso"
+        trident_runcmd(["make", "bin/netlaunch"])
+        trident_runcmd(["make", "bin/trident-mos.iso"])
+        installer_iso_path = TRIDENT_REPO_DIR_PATH / "bin/trident-mos.iso"
 
     # Build netlaunch if it doesn't exist.
     build_netlaunch()
 
     host_config_path = prepare_hostconfig(test_dir_path, ssh_pub_key)
 
-    subprocess.run(
+    trident_runcmd(
         [
             NETLAUNCH_BIN_PATH,
             "-i",
@@ -81,8 +83,9 @@ def deploy_vm(
             "-l",
             "-r",
             remote_addr_path,
-        ],
-        check=True,
+            "-s",
+            TRIDENT_REPO_DIR_PATH / "artifacts" / "test-image",
+        ]
     )
 
     # Temporary solution to initialize the known_hosts file until we can inject

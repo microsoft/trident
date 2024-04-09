@@ -5,9 +5,46 @@ steps:
     displayName: "Download installer-iso/installer.iso"
     inputs:
       buildType: current
-      artifactName: "installer-iso"
-      patterns: "*/installer.iso"
-      targetPath: "$(System.ArtifactsDirectory)/installer-iso"
+      artifactName: "trident-installer-testimage"
+      targetPath: "$(System.ArtifactsDirectory)/"
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: "trident-testimage"
+      targetPath: "$(System.ArtifactsDirectory)/testimage"
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: "trident-verity-testimage"
+      targetPath: "$(System.ArtifactsDirectory)/verity-testimage"
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: "containerhost-testimage"
+      targetPath: "$(System.ArtifactsDirectory)/containerhost-testimage"
+
+  - bash: |
+      set -eux
+      mkdir -p artifacts/test-image
+
+      # Boot image
+      mv $(System.ArtifactsDirectory)/testimage/esp.raw.zst artifacts/test-image/esp.rawzst
+      mv $(System.ArtifactsDirectory)/testimage/root.raw.zst artifacts/test-image/root.rawzst
+
+      # Verity image for functional testing and e2e testing
+      mv $(System.ArtifactsDirectory)/verity-testimage/esp.raw.zst artifacts/test-image/verity_esp.rawzst
+      mv $(System.ArtifactsDirectory)/verity-testimage/boot.raw.zst artifacts/test-image/verity_boot.rawzst
+      mv $(System.ArtifactsDirectory)/verity-testimage/root.raw.zst artifacts/test-image/verity_root.rawzst
+      mv $(System.ArtifactsDirectory)/verity-testimage/root-hash.raw.zst artifacts/test-image/verity_roothash.rawzst
+      mv $(System.ArtifactsDirectory)/verity-testimage/var.raw.zst artifacts/test-image/verity_var.rawzst
+
+      # Containerhost image for e2e testing
+      mv $(System.ArtifactsDirectory)/containerhost-testimage/esp.raw.zst artifacts/test-image/containerhost_esp.rawzst
+      mv $(System.ArtifactsDirectory)/containerhost-testimage/root.raw.zst artifacts/test-image/containerhost_root.rawzst
+    displayName: "Rename images"
 
   - task: DownloadPipelineArtifact@2
     displayName: "Download go-tools/netlaunch"

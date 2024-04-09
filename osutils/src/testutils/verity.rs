@@ -1,15 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use const_format::formatcp;
 
 use crate::{
-    files,
     filesystems::MountFileSystemType,
     grub::GrubConfig,
     mount::{self, MountGuard},
-    mountpoint,
     repart::{RepartMode, SystemdRepartInvoker},
-    testutils::repart::{CDROM_DEVICE_PATH, CDROM_MOUNT_PATH},
     udevadm, veritysetup,
 };
 
@@ -28,44 +25,22 @@ impl<'a> Drop for VerityGuard<'a> {
     }
 }
 
-pub const VERITY_ROOT_DATA_IMAGE_PATH: &str = "data/verity_root.rawzst";
-pub const VERITY_ROOT_HASH_IMAGE_PATH: &str = "data/verity_roothash.rawzst";
-pub const VERITY_ROOT_BOOT_IMAGE_PATH: &str = "data/verity_boot.rawzst";
+pub const VERITY_ROOT_DATA_IMAGE_PATH: &str = "/data/verity_root.rawzst";
+pub const VERITY_ROOT_HASH_IMAGE_PATH: &str = "/data/verity_roothash.rawzst";
+pub const VERITY_ROOT_BOOT_IMAGE_PATH: &str = "/data/verity_boot.rawzst";
 
-pub fn setup_verity_images() -> PathBuf {
-    let cdrom_mount_path = Path::new(CDROM_MOUNT_PATH);
-    if !cdrom_mount_path.exists() {
-        files::create_dirs(cdrom_mount_path).unwrap();
-    }
-    if !mountpoint::check_is_mountpoint(cdrom_mount_path).unwrap() {
-        mount::mount(
-            CDROM_DEVICE_PATH,
-            cdrom_mount_path,
-            MountFileSystemType::Iso9660,
-            &[],
-        )
-        .unwrap();
-    }
-
-    let verity_data_path = cdrom_mount_path.join(VERITY_ROOT_DATA_IMAGE_PATH);
-    assert!(verity_data_path.exists());
-
-    let verity_hash_path = cdrom_mount_path.join(VERITY_ROOT_HASH_IMAGE_PATH);
-    assert!(verity_hash_path.exists());
-
-    let boot_path = cdrom_mount_path.join(VERITY_ROOT_BOOT_IMAGE_PATH);
-    assert!(boot_path.exists());
-
-    cdrom_mount_path.to_owned()
+pub fn check_verity_images() {
+    assert!(Path::new(VERITY_ROOT_DATA_IMAGE_PATH).exists());
+    assert!(Path::new(VERITY_ROOT_HASH_IMAGE_PATH).exists());
+    assert!(Path::new(VERITY_ROOT_BOOT_IMAGE_PATH).exists());
 }
 
 pub fn setup_verity_volumes() -> String {
-    let cdrom_mount_path = setup_verity_images();
+    check_verity_images();
 
     let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
 
-    let boot_path = cdrom_mount_path.join(VERITY_ROOT_BOOT_IMAGE_PATH);
-    image::stream_zstd(&boot_path, block_device_path).unwrap();
+    image::stream_zstd(Path::new(VERITY_ROOT_BOOT_IMAGE_PATH), block_device_path).unwrap();
 
     let expected_root_hash = {
         let boot_mount_dir = tempfile::tempdir().unwrap();
@@ -96,15 +71,15 @@ pub fn setup_verity_volumes() -> String {
     repart.execute().unwrap();
     udevadm::settle().unwrap();
 
-    let verity_data_path = cdrom_mount_path.join(VERITY_ROOT_DATA_IMAGE_PATH);
+    let verity_data_path = Path::new(VERITY_ROOT_DATA_IMAGE_PATH);
     let verity_data_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}3"));
-    image::stream_zstd(&verity_data_path, verity_data_block_device_path).unwrap();
-    let verity_hash_path = cdrom_mount_path.join(VERITY_ROOT_HASH_IMAGE_PATH);
+    image::stream_zstd(verity_data_path, verity_data_block_device_path).unwrap();
+    let verity_hash_path = Path::new(VERITY_ROOT_HASH_IMAGE_PATH);
     let verity_hash_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
-    image::stream_zstd(&verity_hash_path, verity_hash_block_device_path).unwrap();
-    let verity_boot_path = cdrom_mount_path.join(VERITY_ROOT_BOOT_IMAGE_PATH);
+    image::stream_zstd(verity_hash_path, verity_hash_block_device_path).unwrap();
+    let verity_boot_path = Path::new(VERITY_ROOT_BOOT_IMAGE_PATH);
     let verity_boot_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1"));
-    image::stream_zstd(&verity_boot_path, verity_boot_block_device_path).unwrap();
+    image::stream_zstd(verity_boot_path, verity_boot_block_device_path).unwrap();
 
     expected_root_hash
 }

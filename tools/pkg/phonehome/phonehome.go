@@ -15,7 +15,7 @@ type OrchestratorMessage struct {
 	Host_Status string
 }
 
-func SetupPhoneHomeServer(done chan<- bool, remoteAddressFile string) {
+func SetupPhoneHomeServer(done chan<- bool, remoteAddressFile string, ignoreFailure bool) {
 	http.HandleFunc("/phonehome", func(w http.ResponseWriter, r *http.Request) {
 		// log.WithField("remote-address", r.RemoteAddr).Info("Phone Home")
 		w.WriteHeader(201)
@@ -47,12 +47,16 @@ func SetupPhoneHomeServer(done chan<- bool, remoteAddressFile string) {
 		}
 
 		if message.State == "failed" {
-			log.Fatalf("Trident failed to deploy Runtime OS with error:\n%s", message.Message)
-		}
-
-		log.WithField("state", message.State).Info(message.Message)
-		if message.State == "succeeded" {
-			done <- true
+			if ignoreFailure {
+				log.Errorf("Trident failed to deploy Runtime OS with error:\n%s", message.Message)
+			} else {
+				log.Fatalf("Trident failed to deploy Runtime OS with error:\n%s", message.Message)
+			}
+		} else {
+			log.WithField("state", message.State).Info(message.Message)
+			if message.State == "succeeded" {
+				done <- true
+			}
 		}
 	})
 }

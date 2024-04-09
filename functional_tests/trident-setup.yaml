@@ -21,6 +21,17 @@ hostConfiguration:
         name: wheel
         servicingType:
           - clean-install
+      - content: |
+          mkdir -p /data
+          cd /data
+          curl -O http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+          curl -O http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+          curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
+          curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
+          curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
+        name: download-images
+        servicingType:
+          - clean-install
   storage:
     abUpdate:
       volumePairs:
@@ -31,11 +42,11 @@ hostConfiguration:
       - format: raw-zst
         sha256: ignored
         targetId: esp
-        url: file:///trident_cdrom/data/esp.rawzst
+        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
       - format: raw-zst
         sha256: ignored
         targetId: root
-        url: file:///trident_cdrom/data/root.rawzst
+        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
     disks:
       - device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
         id: os

@@ -20,7 +20,7 @@ steps:
   - task: DownloadPipelineArtifact@2
     inputs:
       buildType: current
-      artifactName: "trident-testimg"
+      artifactName: "trident-testimage"
       targetPath: "$(System.ArtifactsDirectory)/trident-testimg"
 
   - task: DownloadPipelineArtifact@2

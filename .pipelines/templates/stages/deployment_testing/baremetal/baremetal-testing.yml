@@ -53,7 +53,12 @@ parameters:
 stages:
   - stage: BaremetalDeploymentTesting
     displayName: Baremetal Deployment Testing
-    dependsOn: InstallerISO
+    dependsOn:
+      - BuildingTools
+      - TridentTestImg_trident_installer_testimage
+      - TridentTestImg_trident_testimage
+      - TridentTestImg_trident_verity_testimage
+      - TridentTestImg_containerhost_testimage
 
     jobs:
       - template: ../common_tasks/get-tests.yml

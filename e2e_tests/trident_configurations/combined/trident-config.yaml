@@ -193,23 +193,23 @@ hostConfiguration:
         filesystem: ext4
         options: ["defaults"]
     images:
-      - url: file:///trident_cdrom/data/verity_esp.rawzst
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
         sha256: ignored
         format: raw-zst
         targetId: esp
-      - url: file:///trident_cdrom/data/verity_boot.rawzst
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
         sha256: ignored
         format: raw-zst
         targetId: boot
-      - url: file:///trident_cdrom/data/verity_root.rawzst
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
         sha256: ignored
         format: raw-zst
         targetId: root
-      - url: file:///trident_cdrom/data/verity_roothash.rawzst
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
         sha256: ignored
         format: raw-zst
         targetId: root-hash
-      - url: file:///trident_cdrom/data/verity_var.rawzst
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
         sha256: ignored
         format: raw-zst
         targetId: var

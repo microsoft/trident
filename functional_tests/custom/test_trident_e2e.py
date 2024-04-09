@@ -56,6 +56,7 @@ def test_trident_get(vm):
         ):
             block_device["contents"]["sha256"] = placeholder
             block_device["contents"]["length"] = placeholder
+            block_device["contents"]["url"] = placeholder
     with open(
         TRIDENT_REPO_DIR_PATH / "functional_tests/host-status-template.yaml", "r"
     ) as file:

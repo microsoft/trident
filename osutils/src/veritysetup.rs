@@ -458,12 +458,11 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_open_and_close() {
-        let cdrom_mount_path = verity::setup_verity_images();
+        verity::check_verity_images();
 
         let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
 
-        let boot_path = cdrom_mount_path.join(VERITY_ROOT_BOOT_IMAGE_PATH);
-        image::stream_zstd(&boot_path, block_device_path).unwrap();
+        image::stream_zstd(Path::new(VERITY_ROOT_BOOT_IMAGE_PATH), block_device_path).unwrap();
 
         let root_hash = {
             let boot_mount_dir = tempfile::tempdir().unwrap();
@@ -508,12 +507,12 @@ mod functional_test {
         repart.execute().unwrap();
         udevadm::settle().unwrap();
 
-        let verity_data_path = cdrom_mount_path.join(VERITY_ROOT_DATA_IMAGE_PATH);
+        let verity_data_path = Path::new(VERITY_ROOT_DATA_IMAGE_PATH);
         let verity_data_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1"));
-        image::stream_zstd(&verity_data_path, verity_data_block_device_path).unwrap();
-        let verity_hash_path = cdrom_mount_path.join(VERITY_ROOT_HASH_IMAGE_PATH);
+        image::stream_zstd(verity_data_path, verity_data_block_device_path).unwrap();
+        let verity_hash_path = Path::new(VERITY_ROOT_HASH_IMAGE_PATH);
         let verity_hash_block_device_path = Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
-        image::stream_zstd(&verity_hash_path, verity_hash_block_device_path).unwrap();
+        image::stream_zstd(verity_hash_path, verity_hash_block_device_path).unwrap();
 
         // bad hash
         assert_eq!(
@@ -678,9 +677,9 @@ mod functional_test {
             "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /etc/passwd is not a valid VERITY device.\n\n"
         );
 
-        let cdrom_mount_path = verity::setup_verity_images();
+        verity::check_verity_images();
         image::stream_zstd(
-            &cdrom_mount_path.join(VERITY_ROOT_HASH_IMAGE_PATH),
+            Path::new(VERITY_ROOT_HASH_IMAGE_PATH),
             Path::new(TEST_DISK_DEVICE_PATH),
         )
         .unwrap();

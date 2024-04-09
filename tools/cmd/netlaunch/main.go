@@ -50,6 +50,7 @@ var logstream bool
 var listen_port int16
 var remoteAddressFile string
 var serveFolder string
+var ignoreFailure bool
 
 func patchFile(iso []byte, filename string, contents []byte) error {
 	// Search for magic string
@@ -85,7 +86,7 @@ var rootCmd = &cobra.Command{
 	Short: "Launch a BMC boot\n\n" +
 		"When a trident configuration is passed, the ISO will be patched with the trident configuration.\n" +
 		"Netlaunch supports replacing the string `NETLAUNCH_HOST_ADDRESS` in the trident configuration with the address of the netlaunch server.\n" +
-		"E.g. `NETLAUNCH_HOST_ADDRESS/url/path` will be replaced with `http://<IP>:<port>/url/path`.",
+		"E.g. `http://NETLAUNCH_HOST_ADDRESS/url/path` will be replaced with `http://<IP>:<port>/url/path`.",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(iso) == 0 {
 			log.Fatal("ISO file not specified")
@@ -135,7 +136,7 @@ var rootCmd = &cobra.Command{
 			}
 
 			// Replace NETLAUNCH_HOST_ADDRESS with the address of the netlaunch server
-			tridentConfigContentsStr := strings.ReplaceAll(string(tridentConfigContents), "NETLAUNCH_HOST_ADDRESS", "http://"+listen.Addr().String())
+			tridentConfigContentsStr := strings.ReplaceAll(string(tridentConfigContents), "NETLAUNCH_HOST_ADDRESS", listen.Addr().String())
 
 			trident := make(map[string]interface{})
 			err = yaml.UnmarshalStrict([]byte(tridentConfigContentsStr), &trident)
@@ -176,7 +177,7 @@ var rootCmd = &cobra.Command{
 		// If we're expecting trident to reach back, we need to listen for it.
 		if enable_phonehome_listening {
 			// Set up listening for phonehome
-			phonehome.SetupPhoneHomeServer(done, remoteAddressFile)
+			phonehome.SetupPhoneHomeServer(done, remoteAddressFile, ignoreFailure)
 
 			// Set up listening for logstream
 			phonehome.SetupLogstream()
@@ -240,6 +241,7 @@ func init() {
 	rootCmd.PersistentFlags().Int16VarP(&listen_port, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
 	rootCmd.PersistentFlags().StringVarP(&remoteAddressFile, "remoteaddress", "r", "", "File for writing remote address of the Trident instance.")
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
+	rootCmd.PersistentFlags().BoolVarP(&ignoreFailure, "ignore-failure", "", false, "Keep running even if Trident sends back a failure message")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing.")
 	rootCmd.MarkFlagRequired("iso-template")
 	log.SetLevel(log.DebugLevel)

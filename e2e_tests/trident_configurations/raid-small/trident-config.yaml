@@ -98,11 +98,11 @@ hostConfiguration:
         filesystem: ext4
         options: ["defaults"]
     images:
-      - url: file:///trident_cdrom/data/esp.rawzst
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
         sha256: ignored
         format: raw-zst
         targetId: esp1
-      - url: file:///trident_cdrom/data/root.rawzst
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
         sha256: ignored
         format: raw-zst
         targetId: root
