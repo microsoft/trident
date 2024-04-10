@@ -11,24 +11,24 @@ parameters:
 
 steps:
   - task: DownloadPipelineArtifact@2
+    displayName: "Download installer-iso/installer.iso"
     inputs:
       buildType: current
-      artifactName: "installer-iso"
-      patterns: "*/installer.iso"
-      targetPath: "$(System.ArtifactsDirectory)/installer-iso"
+      artifactName: "trident-installer-testimage"
+      targetPath: "$(System.ArtifactsDirectory)/"
 
   - task: DownloadPipelineArtifact@2
     inputs:
       buildType: current
       artifactName: "trident-testimage"
-      targetPath: "$(System.ArtifactsDirectory)/trident-testimg"
+      targetPath: "$(System.ArtifactsDirectory)/trident-testimage"
 
   - task: DownloadPipelineArtifact@2
     inputs:
       buildType: current
       artifactName: "trident-verity-testimage"
       branchName: "refs/heads/main"
-      targetPath: "$(System.ArtifactsDirectory)/trident-verity-testimage"
+      targetPath: "$(System.ArtifactsDirectory)/verity-testimage"
 
   - task: DownloadSecureFile@1
     name: httpdPrivKey
@@ -96,14 +96,14 @@ steps:
       # Add poetry to PATH.x
       export PATH="$HOME/.local/bin:$PATH"
       ls -ltr $(System.ArtifactsDirectory)
-      ls -ltr $(System.ArtifactsDirectory)/trident-testimg
-      ls -ltr $(System.ArtifactsDirectory)/trident-verity-testimage
+      ls -ltr $(System.ArtifactsDirectory)/trident-testimage
+      ls -ltr $(System.ArtifactsDirectory)/verity-testimage
       chmod 600 $(httpdPrivKey.secureFilePath)
-      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-testimg/esp.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/esp.rawzst
-      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-testimg/root.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/root.rawzst
-      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/esp.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_esp.rawzst
-      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/root.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_root.rawzst
-      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/root-hash.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_roothash.rawzst
-      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/boot.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_boot.rawzst
-      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-verity-testimage/var.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_var.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-testimage/esp.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/esp.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/trident-testimage/root.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/root.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/verity-testimage/esp.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_esp.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/verity-testimage/root.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_root.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/verity-testimage/root-hash.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_roothash.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/verity-testimage/boot.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_boot.rawzst
+      scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/verity-testimage/var.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_var.rawzst
     displayName: "Upload runtime images manually to the HTTP Server"

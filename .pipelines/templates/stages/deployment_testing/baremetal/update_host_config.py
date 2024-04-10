@@ -37,11 +37,10 @@ def update_trident_host_config(
     if images:
         for image in images:
             parsed_url = urllib.parse.urlparse(image["url"])
-            if parsed_url.scheme == "file":
+            if parsed_url.scheme == "http":
                 image_name = parsed_url.path.rsplit("/", 1)[-1]
-                image["url"] = "file:///" + image_name
-                image["url"] = image["url"].replace(
-                    "file:///", "http://" + iso_httpd_ip + "/isodir/hermes-image/"
+                image["url"] = (
+                    "http://" + iso_httpd_ip + "/isodir/hermes-image/" + image_name
                 )
 
     logging.info("Updating mariner_user in trident.yaml")
