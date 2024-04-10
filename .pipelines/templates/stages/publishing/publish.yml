@@ -46,44 +46,6 @@ stages:
             inputs:
               buildType: current
               patterns: |
-                *.iso
-              targetPath: $(Pipeline.Workspace)/provision-template-iso
-              artifactName: provisioning-os-template
-            displayName: "Download Provision Template ISO"
-
-          - task: UniversalPackages@0
-            displayName: "Publish provision-template-iso Universal Package"
-            inputs:
-              command: publish
-              vstsFeedPublish: ${{ parameters.feed }}
-              vstsFeedPackagePublish: "provision-template-iso${{ variables.artifactSuffix }}"
-              publishDirectory: "$(Pipeline.Workspace)/provision-template-iso"
-              versionPublish: $(Build.BuildNumber)
-              versionOption: custom
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              patterns: |
-                pxe-artifacts.zip
-              targetPath: $(Pipeline.Workspace)/pxe-artifacts
-              artifactName: installer-iso
-            displayName: "Download PXE artifacts"
-
-          - task: UniversalPackages@0
-            displayName: "Publish pxe-artifacts Universal Package"
-            inputs:
-              command: publish
-              vstsFeedPublish: ${{ parameters.feed }}
-              vstsFeedPackagePublish: "pxe-artifacts-preview${{ variables.artifactSuffix }}"
-              publishDirectory: "$(Pipeline.Workspace)/pxe-artifacts"
-              versionPublish: $(Build.BuildNumber)
-              versionOption: custom
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              patterns: |
                 *.rpm
               targetPath: $(Pipeline.Workspace)/rpms
               artifactName: trident-binaries
