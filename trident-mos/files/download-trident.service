@@ -1,0 +1,15 @@
+[Unit]
+Description=Trident Agent
+StartLimitInterval=200
+StartLimitBurst=5
+After=network.target network-online.target systemd-udev-settle.service
+
+[Service]
+ExecStartPre=/bin/bash -c "curl $(grep -oP 'phonehome: \K.*(?=phonehome)' /etc/trident/config.yaml)files/trident > /usr/bin/trident"
+ExecStartPre=chmod +x /usr/bin/trident
+ExecStart=/usr/bin/trident run --verbosity DEBUG
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,9 +1,37 @@
 SystemConfig:
   Hostname: trident-mos-testimage
 
+  PackagesUpdate:
+    - systemd
+
   PackagesInstall:
-    - trident-service
-    - trident-provisioning
+    - curl
+    - dnf
+    - dosfstools
+    - efibootmgr
+    - iproute
+    - iptables
+    - lsof
+    - mdadm
+    - netplan
+    - openssh-server
+    - tpm2-tools
+    - vim
+    - veritysetup
+
+  AdditionalFiles:
+    files/getty@.service:
+    - Path: /usr/lib/systemd/system/getty@.service
+    files/serial-getty@.service:
+    - Path: /usr/lib/systemd/system/serial-getty@.service
+    files/root.profile:
+    - Path: /root/.profile
+    files/download-trident.service:
+    - Path: /usr/lib/systemd/system/download-trident.service
+
+  Services:
+    Enable:
+    - download-trident
 
   PostInstallScripts:
   - Path: post-install.sh

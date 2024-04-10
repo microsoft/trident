@@ -6,6 +6,3 @@ if [ ! -d /etc/trident ]; then
     mkdir /etc/trident
 fi
 ln -s /trident_cdrom/trident-config.yaml /etc/trident/config.yaml
-
-# Enable trace logging for development
-sed -i 's/--verbosity INFO/--verbosity DEBUG/' /usr/lib/systemd/system/trident.service

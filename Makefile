@@ -24,7 +24,7 @@ build:
 	    OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 	    TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 	    cargo build --release --features dangerous-options
-	mkdir -p bin
+	@mkdir -p bin
 
 .PHONY: format
 format:
@@ -68,7 +68,7 @@ artifacts/osmodifier:
 
 # RPM target
 bin/trident: build
-	cp -u target/release/trident bin/
+	@cp -u target/release/trident bin/
 
 bin/trident-rpms.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifier bin/trident
 	@docker build --quiet -t trident/trident-build:latest \
@@ -96,6 +96,9 @@ docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz docker-runtime-build
 .PHONY: docker-runtime-build
 docker-runtime-build: artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
+
+artifacts/test-image/trident-container.bin: docker-runtime-build
+	docker save trident/trident:latest > $@
 
 .PHONY: clean
 clean:
@@ -251,10 +254,15 @@ bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/phonehome/*
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
-	bin/trident validate -c $(TRIDENT_CONFIG)
+	@bin/trident validate -c $(TRIDENT_CONFIG)
 
 .PHONY: run-netlaunch
 run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso validate
+	@cp bin/trident artifacts/test-image
+	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
+
+.PHONY: run-netlaunch-container
+run-netlaunch-container: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.bin
 	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 # This target leverages the samples that are automatically generated as part of
@@ -396,7 +404,7 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.vhdx: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/baseimg.yaml artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/iso.yaml artifacts/systemd/systemd-254-3.cm2.x86_64.rpm trident-mos/files/* trident-mos/post-install.sh
 	mkdir -p bin/
 	BUILD_DIR=`mktemp -d`
 	sudo ./artifacts/imagecustomizer \
@@ -405,23 +413,11 @@ bin/trident-mos.vhdx: artifacts/baremetal.vhdx artifacts/imagecustomizer trident
 	    --build-dir $BUILD_DIR \
 	    --image-file $< \
 	    --output-image-file $@ \
-	    --config-file trident-mos/baseimg.yaml \
-	    --output-image-format vhdx
-	sudo rm -r artifacts/systemd/repodata
-
-bin/trident-mos.iso: bin/trident-mos.vhdx artifacts/imagecustomizer trident-mos/iso.yaml trident-mos/post-install.sh bin/trident-rpms.tar.gz
-	BUILD_DIR=`mktemp -d` && \
-	sudo ./artifacts/imagecustomizer \
-	    --log-level=debug \
-	    --rpm-source ./bin/RPMS/x86_64/ \
-	    --build-dir $$BUILD_DIR \
-	    --image-file $< \
-	    --output-image-file $@ \
 	    --config-file trident-mos/iso.yaml \
 	    --output-image-format iso
-	sudo rm -r bin/RPMS/x86_64/repodata
+	sudo rm -r artifacts/systemd/repodata
 
-bin/trident-containerhost-mos.vhdx: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/trident-containerhost-baseimg.yaml
+bin/trident-containerhost-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/containerhost-iso.yaml trident-mos/files/* trident-mos/post-install.sh
 	mkdir -p bin/
 	BUILD_DIR=`mktemp -d`
 	sudo ./artifacts/imagecustomizer \
@@ -429,17 +425,5 @@ bin/trident-containerhost-mos.vhdx: artifacts/baremetal.vhdx artifacts/imagecust
 	    --build-dir $BUILD_DIR \
 	    --image-file $< \
 	    --output-image-file $@ \
-	    --config-file trident-mos/trident-containerhost-baseimg.yaml \
-	    --output-image-format vhdx
-
-bin/trident-container-mos.iso: bin/trident-containerhost-mos.vhdx artifacts/imagecustomizer trident-mos/trident-containerhost-iso.yaml trident-mos/post-install.sh
-	BUILD_DIR=`mktemp -d`
-	# TODO from pipeline:
-	# sed 's/CONTAINER_TAG/$(Build.BuildNumber)/' trident-mos/files/trident-container.service.template > trident-mos/files/trident-container.service
-	sudo ./artifacts/imagecustomizer \
-	    --log-level=debug \
-	    --build-dir $BUILD_DIR \
-	    --image-file $< \
-	    --output-image-file $@ \
-	    --config-file trident-mos/trident-containerhost-iso.yaml \
+	    --config-file trident-mos/containerhost-iso.yaml \
 	    --output-image-format iso

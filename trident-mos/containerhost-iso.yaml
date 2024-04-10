@@ -16,3 +16,19 @@ SystemConfig:
     - Path: /usr/lib/systemd/system/serial-getty@.service
     files/root.profile:
     - Path: /root/.profile
+    files/download-trident-container.service:
+    - Path: /usr/lib/systemd/system/download-trident-container.service
+
+  Services:
+    Enable:
+      - download-trident-container
+
+  PostInstallScripts:
+    - Path: post-install.sh
+
+Iso:
+  AdditionalFiles:
+    files/config-placeholder.yaml:
+      - Path: /trident-config.yaml
+  KernelCommandLine:
+    ExtraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
