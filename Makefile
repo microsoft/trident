@@ -405,25 +405,24 @@ artifacts/imagecustomizer:
 	@touch artifacts/imagecustomizer
 
 bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/iso.yaml artifacts/systemd/systemd-254-3.cm2.x86_64.rpm trident-mos/files/* trident-mos/post-install.sh
-	mkdir -p bin/
-	BUILD_DIR=`mktemp -d`
-	sudo ./artifacts/imagecustomizer \
-	    --log-level=debug \
-	    --rpm-source ./artifacts/systemd \
-	    --build-dir $BUILD_DIR \
-	    --image-file $< \
-	    --output-image-file $@ \
-	    --config-file trident-mos/iso.yaml \
-	    --output-image-format iso
+	BUILD_DIR=`mktemp -d`; \
+		sudo ./artifacts/imagecustomizer \
+			--log-level=debug \
+			--rpm-source ./artifacts/systemd \
+			--build-dir $$BUILD_DIR \
+			--image-file $< \
+			--output-image-file $@ \
+			--config-file trident-mos/iso.yaml \
+			--output-image-format iso; \
+		sudo rm -rf $$BUILD_DIR
 	sudo rm -r artifacts/systemd/repodata
-
 bin/trident-containerhost-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/containerhost-iso.yaml trident-mos/files/* trident-mos/post-install.sh
-	mkdir -p bin/
-	BUILD_DIR=`mktemp -d`
-	sudo ./artifacts/imagecustomizer \
-	    --log-level=debug \
-	    --build-dir $BUILD_DIR \
-	    --image-file $< \
-	    --output-image-file $@ \
-	    --config-file trident-mos/containerhost-iso.yaml \
-	    --output-image-format iso
+	BUILD_DIR=`mktemp -d`; \
+		sudo ./artifacts/imagecustomizer \
+			--log-level=debug \
+			--build-dir $$BUILD_DIR \
+			--image-file $< \
+			--output-image-file $@ \
+			--config-file trident-mos/containerhost-iso.yaml \
+			--output-image-format iso; \
+		sudo rm -rf $$BUILD_DIR
