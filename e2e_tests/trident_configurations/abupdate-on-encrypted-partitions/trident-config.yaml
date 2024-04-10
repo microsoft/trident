@@ -83,9 +83,10 @@ hostConfiguration:
       - name: testing-user
         sshPublicKeys: []
         sshMode: key-only
-  scripts:
+  scripts:  
     postConfigure:
       - name: testing-privilege
         servicingType:
           - clean-install
-        content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
+          - ab-update
+        content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user

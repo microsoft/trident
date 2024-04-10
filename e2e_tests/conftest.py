@@ -30,12 +30,20 @@ def pytest_addoption(parser):
         help="Provide the path to the directory with the trident configuration and compatible tests.",
     )
     parser.addoption(
+        "-A",
+        "--ab-active-volume",
+        action="store",
+        type=str,
+        default="volume-a",
+        help="Active A/B volume on the host.",
+    )
+    parser.addoption(
         "-K",
         "--keypath",
         action="store",
         type=str,
         default=KEY_PATH,
-        help="Path to the rsa key needed for conection, default path to ./keys/key",
+        help="Path to the rsa key needed for SSH connection, default path to ./keys/key.",
     )
 
 
@@ -68,6 +76,11 @@ def tridentConfiguration(request):
             return {}
 
     return trident_Configuration
+
+
+@pytest.fixture
+def abActiveVolume(request):
+    return request.config.getoption("--ab-active-volume")
 
 
 def define_tests(file_path):

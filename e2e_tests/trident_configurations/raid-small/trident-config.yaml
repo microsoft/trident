@@ -137,4 +137,5 @@ hostConfiguration:
       - name: testing-privilege
         servicingType:
           - clean-install
-        content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
+          - ab-update
+        content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user

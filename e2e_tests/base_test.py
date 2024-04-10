@@ -1,7 +1,7 @@
 import json
 import math
-import os
 import pytest
+import re
 import yaml
 
 pytestmark = [pytest.mark.base]
@@ -20,7 +20,7 @@ def test_connection(connection):
     assert output == "Successful connection"
 
 
-def test_partitions(connection, tridentConfiguration):
+def test_partitions(connection, tridentConfiguration, abActiveVolume):
     # Structure hostConfiguration information
     hostConfiguration = tridentConfiguration["hostConfiguration"]
     expected_partitions = dict()
@@ -161,10 +161,9 @@ def test_partitions(connection, tridentConfiguration):
             ] = size
 
     # Check hostStatus
-    result = connection.run("/usr/bin/trident get")
+    result = connection.run("sudo /usr/bin/trident get")
 
     # Structure output
-    partitions_host_status = dict()
     host_status_output = result.stdout.strip()
 
     HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
@@ -185,6 +184,320 @@ def test_partitions(connection, tridentConfiguration):
             expected_partitions[partition_id]["size"]
             == partitions_system_info[partition_id]["size"]
         )
+
+    # Fetch path of block device mounted at /
+    root_device_path_canonicalized = get_root_device_path_from_mount(connection)
+    # Verify rootDevicePath in host's status
+    assert host_status["storage"]["rootDevicePath"] == root_device_path_canonicalized
+
+    # Perform checks for A/B update only
+    if "abUpdate" in host_status["spec"]["storage"] and abActiveVolume is not None:
+        # Extract the ID of the mount point with path "/"
+        root_mount_id = None
+        for mount_point in host_status["spec"]["storage"]["mountPoints"]:
+            if mount_point["path"] == "/":
+                root_mount_id = mount_point["targetId"]
+                break
+
+        # If block device mounted at / is verity, it will not be part of an A/B volume pair.
+        # Instead, need to find root & root-hash A/B volume pairs
+        verity = is_verity(host_status, root_mount_id)
+        if verity is not None:
+            device_name, data_target_id, hash_target_id = verity
+            active_data_id, active_hash_id = None, None
+            # Identify block devices that we expect to be in use, given the value of
+            # abActiveVolume
+            for volume_pair in host_status["spec"]["storage"]["abUpdate"][
+                "volumePairs"
+            ]:
+                if volume_pair["id"] == data_target_id:
+                    if abActiveVolume == "volume-a":
+                        active_data_id = volume_pair["volumeAId"]
+                    else:
+                        active_data_id = volume_pair["volumeBId"]
+
+                if volume_pair["id"] == hash_target_id:
+                    if abActiveVolume == "volume-a":
+                        active_hash_id = volume_pair["volumeAId"]
+                    else:
+                        active_hash_id = volume_pair["volumeBId"]
+            assert active_data_id is not None and active_hash_id is not None
+
+            # Run and process `veritysetup status`
+            data_block_device, hash_block_device = get_data_hash_from_veritysetup(
+                connection, device_name
+            )
+
+            # Check if data_block_device, hash_block_device correspond to partitions or RAID arrays
+            data_is_raid = get_raid_name_from_device_name(connection, data_block_device)
+            hash_is_raid = get_raid_name_from_device_name(connection, hash_block_device)
+            # Assert that both data_is_raid are either both None or both not None
+            assert (data_is_raid is None) == (hash_is_raid is None)
+
+            # If get_raid_name_from_device_name() returned a non-null value, block device is a RAID
+            # array.
+            if data_is_raid:
+                # Convert /dev/md/root-a into root-a; /dev/sda1 into sda1
+                extracted_data_block_device = data_is_raid.split("/")[-1]
+                extracted_hash_block_device = hash_is_raid.split("/")[-1]
+
+                assert active_data_id == extracted_data_block_device
+                assert active_hash_id == extracted_hash_block_device
+            else:
+                # If get_raid_name_from_device_name() returned None, block device is a partition.
+                # NOTE: This check assumes that PARTLABEL in blkid is same as targetId in host status
+                extracted_data_block_device = data_block_device.split("/")[-1]
+                extracted_hash_block_device = hash_block_device.split("/")[-1]
+
+                assert (
+                    extracted_data_block_device in partitions_blkid
+                    and extracted_hash_block_device in partitions_blkid
+                )
+                assert (
+                    partitions_blkid[extracted_data_block_device]["PARTLABEL"]
+                    == active_data_id
+                )
+                assert (
+                    partitions_blkid[extracted_hash_block_device]["PARTLABEL"]
+                    == active_hash_id
+                )
+        else:
+            # Otherwise, if abUpdate is enabled, then root has to be an A/B volume pair.
+            # Find the active volume ID for the root mount point
+            active_volume_id = None
+            for volume_pair in host_status["spec"]["storage"]["abUpdate"][
+                "volumePairs"
+            ]:
+                if volume_pair["id"] == root_mount_id:
+                    if abActiveVolume == "volume-a":
+                        active_volume_id = volume_pair["volumeAId"]
+                    else:
+                        active_volume_id = volume_pair["volumeBId"]
+                    break
+            assert active_volume_id is not None
+
+            active_volume_is_partition = is_partition(host_status, active_volume_id)
+            active_volume_is_raid = is_raid(host_status, active_volume_id)
+            assert active_volume_is_partition or active_volume_is_raid
+
+            # 1. If active_volume_id is a partition, get full PARTUUID based on blkid output and create
+            # root_device_path, non-canonicalized
+            root_device_path = None
+
+            if active_volume_is_partition:
+                for partition_name, partition_info in partitions_blkid.items():
+                    if partition_name == root_device_path_canonicalized.split("/")[-1]:
+                        root_device_path = (
+                            f"/dev/disk/by-partuuid/{partition_info['PARTUUID']}"
+                        )
+            # 2. If active_volume_id is a software RAID array, run 'ls -l /dev/md' to fetch full name
+            # of RAID array mounted at root /
+            elif active_volume_is_raid:
+                root_device_path = get_raid_name_from_device_name(
+                    connection, root_device_path_canonicalized
+                )
+
+            # Iterate through block devices and confirm that path of active volume corresponds to
+            # non-canonicalized root device path
+            for block_device_id, block_device_info in host_status["storage"][
+                "blockDevices"
+            ].items():
+                if block_device_id == active_volume_id:
+                    assert block_device_info["path"] == root_device_path
+
+            # Verify abActiveVolume
+            assert host_status["storage"]["abActiveVolume"] == abActiveVolume
+
+
+# Returns true if block device with block_device_id is a partition; otherwise, returns false
+def is_partition(host_status, block_device_id):
+    for disk in host_status["spec"]["storage"]["disks"]:
+        for partition in disk.get("partitions", []):
+            if partition["id"] == block_device_id:
+                return True
+    return False
+
+
+# Returns true if block device with target_id is a software RAID array; otherwise, returns false
+def is_raid(host_status, block_device_id):
+    for raid in host_status["spec"]["storage"].get("raid", {}).get("software", []):
+        if raid["id"] == block_device_id:
+            return True
+    return False
+
+
+# If block device with target_id is a verity device, returns a tuple that contains:
+# - Name of verity device,
+# - Block device id of verity root data,
+# - Block device id of verity root hash.
+# Otherwise, return None
+def is_verity(host_status, block_device_id):
+    if "verity" in host_status["spec"]["storage"]:
+        for verity in host_status["spec"]["storage"].get("verity", {}):
+            if verity["id"] == block_device_id:
+                return (
+                    verity["deviceName"],
+                    verity["dataTargetId"],
+                    verity["hashTargetId"],
+                )
+    return None
+
+
+# Runs 'mount' and returns the name of the block device mounted at root /
+def get_root_device_path_from_mount(connection):
+    # Expected output example:
+    # /dev/sda3 on / type ext4 (rw,relatime)
+    # devtmpfs on /dev type devtmpfs (rw,nosuid,size=4096k,nr_inodes=721913,mode=755)
+    # tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)
+    # devpts on /dev/pts type devpts (rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000)
+    # sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)
+    # securityfs on /sys/kernel/security type securityfs (rw,nosuid,nodev,noexec,relatime)
+    # tmpfs on /sys/fs/cgroup type tmpfs (ro,nosuid,nodev,noexec,size=4096k,nr_inodes=1024,mode=755)
+    # cgroup on /sys/fs/cgroup/systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,release_agent=/usr/lib/systemd/systemd-cgroups-agent,name=systemd)
+    # cgroup on /sys/fs/cgroup/freezer type cgroup (rw,nosuid,nodev,noexec,relatime,freezer)
+    # cgroup on /sys/fs/cgroup/net_cls,net_prio type cgroup (rw,nosuid,nodev,noexec,relatime,net_cls,net_prio)
+    # cgroup on /sys/fs/cgroup/hugetlb type cgroup (rw,nosuid,nodev,noexec,relatime,hugetlb)
+    # cgroup on /sys/fs/cgroup/cpu,cpuacct type cgroup (rw,nosuid,nodev,noexec,relatime,cpu,cpuacct)
+    # cgroup on /sys/fs/cgroup/memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)
+    # cgroup on /sys/fs/cgroup/perf_event type cgroup (rw,nosuid,nodev,noexec,relatime,perf_event)
+    # cgroup on /sys/fs/cgroup/cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,cpuset)
+    # cgroup on /sys/fs/cgroup/devices type cgroup (rw,nosuid,nodev,noexec,relatime,devices)
+    # cgroup on /sys/fs/cgroup/blkio type cgroup (rw,nosuid,nodev,noexec,relatime,blkio)
+    # cgroup on /sys/fs/cgroup/pids type cgroup (rw,nosuid,nodev,noexec,relatime,pids)
+    # cgroup on /sys/fs/cgroup/rdma type cgroup (rw,nosuid,nodev,noexec,relatime,rdma)
+    # pstore on /sys/fs/pstore type pstore (rw,nosuid,nodev,noexec,relatime)
+    # efivarfs on /sys/firmware/efi/efivars type efivarfs (rw,nosuid,nodev,noexec,relatime)
+    # bpf on /sys/fs/bpf type bpf (rw,nosuid,nodev,noexec,relatime,mode=700)
+    # proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)
+    # tmpfs on /run type tmpfs (rw,nosuid,nodev,size=1159040k,nr_inodes=819200,mode=755)
+    # systemd-1 on /proc/sys/fs/binfmt_misc type autofs (rw,relatime,fd=27,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=17284)
+    # hugetlbfs on /dev/hugepages type hugetlbfs (rw,nosuid,nodev,relatime,pagesize=2M)
+    # mqueue on /dev/mqueue type mqueue (rw,nosuid,nodev,noexec,relatime)
+    # debugfs on /sys/kernel/debug type debugfs (rw,nosuid,nodev,noexec,relatime)
+    # tracefs on /sys/kernel/tracing type tracefs (rw,nosuid,nodev,noexec,relatime)
+    # fusectl on /sys/fs/fuse/connections type fusectl (rw,nosuid,nodev,noexec,relatime)
+    # configfs on /sys/kernel/config type configfs (rw,nosuid,nodev,noexec,relatime)
+    # tmpfs on /tmp type tmpfs (rw,nosuid,nodev,size=2897596k,nr_inodes=1048576)
+    # /dev/sda5 on /home type ext4 (rw,relatime)
+    # /dev/sda1 on /boot/efi type vfat (rw,relatime,fmask=0077,dmask=0077,codepage=437,iocharset=ascii,shortname=mixed,errors=remount-ro)
+    # /dev/sda6 on /var/lib/trident type ext4 (rw,relatime)
+    # tmpfs on /run/user/1001 type tmpfs (rw,nosuid,nodev,relatime,size=579516k,nr_inodes=144879,mode=700,uid=1001,gid=1001)
+    try:
+        mount_result = connection.run("mount")
+        mount_info = mount_result.stdout.strip().splitlines()
+
+        partitions_mount_info = dict()
+        for line in mount_info:
+            # Assuming the format is 'device on mount_point type fs_type (options)'
+            parts = line.split()
+            if len(parts) >= 3:
+                device_name = parts[0]
+                mount_point = parts[2]
+                fs_type = parts[4] if len(parts) > 4 else "unknown"
+                partitions_mount_info[device_name] = {
+                    "mount_point": mount_point,
+                    "fs_type": fs_type,
+                }
+
+        # Find name of block device mounted at root /
+        for device_name, info in partitions_mount_info.items():
+            if info["mount_point"] == "/":
+                return device_name
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+    return None
+
+
+# Runs 'verity setup' and returns the block device paths of root data device and hash device. E.g.
+# with the sample output below, func returns a tuple  (/dev/sda3, /dev/sda4).
+def get_data_hash_from_veritysetup(connection, device_name):
+    # Expected output example:
+    # /dev/mapper/root is active and is in use.
+    # type:        VERITY
+    # status:      verified
+    # hash type:   1
+    # data block:  4096
+    # hash block:  4096
+    # hash name:   sha256
+    # salt:        1edfc828a4d3116dc42a8457489db9e9024657382c7e6e27fb16a23b8ad68e56
+    # data device: /dev/sda3
+    # size:        1377048 sectors
+    # mode:        readonly
+    # hash device: /dev/sda4
+    # hash offset: 8 sectors
+    # root hash:   d446a67f7521af5bbeb2144b85b0859780d75960475e3dde291236054c59d97a
+    # flags:       panic_on_corruption
+    # OR
+    # /dev/mapper/root is active and is in use.
+    # type:        VERITY
+    # status:      verified
+    # hash type:   1
+    # data block:  4096
+    # hash block:  4096
+    # hash name:   sha256
+    # salt:        d16ba3427abe5c98dcb320d484672cdbce159476ada1831bfdf05be0a7072a50
+    # data device: /dev/md126
+    # size:        1377024 sectors
+    # mode:        readonly
+    # hash device: /dev/md127
+    # hash offset: 8 sectors
+    # root hash:   a35ecce908f6a29fc0dbd56f6cd2216c9c9c883d503252b92f97092b540df9d7
+    # flags:       panic_on_corruption
+
+    try:
+        # Run 'veritysetup status' command
+        command_output = connection.run(f"sudo veritysetup status {device_name}")
+        status_output = command_output.stdout.strip()
+
+        # Parse the output
+        data_device_match = re.search(r"data device: (/dev/\S+)", status_output)
+        hash_device_match = re.search(r"hash device: (/dev/\S+)", status_output)
+
+        if data_device_match and hash_device_match:
+            root_data_device = data_device_match.group(1)
+            root_hash_device = hash_device_match.group(1)
+            return (root_data_device, root_hash_device)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
+    return None
+
+
+# Runs 'ls -l /dev/md' and returns the name of RAID array that corresponds to device_name. E.g. if
+# device_name is /dev/md127 then func returns /dev/md/root-a.
+def get_raid_name_from_device_name(connection, device_name):
+    # Expected output example:
+    # lrwxrwxrwx 1 root root 8 Apr  1 22:42 home -> ../md124
+    # lrwxrwxrwx 1 root root 8 Apr  1 22:42 root-a -> ../md127
+    # lrwxrwxrwx 1 root root 8 Apr  1 22:42 root-b -> ../md125
+    # lrwxrwxrwx 1 root root 8 Apr  1 22:42 trident -> ../md126
+    try:
+        md_device_number = (
+            device_name.split("/")[-1] if "/" in device_name else device_name
+        )
+
+        # Execute command to get RAID names and corresponding devices
+        command_output = connection.run("ls -l /dev/md")
+        raid_output = command_output.stdout.strip().splitlines()
+
+        for line in raid_output:
+            if md_device_number in line:
+                # Extract the RAID name
+                match = re.search(
+                    r"(\S+)\s+-> \.\./" + re.escape(md_device_number), line
+                )
+                if match:
+                    return f"/dev/md/{match.group(1)}"
+
+        return None
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+    return None
 
 
 def test_users(connection, tridentConfiguration):

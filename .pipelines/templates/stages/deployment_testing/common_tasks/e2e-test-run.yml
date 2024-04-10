@@ -22,6 +22,18 @@ parameters:
     type: string
     default: trident_e2e_tests
 
+  - name: sshKeyPath
+    type: string
+    default: $(Build.SourcesDirectory)/e2e_tests/helpers/key
+
+  - name: userName
+    type: string
+    default: 'testing-user'
+
+  - name: artifactsDirectory
+    type: string
+    default: artifacts/test-image
+
 steps:
   - bash: |
       set -eux
@@ -30,19 +42,62 @@ steps:
     displayName: "Installing dependencies for E2E tests"
 
   - bash: |
+      set -eu
+      abUpdateExists=$(sudo yq e '.hostConfiguration.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      # TODO: Currently, exclude rerun and abupdate-with-verity configurations from A/B update
+      # testing. Once the A/B update testing is implemented for these configurations, remove the
+      # condition. Related ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/7456.
+      if [ "$abUpdateExists" == "true" ] && [ ${{ parameters.tridentConfigurationName }} != "rerun" ] && [ ${{ parameters.tridentConfigurationName }} != "abupdate-with-verity" ]; then
+        echo "Trident config requires A/B update testing"
+        echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
+        echo "##vso[task.setvariable variable=version]2"
+      else
+        echo "Trident config does not require A/B update testing"
+        echo "##vso[task.setvariable variable=abActiveVolume]null"
+      fi
+    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    displayName: "Check if Trident config requires A/B update testing"
+
+  # Check if Trident config requires verity runtime OS images. If yes, need to copy verity runtime
+  # OS images to a writable directory /run on the VM. If not, copy runtime OS images to /abupdate
+  - bash: |
+      set -eu
+      verityExists=$(sudo yq e '.hostConfiguration.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      if [ "$verityExists" == "true" ]; then
+        echo "Trident config requires verity runtime OS images"
+        echo "##vso[task.setvariable variable=verityExists]true"
+        echo "##vso[task.setvariable variable=destinationDirectory]/run"
+        echo "Destination directory: $(destinationDirectory)"
+      else
+        echo "Trident config does not require verity runtime OS images"
+        echo "##vso[task.setvariable variable=verityExists]false"
+        echo "##vso[task.setvariable variable=destinationDirectory]/abupdate"
+        echo "Destination directory: $(destinationDirectory)"
+      fi
+    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    displayName: "Check if Trident config requires verity runtime OS images"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
       set -eux
-      sshKeyPath="$(Build.SourcesDirectory)/e2e_tests/helpers/key"
-      ls -l "$sshKeyPath"
+      ls -l "${{ parameters.sshKeyPath }}"
+      sshSucceeded=false
       # Check SSH connection and wait for 2 minutes if it fails
       for i in {1..24}; do
-        if ssh -q -o "StrictHostKeyChecking=no" -i "$sshKeyPath" testing-user@${{ parameters.hostIp }} exit; then
+        if ssh -q -o "StrictHostKeyChecking=no" -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} exit; then
           echo "SSH connection successful. VM is up and running."
-            break
+          sshSucceeded=true
+          break
         else
-            echo "SSH connection failed. Waiting for 5 seconds before retrying..."
-            sleep 5
+          echo "SSH connection failed. Waiting for 5 seconds before retrying..."
+          sleep 5
         fi
       done
+      # If SSH connection did not succeed, fail
+      if [ "$sshSucceeded" != "true" ]; then
+        echo "SSH connection with the VM could not be established."
+        exit 1
+      fi
     displayName: "Check SSH connection"
 
   - bash: |
@@ -53,8 +108,169 @@ steps:
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --configuration ${{ parameters.tridentConfigPath }}
-    workingDirectory: ./e2e_tests
-    displayName: "Trident E2E tests"
+    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    displayName: "Run Trident E2E tests on freshly installed runtime OS"
+
+  # If current Trident config requires A/B update testing, copy runtime OS images to VM
+  - bash: |
+      set -eux
+      ls -ltr $(System.ArtifactsDirectory)
+      ssh -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo chown ${{ parameters.userName }}:${{ parameters.userName }} $(destinationDirectory) && sudo chmod 755 $(destinationDirectory)"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_boot.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_boot_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_esp.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_esp_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_root.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_root_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_roothash.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_roothash_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_var.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_var_v$(version).rawzst"
+    displayName: "Copy runtime verity OS images to VM for A/B update testing"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['verityExists'], 'true'))
+
+  - bash: |
+      set -eux
+      ls -ltr $(System.ArtifactsDirectory)
+      ssh -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo mkdir -p $(destinationDirectory)"
+      ssh -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo chown ${{ parameters.userName }}:${{ parameters.userName }} $(destinationDirectory) && sudo chmod 755 $(destinationDirectory)"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/esp.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/esp_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/root.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/root_v$(version).rawzst"
+    displayName: "Copy runtime OS images to VM for A/B update testing"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['verityExists'], 'false'))
+
+  # If current Trident config requires A/B update testing, execute script to ssh into the host,
+  # update images in HostConfiguration, and re-run Trident
+  - bash: |
+      set -eu
+      echo "Running script to trigger A/B update..."
+      verityExists=$(sudo yq e '.hostConfiguration.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
+          --ip-address ${{ parameters.hostIp }} \
+          --user-name ${{ parameters.userName }} \
+          --keys-file-path ${{ parameters.sshKeyPath }} \
+          --image-dir $(destinationDirectory) \
+          --version $(version)
+
+      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+      current_version=$(echo $(version))
+      new_version=$((current_version + 1))
+      echo "##vso[task.setvariable variable=version]$new_version"
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: 'Perform A/B update into runtime OS B'
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      ls -l "${{ parameters.sshKeyPath }}"
+      sshSucceeded=false
+      # Check SSH connection and wait for 2 minutes if it fails
+      for i in {1..24}; do
+        if ssh -q -o "StrictHostKeyChecking=no" -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} exit; then
+          echo "SSH connection successful. VM is up and running."
+          sshSucceeded=true
+          break
+        else
+          echo "SSH connection failed. Waiting for 5 seconds before retrying..."
+          sleep 5
+        fi
+      done
+      # If SSH connection did not succeed, fail
+      if [ "$sshSucceeded" != "true" ]; then
+        echo "SSH connection with the VM could not be established."
+        exit 1
+      fi
+    displayName: "Check SSH connection after A/B update"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  # Re-run E2E tests after A/B update into runtime OS B
+  - bash: |
+      set -eux
+      python3 -u -m pytest \
+          -m "${{ parameters.buildPurpose }}" \
+          --capture=no \
+          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml \
+          --host ${{ parameters.hostIp }} \
+          --configuration ${{ parameters.tridentConfigPath }} \
+          --ab-active-volume $(abActiveVolume)
+    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    displayName: "Run Trident E2E tests on updated runtime OS B"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      ls -ltr "${{ parameters.artifactsDirectory }}"
+      ssh -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo chown ${{ parameters.userName }}:${{ parameters.userName }} $(destinationDirectory) && sudo chmod 755 $(destinationDirectory)"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_boot.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_boot_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_esp.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_esp_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_root.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_root_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_roothash.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_roothash_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_var.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_var_v$(version).rawzst"
+    displayName: "Copy runtime verity OS images to VM for A/B update testing"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['verityExists'], 'true'))
+
+  - bash: |
+      set -eux
+      ls -ltr "${{ parameters.artifactsDirectory }}"
+      ssh -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo mkdir -p $(destinationDirectory)"
+      ssh -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo chown ${{ parameters.userName }}:${{ parameters.userName }} $(destinationDirectory) && sudo chmod 755 $(destinationDirectory)"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/esp.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/esp_v$(version).rawzst"
+      scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/root.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/root_v$(version).rawzst"
+    displayName: "Copy runtime OS images to VM for A/B update testing"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['verityExists'], 'false'))
+
+  - bash: |
+      set -eu
+      echo "Running script to trigger A/B update..."
+      verityExists=$(sudo yq e '.hostConfiguration.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
+          --ip-address ${{ parameters.hostIp }} \
+          --user-name ${{ parameters.userName }} \
+          --keys-file-path ${{ parameters.sshKeyPath }} \
+          --image-dir $(destinationDirectory) \
+          --version $(version)
+
+      echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
+      current_version=$(echo $(version))
+      new_version=$((current_version + 1))
+      echo "##vso[task.setvariable variable=version]$new_version"
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: 'Perform A/B update into runtime OS A'
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      ls -l "${{ parameters.sshKeyPath }}"
+      sshSucceeded=false
+      # Check SSH connection and wait for 2 minutes if it fails
+      for i in {1..24}; do
+        if ssh -q -o "StrictHostKeyChecking=no" -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} exit; then
+          echo "SSH connection successful. VM is up and running."
+          sshSucceeded=true
+          break
+        else
+          echo "SSH connection failed. Waiting for 5 seconds before retrying..."
+          sleep 5
+        fi
+      done
+      # If SSH connection did not succeed, fail
+      if [ "$sshSucceeded" != "true" ]; then
+        echo "SSH connection with the VM could not be established."
+        exit 1
+      fi
+    displayName: "Check SSH connection after A/B update"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      python3 -u -m pytest \
+          -m "${{ parameters.buildPurpose }}" \
+          --capture=no \
+          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml \
+          --host ${{ parameters.hostIp }} \
+          --configuration ${{ parameters.tridentConfigPath }} \
+          --ab-active-volume $(abActiveVolume)
+    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    displayName: "Run Trident E2E tests on updated runtime OS A"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  # TODO: Add additional steps to perform 3 more A/B updates. Need to figure out how to pull unique
+  # images. Related ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/7363.
 
   - task: PublishTestResults@2
     condition: succeededOrFailed()

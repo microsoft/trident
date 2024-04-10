@@ -32,7 +32,7 @@ stages:
 
       - job: Testing
         dependsOn: DefineTests
-        timeoutInMinutes: 20
+        timeoutInMinutes: 35
         pool:
           type: linux
           name: CAPKV_Pool
@@ -154,6 +154,9 @@ stages:
               tridentConfigurationName: $(tridentConfigurationName)
               hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               tridentConfigPath: $(tridentConfigPath)
+              sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
+              userName: testing-user
+              artifactsDirectory: artifacts/test-image
 
           - bash: |
               set -eux
