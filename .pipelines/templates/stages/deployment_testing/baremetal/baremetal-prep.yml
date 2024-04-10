@@ -15,7 +15,7 @@ steps:
     inputs:
       buildType: current
       artifactName: "trident-installer-testimage"
-      targetPath: "$(System.ArtifactsDirectory)/"
+      targetPath: "$(System.ArtifactsDirectory)/trident-installer-testimage"
 
   - task: DownloadPipelineArtifact@2
     inputs:

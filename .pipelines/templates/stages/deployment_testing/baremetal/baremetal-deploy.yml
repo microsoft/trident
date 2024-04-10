@@ -111,7 +111,8 @@ steps:
       ls -ltr patch.py
       cat input/trident.yaml
       ls -ltr input/
-      ./patch.py ${{ parameters.installerIsoDirectory }}/installer.iso installer-patched.iso input/trident.yaml
+      ls -ltr ${{ parameters.installerIsoDirectory }}
+      ./patch.py ${{ parameters.installerIsoDirectory }}/trident-installer-testimage.iso installer-patched.iso input/trident.yaml
       patched_iso=$(pwd)/installer-patched.iso
       echo "##vso[task.setvariable variable=PATCHED_INSTALLER_ISO]$patched_iso"
       ls -ltr

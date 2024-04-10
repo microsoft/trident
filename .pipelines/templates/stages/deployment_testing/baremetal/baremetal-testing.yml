@@ -19,6 +19,10 @@ parameters:
     type: string
     default: "10.8.4.70"
 
+  - name: oamGateway
+    type: string
+    default: "10.8.6.1"
+
   - name: interfaceForOamIp
     type: string
     default: "eno8303"
@@ -113,6 +117,11 @@ stages:
           - checkout: argus-toolkit
           - checkout: platform-tests
 
+          - bash: |
+              set -xe
+              ping -c 30 ${{ parameters.oamGateWay }}
+            displayName: "Validate if the Baremetal lab is up and running"
+
           - template: baremetal-prep.yml
             parameters:
               k8sSanityDir: $(K8S_SANITY_DIR)
@@ -150,7 +159,7 @@ stages:
               hostConfigYaml: $(TRIDENT_CONFIG_FILE)
               sshKeyFile: $(SSH_KEY_FILE)
               createInstallerIso: false
-              installerIsoDirectory: $(System.ArtifactsDirectory)/installer-iso/installer-iso
+              installerIsoDirectory: $(System.ArtifactsDirectory)/trident-installer-testimage
 
           - ${{ if parameters.deleteIsoOnCleanup }}:
               - bash: |
