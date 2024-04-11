@@ -258,6 +258,7 @@ validate: $(TRIDENT_CONFIG) bin/trident
 
 .PHONY: run-netlaunch
 run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso validate
+	@mkdir -p artifacts/test-image
 	@cp bin/trident artifacts/test-image
 	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
