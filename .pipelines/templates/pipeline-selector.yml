@@ -17,18 +17,7 @@ parameters:
 stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
-
-  - ${{ if eq(parameters.targetStage, 'ci') }}:
+  - ${{ else }}:
       - template: e2e-template.yml
         parameters:
-          stageType: ci
-
-  - ${{ if eq(parameters.targetStage, 'pre') }}:
-      - template: e2e-template.yml
-        parameters:
-          stageType: pre
-
-  - ${{ if eq(parameters.targetStage, 'rel') }}:
-      - template: e2e-template.yml
-        parameters:
-          stageType: rel
+          stageType: ${{ parameters.targetStage }}
