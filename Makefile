@@ -306,7 +306,7 @@ download-runtime-partition-images:
 		--project "ECF" \
 		--run-id $(PIPELINE_IMAGES_LAST_RUN) \
 		--path $(DOWNLOAD_DIR) \
-		--artifact-name 'trident-testimg'
+		--artifact-name 'trident-testimage'
 
 #   Clean & create artifacts dir
 	rm -rf ./artifacts/test-image
