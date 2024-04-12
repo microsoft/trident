@@ -1,0 +1,17 @@
+steps:
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
+    displayName: Install native dependencies
+
+  - script: |
+      set -eux
+      cargo install cargo-nextest --locked --version 0.9.67
+      # Exclude pytest_gen as Mariner Rust is currently failing to build it. See
+      # for more details: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6517
+      cargo nextest run --workspace --exclude pytest_gen --profile ci
+    displayName: Test Debug
+
+  - task: PublishTestResults@2
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: "JUnit"
+      testResultsFiles: "./target/nextest/ci/trident_unit_tests.xml"

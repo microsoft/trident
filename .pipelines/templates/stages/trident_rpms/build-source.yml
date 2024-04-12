@@ -11,8 +11,8 @@ stages:
     displayName: Trident RPMs (Build)
 
     jobs:
-      - job: TestTrident
-        displayName: Check and Unit Test
+      - job: CheckTrident
+        displayName: Check
         pool:
           type: linux
 
@@ -21,7 +21,19 @@ stages:
             value: "$(Build.SourcesDirectory)/trident/out"
 
         steps:
-          - template: test-build.yml
+          - template: check.yml
+
+      - job: TestTrident
+        displayName: Unit Test
+        pool:
+          type: linux
+
+        variables:
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/trident/out"
+
+        steps:
+          - template: unit-test.yml
 
       - job: Coverage
         displayName: Evaluate Unit Test Code Coverage
