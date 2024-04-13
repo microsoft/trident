@@ -41,13 +41,10 @@ steps:
 
       # Install packages.
       sudo apt update
-      sudo apt install -y qemu qemu-kvm qemu-utils libvirt-daemon-system libvirt-dev ovmf \
-        libgirepository1.0-dev python3-venv python3-dev openssh-client ncat libcairo2-dev \
-        acl protobuf-compiler
-      sudo snap install multipass yq
+      sudo apt install -y qemu-utils libgirepository1.0-dev python3-venv python3-dev \
+        openssh-client ncat libcairo2-dev acl protobuf-compiler
+      sudo snap install yq
       setfacl --help
-
-      sudo systemctl enable --now libvirtd
 
       # Install poetry
       curl -sSL https://install.python-poetry.org | python3 -
@@ -55,7 +52,6 @@ steps:
       ls -ltr
       ls -ltr ${{ parameters.k8sSanityDir }}
       pwd
-      sudo ${{ parameters.k8sSanityDir }}/pipelines/ubuntu-fix-app-armor.sh
     displayName: "Install dependencies"
 
   - bash: |

@@ -90,9 +90,6 @@ stages:
           - name: TRIDENT_SOURCE_DIR
             value: $(Build.SourcesDirectory)
 
-          - name: ARGUS_TOOLKIT_DIR
-            value: $(Build.SourcesDirectory)/argus-toolkit
-
           - name: TRIDENT_CONFIG_PATH
             value: $(TRIDENT_SOURCE_DIR)/e2e_tests/trident_configurations/$(TRIDENT_CONFIGURATION_NAME)
 
@@ -114,12 +111,11 @@ stages:
           - group: baremetal_controller
 
         steps:
-          - checkout: argus-toolkit
           - checkout: platform-tests
 
           - bash: |
               set -xe
-              ping -c 30 ${{ parameters.oamGateWay }}
+              ping -c 10 ${{ parameters.oamGateWay }}
             displayName: "Validate if the Baremetal lab is up and running"
 
           - template: baremetal-prep.yml
@@ -154,11 +150,9 @@ stages:
               isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
               noProxy: ${{ parameters.noProxy }}
               httpProxy: ${{ parameters.httpProxy }}
-              argusToolkitDir: $(ARGUS_TOOLKIT_DIR)
               k8sSanityDir: $(K8S_SANITY_DIR)
               hostConfigYaml: $(TRIDENT_CONFIG_FILE)
               sshKeyFile: $(SSH_KEY_FILE)
-              createInstallerIso: false
               installerIsoDirectory: $(System.ArtifactsDirectory)/trident-installer-testimage
 
           - ${{ if parameters.deleteIsoOnCleanup }}:

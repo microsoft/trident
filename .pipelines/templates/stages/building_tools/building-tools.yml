@@ -7,10 +7,6 @@ parameters:
     type: boolean
     default: true
 
-  - name: buildIsogen
-    type: boolean
-    default: true
-
 stages:
   - stage: BuildingTools
     displayName: Building Tools
@@ -25,8 +21,6 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
-
           ob_outputDirectory: $(Build.SourcesDirectory)/go-tools
           ob_artifactBaseName: go-tools
 
@@ -48,16 +42,3 @@ stages:
                   mv bin/netlisten $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
                 displayName: "Building netlisten"
-
-          - ${{ if eq(parameters.buildIsogen, true) }}:
-              - checkout: argus-toolkit
-
-              - template: ../common_tasks/install-clamav.yml
-
-              - bash: |
-                  set -eux
-                  make build/isogen
-                  mkdir -p $(ob_outputDirectory)
-                  mv build/isogen $(ob_outputDirectory)
-                workingDirectory: $(argusToolkitSourceDirectory)
-                displayName: "Building Isogen tool"

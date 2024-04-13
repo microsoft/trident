@@ -40,18 +40,5 @@ steps:
 
   - bash: |
       set -xe
-
-      pwd
-      ls -l
-
-      mkdir -p ./bin
-
-      # Rebuilding the trident binary 
-      make bin/trident
-      ls -ltr
-      ls -ltr ./bin
-      ./bin/trident --help
-
-      # Run validate against the tridentConfigFile
-      ./bin/trident validate --config ${{ parameters.tridentConfigFile }}
+      cargo run -- validate --config ${{ parameters.tridentConfigFile }}
     displayName: "Validate the modified HostConfig by running trident validate"
