@@ -108,6 +108,7 @@ steps:
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
           --configuration ${{ parameters.tridentConfigPath }}
+    timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Run Trident E2E tests on freshly installed runtime OS"
 
@@ -151,6 +152,7 @@ steps:
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
       echo "##vso[task.setvariable variable=version]$new_version"
+    timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: 'Perform A/B update into runtime OS B'
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
@@ -188,6 +190,7 @@ steps:
           --host ${{ parameters.hostIp }} \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
+    timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Run Trident E2E tests on updated runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
@@ -229,6 +232,7 @@ steps:
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
       echo "##vso[task.setvariable variable=version]$new_version"
+    timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: 'Perform A/B update into runtime OS A'
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
@@ -265,6 +269,7 @@ steps:
           --host ${{ parameters.hostIp }} \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
+    timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Run Trident E2E tests on updated runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
