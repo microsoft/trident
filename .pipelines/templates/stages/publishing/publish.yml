@@ -18,8 +18,8 @@ stages:
       - Trident
       - TridentTestImg_trident_installer_testimage
       - ${{ if eq(parameters.stageType, 'pre') }}:
-        - DeploymentTesting
-        - BaremetalDeploymentTesting
+          - DeploymentTesting
+          - BaremetalDeploymentTesting
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
 
     jobs:

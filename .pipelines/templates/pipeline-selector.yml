@@ -14,6 +14,11 @@ parameters:
       - "rel"
     displayName: "Stage to run"
 
+  - name: blockPublishing
+    type: boolean
+    default: false
+    displayName: "Block publishing to artifact feed."
+
 stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
@@ -21,3 +26,4 @@ stages:
       - template: e2e-template.yml
         parameters:
           stageType: ${{ parameters.targetStage }}
+          blockPublishing: ${{ parameters.blockPublishing }}

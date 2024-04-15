@@ -75,3 +75,4 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: ${{ parameters.targetStage }}
+          blockPublishing: true

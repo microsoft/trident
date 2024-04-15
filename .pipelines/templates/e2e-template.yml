@@ -8,6 +8,11 @@ parameters:
       - pre
       - rel
 
+  - name: blockPublishing
+    displayName: "Block publishing to artifact feed."
+    type: boolean
+    default: false
+
 stages:
   - template: stages/trident_rpms/trident-stage.yml
     parameters:
@@ -49,6 +54,7 @@ stages:
         parameters:
           buildPurpose: daily
 
-  - template: stages/publishing/publish.yml
-    parameters:
-      stageType: ${{ parameters.stageType }}
+  - ${{ if eq(parameters.blockPublishing, false) }}:
+      - template: stages/publishing/publish.yml
+        parameters:
+          stageType: ${{ parameters.stageType }}
