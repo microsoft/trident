@@ -479,8 +479,13 @@ def get_raid_name_from_device_name(connection, device_name):
         )
 
         # Execute command to get RAID names and corresponding devices
-        command_output = connection.run("ls -l /dev/md")
+        command_output = connection.run("ls -l /dev/md || true", warn=True)
         raid_output = command_output.stdout.strip().splitlines()
+
+        # If there is no output, return None
+        if not raid_output or "No such file or directory" in command_output.stderr:
+            print("'/dev/md' directory does not exist or is empty")
+            return None
 
         for line in raid_output:
             if md_device_number in line:
@@ -496,8 +501,6 @@ def get_raid_name_from_device_name(connection, device_name):
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
-
-    return None
 
 
 def test_users(connection, tridentConfiguration):

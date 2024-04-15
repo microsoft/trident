@@ -44,10 +44,10 @@ steps:
   - bash: |
       set -eu
       abUpdateExists=$(sudo yq e '.hostConfiguration.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      # TODO: Currently, exclude rerun and abupdate-with-verity configurations from A/B update
-      # testing. Once the A/B update testing is implemented for these configurations, remove the
-      # condition. Related ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/7456.
-      if [ "$abUpdateExists" == "true" ] && [ ${{ parameters.tridentConfigurationName }} != "rerun" ] && [ ${{ parameters.tridentConfigurationName }} != "abupdate-with-verity" ]; then
+      # TODO: Currently, exclude rerun configuration from A/B update testing. Once the A/B update
+      # testing is implemented for this configuration, remove the condition. Related ADO task:
+      # https://dev.azure.com/mariner-org/ECF/_workitems/edit/7507.
+      if [ "$abUpdateExists" == "true" ] && [ ${{ parameters.tridentConfigurationName }} != "rerun" ]; then
         echo "Trident config requires A/B update testing"
         echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
         echo "##vso[task.setvariable variable=version]2"

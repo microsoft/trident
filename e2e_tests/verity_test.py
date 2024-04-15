@@ -49,7 +49,7 @@ def test_verity(connection, tridentConfiguration):
         expected_verity_config[verity["id"]] = verity
 
     # Check host status.
-    res_host_status = connection.run("/usr/bin/trident get")
+    res_host_status = connection.run("sudo /usr/bin/trident get")
     output_host_status = res_host_status.stdout.strip()
 
     HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
