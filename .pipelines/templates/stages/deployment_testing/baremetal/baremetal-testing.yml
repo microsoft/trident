@@ -100,7 +100,7 @@ stages:
             value: $(Pipeline.Workspace)/ssh-key
 
           - name: ob_outputDirectory
-            value: $(Build.SourcesDirectory)/build
+            value: $(Build.SourcesDirectory)/deployment_logs
 
           - name: ob_artifactBaseName
             value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_deployment_log_$(System.JobAttempt)
@@ -170,7 +170,6 @@ stages:
                     --livecd-httpd-ip ${{ parameters.isoHttpdServerIp }} \
                     --livecd-httpd-ssh-key $(httpdPrivKey.secureFilePath) \
                     --iso-filename $(basename $(echo $PATCHED_INSTALLER_ISO | tr -d "'"))
-
                 condition: always()
                 displayName: "Delete generated ISO"
 

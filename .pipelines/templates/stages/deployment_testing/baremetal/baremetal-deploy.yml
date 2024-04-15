@@ -46,6 +46,13 @@ parameters:
     type: string
 
 steps:
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: "go-tools"
+      branchName: "refs/heads/main"
+      targetPath: "$(System.ArtifactsDirectory)/go-tools"
+
   - bash: |
       set -xe
 
@@ -89,6 +96,16 @@ steps:
       # Add poetry to PATH.
       export PATH="$HOME/.local/bin:$PATH"
 
+      # Start netlisten on port.
+      pwd
+      ls -ltr .
+      mkdir -p ./bin
+      sudo cp $(System.ArtifactsDirectory)/go-tools/netlisten ./bin/
+      sudo chown -R $(USER):$(USER) ./bin/netlisten
+      sudo chmod 755 ./bin/netlisten
+      ls -ltr ./bin
+      ./bin/netlisten -p 12000 > ./bm-deployment.log 2>&1 &
+
       cd ${{ parameters.k8sSanityDir }}
 
       chmod 400 $(httpdPrivKey.secureFilePath)
@@ -107,3 +124,18 @@ steps:
         --trident-httpd-ip ${{ parameters.isoHttpdServerIp }} \
         --trident-httpd-ssh-key $(httpdPrivKey.secureFilePath)
     displayName: "Boot baremetal lab machine"
+
+  - bash: |
+      set -xe
+      cat ./bm-deployment.log
+    displayName: "Displaying logs collected from the netlisten process"
+
+  - bash: |
+      set -eux
+      ls -ltr .
+      if [[ -f ./bm-deployment.log ]]; then
+        mkdir -p $(ob_outputDirectory)
+        sudo cp ./bm-deployment.log $(ob_outputDirectory)/bm-deployment.log
+      fi
+    condition: succeededOrFailed()
+    displayName: "Publish deployment.log"

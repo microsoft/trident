@@ -187,7 +187,7 @@ def main():
             }
         )
         ssh_connection = Connection(host=ip, user=ssh_username, config=config)
-        wait_for_ssh_connection(ssh_connection, timeout=1200)
+        wait_for_ssh_connection(ssh_connection, timeout=1020)
     finally:
         get_system_logs(bareMetalMachine=machine)
 

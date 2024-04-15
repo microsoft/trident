@@ -6,6 +6,7 @@ from os.path import basename
 from pathlib import Path
 import urllib
 import yaml
+import subprocess
 
 import logging
 
@@ -48,6 +49,18 @@ def update_trident_host_config(
     users.append(
         {"name": "mariner_user", "sshPublicKeys": [ssh_pub_key], "sshMode": "key-only"}
     )
+
+    logging.info("Updating phonehome and logstream in trident.yaml")
+    # Get inet address of the interface
+    output = subprocess.run(
+        ["ip", "addr", "show", "eth0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    output = output.stdout.decode("utf-8").split("\n")[2].strip()
+    logging.info("Output of ip addr show eth0: %s", output)
+    netlisten_address = output.split(" ")[1].split("/")[0]
+    logging.info("Netlisten address: %s", netlisten_address)
+    trident_yaml_content["phonehome"] = f"http://{netlisten_address}:12000/phonehome"
+    trident_yaml_content["logstream"] = f"http://{netlisten_address}:12000/logstream"
 
     logging.info(
         "Final trident_yaml content post all the updates: %s", trident_yaml_content
