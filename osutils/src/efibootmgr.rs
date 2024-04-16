@@ -154,7 +154,8 @@ pub fn create_boot_entry(
     );
 
     if !valid {
-        // Check if the path exists in new root mount point as we should support creating boot entry in new root mount point before transition.
+        // Check if the path exists in new root mount point as we should support creating boot
+        // entry in new root mount point before finalizing deployment.
         valid = is_valid_bootloader_path(
             &new_root_path.as_ref().join(ESP_RELATIVE_MOUNT_POINT_PATH),
             bootloader_path.as_ref().to_str().context(format!(

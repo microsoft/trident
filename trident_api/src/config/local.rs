@@ -44,7 +44,8 @@ pub struct LocalConfigFile {
     /// A combination of flags representing allowed operations. This is a
     /// list of operations that Trident is allowed to perform on the host.
     ///
-    /// You can pass multiple flags, separated by `|`. Example: `Update | Transition`.
+    /// You can pass multiple flags, separated by `|`. Example:
+    /// `StageDeployment | FinalizeDeployment`.
     /// You can pass `''` to disable all operations, which would result in getting
     /// refreshed Host Status, but no operations performed on the host.
     #[serde(default)]
@@ -210,14 +211,15 @@ bitflags::bitflags! {
     #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Operations: u32 {
-        /// Trident will update the host based on the host configuration,
-        /// but it will not transition the host to the new configuration. This is useful
-        /// if you want to drive additional operations on the host outside of Trident.
-        const Update = 0b1;
-        /// Trident will transition the host to the new configuration,
-        /// which can include rebooting the host. This will only happen if `Update` is
-        /// also specified.
-        const Transition = 0b10;
+        /// Trident will stage the deployment, during a clean install or an A/B update, based on
+        /// the host configuration, but it will not reboot the host into the newly deployed runtime
+        /// OS image. This is useful if you want to drive additional operations on the host outside
+        /// of Trident.
+        const StageDeployment = 0b1;
+        /// Trident will finalize the deployment, during a clean install or an A/B update, i.e.
+        /// set UEFI firmware variables. Then, Trident will reboot the host into the newly deployed
+        /// runtime OS image.
+        const FinalizeDeployment = 0b10;
     }
 }
 impl Default for Operations {

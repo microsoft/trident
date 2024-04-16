@@ -88,7 +88,7 @@ fn get_block_devices_to_initialize(
         });
 
     // Select mount points that have been uninitialized or in case of A/B
-    // update, need to be cleaned (in case of B->A transition, we dont want to
+    // update, need to be cleaned (in case of B->A update, we dont want to
     // mount data from the previous iteration of A)
     let selected = candidates
         .filter_map(|mount_point| {

@@ -168,16 +168,28 @@ composed of the following sections:
 - **allowedOperations**: a combination of flags representing allowed operations.
   This is a list of operations that Trident is allowed to perform on the host.
   Supported flags are:
-  - **Update**: Trident will update the host based on the host configuration,
-    but it will not transition the host to the new configuration. This is useful
-    if you want to drive additional operations on the host outside of Trident.
-  - **Transition**: Trident will transition the host to the new configuration,
-    which can include rebooting the host. This will only happen if `Update` is
-    also specified.
+   - **StageDeployment**: Trident will stage the changes required by the updated
+    host configuration, including deployment of the new runtime OS image onto
+    block devices during a clean install or an A/B update. However, Trident
+    will not reboot the host into the newly deployed runtime OS. This is useful
+    if you want to drive additional operations on the host outside of Trident
+    or delay the reboot until a later point in time. After the new runtime OS
+    image has been staged, Trident will update the host's status to
+    DeploymentStaged.
+  - **FinalizeDeployment**: Trident will reboot the host into the newly deployed
+    runtime OS image to complete a clean install or A/B update. Trident will
+    first manage the UEFI firmware variables, to ensure that post reboot, the
+    firmware will boot into the updated runtime OS image. Then, Trident will
+    set the host's servicing state to DeploymentFinalized and reboot. After the
+    host comes back up, Trident will confirm that firmware booted from the
+    correct block device and change the host's state to Ready. Otherwise, if a
+    rollback into the provisioning OS or the old runtime image has occurred,
+    Trident will notify the user and set the host's state to DeploymentFailed.
 
-  You can pass multiple flags, separated by `|`. Example: `Update | Transition`.
-  You can pass `''` to disable all operations, which would result in getting
-  refreshed Host Status, but no operations performed on the host.
+  You can pass multiple flags, separated by `|`. Example:
+  `StageDeployment | FinalizeDeployment`. You can pass `''` to disable all
+  operations, which would result in getting refreshed Host Status, but no
+  operations performed on the host.
 - **datastore**: if present, indicates the path to an existing datastore Trident
   should load its state from. This field should not be included when Trident is
   running from the provisioning OS.
@@ -350,17 +362,6 @@ The user can also use commands such as `blkid` and `mount` to confirm that the
 volume pairs have been correctly updated and that the correct block devices
 have been mounted at the designated mountpoints.
 
-### TODO: Next Steps
-
-In the future iterations, Trident will support the following additional
-features:
-
-- Decoupling of the A/B update into two steps: StageUpdate, which is the update
-of the image, and Update, which includes the changes required to complete the
-update and the reboot itself.
-- Ability to select the reboot type for the next reboot, either kexec or
-firmware reboot.
-
 ## dm-verity Support
 
 Please review [API Documentation](#documentation) for low level details.
@@ -456,7 +457,7 @@ via the following commands:
 
 ```bash
 # Generate command.json from input/hc.yaml
-jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: "update | transition" }' > command.json
+jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: "stageDeployment | finalizeDeployment" }' > command.json
 
 # Issue gRPC request and pretty print the output as it is streamed back
 evans --host <target-ip-adddress> --proto path/to/trident/proto/trident.proto cli call --file command.json UpdateHost | jq -r .status

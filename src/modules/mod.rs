@@ -184,8 +184,8 @@ pub(super) fn clean_install(
             .structured(InternalError::SendHostStatus)?;
     }
 
-    if !allowed_operations.contains(Operations::Update) {
-        info!("Update not requested, skipping");
+    if !allowed_operations.contains(Operations::StageDeployment) {
+        info!("Staging of clean install not requested, skipping staging");
         return Ok(());
     }
 
@@ -258,13 +258,13 @@ pub(super) fn clean_install(
         root_device_path.structured(InternalError::Internal("Failed to get root block device"))?;
 
     info!("Root device path: {:#?}", root_device_path);
-    if !allowed_operations.contains(Operations::Transition) {
-        info!("Transition not requested, skipping transition");
+    if !allowed_operations.contains(Operations::FinalizeDeployment) {
+        info!("Finalizing of clean install not requested, skipping reboot");
         info!("Unmounting '{}'", new_root_path.display());
         mount_root::unmount_new_root(mounts, &new_root_path)?;
     } else {
-        info!("Performing transition");
-        transition(&new_root_path, &root_device_path, state.host_status())?;
+        info!("Finalizing clean install");
+        finalize_deployment(&new_root_path, &root_device_path, state.host_status())?;
     }
 
     Ok(())
@@ -320,8 +320,8 @@ pub(super) fn update(
     info!("Validating host configuration against system state");
     validate_host_config(&modules, state, host_config, reconcile_state)?;
 
-    if !allowed_operations.contains(Operations::Update) {
-        info!("Update not requested, skipping");
+    if !allowed_operations.contains(Operations::StageDeployment) {
+        info!("Staging of update not requested, skipping staging");
         return Ok(());
     }
 
@@ -392,8 +392,8 @@ pub(super) fn update(
             let root_block_device_path = get_root_block_device_path(state.host_status())
                 .structured(InternalError::GetRootBlockDevice)?;
 
-            if !allowed_operations.contains(Operations::Transition) {
-                info!("Transition not requested, skipping transition");
+            if !allowed_operations.contains(Operations::FinalizeDeployment) {
+                info!("Finalizing of update not requested, skipping reboot");
                 if let Some(mounts) = mounts {
                     mount_root::unmount_new_root(mounts, &new_root_path)?;
                 }
@@ -402,8 +402,8 @@ pub(super) fn update(
 
             info!("Closing datastore");
             state.close();
-            info!("Performing transition");
-            transition(&new_root_path, &root_block_device_path, state.host_status())?;
+            info!("Finalizing update");
+            finalize_deployment(&new_root_path, &root_block_device_path, state.host_status())?;
 
             Ok(())
         }
@@ -691,7 +691,7 @@ pub fn reboot() -> Result<(), TridentError> {
     Err(TridentError::new(ManagementError::RebootTimeout))
 }
 
-fn transition(
+fn finalize_deployment(
     new_root_path: &Path,
     _root_block_device_path: &Path,
     host_status: &HostStatus,
