@@ -9,8 +9,13 @@ from os.path import basename, dirname, abspath, join
 from pathlib import Path
 from paramiko import client, ed25519key, ChannelException, SSHException
 from paramiko import rsakey as rsa
-from paramiko.ssh_exception import AuthenticationException, NoValidConnectionsError
+from paramiko.ssh_exception import (
+    AuthenticationException,
+    NoValidConnectionsError,
+    BadHostKeyException,
+)
 import logging
+import subprocess
 from fabric import Connection, Config
 from fabric.transfer import Transfer
 
@@ -60,6 +65,7 @@ def wait_for_ssh_connection(ssh_connection, timeout=900):
         except (
             ChannelException,
             SSHException,
+            BadHostKeyException,
             AuthenticationException,
             TimeoutError,
             ValueError,
@@ -67,6 +73,15 @@ def wait_for_ssh_connection(ssh_connection, timeout=900):
         ) as ex:
             if time.monotonic() >= stop_time:
                 raise Exception("timeout - ssh connection failed!") from ex
+            elif isinstance(ex, BadHostKeyException):
+                logging.info(
+                    f"Host key verification failed for {ssh_connection.host}. Removing the host key from known_hosts file and retrying..."
+                )
+                host_keys = ssh_connection.client.get_host_keys()
+                host_keys.clear()
+                logging.info("Host keys for hosts: %s", host_keys.keys())
+                time.sleep(wait_time_secs)
+                continue
             else:
                 logging.info(f"Error trying to open ssh connection: {str(ex)}")
                 logging.info(f"Waiting for ssh to {ssh_connection.host}...")
@@ -125,6 +140,7 @@ def main():
     ssh_username = config.nodes.bootstrap.cloud_init.ssh_username
     logging.info(f"ssh_username: {ssh_username}")
     ssh_key = config.nodes.bootstrap.cloud_init.ssh_key
+    logging.info(f"ssh_key: {ssh_key}")
 
     # get public key
     ssh_public_key = get_ssh_public_key(ssh_key)
@@ -187,7 +203,7 @@ def main():
             }
         )
         ssh_connection = Connection(host=ip, user=ssh_username, config=config)
-        wait_for_ssh_connection(ssh_connection, timeout=1020)
+        wait_for_ssh_connection(ssh_connection, timeout=1200)
     finally:
         get_system_logs(bareMetalMachine=machine)
 

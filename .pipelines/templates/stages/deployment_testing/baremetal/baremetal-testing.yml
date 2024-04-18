@@ -17,7 +17,7 @@ parameters:
 
   - name: oamIp
     type: string
-    default: "10.8.4.70"
+    default: "10.8.4.50"
 
   - name: oamGateway
     type: string
