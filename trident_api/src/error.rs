@@ -17,6 +17,8 @@ pub enum InitializationError {
     ParseLocalConfig,
     #[error("Failed connecting to logstream")]
     StartLogstream,
+    #[error("Failed connecting to tracestream")]
+    StartTraceStream,
     #[error("Failed to get host root path")]
     GetHostRootPath,
     #[error("Trident directed to perform clean install but safety check failed")]

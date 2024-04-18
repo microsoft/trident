@@ -51,6 +51,7 @@ var listen_port int16
 var remoteAddressFile string
 var serveFolder string
 var ignoreFailure bool
+var traceFile string
 
 func patchFile(iso []byte, filename string, contents []byte) error {
 	// Search for magic string
@@ -181,6 +182,10 @@ var rootCmd = &cobra.Command{
 
 			// Set up listening for logstream
 			phonehome.SetupLogstream()
+
+			// Set up listening for tracestream
+			phonehome.SetupTraceStream(traceFile)
+
 		}
 
 		if len(serveFolder) != 0 {
@@ -242,6 +247,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&remoteAddressFile, "remoteaddress", "r", "", "File for writing remote address of the Trident instance.")
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
 	rootCmd.PersistentFlags().BoolVarP(&ignoreFailure, "ignore-failure", "", false, "Keep running even if Trident sends back a failure message")
+	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "", "File for writing metrics collected from Trident.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing.")
 	rootCmd.MarkFlagRequired("iso-template")
 	log.SetLevel(log.DebugLevel)

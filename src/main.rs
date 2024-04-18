@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
 use log::{error, info, LevelFilter};
 
-use trident::{BackgroundLog, Logstream, MultiLogger};
+use trident::{BackgroundLog, Logstream, MultiLogger, TraceStream};
 
 use trident_api::error::TridentResultExt;
 
@@ -69,7 +69,11 @@ enum Commands {
     Pytest,
 }
 
-fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
+fn run_trident(
+    mut logstream: Logstream,
+    mut tracestream: TraceStream,
+    args: &Cli,
+) -> Result<(), Error> {
     // Log version ASAP
     info!("Trident version: {}", trident::TRIDENT_VERSION);
 
@@ -96,14 +100,15 @@ fn run_trident(mut logstream: Logstream, args: &Cli) -> Result<(), Error> {
         _ => (),
     }
 
-    // Lock the logstream if we're starting the network
-    // We have no network yet, so we can't send logs anywhere
+    // Lock the streams if we're starting the network
+    // We have no network yet, so we can't send logs or traces anywhere
     if let Commands::StartNetwork = args.command {
         logstream.disable();
+        tracestream.disable();
     }
 
     let res = panic::catch_unwind(move || {
-        let mut trident = trident::Trident::new(args.config.clone(), logstream)
+        let mut trident = trident::Trident::new(args.config.clone(), logstream, tracestream)
             .unstructured("Failed to initialize trident")?;
 
         match &args.command {
@@ -181,6 +186,23 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
     Ok(logstream)
 }
 
+fn setup_tracing() -> Result<TraceStream, Error> {
+    use tracing_subscriber::{filter, layer::SubscriberExt, Layer};
+
+    let tracestream = TraceStream::default();
+    // Set up the trace sender
+    let trace_sender = tracestream
+        .make_trace_sender()
+        .with_filter(filter::LevelFilter::INFO);
+
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::Registry::default().with(trace_sender),
+    )
+    .context("Failed to set global default subscriber")?;
+
+    Ok(tracestream)
+}
+
 fn main() -> ExitCode {
     // Parse args
     let args = Cli::parse();
@@ -192,8 +214,15 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
+    // Initialize the telemetry flow
+    let tracestream = setup_tracing();
+    if let Err(e) = tracestream {
+        error!("Failed to initialize tracing: {e:?}");
+        return ExitCode::from(1);
+    }
+
     // Invoke Trident
-    if let Err(e) = run_trident(logstream.unwrap(), &args) {
+    if let Err(e) = run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
         error!("Trident failed: {e:?}");
         return ExitCode::from(2);
     }

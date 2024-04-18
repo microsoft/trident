@@ -34,7 +34,10 @@ mod logging;
 mod modules;
 mod orchestrate;
 
-pub use logging::{background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger};
+pub use logging::{
+    background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
+    tracestream::TraceStream,
+};
 pub use modules::network::provisioning::start as start_provisioning_network;
 pub use orchestrate::OrchestratorConnection;
 
@@ -122,7 +125,11 @@ pub struct Trident {
     server_runtime: Option<tokio::runtime::Runtime>,
 }
 impl Trident {
-    pub fn new(config_path: Option<PathBuf>, logstream: Logstream) -> Result<Self, TridentError> {
+    pub fn new(
+        config_path: Option<PathBuf>,
+        logstream: Logstream,
+        tracestream: TraceStream,
+    ) -> Result<Self, TridentError> {
         let config_path = if let Some(path) = config_path {
             path.to_owned()
         } else if path::host_relative(TRIDENT_LOCAL_CONFIG_PATH).exists() {
@@ -165,6 +172,14 @@ impl Trident {
             logstream
                 .set_server(url.to_string())
                 .structured(InitializationError::StartLogstream)?;
+        }
+
+        // Set up tracestream if configured, using phonehome url for now
+        if let Some(url) = config.phonehome.as_ref() {
+            let trace_url = url.clone().replace("phonehome", "tracestream");
+            tracestream
+                .set_server(trace_url)
+                .structured(InitializationError::StartTraceStream)?;
         }
 
         debug!(

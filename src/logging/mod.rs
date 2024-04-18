@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 pub(super) mod background_log;
 pub(super) mod logstream;
 pub(super) mod multilog;
+pub(super) mod tracestream;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LogEntry {

@@ -339,6 +339,7 @@ reports/
 /bin
 /artifacts
 /input
+/trident-stats
 remote-addr
 
 # RPM output
