@@ -1,0 +1,109 @@
+#!/usr/bin/python3
+
+# # # # # # # # # # # # # # # # # # # # #
+#             W A R N I N G             #
+#    This script is used in pipelines   #
+#      and in `make check-pipelines`    #
+#       Be careful when modifying!      #
+# # # # # # # # # # # # # # # # # # # # #
+
+import argparse
+import subprocess
+import sys
+import tempfile
+import json
+
+parser = argparse.ArgumentParser(description="Preview a pipeline run")
+
+parser.add_argument(
+    "pipeline",
+    type=str,
+    help="The pipeline to preview",
+    choices=["pr", "ci", "pre", "rel"],
+)
+
+parser.add_argument(
+    "-b",
+    "--branch",
+    type=str,
+    help="The branch to preview the pipeline for",
+    default=None,
+)
+
+parser.add_argument(
+    "-q", "--quiet", action="store_true", help="Suppress YAML output", default=False
+)
+
+args = parser.parse_args()
+
+pipeline_id_map = {"pr": 2113, "ci": 2195, "pre": 2648, "rel": -1}
+
+pipeline_id = pipeline_id_map[args.pipeline]
+
+if pipeline_id == -1:
+    print("Pipeline does not exist yet", file=sys.stderr)
+    exit(2)
+
+if args.branch:
+    selected_branch = args.branch
+else:
+    selected_branch = (
+        "refs/heads/"
+        + subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            check=True,
+        )
+        .stdout.decode("utf-8")
+        .strip()
+    )
+
+print(
+    f"Checking pipeline '{args.pipeline}' with ID '{pipeline_id}' on branch '{selected_branch}'",
+    file=sys.stderr,
+)
+
+payload = {
+    "previewRun": True,
+    "resources": {"repositories": {"self": {"refName": selected_branch}}},
+}
+
+with tempfile.NamedTemporaryFile() as payload_file:
+    payload_file.write(json.dumps(payload).encode("utf-8"))
+    payload_file.flush()
+
+    cmd = [
+        "az",
+        "devops",
+        "invoke",
+        "--org",
+        "https://dev.azure.com/mariner-org",
+        "--api-version",
+        "7.0",
+        "--area",
+        "pipelines",
+        "--resource",
+        "runs",
+        "--route-parameters",
+        "project=ECF",
+        f"pipelineId={pipeline_id}",
+        "--http-method",
+        "POST",
+        "--in-file",
+        payload_file.name,
+    ]
+    output = subprocess.run(
+        cmd,
+        capture_output=True,
+    )
+
+if output.returncode != 0:
+    print("Failed to preview pipeline:", file=sys.stderr)
+    print(output.stderr.decode("utf-8"), file=sys.stderr)
+    exit(1)
+
+print("Pipeline previewed successfully", file=sys.stderr)
+
+if not args.quiet:
+    out_json = json.loads(output.stdout.decode("utf-8"))
+    print(out_json["finalYaml"])

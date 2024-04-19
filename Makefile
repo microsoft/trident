@@ -16,6 +16,15 @@ check:
 	cargo clippy --locked --workspace --tests --all-features -- -D warnings 2>&1
 	cargo fmt -- --check
 
+.PHONY: check-pipelines
+check-pipelines:
+ifdef BRANCH
+	$(eval BRANCH_FLAG := -b $(BRANCH))
+endif
+	./scripts/test-pipeline pr -q $(BRANCH_FLAG)
+	./scripts/test-pipeline ci -q $(BRANCH_FLAG)
+	./scripts/test-pipeline pre -q $(BRANCH_FLAG)
+
 .PHONY: build
 build:
 	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
