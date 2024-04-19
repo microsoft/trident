@@ -397,7 +397,7 @@ artifacts/baremetal.vhdx:
 		echo $$result | jq > artifacts/baremetal.vhdx.metadata.json
 
 MIC_PACKAGE_NAME ?= imagecustomizer_preview
-MIC_PACKAGE_VERSION ?= 0.1.0-preview.525339
+MIC_PACKAGE_VERSION ?= 0.2.0-preview.550844
 artifacts/imagecustomizer:
 	@mkdir -p artifacts
 	@az artifacts universal download \

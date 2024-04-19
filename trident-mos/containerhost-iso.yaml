@@ -1,34 +1,36 @@
-SystemConfig:
-  Hostname: trident-containerhost-mos-testimage
+os:
+  hostname: trident-containerhost-mos-testimage
 
-  PackagesInstall:
-    - curl
-    - dnf
-    - moby-engine
-    - moby-cli
-    - openssh-server
-    - vim
+  packages:
+    install:
+      - curl
+      - dnf
+      - moby-engine
+      - moby-cli
+      - openssh-server
+      - vim
 
-  AdditionalFiles:
+  additionalFiles:
     files/getty@.service:
-    - Path: /usr/lib/systemd/system/getty@.service
+    - path: /usr/lib/systemd/system/getty@.service
     files/serial-getty@.service:
-    - Path: /usr/lib/systemd/system/serial-getty@.service
+    - path: /usr/lib/systemd/system/serial-getty@.service
     files/root.profile:
-    - Path: /root/.profile
+    - path: /root/.profile
     files/download-trident-container.service:
-    - Path: /usr/lib/systemd/system/download-trident-container.service
+    - path: /usr/lib/systemd/system/download-trident-container.service
 
-  Services:
-    Enable:
+  services:
+    enable:
       - download-trident-container
 
-  PostInstallScripts:
-    - Path: post-install.sh
+scripts:
+  postCustomization:
+    - path: post-install.sh
 
-Iso:
-  AdditionalFiles:
+iso:
+  additionalFiles:
     files/config-placeholder.yaml:
-      - Path: /trident-config.yaml
-  KernelCommandLine:
-    ExtraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
+      - path: /trident-config.yaml
+  kernelCommandLine:
+    extraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"

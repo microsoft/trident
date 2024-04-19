@@ -1,44 +1,46 @@
-SystemConfig:
-  Hostname: trident-mos-testimage
+os:
+  hostname: trident-mos-testimage
 
-  PackagesUpdate:
-    - systemd
+  packages:
+    update:
+      - systemd
 
-  PackagesInstall:
-    - curl
-    - dnf
-    - dosfstools
-    - efibootmgr
-    - iproute
-    - iptables
-    - lsof
-    - mdadm
-    - netplan
-    - openssh-server
-    - tpm2-tools
-    - vim
-    - veritysetup
+    install:
+      - curl
+      - dnf
+      - dosfstools
+      - efibootmgr
+      - iproute
+      - iptables
+      - lsof
+      - mdadm
+      - netplan
+      - openssh-server
+      - tpm2-tools
+      - vim
+      - veritysetup
 
-  AdditionalFiles:
+  additionalFiles:
     files/getty@.service:
-    - Path: /usr/lib/systemd/system/getty@.service
+    - path: /usr/lib/systemd/system/getty@.service
     files/serial-getty@.service:
-    - Path: /usr/lib/systemd/system/serial-getty@.service
+    - path: /usr/lib/systemd/system/serial-getty@.service
     files/root.profile:
-    - Path: /root/.profile
+    - path: /root/.profile
     files/download-trident.service:
-    - Path: /usr/lib/systemd/system/download-trident.service
+    - path: /usr/lib/systemd/system/download-trident.service
 
-  Services:
-    Enable:
+  services:
+    enable:
     - download-trident
 
-  PostInstallScripts:
-  - Path: post-install.sh
+scripts:
+  postCustomization:
+    - path: post-install.sh
 
-Iso:
-  AdditionalFiles:
+iso:
+  additionalFiles:
     files/config-placeholder.yaml:
-      - Path: /trident-config.yaml
-  KernelCommandLine:
-    ExtraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
+      - path: /trident-config.yaml
+  kernelCommandLine:
+    extraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
