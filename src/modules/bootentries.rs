@@ -72,13 +72,25 @@ fn set_boot_next(host_status: &HostStatus, new_root_path: &Path) -> Result<(), E
     let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
 
     if bootmgr_output.boot_entry_exists(entry_label_new)? {
-        debug!("Boot entry already exists, deleting and adding new entry with label '{entry_label_new}'");
-        let entry_number = bootmgr_output.get_boot_entry_number(entry_label_new)?;
-        efibootmgr::delete_boot_entry(&entry_number)?;
-        let mut boot_order = bootmgr_output.get_boot_order()?;
-        if boot_order.contains(&entry_number) {
-            boot_order.retain(|x| x != &entry_number);
-            efibootmgr::modify_boot_order(boot_order.join(",").as_str())?;
+        debug!("Boot entry already exists, deleting entries with label '{entry_label_new}'");
+        bootmgr_output.delete_entries_with_label(entry_label_new)?;
+        // Get boot entry numbers for the entries with label '{entry_label_new}'
+        let entry_numbers = bootmgr_output.get_entries_with_label(entry_label_new)?;
+        // Get the current boot order
+        let current_boot_order = bootmgr_output.get_boot_order()?;
+        // Get the modified boot order after removing the entries with label '{entry_label_new}'
+        let new_boot_order: Vec<String> = current_boot_order
+            .iter()
+            .filter(|&x| !entry_numbers.contains(x))
+            .map(|x| x.to_string())
+            .collect();
+
+        // Get the updated boot order
+        let new_boot_order_after_deletion =
+            efibootmgr::list_and_parse_bootmgr_entries()?.get_boot_order()?;
+
+        if current_boot_order != new_boot_order && new_boot_order_after_deletion != new_boot_order {
+            efibootmgr::modify_boot_order(new_boot_order.join(",").as_str())?;
         }
     }
     let disk_path = get_first_partition_of_type(host_status, PartitionType::Esp)

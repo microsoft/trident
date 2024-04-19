@@ -121,9 +121,31 @@ impl EfiBootManagerOutput {
     pub fn get_boot_order(&self) -> Result<Vec<String>, Error> {
         Ok(self.boot_order.clone())
     }
+
+    /// Gets the boot entries with the same label.
+    pub fn get_entries_with_label(&self, entry_label: &str) -> Result<Vec<String>, Error> {
+        Ok(self
+            .boot_entries
+            .iter()
+            .filter(|entry| entry.label == entry_label)
+            .map(|entry| entry.id.clone())
+            .collect::<Vec<String>>())
+    }
+
+    /// Deletes boot entries with the same label.
+    pub fn delete_entries_with_label(&self, entry_label: &str) -> Result<(), Error> {
+        let boot_entries = self.get_entries_with_label(entry_label)?;
+        for entry_number in boot_entries {
+            delete_boot_entry(&entry_number).context(format!(
+                "Failed to delete boot entry {} through efibootmgr",
+                entry_number
+            ))?;
+        }
+        Ok(())
+    }
 }
 
-///lists boot entries using efibootmgr
+/// Lists boot entries using efibootmgr
 pub fn list_bootmgr_entries() -> Result<String, Error> {
     Command::new("efibootmgr")
         .output_and_check()
@@ -363,6 +385,42 @@ mod tests {
 
         assert!(!is_valid_bootloader_path(esp_path, bootloader_dir_name));
     }
+
+    #[test]
+    fn test_get_boot_entries_vector_success() {
+        let sample_output = indoc! {"
+        BootNext: 0000
+        BootCurrent: 0001
+        Timeout: 0 seconds
+        BootOrder: 0001,0000,0002,000A
+        Boot0000  Windows Boot Manager
+        Boot0001* Mariner
+        Boot0002* UEFI: Built-in EFI Shell
+        Boot000A* Mariner
+      "};
+        let bootmgr_output: EfiBootManagerOutput =
+            EfiBootManagerOutput::parse_efibootmgr_output(sample_output).unwrap();
+
+        let expected_boot_entries = vec!["0001", "000A"];
+        assert_eq!(
+            bootmgr_output.get_entries_with_label("Mariner").unwrap(),
+            expected_boot_entries
+        );
+
+        let expected_boot_entries = vec!["0002"];
+        assert_eq!(
+            bootmgr_output
+                .get_entries_with_label("UEFI: Built-in EFI Shell")
+                .unwrap(),
+            expected_boot_entries
+        );
+
+        let expected_boot_entries = Vec::<String>::new();
+        assert_eq!(
+            bootmgr_output.get_entries_with_label("TestBoot").unwrap(),
+            expected_boot_entries
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -525,5 +583,119 @@ mod functional_test {
         let bootentry_number = bootmgr_output1.get_boot_entry_number(entry_label).unwrap();
         // Delete the boot entry thats created above
         delete_boot_entry(&bootentry_number).unwrap();
+    }
+
+    fn create_boot_entry_duplicate(
+        entry_label: impl AsRef<OsStr>,
+        disk_path: impl AsRef<Path>,
+        bootloader_path: impl AsRef<Path>,
+    ) {
+        Command::new("efibootmgr")
+            .arg("--create-only")
+            .arg("--disk")
+            .arg(disk_path.as_ref())
+            .arg("--label")
+            .arg(entry_label.as_ref())
+            .arg("--loader")
+            .arg(bootloader_path.as_ref())
+            .run_and_check()
+            .context(format!(
+                "Failed to add boot entry {} at disk path {} through efibootmgr ",
+                entry_label.as_ref().to_string_lossy(),
+                disk_path.as_ref().display()
+            ))
+            .unwrap();
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_multiple_boot_entries() {
+        // Create a boot entry TestBoot1
+        // Define the boot entry label, disk path and bootloader path
+        let entry_label = "TestBoot1";
+        let disk_path = formatcp!("{OS_DISK_DEVICE_PATH}1");
+        let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
+
+        // Create a boot entry
+        let tempdir = tempfile::tempdir().unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
+
+        // Create another boot entry with the same label using duplicate function
+        create_boot_entry_duplicate(entry_label, disk_path, bootloader_path);
+        let bootmgr_output2 = list_and_parse_bootmgr_entries().unwrap();
+
+        // Get Boot entries vector
+        let boot_entries = bootmgr_output2.get_entries_with_label(entry_label).unwrap();
+        assert_eq!(boot_entries.len(), 2);
+
+        // Delete the boot entry thats created above
+        bootmgr_output2
+            .delete_entries_with_label(entry_label)
+            .unwrap();
+
+        let bootmgr_output3 = list_and_parse_bootmgr_entries().unwrap();
+        let bootentry_exists = bootmgr_output3.boot_entry_exists(entry_label).unwrap();
+        assert!(!bootentry_exists);
+    }
+
+    /// Tests if the boot order is updated correctly when multiple boot entries with same labels are deleted
+    #[functional_test(feature = "helpers")]
+    fn test_update_boot_order_after_deleting_multiple_boot_entries() {
+        // Create a boot entry TestBoot1
+        // Define the boot entry label, disk path and bootloader path
+        let entry_label = "TestBoot1";
+        let disk_path = formatcp!("{OS_DISK_DEVICE_PATH}1");
+        let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
+
+        // Create a boot entry for TestBoot1
+        let tempdir = tempfile::tempdir().unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
+
+        // Create another boot entry with the same label using duplicate function
+        create_boot_entry_duplicate(entry_label, disk_path, bootloader_path);
+
+        // Create a boot entry TestBoot2
+        let entry_label2 = "TestBoot2";
+        create_boot_entry(entry_label2, disk_path, bootloader_path, tempdir.path()).unwrap();
+
+        // Get Boot entries vector for TestBoot1
+        let bootmgr_output2 = list_and_parse_bootmgr_entries().unwrap();
+        let boot_entries = bootmgr_output2.get_entries_with_label(entry_label).unwrap();
+        assert_eq!(boot_entries.len(), 2);
+
+        // Get Boot entry number for TestBoot2
+        let bootentry_number2 = bootmgr_output2.get_boot_entry_number(entry_label2).unwrap();
+
+        // Set Bootorder to append TestBoot2 and TestBoot1 entries
+        let boot_order = bootmgr_output2.get_boot_order().unwrap();
+        let new_boot_order_str =
+            boot_order.join(",") + "," + &bootentry_number2 + "," + &boot_entries.join(",");
+        modify_boot_order(&new_boot_order_str).unwrap();
+
+        // Delete the boot entries with label TestBoot1 that are created above
+        bootmgr_output2
+            .delete_entries_with_label(entry_label)
+            .unwrap();
+
+        let bootmgr_output3 = list_and_parse_bootmgr_entries().unwrap();
+        let bootentry_exists = bootmgr_output3.boot_entry_exists(entry_label).unwrap();
+
+        assert!(!bootentry_exists);
+
+        let updated_boot_order = bootmgr_output3.get_boot_order().unwrap();
+        let modified_boot_order: Vec<String> = new_boot_order_str
+            .split(',')
+            .map(|x| x.to_string())
+            .collect();
+        // Filter boot order to keep only the entries that are present in the updated boot entries
+        let expected_boot_order: Vec<String> = modified_boot_order
+            .iter()
+            .filter(|&x| !boot_entries.contains(x))
+            .map(|x| x.to_string())
+            .collect();
+
+        assert_eq!(updated_boot_order, expected_boot_order);
+
+        // Delete the boot entry TestBoot2
+        delete_boot_entry(&bootentry_number2).unwrap();
     }
 }
