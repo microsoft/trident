@@ -26,25 +26,12 @@ steps:
       artifactName: "containerhost-testimage"
       targetPath: "$(System.ArtifactsDirectory)/containerhost-testimage"
 
-  - bash: |
-      set -eux
-      mkdir -p artifacts/test-image
-
-      # Boot image
-      mv $(System.ArtifactsDirectory)/testimage/esp.raw.zst artifacts/test-image/esp.rawzst
-      mv $(System.ArtifactsDirectory)/testimage/root.raw.zst artifacts/test-image/root.rawzst
-
-      # Verity image for functional testing and e2e testing
-      mv $(System.ArtifactsDirectory)/verity-testimage/esp.raw.zst artifacts/test-image/verity_esp.rawzst
-      mv $(System.ArtifactsDirectory)/verity-testimage/boot.raw.zst artifacts/test-image/verity_boot.rawzst
-      mv $(System.ArtifactsDirectory)/verity-testimage/root.raw.zst artifacts/test-image/verity_root.rawzst
-      mv $(System.ArtifactsDirectory)/verity-testimage/root-hash.raw.zst artifacts/test-image/verity_roothash.rawzst
-      mv $(System.ArtifactsDirectory)/verity-testimage/var.raw.zst artifacts/test-image/verity_var.rawzst
-
-      # Containerhost image for e2e testing
-      mv $(System.ArtifactsDirectory)/containerhost-testimage/esp.raw.zst artifacts/test-image/containerhost_esp.rawzst
-      mv $(System.ArtifactsDirectory)/containerhost-testimage/root.raw.zst artifacts/test-image/containerhost_root.rawzst
-    displayName: "Rename images"
+  - template: ../common_tasks/rename-test-images.yml
+    parameters:
+      targetDirectory: artifacts/test-image
+      testImageDir: $(System.ArtifactsDirectory)/testimage
+      verityTestImageDir: $(System.ArtifactsDirectory)/verity-testimage
+      containerhostTestImageDir: $(System.ArtifactsDirectory)/containerhost-testimage
 
   - task: DownloadPipelineArtifact@2
     displayName: "Download go-tools/netlaunch"

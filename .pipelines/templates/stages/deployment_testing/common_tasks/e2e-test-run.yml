@@ -79,25 +79,11 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
-      set -eux
-      ls -l "${{ parameters.sshKeyPath }}"
-      sshSucceeded=false
-      # Check SSH connection and wait for 2 minutes if it fails
-      for i in {1..24}; do
-        if ssh -q -o "StrictHostKeyChecking=no" -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} exit; then
-          echo "SSH connection successful. VM is up and running."
-          sshSucceeded=true
-          break
-        else
-          echo "SSH connection failed. Waiting for 5 seconds before retrying..."
-          sleep 5
-        fi
-      done
-      # If SSH connection did not succeed, fail
-      if [ "$sshSucceeded" != "true" ]; then
-        echo "SSH connection with the VM could not be established."
-        exit 1
-      fi
+      chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh
+      $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.hostIp }}"
     displayName: "Check SSH connection"
 
   - bash: |
@@ -112,7 +98,7 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Run Trident E2E tests on freshly installed runtime OS"
 
-  # If current Trident config requires A/B update testing, copy runtime OS images to VM
+  # If current Trident config requires A/B update testing, copy runtime OS images onto the host
   - bash: |
       set -eux
       ls -ltr $(System.ArtifactsDirectory)
@@ -122,7 +108,7 @@ steps:
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_root.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_root_v$(version).rawzst"
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_roothash.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_roothash_v$(version).rawzst"
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_var.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_var_v$(version).rawzst"
-    displayName: "Copy runtime verity OS images to VM for A/B update testing"
+    displayName: "Copy runtime verity OS images onto the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['verityExists'], 'true'))
 
   - bash: |
@@ -132,7 +118,7 @@ steps:
       ssh -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo chown ${{ parameters.userName }}:${{ parameters.userName }} $(destinationDirectory) && sudo chmod 755 $(destinationDirectory)"
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/esp.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/esp_v$(version).rawzst"
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/root.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/root_v$(version).rawzst"
-    displayName: "Copy runtime OS images to VM for A/B update testing"
+    displayName: "Copy runtime OS images onto the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['verityExists'], 'false'))
 
   # If current Trident config requires A/B update testing, execute script to ssh into the host,
@@ -158,26 +144,11 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
-      set -eux
-      ls -l "${{ parameters.sshKeyPath }}"
-      sshSucceeded=false
-      # Check SSH connection and wait for 2 minutes if it fails
-      for i in {1..24}; do
-        if ssh -q -o "StrictHostKeyChecking=no" -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} exit; then
-          echo "SSH connection successful. VM is up and running."
-          sshSucceeded=true
-          break
-        else
-          echo "SSH connection failed. Waiting for 5 seconds before retrying..."
-          sleep 5
-        fi
-      done
-      # If SSH connection did not succeed, fail
-      if [ "$sshSucceeded" != "true" ]; then
-        echo "SSH connection with the VM could not be established."
-        exit 1
-      fi
-    displayName: "Check SSH connection after A/B update"
+      $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.hostIp }}"
+    displayName: "Check SSH connection after A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   # Re-run E2E tests after A/B update into runtime OS B
@@ -204,7 +175,7 @@ steps:
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_root.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_root_v$(version).rawzst"
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_roothash.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_roothash_v$(version).rawzst"
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/verity_var.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/verity_var_v$(version).rawzst"
-    displayName: "Copy runtime verity OS images to VM for A/B update testing"
+    displayName: "Copy runtime verity OS images onto the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['verityExists'], 'true'))
 
   - bash: |
@@ -214,7 +185,7 @@ steps:
       ssh -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo chown ${{ parameters.userName }}:${{ parameters.userName }} $(destinationDirectory) && sudo chmod 755 $(destinationDirectory)"
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/esp.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/esp_v$(version).rawzst"
       scp -o StrictHostKeyChecking=no -i "${{ parameters.sshKeyPath }}" "${{ parameters.artifactsDirectory }}/root.rawzst" ${{ parameters.userName }}@${{ parameters.hostIp }}:"$(destinationDirectory)/root_v$(version).rawzst"
-    displayName: "Copy runtime OS images to VM for A/B update testing"
+    displayName: "Copy runtime OS images onto the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'), eq(variables['verityExists'], 'false'))
 
   - bash: |
@@ -238,26 +209,11 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
-      set -eux
-      ls -l "${{ parameters.sshKeyPath }}"
-      sshSucceeded=false
-      # Check SSH connection and wait for 2 minutes if it fails
-      for i in {1..24}; do
-        if ssh -q -o "StrictHostKeyChecking=no" -i "${{ parameters.sshKeyPath }}" ${{ parameters.userName }}@${{ parameters.hostIp }} exit; then
-          echo "SSH connection successful. VM is up and running."
-          sshSucceeded=true
-          break
-        else
-          echo "SSH connection failed. Waiting for 5 seconds before retrying..."
-          sleep 5
-        fi
-      done
-      # If SSH connection did not succeed, fail
-      if [ "$sshSucceeded" != "true" ]; then
-        echo "SSH connection with the VM could not be established."
-        exit 1
-      fi
-    displayName: "Check SSH connection after A/B update"
+      $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.hostIp }}"
+    displayName: "Check SSH connection after A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |

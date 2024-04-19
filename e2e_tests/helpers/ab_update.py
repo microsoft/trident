@@ -184,17 +184,6 @@ def trigger_ab_update(ip_address, user_name, keys_file_path, image_dir, version)
     trident_run(connection, keys_file_path, ip_address, user_name)
     connection.close()
 
-    print("Going to sleep for 60 seconds")
-    time.sleep(60)
-
-    # Reconnect to the SSH server
-    config = Config(overrides={"connect_kwargs": {"key_filename": keys_file_path}})
-    connection = Connection(host=ip_address, user=user_name, config=config)
-
-    run_ssh_command(connection, "sudo echo 'Successfully reconnected after A/B update'")
-
-    connection.close()
-
 
 def main():
     # Setting argument_default=argparse.SUPPRESS means that the program will
