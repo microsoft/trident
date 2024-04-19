@@ -100,13 +100,10 @@ artifacts/systemd/systemd-254-3.cm2.x86_64.rpm:
 	rm -f ./artifacts/systemd/*.src.rpm ./artifacts/systemd/systemd-debuginfo*.rpm ./artifacts/systemd/systemd-devel-*.rpm
 
 .PHONY: docker-build
-docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz docker-runtime-build
-
-.PHONY: docker-runtime-build
-docker-runtime-build: artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
-artifacts/test-image/trident-container.bin: docker-runtime-build
+artifacts/test-image/trident-container.bin: docker-build
 	docker save trident/trident:latest > $@
 
 .PHONY: clean
@@ -268,7 +265,7 @@ validate: $(TRIDENT_CONFIG) bin/trident
 .PHONY: run-netlaunch
 run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso validate
 	@mkdir -p artifacts/test-image
-	@cp bin/trident artifacts/test-image
+	@cp bin/trident artifacts/test-image/
 	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 .PHONY: run-netlaunch-container

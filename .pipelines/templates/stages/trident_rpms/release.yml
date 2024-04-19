@@ -49,10 +49,13 @@ steps:
 
   - script: |
       set -eu
-      
+
+      # Download newer systemd RPMs (needed until we switch to AZL3)
+      make artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+
       mkdir -p bin
       cp -r /usr/src/mariner/RPMS bin/
-      DOCKER_BUILDKIT=1 make docker-runtime-build
+      DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
       # ado redacts random strings (like `ecfafoncpriv`). To still be able
       # to show some useful logs, we replace some parts so that ado does not
@@ -60,7 +63,7 @@ steps:
       #
       echo "container_registry_rw_user    :" $(container_registry_rw_user)
       echo "container_registry_pub        :" $(echo $(container_registry_pub) | sed 's/afo/___/g')
-      
+
       docker login "$(container_registry_pub)" -u "$(container_registry_rw_user)" -p "$(container_registry_rw_pswd)"
       TAG="$(container_registry_pub)"/trident:$(Build.BuildNumber)
       docker tag trident/trident:latest $TAG
