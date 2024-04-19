@@ -44,7 +44,7 @@ fn update_grub_config_boot(
     let mut grub_config = GrubConfig::read(grub_config_path)?;
 
     // TODO(6775): re-enable selinux
-    grub_config.disable_selinux();
+    grub_config.set_selinux_permissive();
 
     grub_config.update_search(boot_fs_uuid)?;
 

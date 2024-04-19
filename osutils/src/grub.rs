@@ -54,15 +54,14 @@ impl GrubConfig {
         Ok(())
     }
 
-    /// Lazy approach at disabling SELinux
+    /// Lazy approach at setting SELinux to permissive
     ///
     /// Will be removed in the future
     /// TODO(6775): re-enable selinux
-    pub fn disable_selinux(&mut self) {
-        self.contents = self
-            .contents
-            .replace("security=selinux", "")
-            .replace("selinux=1", "");
+    pub fn set_selinux_permissive(&mut self) {
+        if self.contents.contains("selinux=1") {
+            self.contents = self.contents.replace("selinux=1", "selinux=1 enforcing=0");
+        }
     }
 
     /// Find the linux command line in the GRUB config.
