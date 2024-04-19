@@ -1,0 +1,26 @@
+# Docs: https://eng.ms/docs/products/1es-merlinbot/extensions/reviewerrec
+
+# Enable/Disable recommender
+enabled: true
+# How many reviewers to add?
+maxReviewers: 3
+# Exclude files/paths in PR to be considered for recommendation
+# Please note, these have to specified as a valid GIT based path regex
+excludedPaths: []
+
+# Only suggest reviewers that are included in the following list
+includedReviewers: []
+
+# Do not make recommendations for reviewers that are included in the following list
+excludedReviewers: []
+
+# Do not make recommendations for the reviewers for pull requests created in the following branches
+excludedBranches: []
+
+# Only suggest reviewers for pull requests created in the following branches
+includedBranches:
+  - main
+
+# Only suggest reviewers for pull requests created with matching titles
+includedTitle:
+  - "*" # Match all titles
