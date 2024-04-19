@@ -69,6 +69,9 @@ pub const ROOT_MOUNT_POINT_PATH: &str = "/";
 /// updated OS (from runtime OS).
 pub const UPDATE_ROOT_PATH: &str = "/mnt/newroot";
 
+/// The path to the root of the system that Trident was run from.
+pub const EXEC_ROOT_PATH: &str = "/tmp/execroot";
+
 /// Boot volume relative mount point path (boot) relative to the root mount point.
 pub const BOOT_RELATIVE_MOUNT_POINT_PATH: &str = BOOT_DIRECTORY;
 

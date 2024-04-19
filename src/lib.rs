@@ -8,7 +8,6 @@ use log::{debug, error, info, warn};
 use nix::unistd::Uid;
 use osutils::exe::RunAndCheck;
 use protobufs::*;
-use sys_mount::{MountFlags, UnmountFlags};
 use tokio::sync::mpsc::{self, Sender, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
@@ -55,10 +54,6 @@ pub const TRIDENT_DATASTORE_PATH: &str = "/var/lib/trident/datastore.sqlite";
 
 /// Location to store the Trident datastore on the provisioning OS.
 pub const TRIDENT_TEMPORARY_DATASTORE_PATH: &str = "/var/lib/trident/tmp-datastore.sqlite";
-
-/// Stores the block device and relative path to the runtime Trident datastore for use by the
-/// provisioning OS.
-pub const TRIDENT_DATASTORE_REF_PATH: &str = "/var/lib/trident/datastore-location.conf";
 
 /// Trident binary path.
 pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
@@ -448,30 +443,6 @@ impl Trident {
             info!("Opening persistent datastore");
             DataStore::open(datastore_path)
                 .unstructured("Failed to open persistent datastore")?
-                .host_status()
-                .clone()
-        } else if Path::new(TRIDENT_DATASTORE_REF_PATH).exists() {
-            info!("Retrieving host status from runtime datastore");
-            let datastore_ref = fs::read_to_string(TRIDENT_DATASTORE_REF_PATH)
-                .context("Failed to read datastore reference")?;
-
-            if datastore_ref.is_empty() {
-                bail!("Datastore reference is empty. This is a trident issue and will be fixed in a future release");
-            }
-
-            let (block_device, relative_path) = datastore_ref
-                .split_once('\n')
-                .context("Failed to parse datastore reference")?;
-
-            let mount_point =
-                tempfile::tempdir_in("/mnt").context("Failed to create temporary mount point")?;
-            let _mount = sys_mount::Mount::builder()
-                .flags(MountFlags::RDONLY)
-                .mount_autodrop(block_device, mount_point.path(), UnmountFlags::DETACH);
-
-            let datastore_path = mount_point.path().join(relative_path);
-            DataStore::open(&datastore_path)
-                .unstructured("Failed to datastore from datastoreRef location")?
                 .host_status()
                 .clone()
         } else if Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH).exists() {

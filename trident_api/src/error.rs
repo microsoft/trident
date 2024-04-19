@@ -134,6 +134,10 @@ pub enum ManagementError {
     MountNewroot,
     #[error("Failed to unmount newroot, unable to unmount '{dir}'")]
     UnmountNewroot { dir: PathBuf },
+    #[error("Failed to create execroot directory")]
+    CreateExecrootDirectory,
+    #[error("Failed to mount execroot")]
+    MountExecroot,
     #[error("Failed to assemble kernel cmdline")]
     SetKernelCmdline,
     #[error("Failed to perform kexec")]

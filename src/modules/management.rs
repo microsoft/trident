@@ -1,17 +1,14 @@
 //! Module in charge of configuring the Trident agent on the runtime OS.
 
 use std::{
-    fs::{self, File},
-    io::Write,
-    os::unix::ffi::OsStrExt,
+    fs::{self},
     path::Path,
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{debug, info, warn};
+use log::{debug, info};
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile},
-    error::{DatastoreError, ManagementError, ReportError, TridentError},
     status::{HostStatus, ReconcileState},
 };
 
@@ -170,56 +167,6 @@ fn validate_datastore_location(
     {
         bail!("Datastore cannot be on an A/B update volume");
     }
-    Ok(())
-}
-
-/// Write the location of the datastore to the open file handle.
-///
-/// This function is used to record the location of the datastore on the provisioning OS's
-/// filesystem so that the `trident get` command knows where to find it.
-pub(super) fn record_datastore_location(
-    host_status: &HostStatus,
-    datastore_path: &Path,
-    mut datastore_ref: File,
-) -> Result<(), TridentError> {
-    info!("Recording datastore location");
-    let (device, relative_path) = host_status
-        .spec
-        .storage
-        .get_mount_point_and_relative_path(datastore_path)
-        .structured(ManagementError::from(
-            DatastoreError::RecordDatastoreLocation,
-        ))?;
-    let Some(partition) = &host_status.spec.storage.get_partition(&device.target_id) else {
-        // TODO(6623, 6624): Handle datastore being on RAID arrays or encrypted volumes.
-        warn!("Datastore is not on a partition, cannot record location");
-        return Ok(());
-    };
-    let device = host_status
-        .storage
-        .block_devices
-        .get(&partition.id)
-        .structured(ManagementError::from(
-            DatastoreError::RecordDatastoreLocation,
-        ))?;
-    datastore_ref
-        .write_all(device.path.as_os_str().as_bytes())
-        .structured(ManagementError::from(
-            DatastoreError::RecordDatastoreLocation,
-        ))?;
-    datastore_ref
-        .write_all(b"\n")
-        .structured(ManagementError::from(
-            DatastoreError::RecordDatastoreLocation,
-        ))?;
-    datastore_ref
-        .write_all(relative_path.as_os_str().as_bytes())
-        .structured(ManagementError::from(
-            DatastoreError::RecordDatastoreLocation,
-        ))?;
-    datastore_ref.sync_all().structured(ManagementError::from(
-        DatastoreError::RecordDatastoreLocation,
-    ))?;
     Ok(())
 }
 
@@ -393,115 +340,5 @@ mod tests {
             &host_config
         )
         .is_err());
-    }
-}
-
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-    use maplit::btreemap;
-    use pytest_gen::functional_test;
-    use std::path::PathBuf;
-    use tempfile::NamedTempFile;
-    use trident_api::{
-        config::{self, Disk, FileSystemType, Partition, PartitionSize, PartitionType},
-        status::{BlockDeviceContents, BlockDeviceInfo, Storage},
-    };
-
-    #[functional_test]
-    fn test_record_datastore_location() {
-        let host_status = HostStatus {
-            spec: HostConfiguration {
-                storage: config::Storage {
-                    disks: vec![Disk {
-                        id: "os".into(),
-                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        partitions: vec![
-                            Partition {
-                                id: "efi".to_string(),
-                                partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(100),
-                            },
-                            Partition {
-                                id: "root".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
-                            },
-                            Partition {
-                                id: "var".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(10000),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    mount_points: vec![
-                        config::MountPoint {
-                            path: PathBuf::from("/"),
-                            target_id: "root".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                        config::MountPoint {
-                            path: PathBuf::from("/var"),
-                            target_id: "var".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                        config::MountPoint {
-                            path: PathBuf::from("/boot/efi"),
-                            target_id: "efi".to_string(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
-                        },
-                    ],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: Storage {
-                block_devices: btreemap! {
-                    "foo".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/c"),
-                        size: 10000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/a"),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/b"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "var".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/c"),
-                        size: 10000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                },
-                ..Default::default()
-            },
-            reconcile_state: ReconcileState::CleanInstall,
-            ..Default::default()
-        };
-
-        let datastore_ref = NamedTempFile::new().unwrap();
-
-        record_datastore_location(
-            &host_status,
-            Path::new(crate::TRIDENT_DATASTORE_PATH),
-            datastore_ref.reopen().unwrap(),
-        )
-        .unwrap();
-
-        let contents = fs::read(datastore_ref.path()).unwrap();
-        assert_eq!(
-            contents,
-            b"/dev/disk/by-partlabel/c\nlib/trident/datastore.sqlite"
-        )
     }
 }

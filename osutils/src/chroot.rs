@@ -43,11 +43,6 @@ impl Chroot {
                     .flags(MountFlags::empty())
                     .mount("sysfs", path.join("sys"))
                     .structured(ManagementError::ChrootMountSpecial { dir: "/sys" })?,
-                Mount::builder()
-                    .fstype("tmpfs")
-                    .flags(MountFlags::empty())
-                    .mount("tmpfs", path.join("tmp"))
-                    .structured(ManagementError::ChrootMountSpecial { dir: "/tmp" })?,
             ]
         } else {
             Vec::new()

@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File},
+    fs::{self},
     path::{Path, PathBuf},
     process::Command,
     sync::Mutex,
@@ -10,18 +10,26 @@ use std::{
 use anyhow::Error;
 use log::{debug, error, info};
 
+use sys_mount::{Mount, MountFlags};
 use trident_api::{
     config::{HostConfiguration, Operations},
-    constants::{self, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH},
+    constants::{
+        self, EXEC_ROOT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
+    },
     error::{
-        DatastoreError, InitializationError, InternalError, InvalidInputError, ManagementError,
-        ModuleError, ReportError, TridentError, TridentResultExt,
+        InitializationError, InternalError, InvalidInputError, ManagementError, ModuleError,
+        ReportError, TridentError, TridentResultExt,
     },
     status::{AbVolumeSelection, BlockDeviceInfo, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
 
-use osutils::{chroot, container, exe::RunAndCheck, mkinitrd, mount};
+use osutils::{
+    chroot, container,
+    exe::RunAndCheck,
+    mkinitrd, mount,
+    path::{self, join_relative},
+};
 
 use crate::{
     datastore::DataStore,
@@ -30,7 +38,7 @@ use crate::{
         osconfig::OsConfigModule, storage::StorageModule,
     },
     protobufs::HostStatusState,
-    HostUpdateCommand, TRIDENT_DATASTORE_REF_PATH,
+    HostUpdateCommand,
 };
 
 // Trident modules
@@ -193,14 +201,11 @@ pub(super) fn clean_install(
     prepare(&mut modules, state)?;
 
     info!("Preparing storage to mount new root");
-    let (new_root_path, mounts) = initialize_new_root(state, host_config)?;
+    let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
     info!("Running provision");
     provision(&mut modules, state, host_config, &new_root_path)?;
 
-    let datastore_ref = File::create(TRIDENT_DATASTORE_REF_PATH).structured(
-        ManagementError::from(DatastoreError::CreateDatastoreRefFile),
-    )?;
     let datastore_path = state
         .host_status()
         .trident
@@ -214,14 +219,8 @@ pub(super) fn clean_install(
 
     chroot
         .execute_and_exit(|| {
-            info!("Persisting datastore");
-            state.persist(&datastore_path)?;
-
-            management::record_datastore_location(
-                state.host_status(),
-                &datastore_path,
-                datastore_ref,
-            )?;
+            info!("Entered chroot");
+            state.switch_to_exec_root(&exec_root_path)?;
 
             // If verity is present, it means that we are currently doing root
             // verity. For now, we can assume that /etc is readonly, so we setup
@@ -249,7 +248,6 @@ pub(super) fn clean_install(
             }
 
             info!("Closing datastore");
-            state.close();
             Ok(())
         })
         .message("Failed to execute in chroot")?;
@@ -260,9 +258,14 @@ pub(super) fn clean_install(
     info!("Root device path: {:#?}", root_device_path);
     if !allowed_operations.contains(Operations::FinalizeDeployment) {
         info!("Finalizing of clean install not requested, skipping reboot");
+        state.close();
+
         info!("Unmounting '{}'", new_root_path.display());
         mount_root::unmount_new_root(mounts, &new_root_path)?;
     } else {
+        state.persist(&path::join_relative(&new_root_path, datastore_path))?;
+        state.close();
+
         info!("Finalizing clean install");
         finalize_deployment(&new_root_path, &root_device_path, state.host_status())?;
     }
@@ -346,7 +349,7 @@ pub(super) fn update(
 
     let (new_root_path, mounts) = if let UpdateKind::AbUpdate = update_kind {
         info!("Preparing storage to mount new root");
-        let (new_root_path, mounts) = initialize_new_root(state, host_config)?;
+        let (new_root_path, _exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
         info!("Running provision");
         provision(&mut modules, state, host_config, &new_root_path)?;
@@ -610,7 +613,7 @@ fn provision(
 fn initialize_new_root(
     state: &mut DataStore,
     host_config: &HostConfiguration,
-) -> Result<(PathBuf, Vec<PathBuf>), TridentError> {
+) -> Result<(PathBuf, PathBuf, Vec<PathBuf>), TridentError> {
     let mut new_root_path = Path::new(UPDATE_ROOT_PATH);
     if mount::ensure_mount_directory(new_root_path).is_err() {
         new_root_path = Path::new(UPDATE_ROOT_FALLBACK_PATH);
@@ -619,10 +622,26 @@ fn initialize_new_root(
     state.try_with_host_status(|host_status| {
         storage::initialize_block_devices(host_status, host_config, new_root_path)
     })?;
-    let mounts = state.try_with_host_status(|host_status| {
+    let mut mounts = state.try_with_host_status(|host_status| {
         mount_root::mount_new_root(host_status, new_root_path)
     })?;
-    Ok((new_root_path.to_owned(), mounts))
+
+    let tmp_mount = Mount::builder()
+        .fstype("tmpfs")
+        .flags(MountFlags::empty())
+        .mount("tmpfs", new_root_path.join("tmp"))
+        .structured(ManagementError::ChrootMountSpecial { dir: "/tmp" })?;
+    mounts.insert(0, tmp_mount.target_path().to_owned());
+
+    let exec_root_path = Path::new(EXEC_ROOT_PATH);
+    let full_exec_root_path = join_relative(new_root_path, exec_root_path);
+    std::fs::create_dir_all(&full_exec_root_path)
+        .structured(ManagementError::CreateExecrootDirectory)?;
+    mount::bind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
+        .structured(ManagementError::MountExecroot)?;
+    mounts.insert(0, full_exec_root_path);
+
+    Ok((new_root_path.to_owned(), exec_root_path.to_owned(), mounts))
 }
 
 fn configure(

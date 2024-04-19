@@ -1,7 +1,8 @@
 use log::info;
+use osutils::path::join_relative;
 use std::{fs, path::Path};
 use trident_api::{
-    error::{DatastoreError, ManagementError, ReportError, TridentError},
+    error::{DatastoreError, InternalError, ManagementError, ReportError, TridentError},
     status::HostStatus,
 };
 
@@ -56,6 +57,26 @@ impl DataStore {
             host_status,
             temporary: false,
         })
+    }
+
+    pub(crate) fn switch_to_exec_root(
+        &mut self,
+        exec_root_path: &Path,
+    ) -> Result<(), TridentError> {
+        if !self.temporary {
+            return Err(TridentError::new(InternalError::Internal(
+                "Attempted to switch to exec root on a persistent datastore",
+            )));
+        }
+
+        let db_path = join_relative(exec_root_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
+        self.db = Some(
+            sqlite::open(&db_path).structured(ManagementError::Datastore(
+                DatastoreError::DatastoreLoad(db_path),
+            ))?,
+        );
+
+        Ok(())
     }
 
     pub(crate) fn is_persistent(&self) -> bool {
