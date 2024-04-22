@@ -1,17 +1,10 @@
 use std::fs;
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
-use osutils::exe::RunAndCheck;
-use protobufs::*;
-use tokio::sync::mpsc::{self, Sender, UnboundedSender};
-use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::Server;
-use tonic::{Request, Response, Status};
+use tokio::sync::mpsc::{self};
 
 use osutils::{container, path};
 use setsail::KsTranslator;
@@ -32,6 +25,9 @@ mod datastore;
 mod logging;
 mod modules;
 mod orchestrate;
+
+#[cfg(feature = "grpc-dangerous")]
+mod grpc;
 
 pub use logging::{
     background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
@@ -64,46 +60,6 @@ pub const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
 /// Trident background log path.
 pub const TRIDENT_BACKGROUND_LOG_PATH: &str = "/var/log/trident-full.log";
 
-mod protobufs {
-    tonic::include_proto!("trident");
-}
-
-/// Implementation of the gRPC service.
-///
-/// This struct contains a tokio Sender which it uses to enqueue commands to the main trident
-/// thread. It also implements the gRPC service trait, which allows it to be used as a gRPC server.
-pub struct HostManagementImpl(Sender<HostUpdateCommand>);
-
-#[tonic::async_trait]
-impl host_management_server::HostManagement for HostManagementImpl {
-    type UpdateHostStream = UnboundedReceiverStream<Result<HostStatusState, Status>>;
-
-    async fn update_host(
-        &self,
-        request: Request<HostUpdateRequest>,
-    ) -> Result<Response<Self::UpdateHostStream>, Status> {
-        info!("Received update_host request");
-        let request = request.into_inner();
-
-        let host_config = serde_yaml::from_str(&request.host_configuration)
-            .context("Failed to parse host config")
-            .map_err(|e| Status::invalid_argument(format!("{e:?}")))?;
-
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.0
-            .send(HostUpdateCommand {
-                allowed_operations: Operations::all(), // TODO
-                host_config,
-                sender: Some(tx),
-            })
-            .await
-            .context("Failed to enqueue provision command")
-            .map_err(|e| Status::from_error(e.into()))?;
-
-        Ok(Response::new(UnboundedReceiverStream::new(rx)))
-    }
-}
-
 /// A command to update the host configuration.
 ///
 /// This struct is used to communicate between the gRPC server and the main trident thread. It
@@ -112,11 +68,13 @@ impl host_management_server::HostManagement for HostManagementImpl {
 struct HostUpdateCommand {
     allowed_operations: Operations,
     host_config: HostConfiguration,
-    sender: Option<UnboundedSender<Result<HostStatusState, Status>>>,
+    #[cfg(feature = "grpc-dangerous")]
+    sender: Option<mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>>,
 }
 
 pub struct Trident {
     config: LocalConfigFile,
+    #[allow(unused)]
     server_runtime: Option<tokio::runtime::Runtime>,
 }
 impl Trident {
@@ -301,6 +259,7 @@ impl Trident {
                 .blocking_send(HostUpdateCommand {
                     allowed_operations: self.config.allowed_operations,
                     host_config: *host_config,
+                    #[cfg(feature = "grpc-dangerous")]
                     sender: None,
                 })
                 .structured(InternalError::Internal(
@@ -308,39 +267,16 @@ impl Trident {
                 ))?;
         }
 
-        // If gRPC connection details were provided, start the gRPC server to accept commands.
-        if let Some(ref grpc) = self.config.grpc {
-            // TODO: make firewall this configurable
-            info!("Opening firewall");
-            let _ = open_firewall_for_grpc().structured(ManagementError::OpenFirewall);
-
-            let addr = "0.0.0.0".parse().unwrap();
-            let port = grpc.listen_port.unwrap_or(50051);
-
-            info!("Preparing to listen for gRPC requests");
-
-            let rt = tokio::runtime::Runtime::new()
-                .structured(InternalError::Internal("Failed to start tokio runtime"))?;
-            rt.spawn(async move {
-                Server::builder()
-                    .add_service(host_management_server::HostManagementServer::new(
-                        HostManagementImpl(sender),
-                    ))
-                    .serve(SocketAddr::new(addr, port))
-                    .await
-                    .context("Failed while serving gRPC requests")
-            });
-            self.server_runtime = Some(rt);
-
-            // Notify orchestrator that we are ready to receive commands.
-            if let Some(ref orchestrator) = orchestrator {
-                orchestrator.report_success(None)
-            }
-        } else {
+        if !cfg!(feature = "grpc-dangerous") || self.config.grpc.is_none() {
             // If no gRPC connection details were provided, drop the sender side of the channel.
             // This causes the loop below will exit immediately after processing the initial command
             // that was enqueued above.
             drop(sender);
+        } else if let Some(_grpc) = &self.config.grpc {
+            #[cfg(feature = "grpc-dangerous")]
+            {
+                self.server_runtime = Some(grpc::start(_grpc, orchestrator.as_ref(), sender)?);
+            }
         }
 
         let host_status = self.handle_commands(receiver, &orchestrator)?;
@@ -370,7 +306,10 @@ impl Trident {
         // (if any). Once that has been handled, subsequent commands are received from the gRPC
         // endpoint.
         while let Some(cmd) = receiver.blocking_recv() {
+            #[cfg(feature = "grpc-dangerous")]
             let has_sender = cmd.sender.is_some();
+            #[cfg(not(feature = "grpc-dangerous"))]
+            let has_sender = false;
 
             if let Err(e) = self.handle_command(&mut datastore, cmd) {
                 if let Some(ref orchestrator) = *orchestrator {
@@ -470,20 +409,6 @@ impl Trident {
 
         Ok(())
     }
-}
-
-fn open_firewall_for_grpc() -> Result<(), Error> {
-    Command::new("iptables")
-        .arg("-A")
-        .arg("INPUT")
-        .arg("-p")
-        .arg("tcp")
-        .arg("--dport")
-        .arg("50051") // TODO
-        .arg("-j")
-        .arg("ACCEPT")
-        .run_and_check()
-        .context("Failed to open firewall for gRPC")
 }
 
 #[cfg(test)]

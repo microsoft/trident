@@ -37,9 +37,11 @@ use crate::{
         boot::BootModule, hooks::HooksModule, management::ManagementModule, network::NetworkModule,
         osconfig::OsConfigModule, storage::StorageModule,
     },
-    protobufs::HostStatusState,
     HostUpdateCommand,
 };
+
+#[cfg(feature = "grpc-dangerous")]
+use crate::grpc::protobufs::HostStatusState;
 
 // Trident modules
 pub mod boot;
@@ -152,6 +154,7 @@ pub(super) fn clean_install(
     let HostUpdateCommand {
         ref host_config,
         allowed_operations,
+        #[cfg(feature = "grpc-dangerous")]
         mut sender,
     } = command;
 
@@ -183,6 +186,7 @@ pub(super) fn clean_install(
     info!("Validating host configuration against system state");
     validate_host_config(&modules, state, host_config, ReconcileState::CleanInstall)?;
 
+    #[cfg(feature = "grpc-dangerous")]
     if let Some(ref mut sender) = sender {
         sender
             .send(Ok(HostStatusState {
@@ -237,6 +241,7 @@ pub(super) fn clean_install(
                     .structured(InternalError::GetRootBlockDevice)?,
             );
 
+            #[cfg(feature = "grpc-dangerous")]
             if let Some(sender) = sender {
                 sender
                     .send(Ok(HostStatusState {
@@ -280,6 +285,7 @@ pub(super) fn update(
     let HostUpdateCommand {
         ref host_config,
         allowed_operations,
+        #[cfg(feature = "grpc-dangerous")]
         mut sender,
     } = command;
 
@@ -287,6 +293,8 @@ pub(super) fn update(
 
     info!("Refreshing host status");
     refresh_host_status(&mut modules, state, false)?;
+
+    #[cfg(feature = "grpc-dangerous")]
     if let Some(ref mut sender) = sender {
         sender
             .send(Ok(HostStatusState {
@@ -380,6 +388,7 @@ pub(super) fn update(
         (PathBuf::from(ROOT_MOUNT_POINT_PATH), None)
     };
 
+    #[cfg(feature = "grpc-dangerous")]
     if let Some(sender) = sender {
         sender
             .send(Ok(HostStatusState {

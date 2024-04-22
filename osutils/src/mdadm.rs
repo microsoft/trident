@@ -160,7 +160,6 @@ fn mdadm_detail_to_struct(mdadm_output: &str) -> Result<Vec<MdadmDetail>, Error>
                 .get(1)
                 .context("Failed to parse RAID devices from details")?
                 .as_str()
-                .to_string()
                 .split(',')
                 .map(PathBuf::from)
                 .collect();

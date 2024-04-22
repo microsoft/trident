@@ -25,7 +25,6 @@ nix = { version = "0.26.2", default-features = false, features = [
     "fs",
     "user",
 ] }
-prost = "0.11.9"
 rayon = "1.8"
 regex = "1.9.5"
 reqwest = { version = "0.11.19", features = ["blocking"] }
@@ -39,7 +38,6 @@ sys-mount = "2.1.0"
 tempfile = "3.8.0"
 tokio = { version = "1.32.0", features = ["rt-multi-thread"] }
 tokio-stream = "0.1.14"
-tonic = "0.9.2"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["json"] }
 tracing-appender = "0.2.3"
@@ -47,11 +45,13 @@ url = { version = "2.5.0", features = ["serde"] }
 uuid = { version = "1.4.1", features = ["v4", "serde"] }
 
 osutils = { path = "osutils" }
-trident_api = { path = "trident_api" }
-setsail = { path = "setsail" }
-
 pytest_gen = { path = "pytest_gen" }
+setsail = { path = "setsail" }
+trident_api = { path = "trident_api" }
+
 pytest = { path = "pytest", optional = true }
+prost = { version = "0.11.9", optional = true }
+tonic = { version = "0.9.2", optional = true }
 
 [build-dependencies]
 tonic-build = "0.9.2"
@@ -67,6 +67,7 @@ dangerous-options = ["trident_api/dangerous-options"]
 sysupdate = ["trident_api/sysupdate"]
 functional-test = ["pytest", "osutils/functional-test"]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
+grpc-dangerous = ["prost", "tonic"]
 
 [workspace]
 members = [

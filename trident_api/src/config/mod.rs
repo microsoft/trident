@@ -23,4 +23,4 @@ pub use host::{
     HostConfiguration,
 };
 
-pub use local::{HostConfigurationSource, LocalConfigFile, Operations};
+pub use local::{GrpcConfiguration, HostConfigurationSource, LocalConfigFile, Operations};
