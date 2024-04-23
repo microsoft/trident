@@ -63,7 +63,7 @@ clean-coverage:
 	rm -rf target/coverage/profraw
 
 EMU_PACKAGE_NAME ?= osmodifier_preview
-EMU_PACKAGE_VERSION ?= 0.1.0-preview.490287
+EMU_PACKAGE_VERSION ?= 0.2.0-preview.551433
 artifacts/osmodifier:
 	az artifacts universal download \
 		--organization "https://dev.azure.com/mariner-org/" \
@@ -263,9 +263,10 @@ validate: $(TRIDENT_CONFIG) bin/trident
 	@bin/trident validate -c $(TRIDENT_CONFIG)
 
 .PHONY: run-netlaunch
-run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso validate
+run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso validate artifacts/osmodifier
 	@mkdir -p artifacts/test-image
 	@cp bin/trident artifacts/test-image/
+	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 .PHONY: run-netlaunch-container

@@ -175,6 +175,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(String, HostConfiguratio
                         permissions: Some("0755".into()),
                         ..Default::default()
                     }],
+                    hostname: None,
                 },
                 scripts: Scripts {
                     post_provision: vec![Script {
@@ -374,6 +375,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(String, HostConfiguratio
                         permissions: Some("0755".into()),
                         ..Default::default()
                     }],
+                    hostname: None,
                 },
                 scripts: Scripts {
                     post_provision: vec![Script {
@@ -596,6 +598,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(String, HostConfiguratio
                         permissions: Some("0755".into()),
                         ..Default::default()
                     }],
+                    hostname: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1115,6 +1118,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(String, HostConfiguratio
                             ..Default::default()
                         },
                     ],
+                    hostname: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1277,6 +1281,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(String, HostConfiguratio
                         ..Default::default()
                     }),
                     additional_files: vec![],
+                    hostname: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1421,6 +1426,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(String, HostConfiguratio
                         ..Default::default()
                     }),
                     additional_files: vec![],
+                    hostname: None,
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {

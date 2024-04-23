@@ -25,6 +25,14 @@ Additional Files to add to the image.
    | Type           | `AdditionalFile`                      |
    | Link           | [AdditionalFile](./AdditionalFile.md) |
 
+### `hostname` (optional)
+
+Hostname of the system.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
 ### `network` (optional)
 
 Netplan network configuration for the runtime OS.

@@ -17,11 +17,11 @@ const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
 
 /// A helper struct to convert user into MIC's user format
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "camelCase")]
 pub struct MICUser {
     pub name: String,
 
-    #[serde(rename = "UID", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub uid: Option<i32>,
 
     #[serde(default)]
@@ -34,8 +34,8 @@ pub struct MICUser {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password_expires_days: Option<u64>,
 
-    #[serde(rename = "SSHPubKeys", skip_serializing_if = "Vec::is_empty")]
-    pub ssh_pub_keys: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ssh_public_keys: Vec<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_group: Option<String>,
@@ -64,7 +64,7 @@ impl MICUser {
             password_hashed: Some(password_hashed),
             #[cfg(feature = "dangerous-options")]
             password_expires_days: user.dangerous_password_expires_days,
-            ssh_pub_keys: user.ssh_public_keys,
+            ssh_public_keys: user.ssh_public_keys,
             primary_group: user.primary_group,
             secondary_groups: user.secondary_groups,
             startup_command: user.startup_command,
@@ -73,8 +73,8 @@ impl MICUser {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct MICSystemConfig {
+#[serde(rename_all = "camelCase")]
+struct MICOSConfig {
     users: Vec<MICUser>,
 }
 
@@ -152,7 +152,7 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
 
     debug!("Setting up users");
 
-    let mic_users_yaml = serde_yaml::to_string(&MICSystemConfig {
+    let mic_users_yaml = serde_yaml::to_string(&MICOSConfig {
         users: users
             .into_iter()
             .map(|user| MICUser::new(user.name.clone(), user))

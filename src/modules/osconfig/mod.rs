@@ -10,6 +10,7 @@ use trident_api::{
 
 use crate::{modules::Module, OS_MODIFIER_BINARY_PATH};
 
+mod hostname;
 mod users;
 
 #[derive(Default, Debug)]
@@ -62,6 +63,10 @@ impl Module for OsConfigModule {
 
         if !host_config.os.users.is_empty() {
             users::set_up_users(host_config.os.users.clone()).context("Failed to set up users")?;
+        }
+
+        if let Some(hostname) = host_config.os.hostname.clone() {
+            hostname::set_up_hostname(&hostname).context("Failed to set up hostname")?;
         }
 
         Ok(())

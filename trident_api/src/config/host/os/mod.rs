@@ -37,6 +37,10 @@ pub struct Os {
     /// Additional Files to add to the image.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub additional_files: Vec<AdditionalFile>,
+
+    /// Hostname of the system.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
 }
 
 /// Configuration for the management OS.
