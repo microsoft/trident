@@ -25,6 +25,21 @@ pub enum MkfsFileSystemType {
     Vfat,
 }
 
+/// File system types for fstab file
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabFileSystemType {
+    Auto,
+    Ext2,
+    Ext3,
+    Ext4,
+    Xfs,
+    Vfat,
+    Iso9660,
+    Tmpfs,
+    Swap,
+    Overlay,
+}
+
 impl MountFileSystemType {
     pub fn name(self) -> &'static str {
         match self {
@@ -100,5 +115,34 @@ impl MkfsFileSystemType {
 impl std::fmt::Display for MkfsFileSystemType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name())
+    }
+}
+
+impl TabFileSystemType {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Ext2 => "ext2",
+            Self::Ext3 => "ext3",
+            Self::Ext4 => "ext4",
+            Self::Xfs => "xfs",
+            Self::Vfat => "vfat",
+            Self::Iso9660 => "iso9660",
+            Self::Tmpfs => "tmpfs",
+            Self::Overlay => "overlay",
+            TabFileSystemType::Swap => "swap",
+        }
+    }
+
+    pub fn from_api_type(api_type: FileSystemType) -> Self {
+        match api_type {
+            FileSystemType::Ext4 => Self::Ext4,
+            FileSystemType::Xfs => Self::Xfs,
+            FileSystemType::Vfat => Self::Vfat,
+            FileSystemType::Iso9660 => Self::Iso9660,
+            FileSystemType::Tmpfs => Self::Tmpfs,
+            FileSystemType::Overlay => Self::Overlay,
+            FileSystemType::Swap => Self::Swap,
+        }
     }
 }

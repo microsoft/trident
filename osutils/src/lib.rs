@@ -26,6 +26,7 @@ pub mod resize2fs;
 pub mod scripts;
 pub mod sfdisk;
 pub mod systemd;
+pub mod tabfile;
 pub mod tune2fs;
 pub mod udevadm;
 pub mod veritysetup;

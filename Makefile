@@ -8,13 +8,13 @@ all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build
 
 .PHONY: check
 check:
+	cargo fmt -- --check
 	cargo check --workspace --all-features --tests
 	cargo clippy --version
 	cargo clippy --locked --workspace -- -D warnings 2>&1
 	cargo clippy --locked --workspace --all-features -- -D warnings 2>&1
 	cargo clippy --locked --workspace --tests -- -D warnings 2>&1
 	cargo clippy --locked --workspace --tests --all-features -- -D warnings 2>&1
-	cargo fmt -- --check
 
 .PHONY: check-pipelines
 check-pipelines:

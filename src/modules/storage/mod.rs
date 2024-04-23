@@ -25,7 +25,7 @@ use trident_api::{
 
 use crate::modules::{self, Module};
 
-use tabfile::{TabFile, DEFAULT_FSTAB_PATH};
+use tabfile::DEFAULT_FSTAB_PATH;
 
 mod encryption;
 mod filesystem;
@@ -328,12 +328,15 @@ fn generate_fstab(
     if !host_config.storage.verity.is_empty() {
         mount_points.push(verity::create_etc_overlay_mount_point());
     }
-    let fstab = TabFile::from_mount_points(host_status, &mount_points)
+    let fstab = tabfile::from_mountpoints(host_status, &mount_points)
         .context("Failed to serialize mount point configuration for the target OS")?;
+
     fstab
         .write(path)
         .context(format!("Failed to write {}", DEFAULT_FSTAB_PATH))?;
+
     trace!("Wrote '{}', contents: '{:?}'", DEFAULT_FSTAB_PATH, fstab);
+
     Ok(())
 }
 
@@ -775,7 +778,7 @@ mod tests {
 
     #[test]
     fn test_generate_fstab() {
-        let expected_contents = "/part1 / ext4  0 1";
+        let expected_contents = "/part1 / ext4 defaults 0 1\n";
         let temp_tabfile = tempfile::NamedTempFile::new().unwrap();
         // passing dummy file
         assert_eq!(
@@ -825,6 +828,7 @@ mod tests {
             temp_tabfile.path(),
         )
         .unwrap();
+
         assert_eq!(
             fs::read_to_string(temp_tabfile.path()).unwrap(),
             expected_contents,
@@ -832,7 +836,7 @@ mod tests {
 
         // test with verity enabled
 
-        let expected_contents = "/part1 / ext4  0 1\noverlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2";
+        let expected_contents = "/part1 / ext4 defaults 0 1\noverlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2\n";
 
         let mut hc = get_host_config(&temp_tabfile);
         hc.storage.verity = vec![config::VerityDevice {
@@ -875,6 +879,7 @@ mod tests {
             temp_tabfile.path(),
         )
         .unwrap();
+
         assert_eq!(
             fs::read_to_string(temp_tabfile.path()).unwrap(),
             expected_contents,
