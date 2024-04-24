@@ -51,6 +51,23 @@ KNOWN_HOSTS_FILENAME = "known_hosts"
 VM_SSH_NODE_CACHE_KEY = "vm_ssh_node"
 
 
+def __get_installer_iso_path():
+    """Returns the path to the installer ISO."""
+    envvar = os.environ.get("INSTALLER_ISO_PATH", None)
+    if envvar:
+        return Path(envvar).resolve()
+    return TRIDENT_REPO_DIR_PATH / "bin" / "trident-mos.iso"
+
+
+"""Location of the installer ISO.
+Defined in the makefile.
+"""
+INSTALLER_ISO_PATH = __get_installer_iso_path()
+
+"""Location of the directory netlaunch will serve from"""
+NETLAUNCH_SERVE_DIRECTORY = TRIDENT_REPO_DIR_PATH / "artifacts" / "test-image"
+
+
 def pytest_addoption(parser):
     """Defines additional command line options for the tests."""
     parser.addoption(
@@ -208,11 +225,6 @@ def argus_runcmd(cmd, check=True, **kwargs):
     """Runs a command in the argus repository directory."""
     logging.debug(f"Running command: {cmd}")
     subprocess.run(cmd, check=check, cwd=ARGUS_REPO_DIR_PATH, **kwargs)
-
-
-def build_netlaunch():
-    """Builds the netlaunch binary with make."""
-    trident_runcmd(["make", NETLAUNCH_BIN_REL_PATH])
 
 
 def upload_test_binaries(build_output_path: Path, force_upload, ssh_node):

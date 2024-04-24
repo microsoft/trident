@@ -23,7 +23,6 @@ stages:
       - TridentTestImg_trident_verity_testimage
       - TridentTestImg_containerhost_testimage
 
-
     jobs:
       - template: ../common_tasks/get-tests.yml
         parameters:
@@ -198,7 +197,15 @@ stages:
           - bash: |
               set -eux
 
-              sg libvirt "make functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimage.iso PLATFORM_TESTS_DIR=platform-tests ARGUS_TOOLKIT_PATH=argus-toolkit"
+              # Copy files from platform-tests to functional_tests
+              cp platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
+              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+
+              # Run the core of the functional tests, which means only
+              # rebuilding the test binaries and invoking pytest. The regular
+              # target is meant for local use and does extra setup not required
+              # here.
+              sg libvirt "make functional-test-core INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimage.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
           - template: ../../common_tasks/coverage.yml

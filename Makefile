@@ -206,16 +206,25 @@ build-functional-test-cc:
 		LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' \
 		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-test --all
 
-PLATFORM_TESTS_DIR ?= ../platform-tests
-# Allow overriding the path to the Argus toolkit
-# Functional tests default to ../argus-tookit when not set
-ARGUS_TOOLKIT_PATH ?=
-
 .PHONY: functional-test
-functional-test: build-functional-test-cc generate-functional-test-manifest
-	cp $(PLATFORM_TESTS_DIR)/tools/marinerhci_test_tools/node_interface.py functional_tests/
-	cp $(PLATFORM_TESTS_DIR)/tools/marinerhci_test_tools/ssh_node.py functional_tests/
-	ARGUS_TOOLKIT_PATH=$(ARGUS_TOOLKIT_PATH) python3 -u -m pytest functional_tests/$(FILTER) -v -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload
+functional-test: bin/trident-mos.iso bin/trident artifacts/osmodifier artifacts/test-image/*.rawzst bin/netlaunch
+	cp ../platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
+	cp ../platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+	cp bin/trident artifacts/test-image/
+	cp artifacts/osmodifier artifacts/test-image/
+	$(MAKE) functional-test-core
+
+# A target for pipelines that skips all setup and building steps that are not
+# required in the pipeline environment.
+.PHONY: functional-test-core
+functional-test-core: build-functional-test-cc generate-functional-test-manifest
+# Check if INSTALLER_ISO_PATH is set, if not, check if the installer iso is present in the bin directory
+ifndef INSTALLER_ISO_PATH
+ifeq ($(wildcard bin/trident-mos.iso),)
+	$(error INSTALLER_ISO_PATH is not set and bin/trident-mos.iso is not present in the bin directory)
+endif
+endif
+	python3 -u -m pytest functional_tests/$(FILTER) -v -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload
 
 .PHONY: patch-functional-test
 patch-functional-test: build-functional-test-cc generate-functional-test-manifest

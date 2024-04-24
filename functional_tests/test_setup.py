@@ -9,9 +9,10 @@ import yaml
 from pathlib import Path
 
 from .conftest import (
+    INSTALLER_ISO_PATH,
+    NETLAUNCH_SERVE_DIRECTORY,
     argus_runcmd,
     trident_runcmd,
-    build_netlaunch,
     ARGUS_REPO_DIR_PATH,
     TRIDENT_REPO_DIR_PATH,
     NETLAUNCH_BIN_PATH,
@@ -55,19 +56,11 @@ def deploy_vm(
     test_dir_path: Path,
     ssh_pub_key: str,
     known_hosts_path: Path,
-    installer_iso_path: Path,
     remote_addr_path: Path,
 ) -> str:
     """# Provision a VM with the given parameters, using virt-deploy to create the VM
     and netlaunch to deploy the OS. Returns the ip address of the VM.
     """
-    if not installer_iso_path:
-        trident_runcmd(["make", "bin/netlaunch"])
-        trident_runcmd(["make", "bin/trident-mos.iso"])
-        installer_iso_path = TRIDENT_REPO_DIR_PATH / "bin/trident-mos.iso"
-
-    # Build netlaunch if it doesn't exist.
-    build_netlaunch()
 
     host_config_path = prepare_hostconfig(test_dir_path, ssh_pub_key)
 
@@ -75,7 +68,7 @@ def deploy_vm(
         [
             NETLAUNCH_BIN_PATH,
             "-i",
-            installer_iso_path,
+            INSTALLER_ISO_PATH,
             "-c",
             ARGUS_REPO_DIR_PATH / "vm-netlaunch.yaml",
             "-t",
@@ -84,7 +77,7 @@ def deploy_vm(
             "-r",
             remote_addr_path,
             "-s",
-            TRIDENT_REPO_DIR_PATH / "artifacts" / "test-image",
+            NETLAUNCH_SERVE_DIRECTORY,
         ]
     )
 
@@ -127,10 +120,6 @@ def test_deploy_vm(
         with open(remote_addr_path, "r") as file:
             address = file.read().strip()
     else:
-        installer_iso_path = None
-        if os.environ.get("INSTALLER_ISO_PATH"):
-            installer_iso_path = os.path.abspath(os.environ["INSTALLER_ISO_PATH"])
-
         if (
             not ARGUS_REPO_DIR_PATH.is_dir()
             or not (ARGUS_REPO_DIR_PATH / "virt-deploy").is_file()
@@ -142,7 +131,6 @@ def test_deploy_vm(
             test_dir_path,
             ssh_key_public,
             known_hosts_path,
-            installer_iso_path,
             remote_addr_path,
         )
 
