@@ -3,6 +3,9 @@ import argparse
 import time
 from fabric import Connection, Config
 import yaml
+from invoke.exceptions import CommandTimedOut
+from invoke.watchers import StreamWatcher
+from io import StringIO
 
 HOST_TRIDENT_CONFIG_PATH = "/etc/trident/config.yaml"
 TRIDENT_EXECUTABLE_PATH = "/usr/bin/trident"
@@ -15,81 +18,112 @@ class YamlSafeLoader(yaml.SafeLoader):
         return self.construct_mapping(node)
 
 
+class OutputWatcher(StreamWatcher):
+    def __init__(self):
+        super().__init__()
+        self.output_len = 0
+
+    def submit(self, stream):
+        new_output = stream[self.output_len :]
+        print(new_output, end="")
+        self.output_len = len(stream)
+        return []
+
+
 # Runs a command on the host using Fabric and returns the combined stdout and stderr
 def run_ssh_command(connection, command):
     try:
         # Executes a command using Fabric and returns the result
-        result = connection.run(command)
+        result = connection.run(command, warn=True, hide="both")
         # Combining stdout and stderr for compatibility with the original function's return
         return result.stdout + result.stderr
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An unexpected error occurred:\n")
         raise
 
 
 # Runs "trident run" to trigger A/B update on the host and ensure that the host reached the reboot
 # stage successfully
 def trident_run(connection, keys_file_path, ip_address, user_name):
+    # Initialize a watcher to return output live
+    watcher = OutputWatcher()
+    # Initialize stdout and stderr streams
+    out_stream = StringIO()
+    err_stream = StringIO()
     try:
         # Set warn=True to continue execution even if the command has a non-zero exit code
         result = connection.run(
-            f"sudo {TRIDENT_EXECUTABLE_PATH} run -v trace", warn=True
+            f"sudo {TRIDENT_EXECUTABLE_PATH} run -v trace",
+            warn=True,
+            out_stream=out_stream,
+            err_stream=err_stream,
+            timeout=180,
+            watchers=[watcher],
         )
-        output_lines = (result.stdout + result.stderr).strip().split("\n")
 
-        # Check the exit code: if -1, host rebooted
-        if (
-            result.return_code == -1
-            and "[INFO  trident::modules] Rebooting system" in output_lines
-        ):
-            print("Received expected output with exit code -1. Host rebooted.")
-        # If non-zero exit code but host was running the rerun script, keep reconnecting
-        elif (
-            result.return_code != 0
-            and "[DEBUG trident::modules::hooks] Running script fail-on-the-first-run-to-force-rerun with interpreter /usr/bin/python3"
-            in output_lines
-        ):
-            print(
-                "Detected an intentional Trident run failure. Attempting to reconnect..."
-            )
-            connection.close()
-            for attempt in range(MAX_RETRIES):
-                try:
-                    time.sleep(RETRY_INTERVAL)
-
-                    # Re-establish connection
-                    print(f"Attempt {attempt + 1}: Reconnecting to the host...")
-
-                    config = Config(
-                        overrides={"connect_kwargs": {"key_filename": keys_file_path}}
-                    )
-                    connection = Connection(
-                        host=ip_address, user=user_name, config=config
-                    )
-
-                    # Check if the host is reachable
-                    run_ssh_command(
-                        connection,
-                        "sudo echo 'Successfully reconnected after A/B update'",
-                    )
-                    connection.close()
-                    break
-                except Exception as e:
-                    print(f"Reconnection attempt {attempt + 1} failed: {e}")
-                    connection.close()
-            else:
-                raise Exception("Maximum reconnection attempts exceeded.")
-        elif result.return_code != 0:
-            connection.close()
-            raise Exception(f"Command failed with exit code {result.return_code}")
-
-        # Return combined stdout and stderr
-        return result.stdout + result.stderr
+    except CommandTimedOut as timeout_exception:
+        output = out_stream.getvalue() + err_stream.getvalue()
+        # Handle the case where the command times out
+        output_lines = output.strip().split("\n")
+        if "[INFO  trident::modules] Rebooting system" in output_lines:
+            print("Timeout occurred. Host rebooted successfully.")
+            return
+        else:
+            raise Exception("Trident run timed out") from timeout_exception
 
     except Exception as e:
-        print(f"An error occurred: {e}")
-        connection.close()
+        print(f"An unexpected error occurred:\n")
         raise
+
+    finally:
+        connection.close()
+
+    output = result.stdout + result.stderr
+    output_lines = output.strip().split("\n")
+    # Check the exit code: if -1, host rebooted
+    if (
+        result.return_code == -1
+        and "[INFO  trident::modules] Rebooting system" in output_lines
+    ):
+        print("Received expected output with exit code -1. Host rebooted successfully.")
+    # If non-zero exit code but host was running the rerun script, keep reconnecting
+    elif (
+        result.return_code != 0
+        and "[DEBUG trident::modules::hooks] Running script fail-on-the-first-run-to-force-rerun with interpreter /usr/bin/python3"
+        in output_lines
+    ):
+        print("Detected an intentional Trident run failure. Attempting to reconnect...")
+        for attempt in range(MAX_RETRIES):
+            try:
+                time.sleep(RETRY_INTERVAL)
+
+                # Re-establish connection
+                print(f"Attempt {attempt + 1}: Reconnecting to the host...")
+
+                config = Config(
+                    overrides={"connect_kwargs": {"key_filename": keys_file_path}}
+                )
+                connection = Connection(host=ip_address, user=user_name, config=config)
+
+                # Check if the host is reachable
+                run_ssh_command(
+                    connection,
+                    "sudo echo 'Successfully reconnected after A/B update'",
+                )
+                break
+            except Exception as e:
+                print(f"Reconnection attempt {attempt + 1} failed with exception: {e}")
+            finally:
+                connection.close()
+        else:
+            raise Exception("Maximum reconnection attempts exceeded.")
+    else:
+        raise Exception(
+            f"Command unexpectedly returned with exit code {result.return_code} and output {output}"
+        )
+
+    # Return
+    return
 
 
 # Update host's Trident config by editing /etc/trident/config.yaml via sed command
@@ -180,7 +214,7 @@ def trigger_ab_update(ip_address, user_name, keys_file_path, image_dir, version)
     update_host_trident_config(connection, image_dir, version)
 
     # Re-run Trident and capture logs
-    print("Re-running Trident to trigger A/B update")
+    print("Re-running Trident to trigger A/B update", flush=True)
     trident_run(connection, keys_file_path, ip_address, user_name)
     connection.close()
 
