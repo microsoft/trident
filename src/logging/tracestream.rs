@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    fs,
     sync::{Arc, RwLock},
 };
 
@@ -12,10 +13,14 @@ use tracing::{
     field::{Field, Visit},
     Event, Subscriber,
 };
+
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
-// TODO: Set the constant value based on the current run
-const ASSET_ID: &str = "testing-asset-id";
+/// The product uuid is used to identify the hardware that Trident is running on.
+const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
+lazy_static::lazy_static! {
+    static ref ASSET_ID: String = read_product_uuid(PRODUCT_UUID_FILE.to_string());
+}
 
 #[derive(Default)]
 struct TraceEntryVisitor {
@@ -183,8 +188,21 @@ where
     }
 }
 
+/// Obtain product uuid of the hardware Trident is running on
+fn read_product_uuid(filepath: String) -> String {
+    match fs::read_to_string(filepath.clone()) {
+        Ok(uuid) => uuid.trim().to_string(),
+        Err(_) => {
+            log::debug!("Failed to read product uuid from {}", filepath);
+            "unknown".into()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::{fs::File, io::Write};
+
     use super::*;
 
     #[test]
@@ -244,5 +262,21 @@ mod tests {
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
         );
+    }
+
+    #[test]
+    fn test_read_product_uuid_unknown() {
+        let uuid = read_product_uuid("unknown".to_string());
+        assert_eq!(uuid, "unknown");
+    }
+
+    #[test]
+    fn test_read_product_uuid_exists() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let filepath = temp_dir.path().join("product_uuid");
+        let mut file = File::create(&filepath).unwrap();
+        file.write_all("test_uuid".as_bytes()).unwrap();
+        let uuid = read_product_uuid(filepath.to_str().unwrap().to_string());
+        assert_eq!(uuid, "test_uuid");
     }
 }
