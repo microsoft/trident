@@ -1,0 +1,151 @@
+hostConfiguration:
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+        partitionTableType: gpt
+        partitions:
+          - id: esp
+            type: esp
+            size: 1G
+          - id: boot
+            type: xbootldr
+            size: 200M
+          - id: root-1
+            type: root
+            size: 4G
+          - id: root-2
+            type: root
+            size: 4G
+          - id: root-hash-1
+            type: root-verity
+            size: 1G
+          - id: root-hash-2
+            type: root-verity
+            size: 1G
+          - id: trident
+            type: linux-generic
+            size: 100M
+          - id: trident-overlay-1
+            type: linux-generic
+            size: 100M
+          - id: trident-overlay-2
+            type: linux-generic
+            size: 100M
+          - id: home
+            type: linux-generic
+            size: 100M
+          - id: var
+            type: linux-generic
+            size: 1G
+          - id: run
+            type: linux-generic
+            size: 1G
+      - id: disk2
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+        partitionTableType: gpt
+        partitions: []
+    raid:
+      software:
+        - id: root
+          name: root
+          level: raid1
+          devices:
+            - root-1
+            - root-2
+          metadataVersion: "1.2"
+        - id: root-hash
+          name: root-hash
+          level: raid1
+          devices:
+            - root-hash-1
+            - root-hash-2
+          metadataVersion: "1.2"
+        - id: trident-overlay
+          name: trident-overlay
+          level: raid1
+          devices:
+            - trident-overlay-1
+            - trident-overlay-2
+          metadataVersion: "1.2"
+    mountPoints:
+      - path: /boot/efi
+        targetId: esp
+        filesystem: vfat
+        options: ["umask=0077"]
+      - path: /boot
+        targetId: boot
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /
+        targetId: verity-root
+        filesystem: ext4
+        options: ["defaults", "ro"]
+      - path: /var/lib/trident
+        targetId: trident
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /var/lib/trident-overlay
+        targetId: trident-overlay
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /home
+        targetId: home
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /var
+        targetId: var
+        filesystem: ext4
+        options: ["defaults"]
+      - path: /run
+        targetId: run
+        filesystem: ext4
+        options: ["defaults"]
+    images:
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
+        sha256: ignored
+        format: raw-zst
+        targetId: esp
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
+        sha256: ignored
+        format: raw-zst
+        targetId: boot
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
+        sha256: ignored
+        format: raw-zst
+        targetId: root
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
+        sha256: ignored
+        format: raw-zst
+        targetId: root-hash
+      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
+        sha256: ignored
+        format: raw-zst
+        targetId: var
+    verity:
+      - id: verity-root
+        deviceName: root
+        dataTargetId: root
+        hashTargetId: root-hash
+  os:
+    network:
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+      version: 2
+    users:
+      - name: testing-user
+        secondaryGroups: [wheel]
+        sshPublicKeys: []
+        sshMode: key-only
+  scripts:
+    postConfigure:
+    - content: |
+        mkdir -p /var/lib/trident-overlay/etc-rw/upper
+        mkdir -p /var/lib/trident-overlay/etc-rw/work
+      name: overlay
+      servicingType:
+      - clean-install
+      - ab-update

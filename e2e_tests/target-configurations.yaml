@@ -11,6 +11,7 @@ bareMetal:
     - rerun
     - simple
     - verity
+    - verity-raid
 virtualMachine:
   daily:
     - base
@@ -24,6 +25,7 @@ virtualMachine:
     - rerun
     - simple
     - verity
+    - verity-raid
   post_merge:
     - base
     - abupdate-on-encrypted-raid
@@ -36,6 +38,7 @@ virtualMachine:
     - rerun
     - simple
     - verity
+    - verity-raid
   pullrequest:
     - base
     - abupdate-on-encrypted-raid
@@ -48,6 +51,7 @@ virtualMachine:
     - rerun
     - simple
     - verity
+    - verity-raid
   validation:
     - base
     - abupdate-on-encrypted-raid
@@ -60,3 +64,4 @@ virtualMachine:
     - rerun
     - simple
     - verity
+    - verity-raid

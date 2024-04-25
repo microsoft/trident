@@ -3,6 +3,11 @@ import math
 import os
 import pytest
 import yaml
+from base_test import (
+    get_verity_info,
+    get_raid_name_from_device_name,
+    get_data_hash_from_veritysetup,
+)
 
 pytestmark = [pytest.mark.verity]
 
@@ -12,7 +17,7 @@ class HostStatusSafeLoader(yaml.SafeLoader):
         return self.construct_mapping(node)
 
 
-def test_verity(connection, tridentConfiguration):
+def test_verity(connection, tridentConfiguration, abActiveVolume):
     # Print out result of blkid for asserting verity root device mapper.
     res_blkid = connection.run("sudo blkid")
     # Expected output example:
@@ -41,44 +46,26 @@ def test_verity(connection, tridentConfiguration):
     # Assert if /dev/mapper/root has been generated properly.
     assert "/dev/mapper/root" in part_path_set
 
+    partitions_blkid = dict()
+    for partition in output_blkid:
+        partition_dict = dict()
+        # Extract partition's name (ex: sda1)
+        name_info = partition.split(": ")
+        name = name_info[0].split("/")[-1]
+        # By line structure output into a dictionary with the partition information
+        for info in name_info[1].split():
+            field_value = info.split("=")
+            if len(field_value) == 2:
+                partition_dict[field_value[0]] = field_value[1].replace('"', "")
+        # Adding information to a dictionary for each partition
+        partitions_blkid[name] = partition_dict
+
     # Collect expected verity info from host config for the later testing usage.
     expected_verity_config = dict()
     host_config = tridentConfiguration["hostConfiguration"]
 
     for verity in host_config["storage"]["verity"]:
         expected_verity_config[verity["id"]] = verity
-
-    # Check host status.
-    res_host_status = connection.run("sudo /usr/bin/trident get")
-    output_host_status = res_host_status.stdout.strip()
-
-    HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
-    host_status = yaml.load(output_host_status, Loader=HostStatusSafeLoader)
-    # Host status expected output example:
-    # root:
-    #   path: /dev/disk/by-partuuid/f69514c7-d20a-42fd-8c4e-49df24d2ce40
-    #   size: 8589934592
-    #   contents: !image
-    #     sha256: 764292ca5261af4d68217381d5e2520f453ca22d2af38c081dfc93aeda075d0b
-    #     length: 705090048
-    #     url: http://10.1.6.1:36439/files/verity_root.rawzst
-    # root-hash:
-    #   path: /dev/disk/by-partuuid/290ddc62-c339-457c-989d-5551153fcb9c
-    #   size: 1073741824
-    #   contents: !image
-    #     sha256: b63a60a5c6d172cf11d0aec785f50414d2d46206a64e95639804b85c8fa0f3e5
-    #     length: 25321984
-    #     url: http://10.1.6.1:36439/files/verity_roothash.rawzst
-    # verity-root:
-    #   path: /dev/mapper/root
-    #   size: 0
-    #   contents: initialized
-    # rootDevicePath: /dev/mapper/root
-
-    # Assert if verity info from host config has been involved in host status.
-    for verity_id in expected_verity_config:
-        assert verity_id in host_status["storage"]["blockDevices"]
-        assert "/dev/mapper/root" == host_status["storage"]["rootDevicePath"]
 
     # Collect veritysetup status output.
     veritysetup_status = connection.run("sudo veritysetup status root")
@@ -113,8 +100,148 @@ def test_verity(connection, tridentConfiguration):
         ]  # Strip spaces from both key and value
         if key and value:
             veritysetup_status_dict[key] = value
+        else:
+            raise ValueError(
+                f"Invalid key or value from status: key='{key}', value='{value}'"
+            )
 
-    # Assert if veritysetup status.
+    # Validate key properties of the veritysetup output to ensure the verity
+    # device is configured correctly.
     assert "VERITY" == veritysetup_status_dict["type"]
     assert "verified" == veritysetup_status_dict["status"]
     assert "readonly" == veritysetup_status_dict["mode"]
+
+    # Check host status.
+    res_host_status = connection.run("sudo /usr/bin/trident get")
+    output_host_status = res_host_status.stdout.strip()
+
+    HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
+    host_status = yaml.load(output_host_status, Loader=HostStatusSafeLoader)
+    # Host status expected output example:
+    # root:
+    #   path: /dev/disk/by-partuuid/f69514c7-d20a-42fd-8c4e-49df24d2ce40
+    #   size: 8589934592
+    #   contents: !image
+    #     sha256: 764292ca5261af4d68217381d5e2520f453ca22d2af38c081dfc93aeda075d0b
+    #     length: 705090048
+    #     url: http://10.1.6.1:36439/files/verity_root.rawzst
+    # root-hash:
+    #   path: /dev/disk/by-partuuid/290ddc62-c339-457c-989d-5551153fcb9c
+    #   size: 1073741824
+    #   contents: !image
+    #     sha256: b63a60a5c6d172cf11d0aec785f50414d2d46206a64e95639804b85c8fa0f3e5
+    #     length: 25321984
+    #     url: http://10.1.6.1:36439/files/verity_roothash.rawzst
+    # verity-root:
+    #   path: /dev/mapper/root
+    #   size: 0
+    #   contents: initialized
+    # rootDevicePath: /dev/mapper/root
+
+    # Assert if verity info from host config has been involved in host status.
+    for verity_id in expected_verity_config:
+        assert verity_id in host_status["storage"]["blockDevices"]
+        assert "/dev/mapper/root" == host_status["storage"]["rootDevicePath"]
+
+    # Assert verity data device and hash device. Refer to logic from base test
+    # to extract the ID of the mount point with path "/".
+    root_mount_id = None
+    for mount_point in host_status["spec"]["storage"]["mountPoints"]:
+        if mount_point["path"] == "/":
+            root_mount_id = mount_point["targetId"]
+            break
+    else:
+        # This block executes if no break occurs in the loop, meaning no mount point
+        # with path "/" was found.
+        raise Exception("Root mount point not found")
+
+    verity_args = None
+    verity_args = get_verity_info(host_status, root_mount_id)
+    if verity_args is not None:
+        device_name, data_target_id, hash_target_id = verity_args
+    else:
+        raise Exception("No verity configuration found for the provided root mount ID")
+
+    if "abUpdate" in host_status["spec"]["storage"] and abActiveVolume is not None:
+        active_data_id, active_hash_id = None, None
+        # Identify block devices we expect to be in use, given the value of abActiveVolume.
+        for volume_pair in host_status["spec"]["storage"]["abUpdate"]["volumePairs"]:
+            if volume_pair["id"] == data_target_id:
+                if abActiveVolume == "volume-a":
+                    active_data_id = volume_pair["volumeAId"]
+                else:
+                    active_data_id = volume_pair["volumeBId"]
+
+            if volume_pair["id"] == hash_target_id:
+                if abActiveVolume == "volume-a":
+                    active_hash_id = volume_pair["volumeAId"]
+                else:
+                    active_hash_id = volume_pair["volumeBId"]
+        assert active_data_id is not None and active_hash_id is not None
+
+        # Run and process `veritysetup status`
+        data_block_device, hash_block_device = get_data_hash_from_veritysetup(
+            connection, device_name
+        )
+
+        # Check if data_block_device, hash_block_device correspond to partitions or RAID arrays
+        data_is_raid = get_raid_name_from_device_name(connection, data_block_device)
+        hash_is_raid = get_raid_name_from_device_name(connection, hash_block_device)
+        # Assert that both data_is_raid are either both None or both not None
+        assert (data_is_raid is None) == (
+            hash_is_raid is None
+        ), f"Assertion failed: data_is_raid={data_is_raid}, hash_is_raid={hash_is_raid}"
+
+        # If get_raid_name_from_device_name() returned a non-null value, block device is a RAID
+        # array.
+        if data_is_raid:
+            # Convert /dev/md/root-a into root-a; /dev/sda1 into sda1
+            extracted_data_block_device = data_is_raid.split("/")[-1]
+            extracted_hash_block_device = hash_is_raid.split("/")[-1]
+
+            assert active_data_id == extracted_data_block_device
+            assert active_hash_id == extracted_hash_block_device
+        else:
+            # If get_raid_name_from_device_name() returned None, block device is a partition.
+            # NOTE: This check assumes that PARTLABEL in blkid is same as targetId in host status
+            extracted_data_block_device = data_block_device.split("/")[-1]
+            extracted_hash_block_device = hash_block_device.split("/")[-1]
+
+            assert (
+                extracted_data_block_device in partitions_blkid
+                and extracted_hash_block_device in partitions_blkid
+            )
+            assert (
+                partitions_blkid[extracted_data_block_device]["PARTLABEL"]
+                == active_data_id
+            )
+            assert (
+                partitions_blkid[extracted_hash_block_device]["PARTLABEL"]
+                == active_hash_id
+            )
+    else:
+        # Retrieve data device and hash device from veritysetup status.
+        data_block_device = veritysetup_status_dict["data device"]
+        hash_block_device = veritysetup_status_dict["hash device"]
+
+        data_is_raid = get_raid_name_from_device_name(connection, data_block_device)
+        hash_is_raid = get_raid_name_from_device_name(connection, hash_block_device)
+        assert (data_is_raid is None) == (
+            hash_is_raid is None
+        ), f"Assertion failed: data_is_raid={data_is_raid}, hash_is_raid={hash_is_raid}"
+
+        if data_is_raid:
+            # Convert for example /dev/md/root into root.
+            extracted_data_block_device = os.path.basename(data_is_raid)
+            extracted_hash_block_device = os.path.basename(hash_is_raid)
+
+            assert data_target_id == extracted_data_block_device
+            assert hash_target_id == extracted_hash_block_device
+        else:
+            extracted_data_block_device = data_block_device.split("/")[-1]
+            extracted_hash_block_device = hash_block_device.split("/")[-1]
+
+            assert (
+                extracted_data_block_device in partitions_blkid
+                and extracted_hash_block_device in partitions_blkid
+            )

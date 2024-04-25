@@ -199,71 +199,14 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
                 root_mount_id = mount_point["targetId"]
                 break
 
-        # If block device mounted at / is verity, it will not be part of an A/B volume pair.
-        # Instead, need to find root & root-hash A/B volume pairs
-        verity = is_verity(host_status, root_mount_id)
-        if verity is not None:
-            device_name, data_target_id, hash_target_id = verity
-            active_data_id, active_hash_id = None, None
-            # Identify block devices that we expect to be in use, given the value of
-            # abActiveVolume
-            for volume_pair in host_status["spec"]["storage"]["abUpdate"][
-                "volumePairs"
-            ]:
-                if volume_pair["id"] == data_target_id:
-                    if abActiveVolume == "volume-a":
-                        active_data_id = volume_pair["volumeAId"]
-                    else:
-                        active_data_id = volume_pair["volumeBId"]
-
-                if volume_pair["id"] == hash_target_id:
-                    if abActiveVolume == "volume-a":
-                        active_hash_id = volume_pair["volumeAId"]
-                    else:
-                        active_hash_id = volume_pair["volumeBId"]
-            assert active_data_id is not None and active_hash_id is not None
-
-            # Run and process `veritysetup status`
-            data_block_device, hash_block_device = get_data_hash_from_veritysetup(
-                connection, device_name
-            )
-
-            # Check if data_block_device, hash_block_device correspond to partitions or RAID arrays
-            data_is_raid = get_raid_name_from_device_name(connection, data_block_device)
-            hash_is_raid = get_raid_name_from_device_name(connection, hash_block_device)
-            # Assert that both data_is_raid are either both None or both not None
-            assert (data_is_raid is None) == (hash_is_raid is None)
-
-            # If get_raid_name_from_device_name() returned a non-null value, block device is a RAID
-            # array.
-            if data_is_raid:
-                # Convert /dev/md/root-a into root-a; /dev/sda1 into sda1
-                extracted_data_block_device = data_is_raid.split("/")[-1]
-                extracted_hash_block_device = hash_is_raid.split("/")[-1]
-
-                assert active_data_id == extracted_data_block_device
-                assert active_hash_id == extracted_hash_block_device
-            else:
-                # If get_raid_name_from_device_name() returned None, block device is a partition.
-                # NOTE: This check assumes that PARTLABEL in blkid is same as targetId in host status
-                extracted_data_block_device = data_block_device.split("/")[-1]
-                extracted_hash_block_device = hash_block_device.split("/")[-1]
-
-                assert (
-                    extracted_data_block_device in partitions_blkid
-                    and extracted_hash_block_device in partitions_blkid
-                )
-                assert (
-                    partitions_blkid[extracted_data_block_device]["PARTLABEL"]
-                    == active_data_id
-                )
-                assert (
-                    partitions_blkid[extracted_hash_block_device]["PARTLABEL"]
-                    == active_hash_id
-                )
-        else:
-            # Otherwise, if abUpdate is enabled, then root has to be an A/B volume pair.
-            # Find the active volume ID for the root mount point
+        # Check the block device mounted at /. If it's a verity device, it won't
+        # be part of an A/B volume pair. For verity devices, root and root-hash
+        # A/B volume pairs are tested in verity_test.py. In this test, we focus
+        # on configurations where abUpdate is enabled, ensuring that root is
+        # part of an A/B volume pair. This test identifies the active volume ID
+        # for the root mount point.
+        verity = get_verity_info(host_status, root_mount_id)
+        if verity is None:
             active_volume_id = None
             for volume_pair in host_status["spec"]["storage"]["abUpdate"][
                 "volumePairs"
@@ -331,7 +274,7 @@ def is_raid(host_status, block_device_id):
 # - Block device id of verity root data,
 # - Block device id of verity root hash.
 # Otherwise, return None
-def is_verity(host_status, block_device_id):
+def get_verity_info(host_status, block_device_id):
     if "verity" in host_status["spec"]["storage"]:
         for verity in host_status["spec"]["storage"].get("verity", {}):
             if verity["id"] == block_device_id:
