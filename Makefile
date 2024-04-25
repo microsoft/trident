@@ -390,7 +390,7 @@ copy-runtime-partition-images: ../test-images/build/trident-testimage/*.raw.zst 
 	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
 
 BASE_IMAGE_NAME ?= baremetal_vhdx
-BASE_IMAGE_VERSION ?= *
+BASE_IMAGE_VERSION ?= 2.0.20240403
 artifacts/baremetal.vhdx:
 	@mkdir -p artifacts
 	@tempdir=$$(mktemp -d); \
