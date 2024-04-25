@@ -51,16 +51,19 @@ if not args.BuildNumber:
 match = re.match(r"(\d+)\.(\d+)", args.BuildNumber)
 
 if match:
-    date, id = match.groups()
-    id = int(id)
-
-    if args.commit:
-        short_commit = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"]
-        ).decode("ascii")
-        print(f"{version}.{date}{id:02d}-{short_commit.strip()}")
+    # Check if BuildNumber is already the trident version
+    version_pattern = rf"(^{version}\.)(\d{{10}})(-?.*$)"
+    if re.match(version_pattern, args.BuildNumber):
+        print(args.BuildNumber)
     else:
-        print(f"{version}.{date}{id:02d}")
+        date, id = match.groups()
+        id = int(id)
+
+        if args.commit:
+            short_commit = get_git_revision_short_hash()
+            print(f"{version}.{date}{id:02d}-{short_commit.strip()}")
+        else:
+            print(f"{version}.{date}{id:02d}")
 else:
     print(
         "Invalid input. BuildNumber should be a date and ID, for example a counter, separated by a point."
