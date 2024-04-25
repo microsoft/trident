@@ -285,6 +285,7 @@ impl Module for StorageModule {
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
+        _exec_root: &Path,
     ) -> Result<(), Error> {
         verity::configure_device_names(host_status)
             .context("Failed to finalize device names for Verity devices")?;

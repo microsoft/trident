@@ -1,8 +1,9 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 use anyhow::{Context, Error};
-use log::debug;
+use log::{debug, warn};
 
+use osutils::path;
 use trident_api::{
     config::HostConfiguration,
     status::{HostStatus, ReconcileState, UpdateKind},
@@ -20,31 +21,11 @@ impl Module for OsConfigModule {
         "os-config"
     }
 
-    // TODO: Revisit this to handle read-only path in runtime os
-    // Also, when os modifier becomes available in RPM, install it in the provisioning and runtime OSs.
-    // Tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/6327/
-    // and https://dev.azure.com/mariner-org/ECF/_workitems/edit/6303
-    fn provision(
-        &mut self,
-        _host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        mount_path: &Path,
-    ) -> Result<(), Error> {
-        let target_path = mount_path.join(&OS_MODIFIER_BINARY_PATH[1..]);
-
-        if !host_config.os.users.is_empty() && !target_path.exists() {
-            debug!("Copying os modifier binary to runtime OS");
-            fs::copy(OS_MODIFIER_BINARY_PATH, target_path)
-                .context("Failed to copy os modifier binary to runtime OS")?;
-        }
-
-        Ok(())
-    }
-
     fn configure(
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
+        exec_root: &Path,
     ) -> Result<(), Error> {
         // TODO: When we switch to MIC, figure out a strategy for handling
         // other kinds of updates. Limit operation to:
@@ -61,12 +42,19 @@ impl Module for OsConfigModule {
             return Ok(());
         }
 
+        let os_modifier_path = path::join_relative(exec_root, OS_MODIFIER_BINARY_PATH);
+        if !os_modifier_path.exists() {
+            warn!("os-modifier binary not found at '{OS_MODIFIER_BINARY_PATH}'");
+        }
+
         if !host_config.os.users.is_empty() {
-            users::set_up_users(host_config.os.users.clone()).context("Failed to set up users")?;
+            users::set_up_users(&host_config.os.users, &os_modifier_path)
+                .context("Failed to set up users")?;
         }
 
         if let Some(hostname) = host_config.os.hostname.clone() {
-            hostname::set_up_hostname(&hostname).context("Failed to set up hostname")?;
+            hostname::set_up_hostname(&hostname, &os_modifier_path)
+                .context("Failed to set up hostname")?;
         }
 
         Ok(())

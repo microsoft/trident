@@ -87,6 +87,7 @@ impl Module for ManagementModule {
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
+        _exec_root: &Path,
     ) -> Result<(), Error> {
         if host_config.trident.disable {
             return Ok(());

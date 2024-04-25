@@ -1,4 +1,9 @@
-use std::{collections::HashMap, ffi::OsString, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Error, Ok};
 use log::{debug, info};
@@ -107,6 +112,7 @@ impl Module for HooksModule {
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
+        _exec_root: &Path,
     ) -> Result<(), Error> {
         info!("Adding additional files");
         for file in &host_config.os.additional_files {
@@ -270,7 +276,7 @@ mod tests {
     use indoc::indoc;
     use maplit::hashmap;
     use trident_api::config::{Scripts, ServicingType};
-    use trident_api::constants;
+    use trident_api::constants::{self, ROOT_MOUNT_POINT_PATH};
     use trident_api::status::Storage;
 
     #[test]
@@ -511,7 +517,13 @@ mod tests {
             ..Default::default()
         };
         module.prepare(&mut host_status).unwrap();
-        module.configure(&mut host_status, &host_config).unwrap();
+        module
+            .configure(
+                &mut host_status,
+                &host_config,
+                Path::new(ROOT_MOUNT_POINT_PATH),
+            )
+            .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
             fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
@@ -537,7 +549,13 @@ mod tests {
             ..Default::default()
         };
         module.prepare(&mut host_status).unwrap();
-        module.configure(&mut host_status, &host_config).unwrap();
+        module
+            .configure(
+                &mut host_status,
+                &host_config,
+                Path::new(ROOT_MOUNT_POINT_PATH),
+            )
+            .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
             fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
@@ -564,7 +582,13 @@ mod tests {
             ..Default::default()
         };
         module.prepare(&mut host_status).unwrap();
-        module.configure(&mut host_status, &host_config).unwrap();
+        module
+            .configure(
+                &mut host_status,
+                &host_config,
+                Path::new(ROOT_MOUNT_POINT_PATH),
+            )
+            .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), "\u{2603}");
         assert_eq!(
             fs::metadata(&source_file).unwrap().permissions().mode() & 0o777,

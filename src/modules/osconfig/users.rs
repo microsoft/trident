@@ -4,7 +4,6 @@ use std::{
     process::Command,
 };
 
-use crate::OS_MODIFIER_BINARY_PATH;
 use anyhow::{bail, Context, Error};
 use log::{debug, warn};
 use osutils::exe::RunAndCheck;
@@ -78,7 +77,7 @@ struct MICOSConfig {
     users: Vec<MICUser>,
 }
 
-pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
+pub(super) fn set_up_users(users: &[User], os_modifier_path: &Path) -> Result<(), Error> {
     if Path::new(SSHD_CONFIG_FILE).exists() {
         debug!("Setting up sshd config");
 
@@ -105,7 +104,7 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
         }
 
         // Set up global sshd config
-        ssh_global_config(&users).context("Failed to set up global sshd config")?;
+        ssh_global_config(users).context("Failed to set up global sshd config")?;
     } else {
         // sshd_config is not installed in a known location, this probably means that sshd is not installed
         // We should check whether this is a problem or not.
@@ -154,8 +153,8 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
 
     let mic_users_yaml = serde_yaml::to_string(&MICOSConfig {
         users: users
-            .into_iter()
-            .map(|user| MICUser::new(user.name.clone(), user))
+            .iter()
+            .map(|user| MICUser::new(user.name.clone(), user.clone()))
             .collect(),
     })
     .context("Failed to serialize MIC configuration")?;
@@ -167,7 +166,7 @@ pub(super) fn set_up_users(users: Vec<User>) -> Result<(), Error> {
     tmpfile.flush().context("Failed to flush temporary file")?;
 
     // Invoke os modifier with the user config file
-    Command::new(OS_MODIFIER_BINARY_PATH)
+    Command::new(os_modifier_path)
         .arg("--config-file")
         .arg(tmpfile.path())
         .arg("--log-level=debug")

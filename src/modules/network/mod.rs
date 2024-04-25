@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Error};
 use log::info;
 
@@ -19,6 +21,7 @@ impl Module for NetworkModule {
         &mut self,
         _host_status: &mut HostStatus,
         host_config: &HostConfiguration,
+        _exec_root: &Path,
     ) -> Result<(), Error> {
         match host_config.os.network.as_ref() {
             Some(config) => {

@@ -131,6 +131,7 @@ trait Module: Send {
         &mut self,
         _host_status: &mut HostStatus,
         _host_config: &HostConfiguration,
+        _exec_root: &Path,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -232,7 +233,13 @@ pub(super) fn clean_install(
             let use_overlay = !host_config.storage.verity.is_empty();
 
             info!("Running configure");
-            configure(&mut modules, state, host_config, use_overlay)?;
+            configure(
+                &mut modules,
+                state,
+                host_config,
+                &exec_root_path,
+                use_overlay,
+            )?;
 
             regenerate_initrd(use_overlay)?;
 
@@ -357,7 +364,7 @@ pub(super) fn update(
 
     let (new_root_path, mounts) = if let UpdateKind::AbUpdate = update_kind {
         info!("Preparing storage to mount new root");
-        let (new_root_path, _exec_root_path, mounts) = initialize_new_root(state, host_config)?;
+        let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
         info!("Running provision");
         provision(&mut modules, state, host_config, &new_root_path)?;
@@ -372,7 +379,13 @@ pub(super) fn update(
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
-                configure(&mut modules, state, host_config, use_overlay)?;
+                configure(
+                    &mut modules,
+                    state,
+                    host_config,
+                    &exec_root_path,
+                    use_overlay,
+                )?;
 
                 regenerate_initrd(use_overlay)
             })
@@ -381,7 +394,13 @@ pub(super) fn update(
         (new_root_path, Some(mounts))
     } else {
         info!("Running configure");
-        configure(&mut modules, state, host_config, false)?;
+        configure(
+            &mut modules,
+            state,
+            host_config,
+            Path::new(ROOT_MOUNT_POINT_PATH),
+            false,
+        )?;
 
         regenerate_initrd(false)?;
 
@@ -657,6 +676,7 @@ fn configure(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
+    exec_root: &Path,
     use_overlay: bool,
 ) -> Result<(), TridentError> {
     for module in modules {
@@ -672,7 +692,7 @@ fn configure(
         };
         state.try_with_host_status(|s| {
             module
-                .configure(s, host_config)
+                .configure(s, host_config, exec_root)
                 .structured(ManagementError::from(ModuleError::Configure {
                     name: module.name(),
                 }))

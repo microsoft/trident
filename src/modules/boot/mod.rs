@@ -34,6 +34,7 @@ impl Module for BootModule {
         &mut self,
         host_status: &mut HostStatus,
         _host_config: &HostConfiguration,
+        _exec_root: &Path,
     ) -> Result<(), Error> {
         grub::update_configs(host_status).context("Failed to update GRUB configs")?;
 
