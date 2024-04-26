@@ -19,12 +19,14 @@ steps:
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel bc
     displayName: Install native dependencies
     condition: eq(${{ parameters.installNativeDependencies }}, true)
+    retryCountOnTaskFailure: 3
 
   - ${{ if eq(parameters.rustup, 'true') }}:
-    - template: rustup.yml
+      - template: rustup.yml
 
   - script: cargo install grcov --locked
     displayName: Install grcov
+    retryCountOnTaskFailure: 3
 
   - script: make ut-coverage
     displayName: Collect code coverage

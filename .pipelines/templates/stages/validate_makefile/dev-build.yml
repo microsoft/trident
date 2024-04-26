@@ -25,6 +25,7 @@ stages:
               set -eux
               sudo apt install -y protobuf-compiler clang-7 bc
             displayName: Install native dependencies
+            retryCountOnTaskFailure: 3
 
           - template: ../common_tasks/rustup.yml
 

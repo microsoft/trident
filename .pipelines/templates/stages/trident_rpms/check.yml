@@ -1,6 +1,7 @@
 steps:
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
     displayName: Install native dependencies
+    retryCountOnTaskFailure: 3
 
   - script: |
       set -eux
@@ -8,6 +9,7 @@ steps:
       python3 -m pip install black==24.1.0
       python3 -m black --version
     displayName: Install Python Black
+    retryCountOnTaskFailure: 3
 
   - script: cargo fmt -- --check 2>&1
     displayName: Check Rust Formatting

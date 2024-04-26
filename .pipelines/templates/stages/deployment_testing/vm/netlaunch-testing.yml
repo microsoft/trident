@@ -189,8 +189,15 @@ stages:
               sudo apt install -y protobuf-compiler clang-7 bc
               sudo apt remove python3-openssl
               pip install pytest assertpy paramiko pyopenssl
-              ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
             displayName: Install dependencies
+            retryCountOnTaskFailure: 3
+
+          - bash: |
+              set -eux
+
+              ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
+            displayName: Set up SSH Keys
+            retryCountOnTaskFailure: 3
 
           - template: ../../common_tasks/rustup.yml
 

@@ -56,6 +56,7 @@ steps:
       ls -ltr ${{ parameters.k8sSanityDir }}
       pwd
     displayName: "Install dependencies"
+    retryCountOnTaskFailure: 3
 
   - bash: |
       set -eux

@@ -16,3 +16,4 @@ steps:
       sudo wget https://packages.microsoft.com/clamav/bytecode.cvd -P /var/lib/clamav/ || [ -f "/var/ib/clamav/bytecode.cvd" ]
     displayName: "Install antivirus"
     continueOnError: true
+    retryCountOnTaskFailure: 3

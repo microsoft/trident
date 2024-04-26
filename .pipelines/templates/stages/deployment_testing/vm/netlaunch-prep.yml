@@ -67,14 +67,35 @@ steps:
           sudo apt-get update
       fi
     displayName: "Install SWTPM PPA on Ubuntu 20.04"
+    retryCountOnTaskFailure: 3
 
   - bash: |
       set -eux
 
-      sudo apt-get install -y swtpm swtpm-tools
-
       curl -fsSL https://get.docker.com | sudo bash
-      sudo NEEDRESTART_MODE=a apt-get install -y virt-manager qemu-efi python3-libvirt ovmf openssl python3-netifaces python3-docker python3-bcrypt python3-jinja2
+    displayName: "Install Docker"
+    retryCountOnTaskFailure: 3
+
+  - bash: |
+      set -eux
+
+      sudo NEEDRESTART_MODE=a apt-get install -y \
+          swtpm \
+          swtpm-tools \
+          virt-manager \
+          qemu-efi \
+          python3-libvirt \
+          ovmf \
+          openssl \
+          python3-netifaces \
+          python3-docker \
+          python3-bcrypt \
+          python3-jinja2
+    displayName: Install virt-deploy dependencies
+    retryCountOnTaskFailure: 3
+
+  - bash: |
+      set -eux
 
       sudo usermod -aG docker $USER
       sudo usermod -a -G libvirt $USER

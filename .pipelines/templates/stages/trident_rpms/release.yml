@@ -20,6 +20,7 @@ steps:
 
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust p7zip p7zip-plugins zstd
     displayName: Install native dependencies
+    retryCountOnTaskFailure: 3
 
   - script: |
       set -eux
@@ -69,3 +70,4 @@ steps:
       docker tag trident/trident:latest $TAG
       docker push $TAG
     displayName: Build and publish Docker image
+    retryCountOnTaskFailure: 3
