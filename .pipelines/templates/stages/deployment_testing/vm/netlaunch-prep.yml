@@ -90,7 +90,8 @@ steps:
           python3-netifaces \
           python3-docker \
           python3-bcrypt \
-          python3-jinja2
+          python3-jinja2 \
+          zstd
     displayName: Install virt-deploy dependencies
     retryCountOnTaskFailure: 3
 
