@@ -248,7 +248,7 @@ mod functional_test {
     };
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk, HostConfiguration, MountPoint, Partition,
+            self, AbUpdate, AbVolumePair, Disk, HostConfiguration, InternalMountPoint, Partition,
             PartitionSize, PartitionType, RaidLevel, SoftwareRaidArray,
         },
         status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage},
@@ -499,12 +499,16 @@ mod functional_test {
         // Make this as Root device
         host_status.storage.root_device_path = Some(root_device_path.to_owned());
 
-        host_status.spec.storage.mount_points.push(MountPoint {
-            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-            target_id: raid_array.id.clone(),
-            filesystem: FileSystemType::Ext4,
-            options: vec![],
-        });
+        host_status
+            .spec
+            .storage
+            .internal_mount_points
+            .push(InternalMountPoint {
+                path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                target_id: raid_array.id.clone(),
+                filesystem: FileSystemType::Ext4,
+                options: vec![],
+            });
 
         host_status.storage.block_devices.insert(
             raid_array.id.clone(),
@@ -544,14 +548,14 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        MountPoint {
+                    internal_mount_points: vec![
+                        InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "boot".to_owned(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
                             filesystem: FileSystemType::Ext4,
@@ -595,13 +599,17 @@ mod functional_test {
         );
 
         // original test
-        host_status.spec.storage.mount_points.remove(0);
-        host_status.spec.storage.mount_points.push(MountPoint {
-            path: PathBuf::from("/esp"),
-            target_id: "boot".to_owned(),
-            filesystem: FileSystemType::Vfat,
-            options: vec![],
-        });
+        host_status.spec.storage.internal_mount_points.remove(0);
+        host_status
+            .spec
+            .storage
+            .internal_mount_points
+            .push(InternalMountPoint {
+                path: PathBuf::from("/esp"),
+                target_id: "boot".to_owned(),
+                filesystem: FileSystemType::Vfat,
+                options: vec![],
+            });
 
         update_configs(&host_status).unwrap();
     }
@@ -636,14 +644,14 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        MountPoint {
+                    internal_mount_points: vec![
+                        InternalMountPoint {
                             path: PathBuf::from("/efi"),
                             target_id: "boot".to_owned(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
                             filesystem: FileSystemType::Ext4,
@@ -718,7 +726,7 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![MountPoint {
+                    internal_mount_points: vec![InternalMountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         target_id: "root".to_string(),
                         filesystem: FileSystemType::Ext4,
@@ -782,7 +790,7 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![MountPoint {
+                    internal_mount_points: vec![InternalMountPoint {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         target_id: "root".to_string(),
                         filesystem: FileSystemType::Ext4,

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import time
+from typing import Dict, List, Tuple
 from fabric import Connection, Config
 import yaml
 from invoke.exceptions import CommandTimedOut
@@ -30,8 +31,11 @@ class OutputWatcher(StreamWatcher):
         return []
 
 
-# Runs a command on the host using Fabric and returns the combined stdout and stderr
 def run_ssh_command(connection, command):
+    """
+    Runs a command on the host using Fabric and returns the combined stdout and
+    stderr.
+    """
     try:
         # Executes a command using Fabric and returns the result
         result = connection.run(command, warn=True, hide="both")
@@ -42,9 +46,11 @@ def run_ssh_command(connection, command):
         raise
 
 
-# Runs "trident run" to trigger A/B update on the host and ensure that the host reached the reboot
-# stage successfully
 def trident_run(connection, keys_file_path, ip_address, user_name):
+    """
+    Runs "trident run" to trigger A/B update on the host and ensure that the
+    host reached the reboot stage successfully
+    """
     # Initialize a watcher to return output live
     watcher = OutputWatcher()
     # Initialize stdout and stderr streams
@@ -126,8 +132,8 @@ def trident_run(connection, keys_file_path, ip_address, user_name):
     return
 
 
-# Update host's Trident config by editing /etc/trident/config.yaml via sed command
 def update_host_trident_config(connection, image_dir, version):
+    """Update host's Trident config by editing /etc/trident/config.yaml via sed command"""
     print("Original Trident configuration:")
     host_config_output = run_ssh_command(
         connection, f"sudo cat {HOST_TRIDENT_CONFIG_PATH}"
@@ -158,16 +164,20 @@ def update_host_trident_config(connection, image_dir, version):
     run_ssh_command(connection, f"sudo cat {HOST_TRIDENT_CONFIG_PATH}")
 
 
-# Based on the local Trident config, returns a list of tuples (URL, image_name), representing
-# images that need to be updated. An image can only be updated if it corresponds to (1) the ESP
-# partition or (2) an A/B volume pair.
-#
-# E.g. If the images section includes URL http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst for the
-# ESP partition and URL http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst for the root A/B volume
-# pair, the function will return the following list:
-# [(http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst, 'esp'),
-# (http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst, 'root')].
-def get_images_to_update(host_config_output):
+def get_images_to_update(host_config_output) -> List[Tuple[str, str]]:
+    """
+    Based on the local Trident config, returns a list of tuples (URL, image_name), representing
+    images that need to be updated. An image can only be updated if it corresponds to (1) the ESP
+    partition or (2) an A/B volume pair.
+
+    E.g. If the images section includes URL http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst for the
+    ESP partition and URL http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst for the root A/B volume
+    pair, the function will return the following list:
+    [
+        (http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst, 'esp'),
+        (http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst, 'root')
+    ].
+    """
     YamlSafeLoader.add_constructor("!image", YamlSafeLoader.accept_image)
     host_config = yaml.load(host_config_output, Loader=YamlSafeLoader)
 
@@ -184,12 +194,29 @@ def get_images_to_update(host_config_output):
     for pair in host_config["hostConfiguration"]["storage"]["abUpdate"]["volumePairs"]:
         ab_volume_pair_ids.append(pair["id"])
 
+    # Collect list of all devices with images: (image URL, deviceId)
+    all_images: List[Tuple[str, str]] = []
+
+    # First check all filesystems
+    for fs in host_config["hostConfiguration"]["storage"].get("filesystems") or []:
+        device_id = fs.get("deviceId")
+        if not device_id:
+            continue
+        source: Dict = fs.get("source", {})
+        if source.get("type") == "image":
+            all_images.append((source["url"], device_id))
+
+    # Then check all verity filesystems:
+    for fs in (
+        host_config["hostConfiguration"]["storage"].get("verityFilesystems") or []
+    ):
+        all_images.append((fs["dataImage"]["url"], fs["dataDeviceId"]))
+        all_images.append((fs["hashImage"]["url"], fs["hashDeviceId"]))
+
     # Collect URLs of images that can be updated
     urls_to_update = []
-    for image in host_config["hostConfiguration"]["storage"]["images"]:
-        target_id = image["targetId"]
-        if target_id == esp_partition_target_id or target_id in ab_volume_pair_ids:
-            url = image["url"]
+    for url, device_id in all_images:
+        if device_id == esp_partition_target_id or device_id in ab_volume_pair_ids:
             if url.startswith("http://"):
                 # Extract part between the last '/' and '.rawzst'
                 image_name = url.split("/")[-1].split(".rawzst")[0]
@@ -204,8 +231,8 @@ def get_images_to_update(host_config_output):
     return urls_to_update
 
 
-# Connects to the host via SSH, updates the local Trident config, and triggers A/B update
 def trigger_ab_update(ip_address, user_name, keys_file_path, image_dir, version):
+    """Connects to the host via SSH, updates the local Trident config, and triggers A/B update"""
     # Set up SSH client
     config = Config(overrides={"connect_kwargs": {"key_filename": keys_file_path}})
     connection = Connection(host=ip_address, user=user_name, config=config)

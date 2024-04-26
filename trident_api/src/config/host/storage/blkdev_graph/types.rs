@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{
-        AbVolumePair, Disk, EncryptedVolume, Image, MountPoint, Partition, SoftwareRaidArray,
-        VerityDevice,
+        AbVolumePair, Disk, EncryptedVolume, FileSystem, FileSystemSource, FileSystemType,
+        MountPoint, Partition, SoftwareRaidArray, VerityFileSystem,
     },
     BlockDeviceId,
 };
@@ -37,9 +37,6 @@ pub enum BlkDevKind {
 
     /// An encrypted volume
     EncryptedVolume,
-
-    /// A verity device
-    VerityDevice,
 }
 
 bitflags::bitflags! {
@@ -54,7 +51,6 @@ bitflags::bitflags! {
         const RaidArray = 1 << 3;
         const ABVolume = 1 << 4;
         const EncryptedVolume = 1 << 5;
-        const VerityDevice = 1 << 6;
     }
 }
 
@@ -81,9 +77,6 @@ pub enum HostConfigBlockDevice<'a> {
 
     /// An encrypted volume
     EncryptedVolume(&'a EncryptedVolume),
-
-    /// A verity device
-    VerityDevice(&'a VerityDevice),
 }
 
 /// Enum for referrer kinds.
@@ -91,9 +84,11 @@ pub enum HostConfigBlockDevice<'a> {
 /// Referrers are config items that refer to other block devices.
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BlkDevReferrerKind {
-    /// Represents an 'null referrer' i.e. a block device that does not refer to other block devices
+    /// Represents an 'null referrer' i.e. an entity that does not refer to any
+    /// block device.
     ///
-    /// Used to aggregate disks, partitions, and adopted partitions.
+    /// E.g. Block devices that do not refer to any other block devices, such as
+    /// disks, partitions, and adopted partitions.
     None,
 
     /// A RAID array
@@ -105,17 +100,17 @@ pub enum BlkDevReferrerKind {
     /// An encrypted volume
     EncryptedVolume,
 
-    /// A regular image
-    Image,
+    /// A regular filesystem
+    FileSystem,
 
-    /// A LZMA image for systemd-sysupdate
-    ImageSysupdate,
+    /// A filesystem for sysupdate
+    FileSystemSysupdate,
 
-    /// A mount point
-    MountPoint,
+    /// A Verity filesystem
+    VerityFileSystemData,
 
-    /// A verity device
-    VerityDevice,
+    /// A Verity filesystem
+    VerityFileSystemHash,
 }
 
 bitflags::bitflags! {
@@ -128,13 +123,98 @@ bitflags::bitflags! {
         const RaidArray = 1 << 0;
         const ABVolume = 1 << 1;
         const EncryptedVolume = 1 << 2;
-        const MountPoint = 1 << 3;
-        const Image = 1 << 4;
-        const ImageSysupdate = 1 << 5;
-        const VerityDevice = 1 << 6;
+        const FileSystem = 1 << 3;
+        const FileSystemSysupdate = 1 << 4;
+        const VerityFileSystemData = 1 << 5;
+        const VerityFileSystemHash = 1 << 6;
 
         // Groups:
-        const AnyImage = Self::Image.bits() | Self::ImageSysupdate.bits();
+        // Example:
+        // const AnyImage = Self::Image.bits() | Self::ImageSysupdate.bits();
+    }
+}
+
+/// File system relationships for a node.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+pub enum NodeFileSystem<'a> {
+    /// Regular filesystem is associated with the node
+    Regular(&'a FileSystem),
+
+    /// Verity filesystem is associated with the node as data device
+    VerityData(&'a VerityFileSystem),
+
+    /// Verity filesystem is associated with the node as hash device
+    VerityHash(&'a VerityFileSystem),
+}
+
+impl<'a> NodeFileSystem<'a> {
+    /// Get the filesystem type
+    pub fn fs_type(&self) -> FileSystemType {
+        match self {
+            NodeFileSystem::Regular(fs) => fs.fs_type,
+            NodeFileSystem::VerityData(vfs) | NodeFileSystem::VerityHash(vfs) => vfs.fs_type,
+        }
+    }
+
+    /// Get Mountpoint
+    pub fn mountpoint(&self) -> Option<&MountPoint> {
+        match self {
+            NodeFileSystem::Regular(fs) => fs.mount_point.as_ref(),
+            NodeFileSystem::VerityData(vfs) => Some(&vfs.mount_point),
+            NodeFileSystem::VerityHash(_) => None,
+        }
+    }
+
+    /// Return whether this filesystem is backed by an image
+    pub fn is_image_backed(&self) -> bool {
+        match self {
+            NodeFileSystem::Regular(fs) => matches!(fs.source, FileSystemSource::Image(_)),
+            // Verity filesystems are always image backed
+            // This code should break if this ever changes :)
+            NodeFileSystem::VerityData(vfs) => !vfs.data_image.url.is_empty(),
+            NodeFileSystem::VerityHash(vfs) => !vfs.hash_image.url.is_empty(),
+        }
+    }
+
+    pub fn targets(&self) -> Vec<BlockDeviceId> {
+        match self {
+            NodeFileSystem::Regular(fs) => fs.device_id.iter().cloned().collect(),
+            NodeFileSystem::VerityData(vfs) => {
+                vec![vfs.data_device_id.clone(), vfs.hash_device_id.clone()]
+            }
+            NodeFileSystem::VerityHash(vfs) => {
+                vec![vfs.data_device_id.clone(), vfs.hash_device_id.clone()]
+            }
+        }
+    }
+
+    pub fn identity(&self) -> String {
+        match self {
+            NodeFileSystem::Regular(fs) => {
+                let mut out = format!("{} filesystem", fs.fs_type);
+                if let Some(mntp) = fs.mount_point.as_ref() {
+                    out.push_str(" mounted at ");
+                    out.push_str(&mntp.path.to_string_lossy());
+                } else if let Some(blkdevid) = fs.device_id.as_ref() {
+                    out.push_str(" on block device ");
+                    out.push_str(blkdevid);
+                }
+
+                out
+            }
+            NodeFileSystem::VerityData(vfs) | NodeFileSystem::VerityHash(vfs) => vfs.name.clone(),
+        }
+    }
+}
+
+/// Small helper to get the referrer kind from a NodeFileSystem
+impl From<NodeFileSystem<'_>> for BlkDevReferrerKind {
+    fn from(fs: NodeFileSystem) -> Self {
+        match fs {
+            NodeFileSystem::Regular(fs) => fs.into(),
+            NodeFileSystem::VerityData(_) => Self::VerityFileSystemData,
+            NodeFileSystem::VerityHash(_) => Self::VerityFileSystemHash,
+        }
     }
 }
 
@@ -150,11 +230,8 @@ pub struct BlkDevNode<'a> {
     /// A reference to the original object in the host configuration
     pub host_config_ref: HostConfigBlockDevice<'a>,
 
-    /// Any mount points associated with the block device
-    pub mount_points: Vec<&'a MountPoint>,
-
-    /// The image associated with the block device
-    pub image: Option<&'a Image>,
+    /// The file system associated with the block device
+    pub filesystem: Option<NodeFileSystem<'a>>,
 
     /// The block devices that this block device depends on
     pub targets: Vec<BlockDeviceId>,
@@ -173,7 +250,6 @@ impl HostConfigBlockDevice<'_> {
             HostConfigBlockDevice::RaidArray(_) => BlkDevKind::RaidArray,
             HostConfigBlockDevice::ABVolume(_) => BlkDevKind::ABVolume,
             HostConfigBlockDevice::EncryptedVolume(_) => BlkDevKind::EncryptedVolume,
-            HostConfigBlockDevice::VerityDevice(_) => BlkDevKind::VerityDevice,
         }
     }
 
@@ -204,6 +280,7 @@ impl HostConfigBlockDevice<'_> {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn unwrap_partition(&self) -> Result<&Partition, Error> {
         if let HostConfigBlockDevice::Partition(partition) = self {
             Ok(partition)
@@ -220,15 +297,6 @@ impl HostConfigBlockDevice<'_> {
             bail!("Block device is not a disk")
         }
     }
-
-    #[allow(dead_code)]
-    pub(super) fn unwrap_verity_device(&self) -> Result<&VerityDevice, Error> {
-        if let HostConfigBlockDevice::VerityDevice(verity_device) = self {
-            Ok(verity_device)
-        } else {
-            bail!("Block device is not a verity device")
-        }
-    }
 }
 
 /// Conversion from BlkDevKind to BlkDevKindFlag
@@ -242,7 +310,6 @@ impl BlkDevKind {
             BlkDevKind::RaidArray => BlkDevKindFlag::RaidArray,
             BlkDevKind::ABVolume => BlkDevKindFlag::ABVolume,
             BlkDevKind::EncryptedVolume => BlkDevKindFlag::EncryptedVolume,
-            BlkDevKind::VerityDevice => BlkDevKindFlag::VerityDevice,
         }
     }
 
@@ -254,7 +321,6 @@ impl BlkDevKind {
             BlkDevKind::RaidArray => BlkDevReferrerKind::RaidArray,
             BlkDevKind::ABVolume => BlkDevReferrerKind::ABVolume,
             BlkDevKind::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
-            BlkDevKind::VerityDevice => BlkDevReferrerKind::VerityDevice,
         }
     }
 }
@@ -263,14 +329,14 @@ impl BlkDevReferrerKind {
     /// Returns the flag associated with the block device kind
     pub(crate) fn as_flag(&self) -> BlkDevReferrerKindFlag {
         match self {
-            BlkDevReferrerKind::None => BlkDevReferrerKindFlag::empty(),
-            BlkDevReferrerKind::RaidArray => BlkDevReferrerKindFlag::RaidArray,
-            BlkDevReferrerKind::ABVolume => BlkDevReferrerKindFlag::ABVolume,
-            BlkDevReferrerKind::EncryptedVolume => BlkDevReferrerKindFlag::EncryptedVolume,
-            BlkDevReferrerKind::Image => BlkDevReferrerKindFlag::Image,
-            BlkDevReferrerKind::ImageSysupdate => BlkDevReferrerKindFlag::ImageSysupdate,
-            BlkDevReferrerKind::MountPoint => BlkDevReferrerKindFlag::MountPoint,
-            BlkDevReferrerKind::VerityDevice => BlkDevReferrerKindFlag::VerityDevice,
+            Self::None => BlkDevReferrerKindFlag::empty(),
+            Self::RaidArray => BlkDevReferrerKindFlag::RaidArray,
+            Self::ABVolume => BlkDevReferrerKindFlag::ABVolume,
+            Self::EncryptedVolume => BlkDevReferrerKindFlag::EncryptedVolume,
+            Self::FileSystem => BlkDevReferrerKindFlag::FileSystem,
+            Self::FileSystemSysupdate => BlkDevReferrerKindFlag::FileSystemSysupdate,
+            Self::VerityFileSystemData => BlkDevReferrerKindFlag::VerityFileSystemData,
+            Self::VerityFileSystemHash => BlkDevReferrerKindFlag::VerityFileSystemHash,
         }
     }
 }
@@ -282,8 +348,7 @@ impl<'a> BlkDevNode<'a> {
             id,
             kind: hc_ref.kind(),
             host_config_ref: hc_ref,
-            mount_points: Vec::new(),
-            image: None,
+            filesystem: None,
             targets: Vec::new(),
             dependents: Vec::new(),
         }
@@ -302,17 +367,63 @@ impl<'a> BlkDevNode<'a> {
             id,
             kind: hc_ref.kind(),
             host_config_ref: hc_ref,
-            mount_points: Vec::new(),
-            image: None,
+            filesystem: None,
             targets: members.into_iter().cloned().collect(),
             dependents: Vec::new(),
         }
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
+/// Enum for simple representation of a filesystem source
+pub enum FileSystemSourceKind {
+    /// Create a new file system.
+    Create,
+
+    /// Use an existing file system from a partition image.
+    Image,
+
+    /// Filesystem from an adopted block device.
+    Adopted,
+}
+
+/// Wrapper for a list of FileSystemSourceKind
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct FileSystemSourceKindList(pub Vec<FileSystemSourceKind>);
+
+impl FileSystemSourceKindList {
+    pub(crate) fn contains(&self, fs_src_kind: FileSystemSourceKind) -> bool {
+        self.0.contains(&fs_src_kind)
+    }
+}
+
 // * * * * * * * * * * * * * * * * * * * * * *
 // * Other convenience Trait implementations *
 // * * * * * * * * * * * * * * * * * * * * * *
+
+impl Display for FileSystemSourceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FileSystemSourceKind::Create => write!(f, "create"),
+            FileSystemSourceKind::Image => write!(f, "image"),
+            FileSystemSourceKind::Adopted => write!(f, "adopted"),
+        }
+    }
+}
+
+impl Display for FileSystemSourceKindList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|kind| kind.to_string())
+                .collect::<Vec<String>>()
+                .join(" or ")
+        )
+    }
+}
 
 impl Display for BlkDevKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -323,7 +434,6 @@ impl Display for BlkDevKind {
             Self::RaidArray => write!(f, "raid-array"),
             Self::ABVolume => write!(f, "ab-volume"),
             Self::EncryptedVolume => write!(f, "encrypted-volume"),
-            Self::VerityDevice => write!(f, "verity-device"),
         }
     }
 }
@@ -335,10 +445,10 @@ impl Display for BlkDevReferrerKind {
             BlkDevReferrerKind::RaidArray => write!(f, "raid-array"),
             BlkDevReferrerKind::ABVolume => write!(f, "ab-volume"),
             BlkDevReferrerKind::EncryptedVolume => write!(f, "encrypted-volume"),
-            BlkDevReferrerKind::Image => write!(f, "image"),
-            BlkDevReferrerKind::ImageSysupdate => write!(f, "image-sysupdate"),
-            BlkDevReferrerKind::MountPoint => write!(f, "mount-point"),
-            BlkDevReferrerKind::VerityDevice => write!(f, "verity-device"),
+            BlkDevReferrerKind::FileSystem => write!(f, "filesystem"),
+            BlkDevReferrerKind::FileSystemSysupdate => write!(f, "filesystem-sysupdate"),
+            BlkDevReferrerKind::VerityFileSystemData => write!(f, "verity-filesystem-data"),
+            BlkDevReferrerKind::VerityFileSystemHash => write!(f, "verity-filesystem-hash"),
         }
     }
 }
@@ -380,7 +490,6 @@ impl BitFlagsBackingEnumVec<BlkDevKind> for BlkDevKindFlag {
                 BlkDevKindFlag::RaidArray => BlkDevKind::RaidArray,
                 BlkDevKindFlag::ABVolume => BlkDevKind::ABVolume,
                 BlkDevKindFlag::EncryptedVolume => BlkDevKind::EncryptedVolume,
-                BlkDevKindFlag::VerityDevice => BlkDevKind::VerityDevice,
                 _ => unreachable!(),
             })
             .collect()
@@ -396,10 +505,16 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 BlkDevReferrerKindFlag::RaidArray => BlkDevReferrerKind::RaidArray,
                 BlkDevReferrerKindFlag::ABVolume => BlkDevReferrerKind::ABVolume,
                 BlkDevReferrerKindFlag::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
-                BlkDevReferrerKindFlag::Image => BlkDevReferrerKind::Image,
-                BlkDevReferrerKindFlag::ImageSysupdate => BlkDevReferrerKind::ImageSysupdate,
-                BlkDevReferrerKindFlag::MountPoint => BlkDevReferrerKind::MountPoint,
-                BlkDevReferrerKindFlag::VerityDevice => BlkDevReferrerKind::VerityDevice,
+                BlkDevReferrerKindFlag::FileSystem => BlkDevReferrerKind::FileSystem,
+                BlkDevReferrerKindFlag::FileSystemSysupdate => {
+                    BlkDevReferrerKind::FileSystemSysupdate
+                }
+                BlkDevReferrerKindFlag::VerityFileSystemData => {
+                    BlkDevReferrerKind::VerityFileSystemData
+                }
+                BlkDevReferrerKindFlag::VerityFileSystemHash => {
+                    BlkDevReferrerKind::VerityFileSystemHash
+                }
                 _ => unreachable!("Invalid referrer kind flag: {:?}", kind),
             })
             .collect()

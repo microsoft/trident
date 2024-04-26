@@ -21,6 +21,11 @@ hostConfiguration:
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
         partitions: []
+    encryption:
+      volumes:
+        - id: web
+          deviceName: web
+          targetId: web-e
     raid:
       software:
         - id: web-e
@@ -30,50 +35,47 @@ hostConfiguration:
             - web-e-1
             - web-e-2
           metadataVersion: "1.2"
-    encryption:
-      volumes:
-        - id: web
-          deviceName: web
-          targetId: web-e
-    mountPoints:
-      - path: /boot/efi
-        targetId: esp
-        filesystem: vfat
-        options: ["umask=0077"]
-      - path: /
-        targetId: root
-        filesystem: ext4
-        options: ["defaults"]
-      - path: /web
-        targetId: web
-        filesystem: ext4
-        options: ["defaults"]
-    images:
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: esp
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: root
-  trident:
-    selfUpgrade: false
-  os:
-    network:
-      ethernets:
-        vmeths:
-          match:
-            name: enp*
-          dhcp4: true
-      version: 2
-    users:
-      - name: testing-user
-        sshPublicKeys: []
-        sshMode: key-only
+    filesystems:
+      - deviceId: esp
+        type: vfat
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /boot/efi
+          options: umask=0077
+      - deviceId: root
+        type: ext4
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /
+          options: defaults
+      - deviceId: web
+        type: ext4
+        mountPoint:
+          path: /web
+          options: defaults
   scripts:
     postConfigure:
       - name: testing-privilege
         servicingType:
           - clean-install
-        content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
+        content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+  os:
+    network:
+      version: 2
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+    users:
+      - name: testing-user
+        sshPublicKeys: []
+        sshMode: key-only

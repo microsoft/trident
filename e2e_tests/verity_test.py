@@ -3,11 +3,8 @@ import math
 import os
 import pytest
 import yaml
-from base_test import (
-    get_verity_info,
-    get_raid_name_from_device_name,
-    get_data_hash_from_veritysetup,
-)
+import re
+from base_test import get_raid_name_from_device_name
 
 pytestmark = [pytest.mark.verity]
 
@@ -64,8 +61,8 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
     expected_verity_config = dict()
     host_config = tridentConfiguration["hostConfiguration"]
 
-    for verity in host_config["storage"]["verity"]:
-        expected_verity_config[verity["id"]] = verity
+    for verity in host_config["storage"]["verityFilesystems"]:
+        expected_verity_config[verity["name"]] = verity
 
     # Collect veritysetup status output.
     veritysetup_status = connection.run("sudo veritysetup status root")
@@ -132,47 +129,65 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
     #     sha256: b63a60a5c6d172cf11d0aec785f50414d2d46206a64e95639804b85c8fa0f3e5
     #     length: 25321984
     #     url: http://10.1.6.1:36439/files/verity_roothash.rawzst
-    # verity-root:
+    # verity-0:
     #   path: /dev/mapper/root
     #   size: 0
     #   contents: initialized
     # rootDevicePath: /dev/mapper/root
 
     # Assert if verity info from host config has been involved in host status.
-    for verity_id in expected_verity_config:
-        assert verity_id in host_status["storage"]["blockDevices"]
+    for i, verity_name in enumerate(expected_verity_config):
+        # This comes from `trident_api/src/config/host/storage/internal.rs` in
+        # the `Storage::populate_internal()` method. Verity FSs get an ascending
+        # number as the unique block device identifier.
+        expected_device_name = f"verity-{i}"
+        assert expected_device_name in host_status["storage"]["blockDevices"]
         assert "/dev/mapper/root" == host_status["storage"]["rootDevicePath"]
 
     # Assert verity data device and hash device. Refer to logic from base test
     # to extract the ID of the mount point with path "/".
     root_mount_id = None
-    for mount_point in host_status["spec"]["storage"]["mountPoints"]:
-        if mount_point["path"] == "/":
-            root_mount_id = mount_point["targetId"]
+    # Look for it in filesystems
+    for fs in host_status["spec"]["storage"]["filesystems"]:
+        mp = fs.get("mountPoint")
+        if not mp:
+            continue
+        if mp["path"] == "/":
+            root_mount_id = fs.get("deviceId")
             break
-    else:
-        # This block executes if no break occurs in the loop, meaning no mount point
-        # with path "/" was found.
+
+    # If root_mount_id is still None, look in verityFilesystems
+    verity_device_name, hash_device_id = None, None
+    if root_mount_id is None:
+        for vfs in host_status["spec"]["storage"].get("verityFilesystems") or []:
+            mp = vfs.get("mountPoint")
+            if not mp:
+                continue
+            if mp["path"] == "/":
+                verity_device_name = vfs.get("name")
+                root_mount_id = vfs.get("dataDeviceId")
+                hash_device_id = vfs.get("hashDeviceId")
+                break
+    # If no mount point with path / found, raise an exception
+    if root_mount_id is None:
         raise Exception("Root mount point not found")
 
-    verity_args = None
-    verity_args = get_verity_info(host_status, root_mount_id)
-    if verity_args is not None:
-        device_name, data_target_id, hash_target_id = verity_args
-    else:
+    # If root is not a verity device, no more testing to do here
+    if verity_device_name is None or hash_device_id is None:
         raise Exception("No verity configuration found for the provided root mount ID")
 
+    data_device_id = root_mount_id
     if "abUpdate" in host_status["spec"]["storage"] and abActiveVolume is not None:
         active_data_id, active_hash_id = None, None
         # Identify block devices we expect to be in use, given the value of abActiveVolume.
         for volume_pair in host_status["spec"]["storage"]["abUpdate"]["volumePairs"]:
-            if volume_pair["id"] == data_target_id:
+            if volume_pair["id"] == data_device_id:
                 if abActiveVolume == "volume-a":
                     active_data_id = volume_pair["volumeAId"]
                 else:
                     active_data_id = volume_pair["volumeBId"]
 
-            if volume_pair["id"] == hash_target_id:
+            if volume_pair["id"] == hash_device_id:
                 if abActiveVolume == "volume-a":
                     active_hash_id = volume_pair["volumeAId"]
                 else:
@@ -181,7 +196,7 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
 
         # Run and process `veritysetup status`
         data_block_device, hash_block_device = get_data_hash_from_veritysetup(
-            connection, device_name
+            connection, verity_device_name
         )
 
         # Check if data_block_device, hash_block_device correspond to partitions or RAID arrays
@@ -235,8 +250,8 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
             extracted_data_block_device = os.path.basename(data_is_raid)
             extracted_hash_block_device = os.path.basename(hash_is_raid)
 
-            assert data_target_id == extracted_data_block_device
-            assert hash_target_id == extracted_hash_block_device
+            assert data_device_id == extracted_data_block_device
+            assert hash_device_id == extracted_hash_block_device
         else:
             extracted_data_block_device = data_block_device.split("/")[-1]
             extracted_hash_block_device = hash_block_device.split("/")[-1]
@@ -245,3 +260,58 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
                 extracted_data_block_device in partitions_blkid
                 and extracted_hash_block_device in partitions_blkid
             )
+
+
+# Runs 'verity setup' and returns the block device paths of root data device and hash device. E.g.
+# with the sample output below, func returns a tuple  (/dev/sda3, /dev/sda4).
+def get_data_hash_from_veritysetup(connection, device_name):
+    # Expected output example:
+    # /dev/mapper/root is active and is in use.
+    # type:        VERITY
+    # status:      verified
+    # hash type:   1
+    # data block:  4096
+    # hash block:  4096
+    # hash name:   sha256
+    # salt:        1edfc828a4d3116dc42a8457489db9e9024657382c7e6e27fb16a23b8ad68e56
+    # data device: /dev/sda3
+    # size:        1377048 sectors
+    # mode:        readonly
+    # hash device: /dev/sda4
+    # hash offset: 8 sectors
+    # root hash:   d446a67f7521af5bbeb2144b85b0859780d75960475e3dde291236054c59d97a
+    # flags:       panic_on_corruption
+    # OR
+    # /dev/mapper/root is active and is in use.
+    # type:        VERITY
+    # status:      verified
+    # hash type:   1
+    # data block:  4096
+    # hash block:  4096
+    # hash name:   sha256
+    # salt:        d16ba3427abe5c98dcb320d484672cdbce159476ada1831bfdf05be0a7072a50
+    # data device: /dev/md126
+    # size:        1377024 sectors
+    # mode:        readonly
+    # hash device: /dev/md127
+    # hash offset: 8 sectors
+    # root hash:   a35ecce908f6a29fc0dbd56f6cd2216c9c9c883d503252b92f97092b540df9d7
+    # flags:       panic_on_corruption
+
+    try:
+        # Run 'veritysetup status' command
+        command_output = connection.run(f"sudo veritysetup status {device_name}")
+        status_output = command_output.stdout.strip()
+
+        # Parse the output
+        data_device_match = re.search(r"data device: (/dev/\S+)", status_output)
+        hash_device_match = re.search(r"hash device: (/dev/\S+)", status_output)
+
+        if data_device_match and hash_device_match:
+            root_data_device = data_device_match.group(1)
+            root_hash_device = hash_device_match.group(1)
+            return (root_data_device, root_hash_device)
+    except Exception as e:
+        raise Exception(f"Unexpected error") from e
+
+    return None

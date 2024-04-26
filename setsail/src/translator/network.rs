@@ -6,15 +6,13 @@ use netplan_types::{
     MatchConfig, NameserverConfig, NetworkConfig, VlanConfig,
 };
 
-use trident_api::config::HostConfiguration;
+use trident_api::{config::HostConfiguration, misc::IdGenerator};
 
 use crate::{
     commands::network::{BootProto, DeviceReference, DeviceType, Ipv6Config},
     data::ParsedData,
     SetsailError,
 };
-
-use super::misc::IdGenerator;
 
 /// This enum represents a netplan device
 #[derive(Clone, Debug)]
@@ -221,14 +219,14 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
 
     // Interface ID generator for nameless devices
     // mostly used for match:mac devices
-    let mut idgen = IdGenerator::new("netdev".into());
+    let mut idgen = IdGenerator::new("netdev");
 
     for (k, net) in input.netdevs.iter() {
         let mut netplan_name = match &k.device {
             // Only device references of type "Name" are literal names that
             // can be used in netplan
             DeviceReference::Name(name) => name.clone(),
-            DeviceReference::Mac(_) /*| DeviceReference::Link*/ => idgen.next(),
+            DeviceReference::Mac(_) /*| DeviceReference::Link*/ => idgen.next_id(),
         };
 
         // Init common properties for devices

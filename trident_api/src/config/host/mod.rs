@@ -61,6 +61,13 @@ impl HostConfiguration {
         Ok(())
     }
 
+    /// Populate internal configuration structures.
+    ///
+    /// This function assumes that the configuration has been validated.
+    pub fn populate_internal(&mut self) {
+        self.storage.populate_internal();
+    }
+
     #[cfg(feature = "schemars")]
     pub fn generate_schema() -> schemars::schema::RootSchema {
         use schemars::schema::Schema;

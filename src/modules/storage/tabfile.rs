@@ -13,7 +13,7 @@ use osutils::{
 use serde_json::Value;
 
 use trident_api::{
-    config::{FileSystemType, MountPoint},
+    config::{FileSystemType, InternalMountPoint},
     status::HostStatus,
 };
 
@@ -23,7 +23,7 @@ pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
 pub(crate) fn from_mountpoints(
     host_status: &HostStatus,
-    mount_points: &[MountPoint],
+    mount_points: &[InternalMountPoint],
 ) -> Result<TabFile, Error> {
     // Generate a list of entries for the tab file
     let entries = mount_points
@@ -34,7 +34,7 @@ pub(crate) fn from_mountpoints(
     Ok(TabFile { entries })
 }
 
-fn entry_from_mountpoint(hs: &HostStatus, mp: &MountPoint) -> Result<TabFileEntry, Error> {
+fn entry_from_mountpoint(hs: &HostStatus, mp: &InternalMountPoint) -> Result<TabFileEntry, Error> {
     Ok(match mp.filesystem {
         // First, check the types that do not depend on a block device
         FileSystemType::Overlay => TabFileEntry::new_overlay(&mp.path),
@@ -136,7 +136,7 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint,
+            Disk, FileSystemType, HostConfiguration, ImageFormat, ImageSha256, InternalImage,
             Partition, PartitionSize, PartitionTableType, PartitionType, Storage,
         },
         constants::{self, SWAP_MOUNT_POINT},
@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(
             entry_from_mountpoint(
                 &host_status,
-                &MountPoint {
+                &InternalMountPoint {
                     path: PathBuf::from("/boot/efi"),
                     filesystem: FileSystemType::Vfat,
                     options: vec!["umask=0077".to_owned()],
@@ -252,7 +252,7 @@ mod tests {
         assert_eq!(
             entry_from_mountpoint(
                 &host_status,
-                &MountPoint {
+                &InternalMountPoint {
                     path: PathBuf::from(SWAP_MOUNT_POINT),
                     filesystem: FileSystemType::Swap,
                     options: vec!["sw".to_owned()],
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(
             entry_from_mountpoint(
                 &host_status,
-                &MountPoint {
+                &InternalMountPoint {
                     path: PathBuf::from("/tmp"),
                     filesystem: FileSystemType::Tmpfs,
                     options: vec![],
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(
             entry_from_mountpoint(
                 &host_status,
-                &MountPoint {
+                &InternalMountPoint {
                     path: PathBuf::from("/etc"),
                     filesystem: FileSystemType::Overlay,
                     options: vec![
@@ -324,8 +324,8 @@ mod tests {
 
         let host_config = HostConfiguration {
             storage: Storage {
-                images: vec![
-                    Image {
+                internal_images: vec![
+                    InternalImage {
                         url: "file:///path/to/efi-image".to_owned(),
                         sha256: ImageSha256::Checksum(
                             "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
@@ -334,7 +334,7 @@ mod tests {
                         format: ImageFormat::RawZst,
                         target_id: "efi".into(),
                     },
-                    Image {
+                    InternalImage {
                         url: "file:///path/to/root-image".to_owned(),
                         sha256: ImageSha256::Checksum(
                             "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
@@ -372,26 +372,26 @@ mod tests {
                     ],
                     ..Default::default()
                 }],
-                mount_points: vec![
-                    MountPoint {
+                internal_mount_points: vec![
+                    InternalMountPoint {
                         path: PathBuf::from("/boot/efi"),
                         filesystem: FileSystemType::Vfat,
                         options: vec!["umask=0077".to_owned()],
                         target_id: "efi".to_owned(),
                     },
-                    MountPoint {
+                    InternalMountPoint {
                         path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                         filesystem: FileSystemType::Ext4,
                         options: vec!["errors=remount-ro".to_owned()],
                         target_id: "root".to_owned(),
                     },
-                    MountPoint {
+                    InternalMountPoint {
                         path: PathBuf::from("/home"),
                         filesystem: FileSystemType::Ext4,
                         options: vec!["defaults".to_owned(), "x-systemd.makefs".to_owned()],
                         target_id: "home".to_owned(),
                     },
-                    MountPoint {
+                    InternalMountPoint {
                         path: PathBuf::from(SWAP_MOUNT_POINT),
                         filesystem: FileSystemType::Swap,
                         options: vec!["sw".to_owned()],
@@ -444,14 +444,14 @@ mod tests {
         };
 
         assert_eq!(
-            from_mountpoints(&host_status, &host_config.storage.mount_points)
+            from_mountpoints(&host_status, &host_config.storage.internal_mount_points)
                 .unwrap()
                 .render(),
             expected_fstab
         );
 
-        let mut mount_points = host_config.storage.mount_points;
-        mount_points.push(MountPoint {
+        let mut mount_points = host_config.storage.internal_mount_points;
+        mount_points.push(InternalMountPoint {
             filesystem: FileSystemType::Overlay,
             options: vec![
                 "lowerdir=/mnt".to_owned(),

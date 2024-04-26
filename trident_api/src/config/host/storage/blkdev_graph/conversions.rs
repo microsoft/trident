@@ -1,11 +1,11 @@
 //! Conversions from config types to BlkDevNode
 
 use crate::config::{
-    AbVolumePair, Disk, EncryptedVolume, Image, ImageFormat, Partition, SoftwareRaidArray,
-    VerityDevice,
+    AbVolumePair, Disk, EncryptedVolume, FileSystem, FileSystemSource, ImageFormat, Partition,
+    SoftwareRaidArray,
 };
 
-use super::types::{BlkDevNode, BlkDevReferrerKind, HostConfigBlockDevice};
+use super::types::{BlkDevNode, BlkDevReferrerKind, FileSystemSourceKind, HostConfigBlockDevice};
 
 /// Get a BlkDevNode from a Disk reference
 impl<'a, 'b> From<&'a Disk> for BlkDevNode<'b>
@@ -58,20 +58,6 @@ where
     }
 }
 
-/// Get a BlkDevNode from a VerityDevice reference
-impl<'a, 'b> From<&'a VerityDevice> for BlkDevNode<'b>
-where
-    'a: 'b,
-{
-    fn from(verity_device: &'a VerityDevice) -> Self {
-        Self::new_composite(
-            verity_device.id.clone(),
-            HostConfigBlockDevice::VerityDevice(verity_device),
-            [&verity_device.data_target_id, &verity_device.hash_target_id],
-        )
-    }
-}
-
 /// Get a BlkDevNode from an EncryptedVolume reference
 impl<'a, 'b> From<&'a EncryptedVolume> for BlkDevNode<'b>
 where
@@ -86,12 +72,42 @@ where
     }
 }
 
-impl From<&Image> for BlkDevReferrerKind {
-    fn from(i: &Image) -> Self {
-        match i.format {
-            ImageFormat::RawZst => BlkDevReferrerKind::Image,
-            #[cfg(feature = "sysupdate")]
-            ImageFormat::RawLzma => BlkDevReferrerKind::ImageSysupdate,
+/// Get a BlkDevReferrerKind from a FileSystem reference
+impl From<&FileSystem> for BlkDevReferrerKind {
+    fn from(fs: &FileSystem) -> Self {
+        if fs.fs_type.requires_block_device_id() {
+            // Filesystems that require a block device are filesystem referrers
+            match &fs.source {
+                // If we're creating a filesystem, then it's a regular filesystem referrer
+                FileSystemSource::Create => BlkDevReferrerKind::FileSystem,
+
+                // TODO: Implement this when adopted partitions are supported
+                FileSystemSource::Adopted => BlkDevReferrerKind::FileSystem,
+
+                // If it's an image, then it depends on the image format
+                FileSystemSource::Image(img) => match img.format {
+                    // If we're creating the FS from a zst image, then it's a filesystem referrer
+                    ImageFormat::RawZst => BlkDevReferrerKind::FileSystem,
+
+                    // If we're creating the FS from a lzma image, then it's a sysupdate referrer
+                    #[cfg(feature = "sysupdate")]
+                    ImageFormat::RawLzma => BlkDevReferrerKind::FileSystemSysupdate,
+                },
+            }
+        } else {
+            // Filesystems that do not require a block device are not referrers
+            BlkDevReferrerKind::None
+        }
+    }
+}
+
+/// Get a FileSystemSourceKind from a FileSystemSource reference
+impl From<&FileSystemSource> for FileSystemSourceKind {
+    fn from(source: &FileSystemSource) -> Self {
+        match source {
+            FileSystemSource::Create => FileSystemSourceKind::Create,
+            FileSystemSource::Image(_) => FileSystemSourceKind::Image,
+            FileSystemSource::Adopted => FileSystemSourceKind::Adopted,
         }
     }
 }

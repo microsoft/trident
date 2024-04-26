@@ -30,45 +30,47 @@ hostConfiguration:
             - root-a1
             - root-a2
           metadataVersion: "1.0"
-    mountPoints:
-      - path: /boot/efi
-        targetId: esp1
-        filesystem: vfat
-        options: ["umask=0077"]
-      - path: /
-        targetId: root-a
-        filesystem: ext4
-        options: ["defaults"]
-      - path: /var/lib/trident
-        targetId: trident
-        filesystem: ext4
-        options: ["defaults"]
-    images:
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: esp1
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: root-a
-  trident:
-    selfUpgrade: false
-  os:
-    network:
-      ethernets:
-        vmeths:
-          match:
-            name: enp*
-          dhcp4: true
-      version: 2
-    users:
-      - name: testing-user
-        sshPublicKeys: []
-        sshMode: key-only
+    filesystems:
+      - deviceId: root-a
+        type: ext4
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /
+          options: defaults
+      - deviceId: esp1
+        type: vfat
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /boot/efi
+          options: umask=0077
+      - deviceId: trident
+        type: ext4
+        mountPoint:
+          path: /var/lib/trident
+          options: defaults
   scripts:
     postConfigure:
       - name: testing-privilege
         servicingType:
           - clean-install
-        content: 'echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user'
+        content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+  os:
+    network:
+      version: 2
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+    users:
+      - name: testing-user
+        sshPublicKeys: []
+        sshMode: key-only

@@ -38,15 +38,6 @@ hostConfiguration:
         - id: root
           volumeAId: root-a
           volumeBId: root-b
-    images:
-      - format: raw-zst
-        sha256: ignored
-        targetId: esp
-        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-      - format: raw-zst
-        sha256: ignored
-        targetId: root
-        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
     disks:
       - device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
         id: os
@@ -67,24 +58,31 @@ hostConfiguration:
           - id: trident
             size: 100M
             type: linux-generic
-    mountPoints:
-      - filesystem: vfat
-        options:
-          - umask=0077
-        path: /boot/efi
-        targetId: esp
-      - filesystem: ext4
-        options:
-          - defaults
-        path: /
-        targetId: root
-      - filesystem: ext4
-        options:
-          - defaults
-        path: /var/lib/trident
-        targetId: trident
-      - filesystem: swap
-        options:
-          - sw
-        path: none
-        targetId: swap
+    filesystems:
+      - type: vfat
+        deviceId: esp
+        source:
+          type: image
+          format: raw-zst
+          sha256: ignored
+          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+        mountPoint:
+          path: /boot/efi
+          options: umask=0077
+      - type: ext4
+        deviceId: root
+        source:
+          type: image
+          format: raw-zst
+          sha256: ignored
+          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+        mountPoint:
+          path: /
+          options: defaults
+      - type: ext4
+        deviceId: trident
+        mountPoint:
+          path: /var/lib/trident
+          options: defaults
+      - type: swap
+        deviceId: swap

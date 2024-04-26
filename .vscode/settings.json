@@ -13,4 +13,9 @@
         "editor.defaultFormatter": "esbenp.prettier-vscode",
         "prettier.tabWidth": 2,
     },
+    "[yaml]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2,
+        "prettier.tabWidth": 2,
+    }
 }

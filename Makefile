@@ -271,12 +271,14 @@ bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/phonehome/*
 validate: $(TRIDENT_CONFIG) bin/trident
 	@bin/trident validate -c $(TRIDENT_CONFIG)
 
+NETLAUNCH_ISO ?= bin/trident-mos.iso
+
 .PHONY: run-netlaunch
-run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-mos.iso validate artifacts/osmodifier
+run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier
 	@mkdir -p artifacts/test-image
 	@cp bin/trident artifacts/test-image/
 	@cp artifacts/osmodifier artifacts/test-image/
-	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
+	@bin/netlaunch -i $(NETLAUNCH_ISO) -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 .PHONY: run-netlaunch-container
 run-netlaunch-container: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.bin
@@ -305,7 +307,7 @@ run-netlaunch-sample: build-api-docs
 .PHONY: download-runtime-partition-images
 download-runtime-partition-images:
 	$(eval BRANCH ?= main)
-	$(eval PIPELINE_IMAGES_LAST_RUN := $(shell az pipelines runs list \
+	$(eval RUN_ID ?= $(shell az pipelines runs list \
 		--org 'https://dev.azure.com/mariner-org' \
 		--project "ECF" \
 		--pipeline-ids 2195 \
@@ -315,12 +317,12 @@ download-runtime-partition-images:
 		--reason triggered \
 		--top 1 \
 		--query '[0].id'))
-	@echo PIPELINE RUN ID: $(PIPELINE_IMAGES_LAST_RUN)
+	@echo PIPELINE RUN ID: $(RUN_ID)
 	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
 	az pipelines runs artifact download \
 		--org 'https://dev.azure.com/mariner-org' \
 		--project "ECF" \
-		--run-id $(PIPELINE_IMAGES_LAST_RUN) \
+		--run-id $(RUN_ID) \
 		--path $(DOWNLOAD_DIR) \
 		--artifact-name 'trident-testimage'
 
@@ -342,7 +344,7 @@ download-runtime-partition-images:
 	az pipelines runs artifact download \
 		--org 'https://dev.azure.com/mariner-org' \
 		--project "ECF" \
-		--run-id $(PIPELINE_IMAGES_LAST_RUN) \
+		--run-id $(RUN_ID) \
 		--path $(DOWNLOAD_DIR) \
 		--artifact-name 'trident-verity-testimage'
 
@@ -356,6 +358,19 @@ download-runtime-partition-images:
 	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
+
+.PHONY: download-trident-installer-iso
+download-trident-installer-iso:
+ifndef RUN_ID
+	$(error RUN_ID is not set)
+endif
+	mkdir -p ./artifacts
+	az pipelines runs artifact download \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--run-id $(RUN_ID) \
+		--path artifacts/ \
+		--artifact-name 'trident-installer-testimage'
 
 .PHONY: copy-runtime-partition-images
 copy-runtime-partition-images: ../test-images/build/trident-testimage/*.raw.zst ../test-images/build/trident-verity-testimage/*.raw.zst

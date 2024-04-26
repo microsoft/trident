@@ -38,7 +38,7 @@ impl DataStore {
         let db = sqlite::open(path).structured(ManagementError::Datastore(
             DatastoreError::DatastoreLoad(path.to_owned()),
         ))?;
-        let host_status = db
+        let mut host_status: HostStatus = db
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC LIMIT 1")
             .structured(ManagementError::Datastore(DatastoreError::DatastoreInit))?
             .into_iter()
@@ -51,6 +51,8 @@ impl DataStore {
                 DatastoreError::DeserializeHostStatus,
             ))?
             .unwrap_or_default();
+
+        host_status.spec.populate_internal();
 
         Ok(Self {
             db: Some(db),

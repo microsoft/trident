@@ -268,6 +268,102 @@
       },
       "additionalProperties": false
     },
+    "FileSystem": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "deviceId": {
+          "description": "The ID of the block device to associate with the file system.",
+          "type": "string",
+          "nullable": true
+        },
+        "mountPoint": {
+          "description": "The mount point of the file system.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/MountPoint"
+            }
+          ],
+          "nullable": true
+        },
+        "source": {
+          "description": "The source of the file system.\n\nIf not specified, a new filesystem will be created.\n\nWhen making a `swap` filesystem the field must be skipped.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FileSystemSource"
+            }
+          ]
+        },
+        "type": {
+          "description": "The file system type.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FileSystemType"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "FileSystemSource": {
+      "oneOf": [
+        {
+          "title": "Create",
+          "description": "Create a new file system.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "create"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "title": "Image",
+          "description": "Use an existing file system from a partition image.",
+          "type": "object",
+          "required": [
+            "format",
+            "sha256",
+            "type",
+            "url"
+          ],
+          "properties": {
+            "format": {
+              "description": "The format of the image.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ImageFormat"
+                }
+              ]
+            },
+            "sha256": {
+              "description": "The SHA256 checksum of the compressed image.\n\nThe hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.\n\nAccepted values:\n\n- 64-character hexadecimal string (case insensitive)\n\n- `ignored` to skip the checksum verification",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "image"
+              ]
+            },
+            "url": {
+              "description": "The URL of the image.\n\nSupported schemes are: `file`, `http`, and `https`.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "FileSystemType": {
       "description": "File system types.",
       "oneOf": [
@@ -300,20 +396,6 @@
           ]
         },
         {
-          "title": "ISO9660 file system",
-          "type": "string",
-          "enum": [
-            "iso9660"
-          ]
-        },
-        {
-          "title": "Overlay file system",
-          "type": "string",
-          "enum": [
-            "overlay"
-          ]
-        },
-        {
           "title": "Tmpfs",
           "description": "[Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)",
           "type": "string",
@@ -329,7 +411,6 @@
       "required": [
         "format",
         "sha256",
-        "targetId",
         "url"
       ],
       "properties": {
@@ -344,11 +425,6 @@
         "sha256": {
           "description": "The SHA256 checksum of the compressed image.\n\nThe hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.\n\nAccepted values:\n\n- 64-character hexadecimal string (case insensitive)\n\n- `ignored` to skip the checksum verification",
           "type": "string"
-        },
-        "targetId": {
-          "description": "The ID of the partition that will be used to store the image.",
-          "type": "string",
-          "format": "Block Device ID"
         },
         "url": {
           "description": "The URL of the image.\n\nSupported schemes are: `file`, `http`, and `https`.",
@@ -384,38 +460,19 @@
       "additionalProperties": false
     },
     "MountPoint": {
-      "description": "Mount point configuration.\n\nThese are used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount the volumes.",
       "type": "object",
       "required": [
-        "filesystem",
         "options",
-        "path",
-        "targetId"
+        "path"
       ],
       "properties": {
-        "filesystem": {
-          "description": "The filesystem to be used for this mount point.\n\nThis value will be used to format the partition.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/FileSystemType"
-            }
-          ]
-        },
         "options": {
-          "description": "A list of options to be used for this mount point.\n\nThese will be passed as is to the `/etc/fstab` file.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "path": {
-          "description": "The path of the mount point.\n\nThis is the path where the volume will be mounted in the runtime OS. For `swap` partitions, the path should be `none`.",
+          "description": "The mount options.",
           "type": "string"
         },
-        "targetId": {
-          "description": "The id of the block device that will be mounted at this mount point.\n\nThis parameter is required. It must be the ID of a disk partition, encrypted volume, software raid array, or a/b update volume pair.",
-          "type": "string",
-          "format": "Block Device ID"
+        "path": {
+          "description": "The path to mount the file system.",
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -870,18 +927,11 @@
           ],
           "nullable": true
         },
-        "images": {
-          "description": "A list of images to be written to the host.",
+        "filesystems": {
+          "description": "Filesystems in this host.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Image"
-          }
-        },
-        "mountPoints": {
-          "description": "Mount point configuration.",
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/MountPoint"
+            "$ref": "#/definitions/FileSystem"
           }
         },
         "raid": {
@@ -892,11 +942,11 @@
             }
           ]
         },
-        "verity": {
-          "description": "Verity configuration.",
+        "verityFilesystems": {
+          "description": "Verity filesystems in this host.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/VerityDevice"
+            "$ref": "#/definitions/VerityFileSystem"
           }
         }
       },
@@ -993,31 +1043,61 @@
       },
       "additionalProperties": false
     },
-    "VerityDevice": {
-      "description": "Verity configuration for a volume.",
+    "VerityFileSystem": {
       "type": "object",
       "required": [
-        "dataTargetId",
-        "deviceName",
-        "hashTargetId",
-        "id"
+        "dataDeviceId",
+        "dataImage",
+        "hashDeviceId",
+        "hashImage",
+        "mountPoint",
+        "name",
+        "type"
       ],
       "properties": {
-        "dataTargetId": {
-          "description": "Block device id of the data block device",
+        "dataDeviceId": {
+          "description": "The ID of the block device to associate with the file system.",
           "type": "string"
         },
-        "deviceName": {
+        "dataImage": {
+          "description": "The image to use for the data device.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Image"
+            }
+          ]
+        },
+        "hashDeviceId": {
+          "description": "The ID of the block device containing the hash.",
+          "type": "string"
+        },
+        "hashImage": {
+          "description": "The image to use for the hash device.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Image"
+            }
+          ]
+        },
+        "mountPoint": {
+          "description": "The mount point of the file system.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/MountPoint"
+            }
+          ]
+        },
+        "name": {
           "description": "Name of the verity device, used for the device mapper name",
           "type": "string"
         },
-        "hashTargetId": {
-          "description": "Block device id of the hash block device",
-          "type": "string"
-        },
-        "id": {
-          "description": "Block device id of the verity device",
-          "type": "string"
+        "type": {
+          "description": "The file system type.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FileSystemType"
+            }
+          ]
         }
       },
       "additionalProperties": false

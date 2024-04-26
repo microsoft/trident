@@ -2563,6 +2563,7 @@ dependencies = [
  "const_format",
  "indoc",
  "lazy_static",
+ "log",
  "maplit",
  "netplan-types",
  "regex",

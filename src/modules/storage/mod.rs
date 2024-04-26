@@ -325,8 +325,8 @@ fn generate_fstab(
     host_status: &HostStatus,
     path: &Path,
 ) -> Result<(), Error> {
-    let mut mount_points = host_config.storage.mount_points.clone();
-    if !host_config.storage.verity.is_empty() {
+    let mut mount_points = host_config.storage.internal_mount_points.clone();
+    if !host_config.storage.internal_verity.is_empty() {
         mount_points.push(verity::create_etc_overlay_mount_point());
     }
     let fstab = tabfile::from_mountpoints(host_status, &mount_points)
@@ -359,7 +359,10 @@ pub(super) fn initialize_block_devices(
         }
     }
 
-    trace!("Mount points: {:?}", host_config.storage.mount_points);
+    trace!(
+        "Mount points: {:?}",
+        host_config.storage.internal_mount_points
+    );
 
     if host_status.reconcile_state == ReconcileState::CleanInstall {
         debug!("Initializing block devices");
@@ -448,9 +451,9 @@ mod tests {
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk as DiskConfig, FileSystemType, HostConfiguration,
-            Image, ImageFormat, ImageSha256, MountPoint, Partition as PartitionConfig,
-            PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray,
-            Storage as StorageConfig,
+            ImageFormat, ImageSha256, InternalImage, InternalMountPoint,
+            Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
+            SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
         status::{BlockDeviceInfo, Storage, UpdateKind},
@@ -526,14 +529,14 @@ mod tests {
                         devices: vec!["part3".to_owned(), "part4".to_owned()],
                     }],
                 },
-                verity: vec![],
-                mount_points: vec![MountPoint {
+                internal_verity: vec![],
+                internal_mount_points: vec![InternalMountPoint {
                     filesystem: FileSystemType::Ext4,
                     options: vec![],
                     target_id: "part1".to_owned(),
                     path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                 }],
-                images: vec![Image {
+                internal_images: vec![InternalImage {
                     target_id: "part1".to_owned(),
                     url: "".to_owned(),
                     sha256: ImageSha256::Ignored,
@@ -556,6 +559,7 @@ mod tests {
                         target_id: "part5".to_owned(),
                     }],
                 }),
+                ..Default::default()
             },
             ..Default::default()
         }
@@ -840,7 +844,7 @@ mod tests {
         let expected_contents = "/part1 / ext4 defaults 0 1\noverlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2\n";
 
         let mut hc = get_host_config(&temp_tabfile);
-        hc.storage.verity = vec![config::VerityDevice {
+        hc.storage.internal_verity = vec![config::InternalVerityDevice {
             device_name: "".into(),
             id: "".into(),
             data_target_id: "".into(),

@@ -17,7 +17,7 @@ use osutils::{
     mount::{self, MountGuard},
 };
 use trident_api::{
-    config::{HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
+    config::{HostConfiguration, ImageFormat, ImageSha256, InternalImage, PartitionType},
     status::{AbVolumeSelection, BlockDeviceContents, HostStatus},
 };
 
@@ -53,7 +53,7 @@ use crate::modules::{
 /// after function returns.
 fn copy_file_artifacts(
     image_url: &Url,
-    image: &Image,
+    image: &InternalImage,
     host_status: &mut HostStatus,
     is_local: bool,
     mount_point: &Path,
@@ -454,7 +454,7 @@ fn get_undeployed_images<'a>(
     host_status: &HostStatus,
     host_config: &'a HostConfiguration,
     active: bool,
-) -> Vec<&'a Image> {
+) -> Vec<&'a InternalImage> {
     // Fetch the list of images that need to be updated/deployed
     let undeployed_images = image::get_undeployed_images(host_status, host_config, active);
 
@@ -643,28 +643,28 @@ mod tests {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        config::MountPoint {
+                    internal_mount_points: vec![
+                        config::InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "esp".to_string(),
                             filesystem: config::FileSystemType::Vfat,
                             options: vec![],
                         },
-                        config::MountPoint {
+                        config::InternalMountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
                             filesystem: config::FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
-                    images: vec![
-                        Image {
+                    internal_images: vec![
+                        InternalImage {
                             url: "http://example.com/esp_1.img".to_string(),
                             target_id: "esp".to_string(),
                             format: ImageFormat::RawZst,
                             sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
                         },
-                        Image {
+                        InternalImage {
                             url: "http://example.com/root_1.img".to_string(),
                             target_id: "root".to_string(),
                             format: ImageFormat::RawZst,
@@ -709,17 +709,18 @@ mod tests {
         // Test case 1: ESP partition does not need to be updated
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<&Image>::new(),
+            Vec::<&InternalImage>::new(),
             "Incorrectly identified ESP partition as needing an update"
         );
 
         // Test case 2: ESP partition needs to be updated
-        host_status.spec.storage.images[0].sha256 =
+        host_status.spec.storage.internal_images[0].sha256 =
             ImageSha256::Checksum("esp_sha256_2".to_string());
-        host_status.spec.storage.images[0].url = "http://example.com/esp_2.img".to_string();
+        host_status.spec.storage.internal_images[0].url =
+            "http://example.com/esp_2.img".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&Image {
+            vec![&InternalImage {
                 url: "http://example.com/esp_2.img".to_string(),
                 target_id: "esp".to_string(),
                 format: ImageFormat::RawZst,
@@ -743,7 +744,7 @@ mod tests {
             .partition_type = PartitionType::Swap;
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<&Image>::new(),
+            Vec::<&InternalImage>::new(),
             "Incorrectly identified ESP partition as needing an update"
         );
     }

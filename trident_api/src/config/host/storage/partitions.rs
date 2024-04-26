@@ -210,11 +210,34 @@ impl PartitionType {
             PartitionType::Xbootldr => "xbootldr",
         }
     }
+
+    /// Returns the corresponding verity partition type for a given partition type.
+    pub fn to_verity(&self) -> Option<Self> {
+        match self {
+            Self::Root => Some(PartitionType::RootVerity),
+            Self::RootVerity
+            | Self::Esp
+            | Self::Swap
+            | Self::Home
+            | Self::Var
+            | Self::Usr
+            | Self::Tmp
+            | Self::LinuxGeneric
+            | Self::Srv
+            | Self::Xbootldr => None,
+        }
+    }
+}
+
+impl Display for PartitionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_sdrepart_part_type())
+    }
 }
 
 /// Partition size enum.
 /// Serialize and Deserialize traits are implemented manually in the crate::serde module.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum PartitionSize {
     /// # Grow

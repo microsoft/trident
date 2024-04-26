@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 
 use crate::{
-    constants::{self, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_PATH},
+    constants::{
+        BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_PATH,
+    },
     is_default, BlockDeviceId,
 };
 
@@ -15,25 +17,26 @@ use super::error::InvalidHostConfigurationError;
 pub mod blkdev_graph;
 pub mod disks;
 pub mod encryption;
+pub mod filesystem;
 pub mod imaging;
-pub mod mountpoint;
+pub mod internal;
 pub mod partitions;
 pub mod raid;
 mod serde_hash;
-pub mod verity;
 
 use self::{
     blkdev_graph::{
-        builder::BlockDeviceGraphBuilder, error::BlockDeviceGraphBuildError,
-        graph::BlockDeviceGraph,
+        builder::BlockDeviceGraphBuilder,
+        error::BlockDeviceGraphBuildError,
+        graph::{BlockDeviceGraph, VolumeStatus},
     },
     disks::Disk,
     encryption::Encryption,
-    imaging::{AbUpdate, Image},
-    mountpoint::{FileSystemType, MountPoint},
+    filesystem::{FileSystem, MountPointInfo, VerityFileSystem},
+    imaging::AbUpdate,
+    internal::{InternalImage, InternalMountPoint, InternalVerityDevice},
     partitions::Partition,
     raid::Raid,
-    verity::VerityDevice,
 };
 
 /// Storage configuration describes the disks of the host that will be used to
@@ -55,21 +58,35 @@ pub struct Storage {
     #[serde(default, skip_serializing_if = "is_default")]
     pub raid: Raid,
 
-    /// Verity configuration.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub verity: Vec<VerityDevice>,
-
-    /// Mount point configuration.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub mount_points: Vec<MountPoint>,
-
     /// A/B update configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ab_update: Option<AbUpdate>,
 
-    /// A list of images to be written to the host.
+    /// Filesystems in this host.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub images: Vec<Image>,
+    pub filesystems: Vec<FileSystem>,
+
+    /// Verity filesystems in this host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verity_filesystems: Vec<VerityFileSystem>,
+
+    /// Old API for mount points.
+    ///
+    /// Used internally by Trident-Core.
+    #[serde(skip)]
+    pub internal_mount_points: Vec<InternalMountPoint>,
+
+    /// Old API for images.
+    ///
+    /// Used internally by Trident-Core.
+    #[serde(skip)]
+    pub internal_images: Vec<InternalImage>,
+
+    /// Old API for verity devices.
+    ///
+    /// Used internally by Trident-Core.
+    #[serde(skip)]
+    pub internal_verity: Vec<InternalVerityDevice>,
 }
 
 impl Storage {
@@ -110,19 +127,12 @@ impl Storage {
             }
         }
 
-        // Add verity devices
-        for verity in &self.verity {
-            builder.add_node(verity.into());
+        for fs in &self.filesystems {
+            builder.add_filesystem(fs);
         }
 
-        // Add mount points
-        for mount_point in &self.mount_points {
-            builder.add_mount_point(mount_point);
-        }
-
-        // Add images
-        for image in &self.images {
-            builder.add_image(image);
+        for vfs in &self.verity_filesystems {
+            builder.add_verity_filesystem(vfs);
         }
 
         // Try to build the graph
@@ -149,20 +159,45 @@ impl Storage {
         // If storage configuration is requested, then ESP volume must be
         // present, to update Grub configuration
         if *self != Storage::default() {
-            graph.validate_volume_presence(Path::new(constants::ESP_MOUNT_POINT_PATH))?;
-        }
-        // If either storage configuration is requested or other modules require
-        // root mount point, ensure the root mount point is present
-        if require_root_mount_point || *self != Storage::default() {
-            graph.validate_volume_presence(Path::new(constants::ROOT_MOUNT_POINT_PATH))?;
+            Self::validate_volume_presence(&graph, ESP_MOUNT_POINT_PATH)?;
         }
 
-        if !self.verity.is_empty() {
-            // Depends on root mount point validated above
-            self.validate_verity(&graph)?;
+        // Ensure the root mount point is present when:
+        //  - Storage configuration is requested
+        //  - Other modules require root mount point
+        //  - Verity filesystems are present
+        if require_root_mount_point
+            || *self != Storage::default()
+            || !self.verity_filesystems.is_empty()
+        {
+            Self::validate_volume_presence(&graph, ROOT_MOUNT_POINT_PATH)?;
         }
+
+        // Validate verity configuration
+        // Depends on root mount point validated above
+        self.validate_verity(&graph)?;
 
         Ok(())
+    }
+
+    /// Validate that a volume is present and backed by an image.
+    fn validate_volume_presence(
+        graph: &BlockDeviceGraph,
+        path: impl AsRef<Path>,
+    ) -> Result<(), InvalidHostConfigurationError> {
+        match graph.get_volume_status(path.as_ref()) {
+            VolumeStatus::PresentAndBackedByImage => Ok(()),
+            VolumeStatus::PresentButNotBackedByImage => {
+                Err(InvalidHostConfigurationError::MountPointNotBackedByImage {
+                    mount_point_path: path.as_ref().to_string_lossy().to_string(),
+                })
+            }
+            VolumeStatus::NotPresent => {
+                Err(InvalidHostConfigurationError::ExpectedMountPointNotFound {
+                    mount_point_path: path.as_ref().to_string_lossy().to_string(),
+                })
+            }
+        }
     }
 
     /// Validates the verity configuration. Assumes the verity list of devices
@@ -171,37 +206,29 @@ impl Storage {
         &self,
         graph: &BlockDeviceGraph,
     ) -> Result<(), InvalidHostConfigurationError> {
-        if self.verity.is_empty() {
-            panic!("validate_verity() called with empty verity configuration");
+        // Return early if no verity filesystems are present
+        if self.verity_filesystems.is_empty() {
+            return Ok(());
         }
 
         // Verity is only supported for root volume, verify the input is not
         // asking for something else
-        if self.verity.len() > 1 {
+        if self.verity_filesystems.len() > 1 {
             return Err(InvalidHostConfigurationError::UnsupportedVerityDevices);
         }
 
-        let verity_device = &self.verity[0];
+        // Get the root verity fs
+        let vfs = &self.verity_filesystems[0];
 
-        let root_mount_point = &self
-            .mount_points
-            .iter()
-            .find(|mp| mp.path == Path::new(ROOT_MOUNT_POINT_PATH));
-        if root_mount_point.is_none() {
-            return Err(InvalidHostConfigurationError::ExpectedMountPointNotFound {
-                mount_point_path: ROOT_MOUNT_POINT_PATH.into(),
-            });
-        }
-        let root_mount_point = root_mount_point.unwrap();
-
-        if root_mount_point.target_id != verity_device.id {
+        // Ensure the verity fs is mounted at root
+        if vfs.mount_point.path != Path::new(ROOT_MOUNT_POINT_PATH) {
             return Err(InvalidHostConfigurationError::UnsupportedVerityDevices);
         }
 
         // If root verity is required, we also require dedicated /boot
         // partition, as we otherwise cannot modify grub configuration and
         // kernel command line.
-        graph.validate_volume_presence(Path::new(constants::BOOT_MOUNT_POINT_PATH))?;
+        Self::validate_volume_presence(graph, BOOT_MOUNT_POINT_PATH)?;
 
         // For root verity, we also require an overlay for /etc, so that we can
         // inject configuration generated by Trident. This overlay needs to be
@@ -213,11 +240,17 @@ impl Storage {
         // backed by an A/B update volume pair and not reside on a read-only
         // volume.
         let overlay_support_mount_point = self
-            .path_to_mount_point(Path::new(TRIDENT_OVERLAY_PATH))
+            .path_to_mount_point_info(TRIDENT_OVERLAY_PATH)
             .ok_or(InvalidHostConfigurationError::ExpectedMountPointNotFound {
-                mount_point_path: ROOT_MOUNT_POINT_PATH.into(),
+                mount_point_path: TRIDENT_OVERLAY_PATH.into(),
             })?;
-        let overlay_block_device_id = &overlay_support_mount_point.target_id;
+
+        // Make sure the overlay is backed by a block device
+        let overlay_block_device_id = overlay_support_mount_point.device_id.ok_or(
+            InvalidHostConfigurationError::MountPointNotBackedByBlockDevice {
+                mount_point_path: TRIDENT_OVERLAY_PATH.into(),
+            },
+        )?;
 
         // If some ab_update is present, the overlay must be also on an ab
         // volume.
@@ -237,11 +270,13 @@ impl Storage {
 
         // Ensure the overlay is not on a read-only volume
         if overlay_support_mount_point
+            .mount_point
             .options
-            .contains(&"ro".to_string())
+            .contains("ro")
         {
             return Err(InvalidHostConfigurationError::OverlayOnReadOnlyVolume {
                 mount_point_path: overlay_support_mount_point
+                    .mount_point
                     .path
                     .to_string_lossy()
                     .to_string(),
@@ -250,9 +285,14 @@ impl Storage {
         }
 
         // Ensure the overlay is not on a verity protected volume
-        if self.verity.iter().any(|v| v.id == *overlay_block_device_id) {
+        if self
+            .verity_filesystems
+            .iter()
+            .any(|v| v.data_device_id.as_str() == overlay_block_device_id)
+        {
             return Err(InvalidHostConfigurationError::OverlayOnReadOnlyVolume {
                 mount_point_path: overlay_support_mount_point
+                    .mount_point
                     .path
                     .to_string_lossy()
                     .to_string(),
@@ -260,95 +300,105 @@ impl Storage {
             });
         }
 
-        // Ensure the root verity device name is set to `root`, as that is what
+        // Ensure the root verity fs name is set to `root`, as that is what
         // the dracut verity module expects.
-        if verity_device.device_name != "root" {
+        if vfs.name != "root" {
             return Err(InvalidHostConfigurationError::RootVerityDeviceNameInvalid {
-                device_name: verity_device.device_name.clone(),
+                device_name: vfs.name.clone(),
             });
         }
 
         // Ensure the root verity device is mounted read-only at /.
-        if !root_mount_point.options.contains(&"ro".to_owned()) {
+        if !vfs.mount_point.options.contains("ro") {
             return Err(InvalidHostConfigurationError::VerityDeviceReadWrite {
-                device_name: verity_device.device_name.clone(),
-                mount_point_path: root_mount_point.path.to_string_lossy().to_string(),
-            });
-        }
-
-        // Ensure the root verity device is not mounted read-write anywhere.
-        if let Some(mp) = self
-            .mount_points
-            .iter()
-            .find(|mp| mp.target_id == verity_device.id && !mp.options.contains(&"ro".to_owned()))
-        {
-            return Err(InvalidHostConfigurationError::VerityDeviceReadWrite {
-                device_name: verity_device.device_name.clone(),
-                mount_point_path: mp.path.to_string_lossy().to_string(),
+                device_name: vfs.name.clone(),
+                mount_point_path: vfs.mount_point.path.to_string_lossy().to_string(),
             });
         }
 
         Ok(())
     }
 
-    /// Find the mount point that is holding the given path. This is useful to find
-    /// the volume on which the given absolute path is located. This version uses HC
-    /// to find the information and is useful early in the process when HS has not
-    /// yet been populated.
-    pub fn path_to_mount_point<'a>(&'a self, path: &Path) -> Option<&'a MountPoint> {
-        self.mount_points
+    /// Get an iterator over all the mount points in the storage configuration.
+    pub fn mount_point_info(&self) -> impl Iterator<Item = MountPointInfo<'_>> {
+        self.filesystems
             .iter()
-            .filter(|mp| path.starts_with(&mp.path))
-            .max_by_key(|mp| mp.path.as_os_str().len())
+            .filter_map(|fs| {
+                fs.mount_point.as_ref().map(|mp| MountPointInfo {
+                    mount_point: mp,
+                    fs_type: fs.fs_type,
+                    is_verity: false,
+                    device_id: fs.device_id.as_ref(),
+                })
+            })
+            .chain(self.verity_filesystems.iter().map(|vfs| MountPointInfo {
+                mount_point: &vfs.mount_point,
+                fs_type: vfs.fs_type,
+                is_verity: true,
+                device_id: Some(&vfs.data_device_id),
+            }))
+    }
+
+    /// Get a MountPointInfo instance for the mount point that is holding the
+    /// given path.
+    pub fn path_to_mount_point_info(&self, path: impl AsRef<Path>) -> Option<MountPointInfo<'_>> {
+        self.mount_point_info()
+            .filter(|mp| path.as_ref().starts_with(&mp.mount_point.path))
+            .max_by_key(|mp| mp.mount_point.path.as_os_str().len())
     }
 
     /// Returns the mount point and relative path for a given path.
     ///
     /// The mount point is the closest parent directory of the path that is a
     /// mount point. The relative path is the path relative to the mount point.
-    pub fn get_mount_point_and_relative_path<'a>(
+    pub fn get_mount_point_info_and_relative_path<'a, 'b>(
         &'a self,
-        path: &'a Path,
-    ) -> Option<(&MountPoint, &Path)> {
-        self.mount_points
+        path: &'b Path,
+    ) -> Option<(MountPointInfo<'a>, &'b Path)> {
+        self.path_to_mount_point_info(path).and_then(move |mpi| {
+            let rel_path = path.strip_prefix(&mpi.mount_point.path).ok()?;
+            Some((mpi, rel_path))
+        })
+    }
+
+    /// INTERNAL FUNCTION!
+    ///
+    /// Find the mount point that is holding the given path. This is useful to find
+    /// the volume on which the given absolute path is located. This version uses HC
+    /// to find the information and is useful early in the process when HS has not
+    /// yet been populated.
+    pub fn path_to_mount_point<'a>(&'a self, path: &Path) -> Option<&'a InternalMountPoint> {
+        self.internal_mount_points
+            .iter()
+            .filter(|mp| path.starts_with(&mp.path))
+            .max_by_key(|mp| mp.path.as_os_str().len())
+    }
+
+    /// INTERNAL FUNCTION!
+    ///
+    /// Returns the mount point and relative path for a given path.
+    ///
+    /// The mount point is the closest parent directory of the path that is a
+    /// mount point. The relative path is the path relative to the mount point.
+    pub fn get_mount_point_and_relative_path<'a, 'b>(
+        &'a self,
+        path: &'b Path,
+    ) -> Option<(&'a InternalMountPoint, &'b Path)> {
+        self.internal_mount_points
             .iter()
             .filter(|mp| path.starts_with(&mp.path))
             .max_by_key(|mp| mp.path.components().count())
-            .and_then(|mp| Some((mp, path.strip_prefix(&mp.path).ok()?)))
+            .and_then(|mp| {
+                let rel_path = path.strip_prefix(&mp.path).ok()?;
+                Some((mp, rel_path))
+            })
     }
 
-    /// This function returns the filesystem of the mount point targetting
-    /// the given block device id or, if part of an A/B update volume
-    /// pair, the mount point targetting the A/B update volume pair it is
-    /// apart of.
-    ///
-    /// If no such mount point exists, None is returned.
-    ///
-    /// Block device IDs that are part of RAID arrays or verity devices
-    /// are not supported. In such cases, None is returned.
-    pub fn get_filesystem(&self, bdid: &BlockDeviceId) -> Option<FileSystemType> {
-        // Recursive case: Check if the block device is part of an A/B
-        // update volume pair, and if so, return the filesystem of A/B
-        // update volume part itself.
-        if let Some(ab_update) = &self.ab_update {
-            if let Some(pair) = ab_update
-                .volume_pairs
-                .iter()
-                .find(|p| p.volume_a_id == *bdid || p.volume_b_id == *bdid)
-            {
-                return self.get_filesystem(&pair.id);
-            }
-        }
-
-        // Base case: Check if the block device is directly mounted, and
-        // if so, return the filesystem of the mount point.
-        self.mount_points.iter().find_map(|mp| {
-            if mp.target_id == *bdid {
-                Some(mp.filesystem)
-            } else {
-                None
-            }
-        })
+    /// Get a map of all the mount points keyed by the mount point path.
+    pub fn mount_points_by_path(&self) -> BTreeMap<&Path, MountPointInfo<'_>> {
+        self.mount_point_info()
+            .map(|mp| (mp.mount_point.path.as_path(), mp))
+            .collect()
     }
 }
 
@@ -363,14 +413,14 @@ mod tests {
             host::storage::blkdev_graph::types::{BlkDevKind, BlkDevReferrerKind},
             HostConfiguration,
         },
-        constants::ROOT_MOUNT_POINT_PATH,
+        constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     };
 
     use self::{
         disks::PartitionTableType,
         encryption::EncryptedVolume,
-        imaging::{AbVolumePair, ImageFormat, ImageSha256},
-        mountpoint::FileSystemType,
+        filesystem::{FileSystemSource, FileSystemType, MountOptions, MountPoint},
+        imaging::{AbVolumePair, Image, ImageFormat, ImageSha256},
         partitions::{PartitionSize, PartitionType},
         raid::{RaidLevel, SoftwareRaidArray},
     };
@@ -383,7 +433,7 @@ mod tests {
             disks: vec![
                 Disk {
                     id: "disk1".to_owned(),
-                    device: constants::ROOT_MOUNT_POINT_PATH.into(),
+                    device: ROOT_MOUNT_POINT_PATH.into(),
                     ..Default::default()
                 },
                 Disk {
@@ -461,69 +511,72 @@ mod tests {
                     devices: vec!["mnt-raid-1".to_owned(), "mnt-raid-2".to_owned()],
                 }],
             },
-            verity: vec![],
-            mount_points: vec![
-                MountPoint {
-                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
-                    filesystem: FileSystemType::Ext4,
-                    options: Vec::new(),
-                    target_id: "root".to_owned(),
+            filesystems: vec![
+                FileSystem {
+                    device_id: Some("esp".to_owned()),
+                    fs_type: FileSystemType::Vfat,
+                    source: FileSystemSource::Image(Image {
+                        url: "file:///esp.raw.zst".to_owned(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
-                MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    filesystem: FileSystemType::Vfat,
-                    options: Vec::new(),
-                    target_id: "esp".to_owned(),
+                FileSystem {
+                    device_id: Some("boot".into()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Image(Image {
+                        url: "file:///boot.raw.zst".to_owned(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(BOOT_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
-                MountPoint {
-                    path: PathBuf::from("/mnt"),
-                    filesystem: FileSystemType::Ext4,
-                    options: Vec::new(),
-                    target_id: "mnt".to_owned(),
+                FileSystem {
+                    device_id: Some("root".into()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Image(Image {
+                        url: "file:///root.raw.zst".to_owned(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
-                MountPoint {
-                    path: PathBuf::from("/srv"),
-                    filesystem: FileSystemType::Ext4,
-                    options: Vec::new(),
-                    target_id: "srv".to_owned(),
+                FileSystem {
+                    device_id: Some("srv".into()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Create,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/srv"),
+                        options: MountOptions::empty(),
+                    }),
                 },
-                MountPoint {
-                    path: PathBuf::from("/boot"),
-                    filesystem: FileSystemType::Ext4,
-                    options: Vec::new(),
-                    target_id: "boot".to_owned(),
+                FileSystem {
+                    device_id: Some("overlay".into()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Create,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(TRIDENT_OVERLAY_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
-                MountPoint {
-                    path: PathBuf::from(TRIDENT_OVERLAY_PATH),
-                    filesystem: FileSystemType::Ext4,
-                    options: Vec::new(),
-                    target_id: "overlay".to_owned(),
-                },
-            ],
-            images: vec![
-                Image {
-                    target_id: "esp".to_owned(),
-                    url: "file:///esp.raw.zst".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                },
-                Image {
-                    target_id: "root".to_owned(),
-                    url: "file:///root.raw.zst".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                },
-                Image {
-                    target_id: "root-a-verity".to_owned(),
-                    url: "file:///root-hash.raw.zst".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                },
-                Image {
-                    target_id: "boot".to_owned(),
-                    url: "file:///boot.raw.zst".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
+                FileSystem {
+                    device_id: Some("mnt".into()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Create,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/mnt"),
+                        options: MountOptions::empty(),
+                    }),
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -533,7 +586,41 @@ mod tests {
                     volume_b_id: "root-b".to_owned(),
                 }],
             }),
+            ..Default::default()
         }
+    }
+
+    fn get_verity_storage() -> Storage {
+        let mut storage = get_storage();
+
+        // Delete the root fs, remove the a/b update volume using `root-a` and
+        // replace it with a verity fs
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("root".into()));
+        storage.ab_update = None;
+        storage.verity_filesystems = vec![VerityFileSystem {
+            name: "root".into(),
+            data_device_id: "root-a".into(),
+            hash_device_id: "root-a-verity".into(),
+            data_image: Image {
+                url: "file:///root.raw.zst".into(),
+                sha256: ImageSha256::Ignored,
+                format: ImageFormat::RawZst,
+            },
+            hash_image: Image {
+                url: "file:///root-verity.raw.zst".into(),
+                sha256: ImageSha256::Ignored,
+                format: ImageFormat::RawZst,
+            },
+            fs_type: FileSystemType::Ext4,
+            mount_point: MountPoint {
+                path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                options: MountOptions::new("ro"),
+            },
+        }];
+
+        storage
     }
 
     /// Test that validates that to_sdrepart_part_type() returns the correct string for each
@@ -647,32 +734,32 @@ mod tests {
                     ..Default::default()
                 },
             ],
-            mount_points: vec![
-                MountPoint {
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                    target_id: "disk1-partition2".to_string(),
-                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
+            filesystems: vec![
+                FileSystem {
+                    device_id: Some("disk1-partition1".to_string()),
+                    fs_type: FileSystemType::Vfat,
+                    source: FileSystemSource::Image(Image {
+                        url: "http://example.com/image".to_string(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
-                MountPoint {
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                    target_id: "disk1-partition1".to_string(),
-                    path: PathBuf::from("/boot/efi"),
-                },
-            ],
-            images: vec![
-                Image {
-                    format: imaging::ImageFormat::RawZst,
-                    target_id: "disk1-partition2".to_string(),
-                    url: "http://example.com/image".to_string(),
-                    sha256: imaging::ImageSha256::Ignored,
-                },
-                Image {
-                    format: imaging::ImageFormat::RawZst,
-                    target_id: "disk1-partition1".to_string(),
-                    url: "http://example.com/image".to_string(),
-                    sha256: imaging::ImageSha256::Ignored,
+                FileSystem {
+                    device_id: Some("disk1-partition2".to_string()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Image(Image {
+                        url: "http://example.com/image".to_string(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
             ],
             ..Default::default()
@@ -687,32 +774,32 @@ mod tests {
                     volume_b_id: "disk2-partition2".to_string(),
                 }],
             }),
-            mount_points: vec![
-                MountPoint {
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                    target_id: "ab-update-volume-pair".to_string(),
-                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
+            filesystems: vec![
+                FileSystem {
+                    device_id: Some("ab-update-volume-pair".to_string()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Image(Image {
+                        url: "http://example.com/image".to_string(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
-                MountPoint {
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                    target_id: "disk1-partition1".to_string(),
-                    path: PathBuf::from("/boot/efi"),
-                },
-            ],
-            images: vec![
-                Image {
-                    format: imaging::ImageFormat::RawZst,
-                    target_id: "ab-update-volume-pair".to_string(),
-                    url: "http://example.com/image".to_string(),
-                    sha256: imaging::ImageSha256::Ignored,
-                },
-                Image {
-                    format: imaging::ImageFormat::RawZst,
-                    target_id: "disk1-partition1".to_string(),
-                    url: "http://example.com/image".to_string(),
-                    sha256: imaging::ImageSha256::Ignored,
+                FileSystem {
+                    device_id: Some("disk1-partition1".to_string()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Image(Image {
+                        url: "http://example.com/image".to_string(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
             ],
             ..storage.clone()
@@ -757,21 +844,28 @@ mod tests {
             )
         );
 
-        let bad_image_target = Storage {
-            images: vec![Image {
-                format: imaging::ImageFormat::RawZst,
-                target_id: "disk99".to_string(),
-                url: "http://example.com/image".to_string(),
-                sha256: imaging::ImageSha256::Ignored,
+        let bad_filesystem_target = Storage {
+            filesystems: vec![FileSystem {
+                device_id: Some("disk99".to_string()),
+                fs_type: FileSystemType::Ext4,
+                source: FileSystemSource::Image(Image {
+                    url: "http://example.com/image".to_string(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZst,
+                }),
+                mount_point: Some(MountPoint {
+                    path: PathBuf::from("/some/path"),
+                    options: MountOptions::empty(),
+                }),
             }],
             ..storage.clone()
         };
         assert_eq!(
-            bad_image_target.validate(true).unwrap_err(),
+            bad_filesystem_target.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ImageNonExistentReference {
-                    image_id: "http://example.com/image".into(),
-                    target_id: "disk99".into()
+                BlockDeviceGraphBuildError::FilesystemNonExistentReference {
+                    target_id: "disk99".into(),
+                    fs_type: FileSystemType::Ext4
                 }
             )
         );
@@ -785,7 +879,7 @@ mod tests {
             disks: vec![
                 Disk {
                     id: "disk1".to_owned(),
-                    device: constants::ROOT_MOUNT_POINT_PATH.into(),
+                    device: ROOT_MOUNT_POINT_PATH.into(),
                     ..Default::default()
                 },
                 Disk {
@@ -830,32 +924,32 @@ mod tests {
                     devices: vec!["part3".to_owned(), "part4".to_owned()],
                 }],
             },
-            mount_points: vec![
-                MountPoint {
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                    target_id: "ab1".to_owned(),
-                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
+            filesystems: vec![
+                FileSystem {
+                    device_id: Some("part1".to_owned()),
+                    fs_type: FileSystemType::Vfat,
+                    source: FileSystemSource::Image(Image {
+                        url: "https://some/url".to_owned(),
+                        sha256: imaging::ImageSha256::Checksum("".into()),
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
-                MountPoint {
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                    target_id: "part1".to_owned(),
-                    path: PathBuf::from("/boot/efi"),
-                },
-            ],
-            images: vec![
-                Image {
-                    target_id: "ab1".to_owned(),
-                    url: "https://some/url".to_owned(),
-                    sha256: imaging::ImageSha256::Checksum("".into()),
-                    format: ImageFormat::RawZst,
-                },
-                Image {
-                    target_id: "part1".to_owned(),
-                    url: "https://some/url".to_owned(),
-                    sha256: imaging::ImageSha256::Checksum("".into()),
-                    format: ImageFormat::RawZst,
+                FileSystem {
+                    device_id: Some("ab1".to_owned()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Image(Image {
+                        url: "https://some/url".to_owned(),
+                        sha256: imaging::ImageSha256::Checksum("".into()),
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -865,8 +959,7 @@ mod tests {
                     volume_b_id: "part2".to_owned(),
                 }],
             }),
-            encryption: None,
-            verity: vec![],
+            ..Default::default()
         };
         storage.validate(true).unwrap();
 
@@ -912,41 +1005,28 @@ mod tests {
 
         // fail on missing reference (disk4 does not exist)
         storage = storage_golden.clone();
-        storage.images[0].target_id = "disk4".to_owned();
+        storage.filesystems[0].device_id = Some("disk4".into());
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ImageNonExistentReference {
-                    image_id: "https://some/url".into(),
-                    target_id: "disk4".into()
-                }
-            ),
-        );
-
-        // fail on missing reference (disk4 does not exist)
-        storage = storage_golden.clone();
-        storage.mount_points[0].target_id = "disk4".to_owned();
-        assert_eq!(
-            storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::MountPointNonExistentReference {
-                    mount_point: "/".into(),
-                    target_id: "disk4".into()
+                BlockDeviceGraphBuildError::FilesystemNonExistentReference {
+                    target_id: "disk4".into(),
+                    fs_type: FileSystemType::Vfat,
                 }
             ),
         );
 
         // fail on bad block device type
         storage = storage_golden.clone();
-        storage.images[0].target_id = "disk1".to_owned();
+        storage.filesystems[0].device_id = Some("disk1".into());
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ImageInvalidReference {
-                    image_id: "https://some/url".into(),
+                BlockDeviceGraphBuildError::FilesystemInvalidReference {
+                    fs_type: FileSystemType::Vfat,
                     target_id: "disk1".into(),
                     target_kind: BlkDevKind::Disk,
-                    valid_references: BlkDevReferrerKind::Image.valid_target_kinds()
+                    valid_references: BlkDevReferrerKind::FileSystem.valid_target_kinds()
                 }
             ),
         );
@@ -957,10 +1037,9 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidTargets {
+                BlockDeviceGraphBuildError::PartitionSizeMismatch {
                     node_id: "my-raid1".into(),
-                    kind: BlkDevKind::RaidArray,
-                    body: "RAID array references partitions with different sizes.".into()
+                    kind: BlkDevKind::RaidArray
                 }
             ),
         );
@@ -976,9 +1055,43 @@ mod tests {
     #[test]
     fn test_validate_ab_update_volume_pair_a_id_encryption_pass() {
         let mut storage: Storage = get_storage();
-        storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "srv".to_owned();
+
+        // Push a new partition to encrypt
+        storage.disks[0].partitions.push(Partition {
+            id: "srv-b-enc".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+
+        // Encrypt new partition
+        storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .volumes
+            .push(EncryptedVolume {
+                id: "srv-b".to_owned(),
+                device_name: "alt-b".to_owned(),
+                target_id: "srv-b-enc".to_owned(),
+            });
+
         // Delete mount point associated with "srv", otherwise this would fail
-        storage.mount_points.retain(|mp| mp.target_id != "srv");
+        storage
+            .filesystems
+            .retain(|mp| mp.device_id != Some("srv".into()));
+
+        // Add a new A/B update volume pair for the alt volumes
+        storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .volume_pairs
+            .push(AbVolumePair {
+                id: "srv-ab".to_owned(),
+                volume_a_id: "srv".to_owned(),
+                volume_b_id: "srv-b".to_owned(),
+            });
+
         storage.validate(true).unwrap();
     }
 
@@ -986,9 +1099,51 @@ mod tests {
     #[test]
     fn test_validate_ab_update_volume_pair_b_id_encryption_pass() {
         let mut storage: Storage = get_storage();
-        storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "srv".to_owned();
-        // Delete mount point associated with "srv", otherwise this would fail
-        storage.mount_points.retain(|mp| mp.target_id != "srv");
+        // Add new test partitions
+        storage.disks[0].partitions.push(Partition {
+            id: "alt-a-enc".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        storage.disks[0].partitions.push(Partition {
+            id: "alt-b-enc".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        // Encrypt alt a and alt b
+        storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .volumes
+            .push(EncryptedVolume {
+                id: "alt-a".to_owned(),
+                device_name: "alt-a".to_owned(),
+                target_id: "alt-a-enc".to_owned(),
+            });
+        storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .volumes
+            .push(EncryptedVolume {
+                id: "alt-b".to_owned(),
+                device_name: "alt-b".to_owned(),
+                target_id: "alt-b-enc".to_owned(),
+            });
+
+        // Add a new A/B update volume pair for the alt volumes
+        storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .volume_pairs
+            .push(AbVolumePair {
+                id: "alt".to_owned(),
+                volume_a_id: "alt-a".to_owned(),
+                volume_b_id: "alt-b".to_owned(),
+            });
+
         storage.validate(true).unwrap();
     }
 
@@ -1129,11 +1284,14 @@ mod tests {
                 device_name: "luks-srv".to_owned(),
                 target_id: "alt-enc".to_owned(),
             });
-        storage.mount_points.push(MountPoint {
-            path: PathBuf::from("/alt"),
-            filesystem: FileSystemType::Ext4,
-            options: Vec::new(),
-            target_id: "alt".to_owned(),
+        storage.filesystems.push(FileSystem {
+            device_id: Some("alt".to_owned()),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::Create,
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/alt"),
+                options: MountOptions::empty(),
+            }),
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1177,7 +1335,12 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_home_pass() {
         let mut storage: Storage = get_storage();
-        storage.disks[1].partitions[5].partition_type = PartitionType::Home;
+        storage.disks[1]
+            .partitions
+            .iter_mut()
+            .find(|p| p.id == "srv-enc")
+            .unwrap()
+            .partition_type = PartitionType::Home;
         storage.validate(true).unwrap();
     }
 
@@ -1185,16 +1348,23 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_esp_fail() {
         let mut storage: Storage = get_storage();
+        // Remoce the filesystem associated with esp
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("esp".into()));
+
+        // Update the target ID of the encrypted volume to esp
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "esp".to_owned();
-        storage.mount_points.remove(1);
-        storage.images.remove(0);
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidTargets {
+                BlockDeviceGraphBuildError::InvalidPartitionType {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
-                    body: "Partition 'esp' is of unsupported type 'Esp'.".into()
+                    partition_id: "esp".into(),
+                    partition_type: PartitionType::Esp,
+                    valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types(),
                 }
             ),
         );
@@ -1204,16 +1374,35 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_root_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-a".to_owned();
-        storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id =
-            "root-b-verity".to_owned();
+
+        // add an alt root partition
+        storage.disks[0].partitions.push(Partition {
+            id: "alt-root".to_owned(),
+            partition_type: PartitionType::Root,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+
+        // Encrypt alt root
+        storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .volumes
+            .push(EncryptedVolume {
+                id: "alt".to_owned(),
+                device_name: "luks-alt".to_owned(),
+                target_id: "alt-root".to_owned(),
+            });
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidTargets {
-                    node_id: "srv".into(),
+                BlockDeviceGraphBuildError::InvalidPartitionType {
+                    node_id: "alt".into(),
                     kind: BlkDevKind::EncryptedVolume,
-                    body: "Partition 'root-a' is of unsupported type 'Root'.".into()
+                    partition_id: "alt-root".into(),
+                    partition_type: PartitionType::Root,
+                    valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
                 }
             ),
         );
@@ -1234,10 +1423,12 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidTargets {
+                BlockDeviceGraphBuildError::InvalidPartitionType {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
-                    body: "Partition 'root-b-verity' is of unsupported type 'RootVerity'.".into()
+                    partition_id: "root-b-verity".into(),
+                    partition_type: PartitionType::RootVerity,
+                    valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
                 }
             ),
             "Block device 'srv' of kind 'encrypted volume' references invalid targets"
@@ -1248,10 +1439,24 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_raid_home_pass() {
         let mut storage: Storage = get_storage();
+
+        // Delete the filesystem associated with mnt
+        storage
+            .filesystems
+            .retain(|mp| mp.device_id != Some("mnt".into()));
+
+        // Switch the encryption target to the mnt RAID array
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
-        storage.mount_points.remove(2);
-        storage.disks[1].partitions[3].partition_type = PartitionType::Home;
-        storage.disks[1].partitions[4].partition_type = PartitionType::Home;
+
+        // Change the partition type of the mnt-raid-1/2 partitions to root
+        storage.disks[1]
+            .partitions
+            .iter_mut()
+            .filter(|p| p.id.starts_with("mnt-raid"))
+            .for_each(|p| {
+                p.partition_type = PartitionType::Home;
+            });
+
         storage.validate(true).unwrap();
     }
 
@@ -1259,47 +1464,108 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_raid_esp_fail() {
         let mut storage: Storage = get_storage();
+
+        // Delete the filesystem associated with mnt
+        storage
+            .filesystems
+            .retain(|mp| mp.device_id != Some("mnt".into()));
+
+        // Switch the encryption target to the mnt RAID array
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
-        storage.mount_points.remove(2);
-        storage.disks[1].partitions[3].partition_type = PartitionType::Esp;
-        storage.disks[1].partitions[4].partition_type = PartitionType::Esp;
-        storage.validate(true).unwrap();
+
+        // Change the partition type of the mnt-raid-1/2 partitions to root
+        storage.disks[1]
+            .partitions
+            .iter_mut()
+            .filter(|p| p.id.starts_with("mnt-raid"))
+            .for_each(|p| {
+                p.partition_type = PartitionType::Esp;
+            });
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidPartitionType {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    partition_id: "mnt-raid-1".into(),
+                    partition_type: PartitionType::Esp,
+                    valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
+                }
+            ),
+        );
     }
 
     /// Encrypted volume target ID must not be a software RAID array of root partitions
     #[test]
     fn test_validate_encryption_target_id_raid_root_fail() {
         let mut storage: Storage = get_storage();
+
+        // Delete the filesystem associated with mnt
+        storage
+            .filesystems
+            .retain(|mp| mp.device_id != Some("mnt".into()));
+
+        // Switch the encryption target to the mnt RAID array
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
-        storage.mount_points.remove(2);
-        storage.disks[1].partitions[3].partition_type = PartitionType::Root;
-        storage.disks[1].partitions[4].partition_type = PartitionType::Root;
-        storage.validate(true).unwrap();
+
+        // Change the partition type of the mnt-raid-1/2 partitions to root
+        storage.disks[1]
+            .partitions
+            .iter_mut()
+            .filter(|p| p.id.starts_with("mnt-raid"))
+            .for_each(|p| {
+                p.partition_type = PartitionType::Root;
+            });
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidPartitionType {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    partition_id: "mnt-raid-1".into(),
+                    partition_type: PartitionType::Root,
+                    valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
+                }
+            ),
+        );
     }
 
     /// Encrypted volume target ID must not be a software RAID array of root-verity partitions
     #[test]
     fn test_validate_encryption_target_id_raid_root_verity_fail() {
         let mut storage: Storage = get_storage();
+
+        // Delete the filesystem associated with mnt
+        storage
+            .filesystems
+            .retain(|mp| mp.device_id != Some("mnt".into()));
+
+        // Switch the encryption target to the mnt RAID array
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
-        storage.mount_points.remove(2);
-        storage
-            .disks
-            .get_mut(1)
-            .unwrap()
+
+        // Change the partition type of the mnt-raid-1/2 partitions to root
+        storage.disks[1]
             .partitions
-            .get_mut(3)
-            .unwrap()
-            .partition_type = PartitionType::RootVerity;
-        storage
-            .disks
-            .get_mut(1)
-            .unwrap()
-            .partitions
-            .get_mut(4)
-            .unwrap()
-            .partition_type = PartitionType::RootVerity;
-        storage.validate(true).unwrap();
+            .iter_mut()
+            .filter(|p| p.id.starts_with("mnt-raid"))
+            .for_each(|p| {
+                p.partition_type = PartitionType::RootVerity;
+            });
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidPartitionType {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    partition_id: "mnt-raid-1".into(),
+                    partition_type: PartitionType::RootVerity,
+                    valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
+                }
+            ),
+        );
     }
 
     /// Encrypted volume target ID must not be a software RAID array of no devices.
@@ -1364,8 +1630,14 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_raid_pass() {
         let mut storage: Storage = get_storage();
+        // Remove the mount point associated with "mnt"
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("mnt".into()));
+
+        // Change the target ID of the encrypted volume to the RAID array
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
-        storage.mount_points.remove(2);
+
         storage.validate(true).unwrap();
     }
 
@@ -1373,9 +1645,15 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_ab_update_volume_pair_fail() {
         let mut storage: Storage = get_storage();
+
+        // Remove filesystem associated with "root"
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("root".into()));
+
+        // Change the target ID of the encrypted volume to the A/B update volume pair
         storage.encryption.as_mut().unwrap().volumes[0].target_id = "root".to_owned();
-        storage.images.remove(1);
-        storage.mount_points.remove(0);
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
@@ -1404,11 +1682,14 @@ mod tests {
                 device_name: "luks-alt".to_owned(),
                 target_id: "srv-enc".to_owned(),
             });
-        storage.mount_points.push(MountPoint {
-            path: PathBuf::from("/alt"),
-            filesystem: FileSystemType::Ext4,
-            options: Vec::new(),
-            target_id: "alt".to_owned(),
+        storage.filesystems.push(FileSystem {
+            device_id: Some("alt".to_owned()),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::Create,
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/alt"),
+                options: MountOptions::empty(),
+            }),
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1429,21 +1710,31 @@ mod tests {
         );
     }
 
-    /// Encrypted volumes cannot target the same partition as a mount point
+    /// Encrypted volumes cannot target the same partition as a filesystem/mount point
     #[test]
     fn test_validate_encryption_mount_point_target_part_id_equal_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
-        storage.mount_points[2].target_id = "mnt-raid-1".to_owned();
+
+        // Add a new filesystem to the partition used for encryption
+        storage.filesystems.push(FileSystem {
+            device_id: Some("srv-enc".to_owned()),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::Create,
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/mnt/some-mount-point"),
+                options: MountOptions::empty(),
+            }),
+        });
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
-                    target_id: "mnt-raid-1".into(),
+                    target_id: "srv-enc".into(),
                     target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "mnt".into(),
-                    referrer_a_kind: BlkDevReferrerKind::RaidArray,
-                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::RaidArray
+                    referrer_a_id: "ext4 filesystem mounted at /mnt/some-mount-point".into(),
+                    referrer_a_kind: BlkDevReferrerKind::FileSystem,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::FileSystem
                         .valid_sharing_peers(),
                     referrer_b_id: "srv".into(),
                     referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
@@ -1534,20 +1825,52 @@ mod tests {
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_a_raid_id_equal_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
-        storage.mount_points.remove(2); // remove /mnt mount point
-        storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "mnt".to_owned();
+
+        storage.disks[0].partitions.push(Partition {
+            id: "alt-a-enc".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        storage.disks[0].partitions.push(Partition {
+            id: "alt-b-enc".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        // Encrypt alt a and alt b
+        storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .volumes
+            .push(EncryptedVolume {
+                id: "alt-a".to_owned(),
+                device_name: "alt-a".to_owned(),
+                target_id: "alt-a-enc".to_owned(),
+            });
+
+        // Add a new A/B update volume pair for the alt volumes
+        storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .volume_pairs
+            .push(AbVolumePair {
+                id: "alt".to_owned(),
+                volume_a_id: "alt-a-enc".to_owned(),
+                volume_b_id: "alt-b-enc".to_owned(),
+            });
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
-                    target_id: "mnt".into(),
-                    target_kind: BlkDevKind::RaidArray,
-                    referrer_a_id: "root".into(),
+                    target_id: "alt-a-enc".into(),
+                    target_kind: BlkDevKind::Partition,
+                    referrer_a_id: "alt".into(),
                     referrer_a_kind: BlkDevReferrerKind::ABVolume,
                     referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
                         .valid_sharing_peers(),
-                    referrer_b_id: "srv".into(),
+                    referrer_b_id: "alt-a".into(),
                     referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
                     referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
@@ -1560,43 +1883,52 @@ mod tests {
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_b_raid_id_equal_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
-        storage.mount_points.remove(2); // remove /mnt mount point
-        storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_b_id = "mnt".to_owned();
+
+        storage.disks[0].partitions.push(Partition {
+            id: "alt-a-enc".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        storage.disks[0].partitions.push(Partition {
+            id: "alt-b-enc".to_owned(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        // Encrypt alt a and alt b
+        storage
+            .encryption
+            .as_mut()
+            .unwrap()
+            .volumes
+            .push(EncryptedVolume {
+                id: "alt-b".to_owned(),
+                device_name: "alt-b".to_owned(),
+                target_id: "alt-b-enc".to_owned(),
+            });
+
+        // Add a new A/B update volume pair for the alt volumes
+        storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .volume_pairs
+            .push(AbVolumePair {
+                id: "alt".to_owned(),
+                volume_a_id: "alt-a-enc".to_owned(),
+                volume_b_id: "alt-b-enc".to_owned(),
+            });
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
-                    target_id: "mnt".into(),
-                    target_kind: BlkDevKind::RaidArray,
-                    referrer_a_id: "root".into(),
+                    target_id: "alt-b-enc".into(),
+                    target_kind: BlkDevKind::Partition,
+                    referrer_a_id: "alt".into(),
                     referrer_a_kind: BlkDevReferrerKind::ABVolume,
                     referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
                         .valid_sharing_peers(),
-                    referrer_b_id: "srv".into(),
-                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
-                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
-                        .valid_sharing_peers(),
-                }
-            ),
-        );
-    }
-
-    /// Encrypted volumes cannot target the same partition as an image
-    #[test]
-    fn test_validate_encryption_image_target_part_id_equal_fail() {
-        let mut storage: Storage = get_storage();
-        storage.images[0].target_id = "srv-enc".to_owned();
-        assert_eq!(
-            storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
-                    target_id: "srv-enc".into(),
-                    target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "file:///esp.raw.zst".into(),
-                    referrer_a_kind: BlkDevReferrerKind::Image,
-                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::Image.valid_sharing_peers(),
-                    referrer_b_id: "srv".into(),
+                    referrer_b_id: "alt-b".into(),
                     referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
                     referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
@@ -1610,7 +1942,19 @@ mod tests {
     #[cfg(feature = "sysupdate")]
     fn test_validate_image_raw_lzma_ab_update_volume_pair_pass() {
         let mut storage: Storage = get_storage();
-        storage.images[1].format = ImageFormat::RawLzma;
+
+        // Change the image format to raw-lzma in the root filesystem
+        storage
+            .filesystems
+            .iter_mut()
+            .find(|fs| fs.device_id == Some("root".into()))
+            .unwrap()
+            .source = FileSystemSource::Image(Image {
+            url: "file:///root.raw.lzma".into(),
+            sha256: ImageSha256::Ignored,
+            format: ImageFormat::RawLzma,
+        });
+
         storage.validate(true).unwrap();
     }
 
@@ -1619,16 +1963,23 @@ mod tests {
     #[cfg(feature = "sysupdate")]
     fn test_validate_image_raw_lzma_partition_fail() {
         let mut storage: Storage = get_storage();
-        storage.images[0].format = ImageFormat::RawLzma;
+
+        // Change the image format to raw-lzma in the esp filesystem
+        storage.filesystems[0].source = FileSystemSource::Image(Image {
+            url: "file:///esp.raw.lzma".into(),
+            sha256: ImageSha256::Ignored,
+            format: ImageFormat::RawLzma,
+        });
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ImageInvalidReference {
-                    image_id: "file:///esp.raw.zst".into(),
+                BlockDeviceGraphBuildError::FilesystemInvalidReference {
+                    fs_type: FileSystemType::Vfat,
                     target_id: "esp".into(),
                     target_kind: BlkDevKind::Partition,
-                    valid_references: BlkDevReferrerKind::ImageSysupdate.valid_target_kinds()
-                }
+                    valid_references: BlkDevReferrerKind::FileSystemSysupdate.valid_target_kinds()
+                },
             )
         );
     }
@@ -1637,45 +1988,34 @@ mod tests {
     #[test]
     fn test_validate_image_target_id_encryption_pass() {
         let mut storage: Storage = get_storage();
-        let mut images = storage.images.clone();
-        images.push(Image {
-            target_id: "srv".to_owned(),
-            url: "file:///root.raw.zst".to_owned(),
+
+        // Set the srv filesystem to use an image as source
+        storage
+            .filesystems
+            .iter_mut()
+            .find(|fs| fs.device_id == Some("srv".into()))
+            .unwrap()
+            .source = FileSystemSource::Image(Image {
+            url: "file:///srv.raw.zst".to_owned(),
             sha256: ImageSha256::Ignored,
             format: ImageFormat::RawZst,
         });
-        storage.images = images;
+
         storage.validate(true).unwrap();
     }
 
     #[test]
     fn test_validate_verity_pass() {
-        let mut storage: Storage = get_storage();
-        storage.verity = vec![VerityDevice {
-            id: "verity-root-a".to_owned(),
-            device_name: "root".to_owned(),
-            data_target_id: "root-a".to_owned(),
-            hash_target_id: "root-a-verity".to_owned(),
-        }];
-        storage.mount_points[0].target_id = "verity-root-a".into();
-        storage.mount_points[0].options.push("ro".to_owned());
-        storage.images[1].target_id = "root-a".into();
-        storage.ab_update = None;
-        storage.validate(true).unwrap();
+        get_verity_storage().validate(true).unwrap();
     }
 
     #[test]
     fn test_validate_verity_rw_fail() {
-        let mut storage: Storage = get_storage();
-        storage.verity = vec![VerityDevice {
-            id: "verity-root-a".to_owned(),
-            device_name: "root".to_owned(),
-            data_target_id: "root-a".to_owned(),
-            hash_target_id: "root-a-verity".to_owned(),
-        }];
-        storage.mount_points[0].target_id = "verity-root-a".into();
-        storage.images[1].target_id = "root-a".into();
-        storage.ab_update = None;
+        let mut storage: Storage = get_verity_storage();
+
+        // Remove "ro" from the mount options
+        storage.verity_filesystems[0].mount_point.options = MountOptions::empty();
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::VerityDeviceReadWrite {
@@ -1687,16 +2027,11 @@ mod tests {
 
     #[test]
     fn test_validate_verity_bad_device_name_fail() {
-        let mut storage: Storage = get_storage();
-        storage.verity = vec![VerityDevice {
-            id: "verity-root-a".to_owned(),
-            device_name: "verity-root-a".to_owned(),
-            data_target_id: "root-a".to_owned(),
-            hash_target_id: "root-a-verity".to_owned(),
-        }];
-        storage.mount_points[0].target_id = "verity-root-a".into();
-        storage.images[1].target_id = "root-a".into();
-        storage.ab_update = None;
+        let mut storage: Storage = get_verity_storage();
+
+        // Swap the name
+        storage.verity_filesystems[0].name = "verity-root-a".into();
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::RootVerityDeviceNameInvalid {
@@ -1707,18 +2042,11 @@ mod tests {
 
     #[test]
     fn test_validate_verity_without_boot_image_fail() {
-        let mut storage: Storage = get_storage();
-        storage.verity = vec![VerityDevice {
-            id: "verity-root-a".to_owned(),
-            device_name: "verity-root-a".to_owned(),
-            data_target_id: "root-a".to_owned(),
-            hash_target_id: "root-a-verity".to_owned(),
-        }];
-        storage.mount_points[0].target_id = "verity-root-a".into();
-        storage.images[1].target_id = "root-a".into();
-        storage.ab_update = None;
+        let mut storage: Storage = get_verity_storage();
 
-        storage.images.remove(3);
+        // Change the boot fs to create instead of image
+        storage.filesystems[1].source = FileSystemSource::Create;
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::MountPointNotBackedByImage {
@@ -1729,19 +2057,13 @@ mod tests {
 
     #[test]
     fn test_validate_verity_without_boot_mountpoint_fail() {
-        let mut storage: Storage = get_storage();
-        storage.verity = vec![VerityDevice {
-            id: "verity-root-a".to_owned(),
-            device_name: "verity-root-a".to_owned(),
-            data_target_id: "root-a".to_owned(),
-            hash_target_id: "root-a-verity".to_owned(),
-        }];
-        storage.mount_points[0].target_id = "verity-root-a".into();
-        storage.images[1].target_id = "root-a".into();
-        storage.ab_update = None;
+        let mut storage: Storage = get_verity_storage();
 
-        storage.images.remove(3);
-        storage.mount_points.remove(4);
+        // Delete the boot fs
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("boot".into()));
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::ExpectedMountPointNotFound {
@@ -1751,61 +2073,20 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_verity_without_hash_image_fail() {
-        let mut storage: Storage = get_storage();
-        storage.verity = vec![VerityDevice {
-            id: "verity-root-a".to_owned(),
-            device_name: "root".to_owned(),
-            data_target_id: "root-a".to_owned(),
-            hash_target_id: "root-a-verity".to_owned(),
-        }];
-        storage.mount_points[0].target_id = "verity-root-a".into();
-        storage.images[1].target_id = "root-a".into();
-        storage.ab_update = None;
-
-        storage.images.remove(2);
-        assert_eq!(
-            storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(BlockDeviceGraphBuildError::InvalidTargets { node_id: "verity-root-a".into(), kind: BlkDevKind::VerityDevice, body: "Verity device 'verity-root-a' points to a block device that has not been initialized with an image: Block device 'root-a-verity' is not initialized using image, which is required for verity device 'verity-root-a' to work".into() }),
-        );
-    }
-
-    #[test]
     fn test_validate_verity_ro_overlay_fail() {
-        let mut storage: Storage = get_storage();
-        storage.verity = vec![VerityDevice {
-            id: "verity-root-a".to_owned(),
-            device_name: "root".to_owned(),
-            data_target_id: "root-a".to_owned(),
-            hash_target_id: "root-a-verity".to_owned(),
-        }];
-        storage.mount_points[0].target_id = "verity-root-a".into();
-        storage.images[1].target_id = "root-a".into();
-        storage.ab_update = None;
-        storage.mount_points.remove(5);
-        assert_eq!(
-            storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::OverlayOnReadOnlyVolume {
-                mount_point_path: "/".into(),
-                overlay_path: "/var/lib/trident-overlay".into()
-            }
-        );
-    }
+        let mut storage: Storage = get_verity_storage();
 
-    #[test]
-    fn test_validate_verity_ro_overlay_2_fail() {
-        let mut storage: Storage = get_storage();
-        storage.verity = vec![VerityDevice {
-            id: "verity-root-a".to_owned(),
-            device_name: "root".to_owned(),
-            data_target_id: "root-a".to_owned(),
-            hash_target_id: "root-a-verity".to_owned(),
-        }];
-        storage.mount_points[0].target_id = "verity-root-a".into();
-        storage.images[1].target_id = "root-a".into();
-        storage.ab_update = None;
-        storage.mount_points[0].options.push("ro".to_owned());
-        storage.mount_points[5].options.push("ro".to_owned());
+        // Set the overlay fs to read-only
+        storage
+            .filesystems
+            .iter_mut()
+            .find(|fs| fs.device_id == Some("overlay".into()))
+            .unwrap()
+            .mount_point
+            .as_mut()
+            .unwrap()
+            .options = MountOptions::new("ro");
+
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::OverlayOnReadOnlyVolume {
@@ -1867,17 +2148,18 @@ mod tests {
                         devices: vec!["part3".to_owned(), "part4".to_owned()],
                     }],
                 },
-                mount_points: vec![MountPoint {
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                    target_id: "part1".to_owned(),
-                    path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                }],
-                images: vec![Image {
-                    target_id: "part1".to_owned(),
-                    url: "".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
+                filesystems: vec![FileSystem {
+                    device_id: Some("part1".to_owned()),
+                    fs_type: FileSystemType::Vfat,
+                    source: FileSystemSource::Image(Image {
+                        url: "".to_owned(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
                 }],
                 ab_update: Some(AbUpdate {
                     volume_pairs: vec![AbVolumePair {
@@ -1886,340 +2168,148 @@ mod tests {
                         volume_b_id: "part2".to_owned(),
                     }],
                 }),
-                encryption: None,
-                verity: vec![],
-            },
-            ..Default::default()
-        };
-        let mount_point = host_config
-            .storage
-            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
-            .unwrap();
-        assert_eq!(mount_point.target_id, "part1");
-
-        // ensure to pick the longest prefix
-        host_config.storage.mount_points.push(MountPoint {
-            filesystem: FileSystemType::Ext4,
-            options: vec![],
-            target_id: "part2".to_owned(),
-            path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
-        });
-
-        let mount_point = host_config
-            .storage
-            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
-            .unwrap();
-        assert_eq!(mount_point.target_id, "part2");
-
-        // validate longer paths
-        let mount_point = host_config
-            .storage
-            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot/foo/bar"))
-            .unwrap();
-        assert_eq!(mount_point.target_id, "part2");
-
-        let mount_point = host_config
-            .storage
-            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar"))
-            .unwrap();
-        assert_eq!(mount_point.target_id, "part1");
-
-        // validate failure without any mount points
-        host_config.storage.mount_points.clear();
-        assert!(host_config
-            .storage
-            .path_to_mount_point(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
-            .is_none());
-    }
-
-    #[test]
-    fn test_get_mount_point_and_relative_path() {
-        let host_config = HostConfiguration {
-            storage: Storage {
-                mount_points: vec![
-                    MountPoint {
-                        path: PathBuf::from("/"),
-                        target_id: "root".into(),
-                        filesystem: FileSystemType::Ext4,
-                        options: vec![],
-                    },
-                    MountPoint {
-                        path: PathBuf::from("/boot"),
-                        target_id: "boot".into(),
-                        filesystem: FileSystemType::Ext4,
-                        options: vec![],
-                    },
-                    MountPoint {
-                        path: PathBuf::from("/boot/efi"),
-                        target_id: "efi".into(),
-                        filesystem: FileSystemType::Vfat,
-                        options: vec![],
-                    },
-                ],
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        assert_eq!(
-            host_config
-                .storage
-                .get_mount_point_and_relative_path(&PathBuf::from("/")),
-            Some((
-                &MountPoint {
-                    path: PathBuf::from("/"),
-                    target_id: "root".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                Path::new("")
-            ))
-        );
+        let mount_point = host_config
+            .storage
+            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
+            .unwrap();
+        assert_eq!(mount_point.device_id, Some(&"part1".into()));
 
-        assert_eq!(
-            host_config
-                .storage
-                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi.cfg")),
-            Some((
-                &MountPoint {
-                    path: PathBuf::from("/boot"),
-                    target_id: "boot".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                Path::new("efi.cfg")
-            ))
-        );
-
-        assert_eq!(
-            host_config
-                .storage
-                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi")),
-            Some((
-                &MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-                Path::new("")
-            ))
-        );
-
-        assert_eq!(
-            host_config
-                .storage
-                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/")),
-            Some((
-                &MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-                Path::new("")
-            ))
-        );
-
-        assert_eq!(
-            host_config
-                .storage
-                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/foobar")),
-            Some((
-                &MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-                Path::new("foobar")
-            ))
-        );
-
-        assert_eq!(
-            host_config
-                .storage
-                .get_mount_point_and_relative_path(&PathBuf::from("/boot/efi/foobar/")),
-            Some((
-                &MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-                Path::new("foobar")
-            ))
-        );
-    }
-
-    #[test]
-    fn test_get_filesystem_match_efi_returns_vfat() {
-        let storage = Storage {
-            mount_points: vec![
-                MountPoint {
-                    path: PathBuf::from("/"),
-                    target_id: "root".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot"),
-                    target_id: "boot".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-            ],
-            ..Default::default()
-        };
-
-        assert_eq!(
-            storage.get_filesystem(&"efi".into()).unwrap(),
-            FileSystemType::Vfat
-        );
-    }
-
-    #[test]
-    fn test_get_filesystem_match_root_returns_ext4() {
-        let storage = Storage {
-            mount_points: vec![
-                MountPoint {
-                    path: PathBuf::from("/"),
-                    target_id: "root".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot"),
-                    target_id: "boot".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-            ],
-            ..Default::default()
-        };
-
-        assert_eq!(
-            storage.get_filesystem(&"root".into()).unwrap(),
-            FileSystemType::Ext4
-        );
-    }
-
-    #[test]
-    fn test_get_filesystem_no_match_returns_none() {
-        let storage = Storage {
-            mount_points: vec![
-                MountPoint {
-                    path: PathBuf::from("/"),
-                    target_id: "root".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot"),
-                    target_id: "boot".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-            ],
-            ..Default::default()
-        };
-
-        assert!(storage.get_filesystem(&"srv".into()).is_none());
-    }
-
-    #[test]
-    fn test_get_filesystem_match_ab_root_by_pair_id_returns_ext4() {
-        let storage = Storage {
-            mount_points: vec![
-                MountPoint {
-                    path: PathBuf::from("/"),
-                    target_id: "root".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot"),
-                    target_id: "boot".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-            ],
-            ab_update: Some(AbUpdate {
-                volume_pairs: vec![AbVolumePair {
-                    id: "root".into(),
-                    volume_a_id: "root-a".into(),
-                    volume_b_id: "root-b".into(),
-                }],
+        // ensure to pick the longest prefix
+        host_config.storage.filesystems.push(FileSystem {
+            device_id: Some("part2".to_owned()),
+            fs_type: FileSystemType::Ext4,
+            source: FileSystemSource::Create,
+            mount_point: Some(MountPoint {
+                path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
+                options: MountOptions::empty(),
             }),
-            ..Default::default()
-        };
+        });
 
-        assert_eq!(
-            storage.get_filesystem(&"root".into()).unwrap(),
-            FileSystemType::Ext4
-        );
+        let mount_point = host_config
+            .storage
+            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
+            .unwrap();
+        assert_eq!(mount_point.device_id, Some(&"part2".into()));
+
+        // validate longer paths
+        let mount_point = host_config
+            .storage
+            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot/foo/bar"))
+            .unwrap();
+        assert_eq!(mount_point.device_id, Some(&"part2".into()));
+
+        let mount_point = host_config
+            .storage
+            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar"))
+            .unwrap();
+        assert_eq!(mount_point.device_id, Some(&"part1".into()));
+
+        // validate failure without any mount points
+        host_config.storage.filesystems.clear();
+        assert!(host_config
+            .storage
+            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
+            .is_none());
     }
 
     #[test]
-    fn test_get_filesystem_match_ab_root_by_vol_a_id_returns_ext4() {
-        let storage = Storage {
-            mount_points: vec![
-                MountPoint {
-                    path: PathBuf::from("/"),
-                    target_id: "root".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
+    fn test_get_mount_point_info_and_relative_path() {
+        let host_config = {
+            let mut hc = HostConfiguration {
+                storage: Storage {
+                    filesystems: vec![
+                        FileSystem {
+                            device_id: Some("root".into()),
+                            fs_type: FileSystemType::Ext4,
+                            source: FileSystemSource::Create,
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                                options: MountOptions::empty(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("boot".into()),
+                            fs_type: FileSystemType::Ext4,
+                            source: FileSystemSource::Create,
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from(BOOT_MOUNT_POINT_PATH),
+                                options: MountOptions::empty(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("efi".into()),
+                            fs_type: FileSystemType::Vfat,
+                            source: FileSystemSource::Create,
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                                options: MountOptions::empty(),
+                            }),
+                        },
+                    ],
+                    ..Default::default()
                 },
-                MountPoint {
-                    path: PathBuf::from("/boot"),
-                    target_id: "boot".into(),
-                    filesystem: FileSystemType::Ext4,
-                    options: vec![],
-                },
-                MountPoint {
-                    path: PathBuf::from("/boot/efi"),
-                    target_id: "efi".into(),
-                    filesystem: FileSystemType::Vfat,
-                    options: vec![],
-                },
-            ],
-            ab_update: Some(AbUpdate {
-                volume_pairs: vec![AbVolumePair {
-                    id: "root".into(),
-                    volume_a_id: "root-a".into(),
-                    volume_b_id: "root-b".into(),
-                }],
-            }),
-            ..Default::default()
+                ..Default::default()
+            };
+
+            hc.populate_internal();
+            hc
         };
 
-        assert_eq!(
-            storage.get_filesystem(&"root-a".into()).unwrap(),
-            FileSystemType::Ext4
-        );
+        fn test_fn(
+            hc: &HostConfiguration,
+            path: &'static str,
+            expected_fs_index: usize,
+            expected_rp: &str,
+        ) {
+            println!("Testing path: {}", path);
+            println!("Expected filesystem index: {}", expected_fs_index);
+            println!("Expected relative path: {}", expected_rp);
+            let expected_fs = &hc.storage.filesystems[expected_fs_index];
+
+            // First check new API functions
+            let (mpi, rp) = hc
+                .storage
+                .get_mount_point_info_and_relative_path(Path::new(path))
+                .unwrap();
+            assert_eq!(mpi.device_id, expected_fs.device_id.as_ref());
+            assert_eq!(mpi.mount_point, expected_fs.mount_point.as_ref().unwrap());
+            assert_eq!(mpi.fs_type, expected_fs.fs_type);
+            assert_eq!(rp, Path::new(expected_rp));
+
+            // Now check old internal functions
+            let (mp, rp) = hc
+                .storage
+                .get_mount_point_and_relative_path(Path::new(path))
+                .unwrap();
+            assert_eq!(
+                mp.target_id,
+                expected_fs.device_id.as_deref().unwrap_or_default()
+            );
+            assert_eq!(
+                mp.path,
+                expected_fs
+                    .mount_point
+                    .as_ref()
+                    .map(|mp| mp.path.as_path())
+                    .unwrap_or(Path::new("none"))
+            );
+            assert_eq!(mp.filesystem, expected_fs.fs_type);
+            assert_eq!(rp, Path::new(expected_rp));
+        }
+
+        test_fn(&host_config, "/", 0, "");
+        test_fn(&host_config, "/some/random/path", 0, "some/random/path");
+        test_fn(&host_config, "/boot/", 1, "");
+        test_fn(&host_config, "/boot/efi.cfg", 1, "efi.cfg");
+        test_fn(&host_config, "/boot/some/path", 1, "some/path");
+        test_fn(&host_config, "/boot/efi", 2, "");
+        test_fn(&host_config, "/boot/efi/", 2, "");
+        test_fn(&host_config, "/boot/efi/foobar", 2, "foobar");
+        test_fn(&host_config, "/boot/efi/foobar/", 2, "foobar");
     }
 }

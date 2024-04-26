@@ -8,7 +8,7 @@ use log::{error, info};
 
 use osutils::{filesystems::MountFileSystemType, lsof, mount};
 use trident_api::{
-    config::MountPoint,
+    config::InternalMountPoint,
     constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
     status::HostStatus,
@@ -41,12 +41,12 @@ pub(super) fn unmount_new_root(
     res
 }
 
-/// Returns an ordered map of mount points to their corresponding MountPoint objects.
-fn mount_points_map(host_status: &HostStatus) -> BTreeMap<&Path, &MountPoint> {
+/// Returns an ordered map of mount points to their corresponding InternalMountPoint objects.
+fn mount_points_map(host_status: &HostStatus) -> BTreeMap<&Path, &InternalMountPoint> {
     host_status
         .spec
         .storage
-        .mount_points
+        .internal_mount_points
         .iter()
         .map(|mp| (&*mp.path, mp))
         .filter(|(path, _)| path.to_str() != Some("none"))
@@ -114,39 +114,39 @@ mod test {
     use super::*;
 
     use std::path::PathBuf;
-    use trident_api::config::{FileSystemType, HostConfiguration, MountPoint, Storage};
+    use trident_api::config::{FileSystemType, HostConfiguration, InternalMountPoint, Storage};
 
     #[test]
     fn test_mount_point_ordering() {
         let host_status = HostStatus {
             spec: HostConfiguration {
                 storage: Storage {
-                    mount_points: vec![
-                        MountPoint {
+                    internal_mount_points: vec![
+                        InternalMountPoint {
                             path: PathBuf::from("/mnt/boot/efi"),
                             target_id: "sda3".to_string(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from("/mnt"),
                             target_id: "sda1".to_string(),
                             filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from("/a"),
                             target_id: "sda1".to_string(),
                             filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from("/"),
                             target_id: "sda1".to_string(),
                             filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from("/mnt/boot"),
                             target_id: "sda2".to_string(),
                             filesystem: FileSystemType::Ext4,
@@ -237,7 +237,7 @@ mod functional_test {
                         }],
                         ..Default::default()
                     }],
-                    mount_points: vec![config::MountPoint {
+                    internal_mount_points: vec![config::InternalMountPoint {
                         path: PathBuf::from("/"),
                         target_id: "sr0".to_string(),
                         filesystem: FileSystemType::Iso9660,
@@ -303,14 +303,14 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        config::MountPoint {
+                    internal_mount_points: vec![
+                        config::InternalMountPoint {
                             path: PathBuf::from("/"),
                             target_id: "root".to_string(),
                             filesystem: FileSystemType::Ext4,
                             options: vec!["defaults".into()],
                         },
-                        config::MountPoint {
+                        config::InternalMountPoint {
                             path: PathBuf::from("/boot/efi"),
                             target_id: "esp".to_string(),
                             filesystem: FileSystemType::Vfat,
@@ -452,7 +452,7 @@ mod functional_test {
                         }],
                         ..Default::default()
                     }],
-                    mount_points: vec![config::MountPoint {
+                    internal_mount_points: vec![config::InternalMountPoint {
                         path: PathBuf::from("foobar"),
                         target_id: "sr0".to_string(),
                         filesystem: FileSystemType::Iso9660,
@@ -488,9 +488,9 @@ mod functional_test {
         );
 
         // bad root path
-        let mut value = host_status.spec.storage.mount_points.remove(0);
+        let mut value = host_status.spec.storage.internal_mount_points.remove(0);
         value.path = PathBuf::from("/");
-        host_status.spec.storage.mount_points.push(value);
+        host_status.spec.storage.internal_mount_points.push(value);
         let temp_file = NamedTempFile::new().unwrap();
 
         assert_eq!(
@@ -552,7 +552,7 @@ mod functional_test {
                         }],
                         ..Default::default()
                     }],
-                    mount_points: vec![config::MountPoint {
+                    internal_mount_points: vec![config::InternalMountPoint {
                         path: PathBuf::from("/"),
                         target_id: "sr0".to_string(),
                         filesystem: FileSystemType::Iso9660,

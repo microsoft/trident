@@ -13,10 +13,13 @@ pub use host::{
     storage::{
         disks::{Disk, PartitionTableType},
         encryption::{EncryptedVolume, Encryption},
-        mountpoint::{FileSystemType, MountPoint},
+        filesystem::{
+            FileSystem, FileSystemSource, FileSystemType, MountOptions, MountPoint, MountPointInfo,
+            VerityFileSystem,
+        },
+        internal::{InternalImage, InternalMountPoint, InternalVerityDevice},
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
-        verity::VerityDevice,
         Storage,
     },
     trident::Trident,

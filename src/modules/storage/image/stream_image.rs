@@ -6,7 +6,7 @@ use osutils::{hashing_reader::HashingReader, image_streamer};
 use reqwest::{blocking::Response, StatusCode, Url};
 
 use trident_api::{
-    config::{Image, ImageSha256},
+    config::{ImageSha256, InternalImage},
     status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
@@ -56,7 +56,7 @@ pub(crate) fn stream_zstd_image(
 /// 5. is_local: bool, which is a boolean indicating whether the image is a local file or not.
 pub(super) fn deploy(
     image_url: &Url,
-    image: &Image,
+    image: &InternalImage,
     host_status: &mut HostStatus,
     block_device: &BlockDeviceInfo,
     is_local: bool,

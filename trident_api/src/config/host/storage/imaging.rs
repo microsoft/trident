@@ -34,10 +34,10 @@ pub struct Image {
 
     /// The format of the image.
     pub format: ImageFormat,
-
-    /// The ID of the partition that will be used to store the image.
-    #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    pub target_id: BlockDeviceId,
+    // TODO: REMOVE
+    // /// The ID of the partition that will be used to store the image.
+    // #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
+    // pub target_id: BlockDeviceId,
 }
 
 /// Image SHA256 checksum.

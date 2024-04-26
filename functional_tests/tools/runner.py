@@ -27,7 +27,9 @@ class RunnerTool:
         self.node: INode = node
 
     def run(self, module_name, test_name=None, parallel: bool = False) -> None:
-        cmd = f"tests/{module_name}"
+        # For some reason, passing RUST_BACKTRACE=1 here works, while passing it
+        # via the `update_envs` parameter in `execute()` does not.
+        cmd = f"RUST_BACKTRACE=1 tests/{module_name}"
         if not parallel:
             cmd += " --test-threads 1"
         if test_name:

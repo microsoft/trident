@@ -30,7 +30,7 @@ use osutils::{
     udevadm,
 };
 use trident_api::{
-    config::{Image, ImageSha256, PartitionType},
+    config::{ImageSha256, InternalImage, PartitionType},
     status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
@@ -153,7 +153,7 @@ impl ImageDeployment {
     /// ImageFormat is OciArtifact.
     /// Returns an instance of ImageDeployment, or an Error if failed to create one.
     pub(super) fn new(
-        update_image: &Image,
+        update_image: &InternalImage,
         host_status: &HostStatus,
         local_update_dir: Option<&Path>,
         local_update_file: Option<&str>,
@@ -732,7 +732,7 @@ fn get_partlabel_from_path(partition_path: &str) -> Result<String, Error> {
 /// is a PathBuf, filename is a String, and sha256 is a String.
 pub(super) fn get_local_image(
     image_url: &Url,
-    image: &Image,
+    image: &InternalImage,
 ) -> Result<(PathBuf, String, String), Error> {
     // Open local image file and read it into a stream of bytes
     let stream: Box<dyn Read> =
@@ -785,7 +785,7 @@ pub(super) fn get_local_image(
 
 /// Call into systemd-sysupdate to update the partition with the given image.
 pub(super) fn deploy(
-    image: &Image,
+    image: &InternalImage,
     host_status: &mut HostStatus,
     directory: Option<&Path>,
     filename: Option<&str>,

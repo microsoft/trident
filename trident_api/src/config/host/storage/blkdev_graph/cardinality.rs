@@ -58,6 +58,21 @@ impl ValidCardinality {
             (None, None) => true,
         }
     }
+
+    /// Returns true if the cardinality is exactly a value.
+    pub fn is_exactly(&self, value: usize) -> bool {
+        self.min_count == Some(value) && self.max_count == Some(value)
+    }
+
+    /// Returns if the cardinality can be more than 1.
+    ///
+    /// Useful to filter out cardinalities of 0-1, exactly 0, or exactly 1.
+    pub fn can_be_multiple(&self) -> bool {
+        match self.max_count {
+            Some(max) => max > 1,
+            None => true,
+        }
+    }
 }
 
 impl std::fmt::Display for ValidCardinality {

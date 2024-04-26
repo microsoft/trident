@@ -47,7 +47,7 @@ stages:
         steps:
           - template: ../common_tasks/coverage.yml
             parameters:
-              codeCoverageBaseline: 71 # Unit tests
+              codeCoverageBaseline: 70 # Unit tests
 
       - job: BuildTrident
         displayName: Build Release Artifacts

@@ -12,7 +12,12 @@ import logging
 
 
 def update_trident_host_config(
-    trident_yaml_content, iso_httpd_ip, oam_ip, ssh_pub_key, interface_name
+    trident_yaml_content,
+    iso_httpd_ip,
+    oam_ip,
+    ssh_pub_key,
+    interface_name,
+    host_interface,
 ):
     logging.info("Updating host config section of trident.yaml")
     logging.info("iso_httpd_ip: %s", iso_httpd_ip)
@@ -33,16 +38,25 @@ def update_trident_host_config(
         elif disk["id"] == "disk2":
             disk["device"] = "/dev/sdb"
 
-    logging.info("Updating image paths in trident.yaml")
-    images = host_configuration.get("storage").get("images")
-    if images:
-        for image in images:
-            parsed_url = urllib.parse.urlparse(image["url"])
-            if parsed_url.scheme == "http":
-                image_name = parsed_url.path.rsplit("/", 1)[-1]
-                image["url"] = (
-                    "http://" + iso_httpd_ip + "/isodir/hermes-image/" + image_name
-                )
+    def update_image_url(image):
+        new = image["url"].replace(
+            "NETLAUNCH_HOST_ADDRESS/files", f"{iso_httpd_ip}/isodir/hermes-image"
+        )
+        logging.info(f"Image found. Updating source url: {image['url']} -> {new}")
+        image["url"] = new
+
+    logging.info("Updating source url in filesystems")
+    for fs in host_configuration.get("storage").get("filesystems", []):
+        logging.info(f"Checking filesystem: {fs}")
+        source = fs.get("source")
+        if source and source.get("type") == "image":
+            update_image_url(source)
+
+    logging.info("Updating source url in verity filesystems")
+    for fs in host_configuration.get("storage").get("verityFilesystems", []):
+        logging.info(f"Updating verity filesystem: {fs}")
+        update_image_url(fs.get("dataImage"))
+        update_image_url(fs.get("hashImage"))
 
     logging.info("Updating mariner_user in trident.yaml")
     users = os.setdefault("users", [])
@@ -53,12 +67,12 @@ def update_trident_host_config(
     logging.info("Updating phonehome and logstream in trident.yaml")
     # Get inet address of the interface
     output = subprocess.run(
-        ["ip", "addr", "show", "eth0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ["ip", "addr", "show", host_interface], text=True, capture_output=True
     )
-    output = output.stdout.decode("utf-8").split("\n")[2].strip()
-    logging.info("Output of ip addr show eth0: %s", output)
+    output = output.stdout.split("\n")[2].strip()
+    logging.info(f"Output of ip addr show {host_interface}: {output}")
     netlisten_address = output.split(" ")[1].split("/")[0]
-    logging.info("Netlisten address: %s", netlisten_address)
+    logging.info(f"Netlisten address: {netlisten_address}")
     trident_yaml_content["phonehome"] = f"http://{netlisten_address}:12000/phonehome"
     trident_yaml_content["logstream"] = f"http://{netlisten_address}:12000/logstream"
 
@@ -93,6 +107,11 @@ def main():
         default="eno8303",
         help="Interface Name that needs the IP assigned. Default: eno8303",
     )
+    parser.add_argument(
+        "--host-interface",
+        default="eth0",
+        help="Host interface to use for netlisten. Default: eth0",
+    )
     args = parser.parse_args()
     with open(args.ssh_pub_key) as f:
         ssh_pub_key_content = f.read()
@@ -106,6 +125,7 @@ def main():
         args.oam_ip,
         ssh_pub_key_content.strip().strip("\n"),
         args.interface_name,
+        args.host_interface,
     )
     with open(args.trident_yaml, "w") as f:
         yaml.dump(trident_yaml_content, f, default_flow_style=False)

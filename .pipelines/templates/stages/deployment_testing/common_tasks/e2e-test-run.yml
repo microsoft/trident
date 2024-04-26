@@ -62,7 +62,7 @@ steps:
   # OS images to a writable directory /run on the VM. If not, copy runtime OS images to /abupdate
   - bash: |
       set -eu
-      verityExists=$(sudo yq e '.hostConfiguration.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      verityExists=$(sudo yq e '.hostConfiguration.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$verityExists" == "true" ]; then
         echo "Trident config requires verity runtime OS images"
         echo "##vso[task.setvariable variable=verityExists]true"

@@ -9,8 +9,6 @@ mod partitions;
 mod scripts;
 mod users;
 
-mod misc;
-
 pub fn translate(input: ParsedData) -> Result<HostConfiguration, Vec<SetsailError>> {
     log::trace!("Translating: {:#?}", input);
     let mut hc = HostConfiguration::default();

@@ -457,9 +457,9 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, EncryptedVolume, Encryption, FileSystemType, Image, ImageFormat, ImageSha256,
-            MountPoint, Partition, PartitionSize, PartitionType, Raid, RaidLevel,
-            SoftwareRaidArray, Storage,
+            Disk, EncryptedVolume, Encryption, FileSystemType, ImageFormat, ImageSha256,
+            InternalImage, InternalMountPoint, Partition, PartitionSize, PartitionType, Raid,
+            RaidLevel, SoftwareRaidArray, Storage,
         },
         constants,
     };
@@ -555,42 +555,42 @@ mod tests {
                 ],
                 ..Default::default()
             }],
-            verity: vec![],
+            internal_verity: vec![],
             raid: Raid { software: vec![] },
-            mount_points: vec![
-                MountPoint {
+            internal_mount_points: vec![
+                InternalMountPoint {
                     path: PathBuf::from("/boot/efi"),
                     target_id: "esp".to_string(),
                     filesystem: FileSystemType::Vfat,
                     options: vec!["defaults".to_owned()],
                 },
-                MountPoint {
+                InternalMountPoint {
                     path: constants::ROOT_MOUNT_POINT_PATH.into(),
                     target_id: "root".to_string(),
                     filesystem: FileSystemType::Ext4,
                     options: vec!["defaults".to_owned()],
                 },
-                MountPoint {
+                InternalMountPoint {
                     path: PathBuf::from("/srv"),
                     target_id: "srv".to_string(),
                     filesystem: FileSystemType::Ext4,
                     options: vec!["defaults".to_owned()],
                 },
             ],
-            images: vec![
-                Image {
+            internal_images: vec![
+                InternalImage {
                     url: "file:///trident_cdrom/data/esp.rawzst".into(),
                     sha256: ImageSha256::Ignored,
                     format: ImageFormat::RawZst,
                     target_id: "esp".to_owned(),
                 },
-                Image {
+                InternalImage {
                     url: "file:///trident_cdrom/data/root.rawzst".into(),
                     sha256: ImageSha256::Ignored,
                     format: ImageFormat::RawZst,
                     target_id: "root".to_owned(),
                 },
-                Image {
+                InternalImage {
                     url: "file:///trident_cdrom/data/srv.rawzst".into(),
                     sha256: ImageSha256::Ignored,
                     format: ImageFormat::RawZst,
@@ -606,6 +606,7 @@ mod tests {
                     target_id: "srv-enc".to_owned(),
                 }],
             }),
+            ..Default::default()
         }
     }
 

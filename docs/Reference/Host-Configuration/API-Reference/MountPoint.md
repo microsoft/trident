@@ -2,61 +2,25 @@
 
 # MountPoint
 
-Mount point configuration.
-
-These are used by Trident to update the `/etc/fstab` in the runtime OS to correctly mount the volumes.
-
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `object` |
 
 ## Properties
 
-### `filesystem` **<span style="color:orange;">(required)</span>**
-
-The filesystem to be used for this mount point.
-
-This value will be used to format the partition.
-
-| Characteristic | Value                                 |
-| -------------- | ------------------------------------- |
-| Type           | `FileSystemType`                      |
-| Link           | [FileSystemType](./FileSystemType.md) |
-
 ### `options` **<span style="color:orange;">(required)</span>**
 
-A list of options to be used for this mount point.
-
-These will be passed as is to the `/etc/fstab` file.
-
-| Characteristic | Value   |
-| -------------- | ------- |
-| Type           | `array` |
-
-- Items of the array must have the type:
-
-   | Characteristic | Value    |
-   | -------------- | -------- |
-   | Type           | `string` |
-
-### `path` **<span style="color:orange;">(required)</span>**
-
-The path of the mount point.
-
-This is the path where the volume will be mounted in the runtime OS. For `swap` partitions, the path should be `none`.
+The mount options.
 
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `string` |
 
-### `targetId` **<span style="color:orange;">(required)</span>**
+### `path` **<span style="color:orange;">(required)</span>**
 
-The id of the block device that will be mounted at this mount point.
+The path to mount the file system.
 
-This parameter is required. It must be the ID of a disk partition, encrypted volume, software raid array, or a/b update volume pair.
-
-| Characteristic | Value             |
-| -------------- | ----------------- |
-| Type           | `string`          |
-| Format         | `Block Device ID` |
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
 

@@ -174,7 +174,7 @@ fn validate_datastore_location(
 #[cfg(test)]
 mod tests {
     use trident_api::{
-        config::{AbUpdate, FileSystemType, MountPoint, Storage},
+        config::{AbUpdate, FileSystemType, InternalMountPoint, Storage},
         constants,
     };
 
@@ -184,7 +184,7 @@ mod tests {
     fn test_validate_datastore_location() {
         let host_config = HostConfiguration {
             storage: Storage {
-                mount_points: vec![MountPoint {
+                internal_mount_points: vec![InternalMountPoint {
                     path: constants::ROOT_MOUNT_POINT_PATH.into(),
                     target_id: "sda1".into(),
                     filesystem: FileSystemType::Ext4,
@@ -205,14 +205,14 @@ mod tests {
 
         let host_config = HostConfiguration {
             storage: Storage {
-                mount_points: vec![
-                    MountPoint {
+                internal_mount_points: vec![
+                    InternalMountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
                         filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
-                    MountPoint {
+                    InternalMountPoint {
                         path: "/bar".into(),
                         target_id: "sda2".into(),
                         filesystem: FileSystemType::Ext4,
@@ -228,14 +228,14 @@ mod tests {
 
         let host_config = HostConfiguration {
             storage: Storage {
-                mount_points: vec![
-                    MountPoint {
+                internal_mount_points: vec![
+                    InternalMountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
                         filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
-                    MountPoint {
+                    InternalMountPoint {
                         path: "/bar".into(),
                         target_id: "sda2".into(),
                         filesystem: FileSystemType::Ext4,
@@ -265,14 +265,14 @@ mod tests {
 
         let host_config = HostConfiguration {
             storage: Storage {
-                mount_points: vec![
-                    MountPoint {
+                internal_mount_points: vec![
+                    InternalMountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
                         filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
-                    MountPoint {
+                    InternalMountPoint {
                         path: "/bar".into(),
                         target_id: "sda2".into(),
                         filesystem: FileSystemType::Ext4,
@@ -302,14 +302,14 @@ mod tests {
 
         let host_config = HostConfiguration {
             storage: Storage {
-                mount_points: vec![
-                    MountPoint {
+                internal_mount_points: vec![
+                    InternalMountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
                         target_id: "sda1".into(),
                         filesystem: FileSystemType::Ext4,
                         options: vec![],
                     },
-                    MountPoint {
+                    InternalMountPoint {
                         path: "/bar".into(),
                         target_id: "sda2".into(),
                         filesystem: FileSystemType::Ext4,

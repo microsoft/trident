@@ -19,9 +19,10 @@
 //!     the same block device twice)
 //! - Call the validation rules defined in the `rules` module to perform
 //!   per-kind validation.
-//! - Validate that all images are valid.
-//! - Validate that all mount points are valid.
-//! - Validate that all mount points are unique. (except for swap and none)
+//! - Validate that all mount points are unique and valid.
+//! - Validate that all filesystems are valid.
+//!   - Check that all filesystems have a valid block device ID if required.
+//!   - Check that all filesystems have a valid mount point if provided.
 //!
 //! The end result is a BlockDeviceGraph struct that contains all the nodes and
 //! their relationships. This graph, can be considered as fully valid.
@@ -31,24 +32,26 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use log::warn;
+
 use crate::{
-    config::{Image, MountPoint},
-    constants::{NONE_MOUNT_POINT, SWAP_MOUNT_POINT},
+    config::{FileSystem, PartitionSize, VerityFileSystem},
     BlockDeviceId,
 };
 
 use super::{
     error::BlockDeviceGraphBuildError,
     graph::BlockDeviceGraph,
-    rules::VALID_NON_PATH_MOUNT_POINTS,
-    types::{BlkDevKind, BlkDevNode, BlkDevReferrerKind},
+    types::{BlkDevKind, BlkDevNode, BlkDevReferrerKind, FileSystemSourceKind, NodeFileSystem},
 };
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct BlockDeviceGraphBuilder<'a> {
     nodes: Vec<BlkDevNode<'a>>,
-    images: Vec<&'a Image>,
-    mount_points: Vec<&'a MountPoint>,
+    // images: Vec<&'a Image>,
+    // mount_points: Vec<&'a MountPoint>,
+    filesystems: Vec<&'a FileSystem>,
+    verity_filesystems: Vec<&'a VerityFileSystem>,
 }
 
 impl<'a> BlockDeviceGraphBuilder<'a> {
@@ -57,14 +60,22 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
         self.nodes.push(node);
     }
 
-    /// Adds a new image to the graph
-    pub(crate) fn add_image(&mut self, image: &'a Image) {
-        self.images.push(image);
+    // /// Adds a new image to the graph
+    // pub(crate) fn add_image(&mut self, image: &'a Image) {
+    //     self.images.push(image);
+    // }
+
+    // /// Adds a new mount point to the graph
+    // pub(crate) fn add_mount_point(&mut self, mount_point: &'a MountPoint) {
+    //     self.mount_points.push(mount_point);
+    // }
+
+    pub(crate) fn add_filesystem(&mut self, filesystem: &'a FileSystem) {
+        self.filesystems.push(filesystem);
     }
 
-    /// Adds a new mount point to the graph
-    pub(crate) fn add_mount_point(&mut self, mount_point: &'a MountPoint) {
-        self.mount_points.push(mount_point);
+    pub(crate) fn add_verity_filesystem(&mut self, verity_filesystem: &'a VerityFileSystem) {
+        self.verity_filesystems.push(verity_filesystem);
     }
 
     /// Builds the block device graph
@@ -88,7 +99,51 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
         }
 
         // Check that all nodes and their references are valid
+        Self::build_nodes(&mut nodes)?;
 
+        // Check that all mountpoints are unique and valid
+        Self::check_mountpounts(&self.filesystems, &self.verity_filesystems)?;
+
+        // Check that all filesystems are valid and register them with their respective nodes
+        // Get a list of filesystems that do not have a block device ID
+        let deviceless_filesystems = Self::build_filesystems(&self.filesystems, &mut nodes)?;
+
+        // Check that all verity filesystems are valid and have unique names
+        Self::build_verity_filesystems(&self.verity_filesystems, &mut nodes)?;
+
+        // The graph can be built now
+        // After this point we only do immutable checks on it!
+        let graph = BlockDeviceGraph {
+            nodes,
+            deviceless_filesystems,
+        };
+
+        // Check that all nodes & filesystems have dependents of the same block
+        // device kind when required
+        Self::check_dependency_kind_homogeneity(&graph)?;
+
+        // Check all dependents for sharing compatibility
+        Self::check_sharing(&graph)?;
+
+        // Check unique field values requirements
+        Self::check_unique_fields(&graph)?;
+
+        // Check that underlying partitions are homogeneous when required
+        Self::check_partition_homogeneity(&graph)?;
+
+        // Check that underlying partitions are of valid types
+        Self::check_valid_partition_types(&graph)?;
+
+        // Check targets for each node
+        Self::check_targets(&graph)?;
+
+        Ok(graph)
+    }
+
+    /// Check that all nodes and their references are valid
+    fn build_nodes(
+        nodes: &mut BTreeMap<BlockDeviceId, BlkDevNode<'a>>,
+    ) -> Result<(), BlockDeviceGraphBuildError> {
         // Fun stuff to get around the borrow checker!
         //
         // We want to iterate over all the nodes, but while we do that, we also
@@ -155,19 +210,13 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
             // Then check each member individually.
             for target in node.targets.iter() {
                 // Try to get a mutable reference to the member node on the map.
-                let target_node = nodes.get_mut(target);
-
-                // Ensure that the member node exists.
-                if target_node.is_none() {
-                    return Err(BlockDeviceGraphBuildError::NonExistentReference {
-                        node_id: node.id,
+                let target_node = nodes.get_mut(target).ok_or_else(|| {
+                    BlockDeviceGraphBuildError::NonExistentReference {
+                        node_id: node.id.clone(),
                         kind: node.kind,
                         target_id: target.clone(),
-                    });
-                }
-
-                // Unwrap the target node since we know it exists.
-                let target_node = target_node.unwrap();
+                    }
+                })?;
 
                 // Get the valid references for the current node.
                 let valid_references = node.kind.as_blkdev_referrer().valid_target_kinds();
@@ -189,120 +238,292 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
             }
         }
 
-        // Check that all images are valid.
-        for image in self.images.iter() {
-            // Try to get target the node from the map.
-            let node = nodes.get_mut(&image.target_id);
+        Ok(())
+    }
 
-            // Ensure that the target node exists.
-            if node.is_none() {
-                return Err(BlockDeviceGraphBuildError::ImageNonExistentReference {
-                    image_id: image.url.clone(),
-                    target_id: image.target_id.clone(),
-                });
-            }
+    /// Check that all mountpoints are unique and valid
+    fn check_mountpounts(
+        filesystems: &[&'a FileSystem],
+        verity_filesystems: &[&'a VerityFileSystem],
+    ) -> Result<(), BlockDeviceGraphBuildError> {
+        // Create a set of all unique mount points
+        let mut unique_mount_points = BTreeSet::new();
 
-            // Unwrap the node since we know it exists.
-            let node = node.unwrap();
-
-            // Depending on the image format, we can have different referrer kinds.
-            // The implementation of this `From` trait lives in `conversions.rs`.
-            let valid_references = BlkDevReferrerKind::from(*image).valid_target_kinds();
-
-            // Check that the node is of a valid kind.
-            if !valid_references.contains(node.kind.as_flag()) {
-                return Err(BlockDeviceGraphBuildError::ImageInvalidReference {
-                    image_id: image.url.clone(), // The image's path.
-                    target_id: node.id.clone(),  // The node being referenced.
-                    target_kind: node.kind,      // The node's kind.
-                    valid_references,            // The valid kinds of nodes for an image.
-                });
-            }
-
-            if let Some(other_image) = node.image {
-                return Err(BlockDeviceGraphBuildError::ImageReferenceAlreadyImaging {
-                    image_id: image.url.clone(),             // The image's path.
-                    target_id: node.id.clone(),              // The node being referenced.
-                    other_image_id: other_image.url.clone(), // The other image that references this target.
-                });
-            }
-
-            // Set the node's image
-            node.image = Some(image);
-        }
-
-        // Check that all mount points are unique
-        {
-            let mut unique_mount_points = BTreeSet::new();
-            for mount_point in self.mount_points.iter() {
-                // Swap is a special case since it is not a real mount point and tghere can be many of them.
-                // The `none` case is also explicitly skipped. Note that currently these are the same.
-                if mount_point.path.as_os_str() == SWAP_MOUNT_POINT
-                    || mount_point.path.as_os_str() == NONE_MOUNT_POINT
-                {
-                    continue;
-                }
-
-                if !unique_mount_points.insert(mount_point.path.clone()) {
+        // Create an iterator with all mount points from all filesystems and
+        // verity filesystems
+        filesystems
+            .iter()
+            .flat_map(|fs| fs.mount_point.iter())
+            .chain(verity_filesystems.iter().map(|fs| &fs.mount_point))
+            .try_for_each(|mntp| {
+                if !unique_mount_points.insert(mntp.path.clone()) {
                     return Err(BlockDeviceGraphBuildError::DuplicateMountPoint(
-                        mount_point.path.to_string_lossy().into(),
+                        mntp.path.to_string_lossy().into(),
                     ));
                 }
+
+                // Ensure the mount point path is absolute
+                if !mntp.path.is_absolute() {
+                    return Err(BlockDeviceGraphBuildError::MountPointPathNotAbsolute(
+                        mntp.path.to_string_lossy().into(),
+                    ));
+                }
+
+                Ok(())
+            })
+    }
+
+    // Check that all filesystems are valid
+    // Register all filesystems with their respective nodes
+    // Returns a list of filesystems that do not have a block device ID
+    fn build_filesystems(
+        filesystems: &[&'a FileSystem],
+        nodes: &mut BTreeMap<BlockDeviceId, BlkDevNode<'a>>,
+    ) -> Result<Vec<&'a FileSystem>, BlockDeviceGraphBuildError> {
+        let mut deviceless_filesystems: Vec<&'a FileSystem> = Vec::new();
+
+        // Check that all filesystems are valid
+        for fs in filesystems {
+            // Check if the mountpoint *can* be provided
+            // Eg. swap cannot have a mountpoint
+            if !fs.fs_type.can_have_mountpoint() && fs.mount_point.is_some() {
+                return Err(BlockDeviceGraphBuildError::FilesystemUnexpectedMountPoint(
+                    fs.fs_type,
+                ));
+            }
+
+            // Check that the filesystem source is valid
+            {
+                let valid_sources = fs.fs_type.valid_sources();
+                let fs_src_kind = FileSystemSourceKind::from(&fs.source);
+                if !valid_sources.contains(fs_src_kind) {
+                    return Err(BlockDeviceGraphBuildError::FilesystemInvalidSource {
+                        fs_type: fs.fs_type,
+                        fs_source: fs_src_kind,
+                        fs_acceptable_sources: valid_sources,
+                    });
+                }
+            }
+
+            // Do checks depending on whether a block device ID was provided
+            if let Some(device_id) = fs.device_id.as_ref() {
+                // Check if we were not expecting a block device ID and got one
+                if !fs.fs_type.requires_block_device_id() {
+                    return Err(
+                        BlockDeviceGraphBuildError::FilesystemUnexpectedBlockDeviceId(fs.fs_type),
+                    );
+                }
+
+                // Try to get the node from the map.
+                let node = nodes.get_mut(device_id).ok_or_else(|| {
+                    BlockDeviceGraphBuildError::FilesystemNonExistentReference {
+                        target_id: device_id.clone(),
+                        fs_type: fs.fs_type,
+                    }
+                })?;
+
+                // Depending on the details of the filesystem, we can have different referrer kinds.
+                let valid_references = BlkDevReferrerKind::from(*fs).valid_target_kinds();
+
+                // Check that the node is of a valid kind.
+                if !valid_references.contains(node.kind.as_flag()) {
+                    return Err(BlockDeviceGraphBuildError::FilesystemInvalidReference {
+                        fs_type: fs.fs_type,        // The image's path.
+                        target_id: node.id.clone(), // The node being referenced.
+                        target_kind: node.kind,     // The node's kind.
+                        valid_references,           // The valid kinds of nodes for an image.
+                    });
+                }
+
+                update_node_filesystem(node, NodeFileSystem::Regular(fs))?;
+            } else {
+                // Check if we were expecting a block device ID and did not get one.
+                if fs.fs_type.requires_block_device_id() {
+                    return Err(BlockDeviceGraphBuildError::FilesystemMissingBlockDeviceId(
+                        fs.fs_type,
+                    ));
+                }
+
+                // Add the filesystem to the list of deviceless filesystems
+                deviceless_filesystems.push(fs);
             }
         }
 
-        // Check that all mount points are valid
-        for mount_point in self.mount_points.iter() {
-            // Try to get the target node from the map
-            let node = nodes.get_mut(&mount_point.target_id);
+        Ok(deviceless_filesystems)
+    }
 
-            // Ensure that the target node exists
-            if node.is_none() {
-                return Err(BlockDeviceGraphBuildError::MountPointNonExistentReference {
-                    mount_point: mount_point.path.to_string_lossy().into(),
-                    target_id: mount_point.target_id.clone(),
+    /// Check that all verity filesystems are valid and have unique names
+    /// Also associate the filesystems with the nodes
+    fn build_verity_filesystems(
+        verity_filesystems: &[&'a VerityFileSystem],
+        nodes: &mut BTreeMap<BlockDeviceId, BlkDevNode<'a>>,
+    ) -> Result<(), BlockDeviceGraphBuildError> {
+        // Set to check for unique names
+        let mut unique_names = BTreeSet::new();
+
+        for vfs in verity_filesystems {
+            // Check if the filesystem is supported and can have a mountpoint
+            if !vfs.fs_type.supports_verity() || !vfs.fs_type.can_have_mountpoint() {
+                return Err(
+                    BlockDeviceGraphBuildError::VerityFileSystemUnsupportedType {
+                        name: vfs.name.clone(),
+                        fs_type: vfs.fs_type,
+                    },
+                );
+            }
+
+            // Check for unique names
+            if !unique_names.insert(vfs.name.clone()) {
+                return Err(BlockDeviceGraphBuildError::VerityDuplicateName {
+                    name: vfs.name.clone(),
                 });
             }
 
-            // Unwrap the node since we know it exists
-            let node = node.unwrap();
+            // Get and update data node
+            let data_node = nodes.get_mut(&vfs.data_device_id).ok_or_else(|| {
+                BlockDeviceGraphBuildError::VerityFilesystemNonExistentReference {
+                    name: vfs.name.clone(),
+                    target_id: vfs.data_device_id.clone(),
+                    fs_type: vfs.fs_type,
+                    role: "data".into(),
+                }
+            })?;
 
-            // Check that the node is of a valid kind
-            if !BlkDevReferrerKind::MountPoint
-                .valid_target_kinds()
-                .contains(node.kind.as_flag())
-            {
-                return Err(BlockDeviceGraphBuildError::MountPointInvalidReference {
-                    mount_point: mount_point.path.to_string_lossy().into(), // The mount point's path
-                    target_id: node.id.clone(), // The node being referenced
-                    target_kind: node.kind,     // The node's kind
-                    valid_references: BlkDevReferrerKind::MountPoint.valid_target_kinds(), // The valid kinds of nodes for a mount point
-                });
+            // Depending on the details of the filesystem, we can have different referrer kinds.
+            let data_valid_references =
+                BlkDevReferrerKind::VerityFileSystemData.valid_target_kinds();
+
+            // Check that the node is of a valid kind.
+            if !data_valid_references.contains(data_node.kind.as_flag()) {
+                return Err(
+                    BlockDeviceGraphBuildError::VerityFilesystemInvalidReferenceData {
+                        name: vfs.name.clone(),
+                        fs_type: vfs.fs_type,
+                        target_id: data_node.id.clone(),
+                        target_kind: data_node.kind,
+                        valid_references: data_valid_references,
+                    },
+                );
             }
 
-            // Ensure the mount point is valid
-            if !(mount_point.path.is_absolute()
-                || VALID_NON_PATH_MOUNT_POINTS
-                    .iter()
-                    .any(|p| p == &mount_point.path.as_os_str()))
-            {
-                return Err(BlockDeviceGraphBuildError::InvalidMountPoint {
-                    mount_point: mount_point.path.to_string_lossy().into(),
-                    valid_mount_points: VALID_NON_PATH_MOUNT_POINTS.join(", "), // Stringified list of other valid mount points
-                });
+            update_node_filesystem(data_node, NodeFileSystem::VerityData(vfs))?;
+
+            // Get and update hash node
+            let hash_node = nodes.get_mut(&vfs.hash_device_id).ok_or_else(|| {
+                BlockDeviceGraphBuildError::VerityFilesystemNonExistentReference {
+                    name: vfs.name.clone(),
+                    target_id: vfs.hash_device_id.clone(),
+                    fs_type: vfs.fs_type,
+                    role: "hash".into(),
+                }
+            })?;
+
+            let hash_valid_references =
+                BlkDevReferrerKind::VerityFileSystemData.valid_target_kinds();
+
+            // Check that the node is of a valid kind.
+            if !hash_valid_references.contains(hash_node.kind.as_flag()) {
+                return Err(
+                    BlockDeviceGraphBuildError::VerityFilesystemInvalidReferenceHash {
+                        name: vfs.name.clone(),
+                        fs_type: vfs.fs_type,
+                        target_id: hash_node.id.clone(),
+                        target_kind: hash_node.kind,
+                        valid_references: hash_valid_references,
+                    },
+                );
             }
 
-            // Add the mount point to the node
-            node.mount_points.push(mount_point);
+            update_node_filesystem(hash_node, NodeFileSystem::VerityHash(vfs))?;
         }
 
-        // Check all dependents for sharing compatibility
-        for (_, node) in nodes.iter() {
+        Ok(())
+    }
+
+    /// Check all dependencies for homogeneity kind
+    fn check_dependency_kind_homogeneity(
+        graph: &BlockDeviceGraph<'a>,
+    ) -> Result<(), BlockDeviceGraphBuildError> {
+        // Get all the nodes for which we need to check the homogeneity of the dependents
+        for node in graph.nodes.values().filter(|n| {
+            n.kind
+                .as_blkdev_referrer()
+                .enforce_homogeneous_reference_kinds()
+        }) {
+            let target_kinds = graph
+                .targets(&node.id)
+                .ok_or(BlockDeviceGraphBuildError::InternalError {
+                    body: format!(
+                        "Failed to get targets for node '{}' of kind '{}'",
+                        node.id, node.kind
+                    ),
+                })?
+                .iter()
+                .map(|target| target.kind)
+                .collect::<Vec<_>>();
+
+            if target_kinds.is_empty() {
+                return Ok(()); // Nothing to check
+            }
+
+            let first_kind = target_kinds[0];
+            if !target_kinds.iter().all(|k| *k == first_kind) {
+                return Err(BlockDeviceGraphBuildError::ReferenceKindMismatch {
+                    referrer: node.id.clone(),
+                    kind: node.kind.as_blkdev_referrer(),
+                });
+            }
+        }
+
+        // Now check that for all filesystems
+        // We iterate over all nodes to get the filesystems
+        for fs in graph
+            .nodes
+            .values()
+            .filter_map(|node| node.filesystem)
+            .filter(|fs| BlkDevReferrerKind::from(*fs).enforce_homogeneous_reference_kinds())
+        {
+            // Get IDs of all targets of this filesystem
+            let targets = fs
+                .targets()
+                .into_iter()
+                .map(|target| {
+                    graph
+                        .get(&target)
+                        .ok_or(BlockDeviceGraphBuildError::InternalError {
+                            body: format!(
+                                "Failed to get known node '{}' from map of nodes",
+                                target
+                            ),
+                        })
+                })
+                .collect::<Result<Vec<&BlkDevNode>, BlockDeviceGraphBuildError>>()?;
+
+            if targets.is_empty() {
+                return Ok(()); // Nothing to check
+            }
+
+            let target_kinds = targets.iter().map(|target| target.kind).collect::<Vec<_>>();
+            let first_kind = target_kinds[0];
+            if !target_kinds.iter().all(|k| *k == first_kind) {
+                return Err(BlockDeviceGraphBuildError::ReferenceKindMismatch {
+                    referrer: fs.identity(),
+                    kind: BlkDevReferrerKind::from(fs),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check all dependents for sharing compatibility
+    fn check_sharing(graph: &BlockDeviceGraph<'a>) -> Result<(), BlockDeviceGraphBuildError> {
+        for node in graph.nodes.values() {
             let dependents = node
                 .dependents
                 .iter()
                 .map(|id| {
-                    nodes
+                    graph
                         .get(id)
                         .ok_or(BlockDeviceGraphBuildError::InternalError {
                             body: format!("Failed to get known node '{}' from map of nodes", id),
@@ -324,83 +545,299 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 }
             }
 
-            // Check that nodes being imaged are not shared with other referrers of invalid kind.
-            if let Some(image) = node.image {
-                // Check image and dependents sharing
+            // Check that nodes with filesystems are not shared with other referrers of invalid kind.
+            if let Some(fs) = node.filesystem {
                 for dependent in dependents.iter() {
                     check_mutual_sharing_peers(
                         &node.id,
                         node.kind,
-                        &image.url,
-                        BlkDevReferrerKind::from(image),
-                        &dependent.id,
-                        dependent.kind.as_blkdev_referrer(),
-                    )?;
-                }
-
-                // Check image and mount point sharing
-                for mount_point in node.mount_points.iter() {
-                    check_mutual_sharing_peers(
-                        &node.id,
-                        node.kind,
-                        &image.url,
-                        BlkDevReferrerKind::from(image),
-                        mount_point.path.to_string_lossy(),
-                        BlkDevReferrerKind::MountPoint,
-                    )?;
-                }
-            }
-
-            // Check that nodes with mount points are not shared with other referrers of invalid kind.
-            for mount_point in node.mount_points.iter() {
-                // Check mount point and dependents sharing
-                for dependent in dependents.iter() {
-                    check_mutual_sharing_peers(
-                        &node.id,
-                        node.kind,
-                        mount_point.path.to_string_lossy(),
-                        BlkDevReferrerKind::MountPoint,
+                        fs.identity(),
+                        BlkDevReferrerKind::from(fs),
                         &dependent.id,
                         dependent.kind.as_blkdev_referrer(),
                     )?;
                 }
             }
         }
+        Ok(())
+    }
 
-        // Check unique field values requirements
+    /// Check unique field values requirements
+    fn check_unique_fields(graph: &BlockDeviceGraph<'a>) -> Result<(), BlockDeviceGraphBuildError> {
+        let mut unique_fields: HashMap<BlkDevKind, HashMap<&'static str, HashMap<&[u8], &str>>> =
+            HashMap::new();
+        for (id, node) in graph.nodes.iter() {
+            if let Some(uniqueness_constraint) = node.host_config_ref.uniqueness_constraints() {
+                let kind = node.host_config_ref.kind();
+                for (field_name, field_value) in uniqueness_constraint {
+                    if let Some(other_id) = unique_fields
+                        .entry(kind)
+                        .or_default()
+                        .entry(field_name)
+                        .or_default()
+                        .insert(field_value, id)
+                    {
+                        return Err(BlockDeviceGraphBuildError::UniqueFieldConstraintError {
+                            node_id: id.clone(),
+                            other_id: other_id.into(),
+                            kind,
+                            field_name: field_name.into(),
+                            value: String::from_utf8_lossy(field_value).into(),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn check_partition_homogeneity(
+        graph: &BlockDeviceGraph<'a>,
+    ) -> Result<(), BlockDeviceGraphBuildError> {
+        // Check partition size homogeneity for all nodes that require it
+        for node in graph.nodes.values().filter(|node| {
+            node.kind
+                .as_blkdev_referrer()
+                .enforce_homogeneous_partition_sizes()
+        }) {
+            let partition_sizes = graph.get_partition_sizes(&node.id)?.ok_or(
+                BlockDeviceGraphBuildError::InternalError {
+                    body: format!(
+                        "check_partition_homogeneity: Failed to get partitions for node '{}' of kind '{}'",
+                        node.id, node.kind
+                    ),
+                },
+            )?;
+
+            if partition_sizes.is_empty() {
+                return Err(BlockDeviceGraphBuildError::InternalError {
+                    body: format!(
+                        "check_partition_homogeneity: partition_sizes is empty for node '{}' of kind '{}'",
+                        node.id, node.kind
+                    ),
+                });
+            }
+
+            // Ensure all partition sizes are fixed
+            partition_sizes.iter().try_for_each(|attr| {
+                if !matches!(attr.value, PartitionSize::Fixed(_)) {
+                    return Err(BlockDeviceGraphBuildError::PartitionSizeNotFixed {
+                        node_id: node.id.clone(),
+                        kind: node.kind,
+                        partition_id: attr.id.to_string(),
+                    });
+                }
+
+                Ok(())
+            })?;
+
+            // Ensure all are equal
+            if !partition_sizes.is_homogeneous() {
+                return Err(BlockDeviceGraphBuildError::PartitionSizeMismatch {
+                    node_id: node.id.clone(),
+                    kind: node.kind,
+                });
+            }
+        }
+
+        // Check partition type homogeneity for all nodes that require it
+        for node in graph.nodes.values().filter(|node| {
+            node.kind
+                .as_blkdev_referrer()
+                .enforce_homogeneous_partition_types()
+        }) {
+            let partition_types = graph.get_partition_type(&node.id)?.ok_or(
+                BlockDeviceGraphBuildError::InternalError {
+                    body: format!(
+                        "check_partition_homogeneity: Failed to get partitions for node '{}' of kind '{}'",
+                        node.id, node.kind
+                    ),
+                },
+            )?;
+
+            if partition_types.is_empty() {
+                return Err(BlockDeviceGraphBuildError::InternalError {
+                    body: format!(
+                        "check_partition_homogeneity: partition_types is empty for node '{}' of kind '{}'",
+                        node.id, node.kind
+                    ),
+                });
+            }
+
+            // Ensure all partition types are equal
+            if !partition_types.is_homogeneous() {
+                return Err(BlockDeviceGraphBuildError::PartitionTypeMismatch {
+                    node_id: node.id.clone(),
+                    kind: node.kind,
+                });
+            }
+        }
+
+        // Check that all nodes with filesystems have homogeneous partition types
+        for (node, fs) in graph
+            .nodes
+            .values()
+            .filter(|node| node.filesystem.is_some())
+            .map(|node| (node, node.filesystem.unwrap()))
+            .filter(|(_, fs)| BlkDevReferrerKind::from(*fs).enforce_homogeneous_partition_types())
         {
-            let mut unique_fields: HashMap<
-                BlkDevKind,
-                HashMap<&'static str, HashMap<&[u8], &str>>,
-            > = HashMap::new();
-            for (id, node) in nodes.iter() {
-                if let Some(uniqueness_constraint) = node.host_config_ref.uniqueness_constraints() {
-                    let kind = node.host_config_ref.kind();
-                    for (field_name, field_value) in uniqueness_constraint {
-                        if let Some(other_id) = unique_fields
-                            .entry(kind)
-                            .or_default()
-                            .entry(field_name)
-                            .or_default()
-                            .insert(field_value, id)
-                        {
-                            return Err(BlockDeviceGraphBuildError::UniqueFieldConstraintError {
-                                node_id: id.clone(),
-                                other_id: other_id.into(),
-                                kind,
-                                field_name: field_name.into(),
-                                value: String::from_utf8_lossy(field_value).into(),
-                            });
+            // Get all partitions for the node
+            let partition_types = graph.get_partition_type(&node.id)?.ok_or(
+                BlockDeviceGraphBuildError::InternalError {
+                    body: format!(
+                        "check_partition_homogeneity: Failed to get partitions for node '{}' of kind '{}'",
+                        node.id, node.kind
+                    ),
+                },
+            )?;
+
+            // This should have already been checked, but just in case
+            if partition_types.is_empty() {
+                return Err(BlockDeviceGraphBuildError::InternalError {
+                    body: format!(
+                        "check_partition_homogeneity: partition_types is empty for node '{}' of kind '{}'",
+                        node.id, node.kind
+                    ),
+                });
+            }
+
+            // Ensure all partition types are equal
+            if !partition_types.is_homogeneous() {
+                return Err(
+                    BlockDeviceGraphBuildError::FilesystemHeterogenousPartitionTypes {
+                        referrer: BlkDevReferrerKind::from(fs),
+                        fs_type: node.filesystem.as_ref().unwrap().fs_type(),
+                    },
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check that all underlying partitions are of valid types
+    fn check_valid_partition_types(
+        graph: &BlockDeviceGraph<'a>,
+    ) -> Result<(), BlockDeviceGraphBuildError> {
+        // Iterate over all nodes that can have partition kinds.
+        // This mostly means skip disks.
+        for node in graph
+            .nodes
+            .values()
+            .filter(|node| node.kind.has_partition_type())
+        {
+            // Get all partitions for the node
+            let partition_types = graph.get_partition_type(&node.id)?.ok_or(
+                BlockDeviceGraphBuildError::InternalError {
+                        body: format!(
+                            "check_valid_partition_types: Failed to get partitions for node '{}' of kind '{}'",
+                            node.id, node.kind
+                        ),
+                    },
+                )?;
+
+            // Check that the node has a valid partition type
+            let valid_part_types = node.kind.as_blkdev_referrer().allowed_partition_types();
+            partition_types.iter().try_for_each(|attr| {
+                if !valid_part_types.contains(attr.value) {
+                    return Err(BlockDeviceGraphBuildError::InvalidPartitionType {
+                        node_id: node.id.clone(),
+                        kind: node.kind,
+                        partition_id: attr.id.to_string(),
+                        partition_type: attr.value,
+                        valid_types: valid_part_types.clone(),
+                    });
+                }
+
+                Ok(())
+            })?;
+
+            // If the node has an associated filesystem, check the filesystem's partition type requirements
+            if let Some(node_fs) = node.filesystem {
+                // This has already been checked in check_partition_homogeneity, but just in case
+                let partition_type = partition_types.get_homogeneous().ok_or(
+                    BlockDeviceGraphBuildError::InternalError { body: format!(
+                        "check_valid_partition_types: Failed to get homogenous partition type for node '{}' of kind '{}'",
+                        node.id, node.kind
+                    ) },
+                )?;
+
+                // If this filesystem is being mounted and check the valid mountpoints for the partition type
+                // This check may be too restrictive to produce a hard error, but we still want to warn the user
+                // about a potential issue.
+                if let Some(mount_point) = node_fs.mountpoint() {
+                    let valid = partition_type.valid_mountpoints();
+                    if !valid.contains(&mount_point.path) {
+                        warn!(
+                            "Mount point '{}' may not valid for partition type '{}', partitions of \
+                                this type will generally be mounted at {}.",
+                            mount_point.path.display(),
+                            partition_type,
+                            valid,
+                        );
+                    }
+                }
+
+                // Assuming we got a homogeneous partition type, check that it is valid for the filesystem
+                let valid_part_types = BlkDevReferrerKind::from(node_fs).allowed_partition_types();
+                if !valid_part_types.contains(*partition_type) {
+                    return Err(BlockDeviceGraphBuildError::FilesystemInvalidPartitionType {
+                        referrer: BlkDevReferrerKind::from(node_fs),
+                        fs_type: node_fs.fs_type(),
+                        partition_type: *partition_type,
+                        valid_types: valid_part_types.clone(),
+                    });
+                }
+
+                // Finally, if the node has a verity filesystem, check that the partition types match:
+                if let NodeFileSystem::VerityData(vfs) = node_fs {
+                    // Get the expected hash partition type for the type of this data partition
+                    let expected_hash_part_type = partition_type.to_verity().ok_or_else(|| {
+                        BlockDeviceGraphBuildError::VerityFilesystemInvalidaDataPartitionType {
+                            name: vfs.name.clone(),
+                            fs_type: vfs.fs_type,
+                            partition_type: *partition_type,
                         }
+                    })?;
+
+                    // Get the type of the hash partition
+                    let hash_part_type = *graph.get_partition_type(&vfs.hash_device_id)?.ok_or_else(||
+                        BlockDeviceGraphBuildError::InternalError {
+                            body: format!(
+                                "check_valid_partition_types: Failed to get partitions for node '{}' of kind '{}'",
+                                vfs.hash_device_id, node.kind
+                            ),
+                        },
+                    )?
+                    // Ensure it is homogeneous
+                    .get_homogeneous().ok_or({
+                        BlockDeviceGraphBuildError::FilesystemHeterogenousPartitionTypes {
+                            referrer: BlkDevReferrerKind::VerityFileSystemHash,
+                            fs_type: vfs.fs_type,
+                        }
+                    })?;
+
+                    // Finally check that the hash partition type matches the expected type
+                    if hash_part_type != expected_hash_part_type {
+                        return Err(
+                            BlockDeviceGraphBuildError::VerityFilesystemPartitionTypeMismatch {
+                                name: vfs.name.clone(),
+                                fs_type: vfs.fs_type,
+                                data_part_type: *partition_type,
+                                expected_type: expected_hash_part_type,
+                                actual_type: hash_part_type,
+                            },
+                        );
                     }
                 }
             }
         }
 
-        // Build the graph structure
-        let graph = BlockDeviceGraph { nodes };
+        Ok(())
+    }
 
-        // Check targets for each node
+    /// Check targets for each node
+    fn check_targets(graph: &BlockDeviceGraph<'a>) -> Result<(), BlockDeviceGraphBuildError> {
         for node in graph.nodes.values().filter(|n| !n.targets.is_empty()) {
             // This should never fail, since we already checked that all targets exist.
             let targets =
@@ -415,18 +852,18 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
 
             node.kind
                 .as_blkdev_referrer()
-                .check_targets(node, &targets, &graph)
+                .check_targets(node, &targets, graph)
                 .map_err(|e| BlockDeviceGraphBuildError::InvalidTargets {
                     node_id: node.id.clone(),
                     kind: node.kind,
                     body: format!("{:#}", e),
                 })?;
         }
-
-        Ok(graph)
+        Ok(())
     }
 }
 
+/// Check that two referrers can share a target
 fn check_mutual_sharing_peers(
     target_id: impl Into<String>,
     target_kind: BlkDevKind,
@@ -453,4 +890,34 @@ fn check_mutual_sharing_peers(
     }
 
     Ok(())
+}
+
+/// Associate the filesystem with the node when possible.
+/// Otherwise, throw an error if the node already has a filesystem associated with it.
+fn update_node_filesystem<'a>(
+    node: &mut BlkDevNode<'a>,
+    nfs: NodeFileSystem<'a>,
+) -> Result<(), BlockDeviceGraphBuildError> {
+    match node.filesystem {
+        None => {
+            node.filesystem = Some(nfs);
+            Ok(())
+        }
+        Some(NodeFileSystem::Regular(other_fs)) => {
+            Err(BlockDeviceGraphBuildError::FilesystemReferenceInUse {
+                fs_type: nfs.fs_type(),
+                target_id: node.id.clone(),
+                other_fs_type: other_fs.fs_type,
+            })
+        }
+        Some(NodeFileSystem::VerityData(other_vfs))
+        | Some(NodeFileSystem::VerityHash(other_vfs)) => {
+            Err(BlockDeviceGraphBuildError::FilesystemReferenceInUseVerity {
+                fs_type: nfs.fs_type(),
+                target_id: node.id.clone(),
+                other_vfs_name: other_vfs.name.clone(),
+                other_vfs_type: other_vfs.fs_type,
+            })
+        }
+    }
 }

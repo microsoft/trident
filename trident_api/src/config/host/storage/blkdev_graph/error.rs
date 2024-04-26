@@ -1,8 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+use crate::{
+    config::{FileSystemType, PartitionType},
+    BlockDeviceId,
+};
+
 use super::{
     cardinality::ValidCardinality,
-    types::{BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag},
+    partitions::AllowedPartitionTypes,
+    types::{
+        BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag,
+        FileSystemSourceKind, FileSystemSourceKindList,
+    },
 };
 
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -19,7 +28,8 @@ pub enum BlockDeviceGraphBuildError {
     },
 
     #[error(
-        "Block device '{node_id}' of kind '{kind}' references target '{target_id}' more than once"
+        "Block device '{node_id}' of kind '{kind}' references target \
+            '{target_id}' more than once"
     )]
     DuplicateTargetId {
         node_id: String,
@@ -27,7 +37,10 @@ pub enum BlockDeviceGraphBuildError {
         target_id: String,
     },
 
-    #[error("Block device '{node_id}' of kind '{kind}' has {target_count} target(s), but must have {expected} target(s)")]
+    #[error(
+        "Block device '{node_id}' of kind '{kind}' has {target_count} \
+            target(s), but must have {expected} target(s)"
+    )]
     InvalidTargetCount {
         node_id: String,
         kind: BlkDevKind,
@@ -35,14 +48,21 @@ pub enum BlockDeviceGraphBuildError {
         expected: ValidCardinality,
     },
 
-    #[error("Block device '{node_id}' of kind '{kind}' references non-existent block device '{target_id}'")]
+    #[error(
+        "Block device '{node_id}' of kind '{kind}' references non-existent \
+            block device '{target_id}'"
+    )]
     NonExistentReference {
         node_id: String,
         kind: BlkDevKind,
         target_id: String,
     },
 
-    #[error("Block device '{node_id}' of kind '{kind}' references block device '{target_id}' of invalid kind '{target_kind}', acceptable kinds are: {valid_references}")]
+    #[error(
+        "Block device '{node_id}' of kind '{kind}' references block device \
+            '{target_id}' of invalid kind '{target_kind}', acceptable kinds \
+            are: {valid_references}"
+    )]
     InvalidReferenceKind {
         node_id: String,
         kind: BlkDevKind,
@@ -51,51 +71,15 @@ pub enum BlockDeviceGraphBuildError {
         valid_references: BlkDevKindFlag,
     },
 
-    #[error("Image '{image_id}' references non-existent block device '{target_id}'")]
-    ImageNonExistentReference { image_id: String, target_id: String },
-
-    #[error("Image '{image_id}' references block device '{target_id}' of invalid kind '{target_kind}', acceptable kinds are: {valid_references}")]
-    ImageInvalidReference {
-        image_id: String,
-        target_id: String,
-        target_kind: BlkDevKind,
-        valid_references: BlkDevKindFlag,
-    },
-
-    #[error("Image '{image_id}' references block device '{target_id}' that is already being imaged with '{other_image_id}'")]
-    ImageReferenceAlreadyImaging {
-        image_id: String,
-        target_id: String,
-        other_image_id: String,
-    },
-
     #[error("Mount point '{0}' is defined more than once")]
     DuplicateMountPoint(String),
 
-    #[error("Mount point '{mount_point}' references non-existent block device '{target_id}'")]
-    MountPointNonExistentReference {
-        mount_point: String,
-        target_id: String,
-    },
-
-    #[error("Mount point '{mount_point}' references block device '{target_id}' of invalid kind '{target_kind}', acceptable kinds are: {valid_references}")]
-    MountPointInvalidReference {
-        mount_point: String,
-        target_id: String,
-        target_kind: BlkDevKind,
-        valid_references: BlkDevKindFlag,
-    },
+    #[error("Mount point '{0}' should be an absolute")]
+    MountPointPathNotAbsolute(String),
 
     #[error(
-        "Mount point '{mount_point}' should be an absolute path or one of '{valid_mount_points}'"
-    )]
-    InvalidMountPoint {
-        mount_point: String,
-        valid_mount_points: String,
-    },
-
-    #[error(
-        "Block device '{node_id}' and '{other_id}' of kind '{kind}' have a duplicate value for field '{field_name}' ('{value}')"
+        "Block device '{node_id}' and '{other_id}' of kind '{kind}' have a \
+            duplicate value for field '{field_name}' ('{value}')"
     )]
     UniqueFieldConstraintError {
         node_id: String,
@@ -131,5 +115,208 @@ pub enum BlockDeviceGraphBuildError {
         referrer_b_kind: BlkDevReferrerKind,
         referrer_a_valid_sharing_peers: BlkDevReferrerKindFlag,
         referrer_b_valid_sharing_peers: BlkDevReferrerKindFlag,
+    },
+
+    #[error("Filesystem of type '{0}' requires a reference to a block device")]
+    FilesystemMissingBlockDeviceId(FileSystemType),
+
+    #[error("Filesystem of type '{0}' should not reference a block device")]
+    FilesystemUnexpectedBlockDeviceId(FileSystemType),
+
+    #[error("Filesystem of type '{0}' should not have a mount point")]
+    FilesystemUnexpectedMountPoint(FileSystemType),
+
+    #[error(
+        "Filesystem of type '{fs_type}' references non-existent block device \
+            '{target_id}'"
+    )]
+    FilesystemNonExistentReference {
+        target_id: BlockDeviceId,
+        fs_type: FileSystemType,
+    },
+
+    #[error(
+        "Filesystem of type '{fs_type}' has invalid source type '{fs_source}', \
+            acceptable sources are: {fs_acceptable_sources}"
+    )]
+    FilesystemInvalidSource {
+        fs_type: FileSystemType,
+        fs_source: FileSystemSourceKind,
+        fs_acceptable_sources: FileSystemSourceKindList,
+    },
+
+    #[error(
+        "Filesystem of type '{fs_type}' references block device '{target_id}' \
+            of invalid kind '{target_kind}', acceptable kinds are: {valid_references}"
+    )]
+    FilesystemInvalidReference {
+        fs_type: FileSystemType,
+        target_id: BlockDeviceId,
+        target_kind: BlkDevKind,
+        valid_references: BlkDevKindFlag,
+    },
+
+    #[error(
+        "Filesystem of type '{fs_type}' references block device '{target_id}' \
+            that is already associated with a filesystem of type '{other_fs_type}'"
+    )]
+    FilesystemReferenceInUse {
+        fs_type: FileSystemType,
+        target_id: BlockDeviceId,
+        other_fs_type: FileSystemType,
+    },
+
+    #[error(
+        "Filesystem of type '{fs_type}' references block device '{target_id}' \
+            that is already associated with verity filesystem '{other_vfs_name}' \
+            of type '{other_vfs_type}'"
+    )]
+    FilesystemReferenceInUseVerity {
+        fs_type: FileSystemType,
+        target_id: BlockDeviceId,
+        other_vfs_name: String,
+        other_vfs_type: FileSystemType,
+    },
+
+    #[error(
+        "Verity filesystem '{name}' is using an unsupported filesystem type \
+            '{fs_type}'"
+    )]
+    VerityFileSystemUnsupportedType {
+        name: String,
+        fs_type: FileSystemType,
+    },
+
+    #[error(
+        "Verity filesystem '{name}' of type '{fs_type}' references non-existent \
+            block device '{target_id}' as '{role}'"
+    )]
+    VerityFilesystemNonExistentReference {
+        name: String,
+        target_id: BlockDeviceId,
+        fs_type: FileSystemType,
+        role: String,
+    },
+
+    #[error("Verity filesystem name '{name}' is used more than once")]
+    VerityDuplicateName { name: String },
+
+    #[error(
+        "Verity filesystem '{name}' of type '{fs_type}' references block device \
+            '{target_id}' of invalid kind '{target_kind}' as data block, acceptable \
+            kinds are: {valid_references}"
+    )]
+    VerityFilesystemInvalidReferenceData {
+        name: String,
+        fs_type: FileSystemType,
+        target_id: BlockDeviceId,
+        target_kind: BlkDevKind,
+        valid_references: BlkDevKindFlag,
+    },
+
+    #[error(
+        "Verity filesystem '{name}' of type '{fs_type}' references block device \
+            '{target_id}' of invalid kind '{target_kind}' as hash block, acceptable \
+            kinds are: {valid_references}"
+    )]
+    VerityFilesystemInvalidReferenceHash {
+        name: String,
+        fs_type: FileSystemType,
+        target_id: BlockDeviceId,
+        target_kind: BlkDevKind,
+        valid_references: BlkDevKindFlag,
+    },
+
+    #[error(
+        "Block device '{node_id}' of kind '{kind}' references partition 
+            '{partition_id}' of non-fixed size"
+    )]
+    PartitionSizeNotFixed {
+        node_id: BlockDeviceId,
+        kind: BlkDevKind,
+        partition_id: BlockDeviceId,
+    },
+
+    #[error(
+        "Block device '{node_id}' of kind '{kind}' references partitions of \
+            different sizes"
+    )]
+    PartitionSizeMismatch {
+        node_id: BlockDeviceId,
+        kind: BlkDevKind,
+    },
+
+    #[error(
+        "Block device '{node_id}' of kind '{kind}' references partition \
+            of different types"
+    )]
+    PartitionTypeMismatch {
+        node_id: BlockDeviceId,
+        kind: BlkDevKind,
+    },
+
+    #[error(
+        "Block device '{node_id}' of kind '{kind}' references partition \
+            '{partition_id}' of invalid type '{partition_type}', acceptable \
+            types are: {valid_types}"
+    )]
+    InvalidPartitionType {
+        node_id: BlockDeviceId,
+        kind: BlkDevKind,
+        partition_id: BlockDeviceId,
+        partition_type: PartitionType,
+        valid_types: AllowedPartitionTypes,
+    },
+
+    #[error(
+        "Referrer '{referrer}' of kind '{fs_type}' references partition(s) \
+            of invalid type '{partition_type}', acceptable \
+            types are: {valid_types}"
+    )]
+    FilesystemInvalidPartitionType {
+        referrer: BlkDevReferrerKind,
+        fs_type: FileSystemType,
+        partition_type: PartitionType,
+        valid_types: AllowedPartitionTypes,
+    },
+
+    #[error(
+        "Referrer '{referrer}' of kind '{fs_type}' references partitions of \
+            different types"
+    )]
+    FilesystemHeterogenousPartitionTypes {
+        referrer: BlkDevReferrerKind,
+        fs_type: FileSystemType,
+    },
+
+    #[error(
+        "Verity filesystem '{name}' of type '{fs_type}' references partition(s) \
+            of invalid type '{partition_type}' because it does not have a hash partition \
+            type counterpart"
+    )]
+    VerityFilesystemInvalidaDataPartitionType {
+        name: String,
+        fs_type: FileSystemType,
+        partition_type: PartitionType,
+    },
+
+    #[error(
+        "Verity filesystem '{name}' of type '{fs_type}' references data \
+            partition(s) of type '{data_part_type}', hash partition(s) \
+            is/are expected to be of type '{expected_type}', but \
+            found '{actual_type}'"
+    )]
+    VerityFilesystemPartitionTypeMismatch {
+        name: String,
+        fs_type: FileSystemType,
+        data_part_type: PartitionType,
+        expected_type: PartitionType,
+        actual_type: PartitionType,
+    },
+
+    #[error("Referrer '{referrer}' of kind '{kind}' references block devices of different kinds")]
+    ReferenceKindMismatch {
+        referrer: String,
+        kind: BlkDevReferrerKind,
     },
 }

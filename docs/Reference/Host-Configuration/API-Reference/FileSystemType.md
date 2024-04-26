@@ -38,20 +38,6 @@ File system types.
 | Type           | `string` |
 | Value          | `swap`   |
 
-### ISO9660 file system
-
-| Characteristic | Value     |
-| -------------- | --------- |
-| Type           | `string`  |
-| Value          | `iso9660` |
-
-### Overlay file system
-
-| Characteristic | Value     |
-| -------------- | --------- |
-| Type           | `string`  |
-| Value          | `overlay` |
-
 ### Tmpfs
 
 [Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)

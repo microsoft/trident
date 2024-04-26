@@ -43,24 +43,9 @@ Encryption configuration.
 | Type           | `Encryption`                  |
 | Link           | [Encryption](./Encryption.md) |
 
-### `images` (optional)
+### `filesystems` (optional)
 
-A list of images to be written to the host.
-
-| Characteristic | Value   |
-| -------------- | ------- |
-| Type           | `array` |
-
-- Items of the array must have the type:
-
-   | Characteristic | Value               |
-   | -------------- | ------------------- |
-   | Type           | `Image`             |
-   | Link           | [Image](./Image.md) |
-
-### `mountPoints` (optional)
-
-Mount point configuration.
+Filesystems in this host.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -70,8 +55,8 @@ Mount point configuration.
 
    | Characteristic | Value                         |
    | -------------- | ----------------------------- |
-   | Type           | `MountPoint`                  |
-   | Link           | [MountPoint](./MountPoint.md) |
+   | Type           | `FileSystem`                  |
+   | Link           | [FileSystem](./FileSystem.md) |
 
 ### `raid` (optional)
 
@@ -82,9 +67,9 @@ RAID configuration.
 | Type           | `Raid`            |
 | Link           | [Raid](./Raid.md) |
 
-### `verity` (optional)
+### `verityFilesystems` (optional)
 
-Verity configuration.
+Verity filesystems in this host.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -92,8 +77,8 @@ Verity configuration.
 
 - Items of the array must have the type:
 
-   | Characteristic | Value                             |
-   | -------------- | --------------------------------- |
-   | Type           | `VerityDevice`                    |
-   | Link           | [VerityDevice](./VerityDevice.md) |
+   | Characteristic | Value                                     |
+   | -------------- | ----------------------------------------- |
+   | Type           | `VerityFileSystem`                        |
+   | Link           | [VerityFileSystem](./VerityFileSystem.md) |
 

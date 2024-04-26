@@ -10,7 +10,7 @@ trident:
 storage:
   disks:
   - id: os
-    device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2.0
+    device: /dev/disk/by-path/pci-0000:00:1f.2-ata-1.0
     partitionTableType: gpt
     partitions:
     - id: esp
@@ -19,26 +19,27 @@ storage:
     - id: root
       type: root
       size: 8G
-  mountPoints:
-  - path: /boot/efi
-    filesystem: vfat
-    options:
-    - umask=0077
-    targetId: esp
-  - path: /
-    filesystem: ext4
-    options:
-    - defaults
-    targetId: root
-  images:
-  - url: file:///trident_cdrom/data/esp.rawzst
-    sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
-    format: raw-zst
-    targetId: esp
-  - url: file:///trident_cdrom/data/root.rawzst
-    sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
-    format: raw-zst
-    targetId: root
+  filesystems:
+  - deviceId: esp
+    type: vfat
+    source:
+      type: image
+      url: file:///trident_cdrom/data/esp.rawzst
+      sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
+      format: raw-zst
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: root
+    type: ext4
+    source:
+      type: image
+      url: file:///trident_cdrom/data/root.rawzst
+      sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
+      format: raw-zst
+    mountPoint:
+      path: /
+      options: defaults
 scripts:
   postProvision:
   - name: sample-provision-script
@@ -71,4 +72,3 @@ os:
   additionalFiles:
   - destination: /var/config-script.sh
     content: 'echo ''Running from newly deployed chroot: $SAMPLE_VARIABLE'''
-    permissions: '0755'

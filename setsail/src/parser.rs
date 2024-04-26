@@ -377,7 +377,7 @@ mod tests {
 
         let mut parser = Parser::new();
         parser.parse(&src);
-        assert!(parser.errors.is_empty(), "Assert no errors");
+        assert_eq!(parser.errors, vec![], "Assert no errors");
         assert_eq!(
             parser.data.partitions.len(),
             1,

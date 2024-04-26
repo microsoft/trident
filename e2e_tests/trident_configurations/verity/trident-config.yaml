@@ -36,84 +36,93 @@ hostConfiguration:
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
         partitions: []
-    mountPoints:
-      - path: /boot/efi
-        targetId: esp
-        filesystem: vfat
-        options: ["umask=0077"]
-      - path: /boot
-        targetId: boot
-        filesystem: ext4
-        options: ["defaults"]
-      - path: /
-        targetId: verity-root
-        filesystem: ext4
-        options: ["defaults", "ro"]
-      - path: /var/lib/trident
-        targetId: trident
-        filesystem: ext4
-        options: ["defaults"]
-      - path: /var/lib/trident-overlay
-        targetId: trident-overlay
-        filesystem: ext4
-        options: ["defaults"]
-      - path: /home
-        targetId: home
-        filesystem: ext4
-        options: ["defaults"]
-      - path: /var
-        targetId: var
-        filesystem: ext4
-        options: ["defaults"]
-      - path: /run
-        targetId: run
-        filesystem: ext4
-        options: ["defaults"]
-    images:
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: esp
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: boot
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: root
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: root-hash
-      - url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
-        sha256: ignored
-        format: raw-zst
-        targetId: var
-    verity:
-      - id: verity-root
-        deviceName: root
-        dataTargetId: root
-        hashTargetId: root-hash
+    filesystems:
+      - deviceId: var
+        type: ext4
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /var
+          options: defaults
+      - deviceId: trident-overlay
+        type: ext4
+        mountPoint:
+          path: /var/lib/trident-overlay
+          options: defaults
+      - deviceId: run
+        type: ext4
+        mountPoint:
+          path: /run
+          options: defaults
+      - deviceId: boot
+        type: ext4
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /boot
+          options: defaults
+      - deviceId: trident
+        type: ext4
+        mountPoint:
+          path: /var/lib/trident
+          options: defaults
+      - deviceId: home
+        type: ext4
+        mountPoint:
+          path: /home
+          options: defaults
+      - deviceId: esp
+        type: vfat
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /boot/efi
+          options: umask=0077
+    verityFilesystems:
+      - name: root
+        dataDeviceId: root
+        hashDeviceId: root-hash
+        dataImage:
+          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
+          sha256: ignored
+          format: raw-zst
+        hashImage:
+          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
+          sha256: ignored
+          format: raw-zst
+        type: ext4
+        mountPoint:
+          path: /
+          options: defaults,ro
+  scripts:
+    postConfigure:
+      - name: overlay
+        servicingType:
+          - clean-install
+          - ab-update
+        content: |
+          mkdir -p /var/lib/trident-overlay/etc-rw/upper
+          mkdir -p /var/lib/trident-overlay/etc-rw/work
   os:
     network:
+      version: 2
       ethernets:
         vmeths:
           match:
             name: enp*
           dhcp4: true
-      version: 2
     users:
       - name: testing-user
-        secondaryGroups: [wheel]
         sshPublicKeys: []
+        secondaryGroups:
+          - wheel
         sshMode: key-only
-  scripts:
-    postConfigure:
-    - content: |
-        mkdir -p /var/lib/trident-overlay/etc-rw/upper
-        mkdir -p /var/lib/trident-overlay/etc-rw/work
-      name: overlay
-      servicingType:
-      - clean-install
-      - ab-update

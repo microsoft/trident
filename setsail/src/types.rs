@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 /// Represents a line in a kickstart file
-#[derive(Serialize, Debug, Clone, Default)]
+#[derive(Serialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct KSLine {
     /// Origin of this kickstart line
     pub source: KSLineSource,
@@ -37,7 +37,7 @@ impl std::fmt::Display for KSLine {
 }
 
 /// Represents the source of a line in a kickstart file
-#[derive(Serialize, Debug, Clone, Default)]
+#[derive(Serialize, Debug, Clone, Default, PartialEq, Eq)]
 pub enum KSLineSource {
     #[default]
     Unknown,

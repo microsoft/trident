@@ -230,7 +230,7 @@ pub(super) fn clean_install(
             // If verity is present, it means that we are currently doing root
             // verity. For now, we can assume that /etc is readonly, so we setup
             // a writable overlay for it.
-            let use_overlay = !host_config.storage.verity.is_empty();
+            let use_overlay = !host_config.storage.internal_verity.is_empty();
 
             info!("Running configure");
             configure(
@@ -372,7 +372,7 @@ pub(super) fn update(
         // If verity is present, it means that we are currently doing root
         // verity. For now, we can assume that /etc is readonly, so we setup
         // a writable overlay for it.
-        let use_overlay = !host_config.storage.verity.is_empty();
+        let use_overlay = !host_config.storage.internal_verity.is_empty();
 
         info!("Entering '{}' chroot", new_root_path.display());
         chroot::enter_update_chroot(&new_root_path)
@@ -613,7 +613,7 @@ fn provision(
     // If verity is present, it means that we are currently doing root
     // verity. For now, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
-    let use_overlay = !host_config.storage.verity.is_empty();
+    let use_overlay = !host_config.storage.internal_verity.is_empty();
 
     for module in modules {
         debug!("Starting stage 'Provision' for module '{}'", module.name());
@@ -812,14 +812,14 @@ mod test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        config::MountPoint {
+                    internal_mount_points: vec![
+                        config::InternalMountPoint {
                             target_id: "boot".to_owned(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                             path: PathBuf::from("/boot"),
                         },
-                        config::MountPoint {
+                        config::InternalMountPoint {
                             target_id: "root".to_owned(),
                             filesystem: FileSystemType::Ext4,
                             options: vec![],

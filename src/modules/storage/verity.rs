@@ -16,7 +16,7 @@ use osutils::{
     mount, veritysetup,
 };
 use trident_api::{
-    config::{self, HostConfiguration, MountPoint},
+    config::{self, HostConfiguration, InternalMountPoint},
     constants::{
         BOOT_MOUNT_POINT_PATH, BOOT_RELATIVE_MOUNT_POINT_PATH, DEV_MAPPER_PATH,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, GRUB2_DIRECTORY, ROOT_MOUNT_POINT_PATH,
@@ -70,10 +70,10 @@ pub(super) fn check_verity_enabled(grub_config_path: &Path) -> Result<bool, Erro
 }
 
 /// Create read-only /etc/ overlay mount point representation
-pub(super) fn create_etc_overlay_mount_point() -> MountPoint {
+pub(super) fn create_etc_overlay_mount_point() -> InternalMountPoint {
     // inject the /etc overlay used for verity setups
     debug!("Creating /etc overlay mount point for verity setups");
-    MountPoint {
+    InternalMountPoint {
         filesystem: config::FileSystemType::Overlay,
         options: vec![
             format!("lowerdir=/{TRIDENT_OVERLAY_LOWER_RELATIVE_PATH}"),
@@ -109,7 +109,7 @@ pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
 }
 
 pub(super) fn configure_device_names(host_status: &mut HostStatus) -> Result<(), Error> {
-    for vd in &host_status.spec.storage.verity {
+    for vd in &host_status.spec.storage.internal_verity {
         host_status
             .storage
             .block_devices
@@ -125,7 +125,7 @@ pub(super) fn configure_device_names(host_status: &mut HostStatus) -> Result<(),
 fn setup_root_verity_device(
     host_config: &HostConfiguration,
     host_status: &HostStatus,
-    root_verity_device: &config::VerityDevice,
+    root_verity_device: &config::InternalVerityDevice,
 ) -> Result<(BlockDeviceId, BlockDeviceInfo), Error> {
     // Extract the root hash from GRUB config
     let root_hash = get_root_verity_root_hash(host_config, host_status)?;
@@ -179,7 +179,7 @@ fn get_root_verity_root_hash(
     // API check ensures there is a boot volume, look up its mount point
     let boot_mount_point = &host_config
         .storage
-        .mount_points
+        .internal_mount_points
         .iter()
         .find(|mp| mp.path == Path::new(BOOT_MOUNT_POINT_PATH))
         .context("Cannot find boot volume")?;
@@ -221,13 +221,13 @@ pub(super) fn setup_verity_devices(
     host_config: &HostConfiguration,
     host_status: &mut HostStatus,
 ) -> Result<(), Error> {
-    if host_config.storage.verity.is_empty() {
+    if host_config.storage.internal_verity.is_empty() {
         return Ok(());
     }
 
     // Validated from API there is only one verity device at the moment and it
     // is tied to the root volume
-    let root_verity_device = &host_config.storage.verity[0];
+    let root_verity_device = &host_config.storage.internal_verity[0];
     let (id, verity_device_status) =
         setup_root_verity_device(host_config, host_status, root_verity_device)?;
 
@@ -247,7 +247,7 @@ pub(super) fn setup_verity_devices(
 fn get_verity_related_device_paths(
     host_status: &HostStatus,
     host_config: &HostConfiguration,
-    verity_device: &config::VerityDevice,
+    verity_device: &config::InternalVerityDevice,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), Error> {
     let verity_data_path =
         modules::get_block_device(host_status, &verity_device.data_target_id, false)
@@ -267,7 +267,7 @@ fn get_verity_related_device_paths(
 
     let overlay_target_id = &host_config
         .storage
-        .mount_points
+        .internal_mount_points
         .iter()
         .find(|mp| mp.path == Path::new(TRIDENT_OVERLAY_PATH))
         .context(format!(
@@ -291,12 +291,12 @@ pub(super) fn update_root_verity_in_grub_config(
     host_config: &HostConfiguration,
     root_mount_path: &Path,
 ) -> Result<(), Error> {
-    if host_config.storage.verity.is_empty() {
+    if host_config.storage.internal_verity.is_empty() {
         return Ok(());
     }
 
     // We currently only support a single verity device, which is the root
-    let verity_device = &host_config.storage.verity[0];
+    let verity_device = &host_config.storage.internal_verity[0];
 
     let mut grub_config = GrubConfig::read(
         root_mount_path
@@ -450,7 +450,7 @@ pub(super) fn validate_compatibility(
         // If verity is enabled, we need to ensure that the verity definition is present in the
         // host configuration; API checks ensure that root verity is present
         // and correctly populated.
-        if host_config.storage.verity.is_empty() {
+        if host_config.storage.internal_verity.is_empty() {
             return Err(anyhow::anyhow!(
                 "Verity is enabled for the root image, but no verity definition is present in the Host Configuration"
             ));
@@ -462,7 +462,7 @@ pub(super) fn validate_compatibility(
     } else {
         // If verity is not enabled, we need to ensure that the verity definition is not present in
         // the host configuration.
-        if !host_config.storage.verity.is_empty() {
+        if !host_config.storage.internal_verity.is_empty() {
             return Err(anyhow::anyhow!(
                 "Verity is not enabled for the root image, but a verity definition is present in the Host Configuration"
             ));
@@ -520,7 +520,7 @@ mod test {
     fn test_create_etc_overlay_mount_point() {
         assert_eq!(
             create_etc_overlay_mount_point(),
-            MountPoint {
+            InternalMountPoint {
                 path: PathBuf::from("/etc"),
                 filesystem: FileSystemType::Overlay,
                 options: vec![
@@ -585,13 +585,13 @@ mod test {
     fn test_get_verity_related_device_paths() {
         let host_config = HostConfiguration {
             storage: Storage {
-                mount_points: vec![config::MountPoint {
+                internal_mount_points: vec![config::InternalMountPoint {
                     path: PathBuf::from("/var/lib/trident-overlay"),
                     filesystem: FileSystemType::Ext4,
                     target_id: "overlay".to_string(),
                     options: vec!["defaults".to_string()],
                 }],
-                verity: vec![config::VerityDevice {
+                internal_verity: vec![config::InternalVerityDevice {
                     id: "root-verity".into(),
                     device_name: "root".into(),
                     data_target_id: "root".into(),
@@ -668,7 +668,7 @@ mod test {
             get_verity_related_device_paths(
                 &host_status,
                 &host_config,
-                &host_config.storage.verity[0],
+                &host_config.storage.internal_verity[0],
             )
             .unwrap();
         assert_eq!(verity_data_path, PathBuf::from("/dev/sdb2"));
@@ -679,13 +679,13 @@ mod test {
         let mut host_config_no_overlay = host_config.clone();
         host_config_no_overlay
             .storage
-            .mount_points
+            .internal_mount_points
             .retain(|mp| mp.path != PathBuf::from("/var/lib/trident-overlay"));
         assert_eq!(
             get_verity_related_device_paths(
                 &host_status,
                 &host_config_no_overlay,
-                &host_config.storage.verity[0]
+                &host_config.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -696,7 +696,7 @@ mod test {
         let mut host_config_no_verity_data = host_config.clone();
         host_config_no_verity_data
             .storage
-            .verity
+            .internal_verity
             .get_mut(0)
             .unwrap()
             .data_target_id = "non-existing".into();
@@ -704,7 +704,7 @@ mod test {
             get_verity_related_device_paths(
                 &host_status,
                 &host_config_no_verity_data,
-                &host_config_no_verity_data.storage.verity[0]
+                &host_config_no_verity_data.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -715,7 +715,7 @@ mod test {
         let mut host_config_no_verity_hash = host_config.clone();
         host_config_no_verity_hash
             .storage
-            .verity
+            .internal_verity
             .get_mut(0)
             .unwrap()
             .hash_target_id = "non-existing".into();
@@ -723,7 +723,7 @@ mod test {
             get_verity_related_device_paths(
                 &host_status,
                 &host_config_no_verity_hash,
-                &host_config_no_verity_hash.storage.verity[0]
+                &host_config_no_verity_hash.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -749,7 +749,7 @@ mod test {
             get_verity_related_device_paths(
                 &host_status_no_overlay,
                 &host_config,
-                &host_config.storage.verity[0]
+                &host_config.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -762,14 +762,14 @@ mod test {
         let mut host_status = HostStatus {
             spec: config::HostConfiguration {
                 storage: config::Storage {
-                    verity: vec![
-                        config::VerityDevice {
+                    internal_verity: vec![
+                        config::InternalVerityDevice {
                             id: "root".into(),
                             device_name: "root".into(),
                             data_target_id: "root".into(),
                             hash_target_id: "root".into(),
                         },
-                        config::VerityDevice {
+                        config::InternalVerityDevice {
                             id: "boot".into(),
                             device_name: "boot".into(),
                             data_target_id: "boot".into(),
@@ -804,7 +804,7 @@ mod test {
             host_status
                 .spec
                 .storage
-                .verity
+                .internal_verity
                 .iter()
                 .find(|vd| vd.id == "root")
                 .unwrap()
@@ -815,7 +815,7 @@ mod test {
             host_status
                 .spec
                 .storage
-                .verity
+                .internal_verity
                 .iter()
                 .find(|vd| vd.id == "boot")
                 .unwrap()
@@ -828,7 +828,7 @@ mod test {
         host_status_no_device
             .spec
             .storage
-            .verity
+            .internal_verity
             .get_mut(0)
             .unwrap()
             .id = "non-existing".into();
@@ -869,7 +869,8 @@ mod functional_test {
     };
     use trident_api::{
         config::{
-            Disk, FileSystemType, Partition, PartitionSize, PartitionType, Storage, VerityDevice,
+            Disk, FileSystemType, InternalVerityDevice, Partition, PartitionSize, PartitionType,
+            Storage,
         },
         status::{self, BlockDeviceContents},
     };
@@ -921,10 +922,10 @@ mod functional_test {
 
         validate_compatibility(&host_config, new_root_dir.path()).unwrap();
 
-        host_config.storage.verity = vec![];
+        host_config.storage.internal_verity = vec![];
         validate_compatibility(&host_config, new_root_dir.path()).unwrap();
 
-        host_config.storage.verity = vec![VerityDevice {
+        host_config.storage.internal_verity = vec![InternalVerityDevice {
             id: "root".into(),
             device_name: "root".into(),
             data_target_id: "root".into(),
@@ -991,14 +992,14 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        config::MountPoint {
+                    internal_mount_points: vec![
+                        config::InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
-                        config::MountPoint {
+                        config::InternalMountPoint {
                             path: PathBuf::from("/"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "root".to_string(),
@@ -1047,7 +1048,7 @@ mod functional_test {
         host_status_no_boot_mount
             .spec
             .storage
-            .mount_points
+            .internal_mount_points
             .retain(|mp| mp.path != PathBuf::from("/boot"));
         assert_eq!(
             get_root_verity_root_hash(&host_status_no_boot_mount.spec, &host_status_no_boot_mount)
@@ -1145,21 +1146,21 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        config::MountPoint {
+                    internal_mount_points: vec![
+                        config::InternalMountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
-                        config::MountPoint {
+                        config::InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    verity: vec![config::VerityDevice {
+                    internal_verity: vec![config::InternalVerityDevice {
                         id: "root-verity".into(),
                         device_name: "root".into(),
                         data_target_id: "root".into(),
@@ -1206,7 +1207,7 @@ mod functional_test {
             let (bdi, vd) = setup_root_verity_device(
                 &host_status.spec,
                 &host_status,
-                &host_status.spec.storage.verity[0],
+                &host_status.spec.storage.internal_verity[0],
             )
             .unwrap();
             let _verityguard = VerityGuard {
@@ -1254,7 +1255,7 @@ mod functional_test {
             setup_root_verity_device(
                 &host_status.spec,
                 &host_status,
-                &host_status.spec.storage.verity[0]
+                &host_status.spec.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -1311,21 +1312,21 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        config::MountPoint {
+                    internal_mount_points: vec![
+                        config::InternalMountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
-                        config::MountPoint {
+                        config::InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    verity: vec![config::VerityDevice {
+                    internal_verity: vec![config::InternalVerityDevice {
                         id: "root-verity".into(),
                         device_name: "root".into(),
                         data_target_id: "root".into(),
@@ -1496,21 +1497,21 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        config::MountPoint {
+                    internal_mount_points: vec![
+                        config::InternalMountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
-                        config::MountPoint {
+                        config::InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    verity: vec![config::VerityDevice {
+                    internal_verity: vec![config::InternalVerityDevice {
                         id: "root-verity".into(),
                         device_name: "root".into(),
                         data_target_id: "root".into(),
@@ -1661,21 +1662,21 @@ mod functional_test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        config::MountPoint {
+                    internal_mount_points: vec![
+                        config::InternalMountPoint {
                             path: PathBuf::from("/var/lib/trident-overlay"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "overlay".to_string(),
                             options: vec!["defaults".to_string()],
                         },
-                        config::MountPoint {
+                        config::InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             filesystem: FileSystemType::Ext4,
                             target_id: "boot".to_string(),
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    verity: vec![config::VerityDevice {
+                    internal_verity: vec![config::InternalVerityDevice {
                         id: "root-verity".into(),
                         device_name: "root".into(),
                         data_target_id: "root".into(),

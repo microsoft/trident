@@ -22,20 +22,18 @@ use std::os::unix::ffi::OsStrExt;
 
 use anyhow::Error;
 
-use crate::constants::SWAP_MOUNT_POINT;
+use crate::config::{FileSystemType, PartitionType};
 
 use super::{
     cardinality::ValidCardinality,
     graph::BlockDeviceGraph,
+    mountpoints::ValidMountpoints,
+    partitions::AllowedPartitionTypes,
     types::{
-        BlkDevKindFlag, BlkDevNode, BlkDevReferrerKind, BlkDevReferrerKindFlag,
-        HostConfigBlockDevice,
+        BlkDevKind, BlkDevKindFlag, BlkDevNode, BlkDevReferrerKind, BlkDevReferrerKindFlag,
+        FileSystemSourceKind, FileSystemSourceKindList, HostConfigBlockDevice,
     },
 };
-
-mod encrypted;
-mod raid;
-mod verity;
 
 /// This impl block contains validation rules for host-config objects
 impl<'a> HostConfigBlockDevice<'a> {
@@ -46,13 +44,12 @@ impl<'a> HostConfigBlockDevice<'a> {
     /// kind.
     pub(super) fn basic_check(&self) -> Result<(), Error> {
         match self {
-            HostConfigBlockDevice::Disk(_) => (),
-            HostConfigBlockDevice::Partition(_) => (),
-            HostConfigBlockDevice::AdoptedPartition => (),
-            HostConfigBlockDevice::RaidArray(_) => (),
-            HostConfigBlockDevice::ABVolume(_) => (),
-            HostConfigBlockDevice::EncryptedVolume(_) => (),
-            HostConfigBlockDevice::VerityDevice(_) => (),
+            Self::Disk(_) => (),
+            Self::Partition(_) => (),
+            Self::AdoptedPartition => (),
+            Self::RaidArray(_) => (),
+            Self::ABVolume(_) => (),
+            Self::EncryptedVolume(_) => (),
         }
 
         Ok(())
@@ -65,18 +62,18 @@ impl BlkDevReferrerKind {
     ///
     /// This table shows the valid block device kinds that can be referenced by each referrer:
     ///
-    /// | Referrer \ Target Kind | Disk | Partition | AdoptedPartition | RaidArray | ABVolume | EncryptedVolume | VerityDevice |
-    /// | ---------------------- | ---- | --------- | ---------------- | --------- | -------- | --------------- | ------------ |
-    /// | **Disk**               | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             | N/A          |
-    /// | **Partition**          | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             | N/A          |
-    /// | **AdoptedPartition**   | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             | N/A          |
-    /// | **RaidArray**          | No   | Yes       | TBD              | No        | No       | No              | No           |
-    /// | **ABVolume**           | No   | Yes       | TBD              | Yes       | No       | Yes             | No           |
-    /// | **EncryptedVolume**    | No   | Yes       | TBD              | Yes       | No       | No              | No           |
-    /// | **Image**              | No   | Yes       | TBD              | Yes       | Yes      | Yes             | No           |
-    /// | **ImageSysupdate**     | No   | No        | TBD              | No        | Yes      | No              | No           |
-    /// | **MountPoint**         | No   | Yes       | TBD              | Yes       | Yes      | Yes             | Yes          |
-    /// | **VerityDevice**       | No   | Yes       | TBD              | Yes       | Yes      | No              | No           |
+    /// | Referrer \ Target Kind   | Disk | Partition | AdoptedPartition | RaidArray | ABVolume | EncryptedVolume |
+    /// | ------------------------ | ---- | --------- | ---------------- | --------- | -------- | --------------- |
+    /// | **Disk**                 | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
+    /// | **Partition**            | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
+    /// | **AdoptedPartition**     | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
+    /// | **RaidArray**            | No   | Yes       | TBD              | No        | No       | No              |
+    /// | **ABVolume**             | No   | Yes       | TBD              | Yes       | No       | Yes             |
+    /// | **EncryptedVolume**      | No   | Yes       | TBD              | Yes       | No       | No              |
+    /// | **Filesystem**           | No   | Yes       | TBD              | Yes       | Yes      | Yes             |
+    /// | **FileSystemSysupdate**  | No   | No        | No               | No        | Yes      | No              |
+    /// | **VerityFilesystemData** | No   | Yes       | TBD              | Yes       | Yes      | No              |
+    /// | **VerityFilesystemHash** | No   | Yes       | TBD              | Yes       | Yes      | No              |
     pub(crate) fn valid_target_kinds(&self) -> BlkDevKindFlag {
         match self {
             Self::None => BlkDevKindFlag::empty(),
@@ -87,42 +84,35 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
             }
             Self::EncryptedVolume => BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray,
-            Self::Image => {
+            Self::FileSystem => {
                 BlkDevKindFlag::Partition
                     | BlkDevKindFlag::RaidArray
                     | BlkDevKindFlag::EncryptedVolume
                     | BlkDevKindFlag::ABVolume
             }
-            Self::ImageSysupdate => BlkDevKindFlag::ABVolume,
-            Self::MountPoint => {
-                BlkDevKindFlag::Partition
-                    | BlkDevKindFlag::AdoptedPartition
-                    | BlkDevKindFlag::EncryptedVolume
-                    | BlkDevKindFlag::ABVolume
-                    | BlkDevKindFlag::RaidArray
-                    | BlkDevKindFlag::VerityDevice
-            }
-            Self::VerityDevice => {
+            Self::FileSystemSysupdate => BlkDevKindFlag::ABVolume,
+            Self::VerityFileSystemData | Self::VerityFileSystemHash => {
                 BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray | BlkDevKindFlag::ABVolume
             }
         }
     }
 
-    /// Returns the valid number of members for the referrer kind
+    /// Returns the valid number of members for the referrer kind.
     ///
     /// This table shows the valid number of members for each referrer:
     ///
-    /// | Referrer Type        | Min | Max |
-    /// | -------------------- | --- | --- |
-    /// | **Disk**             | 0   | 0   |
-    /// | **Partition**        | 0   | 0   |
-    /// | **AdoptedPartition** | 0   | 0   |
-    /// | **RaidArray**        | 2   | ∞   |
-    /// | **ABVolume**         | 2   | 2   |
-    /// | **EncryptedVolume**  | 1   | 1   |
-    /// | **Image**            | 1   | 1   |
-    /// | **MountPoint**       | 1   | 1   |
-    /// | **VerityDevice**     | 2   | 2   |
+    /// | Referrer Type            | Min | Max |
+    /// | ------------------------ | --- | --- |
+    /// | **Disk**                 | 0   | 0   |
+    /// | **Partition**            | 0   | 0   |
+    /// | **AdoptedPartition**     | 0   | 0   |
+    /// | **RaidArray**            | 2   | ∞   |
+    /// | **ABVolume**             | 2   | 2   |
+    /// | **EncryptedVolume**      | 1   | 1   |
+    /// | **Filesystem**           | 0   | 1   |
+    /// | **FileSystemSysupdate**  | 1   | 1   |
+    /// | **VerityFilesystemData** | 1   | 1   |
+    /// | **VerityFilesystemHash** | 1   | 1   |
     ///
     /// (Above ranges are inclusive)
     pub(crate) fn valid_target_count(self) -> ValidCardinality {
@@ -131,12 +121,13 @@ impl BlkDevReferrerKind {
             Self::RaidArray => ValidCardinality::new_at_least(2),
             Self::ABVolume => ValidCardinality::new_exact(2),
             Self::EncryptedVolume => ValidCardinality::new_exact(1),
-            Self::VerityDevice => ValidCardinality::new_exact(2),
-            // These three are not really used, but we define them for
+
+            // These are not really used, but we define them for
             // completeness
-            Self::Image => ValidCardinality::new_exact(1),
-            Self::ImageSysupdate => ValidCardinality::new_exact(1),
-            Self::MountPoint => ValidCardinality::new_exact(1),
+            Self::FileSystem => ValidCardinality::new_at_most(1),
+            Self::FileSystemSysupdate => ValidCardinality::new_exact(1),
+            Self::VerityFileSystemData => ValidCardinality::new_exact(1),
+            Self::VerityFileSystemHash => ValidCardinality::new_exact(1),
         }
     }
 
@@ -155,16 +146,13 @@ impl BlkDevReferrerKind {
     /// IMPORTANT: Sharing goes both ways! Both referrers must be in each
     /// other's valid_sharing_peers() bitset for it to work!
     ///
-    /// NOTE: Images and mount points are special referrers that follow
-    /// additional rules not covered here:
-    /// 1. Image kinds can never share with any other image kind. (Only one
-    ///    image slot!)
-    /// 2. Mount points can always share with any number of other mount points
-    ///   **implicitly**!
+    /// NOTE: Filesystems are special referrers that follow additional rules not
+    /// covered here:
+    /// 1. Filesystems can never share with any other filesystem kind. (Only one
+    ///    filesystem slot!)
     ///
-    /// The reason for this is that images and mount points are not block
-    /// devices, so they get their own respective fields in the BlkDevNode
-    /// object.
+    /// The reason for this is that filesystems are not block devices, so they
+    /// get their own respective fields in the BlkDevNode object.
     /// - #1 above is enforced by the node struct having only an `Option` to
     ///   store the image associated with it.
     /// - #2 follows from the node struct using a `Vec` to store mount points.
@@ -174,53 +162,182 @@ impl BlkDevReferrerKind {
             Self::RaidArray => BlkDevReferrerKindFlag::empty(),
             Self::ABVolume => BlkDevReferrerKindFlag::empty(),
             Self::EncryptedVolume => BlkDevReferrerKindFlag::empty(),
-            Self::Image => {
-                BlkDevReferrerKindFlag::MountPoint | BlkDevReferrerKindFlag::VerityDevice
-            }
-            Self::ImageSysupdate => BlkDevReferrerKindFlag::MountPoint,
-            Self::MountPoint => BlkDevReferrerKindFlag::AnyImage,
-            Self::VerityDevice => {
-                // Not supporting ImageSysupdate for now, until we have more
-                // testing in place to support ImageSysupdate
-                BlkDevReferrerKindFlag::Image
-            }
+            Self::FileSystem
+            | Self::FileSystemSysupdate
+            | Self::VerityFileSystemData
+            | Self::VerityFileSystemHash => BlkDevReferrerKindFlag::empty(),
         }
     }
 }
 
-/// Mount points generally should refer to paths, however, there are certain exceptions, which are listed here.
-pub(super) const VALID_NON_PATH_MOUNT_POINTS: [&str; 1] = [SWAP_MOUNT_POINT];
+impl FileSystemType {
+    /// Returns whether a filesystem type requires a block device ID.
+    pub(crate) fn requires_block_device_id(&self) -> bool {
+        match self {
+            Self::Ext4 | Self::Xfs | Self::Vfat | Self::Iso9660 | Self::Swap => true,
+            Self::Tmpfs | Self::Overlay => false,
+        }
+    }
+
+    /// Returns the valid sources for a filesystem type.
+    pub(crate) fn valid_sources(&self) -> FileSystemSourceKindList {
+        match self {
+            Self::Ext4 | Self::Xfs | Self::Vfat => FileSystemSourceKindList(vec![
+                FileSystemSourceKind::Create,
+                FileSystemSourceKind::Image,
+            ]),
+            Self::Swap => FileSystemSourceKindList(vec![FileSystemSourceKind::Create]),
+            Self::Iso9660 => FileSystemSourceKindList(vec![FileSystemSourceKind::Adopted]),
+            Self::Tmpfs => FileSystemSourceKindList(vec![FileSystemSourceKind::Create]),
+            Self::Overlay => FileSystemSourceKindList(vec![FileSystemSourceKind::Create]),
+        }
+    }
+
+    /// Returns whether a filesystem type can have a mountpoint.
+    pub(crate) fn can_have_mountpoint(&self) -> bool {
+        match self {
+            Self::Ext4 | Self::Xfs | Self::Vfat | Self::Iso9660 | Self::Tmpfs | Self::Overlay => {
+                true
+            }
+            Self::Swap => false,
+        }
+    }
+
+    /// Returns whether a filesystem type can be used with verity.
+    pub(crate) fn supports_verity(&self) -> bool {
+        match self {
+            Self::Ext4 | Self::Xfs => true,
+            Self::Vfat | Self::Iso9660 | Self::Swap | Self::Tmpfs | Self::Overlay => false,
+        }
+    }
+}
 
 /// This impl block contains validation rules for host-config objects
 impl<'a> HostConfigBlockDevice<'a> {
-    /// Return information about fields that must be unique.
+    /// Return information about fields that must be unique across all block devices of a type.
     ///
     /// Some block devices define fields that must be unique across all block devices of the same
     /// kind. This function returns a tuple of the field name, and field value (as bytes) for each
     /// field that must be unique.
     ///
-    /// The caller will collect all these tuples and ensure the uniqueness of each field
+    /// The caller will collect all these tuples and ensure the uniqueness of each field.
     pub(super) fn uniqueness_constraints(&self) -> Option<Vec<(&'static str, &[u8])>> {
         match self {
             Self::Disk(disk) => Some(vec![("device", disk.device.as_os_str().as_bytes())]),
-            HostConfigBlockDevice::Partition(_) => None,
+            Self::Partition(_) => None,
             // Will be implemented in the future
-            HostConfigBlockDevice::AdoptedPartition => todo!("AdoptedPartition unique fields"),
-            HostConfigBlockDevice::RaidArray(raid_array) => {
-                Some(vec![("name", raid_array.name.as_bytes())])
-            }
-            HostConfigBlockDevice::ABVolume(_) => None,
-            HostConfigBlockDevice::EncryptedVolume(enc_vol) => {
+            Self::AdoptedPartition => todo!("AdoptedPartition unique fields"),
+            Self::RaidArray(raid_array) => Some(vec![("name", raid_array.name.as_bytes())]),
+            Self::ABVolume(_) => None,
+            Self::EncryptedVolume(enc_vol) => {
                 Some(vec![("deviceName", enc_vol.device_name.as_bytes())])
-            }
-            HostConfigBlockDevice::VerityDevice(verity_device) => {
-                Some(vec![("name", verity_device.device_name.as_bytes())])
             }
         }
     }
 }
 
+impl BlkDevKind {
+    /// Returns whether a block device kind can have a partition type.
+    ///
+    /// This is used to avoid checking partition types for block device nodes
+    /// that can't have them.
+    pub(super) fn has_partition_type(self) -> bool {
+        match self {
+            Self::Disk => false,
+            Self::Partition
+            | Self::AdoptedPartition
+            | Self::RaidArray
+            | Self::ABVolume
+            | Self::EncryptedVolume => true,
+        }
+    }
+}
+
 impl BlkDevReferrerKind {
+    /// Returns whether to enforce homogeneous reference kinds for a given referrer
+    /// kind.
+    ///
+    /// In other words, can a referrer kind refer to multiple target
+    /// kinds? e.g a partition and a raid array?
+    pub(super) fn enforce_homogeneous_reference_kinds(&self) -> bool {
+        match self {
+            // Nothing to do.
+            Self::None => false,
+
+            // These should always have homogeneous reference kinds.
+            Self::RaidArray | Self::ABVolume | Self::EncryptedVolume => true,
+
+            // These only have one target, so enforcing this is meaningless.
+            Self::FileSystem | Self::FileSystemSysupdate => false,
+
+            // Only enforce it for the data partition, which will check both.
+            // Do not enforce for the hash partition to avoid checking twice.
+            Self::VerityFileSystemData => true,
+            Self::VerityFileSystemHash => false,
+        }
+    }
+
+    /// Returns whether to enforce homogeneous partition sizes for a given referrer kind.
+    pub(super) fn enforce_homogeneous_partition_sizes(&self) -> bool {
+        // If the referrer can't have multiple targets, there's nothing to enforce.
+        if !self.valid_target_count().can_be_multiple() {
+            return false;
+        }
+
+        match self {
+            Self::RaidArray => true,
+            Self::None | Self::ABVolume | Self::EncryptedVolume => false,
+
+            // Filesystems are special referrers because they are not nodes.
+            // These rules are not checked, but included here for completeness.
+            Self::FileSystem
+            | Self::FileSystemSysupdate
+            | Self::VerityFileSystemData
+            | Self::VerityFileSystemHash => false,
+        }
+    }
+
+    /// Returns whether to enforce homogeneous partition types for a given referrer kind.
+    pub(super) fn enforce_homogeneous_partition_types(&self) -> bool {
+        // If the referrer can't have multiple targets, there's nothing to enforce.
+        if !self.valid_target_count().can_be_multiple() {
+            return false;
+        }
+
+        match self {
+            Self::RaidArray | Self::ABVolume => true,
+            Self::None | Self::EncryptedVolume => false,
+            // Filesystems should always have homogeneous partition types.
+            Self::FileSystem
+            | Self::FileSystemSysupdate
+            | Self::VerityFileSystemData
+            | Self::VerityFileSystemHash => true,
+        }
+    }
+
+    /// Returns the valid partition types for a given referrer kind.
+    pub(crate) fn allowed_partition_types(&self) -> AllowedPartitionTypes {
+        match self {
+            Self::None => AllowedPartitionTypes::Any,
+            Self::RaidArray => AllowedPartitionTypes::Any,
+            Self::ABVolume => AllowedPartitionTypes::Any,
+            Self::EncryptedVolume => AllowedPartitionTypes::Block(vec![
+                PartitionType::Esp,
+                PartitionType::Root,
+                PartitionType::RootVerity,
+            ]),
+            Self::FileSystem | Self::FileSystemSysupdate => AllowedPartitionTypes::Any,
+            Self::VerityFileSystemData => {
+                // TODO: add Usr when it's supported
+                AllowedPartitionTypes::Allow(vec![PartitionType::Root])
+            }
+            Self::VerityFileSystemHash => {
+                // TODO: add UsrVerity when it's supported
+                AllowedPartitionTypes::Allow(vec![PartitionType::RootVerity])
+            }
+        }
+    }
+
     /// Checks for the targets of a given referrer kind.
     ///
     /// THESE CHECKS ARE NOT VERY DECLARATIVE, TRY TO MINIMIZE THEIR USE AND
@@ -237,21 +354,47 @@ impl BlkDevReferrerKind {
     /// RAID array are the same.
     pub(super) fn check_targets(
         &self,
-        node: &BlkDevNode,
-        targets: &[&BlkDevNode],
-        graph: &BlockDeviceGraph,
+        _node: &BlkDevNode,
+        _targets: &[&BlkDevNode],
+        _graph: &BlockDeviceGraph,
     ) -> Result<(), Error> {
         match self {
             Self::None => (),
-            Self::RaidArray => raid::check_targets(node, targets, graph)?,
+
+            Self::RaidArray => (),
+
             Self::ABVolume => (),
-            Self::EncryptedVolume => encrypted::check_targets(node, targets, graph)?,
-            Self::Image => (),
-            Self::ImageSysupdate => (),
-            Self::MountPoint => (),
-            Self::VerityDevice => verity::check_targets(node, targets, graph)?,
+
+            Self::EncryptedVolume => (),
+
+            // Filesystems are special referrers because they are not nodes.
+            // Because of that, they have their own set of rules that are not
+            // covered here, and this section is unreachable.
+            Self::FileSystem
+            | Self::FileSystemSysupdate
+            | Self::VerityFileSystemData
+            | Self::VerityFileSystemHash => (),
         }
 
         Ok(())
+    }
+}
+
+impl PartitionType {
+    /// Return known-valid and expected mountpoints for a partition type.
+    pub(super) fn valid_mountpoints(&self) -> ValidMountpoints {
+        match self {
+            Self::Esp => ValidMountpoints::new(&["/boot", "/efi", "/boot/efi"]),
+            Self::Home => ValidMountpoints::new(&["/home"]),
+            Self::LinuxGeneric => ValidMountpoints::Any,
+            Self::Root => ValidMountpoints::new(&["/"]),
+            Self::RootVerity => ValidMountpoints::None,
+            Self::Srv => ValidMountpoints::new(&["/srv"]),
+            Self::Swap => ValidMountpoints::None,
+            Self::Tmp => ValidMountpoints::new(&["/var/tmp"]),
+            Self::Usr => ValidMountpoints::new(&["/usr"]),
+            Self::Var => ValidMountpoints::new(&["/var"]),
+            Self::Xbootldr => ValidMountpoints::new(&["/boot"]),
+        }
     }
 }

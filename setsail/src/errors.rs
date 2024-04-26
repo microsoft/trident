@@ -5,14 +5,14 @@ use serde::Serialize;
 use super::types::KSLine;
 
 /// External facing representation of a parser error
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct SetsailError {
     pub line: KSLine,
     pub error: SetsailErrorType,
 }
 
 /// External facing representation of a parser error type
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub enum SetsailErrorType {
     KSAppendError(String),
     MismatechedQuotes,

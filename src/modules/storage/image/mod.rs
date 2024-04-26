@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use osutils::{container, e2fsck, resize2fs, tune2fs, veritysetup};
 use trident_api::{
-    config::{AbUpdate, HostConfiguration, Image, ImageFormat, ImageSha256, PartitionType},
+    config::{AbUpdate, HostConfiguration, ImageFormat, ImageSha256, InternalImage, PartitionType},
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::TridentResultExt,
     status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, ReconcileState},
@@ -170,7 +170,7 @@ fn update_images(
 /// 5. is_local: bool indicating whether the image is a local file or not.
 fn update_image(
     image_url: &Url,
-    image: &Image,
+    image: &InternalImage,
     host_status: &mut HostStatus,
     block_device: &BlockDeviceInfo,
     is_local: bool,
@@ -217,7 +217,7 @@ fn update_image(
     let mount_point = host_status
         .spec
         .storage
-        .mount_points
+        .internal_mount_points
         .iter()
         .find(|mp| mp.target_id == image.target_id);
     if let Some(mount_point) = mount_point {
@@ -322,10 +322,10 @@ pub(crate) fn get_undeployed_images<'a>(
     host_status: &HostStatus,
     host_config: &'a HostConfiguration,
     active: bool,
-) -> Vec<&'a Image> {
+) -> Vec<&'a InternalImage> {
     host_config
         .storage
-        .images
+        .internal_images
         .iter()
         .filter(|image| {
             if let Some(bdi) = modules::get_block_device(host_status, &image.target_id, active) {
@@ -483,7 +483,7 @@ fn get_verity_data_volume_pair_paths(
     let root_verity_device_config = host_status
         .spec
         .storage
-        .verity
+        .internal_verity
         .iter()
         .find(|vd| &vd.id == root_device_id)
         .context("Failed to find root verity device config")?;
@@ -576,8 +576,8 @@ mod tests {
 
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystemType, ImageSha256, MountPoint, Partition,
-            PartitionSize, PartitionType, Storage as StorageConfig,
+            AbUpdate, AbVolumePair, Disk, FileSystemType, ImageSha256, InternalMountPoint,
+            Partition, PartitionSize, PartitionType, Storage as StorageConfig,
         },
         status::{Storage, UpdateKind},
     };
@@ -590,28 +590,28 @@ mod tests {
             reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
-                    mount_points: vec![
-                        MountPoint {
+                    internal_mount_points: vec![
+                        InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "boot".to_string(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
                             filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
-                    images: vec![
-                        Image {
+                    internal_images: vec![
+                        InternalImage {
                             url: "http://example.com/esp.img".to_string(),
                             target_id: "boot".to_string(),
                             format: ImageFormat::RawZst,
                             sha256: ImageSha256::Checksum("foobar".to_string()),
                         },
-                        Image {
+                        InternalImage {
                             url: "http://example.com/image1.img".to_string(),
                             target_id: "root".to_string(),
                             format: ImageFormat::RawZst,
@@ -677,17 +677,19 @@ mod tests {
         );
 
         // should be zero, as images and hashes are matching
-        host_status.spec.storage.images[0].sha256 = ImageSha256::Checksum("foobar".to_string());
+        host_status.spec.storage.internal_images[0].sha256 =
+            ImageSha256::Checksum("foobar".to_string());
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false).len(),
             0
         );
 
         // should be one, as image hash is different
-        host_status.spec.storage.images[0].sha256 = ImageSha256::Checksum("barfoo".to_string());
+        host_status.spec.storage.internal_images[0].sha256 =
+            ImageSha256::Checksum("barfoo".to_string());
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&Image {
+            vec![&InternalImage {
                 url: "http://example.com/esp.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZst,
@@ -696,11 +698,12 @@ mod tests {
         );
 
         // should be one, as image url is different
-        host_status.spec.storage.images[0].sha256 = ImageSha256::Ignored;
-        host_status.spec.storage.images[0].url = "http://example.com/image2.img".to_string();
+        host_status.spec.storage.internal_images[0].sha256 = ImageSha256::Ignored;
+        host_status.spec.storage.internal_images[0].url =
+            "http://example.com/image2.img".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&Image {
+            vec![&InternalImage {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZst,
@@ -710,10 +713,11 @@ mod tests {
 
         // could be zero, as despite the url being different, the hash is the
         // same; for now though we reimage to be safe, hence 1
-        host_status.spec.storage.images[0].sha256 = ImageSha256::Checksum("foobar".to_string());
+        host_status.spec.storage.internal_images[0].sha256 =
+            ImageSha256::Checksum("foobar".to_string());
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&Image {
+            vec![&InternalImage {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZst,
@@ -732,13 +736,13 @@ mod tests {
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
             vec![
-                &Image {
+                &InternalImage {
                     url: "http://example.com/image2.img".to_string(),
                     target_id: "boot".to_string(),
                     format: ImageFormat::RawZst,
                     sha256: ImageSha256::Checksum("foobar".to_string()),
                 },
-                &Image {
+                &InternalImage {
                     url: "http://example.com/image1.img".to_string(),
                     target_id: "root".to_string(),
                     format: ImageFormat::RawZst,
@@ -752,28 +756,28 @@ mod tests {
             reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
-                    mount_points: vec![
-                        MountPoint {
+                    internal_mount_points: vec![
+                        InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "boot".to_string(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
                             filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
-                    images: vec![
-                        Image {
+                    internal_images: vec![
+                        InternalImage {
                             url: "http://example.com/esp.img".to_string(),
                             target_id: "boot".to_string(),
                             format: ImageFormat::RawZst,
                             sha256: ImageSha256::Checksum("foobar".to_string()),
                         },
-                        Image {
+                        InternalImage {
                             url: "http://example.com/image1.img".to_string(),
                             target_id: "root".to_string(),
                             format: ImageFormat::RawZst,
@@ -824,7 +828,7 @@ mod tests {
 
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&Image {
+            vec![&InternalImage {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZst,
@@ -835,7 +839,7 @@ mod tests {
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, true),
             // Vec::<&Image>::new()
-            vec![&Image {
+            vec![&InternalImage {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZst,
@@ -857,12 +861,12 @@ mod tests {
 
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<&Image>::new()
+            Vec::<&InternalImage>::new()
         );
 
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, true),
-            vec![&Image {
+            vec![&InternalImage {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZst,
@@ -952,14 +956,14 @@ mod tests {
                         partitions: vec![],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        MountPoint {
+                    internal_mount_points: vec![
+                        InternalMountPoint {
                             path: PathBuf::from("/boot"),
                             target_id: "boot".to_string(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
                             filesystem: FileSystemType::Ext4,
@@ -1027,14 +1031,14 @@ mod tests {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        MountPoint {
+                    internal_mount_points: vec![
+                        InternalMountPoint {
                             path: PathBuf::from("/esp"),
                             target_id: "esp".to_string(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
                             filesystem: FileSystemType::Ext4,
@@ -1079,19 +1083,19 @@ mod tests {
         };
 
         // Initialize image objects
-        let image_esp = Image {
+        let image_esp = InternalImage {
             url: "http://example.com/esp_1.img".to_string(),
             target_id: "esp".to_string(),
             format: ImageFormat::RawZst,
             sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
         };
-        let image_root = Image {
+        let image_root = InternalImage {
             url: "http://example.com/root_1.img".to_string(),
             target_id: "root".to_string(),
             format: ImageFormat::RawZst,
             sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
         };
-        let image_trident = Image {
+        let image_trident = InternalImage {
             url: "http://example.com/trident_1.img".to_string(),
             target_id: "trident".to_string(),
             format: ImageFormat::RawZst,
@@ -1101,7 +1105,7 @@ mod tests {
         // Test case 1: Running validate_undeployed_images() when update of ESP image only is
         // requested should return ((Ok)), even if ab_update is null.
         // Update images section of host_config
-        host_status.spec.storage.images = vec![image_esp.clone()];
+        host_status.spec.storage.internal_images = vec![image_esp.clone()];
         assert!(
             validate_undeployed_images(&host_status,&host_status.spec).is_ok(),
             "Failed to determine that no images should be undeployed when update of ESP image is requested"
@@ -1110,7 +1114,7 @@ mod tests {
         // Test case 2: Running validate_undeployed_images() when update of ESP and root images is
         // requested should return an error since ab_update is null.
         // Update images section of host_config
-        host_status.spec.storage.images = vec![image_esp.clone(), image_root.clone()];
+        host_status.spec.storage.internal_images = vec![image_esp.clone(), image_root.clone()];
         // Compare the actual error kind with the expected one.
         assert_eq!(
             validate_undeployed_images(&host_status,&host_status.spec)
@@ -1132,7 +1136,7 @@ mod tests {
             }],
         });
 
-        host_status.spec.storage.images = vec![image_esp.clone()];
+        host_status.spec.storage.internal_images = vec![image_esp.clone()];
         assert!(
             validate_undeployed_images(&host_status, &host_status.spec).is_ok(),
             "Failed to determine that no images should be undeployed when all images are valid"
@@ -1142,7 +1146,7 @@ mod tests {
         // block device 'trident' should return an error since it's neither the ESP partition nor
         // an A/B volume pair
         // Update images section of host_config
-        host_status.spec.storage.images =
+        host_status.spec.storage.internal_images =
             vec![image_esp.clone(), image_root.clone(), image_trident.clone()];
         // Compare the actual error kind with the expected one.
         assert_eq!(
@@ -1234,7 +1238,7 @@ mod tests {
         });
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
-        let image_boot = Image {
+        let image_boot = InternalImage {
             url: "http://example.com/boot_1.img".to_string(),
             target_id: "boot".to_string(),
             format: ImageFormat::RawZst,
@@ -1242,7 +1246,7 @@ mod tests {
         };
 
         // Update images section of host_config
-        host_status_2.spec.storage.images =
+        host_status_2.spec.storage.internal_images =
             vec![image_esp.clone(), image_root.clone(), image_boot.clone()];
         // Compare the actual error kind with the expected one.
         assert_eq!(
@@ -1277,7 +1281,7 @@ mod functional_test {
         },
     };
     use trident_api::{
-        config::{self, AbVolumePair, Disk, FileSystemType, MountPoint, Partition},
+        config::{self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition},
         status::Storage,
     };
 
@@ -1484,7 +1488,7 @@ mod functional_test {
 
         host_status.spec = HostConfiguration {
             storage: config::Storage {
-                verity: vec![config::VerityDevice {
+                internal_verity: vec![config::InternalVerityDevice {
                     id: "root-id".to_string(),
                     device_name: "root".to_string(),
                     data_target_id: "root-data".to_string(),
@@ -1634,7 +1638,7 @@ mod functional_test {
             },
             spec: HostConfiguration {
                 storage: config::Storage {
-                    verity: vec![config::VerityDevice {
+                    internal_verity: vec![config::InternalVerityDevice {
                         id: "root-id".to_string(),
                         device_name: "root".to_string(),
                         data_target_id: "root-data".to_string(),
@@ -1729,7 +1733,7 @@ mod functional_test {
         );
 
         // Missing volume pair for root mount point
-        host_status.spec.storage.mount_points = vec![MountPoint {
+        host_status.spec.storage.internal_mount_points = vec![InternalMountPoint {
             target_id: "root".to_string(),
             filesystem: FileSystemType::Ext4,
             options: vec![],
@@ -1904,7 +1908,7 @@ mod functional_test {
                 contents: BlockDeviceContents::Unknown,
             },
         );
-        host_status.spec.storage.verity = vec![config::VerityDevice {
+        host_status.spec.storage.internal_verity = vec![config::InternalVerityDevice {
             id: "root".to_string(),
             device_name: "root".to_string(),
             data_target_id: "root-data".to_string(),

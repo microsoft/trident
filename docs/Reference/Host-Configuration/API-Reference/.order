@@ -6,6 +6,8 @@ AdoptedPartition
 Disk
 EncryptedVolume
 Encryption
+FileSystem
+FileSystemSource
 FileSystemType
 Image
 ImageFormat
@@ -26,4 +28,4 @@ SshMode
 Storage
 Trident
 User
-VerityDevice
+VerityFileSystem

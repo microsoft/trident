@@ -355,6 +355,11 @@ impl Trident {
             .validate()
             .map_err(|e| TridentError::new(InvalidInputError::InvalidHostConfiguration(e)))?;
 
+        // Populate internal fields in host configuration.
+        // This is needed because the external API and the internal logic use different fields.
+        // This call ensures that the internal fields are populated from the external fields.
+        cmd.host_config.populate_internal();
+
         // When running inside a container, we need access to various host
         // paths. For now, check at least for presence of /host, which needs to
         // point to host's /. This function will return an error if running in a
@@ -414,7 +419,7 @@ impl Trident {
 #[cfg(test)]
 mod tests {
     use trident_api::{
-        config::{FileSystemType, MountPoint, Storage},
+        config::{FileSystemType, InternalMountPoint, Storage},
         constants,
     };
 
@@ -438,7 +443,7 @@ mod tests {
         // ok
         let host_config_original = HostConfiguration {
             storage: Storage {
-                mount_points: vec![MountPoint {
+                internal_mount_points: vec![InternalMountPoint {
                     path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
                     target_id: "sda1".to_string(),
                     filesystem: FileSystemType::Ext4,

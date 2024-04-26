@@ -1,28 +1,27 @@
 use std::path::Path;
 use std::{collections::HashMap, path::PathBuf};
 
-use trident_api::config::{
-    Disk, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256, MountPoint,
-    Partition, PartitionSize, PartitionTableType, PartitionType,
+use trident_api::{
+    config::{
+        Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat,
+        ImageSha256, MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType,
+        PartitionType,
+    },
+    misc::IdGenerator,
 };
 
 use crate::commands::partition::{FsType, PartitionMount};
 use crate::{data::ParsedData, SetsailError};
 
-use super::misc::IdGenerator;
-
 pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Vec<SetsailError>) {
-    let mut disk_id_gen = IdGenerator::new("disk".into());
+    let mut disk_id_gen = IdGenerator::new("disk");
 
     // Create a HashMap of all disks
     // The /dev/? path is to be used as the key
     let mut disks: HashMap<String, Disk> = HashMap::new();
 
-    // Create a list of all mount points
-    let mut mount_points: Vec<MountPoint> = Vec::new();
-
-    // Create a list of all images to be mounted on partitions
-    let mut images: Vec<Image> = Vec::new();
+    // List of all filesystems
+    let mut filesystems: Vec<FileSystem> = Vec::new();
 
     // Go over all parsed partitions
     for part in input.partitions.iter() {
@@ -41,7 +40,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
         // Get/insert the disk in the HashMap
         let disk = disks.entry(target_disk.clone()).or_insert_with(|| Disk {
             // We haven't seen this disk before, generate a new ID
-            id: disk_id_gen.next(),
+            id: disk_id_gen.next_id(),
             // Use the /dev/? path as the device
             device: PathBuf::from(target_disk),
             // We only support GPT
@@ -85,10 +84,25 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
             },
         });
 
-        mount_points.push(MountPoint {
-            path: match part.mntpoint {
-                PartitionMount::Path(ref s) => s.clone(),
-                PartitionMount::Swap => PathBuf::from("swap"),
+        filesystems.push(FileSystem {
+            device_id: Some(partition_id.clone()),
+            fs_type: part.fstype.into(),
+            // TODO(5989): Figure out how to bridge the gap between how kickstart
+            // handles images and how Trident handles them
+            source: match part.image.as_ref() {
+                Some(img) => FileSystemSource::Image(Image {
+                    url: img.clone(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZst,
+                }),
+                None => FileSystemSource::Create,
+            },
+            mount_point: match part.mntpoint {
+                PartitionMount::Path(ref s) => Some(MountPoint {
+                    path: s.clone(),
+                    options: MountOptions(part.fsoptions.join(",")),
+                }),
+                PartitionMount::Swap => None,
                 _ => {
                     errors.push(SetsailError::new_translation(
                         part.line.clone(),
@@ -97,26 +111,11 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
                     continue;
                 }
             },
-            filesystem: part.fstype.into(),
-            options: part.fsoptions.clone(),
-            target_id: partition_id.clone(),
         });
-
-        // TODO(5989): Figure out how to bridge the gap between how kickstart
-        // handles images and how Trident handles them
-        if let Some(img) = part.image.as_ref() {
-            images.push(Image {
-                url: img.clone(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-                target_id: partition_id.clone(),
-            });
-        }
     }
 
     hc.storage.disks = disks.into_values().collect();
-    hc.storage.mount_points = mount_points;
-    hc.storage.images = images;
+    hc.storage.filesystems = filesystems;
 }
 
 impl From<FsType> for FileSystemType {

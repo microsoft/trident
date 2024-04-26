@@ -44,40 +44,38 @@ storage:
       - root1
       - root2
       metadataVersion: '1.0'
-  mountPoints:
-  - path: /boot/efi
-    filesystem: vfat
-    options:
-    - umask=0077
-    targetId: esp1
-  - path: /
-    filesystem: ext4
-    options:
-    - defaults
-    targetId: root
-  - path: none
-    filesystem: swap
-    options:
-    - sw
-    targetId: swap1
-  - path: none
-    filesystem: swap
-    options:
-    - sw
-    targetId: swap2
-  images:
-  - url: file:///trident_cdrom/data/esp.rawzst
-    sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
-    format: raw-zst
-    targetId: esp1
-  - url: file:///trident_cdrom/data/esp.rawzst
-    sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
-    format: raw-zst
-    targetId: esp2
-  - url: file:///trident_cdrom/data/root.rawzst
-    sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
-    format: raw-zst
-    targetId: root
+  filesystems:
+  - deviceId: esp1
+    type: vfat
+    source:
+      type: image
+      url: file:///trident_cdrom/data/verity_esp.rawzst
+      sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
+      format: raw-zst
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: esp2
+    type: vfat
+    source:
+      type: image
+      url: file:///trident_cdrom/data/verity_esp.rawzst
+      sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
+      format: raw-zst
+  - deviceId: root
+    type: ext4
+    source:
+      type: image
+      url: file:///trident_cdrom/data/verity_root.rawzst
+      sha256: c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293
+      format: raw-zst
+    mountPoint:
+      path: /
+      options: defaults
+  - deviceId: swap1
+    type: swap
+  - deviceId: swap2
+    type: swap
 scripts:
   postConfigure:
   - name: wheel

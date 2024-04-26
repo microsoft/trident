@@ -66,7 +66,7 @@ fn get_block_devices_to_initialize(
     let requested_image_block_device_ids: HashSet<&BlockDeviceId> = host_status
         .spec
         .storage
-        .images
+        .internal_images
         .iter()
         .map(|image| &image.target_id)
         .collect();
@@ -76,7 +76,7 @@ fn get_block_devices_to_initialize(
     let candidates = host_status
         .spec
         .storage
-        .mount_points
+        .internal_mount_points
         .iter()
         .filter(|mount_point| {
             // Skip mount points that are initialized by images
@@ -185,8 +185,9 @@ mod test {
     use maplit::btreemap;
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk, HostConfiguration, Image, ImageFormat, ImageSha256,
-            MountPoint, Partition, PartitionSize, PartitionType, Storage as StorageConfig,
+            self, AbUpdate, AbVolumePair, Disk, HostConfiguration, ImageFormat, ImageSha256,
+            InternalImage, InternalMountPoint, Partition, PartitionSize, PartitionType,
+            Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
         status::{AbVolumeSelection, BlockDeviceInfo, Storage},
@@ -225,21 +226,21 @@ mod test {
                         ],
                         ..Default::default()
                     }],
-                    mount_points: vec![
-                        MountPoint {
+                    internal_mount_points: vec![
+                        InternalMountPoint {
                             path: PathBuf::from("/boot/efi"),
                             target_id: "esp".to_string(),
                             filesystem: FileSystemType::Vfat,
                             options: vec![],
                         },
-                        MountPoint {
+                        InternalMountPoint {
                             path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                             target_id: "root".to_string(),
                             filesystem: FileSystemType::Ext4,
                             options: vec![],
                         },
                     ],
-                    images: vec![Image {
+                    internal_images: vec![InternalImage {
                         url: "http://example.com/root_3.img".to_string(),
                         target_id: "root".to_string(),
                         format: ImageFormat::RawZst,
@@ -358,7 +359,7 @@ mod test {
         // and some devices uninitialized or zeroed, should not return empty
         // vector
         host_status.spec = host_status_golden.spec.clone();
-        host_status.spec.storage.images.clear();
+        host_status.spec.storage.internal_images.clear();
         assert_eq!(
             get_block_devices_to_initialize(&host_status),
             vec![
@@ -399,7 +400,7 @@ mod test {
         // Test case 5: Remove image for target_id root from HostStatus. Running
         // get_volumes_to_reinitialize() should now return a vector containing the target_id of the volume
         // pair with id root
-        host_status.spec.storage.images = vec![];
+        host_status.spec.storage.internal_images = vec![];
 
         let expected_path_rootb = PathBuf::from("/dev/disk/by-partlabel/osp3");
 
