@@ -28,7 +28,7 @@ steps:
       scriptLocation: inlineScript
       inlineScript: |
         set -eux
-        
+
         LATEST_VERSION=$(./scripts/get-packages.py \
             -f '${{ parameters.packageName }}' \
             --feed '${{ parameters.feedName }}' \
@@ -51,9 +51,10 @@ steps:
 
   - task: UniversalPackages@0
     displayName: "Downloading ${{ parameters.packageName }} version $(${{ parameters.outputVersionVariable }})"
+    retryCountOnTaskFailure: 3
     inputs:
-      command: 'download'
-      downloadDirectory: '${{ parameters.downloadLocation }}'
-      vstsFeed: 'ECF/${{ parameters.feedName }}'
-      vstsFeedPackage: '${{ parameters.packageName }}'
-      vstsPackageVersion: '$(${{ parameters.outputVersionVariable }})'
+      command: "download"
+      downloadDirectory: "${{ parameters.downloadLocation }}"
+      vstsFeed: "ECF/${{ parameters.feedName }}"
+      vstsFeedPackage: "${{ parameters.packageName }}"
+      vstsPackageVersion: "$(${{ parameters.outputVersionVariable }})"

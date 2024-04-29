@@ -15,13 +15,14 @@ steps:
                             ./Makefile | \
                             sed 's/EMU_PACKAGE_VERSION ?= //')
       echo "##vso[task.setvariable variable=emu_package_version]$emu_package_version"
-    displayName: 'Extract and Set EMU Package Variables'
+    displayName: "Extract and Set EMU Package Variables"
 
   - task: UniversalPackages@0
-    displayName: 'Download EMU'
+    displayName: "Download EMU"
+    retryCountOnTaskFailure: 3
     inputs:
-      command: 'download'
-      downloadDirectory: './artifacts'
-      vstsFeed: 'mariner/MarinerCoreArtifacts'
-      vstsFeedPackage: '$(emu_package_name)'
-      vstsPackageVersion: '$(emu_package_version)'
+      command: "download"
+      downloadDirectory: "./artifacts"
+      vstsFeed: "mariner/MarinerCoreArtifacts"
+      vstsFeedPackage: "$(emu_package_name)"
+      vstsPackageVersion: "$(emu_package_version)"
