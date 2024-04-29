@@ -144,6 +144,7 @@ TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
 
 TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
 TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/sample-host-configuration.md
+TRIDENT_API_HC_EXAMPLE_YAML := docs/Reference/Host-Configuration/sample-host-configuration.yaml
 
 target/trident-api-docs:
 	mkdir -p target/trident-api-docs
@@ -158,7 +159,8 @@ TRIDENT_API_HC_SAMPLES := docs/Reference/Host-Configuration/Samples
 .PHONY: build-api-docs
 build-api-docs: build-api-schema docbuilder
 	$(DOCBUILDER_BIN) host-config sample -n base -m -o $(TRIDENT_API_HC_EXAMPLE_FILE)
-	@echo Updated "base" sample Host Configuration in $(TRIDENT_API_HC_EXAMPLE_FILE)
+	$(DOCBUILDER_BIN) host-config sample -n base -o $(TRIDENT_API_HC_EXAMPLE_YAML)
+	@echo Updated "base" sample Host Configuration in $(TRIDENT_API_HC_EXAMPLE_FILE) and $(TRIDENT_API_HC_EXAMPLE_YAML)
 
 	$(foreach SAMPLE_NAME,$(HC_SAMPLES),$(DOCBUILDER_BIN) host-config sample -n $(SAMPLE_NAME) -o $(TRIDENT_API_HC_SAMPLES)/$(SAMPLE_NAME).yaml &&) true
 
