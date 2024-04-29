@@ -124,8 +124,6 @@ stages:
               isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
               sshKeyFile: $(SSH_KEY_FILE)
 
-          - template: ../../common_tasks/install-clamav.yml
-
           - template: ../common_tasks/trident-prep.yml
             parameters:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)

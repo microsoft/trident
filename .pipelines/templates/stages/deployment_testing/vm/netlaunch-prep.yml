@@ -1,6 +1,4 @@
 steps:
-  - template: ../../common_tasks/install-clamav.yml
-
   - task: DownloadPipelineArtifact@2
     displayName: "Download installer-iso/installer.iso"
     inputs:
@@ -70,9 +68,10 @@ steps:
     retryCountOnTaskFailure: 3
 
   - bash: |
-      set -eux
-
-      curl -fsSL https://get.docker.com | sudo bash
+      # Install Docker if it isn't installed
+      if ! which docker ; then
+        curl -fsSL https://get.docker.com | sudo bash
+      fi
     displayName: "Install Docker"
     retryCountOnTaskFailure: 3
 
@@ -82,8 +81,12 @@ steps:
       sudo NEEDRESTART_MODE=a apt-get install -y \
           swtpm \
           swtpm-tools \
+          bridge-utils \
           virt-manager \
           qemu-efi \
+          qemu-kvm \
+          libvirt-daemon-system \
+          libvirt-clients \
           python3-libvirt \
           ovmf \
           openssl \

@@ -8,7 +8,7 @@ stages:
         timeoutInMinutes: 30
         pool:
           type: linux
-          name: CAPKV_Pool
+          name: Trident_Ubuntu
           hostArchitecture: amd64
 
         variables:
@@ -17,13 +17,11 @@ stages:
           emu_package_version: ""
 
         steps:
-          - template: ../common_tasks/install-clamav.yml
-
           - template: ../common_tasks/download-emu.yml
 
           - script: |
               set -eux
-              sudo apt install -y protobuf-compiler clang-7 bc
+              sudo apt install -y protobuf-compiler clang bc
             displayName: Install native dependencies
             retryCountOnTaskFailure: 3
 

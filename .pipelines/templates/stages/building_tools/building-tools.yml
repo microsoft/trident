@@ -17,7 +17,7 @@ stages:
         timeoutInMinutes: 60
         pool:
           type: linux
-          name: CAPKV_Pool
+          name: Trident_Ubuntu
           hostArchitecture: amd64
 
         variables:
