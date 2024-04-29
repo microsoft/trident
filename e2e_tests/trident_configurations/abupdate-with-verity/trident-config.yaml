@@ -44,9 +44,6 @@ hostConfiguration:
           - id: home
             type: linux-generic
             size: 100M
-          - id: run
-            type: linux-generic
-            size: 1G
       - id: disk2
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
@@ -73,11 +70,6 @@ hostConfiguration:
         type: ext4
         mountPoint:
           path: /home
-          options: defaults
-      - deviceId: run
-        type: ext4
-        mountPoint:
-          path: /run
           options: defaults
       - deviceId: trident
         type: ext4

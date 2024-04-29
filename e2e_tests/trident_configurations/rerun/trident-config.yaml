@@ -68,9 +68,6 @@ hostConfiguration:
           - id: var
             type: linux-generic
             size: 1G
-          - id: run
-            type: linux-generic
-            size: 1G
       - id: disk2
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
@@ -181,11 +178,6 @@ hostConfiguration:
         mountPoint:
           path: /boot/efi
           options: umask=0077
-      - deviceId: run
-        type: ext4
-        mountPoint:
-          path: /run
-          options: defaults
       - deviceId: boot
         type: ext4
         source:

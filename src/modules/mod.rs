@@ -661,6 +661,13 @@ fn initialize_new_root(
         .structured(ManagementError::ChrootMountSpecial { dir: "/tmp" })?;
     mounts.insert(0, tmp_mount.target_path().to_owned());
 
+    let run_mount = Mount::builder()
+        .fstype("tmpfs")
+        .flags(MountFlags::empty())
+        .mount("tmpfs", new_root_path.join("run"))
+        .structured(ManagementError::ChrootMountSpecial { dir: "/run" })?;
+    mounts.insert(0, run_mount.target_path().to_owned());
+
     let exec_root_path = Path::new(EXEC_ROOT_PATH);
     let full_exec_root_path = join_relative(new_root_path, exec_root_path);
     std::fs::create_dir_all(&full_exec_root_path)
