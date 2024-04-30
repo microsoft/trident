@@ -38,15 +38,22 @@
 //! ```
 //!
 
+// Modules directly related to the graph and its building.
 pub(super) mod builder;
-pub(super) mod cardinality;
 pub(super) mod conversions;
-pub mod error;
 pub(super) mod graph;
-pub(super) mod mountpoints;
-pub(super) mod partitions;
-pub(super) mod rules;
-pub(super) mod types;
+
+// Rules & rule helpers.
+// Public so docbuilder can access these.
+pub mod cardinality;
+pub mod mountpoints;
+pub mod partitions;
+pub mod rules;
+pub mod types;
+
+// Errors module.
+// Public because it's used by trident to report errors.
+pub mod error;
 
 #[cfg(test)]
 mod validation_tests;

@@ -507,6 +507,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "setsail",
+ "strum",
  "tera",
  "trident_api",
 ]

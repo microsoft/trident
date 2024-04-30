@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(super) enum ValidMountpoints {
+pub enum ValidMountpoints {
     None,
     Any,
     Specific(Vec<PathBuf>),

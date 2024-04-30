@@ -145,6 +145,7 @@ TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
 TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
 TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/sample-host-configuration.md
 TRIDENT_API_HC_EXAMPLE_YAML := docs/Reference/Host-Configuration/sample-host-configuration.yaml
+TRIDENT_API_HC_STORAGE_RULES_FILES := docs/Reference/Host-Configuration/storage-rules.md
 
 target/trident-api-docs:
 	mkdir -p target/trident-api-docs
@@ -169,6 +170,9 @@ build-api-docs: build-api-schema docbuilder
 
 	$(DOCBUILDER_BIN) host-config markdown $(TRIDENT_API_HC_MARKDOWN_DIR) --devops-wiki
 	@echo Wrote Markdown docs to $(TRIDENT_API_HC_MARKDOWN_DIR)
+
+	$(DOCBUILDER_BIN) host-config storage-rules -o $(TRIDENT_API_HC_STORAGE_RULES_FILES)
+	@echo Wrote storage rules to $(TRIDENT_API_HC_STORAGE_RULES_FILES)
 
 # This target is meant to be used by CI to ensure that the API schema is up to date.
 # It compares the generated schema with the checked-in schema.

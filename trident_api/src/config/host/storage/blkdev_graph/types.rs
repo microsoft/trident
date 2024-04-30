@@ -16,6 +16,7 @@ use crate::{
 /// Enum for supported block device types
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "documentation", derive(strum_macros::EnumIter))]
 pub enum BlkDevKind {
     /// A disk
     Disk,
@@ -83,6 +84,7 @@ pub enum HostConfigBlockDevice<'a> {
 ///
 /// Referrers are config items that refer to other block devices.
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "documentation", derive(strum_macros::EnumIter))]
 pub enum BlkDevReferrerKind {
     /// Represents an 'null referrer' i.e. an entity that does not refer to any
     /// block device.
@@ -302,7 +304,7 @@ impl HostConfigBlockDevice<'_> {
 /// Conversion from BlkDevKind to BlkDevKindFlag
 impl BlkDevKind {
     /// Returns the flag associated with the block device kind
-    pub(crate) fn as_flag(&self) -> BlkDevKindFlag {
+    pub fn as_flag(&self) -> BlkDevKindFlag {
         match self {
             BlkDevKind::Disk => BlkDevKindFlag::Disk,
             BlkDevKind::Partition => BlkDevKindFlag::Partition,
@@ -327,7 +329,7 @@ impl BlkDevKind {
 
 impl BlkDevReferrerKind {
     /// Returns the flag associated with the block device kind
-    pub(crate) fn as_flag(&self) -> BlkDevReferrerKindFlag {
+    pub fn as_flag(&self) -> BlkDevReferrerKindFlag {
         match self {
             Self::None => BlkDevReferrerKindFlag::empty(),
             Self::RaidArray => BlkDevReferrerKindFlag::RaidArray,
@@ -530,6 +532,30 @@ impl Display for BlkDevKindFlag {
 impl Display for BlkDevReferrerKindFlag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.user_readable())
+    }
+}
+
+#[cfg(feature = "documentation")]
+mod documentation {
+    use super::{BlkDevKind, BlkDevReferrerKind};
+
+    impl BlkDevReferrerKind {
+        /// Returns whether a referrer kind should be included in the public
+        /// documentation
+        pub fn document(&self) -> bool {
+            !matches!(
+                self,
+                BlkDevReferrerKind::None | BlkDevReferrerKind::FileSystemSysupdate
+            )
+        }
+    }
+
+    impl BlkDevKind {
+        /// Returns whether a referrer kind flag should be included in the public
+        /// documentation
+        pub fn document(&self) -> bool {
+            !matches!(self, BlkDevKind::AdoptedPartition)
+        }
     }
 }
 

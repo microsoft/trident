@@ -59,22 +59,7 @@ impl<'a> HostConfigBlockDevice<'a> {
 /// This impl block contains validation rules for block device referrers
 impl BlkDevReferrerKind {
     /// Returns the valid target kinds for the referrer kind.
-    ///
-    /// This table shows the valid block device kinds that can be referenced by each referrer:
-    ///
-    /// | Referrer \ Target Kind   | Disk | Partition | AdoptedPartition | RaidArray | ABVolume | EncryptedVolume |
-    /// | ------------------------ | ---- | --------- | ---------------- | --------- | -------- | --------------- |
-    /// | **Disk**                 | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
-    /// | **Partition**            | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
-    /// | **AdoptedPartition**     | N/A  | N/A       | N/A              | N/A       | N/A      | N/A             |
-    /// | **RaidArray**            | No   | Yes       | TBD              | No        | No       | No              |
-    /// | **ABVolume**             | No   | Yes       | TBD              | Yes       | No       | Yes             |
-    /// | **EncryptedVolume**      | No   | Yes       | TBD              | Yes       | No       | No              |
-    /// | **Filesystem**           | No   | Yes       | TBD              | Yes       | Yes      | Yes             |
-    /// | **FileSystemSysupdate**  | No   | No        | No               | No        | Yes      | No              |
-    /// | **VerityFilesystemData** | No   | Yes       | TBD              | Yes       | Yes      | No              |
-    /// | **VerityFilesystemHash** | No   | Yes       | TBD              | Yes       | Yes      | No              |
-    pub(crate) fn valid_target_kinds(&self) -> BlkDevKindFlag {
+    pub fn valid_target_kinds(&self) -> BlkDevKindFlag {
         match self {
             Self::None => BlkDevKindFlag::empty(),
             Self::RaidArray => BlkDevKindFlag::Partition,
@@ -100,22 +85,7 @@ impl BlkDevReferrerKind {
     /// Returns the valid number of members for the referrer kind.
     ///
     /// This table shows the valid number of members for each referrer:
-    ///
-    /// | Referrer Type            | Min | Max |
-    /// | ------------------------ | --- | --- |
-    /// | **Disk**                 | 0   | 0   |
-    /// | **Partition**            | 0   | 0   |
-    /// | **AdoptedPartition**     | 0   | 0   |
-    /// | **RaidArray**            | 2   | ∞   |
-    /// | **ABVolume**             | 2   | 2   |
-    /// | **EncryptedVolume**      | 1   | 1   |
-    /// | **Filesystem**           | 0   | 1   |
-    /// | **FileSystemSysupdate**  | 1   | 1   |
-    /// | **VerityFilesystemData** | 1   | 1   |
-    /// | **VerityFilesystemHash** | 1   | 1   |
-    ///
-    /// (Above ranges are inclusive)
-    pub(crate) fn valid_target_count(self) -> ValidCardinality {
+    pub fn valid_target_count(self) -> ValidCardinality {
         match self {
             Self::None => ValidCardinality::new_zero(),
             Self::RaidArray => ValidCardinality::new_at_least(2),
@@ -156,7 +126,7 @@ impl BlkDevReferrerKind {
     /// - #1 above is enforced by the node struct having only an `Option` to
     ///   store the image associated with it.
     /// - #2 follows from the node struct using a `Vec` to store mount points.
-    pub(crate) fn valid_sharing_peers(self) -> BlkDevReferrerKindFlag {
+    pub fn valid_sharing_peers(self) -> BlkDevReferrerKindFlag {
         match self {
             Self::None => BlkDevReferrerKindFlag::empty(),
             Self::RaidArray => BlkDevReferrerKindFlag::empty(),
@@ -172,7 +142,7 @@ impl BlkDevReferrerKind {
 
 impl FileSystemType {
     /// Returns whether a filesystem type requires a block device ID.
-    pub(crate) fn requires_block_device_id(&self) -> bool {
+    pub fn requires_block_device_id(&self) -> bool {
         match self {
             Self::Ext4 | Self::Xfs | Self::Vfat | Self::Iso9660 | Self::Swap => true,
             Self::Tmpfs | Self::Overlay => false,
@@ -180,7 +150,7 @@ impl FileSystemType {
     }
 
     /// Returns the valid sources for a filesystem type.
-    pub(crate) fn valid_sources(&self) -> FileSystemSourceKindList {
+    pub fn valid_sources(&self) -> FileSystemSourceKindList {
         match self {
             Self::Ext4 | Self::Xfs | Self::Vfat => FileSystemSourceKindList(vec![
                 FileSystemSourceKind::Create,
@@ -194,7 +164,7 @@ impl FileSystemType {
     }
 
     /// Returns whether a filesystem type can have a mountpoint.
-    pub(crate) fn can_have_mountpoint(&self) -> bool {
+    pub fn can_have_mountpoint(&self) -> bool {
         match self {
             Self::Ext4 | Self::Xfs | Self::Vfat | Self::Iso9660 | Self::Tmpfs | Self::Overlay => {
                 true
@@ -204,7 +174,7 @@ impl FileSystemType {
     }
 
     /// Returns whether a filesystem type can be used with verity.
-    pub(crate) fn supports_verity(&self) -> bool {
+    pub fn supports_verity(&self) -> bool {
         match self {
             Self::Ext4 | Self::Xfs => true,
             Self::Vfat | Self::Iso9660 | Self::Swap | Self::Tmpfs | Self::Overlay => false,
@@ -259,7 +229,7 @@ impl BlkDevReferrerKind {
     ///
     /// In other words, can a referrer kind refer to multiple target
     /// kinds? e.g a partition and a raid array?
-    pub(super) fn enforce_homogeneous_reference_kinds(&self) -> bool {
+    pub fn enforce_homogeneous_reference_kinds(&self) -> bool {
         match self {
             // Nothing to do.
             Self::None => false,
@@ -278,7 +248,7 @@ impl BlkDevReferrerKind {
     }
 
     /// Returns whether to enforce homogeneous partition sizes for a given referrer kind.
-    pub(super) fn enforce_homogeneous_partition_sizes(&self) -> bool {
+    pub fn enforce_homogeneous_partition_sizes(&self) -> bool {
         // If the referrer can't have multiple targets, there's nothing to enforce.
         if !self.valid_target_count().can_be_multiple() {
             return false;
@@ -298,7 +268,7 @@ impl BlkDevReferrerKind {
     }
 
     /// Returns whether to enforce homogeneous partition types for a given referrer kind.
-    pub(super) fn enforce_homogeneous_partition_types(&self) -> bool {
+    pub fn enforce_homogeneous_partition_types(&self) -> bool {
         // If the referrer can't have multiple targets, there's nothing to enforce.
         if !self.valid_target_count().can_be_multiple() {
             return false;
@@ -316,7 +286,7 @@ impl BlkDevReferrerKind {
     }
 
     /// Returns the valid partition types for a given referrer kind.
-    pub(crate) fn allowed_partition_types(&self) -> AllowedPartitionTypes {
+    pub fn allowed_partition_types(&self) -> AllowedPartitionTypes {
         match self {
             Self::None => AllowedPartitionTypes::Any,
             Self::RaidArray => AllowedPartitionTypes::Any,
@@ -382,7 +352,7 @@ impl BlkDevReferrerKind {
 
 impl PartitionType {
     /// Return known-valid and expected mountpoints for a partition type.
-    pub(super) fn valid_mountpoints(&self) -> ValidMountpoints {
+    pub fn valid_mountpoints(&self) -> ValidMountpoints {
         match self {
             Self::Esp => ValidMountpoints::new(&["/boot", "/efi", "/boot/efi"]),
             Self::Home => ValidMountpoints::new(&["/home"]),

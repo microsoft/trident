@@ -129,6 +129,7 @@ pub struct AdoptedPartition {
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
+#[cfg_attr(feature = "documentation", derive(strum_macros::EnumIter))]
 pub enum PartitionType {
     /// # EFI System Partition
     ///

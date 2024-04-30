@@ -1,0 +1,16 @@
+# Storage Configuration Rules
+
+Documentation about the rules used to validate the storage configuration.
+
+## Contents
+
+{% for rule in rules -%}
+- [{{ rule.name }}](#{{ rule.name | slugify  }})
+{% endfor %}
+{% for rule in rules -%}
+
+## {{ rule.name }}
+
+{{ rule.body }}
+{% endfor -%}
+

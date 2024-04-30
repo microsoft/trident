@@ -7,6 +7,7 @@ use log::info;
 use crate::schema_renderer::SchemaDocSettings;
 
 mod host_config;
+mod markdown;
 mod schema_renderer;
 mod setsail;
 
@@ -45,7 +46,7 @@ enum HostConfigCommands {
     /// Build markdown docs for Host Configuration
     Markdown(HostConfigMarkdownOpts),
 
-    /// Print the Host Configuration JSON Schema
+    /// Output the Host Configuration JSON Schema
     ///
     /// If no output file is specified, will print to stdout.
     Schema {
@@ -69,6 +70,15 @@ enum HostConfigCommands {
         /// Name
         #[clap(short, long)]
         name: String,
+    },
+
+    /// Output the Storage Rules
+    ///
+    /// If no output file is specified, will print to stdout.
+    StorageRules {
+        /// Output file
+        #[clap(short, long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -107,14 +117,16 @@ fn main() -> Result<(), Error> {
                 build_host_config_docs(opts).context("Failed to build host config docs")
             }
             HostConfigCommands::Schema { output } => {
-                host_config::print_schema(output).context("Failed to print schema")
+                host_config::schema::write(output).context("Failed to print schema")
             }
             HostConfigCommands::Sample {
                 markdown,
                 output,
                 name,
-            } => {
-                host_config::print_sample(name, output, markdown).context("Failed to print sample")
+            } => host_config::samples::print(name, output, markdown)
+                .context("Failed to print sample"),
+            HostConfigCommands::StorageRules { output } => {
+                host_config::storage_rules::write(output)
             }
         },
     }
@@ -150,7 +162,7 @@ fn build_host_config_docs(opts: HostConfigMarkdownOpts) -> Result<(), Error> {
         opts.output.display()
     ))?;
 
-    host_config::build(
+    host_config::docs::build(
         opts.output,
         SchemaDocSettings {
             devops_wiki: opts.devops_wiki,

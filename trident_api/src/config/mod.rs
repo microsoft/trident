@@ -1,5 +1,5 @@
-mod host;
-mod local;
+pub(crate) mod host;
+pub(crate) mod local;
 
 pub use host::{
     error::InvalidHostConfigurationError,

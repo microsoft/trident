@@ -17,11 +17,12 @@ regex = "1.9.5"
 serde = { version = "1.0.185", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.25"
+strum = "0.25.0"
 tera = { version = "1.19.1" }
 
 
 setsail = { path = "../setsail" }
-trident_api = { path = "../trident_api", features = ["schema", "samples"] }
+trident_api = { path = "../trident_api", features = ["documentation"] }
 osutils = { path = "../osutils" }
 
 [features]

@@ -150,6 +150,7 @@ impl MountOptions {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
+#[cfg_attr(feature = "documentation", derive(strum_macros::EnumIter))]
 pub enum FileSystemType {
     /// # Ext4 file system
     Ext4,
@@ -215,6 +216,12 @@ impl FileSystemType {
             | FileSystemType::Overlay
             | FileSystemType::Iso9660 => false,
         }
+    }
+
+    /// Returns whether the filesystem should appear in the rules documentation.
+    #[cfg(feature = "documentation")]
+    pub fn document(&self) -> bool {
+        !matches!(self, FileSystemType::Overlay | FileSystemType::Iso9660)
     }
 }
 

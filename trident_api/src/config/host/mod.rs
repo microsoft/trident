@@ -5,11 +5,11 @@ use schemars::JsonSchema;
 
 use crate::is_default;
 
-pub(super) mod error;
-pub(super) mod os;
-pub(super) mod scripts;
-pub(super) mod storage;
-pub(super) mod trident;
+pub(crate) mod error;
+pub(crate) mod os;
+pub(crate) mod scripts;
+pub(crate) mod storage;
+pub(crate) mod trident;
 
 use os::Os;
 use scripts::Scripts;
