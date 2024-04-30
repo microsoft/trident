@@ -12,6 +12,19 @@ bareMetal:
     - simple
     - verity
     - verity-raid
+  validation:
+    - base
+    - raid-big
+    - abupdate-on-encrypted-raid
+    - abupdate-on-encrypted-partitions
+    - abupdate-with-verity
+    - encrypted-partition
+    - encrypted-raid
+    - encrypted-swap
+    - rerun
+    - simple
+    - verity
+    - verity-raid
 virtualMachine:
   daily:
     - base

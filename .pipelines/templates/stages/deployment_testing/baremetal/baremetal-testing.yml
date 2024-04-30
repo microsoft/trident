@@ -34,6 +34,15 @@ parameters:
   - name: jobName
     type: string
     default: trident_baremetal_tests
+  
+  - name: stageDependencies
+    type: object
+    default:
+    - BuildingTools
+    - TridentTestImg_trident_installer_testimage
+    - TridentTestImg_trident_testimage
+    - TridentTestImg_trident_verity_testimage
+    - TridentTestImg_containerhost_testimage
 
   - name: buildPurpose
     type: string
@@ -57,12 +66,7 @@ parameters:
 stages:
   - stage: BaremetalDeploymentTesting
     displayName: Baremetal Deployment Testing
-    dependsOn:
-      - BuildingTools
-      - TridentTestImg_trident_installer_testimage
-      - TridentTestImg_trident_testimage
-      - TridentTestImg_trident_verity_testimage
-      - TridentTestImg_containerhost_testimage
+    dependsOn: ${{ parameters.stageDependencies }}
 
     jobs:
       - template: ../common_tasks/get-tests.yml

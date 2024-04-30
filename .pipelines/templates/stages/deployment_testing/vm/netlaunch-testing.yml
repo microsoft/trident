@@ -9,6 +9,15 @@ parameters:
       - post_merge
       - validation
 
+  - name: stageDependencies
+    type: object
+    default:
+    - BuildingTools
+    - TridentTestImg_trident_installer_testimage
+    - TridentTestImg_trident_testimage
+    - TridentTestImg_trident_verity_testimage
+    - TridentTestImg_containerhost_testimage
+
   - name: updateRuntimeOSTrident
     type: boolean
     default: false
@@ -16,12 +25,7 @@ parameters:
 stages:
   - stage: DeploymentTesting
     displayName: Deployment Testing
-    dependsOn:
-      - BuildingTools
-      - TridentTestImg_trident_installer_testimage
-      - TridentTestImg_trident_testimage
-      - TridentTestImg_trident_verity_testimage
-      - TridentTestImg_containerhost_testimage
+    dependsOn: ${{ parameters.stageDependencies }}
 
     jobs:
       - template: ../common_tasks/get-tests.yml

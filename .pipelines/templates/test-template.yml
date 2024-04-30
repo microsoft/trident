@@ -1,0 +1,38 @@
+parameters:
+  - name: definition
+    type: number
+    default: 2195
+    displayName: Pipeline definition ID
+
+  - name: branch
+    type: string
+    default: main
+    displayName: Branch to download Artifacts from
+
+  - name: runDeploymentVM
+    type: boolean
+    default: true
+    displayName: Run E2E testing on Virtual Machines
+
+  - name: runDeploymentBM
+    type: boolean
+    default: false
+    displayName: Run E2E testing on Bare Metal
+
+stages:
+  - template: stages/download_artifacts/get-artifacts.yml
+    parameters:
+      definition: ${{ parameters.definition }}
+      branch: ${{ parameters.branch }}
+
+  - ${{ if parameters.runDeploymentVM }}:
+    - template: stages/deployment_testing/vm/netlaunch-testing.yml
+      parameters:
+        buildPurpose: validation
+        stageDependencies: DownloadTestingElements
+
+  - ${{ if parameters.runDeploymentBM }}:
+    - template: stages/deployment_testing/baremetal/baremetal-testing.yml
+      parameters:
+        buildPurpose: validation
+        stageDependencies: DownloadTestingElements
