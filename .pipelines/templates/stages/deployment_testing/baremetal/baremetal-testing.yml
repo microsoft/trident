@@ -34,15 +34,15 @@ parameters:
   - name: jobName
     type: string
     default: trident_baremetal_tests
-  
+
   - name: stageDependencies
     type: object
     default:
-    - BuildingTools
-    - TridentTestImg_trident_installer_testimage
-    - TridentTestImg_trident_testimage
-    - TridentTestImg_trident_verity_testimage
-    - TridentTestImg_containerhost_testimage
+      - BuildingTools
+      - TridentTestImg_trident_installer_testimage
+      - TridentTestImg_trident_testimage
+      - TridentTestImg_trident_verity_testimage
+      - TridentTestImg_containerhost_testimage
 
   - name: buildPurpose
     type: string
@@ -80,7 +80,7 @@ stages:
         timeoutInMinutes: 90
         pool:
           type: linux
-          name: mariner-hci-aods-conn-1es-pool
+          name: trident-aods-conn-1es-pool
           hostArchitecture: amd64
 
         strategy:
