@@ -28,8 +28,7 @@ steps:
       python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/add_key.py \
           --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
           --tridentconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml
-      openssl rsa -in ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
-          -out ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key -traditional
       chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
+      ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key -N ""
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Setting keys to ssh for testing"
