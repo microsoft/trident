@@ -18,7 +18,7 @@ steps:
       contents: "*"
     displayName: Copy EMU to SOURCES
 
-  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust p7zip p7zip-plugins zstd
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust p7zip p7zip-plugins zstd moby-buildx
     displayName: Install native dependencies
     retryCountOnTaskFailure: 3
 
@@ -56,37 +56,6 @@ steps:
 
       mkdir -p bin
       cp -r /usr/src/mariner/RPMS bin/
-
-      # Explicitly check for Docker Buildx and install if not available
-      if [ ! -f ~/.docker/cli-plugins/docker-buildx ]; then
-          echo "Docker Buildx not found. Installing..."
-
-          # Determine system architecture for downloading the correct Buildx binary
-          ARCH=$(uname -m)
-          case "$ARCH" in
-              x86_64) ARCH="amd64";;
-              aarch64) ARCH="arm64";;
-              arm*) ARCH="arm-v7";;
-              *) echo "Unsupported architecture: $ARCH"; exit 1;;
-          esac
-
-          # Set the desired version of Buildx
-          BUILDX_VERSION="v0.8.2"
-
-          # Compose Buildx binary path
-          BUILDX_BIN_PATH="https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${ARCH}"
-
-          # Download and install Buildx
-          mkdir -p ~/.docker/cli-plugins
-          curl -sSL $BUILDX_BIN_PATH -o ~/.docker/cli-plugins/docker-buildx
-          chmod a+x ~/.docker/cli-plugins/docker-buildx
-          echo "Docker Buildx installed."
-          echo "Docker Buildx version:"
-          ~/.docker/cli-plugins/docker-buildx version
-      else
-          echo "Docker Buildx is already installed."
-      fi
-
       DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
       # ado redacts random strings (like `ecfafoncpriv`). To still be able
