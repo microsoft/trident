@@ -4,27 +4,27 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = { version = "1.0.75", features = ["backtrace"] }
-bitflags = { version = "2.4.0", features = ["serde"] }
+anyhow = { version = "1.0.82", features = ["backtrace"] }
+bitflags = { version = "2.5.0", features = ["serde"] }
 const_format = "0.2.32"
 lazy_static = "1.4.0"
-log = "0.4.20"
-netplan-types = "0.4.0"
-serde = { version = "1.0.185", features = ["derive"] }
-serde_yaml = "0.9.25"
-uuid = { version = "1.4.1", features = ["v4", "serde"] }
-regex = "1.9.5"
-strum = "0.25.0"
-strum_macros = "0.25.0"
-thiserror = "1.0.56"
+log = "0.4.21"
+netplan-types = "0.5.0"
+serde = { version = "1.0.200", features = ["derive"] }
+serde_yaml = "0.9.34"
+uuid = { version = "1.8.0", features = ["v4", "serde"] }
+regex = "1.10.4"
+strum = "0.26.2"
+strum_macros = "0.26.2"
+thiserror = "1.0.59"
 url = { version = "2.5.0", features = ["serde"] }
 
 # Optional dependencies
-schemars = { version = "0.8.15", optional = true, features = ["url", "uuid1"] }
-serde_json = { version = "1.0.107", optional = true }
+schemars = { version = "0.8.17", optional = true, features = ["url", "uuid1"] }
+serde_json = { version = "1.0.116", optional = true }
 
 [dev-dependencies]
-indoc = "2.0.4"
+indoc = "2.0.5"
 maplit = "1.0.2"
 
 [features]

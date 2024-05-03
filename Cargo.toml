@@ -6,43 +6,43 @@ publish = false
 
 
 [dependencies]
-anyhow = { version = "1.0.75", features = ["backtrace"] }
-chrono = { version = "0.4.37", features = ["serde"] }
-clap = { version = "4.3.23", features = ["derive"] }
-configparser = { version = "3.0.2", features = ["indexmap"] }
+anyhow = { version = "1.0.82", features = ["backtrace"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+clap = { version = "4.4.0", features = ["derive"] }
+configparser = { version = "3.0.4", features = ["indexmap"] }
 const_format = "0.2.32"
-duct = "0.13.6"
-env_logger = "0.10.0"
+duct = "0.13.7"
+env_logger = "0.11.3"
 glob = "0.3.1"
-indoc = "2.0.3"
-inventory = "0.3.14"
+indoc = "2.0.5"
+inventory = "0.3.15"
 lazy_static = "1.4.0"
-libc = "0.2.147"
-log = "0.4.20"
+libc = "0.2.154"
+log = "0.4.21"
 maplit = "1.0.2"
-netplan-types = "0.4.0"
-nix = { version = "0.26.2", default-features = false, features = [
+netplan-types = "0.5.0"
+nix = { version = "0.28.0", default-features = false, features = [
     "fs",
     "user",
 ] }
-rayon = "1.8"
-regex = "1.9.5"
-reqwest = { version = "0.11.19", features = ["blocking"] }
-serde = { version = "1.0.185", features = ["derive"] }
+rayon = "1.10"
+regex = "1.10.4"
+reqwest = { version = "0.12.4", features = ["blocking"] }
+serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9.25"
-sqlite = "0.31.1"
-strum = "0.25.0"
-strum_macros = "0.25.0"
-sys-mount = "2.1.0"
-tempfile = "3.8.0"
-tokio = { version = "1.32.0", features = ["rt-multi-thread"] }
-tokio-stream = "0.1.14"
+serde_yaml = "0.9.34"
+sqlite = "0.36.0"
+strum = "0.26.2"
+strum_macros = "0.26.2"
+sys-mount = "3.0.1"
+tempfile = "3.10.1"
+tokio = { version = "1.37.0", features = ["rt-multi-thread"] }
+tokio-stream = "0.1.15"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["json"] }
 tracing-appender = "0.2.3"
 url = { version = "2.5.0", features = ["serde"] }
-uuid = { version = "1.4.1", features = ["v4", "serde"] }
+uuid = { version = "1.8.0", features = ["v4", "serde"] }
 
 osutils = { path = "osutils" }
 pytest_gen = { path = "pytest_gen" }
@@ -50,11 +50,11 @@ setsail = { path = "setsail" }
 trident_api = { path = "trident_api" }
 
 pytest = { path = "pytest", optional = true }
-prost = { version = "0.11.9", optional = true }
-tonic = { version = "0.9.2", optional = true }
+prost = { version = "0.12.4", optional = true }
+tonic = { version = "0.11.0", optional = true }
 
 [build-dependencies]
-tonic-build = "0.9.2"
+tonic-build = "0.11.0"
 osutils = { path = "osutils" }
 
 [dev-dependencies]
