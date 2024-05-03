@@ -8,7 +8,7 @@ pub use host::{
         users::{Password, SshMode, User},
         ManagementOs, Os,
     },
-    scripts::{Script, Scripts, ServicingType},
+    scripts::{Script, Scripts, ServicingTypeSelection},
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},
     storage::{
         disks::{Disk, PartitionTableType},

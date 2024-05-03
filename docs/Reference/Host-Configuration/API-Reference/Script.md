@@ -18,9 +18,9 @@ Name of the script.
 | -------------- | -------- |
 | Type           | `string` |
 
-### `servicingType` **<span style="color:orange;">(required)</span>**
+### `servicingTypeSelection` **<span style="color:orange;">(required)</span>**
 
-List of servicing_type to run the script with.
+Selection of servicing types to run the script with.
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -28,10 +28,10 @@ List of servicing_type to run the script with.
 
 - Items of the array must have the type:
 
-   | Characteristic | Value                               |
-   | -------------- | ----------------------------------- |
-   | Type           | `ServicingType`                     |
-   | Link           | [ServicingType](./ServicingType.md) |
+   | Characteristic | Value                                                 |
+   | -------------- | ----------------------------------------------------- |
+   | Type           | `ServicingTypeSelection`                              |
+   | Link           | [ServicingTypeSelection](./ServicingTypeSelection.md) |
 
 ### `content` (optional)
 

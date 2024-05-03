@@ -97,13 +97,13 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     let mut bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_A);
     //Check if hoststatus has ab_update and update the grub config for the inactive volume
     if host_status.spec.storage.ab_update.is_some() {
-        match modules::get_ab_update_volume(host_status, false) {
+        match modules::get_ab_update_volume(host_status) {
             Some(AbVolumeSelection::VolumeA) => {}
             Some(AbVolumeSelection::VolumeB) => {
                 bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_B);
             }
 
-            None => bail!("Unsupported AB volume selection to update grub config."),
+            None => bail!("Unsupported A/B volume selection to update grub config."),
         }
     }
 
@@ -251,7 +251,7 @@ mod functional_test {
             self, AbUpdate, AbVolumePair, Disk, HostConfiguration, InternalMountPoint, Partition,
             PartitionSize, PartitionType, RaidLevel, SoftwareRaidArray,
         },
-        status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage},
+        status::{BlockDeviceContents, BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
 
     pub fn test_execute_and_resulting_layout(is_single_disk_raid: bool) {
@@ -619,7 +619,8 @@ mod functional_test {
     fn test_update_grub_root_abvolume() {
         test_execute_and_resulting_layout(false);
         let host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::StagingDeployment,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {

@@ -7,14 +7,18 @@ use crate::{
     BlockDeviceId,
 };
 
-/// HostStatus is the status of a host. Reflects the current provisioning state
-/// of the host and any encountered errors.
+/// HostStatus is the status of a host. Reflects the current state of the host and any encountered
+/// errors.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HostStatus {
     pub spec: HostConfiguration,
 
-    pub reconcile_state: ReconcileState,
+    /// Type of servicing that Trident is executing on the host.
+    pub servicing_type: Option<ServicingType>,
+
+    /// Current state of the servicing that Trident is executing on the host.
+    pub servicing_state: ServicingState,
 
     #[serde(default)]
     pub trident: Trident,
@@ -27,24 +31,11 @@ pub struct HostStatus {
     pub boot_next: Option<String>,
 }
 
-/// ReconcileState is the state of the host's reconciliation process. Through
-/// the ReconcileState, the Trident agent communicates what operations are in progress.
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum ReconcileState {
-    /// A clean install is in progress.
-    CleanInstall,
-    /// An update is in progress.
-    UpdateInProgress(UpdateKind),
-    /// The system is running normally.
-    #[default]
-    Ready,
-}
-
-/// UpdateKind is the kind of update that is in progress.
+/// ServicingType is the type of servicing that the Trident agent is executing on the host. Through
+/// ServicingType, Trident communicates what servicing operations are in progress.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum UpdateKind {
+pub enum ServicingType {
     /// Update that can be applied without pausing the workload.
     HotPatch = 0,
     /// Update that requires pausing the workload.
@@ -53,8 +44,38 @@ pub enum UpdateKind {
     UpdateAndReboot = 2,
     /// Update that requires switching to a different root partition and rebooting.
     AbUpdate = 3,
-    /// Update that cannot be applied given the current state of the system.
-    Incompatible = 4,
+    /// Clean install of the runtime OS image when the host is booted from the provisioning OS.
+    CleanInstall = 4,
+    // Update that cannot be applied given the current state of the system.
+    Incompatible = 5,
+}
+
+/// ServicingState describes the progress of the servicing that the Trident agent is executing on
+/// the host. The host will transition through a different sequence of servicing states, depending
+/// on the servicing type.
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ServicingState {
+    /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
+    #[default]
+    NotProvisioned,
+    /// Trident is now staging a new deployment, for the current servicing.
+    StagingDeployment,
+    /// Deployment has been staged, i.e., the updated runtime OS image has been deployed to block
+    /// devices.
+    DeploymentStaged,
+    /// Trident is now finalizing the new deployment.
+    FinalizingDeployment,
+    /// Deployment has been finalized, i.e., UEFI variables have been set, so that firmware boots
+    /// from the updated runtime OS image after reboot.
+    DeploymentFinalized,
+    /// Servicing of type CleanInstall has failed.
+    CleanInstallFailed,
+    /// Servicing of type AbUpdate has failed.
+    AbUpdateFailed,
+    /// Servicing has been completed, and the host succesfully booted from the updated runtime OS
+    /// image. Trident is ready to begin a new servicing.
+    Provisioned,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -122,50 +143,84 @@ pub struct BlockDeviceInfo {
 }
 
 impl HostStatus {
-    /// Returns the volume selection for all AB Volume Pairs.
-    ///
-    /// This is used to determine which volumes are currently active and which
-    /// are meant for updating. In addition, if active is true and an A/B update
-    /// is in progress, the active volume selection will be returned. If active
-    /// is false, the volume selection corresponding to the volumes to be
-    /// updated will be returned.
-    pub fn get_ab_update_volume(&self, active: bool) -> Option<AbVolumeSelection> {
+    /// Returns the update volume selection for all A/B volume pairs. The update volume is the one that
+    /// is meant to be updated, based on the ongoing servicing type and state.
+    pub fn get_ab_update_volume(&self) -> Option<AbVolumeSelection> {
+        // If there is no A/B update configuration, return None
         self.spec.storage.ab_update.as_ref()?;
 
-        match self.reconcile_state {
-            ReconcileState::UpdateInProgress(UpdateKind::HotPatch)
-            | ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)
-            | ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => {
+        match self.servicing_state {
+            // If host is in NotProvisioned, CleanInstallFailed, Provisioned, or AbUpdateFailed,
+            // update volume is None, since Trident is not executing any servicing
+            ServicingState::NotProvisioned
+            | ServicingState::CleanInstallFailed
+            | ServicingState::Provisioned
+            | ServicingState::AbUpdateFailed => None,
+            // If host is in any different servicing state, determine based on servicing type
+            ServicingState::StagingDeployment
+            | ServicingState::DeploymentStaged
+            | ServicingState::FinalizingDeployment
+            | ServicingState::DeploymentFinalized => {
+                match self.servicing_type {
+                    Some(ServicingType::HotPatch)
+                    | Some(ServicingType::NormalUpdate)
+                    | Some(ServicingType::UpdateAndReboot) => self.storage.ab_active_volume,
+                    // If host executing A/B update, update volume is the opposite of active volume
+                    // as specified in the storage status
+                    Some(ServicingType::AbUpdate) => {
+                        if self.storage.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
+                            Some(AbVolumeSelection::VolumeB)
+                        } else {
+                            Some(AbVolumeSelection::VolumeA)
+                        }
+                    }
+                    // If host is executing a clean install, update volume is always A
+                    Some(ServicingType::CleanInstall) => Some(AbVolumeSelection::VolumeA),
+                    Some(ServicingType::Incompatible) | None => None,
+                }
+            }
+        }
+    }
+
+    /// Returns the active volume selection for all A/B volume pairs. The active volume is the one that
+    /// the host is currently running from.
+    pub fn get_ab_active_volume(&self) -> Option<AbVolumeSelection> {
+        // If there is no A/B update configuration, return None
+        self.spec.storage.ab_update.as_ref()?;
+
+        match self.servicing_state {
+            // If host is in NotProvisioned or CleanInstallFailed, there is no active volume, as
+            // we're still booted from the provisioning OS
+            ServicingState::NotProvisioned | ServicingState::CleanInstallFailed => None,
+            // If host is in Provisioned OR AbUpdateFailed, active volume is the current one
+            ServicingState::Provisioned | ServicingState::AbUpdateFailed => {
                 self.storage.ab_active_volume
             }
-            ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
-                if active {
-                    self.storage.ab_active_volume
-                } else {
-                    Some(
-                        if self.storage.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
-                            AbVolumeSelection::VolumeB
-                        } else {
-                            AbVolumeSelection::VolumeA
-                        },
-                    )
+            ServicingState::StagingDeployment
+            | ServicingState::DeploymentStaged
+            | ServicingState::FinalizingDeployment
+            | ServicingState::DeploymentFinalized => {
+                match self.servicing_type {
+                    // If host is executing a deployment of any type, active volume is in host status
+                    Some(ServicingType::HotPatch)
+                    | Some(ServicingType::NormalUpdate)
+                    | Some(ServicingType::UpdateAndReboot)
+                    | Some(ServicingType::AbUpdate) => self.storage.ab_active_volume,
+                    // If host is executing a clean install, there is no active volume yet
+                    Some(ServicingType::CleanInstall)
+                    | Some(ServicingType::Incompatible)
+                    | None => None,
                 }
             }
-            ReconcileState::UpdateInProgress(UpdateKind::Incompatible) => None,
-            ReconcileState::Ready => {
-                if active {
-                    self.storage.ab_active_volume
-                } else {
-                    None
-                }
-            }
-            ReconcileState::CleanInstall => Some(AbVolumeSelection::VolumeA),
         }
     }
 
     /// Returns a reference to the Partition object within an AB volume pair that corresponds to the
-    /// inactive partition, or the one to be updated.
-    pub fn get_ab_volume_partition(&self, block_device_id: &BlockDeviceId) -> Option<&Partition> {
+    /// update partition, or the one to be updated.
+    pub fn get_ab_update_volume_partition(
+        &self,
+        block_device_id: &BlockDeviceId,
+    ) -> Option<&Partition> {
         if let Some(ab_update) = self.spec.storage.ab_update.as_ref() {
             let ab_volume = ab_update
                 .volume_pairs
@@ -173,7 +228,7 @@ impl HostStatus {
                 .find(|v| &v.id == block_device_id);
             if let Some(v) = ab_volume {
                 return self
-                    .get_ab_update_volume(false)
+                    .get_ab_update_volume()
                     .and_then(|selection| match selection {
                         AbVolumeSelection::VolumeA => {
                             self.spec.storage.get_partition(&v.volume_a_id)
@@ -197,13 +252,13 @@ mod tests {
 
     use super::*;
 
-    /// Validates that get_ab_volume_partition() correctly returns the id of
+    /// Validates that get_ab_update_volume_partition correctly returns the id of
     /// the active partition inside of an ab-volume pair.
     #[test]
-    fn test_get_ab_volume_partition() {
+    fn test_get_ab_update_volume_partition() {
         // Setting up the sample host_status
         let mut host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
+            servicing_state: ServicingState::NotProvisioned,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -274,11 +329,11 @@ mod tests {
         };
 
         // 1. Test when the active volume is VolumeA
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.servicing_state = ServicingState::StagingDeployment;
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
-        // Declare a new Partition object corresponding to the inactive
-        // partition root-b
+        // Declare a new Partition object corresponding to the update partition root-b
         let partition_root_b = Partition {
             id: "root-b".to_owned(),
             size: config::PartitionSize::Fixed(10000),
@@ -286,7 +341,7 @@ mod tests {
         };
 
         assert_eq!(
-            host_status.get_ab_volume_partition(&"root".to_owned()),
+            host_status.get_ab_update_volume_partition(&"root".to_owned()),
             Some(&partition_root_b)
         );
 
@@ -301,13 +356,13 @@ mod tests {
         };
 
         assert_eq!(
-            host_status.get_ab_volume_partition(&"root".to_owned()),
+            host_status.get_ab_update_volume_partition(&"root".to_owned()),
             Some(&partition_root_a)
         );
 
         // 3. Test with an ID that doesn't match any volume pair
         assert_eq!(
-            host_status.get_ab_volume_partition(&"nonexistent".to_owned()),
+            host_status.get_ab_update_volume_partition(&"nonexistent".to_owned()),
             None
         );
     }

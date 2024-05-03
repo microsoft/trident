@@ -6,7 +6,7 @@ use log::{debug, warn};
 use osutils::path;
 use trident_api::{
     config::HostConfiguration,
-    status::{HostStatus, ReconcileState, UpdateKind},
+    status::{HostStatus, ServicingType},
 };
 
 use crate::{modules::Module, OS_MODIFIER_BINARY_PATH};
@@ -29,15 +29,14 @@ impl Module for OsConfigModule {
     ) -> Result<(), Error> {
         // TODO: When we switch to MIC, figure out a strategy for handling
         // other kinds of updates. Limit operation to:
-        // 1. ReconcileState::CleanInstall,
-        // 2. ReconcileState::UpdateInProgress(UpdateKind::AbUpdate), to be
-        // able to test e2e A/B update.
-        if host_status.reconcile_state != ReconcileState::CleanInstall
-            && host_status.reconcile_state != ReconcileState::UpdateInProgress(UpdateKind::AbUpdate)
+        // 1. ServicingType::CleanInstall,
+        // 2. ServicingType::AbUpdate, to be able to do E2E A/B update testing.
+        if host_status.servicing_type != Some(ServicingType::CleanInstall)
+            && host_status.servicing_type != Some(ServicingType::AbUpdate)
         {
             debug!(
-                "Skipping os-config module for reconcile state: {:?}",
-                host_status.reconcile_state
+                "Skipping os-config module for servicing type: {:?}",
+                host_status.servicing_type
             );
             return Ok(());
         }

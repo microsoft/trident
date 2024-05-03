@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf, MAIN_SEPARATOR};
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
@@ -11,8 +11,7 @@ use trident_api::error::{ManagementError, ReportError, TridentError, TridentResu
 use trident_api::status::{AbVolumeSelection, HostStatus};
 
 use crate::datastore::DataStore;
-use crate::modules::{BOOT_ENTRY_A, BOOT_ENTRY_B};
-use crate::{modules, TRIDENT_DATASTORE_PATH};
+use crate::modules::{self, BOOT_ENTRY_A, BOOT_ENTRY_B};
 
 use super::BOOT64_EFI;
 
@@ -20,10 +19,10 @@ use super::BOOT64_EFI;
 ///
 /// This function first sets the boot next variable by calling set_boot_next.
 /// Then it retrieves the output of `efibootmgr` to get information about boot manager entries.
-/// After that, it opens the datastore to update the host status with the retrieved boot next variable.
+/// After that, it updates the host status with the retrieved boot next variable.
 ///
 pub fn call_set_boot_next_and_update_hs(
-    host_status: &HostStatus,
+    host_status: &mut HostStatus,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
     set_boot_next(host_status, new_root_path).structured(ManagementError::SetBootNext)?;
@@ -32,34 +31,17 @@ pub fn call_set_boot_next_and_update_hs(
     let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
         .structured(ManagementError::ListAndParseBootEntries)?;
 
-    // Open datastore
-    let datastore_path = host_status
-        .trident
-        .datastore_path
-        .as_deref()
-        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
-    debug!("Opening datastore at path: {}", datastore_path.display());
-    let new_path = new_root_path.join(
-        datastore_path
-            .to_str()
-            .unwrap()
-            .trim_start_matches(MAIN_SEPARATOR),
-    );
-    let mut datastore =
-        DataStore::open(&new_path).message("Failed to open datastore while setting boot_next")?;
-
     // Update host status with BootNext variable
-    datastore.with_host_status(|s| {
-        s.boot_next = if !bootmgr_output.boot_next.is_empty() {
-            Some(bootmgr_output.boot_next)
-        } else {
-            None
-        };
-        debug!("Updating host status with BootNext: {:?}", s.boot_next);
-    })?;
-
-    //TODO-  https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807 better way to close datastore
-    datastore.close();
+    host_status.boot_next = if !bootmgr_output.boot_next.is_empty() {
+        debug!(
+            "Setting boot_next in host status to {:?}",
+            bootmgr_output.boot_next
+        );
+        Some(bootmgr_output.boot_next)
+    } else {
+        debug!("Setting boot_next in host status to none");
+        None
+    };
 
     Ok(())
 }
@@ -155,7 +137,7 @@ fn get_first_partition_of_type(
 /// the label associated with the inactive A/B update volume and the path to its EFI boot loader.
 ///
 fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error> {
-    match modules::get_ab_update_volume(host_status, false) {
+    match modules::get_ab_update_volume(host_status) {
         Some(AbVolumeSelection::VolumeA) => Ok((
             BOOT_ENTRY_A,
             Path::new(constants::ROOT_MOUNT_POINT_PATH)
@@ -174,7 +156,7 @@ fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error
                 .to_path_buf(),
         )),
 
-        None => bail!("Unsupported AB volume selection"),
+        None => bail!("Unsupported A/B volume selection"),
     }
 }
 
@@ -269,7 +251,7 @@ mod tests {
         config::{
             self, AbUpdate, Disk, HostConfiguration, Partition, PartitionSize, PartitionType,
         },
-        status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage, UpdateKind},
+        status::{BlockDeviceContents, BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
 
     use super::*;
@@ -287,7 +269,8 @@ mod tests {
                 },
                 ..Default::default()
             },
-            reconcile_state: ReconcileState::CleanInstall,
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::StagingDeployment,
             ..Default::default()
         };
 
@@ -303,9 +286,9 @@ mod tests {
             )
         );
 
-        // Test that UpdateInProgress(HostPatch, NormalUpdate, UpdateAndReboot)
-        // will always use the active volume for updates
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
+        // Test that servicing types HotPatch, NormalUpdate, UpdateAndReboot will always use the
+        // active volume for updates
+        host_status.servicing_type = Some(ServicingType::NormalUpdate);
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_label_and_path(&host_status).unwrap(),
@@ -318,16 +301,17 @@ mod tests {
             )
         );
 
-        // Test that UpdateInProgress(Incompatible) will return None
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::Incompatible);
+        // Test that servicing type Incompatible will return None
+        host_status.servicing_type = Some(ServicingType::Incompatible);
         let error_message = get_label_and_path(&host_status).unwrap_err().to_string();
-        assert_eq!(error_message, "Unsupported AB volume selection");
+        assert_eq!(error_message, "Unsupported A/B volume selection");
     }
 
     #[test]
     fn test_get_first_partition_of_type() {
         let host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
+            servicing_type: None,
+            servicing_state: ServicingState::NotProvisioned,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -520,7 +504,7 @@ mod functional_test {
     use trident_api::{
         config::{self, AbUpdate, AbVolumePair, Disk, HostConfiguration, Partition, PartitionSize},
         constants::{ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
-        status::{BlockDeviceInfo, ReconcileState, UpdateKind},
+        status::{BlockDeviceInfo, ServicingState, ServicingType},
     };
 
     use osutils::{
@@ -779,7 +763,8 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     fn test_set_boot_entries() {
         let mut host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::StagingDeployment,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -849,7 +834,7 @@ mod functional_test {
 
         test_helper_set_boot_entries(BOOT_ENTRY_A, &host_status);
 
-        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
+        host_status.servicing_type = Some(ServicingType::NormalUpdate);
         let dir_path = Path::new(&format!(
             "{}/{}",
             ROOT_MOUNT_POINT_PATH, ESP_RELATIVE_MOUNT_POINT_PATH

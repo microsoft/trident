@@ -19,7 +19,7 @@ hostConfiguration:
     postConfigure:
       - content: 'echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel'
         name: wheel
-        servicingType:
+        servicingTypeSelection:
           - clean-install
       - content: |
           mkdir -p /data
@@ -30,7 +30,7 @@ hostConfiguration:
           curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
           curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
         name: download-images
-        servicingType:
+        servicingTypeSelection:
           - clean-install
   storage:
     abUpdate:

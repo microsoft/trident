@@ -141,14 +141,15 @@ mod tests {
         },
         constants::{self, SWAP_MOUNT_POINT},
         status::{
-            BlockDeviceContents, BlockDeviceInfo, HostStatus, ReconcileState,
+            BlockDeviceContents, BlockDeviceInfo, HostStatus, ServicingState, ServicingType,
             Storage as StorageStatus,
         },
     };
 
     fn get_host_status() -> HostStatus {
         HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::StagingDeployment,
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -404,7 +405,8 @@ mod tests {
         };
 
         let host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::StagingDeployment,
             spec: host_config.clone(),
             storage: StorageStatus {
                 block_devices: btreemap! {

@@ -725,7 +725,7 @@
       "type": "object",
       "required": [
         "name",
-        "servicingType"
+        "servicingTypeSelection"
       ],
       "properties": {
         "content": {
@@ -759,11 +759,11 @@
           "type": "string",
           "nullable": true
         },
-        "servicingType": {
-          "description": "List of servicing_type to run the script with.",
+        "servicingTypeSelection": {
+          "description": "Selection of servicing types to run the script with.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/ServicingType"
+            "$ref": "#/definitions/ServicingTypeSelection"
           }
         }
       },
@@ -790,12 +790,12 @@
       },
       "additionalProperties": false
     },
-    "ServicingType": {
-      "description": "The type of servicing performed by Trident that a script should be run for.",
+    "ServicingTypeSelection": {
+      "description": "The selection of servicing types performed by Trident that can be used for any user-facing API. Currently, it is used to allow the user to select when to run a custom Script.",
       "oneOf": [
         {
           "title": "Clean Install",
-          "description": "This is the first time Trident is installed on the host.",
+          "description": "This selection only includes CleanInstall, a clean install of the runtime OS image when the host is booted from the provisioning OS.",
           "type": "string",
           "enum": [
             "clean-install"
@@ -803,15 +803,15 @@
         },
         {
           "title": "Normal Update",
-          "description": "This is a normal update that is not an AB update.",
+          "description": "This selection only includes NormalUpdate, an update that requires pausing the workload.",
           "type": "string",
           "enum": [
             "normal-update"
           ]
         },
         {
-          "title": "AB Update",
-          "description": "This is an AB update.",
+          "title": "A/B Update",
+          "description": "This selection only includes AbUpdate, an update that requires switching to a different root partition and rebooting.",
           "type": "string",
           "enum": [
             "ab-update"
@@ -819,7 +819,7 @@
         },
         {
           "title": "Update and Reboot",
-          "description": "This is an update that requires a reboot.",
+          "description": "This selection only includes UpdateAndReboot, an update that requires rebooting the host.",
           "type": "string",
           "enum": [
             "update-and-reboot"
@@ -827,7 +827,7 @@
         },
         {
           "title": "All",
-          "description": "This includes all servicing types.",
+          "description": "This selection includes all servicing types.",
           "type": "string",
           "enum": [
             "all"
