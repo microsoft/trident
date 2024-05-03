@@ -116,6 +116,7 @@ stages:
 
         steps:
           - checkout: platform-tests
+            fetchDepth: 1
 
           - bash: |
               set -xe

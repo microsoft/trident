@@ -28,6 +28,7 @@ stages:
 
     steps:
     - checkout: test-images
+      fetchDepth: 1
 
     - task: DownloadPipelineArtifact@2
       inputs:

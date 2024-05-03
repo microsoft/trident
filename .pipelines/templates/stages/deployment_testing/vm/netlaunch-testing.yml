@@ -57,6 +57,7 @@ stages:
 
         steps:
           - checkout: argus-toolkit
+            fetchDepth: 1
 
           - template: netlaunch-prep.yml
 
@@ -184,7 +185,9 @@ stages:
 
         steps:
           - checkout: argus-toolkit
+            fetchDepth: 1
           - checkout: platform-tests
+            fetchDepth: 1
 
           - template: netlaunch-prep.yml
 
