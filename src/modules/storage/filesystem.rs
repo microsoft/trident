@@ -9,7 +9,7 @@ use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
 use rayon::prelude::*;
 use trident_api::{
     config::FileSystemType,
-    status::{BlockDeviceContents, HostStatus, ServicingType},
+    status::{BlockDeviceContents, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
 
@@ -81,9 +81,9 @@ fn get_block_devices_to_initialize(
         .filter(|mount_point| {
             // Skip mount points that are initialized by images
             !requested_image_block_device_ids.contains(&mount_point.target_id)
-            // If the current servicing is of type CleanInstall, we need to special case ESP and
+            // If this is Clean Install, we need to special case ESP and
             // initialize it here
-                || (host_status.servicing_type == Some(ServicingType::CleanInstall)
+                || (host_status.reconcile_state == ReconcileState::CleanInstall
                     && image::is_esp(&host_status.spec, &mount_point.target_id))
         });
 
@@ -122,7 +122,9 @@ fn get_block_devices_to_initialize(
                 ));
             }
 
-            if host_status.servicing_type == Some(ServicingType::AbUpdate) && ab_volume_pair {
+            if host_status.reconcile_state == ReconcileState::UpdateInProgress(UpdateKind::AbUpdate)
+                && ab_volume_pair
+            {
                 // If this is an A/B volume pair, reinitialize it
                 return Some((
                     mount_point.target_id.clone(),
@@ -188,7 +190,7 @@ mod test {
             Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
-        status::{AbVolumeSelection, BlockDeviceInfo, ServicingState, Storage},
+        status::{AbVolumeSelection, BlockDeviceInfo, Storage},
     };
 
     use super::*;
@@ -199,8 +201,7 @@ mod test {
     fn test_get_block_devices_to_initialize() {
         // Setup HostStatus where image is requested for volume pair with id root
         let host_status_golden = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -376,11 +377,11 @@ mod test {
             "Failed to determine which block devices should be initialized on CleanInstall"
         );
 
-        // Test case 4: Set host's servicing type to AbUpdate and set active volume to A. Running
-        // get_block_devices_to_initialize() when there is an image requested for A/B volume pair
-        // with id root should return an empty vector.
+        // Test case 4: Set host's status to UpdateInProgress(AbUpdate) and set active volume to A.
+        // Running get_block_devices_to_initialize() when there is an image requested for A/B volume pair with
+        // id root should return an empty vector
         let mut host_status = host_status_golden.clone();
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![AbVolumePair {
                 id: "root".to_string(),

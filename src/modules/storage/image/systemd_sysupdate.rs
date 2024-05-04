@@ -551,12 +551,12 @@ fn get_update_partition_id(
     target_id: &BlockDeviceId,
 ) -> Result<BlockDeviceId, Error> {
     // Iterate through storage.ab-update.volume-pairs and return the correct volume-id, i.e. id of
-    // partition to be updated; when ServicingType is AbUpdate, get_ab_update_volume() already returns
+    // partition to be updated; when UpdateKind is AbUpdate, get_ab_update_volume() already returns
     // the inactive AbVolumeSelection, i.e. the one to be updated
     if let Some(ab_update) = &host_status.spec.storage.ab_update {
         // Call helper func from lib.rs, which returns AbVolumeSelection to be updated in this A/B
         // update, either VolumeA or VolumeB, depending on which volume is active now
-        let volume_selection: AbVolumeSelection = modules::get_ab_update_volume(host_status)
+        let volume_selection: AbVolumeSelection = modules::get_ab_update_volume(host_status, false)
             .context("Failed to determine which A/B volume is currently inactive")?;
         // Fetch volume pair for the target_id
         if let Some(volume_pair) = ab_update.volume_pairs.iter().find(|p| &p.id == target_id) {
@@ -839,7 +839,7 @@ mod tests {
 
     use trident_api::{
         config::{self, AbUpdate, AbVolumePair, HostConfiguration, PartitionSize},
-        status::{ServicingState, ServicingType, Storage},
+        status::{ReconcileState, Storage, UpdateKind},
     };
 
     // Import everything from the parent module
@@ -1024,12 +1024,11 @@ mod tests {
                 },
                 ..Default::default()
             },
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             ..Default::default()
         };
 
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
         // Scenario 1: Target ID matches with an entry and active volume is VolumeA
@@ -1046,6 +1045,7 @@ mod tests {
         }
 
         // Scenario 3: Switch active-volume to VolumeB and verify
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         match get_update_partition_id(&host_status, &"osab".to_string()) {
             Ok(volume_id) => assert_eq!(volume_id, "root"),
@@ -1101,8 +1101,7 @@ mod tests {
 
                 ..Default::default()
             },
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             ..Default::default()
         };
 
@@ -1203,8 +1202,7 @@ mod tests {
 
         // Scenario 3: No partitions available
         let host_status2 = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![
@@ -1248,8 +1246,7 @@ mod tests {
     #[test]
     fn test_get_parent_disk() {
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {

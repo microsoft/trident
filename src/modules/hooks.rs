@@ -12,7 +12,7 @@ use osutils::{files, scripts::ScriptRunner};
 use trident_api::{
     config::{HostConfiguration, Script},
     constants::DEFAULT_SCRIPT_INTERPRETER,
-    status::{HostStatus, ServicingType},
+    status::{HostStatus, ReconcileState, UpdateKind},
 };
 
 use crate::modules::Module;
@@ -40,7 +40,7 @@ impl Module for HooksModule {
         &self,
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
-        planned_servicing_type: ServicingType,
+        planned_update: ReconcileState,
     ) -> Result<(), Error> {
         for script in host_config
             .scripts
@@ -49,7 +49,7 @@ impl Module for HooksModule {
             .chain(&host_config.scripts.post_provision)
         {
             if let Some(ref path) = script.path {
-                if script.should_run(&planned_servicing_type) && !path.exists() {
+                if script.should_run(&planned_update) && !path.exists() {
                     bail!(
                         "Script '{}' not found at '{}' on host system",
                         script.name,
@@ -70,11 +70,9 @@ impl Module for HooksModule {
             .chain(&host_status.spec.scripts.post_provision)
         {
             if let Some(ref path) = script.path {
-                if let Some(ref servicing_type) = host_status.servicing_type {
-                    if script.should_run(servicing_type) {
-                        self.stage_file(path.to_owned())
-                            .context(format!("Failed to load script '{}'", script.name,))?;
-                    }
+                if script.should_run(&host_status.reconcile_state) {
+                    self.stage_file(path.to_owned())
+                        .context(format!("Failed to load script '{}'", script.name,))?;
                 }
             }
         }
@@ -183,15 +181,13 @@ impl HooksModule {
     }
 
     fn run_script(&self, script: &Script, host_status: &HostStatus) -> Result<(), Error> {
-        // Check if the script should be run for the current servicing type
-        if let Some(ref servicing_type) = host_status.servicing_type {
-            if !script.should_run(servicing_type) {
-                debug!(
-                    "Skipping script {} for servicing type {:?}",
-                    script.name, host_status.servicing_type
-                );
-                return Ok(());
-            }
+        // Check if the script should be run for the current reconcile state
+        if !script.should_run(&host_status.reconcile_state) {
+            debug!(
+                "Skipping script {} for reconcile state {:?}",
+                script.name, host_status.reconcile_state
+            );
+            return Ok(());
         }
 
         let interpreter: PathBuf = script
@@ -242,8 +238,8 @@ fn set_env_vars(
     }
     // Add default environment variables from host status that can be used
     script_runner.env_vars.insert(
-        "SERVICING_TYPE".into(),
-        match_servicing_type_env_var(host_status.servicing_type.as_ref().unwrap()),
+        "UPDATE_KIND".into(),
+        match_update_kind_env_var(&host_status.reconcile_state),
     );
     script_runner.env_vars.insert(
         "TARGET_ROOT".into(),
@@ -258,14 +254,15 @@ fn set_env_vars(
     Ok(())
 }
 
-fn match_servicing_type_env_var(servicing_type: &ServicingType) -> OsString {
-    match servicing_type {
-        ServicingType::HotPatch => "hot_patch",
-        ServicingType::NormalUpdate => "normal_update",
-        ServicingType::UpdateAndReboot => "update_and_reboot",
-        ServicingType::AbUpdate => "ab_update",
-        ServicingType::CleanInstall => "clean_install",
-        ServicingType::Incompatible => "incompatible",
+fn match_update_kind_env_var(reconcile_state: &ReconcileState) -> OsString {
+    match reconcile_state {
+        ReconcileState::Ready => "ready",
+        ReconcileState::CleanInstall => "clean_install",
+        ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => "ab_update",
+        ReconcileState::UpdateInProgress(UpdateKind::HotPatch) => "hot_patch",
+        ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate) => "normal_update",
+        ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => "update_and_reboot",
+        ReconcileState::UpdateInProgress(UpdateKind::Incompatible) => "incompatible",
     }
     .into()
 }
@@ -278,10 +275,9 @@ mod tests {
     use super::*;
     use indoc::indoc;
     use maplit::hashmap;
-    use trident_api::config::{Scripts, ServicingTypeSelection};
-    use trident_api::constants;
-    use trident_api::constants::ROOT_MOUNT_POINT_PATH;
-    use trident_api::status::{ServicingState, ServicingType, Storage};
+    use trident_api::config::{Scripts, ServicingType};
+    use trident_api::constants::{self, ROOT_MOUNT_POINT_PATH};
+    use trident_api::status::Storage;
 
     #[test]
     fn test_stage_file() {
@@ -313,8 +309,7 @@ mod tests {
         let test_dir = temp_dir.path().join("test-directory");
 
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
                 root_device_path: Some("/dev/sda".into()),
                 ..Default::default()
@@ -326,7 +321,7 @@ mod tests {
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            servicing_type: vec![ServicingType::CleanInstall],
             interpreter: Some("/bin/bash".into()),
             content: Some("mkdir $TEST_DIR".into()),
             environment_variables,
@@ -358,7 +353,7 @@ mod tests {
             scripts: Scripts {
                 post_provision: vec![Script {
                     name: "test-script".into(),
-                    servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+                    servicing_type: vec![ServicingType::CleanInstall],
                     interpreter: Some("/bin/bash".into()),
                     path: Some(script_path),
                     environment_variables: hashmap! {
@@ -372,8 +367,7 @@ mod tests {
         };
         let mut host_status = HostStatus {
             spec: host_config.clone(),
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
                 root_device_path: Some("/dev/sda".into()),
                 ..Default::default()
@@ -399,8 +393,7 @@ mod tests {
     #[test]
     fn test_run_script_that_always_fails() {
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
                 root_device_path: Some("/dev/sda".into()),
                 ..Default::default()
@@ -410,7 +403,7 @@ mod tests {
 
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            servicing_type: vec![ServicingType::CleanInstall],
             interpreter: Some("/bin/bash".into()),
             content: Some("cat nonexisting.txt".into()),
             ..Default::default()
@@ -423,8 +416,7 @@ mod tests {
     #[test]
     fn test_run_script_with_non_existing_interpreter() {
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
                 root_device_path: Some("/dev/sda".into()),
                 ..Default::default()
@@ -434,7 +426,7 @@ mod tests {
 
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            servicing_type: vec![ServicingType::CleanInstall],
             interpreter: Some("/bin/nonexisting".into()),
             content: Some("mkdir test-directory".into()),
             ..Default::default()
@@ -450,8 +442,7 @@ mod tests {
         let test_dir = temp_dir.path().join("test-directory");
 
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
                 root_device_path: Some("/dev/sda".into()),
                 ..Default::default()
@@ -463,7 +454,7 @@ mod tests {
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::NormalUpdate],
+            servicing_type: vec![ServicingType::NormalUpdate],
             interpreter: Some("/bin/bash".into()),
             content: Some("mkdir $TEST_DIR_NAME".into()),
             environment_variables,
@@ -485,8 +476,7 @@ mod tests {
         let mut env_vars = HashMap::new();
         env_vars.insert("TEST_VAR".into(), "test-value".into());
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             storage: Storage {
                 root_device_path: Some("/dev/sda".into()),
                 ..Default::default()
@@ -497,7 +487,7 @@ mod tests {
         // Check that the environment variables are set in script_runner after the function call
         let expected_env_vars = hashmap! {
             "TEST_VAR".into() => "test-value".into(),
-            "SERVICING_TYPE".into() => "clean_install".into(),
+            "UPDATE_KIND".into() => "clean_install".into(),
             "TARGET_ROOT".into() => "/dev/sda".into()
         };
         assert_eq!(script_runner.env_vars, expected_env_vars);

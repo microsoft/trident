@@ -371,7 +371,7 @@ fn generate_efi_bin_base_dir_path(
         .join(ESP_EFI_DIRECTORY);
 
     // Based on which volume is being updated, determine how to name the dir
-    let esp_dir_path = match modules::get_ab_update_volume(host_status)
+    let esp_dir_path = match modules::get_ab_update_volume(host_status, false)
         .context("Failed to determine which A/B volume is currently inactive")?
     {
         AbVolumeSelection::VolumeA => Path::new(&esp_efi_path).join(BOOT_ENTRY_A),
@@ -486,7 +486,7 @@ mod tests {
     use trident_api::{
         config::{self, AbUpdate, AbVolumePair, PartitionSize, PartitionType},
         constants::{ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
-        status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
+        status::{BlockDeviceInfo, ReconcileState, Storage, UpdateKind},
     };
 
     /// Validates that generate_arch_str() returns the correct string based on target architecture
@@ -516,8 +516,7 @@ mod tests {
     #[test]
     fn test_generate_esp_dir_path() {
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {
@@ -598,7 +597,7 @@ mod tests {
         // Test case 2: If volume A is currently active, generate_esp_dir_path() should return
         // /boot/efi/EFI/azlinuxB
         // Modify host_status to set active_volume to volume A
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert!(
             generate_efi_bin_base_dir_path(&host_status, Path::new(UPDATE_ROOT_PATH))
@@ -625,8 +624,7 @@ mod tests {
     fn test_get_undeployed_esp() {
         // Initialize a HostStatus object with ESP and root partitions
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {

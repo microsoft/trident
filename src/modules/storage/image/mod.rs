@@ -10,7 +10,7 @@ use trident_api::{
     config::{AbUpdate, HostConfiguration, ImageFormat, ImageSha256, InternalImage, PartitionType},
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::TridentResultExt,
-    status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, ServicingType},
+    status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, ReconcileState},
     BlockDeviceId,
 };
 
@@ -103,7 +103,7 @@ fn update_images(
                     // Determine if target-id corresponds to an A/B volume pair; if helper
                     // func returns None, then set bool to false
                     let targets_ab_volume_pair = host_status
-                        .get_ab_update_volume_partition(&image.target_id)
+                        .get_ab_volume_partition(&image.target_id)
                         .is_some();
 
                     // If image is of format RawLzma but target-id does NOT
@@ -351,7 +351,7 @@ pub(super) fn refresh_host_status(
 ) -> Result<(), Error> {
     update_root_device_path(host_status)?;
 
-    // if A/B update is enabled
+    // if a/b update is enabled
     if host_status.spec.storage.ab_update.is_some() && !clean_install {
         debug!("A/B update is enabled");
         update_active_volume(host_status)?;
@@ -426,7 +426,7 @@ fn update_active_volume(host_status: &mut HostStatus) -> Result<(), Error> {
         debug!("Unrecognized active volume");
         // To prevent data loss, abort if we cannot find the
         // matching root volume outside of clean install
-        if host_status.servicing_type != Some(ServicingType::CleanInstall) {
+        if host_status.reconcile_state != ReconcileState::CleanInstall {
             bail!("No matching root volume found");
         }
         None
@@ -557,8 +557,8 @@ pub(super) fn provision(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     // Only call refresh_ab_volumes() and set active_volume to None if
-    // the servicing type is CleanInstall
-    if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+    // the reconcile_state is CleanInstall
+    if host_status.reconcile_state == ReconcileState::CleanInstall {
         debug!("Initializing A/B volumes");
         host_status.storage.ab_active_volume = None;
     }
@@ -579,7 +579,7 @@ mod tests {
             AbUpdate, AbVolumePair, Disk, FileSystemType, ImageSha256, InternalMountPoint,
             Partition, PartitionSize, PartitionType, Storage as StorageConfig,
         },
-        status::{ServicingState, ServicingType, Storage},
+        status::{Storage, UpdateKind},
     };
 
     use super::*;
@@ -587,8 +587,7 @@ mod tests {
     #[test]
     fn test_get_undeployed_images() {
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     internal_mount_points: vec![
@@ -754,8 +753,7 @@ mod tests {
 
         // root config is not matching root status
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     internal_mount_points: vec![
@@ -851,7 +849,7 @@ mod tests {
 
         // with a/b update, we should get ...
 
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
         host_status.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![AbVolumePair {
                 id: "root".to_string(),
@@ -949,8 +947,7 @@ mod tests {
     fn test_is_mount_point_for_boot() {
         // Setup HostStatus with predefined mount points
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -1004,8 +1001,7 @@ mod tests {
     fn test_validate_undeployed_images() {
         // Initialize a HostStatus object
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -1166,8 +1162,7 @@ mod tests {
         // root should return an error since root is a single volume and not an A/B volume pair in
         // this scenario
         let mut host_status_2 = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -1834,7 +1829,7 @@ mod functional_test {
         );
 
         // None when clean install
-        host_status.servicing_type = Some(ServicingType::CleanInstall);
+        host_status.reconcile_state = ReconcileState::CleanInstall;
 
         update_active_volume(&mut host_status).unwrap();
         assert_eq!(host_status.storage.ab_active_volume, None);

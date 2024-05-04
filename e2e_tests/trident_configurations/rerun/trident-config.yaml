@@ -212,7 +212,7 @@ hostConfiguration:
   scripts:
     postProvision:
       - name: fail-on-the-first-run-to-force-rerun
-        servicingTypeSelection:
+        servicingType:
           - all
         interpreter: /usr/bin/python3
         content: |
@@ -224,7 +224,7 @@ hostConfiguration:
             sys.exit(1)
     postConfigure:
       - name: overlay
-        servicingTypeSelection:
+        servicingType:
           - clean-install
           - ab-update
         content: |

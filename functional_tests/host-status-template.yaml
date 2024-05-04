@@ -1,6 +1,4 @@
-bootNext: '0003'
-servicingType: null
-servicingState: provisioned
+reconcileState: ready
 trident:
   datastorePath: /var/lib/trident/datastore.sqlite
 storage:

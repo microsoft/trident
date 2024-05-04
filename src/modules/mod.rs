@@ -1,6 +1,6 @@
 use std::{
     fs::{self},
-    path::{Path, PathBuf, MAIN_SEPARATOR},
+    path::{Path, PathBuf},
     process::Command,
     sync::Mutex,
     thread,
@@ -20,7 +20,7 @@ use trident_api::{
         InitializationError, InternalError, InvalidInputError, ManagementError, ModuleError,
         ReportError, TridentError, TridentResultExt,
     },
-    status::{AbVolumeSelection, BlockDeviceInfo, HostStatus, ServicingState, ServicingType},
+    status::{AbVolumeSelection, BlockDeviceInfo, HostStatus, ReconcileState, UpdateKind},
     BlockDeviceId,
 };
 
@@ -37,7 +37,7 @@ use crate::{
         boot::BootModule, hooks::HooksModule, management::ManagementModule, network::NetworkModule,
         osconfig::OsConfigModule, storage::StorageModule,
     },
-    HostUpdateCommand, TRIDENT_DATASTORE_PATH,
+    HostUpdateCommand,
 };
 
 #[cfg(feature = "grpc-dangerous")]
@@ -87,12 +87,12 @@ trait Module: Send {
         Ok(())
     }
 
-    /// Select the servicing type based on the host status and host config.
-    fn select_servicing_type(
+    /// Select the update kind based on the host status and host config.
+    fn select_update_kind(
         &self,
         _host_status: &HostStatus,
         _host_config: &HostConfiguration,
-    ) -> Option<ServicingType> {
+    ) -> Option<UpdateKind> {
         None
     }
 
@@ -101,7 +101,7 @@ trait Module: Send {
         &self,
         _host_status: &HostStatus,
         _host_config: &HostConfiguration,
-        _planned_servicing_type: ServicingType,
+        _planned_update: ReconcileState,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -160,11 +160,6 @@ pub(super) fn clean_install(
     } = command;
 
     {
-        // TODO: Currently, we're assuming we are either in servicing state NotProvisioned,
-        // servicing type None OR servicing state CleanInstallFailed, servicing type None at this
-        // point. In the follow up PR, we can also be in servicing type CleanInstall, servicing
-        // state DeploymentStaged here.
-
         // TODO: needs to be refactored once we have a way to preserve existing partitions
         // This is a safety check so that nobody accidentally formats their dev
         // machine.
@@ -183,15 +178,14 @@ pub(super) fn clean_install(
         }
     }
 
-    info!("Starting clean_install");
+    info!("Starting provision_host");
     let mut modules = MODULES.lock().unwrap();
 
     info!("Refreshing host status");
     refresh_host_status(&mut modules, state, true)?;
 
     info!("Validating host configuration against system state");
-    // Since we're in clean_install(), the only possible servicing type is CleanInstall.
-    validate_host_config(&modules, state, host_config, ServicingType::CleanInstall)?;
+    validate_host_config(&modules, state, host_config, ReconcileState::CleanInstall)?;
 
     #[cfg(feature = "grpc-dangerous")]
     if let Some(ref mut sender) = sender {
@@ -203,28 +197,9 @@ pub(super) fn clean_install(
             .structured(InternalError::SendHostStatus)?;
     }
 
-    // TODO: If StageDeployment is not requested but we're in DeploymentStaged AND allowed
-    // operations include FinalizeDeployment, finalize deployment and reboot.
     if !allowed_operations.contains(Operations::StageDeployment) {
         info!("Staging of clean install not requested, skipping staging");
         return Ok(());
-    }
-
-    // Otherwise, set servicing type to Cleaninstall; servicing state to StagingDeployment
-    debug!("Setting host's servicing type to CleanInstall");
-    debug!("Updating host's servicing state to StagingDeployment");
-    state.with_host_status(|host_status| {
-        host_status.servicing_type = Some(ServicingType::CleanInstall);
-        host_status.servicing_state = ServicingState::StagingDeployment;
-    })?;
-    #[cfg(feature = "grpc-dangerous")]
-    if let Some(ref mut sender) = sender {
-        sender
-            .send(Ok(HostStatusState {
-                status: serde_yaml::to_string(state.host_status())
-                    .structured(InternalError::SerializeHostStatus)?,
-            }))
-            .structured(InternalError::SendHostStatus)?;
     }
 
     info!("Running prepare");
@@ -232,11 +207,6 @@ pub(super) fn clean_install(
 
     info!("Preparing storage to mount new root");
     let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
-    // Print out the contents of mounts
-    debug!("List of custom mounts after initializing the new root:");
-    for mount in &mounts {
-        debug!("Mount: {}", mount.display());
-    }
 
     info!("Running provision");
     provision(&mut modules, state, host_config, &new_root_path)?;
@@ -255,7 +225,7 @@ pub(super) fn clean_install(
     chroot
         .execute_and_exit(|| {
             info!("Entered chroot");
-            state.switch_datastore_to_path(&exec_root_path)?;
+            state.switch_to_exec_root(&exec_root_path)?;
 
             // If verity is present, it means that we are currently doing root
             // verity. For now, we can assume that /etc is readonly, so we setup
@@ -278,66 +248,38 @@ pub(super) fn clean_install(
                     .structured(InternalError::GetRootBlockDevice)?,
             );
 
-            // At this point, clean install has been staged, so update servicing state
-            debug!("Updating host's servicing state to DeploymentStaged");
-            state.with_host_status(|host_status| {
-                host_status.servicing_state = ServicingState::DeploymentStaged
-            })?;
             #[cfg(feature = "grpc-dangerous")]
-            if let Some(ref mut sender) = sender {
+            if let Some(sender) = sender {
                 sender
                     .send(Ok(HostStatusState {
                         status: serde_yaml::to_string(state.host_status())
-                            .structured(InternalError::SerializeHostStatus)?,
+                            .structured(InternalError::Todo("Failed to serialize host status"))?,
                     }))
-                    .structured(InternalError::SendHostStatus)?;
+                    .structured(InternalError::Todo("Failed to send host status"))?;
+                drop(sender);
             }
 
+            info!("Closing datastore");
             Ok(())
         })
         .message("Failed to execute in chroot")?;
-
-    // Switch datastore back to the old path
-    state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH))?;
 
     let root_device_path =
         root_device_path.structured(InternalError::Internal("Failed to get root block device"))?;
 
     info!("Root device path: {:#?}", root_device_path);
-
-    // If FinalizeDeployment is not requested, close the datastore and unmount the new root
     if !allowed_operations.contains(Operations::FinalizeDeployment) {
-        info!("Finalizing of clean install not requested, skipping finalizing and reboot");
+        info!("Finalizing of clean install not requested, skipping reboot");
         state.close();
 
         info!("Unmounting '{}'", new_root_path.display());
         mount_root::unmount_new_root(mounts, &new_root_path)?;
     } else {
-        // Otherwise, persist the datastore and finalize deployment
-        debug!("Updating host's servicing state to FinalizingDeployment");
-        state.with_host_status(|host_status| {
-            host_status.servicing_state = ServicingState::FinalizingDeployment
-        })?;
-        #[cfg(feature = "grpc-dangerous")]
-        if let Some(sender) = sender {
-            sender
-                .send(Ok(HostStatusState {
-                    status: serde_yaml::to_string(state.host_status())
-                        .structured(InternalError::SerializeHostStatus)?,
-                }))
-                .structured(InternalError::SendHostStatus)?;
-            drop(sender);
-        }
-
         state.persist(&path::join_relative(&new_root_path, datastore_path))?;
         state.close();
 
         info!("Finalizing clean install");
-        state
-            .try_with_host_status(|host_status| finalize_deployment(host_status, &new_root_path))?;
-
-        info!("Performing reboot");
-        state.try_with_host_status(|host_status| perform_reboot(&root_device_path, host_status))?;
+        finalize_deployment(&new_root_path, &root_device_path, state.host_status())?;
     }
 
     Ok(())
@@ -356,10 +298,6 @@ pub(super) fn update(
 
     let mut modules = MODULES.lock().unwrap();
 
-    // TODO: Currently, we're assuming we're in servicing state Provisioned, servicing type None OR
-    // servicing state AbUpdateFailed, servicing type AbUpdate at this point. In the follow up PR,
-    // we can also be in servicing state DeploymentStaged, servicing type AbUpdate here.
-
     info!("Refreshing host status");
     refresh_host_status(&mut modules, state, false)?;
 
@@ -373,73 +311,58 @@ pub(super) fn update(
             .structured(InternalError::SendHostStatus)?;
     }
 
-    info!("Determining servicing type");
-    let servicing_type = modules
+    info!("Determining update kind");
+    let update_kind = modules
         .iter()
         .filter_map(|m| {
-            let servicing_type = m.select_servicing_type(state.host_status(), host_config);
-            if let Some(servicing_type) = servicing_type {
+            let update_kind = m.select_update_kind(state.host_status(), host_config);
+            if let Some(update_kind) = update_kind {
                 info!(
-                    "Module '{}' selected servicing type: {:?}",
+                    "Module '{}' selected update kind: {:?}",
                     m.name(),
-                    servicing_type
+                    update_kind
                 );
             }
-            servicing_type
+            update_kind
         })
         .max();
-    let Some(servicing_type) = servicing_type else {
+    let Some(update_kind) = update_kind else {
         info!("No updates required");
+        state.with_host_status(|s| s.reconcile_state = ReconcileState::Ready)?;
         return Ok(());
     };
 
-    info!(
-        "Selected servicing type for the required update: {:?}",
-        servicing_type
-    );
+    info!("Selected update kind: {:?}", update_kind);
+    let reconcile_state = ReconcileState::UpdateInProgress(update_kind);
 
     info!("Validating host configuration against system state");
-    validate_host_config(&modules, state, host_config, servicing_type)?;
+    validate_host_config(&modules, state, host_config, reconcile_state)?;
 
-    // TODO: In the follow up PR, we'll check if current servicing state is DeploymentStaged,
-    // servicing type is AbUpdate, and allowed operations include FinalizeDeployment. If that's the
-    // case, finalize the A/B update and reboot.
     if !allowed_operations.contains(Operations::StageDeployment) {
         info!("Staging of update not requested, skipping staging");
         return Ok(());
     }
 
-    match servicing_type {
-        ServicingType::HotPatch => info!("Performing hot patch update"),
-        ServicingType::NormalUpdate => info!("Performing normal update"),
-        ServicingType::UpdateAndReboot => info!("Performing update and reboot"),
-        ServicingType::AbUpdate => info!("Performing A/B update"),
-        ServicingType::Incompatible => {
+    match update_kind {
+        UpdateKind::HotPatch => info!("Performing hot patch update"),
+        UpdateKind::NormalUpdate => info!("Performing normal update"),
+        UpdateKind::UpdateAndReboot => info!("Performing update and reboot"),
+        UpdateKind::AbUpdate => info!("Performing A/B update"),
+        UpdateKind::Incompatible => {
             return Err(TridentError::new(
                 InvalidInputError::IncompatibleHostConfiguration,
             ));
         }
-        ServicingType::CleanInstall => {
-            return Err(TridentError::new(
-                InvalidInputError::CleanInstallRequestedForProvisionedHost,
-            ));
-        }
     }
-
-    // Set servicing type to the selected servicing type; servicing state to StagingDeployment.
-    // Update spec by copying the current host config.
-    debug!("Setting host's servicing type to {:?}", servicing_type);
-    debug!("Updating host's servicing state to StagingDeployment");
-    state.with_host_status(|host_status| {
-        host_status.servicing_type = Some(servicing_type);
-        host_status.servicing_state = ServicingState::StagingDeployment;
-        host_status.spec = host_config.clone();
+    state.with_host_status(|s| {
+        s.reconcile_state = reconcile_state;
+        s.spec = host_config.clone();
     })?;
 
     info!("Running prepare");
     prepare(&mut modules, state)?;
 
-    let (new_root_path, mounts) = if let ServicingType::AbUpdate = servicing_type {
+    let (new_root_path, mounts) = if let UpdateKind::AbUpdate = update_kind {
         info!("Preparing storage to mount new root");
         let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
@@ -468,12 +391,6 @@ pub(super) fn update(
             })
             .message("Failed to execute in chroot")?;
 
-        // At this point, deployment has been staged, so update servicing state
-        debug!("Updating host's servicing state to DeploymentStaged");
-        state.with_host_status(|host_status| {
-            host_status.servicing_state = ServicingState::DeploymentStaged
-        })?;
-
         (new_root_path, Some(mounts))
     } else {
         info!("Running configure");
@@ -491,17 +408,18 @@ pub(super) fn update(
     };
 
     #[cfg(feature = "grpc-dangerous")]
-    if let Some(ref mut sender) = sender {
+    if let Some(sender) = sender {
         sender
             .send(Ok(HostStatusState {
                 status: serde_yaml::to_string(state.host_status())
                     .structured(InternalError::SerializeHostStatus)?,
             }))
             .structured(InternalError::SendHostStatus)?;
+        drop(sender);
     }
 
-    match servicing_type {
-        ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
+    match update_kind {
+        UpdateKind::UpdateAndReboot | UpdateKind::AbUpdate => {
             let root_block_device_path = get_root_block_device_path(state.host_status())
                 .structured(InternalError::GetRootBlockDevice)?;
 
@@ -513,46 +431,19 @@ pub(super) fn update(
                 return Ok(());
             }
 
-            // Otherwise, finalize deployment
-            debug!("Updating host's servicing state to FinalizingDeployment");
-            state.with_host_status(|host_status| {
-                host_status.servicing_state = ServicingState::FinalizingDeployment
-            })?;
-            #[cfg(feature = "grpc-dangerous")]
-            if let Some(sender) = sender {
-                sender
-                    .send(Ok(HostStatusState {
-                        status: serde_yaml::to_string(state.host_status())
-                            .structured(InternalError::SerializeHostStatus)?,
-                    }))
-                    .structured(InternalError::SendHostStatus)?;
-                drop(sender);
-            }
-
             info!("Closing datastore");
             state.close();
-
             info!("Finalizing update");
-            state.try_with_host_status(|host_status| {
-                finalize_deployment(host_status, &new_root_path)
-            })?;
-
-            info!("Performing reboot");
-            state.try_with_host_status(|host_status| {
-                perform_reboot(&root_block_device_path, host_status)
-            })?;
+            finalize_deployment(&new_root_path, &root_block_device_path, state.host_status())?;
 
             Ok(())
         }
-        ServicingType::NormalUpdate | ServicingType::HotPatch => {
-            state.with_host_status(|host_status| {
-                host_status.servicing_type = None;
-                host_status.servicing_state = ServicingState::Provisioned;
-            })?;
+        UpdateKind::NormalUpdate | UpdateKind::HotPatch => {
+            state.with_host_status(|s| s.reconcile_state = ReconcileState::Ready)?;
             info!("Update complete");
             Ok(())
         }
-        ServicingType::Incompatible | ServicingType::CleanInstall => {
+        UpdateKind::Incompatible => {
             unreachable!()
         }
     }
@@ -568,10 +459,10 @@ fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
 }
 
 /// Returns a block device info for a block device referenced by the
-/// `block_device_id`. If the volume is part of an A/B Volume Pair and active is
+/// `block_device_id`. If the volume is part of an AB Volume Pair and active is
 /// true it returns the active volume, and if active is false it returns the
 /// update volume (i.e. the one that isn't active).
-pub(super) fn get_block_device(
+fn get_block_device(
     host_status: &HostStatus,
     block_device_id: &BlockDeviceId,
     active: bool,
@@ -584,7 +475,7 @@ pub(super) fn get_block_device(
         .or_else(|| get_ab_volume(host_status, block_device_id, active))
 }
 
-/// Returns a block device info for a volume from the given A/B Volume Pair. If
+/// Returns a block device info for a volume from the given AB Volume Pair. If
 /// active is true it returns the active volume, and if active is false it
 /// returns the update volume (i.e. the one that isn't active).
 fn get_ab_volume(
@@ -597,7 +488,7 @@ fn get_ab_volume(
     )
 }
 
-/// Returns a block device id for a volume from the given A/B Volume Pair. If
+/// Returns a block device id for a volume from the given AB Volume Pair. If
 /// active is true it returns the active volume, and if active is false it
 /// returns the update volume (i.e. the one that isn't active).
 fn get_ab_volume_block_device_id(
@@ -611,88 +502,50 @@ fn get_ab_volume_block_device_id(
             .iter()
             .find(|v| &v.id == block_device_id);
         if let Some(v) = ab_volume {
-            // Determine which func to use based on 'active' flag
-            let selection = if active {
-                get_ab_active_volume(host_status)
-            } else {
-                get_ab_update_volume(host_status)
-            };
-            // Return the appropriate BlockDeviceId based on the selection
-            return selection.map(|sel| match sel {
+            // TODO https://dev.azure.com/mariner-org/ECF/_workitems/edit/6808- should we support esp as part of abVolume?
+            return get_ab_update_volume(host_status, active).map(|selection| match selection {
                 AbVolumeSelection::VolumeA => v.volume_a_id.clone(),
                 AbVolumeSelection::VolumeB => v.volume_b_id.clone(),
             });
-        };
+        }
     }
     None
 }
 
-/// Returns the update volume selection for all A/B volume pairs. The update volume is the one that
-/// is meant to be updated, based on the ongoing servicing type and state.
-fn get_ab_update_volume(host_status: &HostStatus) -> Option<AbVolumeSelection> {
-    match &host_status.servicing_state {
-        // If host is in NotProvisioned, CleanInstallFailed, Provisioned, or AbUpdateFailed,
-        // update volume is None, since Trident is not executing any servicing
-        ServicingState::NotProvisioned
-        | ServicingState::CleanInstallFailed
-        | ServicingState::Provisioned
-        | ServicingState::AbUpdateFailed => None,
-        // If host is in any different servicing state, determine based on servicing type
-        ServicingState::StagingDeployment
-        | ServicingState::DeploymentStaged
-        | ServicingState::FinalizingDeployment
-        | ServicingState::DeploymentFinalized => {
-            match host_status.servicing_type {
-                Some(ServicingType::HotPatch)
-                | Some(ServicingType::NormalUpdate)
-                | Some(ServicingType::UpdateAndReboot) => host_status.storage.ab_active_volume,
-                // If host executing A/B update, update volume is the opposite of active volume
-                // as specified in the storage status
-                Some(ServicingType::AbUpdate) => {
-                    if host_status.storage.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
-                        Some(AbVolumeSelection::VolumeB)
-                    } else {
-                        Some(AbVolumeSelection::VolumeA)
-                    }
-                }
-                // If host is executing a clean install, update volume is always A
-                Some(ServicingType::CleanInstall) => Some(AbVolumeSelection::VolumeA),
-                // In host status, servicing type will never be set to Incompatible OR be None if
-                // servicing state is one of the above.
-                Some(ServicingType::Incompatible) | None => None,
-            }
-        }
-    }
-}
-
-/// Returns the active volume selection for all A/B volume pairs. The active volume is the one that
-/// the host is currently running from.
-fn get_ab_active_volume(host_status: &HostStatus) -> Option<AbVolumeSelection> {
-    match host_status.servicing_state {
-        // If host is in NotProvisioned or CleanInstallFailed, there is no active volume, as
-        // we're still booted from the provisioning OS
-        ServicingState::NotProvisioned | ServicingState::CleanInstallFailed => None,
-        // If host is in Provisioned OR AbUpdateFailed, active volume is the current one
-        ServicingState::Provisioned | ServicingState::AbUpdateFailed => {
+/// Returns the volume selection for all AB Volume Pairs. This is used to
+/// determine which volumes are currently active and which are meant for
+/// updating. In addition, if active is true and an A/B update is in progress,
+/// the active volume selection will be returned. If active is false, the volume
+/// selection corresponding to the volumes to be updated will be returned.
+fn get_ab_update_volume(host_status: &HostStatus, active: bool) -> Option<AbVolumeSelection> {
+    match &host_status.reconcile_state {
+        ReconcileState::UpdateInProgress(UpdateKind::HotPatch)
+        | ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)
+        | ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => {
             host_status.storage.ab_active_volume
         }
-        ServicingState::StagingDeployment
-        | ServicingState::DeploymentStaged
-        | ServicingState::FinalizingDeployment
-        | ServicingState::DeploymentFinalized => {
-            match host_status.servicing_type {
-                // If host is executing a deployment of any type, active volume is in host status.
-                Some(ServicingType::HotPatch)
-                | Some(ServicingType::NormalUpdate)
-                | Some(ServicingType::UpdateAndReboot)
-                | Some(ServicingType::AbUpdate) => host_status.storage.ab_active_volume,
-                // If host is executing a clean install, there is no active volume yet.
-                Some(ServicingType::CleanInstall) => None,
-                // In host status, servicing type will never be set to Incompatible OR be None if
-                // servicing state is one of the above.
-                Some(ServicingType::Incompatible) | None => unreachable!(),
+        ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
+            if active {
+                host_status.storage.ab_active_volume
+            } else {
+                Some(
+                    if host_status.storage.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
+                        AbVolumeSelection::VolumeB
+                    } else {
+                        AbVolumeSelection::VolumeA
+                    },
+                )
             }
         }
+        ReconcileState::UpdateInProgress(UpdateKind::Incompatible) => None,
+        ReconcileState::Ready => {
+            if active {
+                host_status.storage.ab_active_volume
+            } else {
+                None
+            }
+        }
+        ReconcileState::CleanInstall => Some(AbVolumeSelection::VolumeA),
     }
 }
 
@@ -719,12 +572,12 @@ fn validate_host_config(
     modules: &[Box<dyn Module>],
     state: &DataStore,
     host_config: &HostConfiguration,
-    planned_servicing_type: ServicingType,
+    planned_update: ReconcileState,
 ) -> Result<(), TridentError> {
     for module in modules {
         debug!("Starting stage 'Validate' for module '{}'", module.name());
         module
-            .validate_host_config(state.host_status(), host_config, planned_servicing_type)
+            .validate_host_config(state.host_status(), host_config, planned_update)
             .structured(ManagementError::from(
                 ModuleError::ValidateHostConfiguration {
                     name: module.name(),
@@ -806,8 +659,14 @@ fn initialize_new_root(
         .flags(MountFlags::empty())
         .mount("tmpfs", new_root_path.join("tmp"))
         .structured(ManagementError::ChrootMountSpecial { dir: "/tmp" })?;
-    // Insert tmp_mount at the end of the mounts vector
-    mounts.push(tmp_mount.target_path().to_owned());
+    mounts.insert(0, tmp_mount.target_path().to_owned());
+
+    let run_mount = Mount::builder()
+        .fstype("tmpfs")
+        .flags(MountFlags::empty())
+        .mount("tmpfs", new_root_path.join("run"))
+        .structured(ManagementError::ChrootMountSpecial { dir: "/run" })?;
+    mounts.insert(0, run_mount.target_path().to_owned());
 
     let exec_root_path = Path::new(EXEC_ROOT_PATH);
     let full_exec_root_path = join_relative(new_root_path, exec_root_path);
@@ -815,16 +674,7 @@ fn initialize_new_root(
         .structured(ManagementError::CreateExecrootDirectory)?;
     mount::bind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
         .structured(ManagementError::MountExecroot)?;
-    // Insert full_exec_root_path at the end of the mounts vector
-    mounts.push(full_exec_root_path);
-
-    let run_mount = Mount::builder()
-        .fstype("tmpfs")
-        .flags(MountFlags::empty())
-        .mount("tmpfs", new_root_path.join("run"))
-        .structured(ManagementError::ChrootMountSpecial { dir: "/run" })?;
-    // Insert run_mount at the end of the mounts vector
-    mounts.push(run_mount.target_path().to_owned());
+    mounts.insert(0, full_exec_root_path);
 
     Ok((new_root_path.to_owned(), exec_root_path.to_owned(), mounts))
 }
@@ -896,12 +746,11 @@ pub fn reboot() -> Result<(), TridentError> {
     Err(TridentError::new(ManagementError::RebootTimeout))
 }
 
-/// Triggers a reboot. Currently, this defaults to firmware reboot.
-fn perform_reboot(
+fn finalize_deployment(
+    new_root_path: &Path,
     _root_block_device_path: &Path,
-    _host_status: &HostStatus,
+    host_status: &HostStatus,
 ) -> Result<(), TridentError> {
-    // TODO(6721): Re-enable kexec
     // let root_block_device_path = root_block_device_path
     //     .to_str()
     //     .structured(ManagementError::SetKernelCmdline)
@@ -909,7 +758,18 @@ fn perform_reboot(
     //         "Failed to convert root device path {:?} to string",
     //         root_block_device_path
     //     ))?;
-    //
+    info!("Setting boot entries");
+
+    // TODO - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/ delete boot entries
+    // TODO - set_boot_entries only if ABUpdate is in state AbUpdateStaged/ CleanInstall
+    // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
+    bootentries::call_set_boot_next_and_update_hs(host_status, new_root_path)?;
+    //TODO - update ABUpdate state to AbUpdateFinalized
+    // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
+
+    // TODO(6721): Re-enable kexec
+    // TODO - update ABUpdate state to AbUpdateFinalized
+    // TASK - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625
     // info!("Performing soft reboot");
     // storage::image::kexec(
     //     new_root_path,
@@ -919,52 +779,6 @@ fn perform_reboot(
 
     info!("Performing reboot");
     reboot()
-}
-
-/// Finalizes deployment by setting bootNext and updating host status. Changes host's servicing state
-/// to DeploymentFinalized.
-fn finalize_deployment(
-    host_status: &mut HostStatus,
-    new_root_path: &Path,
-) -> Result<(), TridentError> {
-    // TODO: Delete boot entries. Related ADO task:
-    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/
-
-    // Re-open datastore
-    info!("Re-opening datastore");
-    // Open datastore
-    let datastore_path = host_status
-        .trident
-        .datastore_path
-        .as_deref()
-        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
-
-    let new_datastore_path = new_root_path.join(
-        datastore_path
-            .to_str()
-            .unwrap()
-            .trim_start_matches(MAIN_SEPARATOR),
-    );
-    debug!(
-        "Opening datastore in finalize_deployment at path: {}",
-        new_datastore_path.display()
-    );
-    let mut datastore = DataStore::open(&new_datastore_path)?;
-
-    info!("Setting boot entries");
-    datastore.try_with_host_status(|host_status| {
-        bootentries::call_set_boot_next_and_update_hs(host_status, new_root_path)
-    })?;
-
-    // Update host's status
-    debug!("Updating host's servicing state to DeploymentFinalized");
-    datastore
-        .with_host_status(|status| status.servicing_state = ServicingState::DeploymentFinalized)?;
-
-    info!("Closing datastore");
-    datastore.close();
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1043,7 +857,7 @@ mod test {
                 },
                 ..Default::default()
             },
-            servicing_state: ServicingState::Provisioned,
+            reconcile_state: ReconcileState::CleanInstall,
             ..Default::default()
         };
 
@@ -1131,8 +945,7 @@ mod test {
                 },
                 ..Default::default()
             },
-            servicing_state: ServicingState::Provisioned,
-            servicing_type: None,
+            reconcile_state: ReconcileState::CleanInstall,
             ..Default::default()
         };
 
@@ -1172,87 +985,15 @@ mod test {
                 contents: BlockDeviceContents::Unknown,
             }
         );
-
-        // If servicing state is Provisioned, get_block_device() should return the active volume
-        // when active=true and None when active=false, for A/B volume pair.
-        assert_eq!(
-            get_block_device(&host_status, &"osab".to_owned(), true),
-            None
-        );
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
-            None
-        );
-        // Now, set ab_active_volume to VolumeA.
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        assert_eq!(
-            get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),
-            BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                size: 900,
-                contents: BlockDeviceContents::Unknown,
-            }
-        );
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
-            Some("root".to_owned())
-        );
-
-        assert_eq!(
-            get_block_device(&host_status, &"osab".to_owned(), false),
-            None
-        );
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), false),
-            None
-        );
-
-        // Now, set servicing type to AbUpdate; servicing state to Staging Deployment.
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
-        host_status.servicing_state = ServicingState::StagingDeployment;
-        // When active=true, should return VolumeA; when active=false, return VolumeB.
-        assert_eq!(
-            get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),
-            BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                size: 900,
-                contents: BlockDeviceContents::Unknown,
-            }
-        );
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
-            Some("root".to_owned())
-        );
-
         assert_eq!(
             get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
             BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                size: 9000,
+                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                size: 900,
                 contents: BlockDeviceContents::Unknown,
             }
         );
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), false),
-            Some("rootb".to_owned())
-        );
-
-        // When active volume is VolumeB, should return VolumeB when active=true; VolumeA when
-        // active=false.
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        assert_eq!(
-            get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),
-            BlockDeviceInfo {
-                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                size: 9000,
-                contents: BlockDeviceContents::Unknown,
-            }
-        );
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
-            Some("rootb".to_owned())
-        );
-
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
             super::get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
             BlockDeviceInfo {
@@ -1261,21 +1002,47 @@ mod test {
                 contents: BlockDeviceContents::Unknown,
             }
         );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        assert_eq!(
+            get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                size: 9000,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+
+        assert_eq!(
+            get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),
+            BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                size: 900,
+                contents: BlockDeviceContents::Unknown,
+            }
+        );
+
         assert_eq!(
             get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), false),
-            Some("root".to_owned())
+            Some("rootb".to_owned())
         );
 
-        // If target block device id does not exist, should return None.
         assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"non-existent".to_owned(), false),
+            get_ab_volume_block_device_id(&host_status, &"osb".to_owned(), false),
             None
         );
+
+        assert_eq!(
+            get_ab_volume(&host_status, &"osab".to_owned(), false),
+            Some(BlockDeviceInfo {
+                path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                size: 9000,
+                contents: BlockDeviceContents::Unknown,
+            })
+        );
     }
 
-    /// Validates logic in get_ab_update_volume() function
-    #[test]
-    fn test_get_ab_update_volume() {
+    /// Validates logic for determining which A/B volume to use
+    fn test_get_ab_update_volume(active: bool) -> HostStatus {
         let mut host_status = HostStatus {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -1286,227 +1053,101 @@ mod test {
                 },
                 ..Default::default()
             },
-            servicing_type: None,
-            servicing_state: ServicingState::NotProvisioned,
+            reconcile_state: ReconcileState::CleanInstall,
             ..Default::default()
         };
 
-        // 1. If host is in NotProvisioned, update volume is None b/c Trident is not executing any
-        // servicing
-        assert_eq!(get_ab_update_volume(&host_status), None);
-
-        // 2. If host is in CleanInstallFailed, update volume is None b/c Trident is not executing any
-        // servicing
-        host_status.servicing_state = ServicingState::CleanInstallFailed;
-        assert_eq!(get_ab_update_volume(&host_status), None);
-
-        // 3. If host is in Provisioned, update volume is None b/c Trident is not executing any
-        // servicing
-        host_status.servicing_state = ServicingState::Provisioned;
-        assert_eq!(get_ab_update_volume(&host_status), None);
-
-        // 4. If host is in AbUpdateFailed, update volume is None b/c Trident is not executing any
-        // servicing
-        host_status.servicing_state = ServicingState::AbUpdateFailed;
-        assert_eq!(get_ab_update_volume(&host_status), None);
-
-        // 5. If host is doing CleanInstall, update volume is always A
-        host_status.servicing_type = Some(ServicingType::CleanInstall);
-        host_status.servicing_state = ServicingState::StagingDeployment;
+        // test that clean-install will always use volume A for updates
         assert_eq!(
-            get_ab_update_volume(&host_status),
+            get_ab_update_volume(&host_status, active),
             Some(AbVolumeSelection::VolumeA)
         );
 
-        host_status.servicing_state = ServicingState::DeploymentStaged;
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            Some(AbVolumeSelection::VolumeA)
-        );
-
-        host_status.servicing_state = ServicingState::FinalizingDeployment;
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            Some(AbVolumeSelection::VolumeA)
-        );
-
-        host_status.servicing_state = ServicingState::DeploymentFinalized;
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            Some(AbVolumeSelection::VolumeA)
-        );
-
-        // 6. If host is doing HotPatch, NormalUpdate, or UpdateAndReboot, update volume is always
-        // the currently active volume
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        host_status.servicing_state = ServicingState::StagingDeployment;
-        host_status.servicing_type = Some(ServicingType::HotPatch);
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
 
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
         assert_eq!(
-            get_ab_update_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.servicing_type = Some(ServicingType::UpdateAndReboot);
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            host_status.storage.ab_active_volume
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeA)
         );
 
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        host_status.servicing_type = Some(ServicingType::HotPatch);
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
 
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
         assert_eq!(
-            get_ab_update_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.servicing_type = Some(ServicingType::UpdateAndReboot);
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        // 7. If host is doing A/B update, update volume is the opposite of the active volume
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            Some(AbVolumeSelection::VolumeB)
-        );
-
-        // If servicing state changes, the update volume should not change
-        host_status.servicing_state = ServicingState::DeploymentStaged;
-        assert_eq!(
-            get_ab_update_volume(&host_status),
-            Some(AbVolumeSelection::VolumeB)
-        );
-
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        assert_eq!(
-            get_ab_update_volume(&host_status),
+            get_ab_update_volume(&host_status, active),
             Some(AbVolumeSelection::VolumeA)
         );
 
-        // If servicing state changes, the update volume should not change
-        host_status.servicing_state = ServicingState::FinalizingDeployment;
+        // test that UpdateInProgress(HostPatch, NormalUpdate, UpdateAndReboot)
+        // will always use the active volume for updates
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::HotPatch);
         assert_eq!(
-            get_ab_update_volume(&host_status),
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate);
+        assert_eq!(
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot);
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        assert_eq!(
+            get_ab_update_volume(&host_status, active),
+            Some(AbVolumeSelection::VolumeA)
+        );
+
+        // test that UpdateInProgress(Incompatible) will return None
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::Incompatible);
+        assert_eq!(get_ab_update_volume(&host_status, active), None);
+
+        host_status
+    }
+
+    /// Validates logic for determining which A/B volume to update
+    #[test]
+    fn test_get_ab_update_volume_update() {
+        let mut host_status = test_get_ab_update_volume(false);
+
+        // test that Ready will return the None
+        host_status.reconcile_state = ReconcileState::Ready;
+        assert_eq!(get_ab_update_volume(&host_status, false), None);
+
+        // test that UpdateInProgress(AbUpdate) will use the opposite volume
+        // for updates
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        assert_eq!(
+            get_ab_update_volume(&host_status, false),
+            Some(AbVolumeSelection::VolumeB)
+        );
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        assert_eq!(
+            get_ab_update_volume(&host_status, false),
             Some(AbVolumeSelection::VolumeA)
         );
     }
 
-    /// Validates logic in get_ab_active_volume() function
+    /// Validates logic for determining which A/B volume is active
     #[test]
-    fn test_get_ab_active_volume() {
-        let mut host_status = HostStatus {
-            spec: HostConfiguration {
-                storage: config::Storage {
-                    ab_update: Some(AbUpdate {
-                        volume_pairs: Vec::new(),
-                    }),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            servicing_type: None,
-            servicing_state: ServicingState::NotProvisioned,
-            ..Default::default()
-        };
+    fn test_get_ab_update_volume_active() {
+        let mut host_status = test_get_ab_update_volume(true);
 
-        // 1. If host is in NotProvisioned, there is no active volume, as we're still booted from
-        // the provisioning OS
-        assert_eq!(get_ab_active_volume(&host_status), None);
-
-        // 2. If host is in CleanInstallFailed, there is no active volume either
-        host_status.servicing_state = ServicingState::CleanInstallFailed;
-        assert_eq!(get_ab_active_volume(&host_status), None);
-
-        // 3. If host is in Provisioned, active volume is the current one
-        host_status.servicing_state = ServicingState::Provisioned;
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        // test that Ready will return the active volume
+        host_status.reconcile_state = ReconcileState::Ready;
         assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
+            get_ab_update_volume(&host_status, true),
+            Some(AbVolumeSelection::VolumeA)
         );
 
-        // 4. If host is in AbUpdateFailed, active volume is the current one
-        host_status.servicing_state = ServicingState::AbUpdateFailed;
+        // test that UpdateInProgress(AbUpdate) will use the active volume
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
+        assert_eq!(
+            get_ab_update_volume(&host_status, true),
+            Some(AbVolumeSelection::VolumeA)
+        );
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        // 5. If host is doing CleanInstall, active volume is always None
-        host_status.servicing_type = Some(ServicingType::CleanInstall);
-        host_status.servicing_state = ServicingState::StagingDeployment;
-        assert_eq!(get_ab_active_volume(&host_status), None);
-
-        host_status.servicing_state = ServicingState::DeploymentStaged;
-        assert_eq!(get_ab_active_volume(&host_status), None);
-
-        // 6. If host is doing HotPatch, NormalUpdate, UpdateAndReboot, or AbUpdate, the active
-        // volume is in host status
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        host_status.servicing_type = Some(ServicingType::HotPatch);
-        assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
-        assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.servicing_type = Some(ServicingType::UpdateAndReboot);
-        assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
-        assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        host_status.servicing_state = ServicingState::FinalizingDeployment;
-        host_status.servicing_type = Some(ServicingType::HotPatch);
-        assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
-        assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.servicing_type = Some(ServicingType::UpdateAndReboot);
-        assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
-        );
-
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
-        assert_eq!(
-            get_ab_active_volume(&host_status),
-            host_status.storage.ab_active_volume
+            get_ab_update_volume(&host_status, true),
+            Some(AbVolumeSelection::VolumeB)
         );
     }
 }

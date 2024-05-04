@@ -17,7 +17,9 @@ use trident_api::{
     config::{HostConfiguration, PartitionSize, PartitionType},
     constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
-    status::{self, AbVolumeSelection, BlockDeviceContents, HostStatus, ServicingType},
+    status::{
+        self, AbVolumeSelection, BlockDeviceContents, HostStatus, ReconcileState, UpdateKind,
+    },
     BlockDeviceId,
 };
 
@@ -213,7 +215,7 @@ impl Module for StorageModule {
         &self,
         host_status: &HostStatus,
         host_config: &HostConfiguration,
-        planned_servicing_type: ServicingType,
+        planned_update: ReconcileState,
     ) -> Result<(), Error> {
         // Ensure any two disks point to different devices. This requires canonicalizing the device
         // paths, which can only be done on the target system.
@@ -235,7 +237,7 @@ impl Module for StorageModule {
             }
         }
 
-        if planned_servicing_type != ServicingType::CleanInstall {
+        if planned_update != ReconcileState::CleanInstall {
             // TODO: validate that block devices naming is consistent with the current state
             // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
@@ -253,13 +255,13 @@ impl Module for StorageModule {
         Ok(())
     }
 
-    fn select_servicing_type(
+    fn select_update_kind(
         &self,
         host_status: &HostStatus,
         host_config: &HostConfiguration,
-    ) -> Option<ServicingType> {
+    ) -> Option<UpdateKind> {
         if image::needs_ab_update(host_status, host_config) {
-            return Some(ServicingType::AbUpdate);
+            return Some(UpdateKind::AbUpdate);
         }
 
         None
@@ -362,7 +364,7 @@ pub(super) fn initialize_block_devices(
         host_config.storage.internal_mount_points
     );
 
-    if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+    if host_status.reconcile_state == ReconcileState::CleanInstall {
         debug!("Initializing block devices");
         // Stop verity before RAID, as verity can sit on top of RAID
         verity::stop_pre_existing_verity_devices(host_config)
@@ -418,7 +420,7 @@ pub(super) fn set_host_status_block_device_contents(
             .iter()
             .find(|p| &p.id == block_device_id)
         {
-            let target_id = match modules::get_ab_update_volume(host_status) {
+            let target_id = match modules::get_ab_update_volume(host_status, false) {
                 Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
                 Some(AbVolumeSelection::VolumeB) => Some(&ab_volume_pair.volume_b_id),
                 None => None,
@@ -454,14 +456,14 @@ mod tests {
             SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
-        status::{BlockDeviceInfo, ServicingState, Storage},
+        status::{BlockDeviceInfo, Storage, UpdateKind},
     };
 
     use super::*;
 
     fn get_host_status() -> HostStatus {
         HostStatus {
-            servicing_state: ServicingState::NotProvisioned,
+            reconcile_state: ReconcileState::CleanInstall,
             ..Default::default()
         }
     }
@@ -571,7 +573,7 @@ mod tests {
         let host_config = get_host_config(&recovery_key_file);
 
         StorageModule
-            .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+            .validate_host_config(&host_status, &host_config, ReconcileState::CleanInstall)
             .unwrap();
     }
 
@@ -586,7 +588,7 @@ mod tests {
 
         assert_eq!(
             StorageModule
-                .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+                .validate_host_config(&host_status, &host_config, ReconcileState::CleanInstall)
                 .unwrap_err()
                 .to_string(),
             "Disks 'disk2' and 'disk1' point to the same device '/tmp'"
@@ -605,7 +607,7 @@ mod tests {
 
         assert_eq!(
             StorageModule
-                .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+                .validate_host_config(&host_status, &host_config, ReconcileState::CleanInstall)
                 .unwrap_err()
                 .to_string(),
             "Encryption host configuration validation failed"
@@ -616,8 +618,7 @@ mod tests {
     #[test]
     fn test_set_host_status_block_device_contents() {
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            reconcile_state: ReconcileState::CleanInstall,
             spec: HostConfiguration {
                 storage: config::Storage {
                     ab_update: Some(AbUpdate {
@@ -731,7 +732,7 @@ mod tests {
             contents.clone()
         );
 
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.reconcile_state = ReconcileState::UpdateInProgress(UpdateKind::AbUpdate);
 
         set_host_status_block_device_contents(
             &mut host_status,

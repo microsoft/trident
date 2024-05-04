@@ -79,7 +79,7 @@ storage:
 scripts:
   postConfigure:
   - name: wheel
-    servicingTypeSelection:
+    servicingType:
     - clean-install
     - ab-update
     content: 'echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel'

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use trident_api::config::{HostConfiguration, Script, ServicingTypeSelection};
+use trident_api::config::{HostConfiguration, Script, ServicingType};
 
 use crate::{data::ParsedData, sections::script::ScriptType};
 
@@ -12,7 +12,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration) {
         .filter(|(_, s)| matches!(s.script_type, ScriptType::Post))
         .map(|(index, script)| Script {
             name: format!("kickstart-script-{}", index),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            servicing_type: vec![ServicingType::CleanInstall],
             interpreter: Some(script.interpreter.clone()),
             content: Some(script.body.clone()),
             log_file_path: script.log.clone(),
