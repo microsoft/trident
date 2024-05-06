@@ -2,13 +2,14 @@
 
 use std::{
     fs::{self},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info};
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile},
+    constants::ROOT_MOUNT_POINT_PATH,
     status::{HostStatus, ReconcileState},
 };
 
@@ -31,6 +32,19 @@ impl Module for ManagementModule {
     ) -> Result<(), Error> {
         if host_config.trident.disable {
             return Ok(());
+        }
+
+        // If self-upgrade is requested, ensure that root is not a RO verity filesystem b/c Trident
+        // will not be able to copy itself into the FS.
+        if host_config.trident.self_upgrade {
+            let root_is_ro_verity = host_config.storage.verity_filesystems.iter().any(|v| {
+                v.mount_point.path == PathBuf::from(ROOT_MOUNT_POINT_PATH)
+                    && v.mount_point.options.contains("ro")
+            });
+            ensure!(
+                !root_is_ro_verity,
+                "Cannot self-upgrade Trident when a read-only verity filesystem is mounted at '/'"
+            );
         }
 
         let datastore_path = host_config
