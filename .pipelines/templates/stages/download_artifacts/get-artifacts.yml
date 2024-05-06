@@ -118,5 +118,7 @@ stages:
               buildVersionToDownload: "latestFromBranch"
               branchName: "refs/heads/${{ parameters.branch }}"
               artifactName: "go-tools"
-              patterns: "netlaunch"
+              patterns: |
+                netlaunch
+                netlisten
               targetPath: $(ob_outputDirectory)
