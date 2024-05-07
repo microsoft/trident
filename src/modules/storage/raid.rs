@@ -15,7 +15,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::{block_devices, exe::OutputChecker, mdadm, udevadm};
+use osutils::{block_devices, exe::OutputChecker, lsblk, mdadm, udevadm};
 
 use crate::modules::storage;
 
@@ -93,10 +93,9 @@ pub(super) fn get_raid_details(
         .get_partition(&devices[0])
         .context("Failed to get partition")?;
     let first_device_type: PartitionType = first_device.partition_type;
-    let component_size = osutils::files::read_file_trim(&md_folder.join("component_size"))?;
 
-    // TODO(6331): fins a better way to get the size of the RAID array
-    let array_size = component_size.parse::<u64>()? * 1024;
+    let block_device = lsblk::run(raid_device).context("Failed to get RAID device size")?;
+    let array_size = block_device.size;
 
     let raid_detail = RaidDetail {
         id: raid_id.clone(),
