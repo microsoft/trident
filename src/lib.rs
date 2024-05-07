@@ -12,14 +12,15 @@ use trident_api::config::{
     HostConfiguration, HostConfigurationSource, InvalidHostConfigurationError, LocalConfigFile,
     Operations,
 };
+use trident_api::constants::ROOT_MOUNT_POINT_PATH;
 use trident_api::error::{
     ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
     InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt,
 };
-use trident_api::status::{HostStatus, ReconcileState};
+use trident_api::status::{HostStatus, ServicingState, ServicingType};
 
 use crate::datastore::DataStore;
-use crate::modules::bootentries;
+use crate::modules::{bootentries, get_block_device, storage::tabfile};
 
 mod datastore;
 mod logging;
@@ -302,6 +303,72 @@ impl Trident {
             None => DataStore::open_temporary().message("Failed to open temporary datastore")?,
         };
 
+        // If host's servicing state is DeploymentFinalized, need to verify if firmware correctly
+        // booted into the updated runtime OS image.
+        debug!(
+            "Servicing state after reboot: {:?}",
+            datastore.host_status().servicing_state
+        );
+        if datastore.host_status().servicing_state == ServicingState::DeploymentFinalized {
+            // Get device path of root mount point
+            let root_dev_path = match tabfile::get_device_path(
+                Path::new("/proc/mounts"),
+                Path::new(ROOT_MOUNT_POINT_PATH),
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    error!("Failed to get device path of root mount point: {e}");
+                    return Err(TridentError::new(ManagementError::RootMountPointDevPath));
+                }
+            };
+            info!("Validating whether firmware correctly booted into the updated runtime OS image");
+            match validate_reboot(datastore.host_status(), root_dev_path) {
+                Ok(_) => {
+                    info!("Firmware correctly booted into the updated runtime OS image");
+                }
+                Err(e) => {
+                    error!("Firmware performed a rollback into an incorrect OS image: {e}");
+                    if datastore.host_status().servicing_type == Some(ServicingType::CleanInstall) {
+                        datastore.with_host_status(|host_status| {
+                            host_status.servicing_state = ServicingState::CleanInstallFailed;
+                        })?;
+                        return Err(TridentError::new(ManagementError::RollbackCleanInstall));
+                    } else {
+                        datastore.with_host_status(|host_status| {
+                            host_status.servicing_state = ServicingState::AbUpdateFailed;
+                        })?;
+                        return Err(TridentError::new(ManagementError::RollbackAbUpdate));
+                    }
+                }
+            }
+
+            // Update boot order
+            let datastore_path = match self.config.datastore {
+                Some(ref path) => path,
+                None => {
+                    error!("Datastore path not set in local config");
+                    return Err(TridentError::new(
+                        InternalError::GetDatastorePathFromLocalTridentConfig,
+                    ));
+                }
+            };
+            info!("Setting boot order");
+            bootentries::set_boot_order(datastore_path)?;
+
+            // Update host's servicing state to Provisioned; servicing type to None
+            if datastore.host_status().servicing_type == Some(ServicingType::CleanInstall) {
+                info!(
+                    "Clean install of runtime OS succeeded. Setting servicing state to Provisioned"
+                );
+            } else {
+                info!("A/B update succeeded. Setting servicing state to Provisioned");
+            }
+            datastore.with_host_status(|host_status| {
+                host_status.servicing_state = ServicingState::Provisioned;
+                host_status.servicing_type = None;
+            })?;
+        }
+
         // Process commands. Starting with the initial command indicated in the local config file
         // (if any). Once that has been handled, subsequent commands are received from the gRPC
         // endpoint.
@@ -329,13 +396,6 @@ impl Trident {
                     return Err(e);
                 }
             }
-        }
-
-        // Temporarily calling set_boot_order here until we have a better place to call it
-        // TODO -  https://dev.azure.com/mariner-org/ECF/_workitems/edit/6814
-        if let Some(ref datastore_path) = self.config.datastore {
-            info!("Setting boot order");
-            bootentries::set_boot_order(datastore_path)?;
         }
 
         Ok(datastore.host_status().clone())
@@ -366,19 +426,29 @@ impl Trident {
         // container and /host is not mounted.
         container::is_running_in_container().message("Running in container check failed")?;
 
-        if datastore.is_persistent() {
+        // If datastore is persistent, need to do A/B update, unless current servicing state is
+        // CleanInstallFailed: then, we need to re-try clean install.
+        if datastore.is_persistent()
+            && datastore.host_status().servicing_state != ServicingState::CleanInstallFailed
+        {
             modules::update(cmd, datastore).message("Failed to update host")
         } else {
+            // If HS.spec in the datastore is different from the new HC, delete the old HS and
+            // replace it with a new version, with the new HC.
             if datastore.host_status().spec != cmd.host_config {
                 datastore.with_host_status(|status| {
                     *status = HostStatus {
                         spec: cmd.host_config.clone(),
-                        reconcile_state: ReconcileState::CleanInstall,
+                        servicing_state: ServicingState::DeploymentStaged,
+                        servicing_type: Some(ServicingType::CleanInstall),
                         ..Default::default()
                     }
                 })?;
             }
-            modules::clean_install(cmd, datastore).message("Failed to provision host")
+            // If HS.spec matches the new HS, run clean_install() without updating the datastore.
+            // TODO: When implementing the StageDeployment/FinalizeDeployment split, will only call
+            // finalize_clean_install() here.
+            modules::clean_install(cmd, datastore).message("Failed to do clean install on the host")
         }
     }
 
@@ -416,12 +486,82 @@ impl Trident {
     }
 }
 
+/// Validates that the host correctly booted from the updated image after finalizing CleanInstall
+/// or A/B update. Otherwise, if a rollback occurred, returns an error.
+fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(), Error> {
+    // Fetch mount point for root from host status and fetch target_id of root device
+    let root_target_id = match host_status
+        .spec
+        .storage
+        .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
+    {
+        Some(mp) => &mp.target_id,
+        None => {
+            bail!(
+                "Failed to get mount point for root '{}'. Disk intended for reboot no longer exists",
+                ROOT_MOUNT_POINT_PATH
+            );
+        }
+    };
+    debug!(
+        "Firmware booted from block device with target_id {:?}",
+        root_target_id
+    );
+
+    // Fetch expected_root_dev_path. active=false b/c need to fetch info for volume that we expect
+    // to be active at this point, after firmware has already rebooted, and it used to be the
+    // update volume before the reboot.
+    let expected_root_path = match get_block_device(host_status, root_target_id, false) {
+        Some(block_device_info) => block_device_info.path,
+        None => {
+            bail!(
+                "Failed to get block device info for root '{}'",
+                root_target_id
+            );
+        }
+    };
+    debug!(
+        "Non-canonicalized root device path: {}",
+        expected_root_path.display()
+    );
+    let expected_root_path_canonicalized = match expected_root_path.canonicalize() {
+        Ok(path) => path,
+        Err(e) => {
+            bail!(
+                "Failed to get canonical path for expected root '{}': {e}",
+                expected_root_path.display()
+            );
+        }
+    };
+
+    // If current root device path is NOT the same as the expected root device path, firmware did
+    // not boot into the updated runtime OS image, but instead, performed a rollback into prov OS
+    // or old runtime OS.
+    // NOTE: For verity, path like /dev/mapper/root, which is what we use in host status, gets
+    // resolved to /dev/dm-0. So, compare if matches either.
+    if root_dev_path != expected_root_path && root_dev_path != expected_root_path_canonicalized {
+        debug!(
+            "Expected root device path: {:?}. In canonicalized format: {:?}",
+            expected_root_path, expected_root_path_canonicalized
+        );
+        debug!("Current root device path: {:?}", root_dev_path);
+        // If root_device_path is None, Trident tried to perform reboot as part of CleanInstall
+        if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+            bail!("Reboot validation failed: Firmware rolled back into provisioning OS");
+        } else {
+            bail!(
+                "Reboot validation failed: Firmware rolled back into '{}'",
+                root_dev_path.display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use trident_api::{
-        config::{FileSystemType, InternalMountPoint, Storage},
-        constants,
-    };
+    use trident_api::config::{FileSystemType, InternalMountPoint, Storage};
 
     use super::*;
     use std::path::PathBuf;
@@ -444,7 +584,7 @@ mod tests {
         let host_config_original = HostConfiguration {
             storage: Storage {
                 internal_mount_points: vec![InternalMountPoint {
-                    path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
+                    path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                     target_id: "sda1".to_string(),
                     filesystem: FileSystemType::Ext4,
                     options: vec![],
@@ -459,5 +599,264 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(*host_config, host_config_original);
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+    use pytest_gen::functional_test;
+
+    use maplit::btreemap;
+    use trident_api::{
+        config::{
+            AbUpdate, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition,
+            PartitionSize, PartitionType, Storage,
+        },
+        status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Storage as HostStorage},
+    };
+
+    /// Validates that validate_reboot() correctly detects rollback when root is a partition.
+    #[functional_test]
+    fn test_validate_reboot_partition() {
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_owned(),
+                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_owned(),
+                                size: PartitionSize::Fixed(100),
+                                partition_type: PartitionType::Esp,
+                            },
+                            Partition {
+                                id: "root-a".to_owned(),
+                                size: PartitionSize::Fixed(900),
+                                partition_type: PartitionType::Root,
+                            },
+                            Partition {
+                                id: "root-b".to_owned(),
+                                size: PartitionSize::Fixed(9000),
+                                partition_type: PartitionType::Root,
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "root".to_string(),
+                            volume_a_id: "root-a".to_string(),
+                            volume_b_id: "root-b".to_string(),
+                        }],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: HostStorage {
+                block_devices: [].into(),
+                ..Default::default()
+            },
+            servicing_state: ServicingState::DeploymentFinalized,
+            servicing_type: Some(ServicingType::CleanInstall),
+            ..Default::default()
+        };
+
+        // Test case #0: If no mount points defined, should return an error.
+        let result0 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
+        let error_message0 = result0.unwrap_err().root_cause().to_string();
+        assert_eq!(
+            error_message0,
+            "Failed to get mount point for root '/'. Disk intended for reboot no longer exists"
+        );
+
+        // Test case #1: If no root target id in block devices, should return an error.
+        host_status.spec.storage.internal_mount_points = vec![InternalMountPoint {
+            path: PathBuf::from("/"),
+            target_id: "root".to_string(),
+            filesystem: FileSystemType::Ext4,
+            options: vec![],
+        }];
+        let result1 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
+        let error_message1 = result1.unwrap_err().root_cause().to_string();
+        assert_eq!(
+            error_message1,
+            "Failed to get block device info for root 'root'"
+        );
+
+        // Test case #2: After CleanInstall, Trident correctly booted into root-a.
+        host_status.storage.block_devices = btreemap! {
+            "os".to_owned() => BlockDeviceInfo {
+                path: PathBuf::from("/dev/sda"),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            },
+            "efi".to_owned() => BlockDeviceInfo {
+                path: PathBuf::from("/dev/sda1"),
+                size: 0,
+                contents: BlockDeviceContents::Unknown,
+            },
+            "root-a".to_owned() => BlockDeviceInfo {
+                path: PathBuf::from("/dev/sda2"),
+                size: 900,
+                contents: BlockDeviceContents::Unknown,
+            },
+            "root-b".to_owned() => BlockDeviceInfo {
+                path: PathBuf::from("/dev/sda3"),
+                size: 9000,
+                contents: BlockDeviceContents::Unknown,
+            },
+        };
+        let result2 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
+        assert!(result2.is_ok());
+
+        // Test case #3: After CleanInstall, Trident performed a rollback into prov OS.
+        let result3 = validate_reboot(&host_status, PathBuf::from("/provOS/path"));
+        let error_message3 = result3.unwrap_err().root_cause().to_string();
+        assert_eq!(
+            error_message3,
+            "Reboot validation failed: Firmware rolled back into provisioning OS"
+        );
+
+        // Test case #4: After A/B update from A to B, Trident correctly booted into root-b.
+        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.servicing_state = ServicingState::DeploymentFinalized;
+        // Update root_device_path to /dev/sda2 and active volume to VolumeA
+        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda2"));
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        let result4 = validate_reboot(&host_status, PathBuf::from("/dev/sda3"));
+        assert!(result4.is_ok());
+
+        // Test case #5: After A/B update from A to B, Trident performed a rollback into root-a.
+        let result5 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
+        let error_message5 = result5.unwrap_err().root_cause().to_string();
+        assert_eq!(
+            error_message5,
+            "Reboot validation failed: Firmware rolled back into '/dev/sda2'"
+        );
+
+        // Test case #6: After A/B update from B to A, Trident correctly booted into root-a.
+        // Update root_device_path to /dev/sda3 and active volume to VolumeB
+        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda3"));
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        let result6 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
+        assert!(result6.is_ok());
+
+        // Test case #7: After A/B update from B to A, Trident performed a rollback into root-b.
+        let result7 = validate_reboot(&host_status, PathBuf::from("/dev/sda3"));
+        let error_message7 = result7.unwrap_err().root_cause().to_string();
+        assert_eq!(
+            error_message7,
+            "Reboot validation failed: Firmware rolled back into '/dev/sda3'"
+        );
+    }
+
+    /// Validates that validate_reboot() correctly detects rollback when root is a verity device.
+    #[functional_test]
+    fn test_validate_reboot_verity() {
+        let mut _host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_owned(),
+                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_owned(),
+                                size: PartitionSize::Fixed(100),
+                                partition_type: PartitionType::Esp,
+                            },
+                            Partition {
+                                id: "boot-a".to_owned(),
+                                size: PartitionSize::Fixed(200),
+                                partition_type: PartitionType::Xbootldr,
+                            },
+                            Partition {
+                                id: "root-a".to_owned(),
+                                size: PartitionSize::Fixed(900),
+                                partition_type: PartitionType::Root,
+                            },
+                            Partition {
+                                id: "root-hash-a".to_owned(),
+                                size: PartitionSize::Fixed(100),
+                                partition_type: PartitionType::RootVerity,
+                            },
+                            Partition {
+                                id: "trident-overlay-a".to_owned(),
+                                size: PartitionSize::Fixed(200),
+                                partition_type: PartitionType::LinuxGeneric,
+                            },
+                            Partition {
+                                id: "boot-b".to_owned(),
+                                size: PartitionSize::Fixed(200),
+                                partition_type: PartitionType::Xbootldr,
+                            },
+                            Partition {
+                                id: "root-b".to_owned(),
+                                size: PartitionSize::Fixed(9000),
+                                partition_type: PartitionType::Root,
+                            },
+                            Partition {
+                                id: "root-hash-b".to_owned(),
+                                size: PartitionSize::Fixed(100),
+                                partition_type: PartitionType::RootVerity,
+                            },
+                            Partition {
+                                id: "trident-overlay-b".to_owned(),
+                                size: PartitionSize::Fixed(200),
+                                partition_type: PartitionType::LinuxGeneric,
+                            },
+                            Partition {
+                                id: "trident".to_owned(),
+                                size: PartitionSize::Fixed(200),
+                                partition_type: PartitionType::LinuxGeneric,
+                            },
+                            Partition {
+                                id: "home".to_owned(),
+                                size: PartitionSize::Fixed(200),
+                                partition_type: PartitionType::LinuxGeneric,
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![
+                            AbVolumePair {
+                                id: "boot".to_string(),
+                                volume_a_id: "boot-a".to_string(),
+                                volume_b_id: "boot-b".to_string(),
+                            },
+                            AbVolumePair {
+                                id: "root".to_string(),
+                                volume_a_id: "root-a".to_string(),
+                                volume_b_id: "root-b".to_string(),
+                            },
+                            AbVolumePair {
+                                id: "root-hash".to_string(),
+                                volume_a_id: "root-hash-a".to_string(),
+                                volume_b_id: "root-hash-b".to_string(),
+                            },
+                            AbVolumePair {
+                                id: "trident-overlay".to_string(),
+                                volume_a_id: "trident-overlay-a".to_string(),
+                                volume_b_id: "trident-overlay-b".to_string(),
+                            },
+                        ],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: HostStorage {
+                block_devices: [].into(),
+                ..Default::default()
+            },
+            servicing_state: ServicingState::DeploymentFinalized,
+            servicing_type: Some(ServicingType::CleanInstall),
+            ..Default::default()
+        };
     }
 }

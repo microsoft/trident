@@ -100,14 +100,14 @@ storage:
 scripts:
   postProvision:
   - name: sample-provision-script
-    servicingType:
+    servicingTypeSelection:
     - clean-install
     - ab-update
     content: ls /mnt/newroot
     logFilePath: /var/log/sample-provision-script.log
   postConfigure:
   - name: sample-configure-script
-    servicingType:
+    servicingTypeSelection:
     - all
     content: /var/config-script.sh
     logFilePath: /var/log/sample-configure-script.log

@@ -138,7 +138,7 @@ hostConfiguration:
   scripts:
     postConfigure:
       - name: overlay
-        servicingType:
+        servicingTypeSelection:
           - clean-install
           - ab-update
         content: |

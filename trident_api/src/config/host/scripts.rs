@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::status::{ReconcileState, UpdateKind};
+use crate::status::ServicingType;
 
 use super::error::InvalidHostConfigurationError;
 
@@ -41,9 +41,9 @@ pub struct Script {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub name: String,
 
-    /// List of servicing_type to run the script with.
+    /// Selection of servicing types to run the script with.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub servicing_type: Vec<ServicingType>,
+    pub servicing_type_selection: Vec<ServicingTypeSelection>,
 
     /// Binary to run the script with. The default is `/bin/sh`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,57 +76,63 @@ pub struct Script {
 }
 
 impl Script {
-    /// Returns true if reconcile state is enabled for this script.
-    pub fn should_run(&self, reconcile_state: &ReconcileState) -> bool {
-        if self.servicing_type.contains(&ServicingType::All) {
+    /// Returns true if servicing type is enabled for this script.
+    pub fn should_run(&self, servicing_type: &ServicingType) -> bool {
+        if self
+            .servicing_type_selection
+            .contains(&ServicingTypeSelection::All)
+        {
             return true;
         }
-        match reconcile_state {
-            ReconcileState::CleanInstall => {
-                self.servicing_type.contains(&ServicingType::CleanInstall)
-            }
-            ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate) => {
-                self.servicing_type.contains(&ServicingType::NormalUpdate)
-            }
-            ReconcileState::UpdateInProgress(UpdateKind::AbUpdate) => {
-                self.servicing_type.contains(&ServicingType::AbUpdate)
-            }
-            ReconcileState::UpdateInProgress(UpdateKind::UpdateAndReboot) => self
-                .servicing_type
-                .contains(&ServicingType::UpdateAndReboot),
+        match servicing_type {
+            ServicingType::CleanInstall => self
+                .servicing_type_selection
+                .contains(&ServicingTypeSelection::CleanInstall),
+            ServicingType::NormalUpdate => self
+                .servicing_type_selection
+                .contains(&ServicingTypeSelection::NormalUpdate),
+            ServicingType::AbUpdate => self
+                .servicing_type_selection
+                .contains(&ServicingTypeSelection::AbUpdate),
+            ServicingType::UpdateAndReboot => self
+                .servicing_type_selection
+                .contains(&ServicingTypeSelection::UpdateAndReboot),
             _ => false,
         }
     }
 }
 
-/// The type of servicing performed by Trident that a script should be run for.
+/// The selection of servicing types performed by Trident that can be used for any user-facing API.
+/// Currently, it is used to allow the user to select when to run a custom Script.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-pub enum ServicingType {
+pub enum ServicingTypeSelection {
     /// # Clean Install
     ///
-    /// This is the first time Trident is installed on the host.
+    /// This selection only includes CleanInstall, a clean install of the runtime OS image when the
+    /// host is booted from the provisioning OS.
     CleanInstall,
 
     /// # Normal Update
     ///
-    /// This is a normal update that is not an AB update.
+    /// This selection only includes NormalUpdate, an update that requires pausing the workload.
     NormalUpdate,
 
-    /// # AB Update
+    /// # A/B Update
     ///
-    /// This is an AB update.
+    /// This selection only includes AbUpdate, an update that requires switching to a different
+    /// root partition and rebooting.
     AbUpdate,
 
     /// # Update and Reboot
     ///
-    /// This is an update that requires a reboot.
+    /// This selection only includes UpdateAndReboot, an update that requires rebooting the host.
     UpdateAndReboot,
 
     /// # All
     ///
-    /// This includes all servicing types.
+    /// This selection includes all servicing types.
     All,
 }
 
@@ -163,41 +169,41 @@ mod tests {
     fn test_should_run_true() {
         let script = Script {
             name: "test-script".into(),
-            servicing_type: vec![ServicingType::CleanInstall],
+            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
             content: Some("echo test".into()),
             environment_variables: HashMap::new(),
             log_file_path: None,
             path: None,
         };
-        assert!(script.should_run(&ReconcileState::CleanInstall));
+        assert!(script.should_run(&ServicingType::CleanInstall));
     }
 
     #[test]
     fn test_should_run_false() {
         let script = Script {
             name: "test-script".into(),
-            servicing_type: vec![ServicingType::CleanInstall],
+            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
             content: Some("echo test".into()),
             environment_variables: HashMap::new(),
             log_file_path: None,
             path: None,
         };
-        assert!(!script.should_run(&ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)));
+        assert!(!script.should_run(&ServicingType::NormalUpdate));
     }
 
     #[test]
     fn test_should_run_all() {
         let script = Script {
             name: "test-script".into(),
-            servicing_type: vec![ServicingType::All],
+            servicing_type_selection: vec![ServicingTypeSelection::All],
             interpreter: Some("/bin/bash".into()),
             content: Some("echo test".into()),
             environment_variables: HashMap::new(),
             log_file_path: None,
             path: None,
         };
-        assert!(script.should_run(&ReconcileState::UpdateInProgress(UpdateKind::NormalUpdate)));
+        assert!(script.should_run(&ServicingType::AbUpdate));
     }
 }

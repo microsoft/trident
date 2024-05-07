@@ -399,7 +399,10 @@ mod tests {
 
     use trident_api::{
         config::{Disk, Partition, PartitionSize, PartitionType, Storage},
-        status::{BlockDeviceContents, BlockDeviceInfo, ReconcileState, Storage as StorageStatus},
+        status::{
+            BlockDeviceContents, BlockDeviceInfo, ServicingState, ServicingType,
+            Storage as StorageStatus,
+        },
     };
 
     use super::*;
@@ -407,7 +410,8 @@ mod tests {
     #[test]
     fn test_get_device_paths() {
         let host_status = HostStatus {
-            reconcile_state: ReconcileState::CleanInstall,
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::StagingDeployment,
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {

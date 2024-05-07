@@ -8,7 +8,7 @@ use trident_api::{
 
 use crate::TRIDENT_TEMPORARY_DATASTORE_PATH;
 
-pub(crate) struct DataStore {
+pub struct DataStore {
     db: Option<sqlite::Connection>,
     host_status: HostStatus,
     temporary: bool,
@@ -61,17 +61,17 @@ impl DataStore {
         })
     }
 
-    pub(crate) fn switch_to_exec_root(
-        &mut self,
-        exec_root_path: &Path,
-    ) -> Result<(), TridentError> {
+    /// Switches the datastore to a new path, by appending the Trident temporary datastore path to
+    /// new_path.
+    pub(crate) fn switch_datastore_to_path(&mut self, new_path: &Path) -> Result<(), TridentError> {
         if !self.temporary {
             return Err(TridentError::new(InternalError::Internal(
-                "Attempted to switch to exec root on a persistent datastore",
+                "Attempted to switch to path {new_path} on a persistent datastore",
             )));
         }
 
-        let db_path = join_relative(exec_root_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
+        let db_path = join_relative(new_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
+        info!("Switching datastore to path {}", db_path.display());
         self.db = Some(
             sqlite::open(&db_path).structured(ManagementError::Datastore(
                 DatastoreError::DatastoreLoad(db_path),
@@ -216,7 +216,7 @@ mod functional_test {
     use pytest_gen::functional_test;
     use tempfile::TempDir;
     use trident_api::error::InternalError;
-    use trident_api::status::ReconcileState;
+    use trident_api::status::{ServicingState, ServicingType};
 
     #[functional_test]
     fn test_open_temporary_persist_reopen() {
@@ -228,26 +228,41 @@ mod functional_test {
         // Open and initialize a temporary datastore.
         {
             let mut datastore = DataStore::open_temporary().unwrap();
+            assert_eq!(datastore.host_status().servicing_type, None);
             assert_eq!(
-                datastore.host_status().reconcile_state,
-                ReconcileState::Ready
+                datastore.host_status().servicing_state,
+                ServicingState::NotProvisioned
             );
+
+            // Update servicing type and state for clean install
             datastore
-                .with_host_status(|s| s.reconcile_state = ReconcileState::CleanInstall)
+                .with_host_status(|s| s.servicing_type = Some(ServicingType::CleanInstall))
                 .unwrap();
+            datastore
+                .with_host_status(|s| s.servicing_state = ServicingState::StagingDeployment)
+                .unwrap();
+
             assert_eq!(
-                datastore.host_status().reconcile_state,
-                ReconcileState::CleanInstall
+                datastore.host_status().servicing_type,
+                Some(ServicingType::CleanInstall)
+            );
+            assert_eq!(
+                datastore.host_status().servicing_state,
+                ServicingState::StagingDeployment
             );
         }
 
-        // Re-open the temporary datastore and verify that the reconcile state was retained. Then
-        // rewrite the reconcile state and persist the datastore to a new location.
+        // Re-open the temporary datastore and verify that the servicing type and state were
+        // retained. Then re-rewrite and persist the datastore to a new location.
         {
             let mut datastore = DataStore::open_temporary().unwrap();
             assert_eq!(
-                datastore.host_status().reconcile_state,
-                ReconcileState::CleanInstall
+                datastore.host_status().servicing_type,
+                Some(ServicingType::CleanInstall)
+            );
+            assert_eq!(
+                datastore.host_status().servicing_state,
+                ServicingState::StagingDeployment
             );
 
             datastore
@@ -256,20 +271,20 @@ mod functional_test {
             datastore.persist(&datastore_path).unwrap();
         }
 
-        // Re-open the persisted datastore and verify that the reconcile state was retained.
+        // Re-open the persisted datastore and verify that the servicing state was retained.
         let mut datastore = DataStore::open(&datastore_path).unwrap();
         assert_eq!(datastore.host_status().boot_next.as_deref(), Some("test"));
 
         // Ensure that the datastore can be closed and re-opened.
         datastore.close();
         datastore
-            .with_host_status(|s| s.reconcile_state = ReconcileState::Ready)
+            .with_host_status(|s| s.servicing_state = ServicingState::Provisioned)
             .unwrap_err();
 
         let mut datastore = DataStore::open(&datastore_path).unwrap();
         assert_eq!(
-            datastore.host_status().reconcile_state,
-            ReconcileState::CleanInstall
+            datastore.host_status().servicing_state,
+            ServicingState::StagingDeployment
         );
 
         datastore

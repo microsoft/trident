@@ -237,7 +237,10 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
 
             active_volume_is_partition = is_partition(host_status, active_volume_id)
             active_volume_is_raid = is_raid(host_status, active_volume_id)
-            assert active_volume_is_partition or active_volume_is_raid
+            # active_volume_id should be either a partition or a software RAID array
+            assert (active_volume_is_partition and not active_volume_is_raid) or (
+                not active_volume_is_partition and active_volume_is_raid
+            )
 
             # 1. If active_volume_id is a partition, get full PARTUUID based on blkid output and create
             # root_device_path, non-canonicalized

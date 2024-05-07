@@ -11,7 +11,7 @@ use crate::config::InvalidHostConfigurationError;
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InitializationError {
-    #[error("Failed load local configuration")]
+    #[error("Failed to load local configuration")]
     LoadLocalConfig,
     #[error("Failed to parse local configuration")]
     ParseLocalConfig,
@@ -55,6 +55,8 @@ pub enum InvalidInputError {
     InvalidHostConfiguration(#[from] InvalidHostConfigurationError),
     #[error("Host configuration is incompatible with current install")]
     IncompatibleHostConfiguration,
+    #[error("Failed to initialize CleanInstall as host is provisioned")]
+    CleanInstallRequestedForProvisionedHost,
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
@@ -176,10 +178,16 @@ pub enum ManagementError {
     RebootTimeout,
     #[error("Failed to check mount point")]
     MountPointCheck,
-    #[error("Failed parse non-Unicode path '{path}'")]
+    #[error("Failed to parse non-Unicode path '{path}'")]
     PathIsNotUnicode { path: PathBuf },
     #[error("Failed to create directory '{dir}'")]
     CreateDirectory { dir: PathBuf },
+    #[error("Firmware performed a rollback. Clean install of runtime OS failed")]
+    RollbackCleanInstall,
+    #[error("Firmware performed a rollback. A/B update failed")]
+    RollbackAbUpdate,
+    #[error("Failed to fetch device path for root from /proc/mounts")]
+    RootMountPointDevPath,
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
@@ -196,6 +204,8 @@ pub enum InternalError {
     SerializeHostStatus,
     #[error("Failed to send host status")]
     SendHostStatus,
+    #[error("No datastore path provided in the local Trident config")]
+    GetDatastorePathFromLocalTridentConfig,
 }
 
 /// Each variant of `ErrorKind` corresponds to a different category of error. The categories are
@@ -219,9 +229,8 @@ pub enum ErrorKind {
     #[error(transparent)]
     UnsupportedConfiguration(#[from] UnsupportedConfigurationError),
 
-    /// Some step during provisioning or update failed. User investigation is required to determine
-    /// whether this is an issue with Trident or one of its dependencies, or whether the system is
-    /// misconfigured.
+    /// Some step during servicing failed. User investigation is required to determine whether this
+    /// is an issue with Trident or one of its dependencies, or whether the system is misconfigured.
     #[error(transparent)]
     Management(#[from] ManagementError),
 
@@ -436,7 +445,7 @@ mod tests {
                 assert!(matches!(m["cause"], Value::String(_)));
                 assert_eq!(
                     m["message"],
-                    Value::String("Failed load local configuration".into())
+                    Value::String("Failed to load local configuration".into())
                 );
                 match m["location"] {
                     Value::String(ref s) => assert!(s.contains("error.rs:")),

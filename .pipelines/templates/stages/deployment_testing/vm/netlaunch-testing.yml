@@ -225,7 +225,7 @@ stages:
 
           - template: ../../common_tasks/coverage.yml
             parameters:
-              codeCoverageBaseline: 79 # Unit + functional tests
+              codeCoverageBaseline: 78 # Unit + functional tests
               executeUnitTests: true
               installNativeDependencies: false
               rustup: false

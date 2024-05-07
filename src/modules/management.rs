@@ -10,7 +10,7 @@ use log::{debug, info};
 use trident_api::{
     config::{HostConfiguration, LocalConfigFile},
     constants::ROOT_MOUNT_POINT_PATH,
-    status::{HostStatus, ReconcileState},
+    status::{HostStatus, ServicingType},
 };
 
 use crate::{
@@ -28,7 +28,7 @@ impl Module for ManagementModule {
         &self,
         host_status: &HostStatus,
         host_config: &HostConfiguration,
-        _planned_update: ReconcileState,
+        _planned_servicing_type: ServicingType,
     ) -> Result<(), Error> {
         if host_config.trident.disable {
             return Ok(());
