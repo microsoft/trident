@@ -152,9 +152,9 @@ impl Trident {
     ) -> Result<Option<Box<HostConfiguration>>, TridentError> {
         config
             .get_host_configuration_source()
-            .structured(InvalidInputError::InvalidHostConfiguration(
-                InvalidHostConfigurationError::FailedToParse,
-            ))?
+            .structured(InvalidInputError::InvalidHostConfiguration {
+                inner: InvalidHostConfigurationError::FailedToParse,
+            })?
             .as_ref()
             .map(Self::load_host_config)
             .transpose()
@@ -211,9 +211,9 @@ impl Trident {
             HostConfigurationSource::KickstartFile(_)
             | HostConfigurationSource::KickstartEmbedded(_),
         ) = self.config.get_host_configuration_source().structured(
-            InvalidInputError::InvalidHostConfiguration(
-                InvalidHostConfigurationError::FailedToParse,
-            ),
+            InvalidInputError::InvalidHostConfiguration {
+                inner: InvalidHostConfigurationError::FailedToParse,
+            },
         )? {
             warn!("Cannot set up network early when using kickstart");
             return Ok(());
@@ -411,9 +411,9 @@ impl Trident {
             cmd.host_config.trident.phonehome = self.config.phonehome.clone();
         }
 
-        cmd.host_config
-            .validate()
-            .map_err(|e| TridentError::new(InvalidInputError::InvalidHostConfiguration(e)))?;
+        cmd.host_config.validate().map_err(|e| {
+            TridentError::new(InvalidInputError::InvalidHostConfiguration { inner: e })
+        })?;
 
         // Populate internal fields in host configuration.
         // This is needed because the external API and the internal logic use different fields.

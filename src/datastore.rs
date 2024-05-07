@@ -35,21 +35,25 @@ impl DataStore {
 
     pub(crate) fn open(path: &Path) -> Result<Self, TridentError> {
         info!("Loading datastore from {}", path.display());
-        let db = sqlite::open(path).structured(ManagementError::Datastore(
-            DatastoreError::DatastoreLoad(path.to_owned()),
-        ))?;
+        let db = sqlite::open(path).structured(ManagementError::Datastore {
+            inner: DatastoreError::DatastoreLoad(path.to_owned()),
+        })?;
         let mut host_status: HostStatus = db
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC LIMIT 1")
-            .structured(ManagementError::Datastore(DatastoreError::DatastoreInit))?
+            .structured(ManagementError::Datastore {
+                inner: DatastoreError::DatastoreInit,
+            })?
             .into_iter()
             .next()
             .transpose()
-            .structured(ManagementError::Datastore(DatastoreError::DatastoreInit))?
+            .structured(ManagementError::Datastore {
+                inner: DatastoreError::DatastoreInit,
+            })?
             .map(|row| serde_yaml::from_str(row.read::<&str, _>(0)))
             .transpose()
-            .structured(ManagementError::Datastore(
-                DatastoreError::DeserializeHostStatus,
-            ))?
+            .structured(ManagementError::Datastore {
+                inner: DatastoreError::DeserializeHostStatus,
+            })?
             .unwrap_or_default();
 
         host_status.spec.populate_internal();
@@ -73,9 +77,9 @@ impl DataStore {
         let db_path = join_relative(new_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
         info!("Switching datastore to path {}", db_path.display());
         self.db = Some(
-            sqlite::open(&db_path).structured(ManagementError::Datastore(
-                DatastoreError::DatastoreLoad(db_path),
-            ))?,
+            sqlite::open(&db_path).structured(ManagementError::Datastore {
+                inner: DatastoreError::DatastoreLoad(db_path),
+            })?,
         );
 
         Ok(())

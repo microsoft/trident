@@ -51,8 +51,10 @@ pub enum InvalidInputError {
     LoadKickstart { path: String },
     #[error("Failed to translate kickstart")]
     KickstartTranslation,
-    #[error("Invalid host configuration: {0}")]
-    InvalidHostConfiguration(#[from] InvalidHostConfigurationError),
+    #[error("Invalid host configuration: {inner}")]
+    InvalidHostConfiguration {
+        inner: InvalidHostConfigurationError,
+    },
     #[error("Host configuration is incompatible with current install")]
     IncompatibleHostConfiguration,
     #[error("Failed to initialize CleanInstall as host is provisioned")]
@@ -151,9 +153,15 @@ pub enum ManagementError {
     #[error("Failed to copy os modifier binary to host")]
     OSModifierCopy,
     #[error(transparent)]
-    Module(#[from] ModuleError),
+    Module {
+        #[from]
+        inner: ModuleError,
+    },
     #[error(transparent)]
-    Datastore(#[from] DatastoreError),
+    Datastore {
+        #[from]
+        inner: DatastoreError,
+    },
     #[error("Failed to list boot entries")]
     ListAndParseBootEntries,
     #[error("Failed to list and parse boot manager entries")]
@@ -454,6 +462,16 @@ mod tests {
             }
             _ => panic!("value isn't mapping"),
         }
+
+        let e = TridentError(Box::new(TridentErrorInner {
+            kind: ErrorKind::Management(ManagementError::Module {
+                inner: ModuleError::Configure { name: "storage" },
+            }),
+            location: Location::caller(),
+            source: None,
+            context: Vec::new(),
+        }));
+        serde_yaml::to_string(&e).unwrap();
     }
 
     #[test]
