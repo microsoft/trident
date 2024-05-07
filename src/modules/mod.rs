@@ -1,11 +1,15 @@
+#[cfg(feature = "grpc-dangerous")]
+use crate::grpc;
 use std::{
     fs::{self},
     path::{Path, PathBuf, MAIN_SEPARATOR},
     process::Command,
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
+#[cfg(feature = "grpc-dangerous")]
+use tokio::sync::mpsc;
 
 use anyhow::Error;
 use log::{debug, error, info};
@@ -184,7 +188,7 @@ pub(super) fn clean_install(
     }
 
     info!("Starting clean_install");
-    let clean_install_time = std::time::Instant::now();
+    let clean_install_start_time = Instant::now();
     let mut modules = MODULES.lock().unwrap();
 
     info!("Refreshing host status");
@@ -195,14 +199,7 @@ pub(super) fn clean_install(
     validate_host_config(&modules, state, host_config, ServicingType::CleanInstall)?;
 
     #[cfg(feature = "grpc-dangerous")]
-    if let Some(ref mut sender) = sender {
-        sender
-            .send(Ok(HostStatusState {
-                status: serde_yaml::to_string(state.host_status())
-                    .structured(InternalError::SerializeHostStatus)?,
-            }))
-            .structured(InternalError::SendHostStatus)?;
-    }
+    send_host_status_state(&mut sender, state)?;
 
     // TODO: If StageDeployment is not requested but we're in DeploymentStaged AND allowed
     // operations include FinalizeDeployment, finalize deployment and reboot.
@@ -211,7 +208,57 @@ pub(super) fn clean_install(
         return Ok(());
     }
 
-    // Otherwise, set servicing type to Cleaninstall; servicing state to StagingDeployment
+    // Otherwise, stage clean install
+    let (root_device_path, new_root_path, mounts) = stage_clean_install(
+        &mut modules,
+        state,
+        host_config,
+        #[cfg(feature = "grpc-dangerous")]
+        &mut sender,
+    )?;
+
+    // Switch datastore back to the old path
+    state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH))?;
+
+    // If FinalizeDeployment is not requested, close the datastore and unmount the new root
+    if !allowed_operations.contains(Operations::FinalizeDeployment) {
+        info!("Finalizing of clean install not requested, skipping finalizing and reboot");
+        state.close();
+
+        info!("Unmounting '{}'", new_root_path.display());
+        mount_root::unmount_new_root(mounts, &new_root_path)?;
+    } else {
+        finalize_clean_install(
+            state,
+            &root_device_path,
+            &new_root_path,
+            clean_install_start_time,
+            #[cfg(feature = "grpc-dangerous")]
+            &mut sender,
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Stages a clean install. Takes in 4 arguments:
+/// - modules: A mutable reference to the list of modules.
+/// - state: A mutable reference to the DataStore.
+/// - host_config: A reference to the HostConfiguration.
+/// - sender: A mutable reference to the gRPC sender.
+///
+/// On success, returns a tuple with 3 elements:
+/// - The current root device path.
+/// - The new root device path.
+/// - A vector of paths to custom mounts for the new root.
+fn stage_clean_install(
+    modules: &mut MutexGuard<Vec<Box<dyn Module>>>,
+    state: &mut DataStore,
+    host_config: &HostConfiguration,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
+        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
+    >,
+) -> Result<(PathBuf, PathBuf, Vec<PathBuf>), TridentError> {
     debug!("Setting host's servicing type to CleanInstall");
     debug!("Updating host's servicing state to StagingDeployment");
     state.with_host_status(|host_status| {
@@ -219,35 +266,16 @@ pub(super) fn clean_install(
         host_status.servicing_state = ServicingState::StagingDeployment;
     })?;
     #[cfg(feature = "grpc-dangerous")]
-    if let Some(ref mut sender) = sender {
-        sender
-            .send(Ok(HostStatusState {
-                status: serde_yaml::to_string(state.host_status())
-                    .structured(InternalError::SerializeHostStatus)?,
-            }))
-            .structured(InternalError::SendHostStatus)?;
-    }
+    send_host_status_state(sender, state)?;
 
     info!("Running prepare");
-    prepare(&mut modules, state)?;
+    prepare(modules, state)?;
 
     info!("Preparing storage to mount new root");
     let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
-    // Print out the contents of mounts
-    debug!("List of custom mounts after initializing the new root:");
-    for mount in &mounts {
-        debug!("Mount: {}", mount.display());
-    }
 
     info!("Running provision");
-    provision(&mut modules, state, host_config, &new_root_path)?;
-
-    let datastore_path = state
-        .host_status()
-        .trident
-        .datastore_path
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
+    provision(modules, state, host_config, &new_root_path)?;
 
     info!("Entering '{}' chroot", new_root_path.display());
     let chroot = chroot::enter_update_chroot(&new_root_path).message("Failed to enter chroot")?;
@@ -264,13 +292,7 @@ pub(super) fn clean_install(
             let use_overlay = !host_config.storage.internal_verity.is_empty();
 
             info!("Running configure");
-            configure(
-                &mut modules,
-                state,
-                host_config,
-                &exec_root_path,
-                use_overlay,
-            )?;
+            configure(modules, state, host_config, &exec_root_path, use_overlay)?;
 
             regenerate_initrd(use_overlay)?;
 
@@ -285,67 +307,62 @@ pub(super) fn clean_install(
                 host_status.servicing_state = ServicingState::DeploymentStaged
             })?;
             #[cfg(feature = "grpc-dangerous")]
-            if let Some(ref mut sender) = sender {
-                sender
-                    .send(Ok(HostStatusState {
-                        status: serde_yaml::to_string(state.host_status())
-                            .structured(InternalError::SerializeHostStatus)?,
-                    }))
-                    .structured(InternalError::SendHostStatus)?;
-            }
+            send_host_status_state(sender, state)?;
 
             Ok(())
         })
         .message("Failed to execute in chroot")?;
 
-    // Switch datastore back to the old path
-    state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH))?;
-
     let root_device_path =
         root_device_path.structured(InternalError::Internal("Failed to get root block device"))?;
+    debug!("Root device path: {:#?}", root_device_path);
 
-    info!("Root device path: {:#?}", root_device_path);
+    // Return the current root device path, new root device path, and the list of mounts
+    Ok((root_device_path, new_root_path, mounts))
+}
 
-    // If FinalizeDeployment is not requested, close the datastore and unmount the new root
-    if !allowed_operations.contains(Operations::FinalizeDeployment) {
-        info!("Finalizing of clean install not requested, skipping finalizing and reboot");
-        state.close();
+/// Finalizes a clean install. Takes in 5 arguments:
+/// - state: A mutable reference to the DataStore.
+/// - root_device_path: Current root device path.
+/// - new_root_path: New root device path.
+/// - clean_install_start_time: Instant when clean install started.
+/// - sender: A mutable reference to the gRPC sender.
+fn finalize_clean_install(
+    state: &mut DataStore,
+    root_device_path: &Path,
+    new_root_path: &Path,
+    clean_install_start_time: Instant,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
+        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
+    >,
+) -> Result<(), TridentError> {
+    debug!("Updating host's servicing state to FinalizingDeployment");
+    state.with_host_status(|host_status| {
+        host_status.servicing_state = ServicingState::FinalizingDeployment
+    })?;
+    #[cfg(feature = "grpc-dangerous")]
+    send_host_status_state(sender, state)?;
 
-        info!("Unmounting '{}'", new_root_path.display());
-        mount_root::unmount_new_root(mounts, &new_root_path)?;
-    } else {
-        // Otherwise, persist the datastore and finalize deployment
-        debug!("Updating host's servicing state to FinalizingDeployment");
-        state.with_host_status(|host_status| {
-            host_status.servicing_state = ServicingState::FinalizingDeployment
-        })?;
-        #[cfg(feature = "grpc-dangerous")]
-        if let Some(sender) = sender {
-            sender
-                .send(Ok(HostStatusState {
-                    status: serde_yaml::to_string(state.host_status())
-                        .structured(InternalError::SerializeHostStatus)?,
-                }))
-                .structured(InternalError::SendHostStatus)?;
-            drop(sender);
-        }
+    // Persist and close the datastore
+    let datastore_path = state
+        .host_status()
+        .trident
+        .datastore_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
+    state.persist(&path::join_relative(new_root_path, datastore_path))?;
+    state.close();
 
-        state.persist(&path::join_relative(&new_root_path, datastore_path))?;
-        state.close();
+    info!("Finalizing clean install");
+    state.try_with_host_status(|host_status| finalize_deployment(host_status, new_root_path))?;
 
-        info!("Finalizing clean install");
-        state
-            .try_with_host_status(|host_status| finalize_deployment(host_status, &new_root_path))?;
+    // Metric for clean install provisioning time in seconds
+    tracing::info!(
+        metric_name = "clean_install_provisioning_secs",
+        value = clean_install_start_time.elapsed().as_secs_f64()
+    );
 
-        // Metric for clean install provisioning time in seconds
-        tracing::info!(
-            metric_name = "clean_install_provisioning_secs",
-            value = clean_install_time.elapsed().as_secs_f64()
-        );
-
-        info!("Performing reboot");
-        state.try_with_host_status(|host_status| perform_reboot(&root_device_path, host_status))?;
-    }
+    state.try_with_host_status(|host_status| perform_reboot(root_device_path, host_status))?;
 
     Ok(())
 }
@@ -371,14 +388,7 @@ pub(super) fn update(
     refresh_host_status(&mut modules, state, false)?;
 
     #[cfg(feature = "grpc-dangerous")]
-    if let Some(ref mut sender) = sender {
-        sender
-            .send(Ok(HostStatusState {
-                status: serde_yaml::to_string(state.host_status())
-                    .structured(InternalError::SerializeHostStatus)?,
-            }))
-            .structured(InternalError::SendHostStatus)?;
-    }
+    send_host_status_state(&mut sender, state)?;
 
     info!("Determining servicing type");
     let servicing_type = modules
@@ -498,14 +508,7 @@ pub(super) fn update(
     };
 
     #[cfg(feature = "grpc-dangerous")]
-    if let Some(ref mut sender) = sender {
-        sender
-            .send(Ok(HostStatusState {
-                status: serde_yaml::to_string(state.host_status())
-                    .structured(InternalError::SerializeHostStatus)?,
-            }))
-            .structured(InternalError::SendHostStatus)?;
-    }
+    send_host_status_state(&mut sender, state)?;
 
     match servicing_type {
         ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
@@ -526,15 +529,7 @@ pub(super) fn update(
                 host_status.servicing_state = ServicingState::FinalizingDeployment
             })?;
             #[cfg(feature = "grpc-dangerous")]
-            if let Some(sender) = sender {
-                sender
-                    .send(Ok(HostStatusState {
-                        status: serde_yaml::to_string(state.host_status())
-                            .structured(InternalError::SerializeHostStatus)?,
-                    }))
-                    .structured(InternalError::SendHostStatus)?;
-                drop(sender);
-            }
+            send_host_status_state(&mut sender, state)?;
 
             info!("Closing datastore");
             state.close();
@@ -544,7 +539,6 @@ pub(super) fn update(
                 finalize_deployment(host_status, &new_root_path)
             })?;
 
-            info!("Performing reboot");
             state.try_with_host_status(|host_status| {
                 perform_reboot(&root_block_device_path, host_status)
             })?;
@@ -563,6 +557,22 @@ pub(super) fn update(
             unreachable!()
         }
     }
+}
+
+#[cfg(feature = "grpc-dangerous")]
+fn send_host_status_state(
+    sender: &mut Option<mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>>,
+    state: &DataStore,
+) -> Result<(), TridentError> {
+    if let Some(ref mut sender) = sender {
+        sender
+            .send(Ok(HostStatusState {
+                status: serde_yaml::to_string(state.host_status())
+                    .structured(InternalError::SerializeHostStatus)?,
+            }))
+            .structured(InternalError::SendHostStatus)?;
+    }
+    Ok(())
 }
 
 /// Using the / mount point, figure out what should be used as a root block device.
