@@ -280,12 +280,24 @@ impl Trident {
             }
         }
 
-        let host_status = self.handle_commands(receiver, &orchestrator)?;
+        let mut datastore = match self.config.datastore {
+            Some(ref datastore_path) => DataStore::open(datastore_path)?,
+            None => DataStore::open_temporary().message("Failed to open temporary datastore")?,
+        };
+
+        if let Err(e) = self.handle_commands(receiver, &orchestrator, &mut datastore) {
+            let error = serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
+            if let Err(e2) = datastore.with_host_status(|status| status.last_error = Some(error)) {
+                error!("Failed to record error in datastore: {e2:?}");
+            }
+
+            return Err(e);
+        }
 
         tracing::info!(metric_name = "clean_install_success", value = true,);
         if let Some(ref orchestrator) = orchestrator {
             orchestrator.report_success(Some(
-                serde_yaml::to_string(&host_status)
+                serde_yaml::to_string(&datastore.host_status())
                     .unwrap_or("Failed to serialize host status".into()),
             ))
         }
@@ -296,19 +308,23 @@ impl Trident {
         &mut self,
         mut receiver: mpsc::Receiver<HostUpdateCommand>,
         orchestrator: &Option<OrchestratorConnection>,
-    ) -> Result<HostStatus, TridentError> {
+        datastore: &mut DataStore,
+    ) -> Result<(), TridentError> {
         info!("Handling commands");
-        let mut datastore = match self.config.datastore {
-            Some(ref datastore_path) => DataStore::open(datastore_path)?,
-            None => DataStore::open_temporary().message("Failed to open temporary datastore")?,
-        };
+        debug!(
+            "Current servicing state: {:?}",
+            datastore.host_status().servicing_state
+        );
+
+        datastore.with_host_status(|host_status| {
+            if let Some(e) = host_status.last_error.take() {
+                warn!("Previously encountered error: {e:?}");
+                info!("Clearing last error");
+            }
+        })?;
 
         // If host's servicing state is DeploymentFinalized, need to verify if firmware correctly
         // booted into the updated runtime OS image.
-        debug!(
-            "Servicing state after reboot: {:?}",
-            datastore.host_status().servicing_state
-        );
         if datastore.host_status().servicing_state == ServicingState::DeploymentFinalized {
             // Get device path of root mount point
             let root_dev_path = match tabfile::get_device_path(
@@ -378,7 +394,7 @@ impl Trident {
             #[cfg(not(feature = "grpc-dangerous"))]
             let has_sender = false;
 
-            if let Err(e) = self.handle_command(&mut datastore, cmd) {
+            if let Err(e) = self.handle_command(datastore, cmd) {
                 if let Some(ref orchestrator) = *orchestrator {
                     orchestrator.report_error(
                         format!("{e:?}"),
@@ -398,7 +414,7 @@ impl Trident {
             }
         }
 
-        Ok(datastore.host_status().clone())
+        Ok(())
     }
 
     fn handle_command(

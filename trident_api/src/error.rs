@@ -210,6 +210,8 @@ pub enum InternalError {
     GetRootBlockDevice,
     #[error("Failed to serialize host status")]
     SerializeHostStatus,
+    #[error("Failed to serialize error")]
+    SerializeError,
     #[error("Failed to send host status")]
     SendHostStatus,
     #[error("No datastore path provided in the local Trident config")]
