@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sysinfo::System;
 use tracing::{
     field::{Field, Visit},
     Event, Subscriber,
@@ -16,10 +17,15 @@ use tracing::{
 
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
+use crate::TRIDENT_VERSION;
+
 /// The product uuid is used to identify the hardware that Trident is running on.
 const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
 lazy_static::lazy_static! {
     static ref ASSET_ID: String = read_product_uuid(PRODUCT_UUID_FILE.to_string());
+    static ref ADDITIONAL_FIELDS: BTreeMap<String, Value> = populate_additional_fields();
+    static ref PLATFORM_INFO: BTreeMap<String, Value> = populate_platform_info();
+    static ref OS_RELEASE: String = get_os_release();
 }
 
 #[derive(Default)]
@@ -61,6 +67,9 @@ struct TraceEntry {
     pub asset_id: String,
     pub metric_name: String,
     pub value: Value,
+    pub os_release: String,
+    pub additional_fields: BTreeMap<String, Value>,
+    pub platform_info: BTreeMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -171,6 +180,9 @@ where
                         v.as_str().unwrap_or_default().to_string()
                     }),
                 value: visitor.fields.get("value").cloned().unwrap_or_default(),
+                os_release: OS_RELEASE.to_string(),
+                additional_fields: ADDITIONAL_FIELDS.clone(),
+                platform_info: PLATFORM_INFO.clone(),
             };
 
             let body = match serde_json::to_string(&entry) {
@@ -197,6 +209,49 @@ fn read_product_uuid(filepath: String) -> String {
             "unknown".into()
         }
     }
+}
+
+fn populate_additional_fields() -> BTreeMap<String, Value> {
+    // TODO: Add more additional fields here as needed
+    let mut additional_fields = BTreeMap::new();
+    additional_fields.insert("trident_version".to_string(), json!(TRIDENT_VERSION));
+    additional_fields
+}
+
+/// Grab the os-release file and extract the VERSION field
+fn get_os_release() -> String {
+    match fs::read_to_string("/etc/os-release") {
+        Ok(os_release) => {
+            let version_line = os_release.lines().find(|line| line.starts_with("VERSION="));
+            version_line
+                .and_then(|line| line.split_once('='))
+                .map(|(_, version)| version.replace('\"', "").to_string())
+                .unwrap_or_else(|| {
+                    log::debug!("Failed to find VERSION in os-release");
+                    "unknown".into()
+                })
+        }
+        Err(_) => {
+            log::debug!("Failed to read os-release");
+            "unknown".into()
+        }
+    }
+}
+
+/// Populate platform info with the number of CPUs and the total memory
+fn populate_platform_info() -> BTreeMap<String, Value> {
+    let mut platform_info = BTreeMap::new();
+    let mut sys = System::new();
+    sys.refresh_all();
+    platform_info.insert("cpu".to_string(), json!(sys.cpus().len()));
+    platform_info.insert(
+        "memory".to_string(),
+        json!(format!(
+            "{:.3}",
+            sys.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0)
+        )),
+    );
+    platform_info
 }
 
 #[cfg(test)]

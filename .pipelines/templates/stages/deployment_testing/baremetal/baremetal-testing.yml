@@ -158,6 +158,18 @@ stages:
               sshKeyFile: $(SSH_KEY_FILE)
               installerIsoDirectory: $(System.ArtifactsDirectory)/trident-installer-testimage
 
+          - template: ../common_tasks/trident-metrics.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              deploymentEnvironment: bareMetal
+              tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
+              metricsFile: $(TRIDENT_SOURCE_DIR)/trident-metrics.json
+              ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+                kustoTableName: main
+              ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
+                kustoTableName: dev
+
           - ${{ if parameters.deleteIsoOnCleanup }}:
               - bash: |
                   set -xe

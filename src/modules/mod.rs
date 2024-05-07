@@ -184,6 +184,7 @@ pub(super) fn clean_install(
     }
 
     info!("Starting clean_install");
+    let clean_install_time = std::time::Instant::now();
     let mut modules = MODULES.lock().unwrap();
 
     info!("Refreshing host status");
@@ -335,6 +336,12 @@ pub(super) fn clean_install(
         info!("Finalizing clean install");
         state
             .try_with_host_status(|host_status| finalize_deployment(host_status, &new_root_path))?;
+
+        // Metric for clean install provisioning time in seconds
+        tracing::info!(
+            metric_name = "clean_install_provisioning_secs",
+            value = clean_install_time.elapsed().as_secs_f64()
+        );
 
         info!("Performing reboot");
         state.try_with_host_status(|host_status| perform_reboot(&root_device_path, host_status))?;

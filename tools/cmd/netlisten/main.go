@@ -38,6 +38,9 @@ import (
 
 var listen_port int16
 
+// Filepath to store metrics from Trident
+var TRIDENT_METRICS_PATH = "trident-metrics.json"
+
 var rootCmd = &cobra.Command{
 	Use:   "netlisten",
 	Short: "Trident Phonehome Server",
@@ -61,6 +64,8 @@ var rootCmd = &cobra.Command{
 		phonehome.SetupPhoneHomeServer(done, "", false)
 		// Set up listening for logstream
 		phonehome.SetupLogstream()
+		// Set up listening for tracestream
+		phonehome.SetupTraceStream(TRIDENT_METRICS_PATH)
 
 		// Start the HTTP server
 		go server.Serve(listen)

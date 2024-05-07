@@ -68,6 +68,11 @@ resources:
       name: platform-pipelines
       ref: refs/heads/main
 
+    - repository: afo-telemetry
+      name: afo-telemetry
+      type: git
+      ref : refs/heads/main
+
 
 extends:
   template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates

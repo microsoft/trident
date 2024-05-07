@@ -1,0 +1,58 @@
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: "."
+
+  - name: tridentConfigPath
+    type: string
+  
+  - name: deploymentEnvironment
+    type: string
+  
+  - name: tridentConfigurationName
+    type: string
+  
+  - name: metricsFile
+    type: string
+
+  - name: kustoDatabaseName
+    type: string
+    default: "trident"
+  
+  - name: kustoTableName
+    type: string
+  
+  - name: kustoTableMapping
+    type: string
+    default: "trident_mapping"
+
+steps:
+  - bash: |
+      set -eux
+      python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/process_trident_metrics.py --trident-config ${{ parameters.tridentConfigPath }}/trident-config.yaml --metrics-file ${{ parameters.metricsFile }}
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    condition: succeededOrFailed()
+    displayName: "Process Trident metrics"
+    env:
+      TRIDENT_CONFIGURATION_NAME: ${{ parameters.tridentConfigurationName }}
+      SOURCE_BRANCH_NAME: $(Build.SourceBranchName)
+      MACHINE_TYPE: ${{ parameters.deploymentEnvironment }}
+
+  - task: AzureCLI@2.236.0
+    displayName: Azure CLI
+    inputs:
+      azureSubscription: bmp_perf_poc_service_connection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az --version
+        az account show
+        azToken=$(az account get-access-token --resource "https://api.kusto.windows.net" | jq -r '.accessToken')
+        echo "##vso[task.setvariable variable=AZ_TOKEN]$azToken" 
+
+  - template: pipelines/templates/upload-metrics-step.yml@afo-telemetry
+    parameters:
+      kustoDatabaseName: ${{ parameters.kustoDatabaseName }}
+      kustoTableName: ${{ parameters.kustoTableName }}
+      kustoTableMapping: ${{ parameters.kustoTableMapping }}
+      metricsFile: ${{ parameters.metricsFile }}

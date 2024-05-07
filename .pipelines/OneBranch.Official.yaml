@@ -53,6 +53,11 @@ resources:
       type: git
       name: test-images
 
+    - repository: afo-telemetry
+      name: afo-telemetry
+      type: git
+      ref : refs/heads/main
+
 extends:
   template: v2/OneBranch.Official.CrossPlat.yml@templates
   parameters:

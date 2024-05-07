@@ -5,14 +5,18 @@ import (
 	"net/http"
 	"os"
 
+	uuid "github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
 type TraceEntry struct {
-	Timestamp  string      `json:"timestamp"`
-	AssetId    string      `json:"asset_id"`
-	MetricName string      `json:"metric_name"`
-	Value      interface{} `json:"value"`
+	Timestamp        string                 `json:"timestamp"`
+	AssetId          string                 `json:"asset_id"`
+	MetricName       string                 `json:"metric_name"`
+	Value            interface{}            `json:"value"`
+	AdditionalFields map[string]interface{} `json:"additional_fields"`
+	OsRelease        string                 `json:"os_release"`
+	PlatformInfo     map[string]interface{} `json:"platform_info"`
 }
 
 func SetupTraceStream(filepath string) {
@@ -25,6 +29,10 @@ func SetupTraceStream(filepath string) {
 			log.WithError(err).Fatalf("failed to create trace file")
 		}
 	}
+
+	// Generate a UUID to group events coming in from the same trident run
+	traceID := uuid.New().String()
+
 	http.HandleFunc("/tracestream", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(201)
 		w.Write([]byte("OK"))
@@ -36,6 +44,8 @@ func SetupTraceStream(filepath string) {
 			return
 		}
 
+		traceEntry.AdditionalFields["trace_id"] = traceID
+
 		// write the trace data as json
 		traceData, err := json.Marshal(traceEntry)
 		if err != nil {
@@ -45,10 +55,13 @@ func SetupTraceStream(filepath string) {
 
 		log.WithFields(
 			log.Fields{
-				"timestamp":   traceEntry.Timestamp,
-				"asset_id":    traceEntry.AssetId,
-				"metric_name": traceEntry.MetricName,
-				"value":       traceEntry.Value,
+				"timestamp":       traceEntry.Timestamp,
+				"asset_id":        traceEntry.AssetId,
+				"metric_name":     traceEntry.MetricName,
+				"value":           traceEntry.Value,
+				"additional_info": traceEntry.AdditionalFields,
+				"platform_info":   traceEntry.PlatformInfo,
+				"os_release":      traceEntry.OsRelease,
 			},
 		).Debug("Recieved a tracing event")
 

@@ -90,6 +90,7 @@ stages:
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \
                   --logstream $IGNORE_FAILURE_FLAG \
+                  --trace-file trident-metrics.json \
               2>&1 | tee -a ./deployment.log
 
               mkdir -p $(ob_outputDirectory)
@@ -150,6 +151,18 @@ stages:
             workingDirectory: $(tridentSourceDirectory)
             condition: succeededOrFailed()
             displayName: "Publish deployment.log"
+
+          - template: ../common_tasks/trident-metrics.yml
+            parameters:
+              tridentSourceDirectory: $(tridentSourceDirectory)
+              tridentConfigPath: $(tridentConfigPath)
+              deploymentEnvironment: virtualMachine
+              tridentConfigurationName: $(tridentConfigurationName)
+              metricsFile: $(tridentSourceDirectory)/trident-metrics.json
+              ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+                kustoTableName: main
+              ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
+                kustoTableName: dev
 
           - template: ../common_tasks/e2e-test-run.yml
             parameters:

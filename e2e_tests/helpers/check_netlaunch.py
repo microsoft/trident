@@ -17,6 +17,7 @@ template = r"""
 .*(")?Trident\s+started\s+\(connection\s+attempt\s+\d+\)(")?\s+state=started\n
 (.*\n)*
 .*(")?Trident\s+started\s+\(connection\s+attempt\s+\d+\)(")?\s+state=started\n
+(.*\n)*
 .*(")?Host\s+Status:\\nspec:\\n.*\\n"\n
 .*(")?provisioning\s+succeeded(")?\s+state=succeeded\s*
 """

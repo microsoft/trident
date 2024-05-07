@@ -282,13 +282,13 @@ impl Trident {
 
         let host_status = self.handle_commands(receiver, &orchestrator)?;
 
+        tracing::info!(metric_name = "clean_install_success", value = true,);
         if let Some(ref orchestrator) = orchestrator {
             orchestrator.report_success(Some(
                 serde_yaml::to_string(&host_status)
                     .unwrap_or("Failed to serialize host status".into()),
             ))
         }
-
         Ok(())
     }
 
