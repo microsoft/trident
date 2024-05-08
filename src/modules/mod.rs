@@ -245,7 +245,7 @@ pub(super) fn clean_install(
 /// - modules: A mutable reference to the list of modules.
 /// - state: A mutable reference to the DataStore.
 /// - host_config: A reference to the HostConfiguration.
-/// - sender: A mutable reference to the gRPC sender.
+/// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns a tuple with 3 elements:
 /// - The current root device path.
@@ -326,7 +326,7 @@ fn stage_clean_install(
 /// - root_device_path: Current root device path.
 /// - new_root_path: New root device path.
 /// - clean_install_start_time: Instant when clean install started.
-/// - sender: A mutable reference to the gRPC sender.
+/// - sender: Optional mutable reference to the gRPC sender.
 fn finalize_clean_install(
     state: &mut DataStore,
     root_device_path: &Path,
@@ -426,6 +426,76 @@ pub(super) fn update(
         return Ok(());
     }
 
+    // Otherwise, stage update
+    let (new_root_path, mounts) = stage_update(
+        &mut modules,
+        state,
+        host_config,
+        servicing_type,
+        #[cfg(feature = "grpc-dangerous")]
+        &mut sender,
+    )?;
+
+    match servicing_type {
+        ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
+            let root_device_path = get_root_block_device_path(state.host_status())
+                .structured(InternalError::GetRootBlockDevice)?;
+
+            if !allowed_operations.contains(Operations::FinalizeDeployment) {
+                info!("Finalizing of update not requested, skipping reboot");
+                if let Some(mounts) = mounts {
+                    mount_root::unmount_new_root(mounts, &new_root_path)?;
+                }
+                return Ok(());
+            }
+
+            // Otherwise, finalize update
+            finalize_update(
+                state,
+                &root_device_path,
+                &new_root_path,
+                #[cfg(feature = "grpc-dangerous")]
+                &mut sender,
+            )?;
+
+            Ok(())
+        }
+        ServicingType::NormalUpdate | ServicingType::HotPatch => {
+            state.with_host_status(|host_status| {
+                host_status.servicing_type = None;
+                host_status.servicing_state = ServicingState::Provisioned;
+            })?;
+            #[cfg(feature = "grpc-dangerous")]
+            send_host_status_state(&mut sender, state)?;
+
+            info!("Update complete");
+            Ok(())
+        }
+        ServicingType::Incompatible | ServicingType::CleanInstall => {
+            unreachable!()
+        }
+    }
+}
+
+/// Stages an update. Takes in 5 arguments:
+/// - modules: A mutable reference to the list of modules.
+/// - state: A mutable reference to the DataStore.
+/// - host_config: Updated host configuration.
+/// - servicing_type: Servicing type of the update that Trident will now stage, based on host config.
+/// - sender: Optional mutable reference to the gRPC sender.
+///
+/// On success, returns a tuple with 2 elements:
+/// - New root device path.
+/// - Vector of paths to custom mounts for the new root. This is not null only for A/B updates.
+fn stage_update(
+    modules: &mut [Box<dyn Module>],
+    state: &mut DataStore,
+    host_config: &HostConfiguration,
+    servicing_type: ServicingType,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
+        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
+    >,
+) -> Result<(PathBuf, Option<Vec<PathBuf>>), TridentError> {
     match servicing_type {
         ServicingType::HotPatch => info!("Performing hot patch update"),
         ServicingType::NormalUpdate => info!("Performing normal update"),
@@ -443,8 +513,7 @@ pub(super) fn update(
         }
     }
 
-    // Set servicing type to the selected servicing type; servicing state to StagingDeployment.
-    // Update spec by copying the current host config.
+    // Update host status and copy new host config to the spec field
     debug!("Setting host's servicing type to {:?}", servicing_type);
     debug!("Updating host's servicing state to StagingDeployment");
     state.with_host_status(|host_status| {
@@ -452,16 +521,18 @@ pub(super) fn update(
         host_status.servicing_state = ServicingState::StagingDeployment;
         host_status.spec = host_config.clone();
     })?;
+    #[cfg(feature = "grpc-dangerous")]
+    send_host_status_state(sender, state)?;
 
     info!("Running prepare");
-    prepare(&mut modules, state)?;
+    prepare(modules, state)?;
 
     let (new_root_path, mounts) = if let ServicingType::AbUpdate = servicing_type {
         info!("Preparing storage to mount new root");
         let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
         info!("Running provision");
-        provision(&mut modules, state, host_config, &new_root_path)?;
+        provision(modules, state, host_config, &new_root_path)?;
 
         // If verity is present, it means that we are currently doing root
         // verity. For now, we can assume that /etc is readonly, so we setup
@@ -473,29 +544,17 @@ pub(super) fn update(
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
-                configure(
-                    &mut modules,
-                    state,
-                    host_config,
-                    &exec_root_path,
-                    use_overlay,
-                )?;
+                configure(modules, state, host_config, &exec_root_path, use_overlay)?;
 
                 regenerate_initrd(use_overlay)
             })
             .message("Failed to execute in chroot")?;
 
-        // At this point, deployment has been staged, so update servicing state
-        debug!("Updating host's servicing state to DeploymentStaged");
-        state.with_host_status(|host_status| {
-            host_status.servicing_state = ServicingState::DeploymentStaged
-        })?;
-
         (new_root_path, Some(mounts))
     } else {
         info!("Running configure");
         configure(
-            &mut modules,
+            modules,
             state,
             host_config,
             Path::new(ROOT_MOUNT_POINT_PATH),
@@ -507,56 +566,46 @@ pub(super) fn update(
         (PathBuf::from(ROOT_MOUNT_POINT_PATH), None)
     };
 
+    // At this point, deployment has been staged, so update servicing state
+    debug!("Updating host's servicing state to DeploymentStaged");
+    state.with_host_status(|host_status| {
+        host_status.servicing_state = ServicingState::DeploymentStaged
+    })?;
     #[cfg(feature = "grpc-dangerous")]
-    send_host_status_state(&mut sender, state)?;
+    send_host_status_state(sender, state)?;
 
-    match servicing_type {
-        ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
-            let root_block_device_path = get_root_block_device_path(state.host_status())
-                .structured(InternalError::GetRootBlockDevice)?;
+    Ok((new_root_path, mounts))
+}
 
-            if !allowed_operations.contains(Operations::FinalizeDeployment) {
-                info!("Finalizing of update not requested, skipping reboot");
-                if let Some(mounts) = mounts {
-                    mount_root::unmount_new_root(mounts, &new_root_path)?;
-                }
-                return Ok(());
-            }
+/// Finalizes an update. Takes in 4 arguments:
+/// - state: A mutable reference to the DataStore.
+/// - root_device_path: Current root device path.
+/// - new_root_path: New root device path.
+/// - sender: Optional mutable reference to the gRPC sender.
+fn finalize_update(
+    state: &mut DataStore,
+    root_device_path: &Path,
+    new_root_path: &Path,
+    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
+        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
+    >,
+) -> Result<(), TridentError> {
+    debug!("Updating host's servicing state to FinalizingDeployment");
+    state.with_host_status(|host_status| {
+        host_status.servicing_state = ServicingState::FinalizingDeployment
+    })?;
+    #[cfg(feature = "grpc-dangerous")]
+    send_host_status_state(sender, state)?;
 
-            // Otherwise, finalize deployment
-            debug!("Updating host's servicing state to FinalizingDeployment");
-            state.with_host_status(|host_status| {
-                host_status.servicing_state = ServicingState::FinalizingDeployment
-            })?;
-            #[cfg(feature = "grpc-dangerous")]
-            send_host_status_state(&mut sender, state)?;
+    info!("Closing datastore");
+    state.close();
 
-            info!("Closing datastore");
-            state.close();
+    info!("Finalizing update");
+    state.try_with_host_status(|host_status| finalize_deployment(host_status, new_root_path))?;
 
-            info!("Finalizing update");
-            state.try_with_host_status(|host_status| {
-                finalize_deployment(host_status, &new_root_path)
-            })?;
+    state.try_with_host_status(|host_status| perform_reboot(root_device_path, host_status))?;
 
-            state.try_with_host_status(|host_status| {
-                perform_reboot(&root_block_device_path, host_status)
-            })?;
-
-            Ok(())
-        }
-        ServicingType::NormalUpdate | ServicingType::HotPatch => {
-            state.with_host_status(|host_status| {
-                host_status.servicing_type = None;
-                host_status.servicing_state = ServicingState::Provisioned;
-            })?;
-            info!("Update complete");
-            Ok(())
-        }
-        ServicingType::Incompatible | ServicingType::CleanInstall => {
-            unreachable!()
-        }
-    }
+    Ok(())
 }
 
 #[cfg(feature = "grpc-dangerous")]
