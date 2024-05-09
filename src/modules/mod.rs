@@ -2,7 +2,7 @@
 use crate::grpc;
 use std::{
     fs::{self},
-    path::{Path, PathBuf, MAIN_SEPARATOR},
+    path::{Path, PathBuf},
     process::Command,
     sync::{Mutex, MutexGuard},
     thread,
@@ -15,6 +15,7 @@ use anyhow::Error;
 use log::{debug, error, info};
 
 use sys_mount::{Mount, MountFlags};
+
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
@@ -41,7 +42,7 @@ use crate::{
         boot::BootModule, hooks::HooksModule, management::ManagementModule, network::NetworkModule,
         osconfig::OsConfigModule, storage::StorageModule,
     },
-    HostUpdateCommand, TRIDENT_DATASTORE_PATH,
+    HostUpdateCommand,
 };
 
 #[cfg(feature = "grpc-dangerous")]
@@ -351,10 +352,9 @@ fn finalize_clean_install(
         .clone()
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
     state.persist(&path::join_relative(new_root_path, datastore_path))?;
-    state.close();
 
     info!("Finalizing clean install");
-    state.try_with_host_status(|host_status| finalize_deployment(host_status, new_root_path))?;
+    finalize_deployment(state, new_root_path)?;
 
     // Metric for clean install provisioning time in seconds
     tracing::info!(
@@ -362,7 +362,7 @@ fn finalize_clean_install(
         value = clean_install_start_time.elapsed().as_secs_f64()
     );
 
-    state.try_with_host_status(|host_status| perform_reboot(root_device_path, host_status))?;
+    perform_reboot(root_device_path)?;
 
     Ok(())
 }
@@ -594,16 +594,14 @@ fn finalize_update(
     state.with_host_status(|host_status| {
         host_status.servicing_state = ServicingState::FinalizingDeployment
     })?;
+
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    info!("Closing datastore");
-    state.close();
-
     info!("Finalizing update");
-    state.try_with_host_status(|host_status| finalize_deployment(host_status, new_root_path))?;
+    finalize_deployment(state, new_root_path)?;
 
-    state.try_with_host_status(|host_status| perform_reboot(root_device_path, host_status))?;
+    perform_reboot(root_device_path)?;
 
     Ok(())
 }
@@ -963,10 +961,7 @@ pub fn reboot() -> Result<(), TridentError> {
 }
 
 /// Triggers a reboot. Currently, this defaults to firmware reboot.
-fn perform_reboot(
-    _root_block_device_path: &Path,
-    _host_status: &HostStatus,
-) -> Result<(), TridentError> {
+fn perform_reboot(_root_block_device_path: &Path) -> Result<(), TridentError> {
     // TODO(6721): Re-enable kexec
     // let root_block_device_path = root_block_device_path
     //     .to_str()
@@ -990,30 +985,11 @@ fn perform_reboot(
 /// Finalizes deployment by setting bootNext and updating host status. Changes host's servicing state
 /// to DeploymentFinalized.
 fn finalize_deployment(
-    host_status: &mut HostStatus,
+    datastore: &mut DataStore,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
     // TODO: Delete boot entries. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/
-
-    info!("Re-opening datastore");
-    let datastore_path = host_status
-        .trident
-        .datastore_path
-        .as_deref()
-        .unwrap_or(Path::new(TRIDENT_DATASTORE_PATH));
-
-    let new_datastore_path = new_root_path.join(
-        datastore_path
-            .to_str()
-            .unwrap()
-            .trim_start_matches(MAIN_SEPARATOR),
-    );
-    debug!(
-        "Opening datastore in finalize_deployment at path: {}",
-        new_datastore_path.display()
-    );
-    let mut datastore = DataStore::open(&new_datastore_path)?;
 
     info!("Setting boot entries");
     datastore.try_with_host_status(|host_status| {
