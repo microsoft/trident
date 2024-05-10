@@ -1,0 +1,11 @@
+graph TD
+A[NotProvisioned] --> |Received a valid HC & StageDeployment in AllowedOperations|B[StagingDeployment]
+B --> |Staging succeeded|C[DeploymentStaged]
+B --> |Staging failed|B
+C --> |Received FinalizeDeployment in AO|E[FinalizingDeployment]
+C --> |Received a new valid HC & StageDeployment in AO|B
+E --> |Finalizing failed|B
+E --> |Finalizing succeeded|F[DeploymentFinalized]
+F --> |Reboot into runtime OS image succeeded|G[Provisioned]
+F --> |Rollback into provisioning OS occurred|D[CleanInstallFailed]
+D --> |Received a new valid HC & StageDeployment in AO|B
