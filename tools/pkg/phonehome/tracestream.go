@@ -63,7 +63,7 @@ func SetupTraceStream(filepath string) {
 				"platform_info":   traceEntry.PlatformInfo,
 				"os_release":      traceEntry.OsRelease,
 			},
-		).Debug("Recieved a tracing event")
+		).Debug("Received a tracing event")
 
 		// if no file is provided, don't write the trace data to a file
 		if traceFile == nil {

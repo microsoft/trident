@@ -80,7 +80,7 @@ trait Module: Send {
         true
     }
 
-    // // TODO: Implement dependencies
+    // TODO: Implement dependencies
     // fn dependencies(&self) -> &'static [&'static str];
 
     /// Refresh the host status.
@@ -156,6 +156,7 @@ lazy_static::lazy_static! {
 pub(super) fn clean_install(
     command: HostUpdateCommand,
     state: &mut DataStore,
+    clean_install_start_time: Option<Instant>,
 ) -> Result<(), TridentError> {
     let HostUpdateCommand {
         ref host_config,
@@ -165,11 +166,6 @@ pub(super) fn clean_install(
     } = command;
 
     {
-        // TODO: Currently, we're assuming we are either in servicing state NotProvisioned,
-        // servicing type None OR servicing state CleanInstallFailed, servicing type None at this
-        // point. In the follow up PR, we can also be in servicing type CleanInstall, servicing
-        // state DeploymentStaged here.
-
         // TODO: needs to be refactored once we have a way to preserve existing partitions
         // This is a safety check so that nobody accidentally formats their dev
         // machine.
@@ -189,7 +185,6 @@ pub(super) fn clean_install(
     }
 
     info!("Starting clean_install");
-    let clean_install_start_time = Instant::now();
     let mut modules = MODULES.lock().unwrap();
 
     info!("Refreshing host status");
@@ -198,19 +193,11 @@ pub(super) fn clean_install(
     info!("Validating host configuration against system state");
     // Since we're in clean_install(), the only possible servicing type is CleanInstall.
     validate_host_config(&modules, state, host_config, ServicingType::CleanInstall)?;
-
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(&mut sender, state)?;
 
-    // TODO: If StageDeployment is not requested but we're in DeploymentStaged AND allowed
-    // operations include FinalizeDeployment, finalize deployment and reboot.
-    if !allowed_operations.contains(Operations::StageDeployment) {
-        info!("Staging of clean install not requested, skipping staging");
-        return Ok(());
-    }
-
-    // Otherwise, stage clean install
-    let (root_device_path, new_root_path, mounts) = stage_clean_install(
+    // Stage clean install
+    let (new_root_path, mounts) = stage_clean_install(
         &mut modules,
         state,
         host_config,
@@ -221,7 +208,6 @@ pub(super) fn clean_install(
     // Switch datastore back to the old path
     state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH))?;
 
-    // If FinalizeDeployment is not requested, close the datastore and unmount the new root
     if !allowed_operations.contains(Operations::FinalizeDeployment) {
         info!("Finalizing of clean install not requested, skipping finalizing and reboot");
         state.close();
@@ -231,7 +217,6 @@ pub(super) fn clean_install(
     } else {
         finalize_clean_install(
             state,
-            &root_device_path,
             &new_root_path,
             clean_install_start_time,
             #[cfg(feature = "grpc-dangerous")]
@@ -259,12 +244,13 @@ fn stage_clean_install(
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
-) -> Result<(PathBuf, PathBuf, Vec<PathBuf>), TridentError> {
+) -> Result<(PathBuf, Vec<PathBuf>), TridentError> {
     debug!("Setting host's servicing type to CleanInstall");
     debug!("Updating host's servicing state to StagingDeployment");
     state.with_host_status(|host_status| {
         host_status.servicing_type = Some(ServicingType::CleanInstall);
         host_status.servicing_state = ServicingState::StagingDeployment;
+        host_status.spec = host_config.clone();
     })?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
@@ -318,21 +304,19 @@ fn stage_clean_install(
         root_device_path.structured(InternalError::Internal("Failed to get root block device"))?;
     debug!("Root device path: {:#?}", root_device_path);
 
-    // Return the current root device path, new root device path, and the list of mounts
-    Ok((root_device_path, new_root_path, mounts))
+    // Return the new root device path and the list of mounts
+    Ok((new_root_path, mounts))
 }
 
-/// Finalizes a clean install. Takes in 5 arguments:
+/// Finalizes a clean install. Takes in 4 arguments:
 /// - state: A mutable reference to the DataStore.
-/// - root_device_path: Current root device path.
 /// - new_root_path: New root device path.
-/// - clean_install_start_time: Instant when clean install started.
+/// - clean_install_start_time: Optional instant when clean install started.
 /// - sender: Optional mutable reference to the gRPC sender.
-fn finalize_clean_install(
+pub(super) fn finalize_clean_install(
     state: &mut DataStore,
-    root_device_path: &Path,
     new_root_path: &Path,
-    clean_install_start_time: Instant,
+    clean_install_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
@@ -357,12 +341,14 @@ fn finalize_clean_install(
     finalize_deployment(state, new_root_path)?;
 
     // Metric for clean install provisioning time in seconds
-    tracing::info!(
-        metric_name = "clean_install_provisioning_secs",
-        value = clean_install_start_time.elapsed().as_secs_f64()
-    );
+    if let Some(start_time) = clean_install_start_time {
+        tracing::info!(
+            metric_name = "clean_install_provisioning_secs",
+            value = start_time.elapsed().as_secs_f64()
+        );
+    }
 
-    perform_reboot(root_device_path)?;
+    perform_reboot()?;
 
     Ok(())
 }
@@ -379,10 +365,6 @@ pub(super) fn update(
     } = command;
 
     let mut modules = MODULES.lock().unwrap();
-
-    // TODO: Currently, we're assuming we're in servicing state Provisioned, servicing type None OR
-    // servicing state AbUpdateFailed, servicing type AbUpdate at this point. In the follow up PR,
-    // we can also be in servicing state DeploymentStaged, servicing type AbUpdate here.
 
     info!("Refreshing host status");
     refresh_host_status(&mut modules, state, false)?;
@@ -418,15 +400,7 @@ pub(super) fn update(
     info!("Validating host configuration against system state");
     validate_host_config(&modules, state, host_config, servicing_type)?;
 
-    // TODO: In the follow up PR, we'll check if current servicing state is DeploymentStaged,
-    // servicing type is AbUpdate, and allowed operations include FinalizeDeployment. If that's the
-    // case, finalize the A/B update and reboot.
-    if !allowed_operations.contains(Operations::StageDeployment) {
-        info!("Staging of update not requested, skipping staging");
-        return Ok(());
-    }
-
-    // Otherwise, stage update
+    // Stage update
     let (new_root_path, mounts) = stage_update(
         &mut modules,
         state,
@@ -438,9 +412,6 @@ pub(super) fn update(
 
     match servicing_type {
         ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
-            let root_device_path = get_root_block_device_path(state.host_status())
-                .structured(InternalError::GetRootBlockDevice)?;
-
             if !allowed_operations.contains(Operations::FinalizeDeployment) {
                 info!("Finalizing of update not requested, skipping reboot");
                 if let Some(mounts) = mounts {
@@ -452,7 +423,6 @@ pub(super) fn update(
             // Otherwise, finalize update
             finalize_update(
                 state,
-                &root_device_path,
                 &new_root_path,
                 #[cfg(feature = "grpc-dangerous")]
                 &mut sender,
@@ -577,14 +547,12 @@ fn stage_update(
     Ok((new_root_path, mounts))
 }
 
-/// Finalizes an update. Takes in 4 arguments:
+/// Finalizes an update. Takes in 3 arguments:
 /// - state: A mutable reference to the DataStore.
-/// - root_device_path: Current root device path.
 /// - new_root_path: New root device path.
 /// - sender: Optional mutable reference to the gRPC sender.
-fn finalize_update(
+pub(super) fn finalize_update(
     state: &mut DataStore,
-    root_device_path: &Path,
     new_root_path: &Path,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -601,7 +569,7 @@ fn finalize_update(
     info!("Finalizing update");
     finalize_deployment(state, new_root_path)?;
 
-    perform_reboot(root_device_path)?;
+    perform_reboot()?;
 
     Ok(())
 }
@@ -623,7 +591,7 @@ fn send_host_status_state(
 }
 
 /// Using the / mount point, figure out what should be used as a root block device.
-fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
+pub(super) fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
     host_status
         .spec
         .storage
@@ -849,20 +817,31 @@ fn provision(
     Ok(())
 }
 
-fn initialize_new_root(
-    state: &mut DataStore,
-    host_config: &HostConfiguration,
-) -> Result<(PathBuf, PathBuf, Vec<PathBuf>), TridentError> {
+/// Returns the path to the new root.
+pub(super) fn get_new_root_path() -> PathBuf {
     let mut new_root_path = Path::new(UPDATE_ROOT_PATH);
     if mount::ensure_mount_directory(new_root_path).is_err() {
         new_root_path = Path::new(UPDATE_ROOT_FALLBACK_PATH);
     }
+    new_root_path.to_owned()
+}
 
-    state.try_with_host_status(|host_status| {
-        storage::initialize_block_devices(host_status, host_config, new_root_path)
-    })?;
+pub(super) fn initialize_new_root(
+    state: &mut DataStore,
+    host_config: &HostConfiguration,
+) -> Result<(PathBuf, PathBuf, Vec<PathBuf>), TridentError> {
+    let new_root_path = get_new_root_path();
+
+    // Only initialize block devices if currently staging a deployment
+    if state.host_status().servicing_state == ServicingState::StagingDeployment {
+        state.try_with_host_status(|host_status| {
+            storage::initialize_block_devices(host_status, host_config, &new_root_path)
+        })?;
+    }
+
+    // Mount new root while staging a new deployment OR while finalizing a previous deployment
     let mut mounts = state.try_with_host_status(|host_status| {
-        mount_root::mount_new_root(host_status, new_root_path)
+        mount_root::mount_new_root(host_status, &new_root_path)
     })?;
 
     let tmp_mount = Mount::builder()
@@ -874,7 +853,7 @@ fn initialize_new_root(
     mounts.push(tmp_mount.target_path().to_owned());
 
     let exec_root_path = Path::new(EXEC_ROOT_PATH);
-    let full_exec_root_path = join_relative(new_root_path, exec_root_path);
+    let full_exec_root_path = join_relative(&new_root_path, exec_root_path);
     std::fs::create_dir_all(&full_exec_root_path)
         .structured(ManagementError::CreateExecrootDirectory)?;
     mount::bind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
@@ -961,7 +940,7 @@ pub fn reboot() -> Result<(), TridentError> {
 }
 
 /// Triggers a reboot. Currently, this defaults to firmware reboot.
-fn perform_reboot(_root_block_device_path: &Path) -> Result<(), TridentError> {
+fn perform_reboot() -> Result<(), TridentError> {
     // TODO(6721): Re-enable kexec
     // let root_block_device_path = root_block_device_path
     //     .to_str()

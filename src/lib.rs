@@ -1,5 +1,8 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error, info, warn};
@@ -312,6 +315,10 @@ impl Trident {
     ) -> Result<(), TridentError> {
         info!("Handling commands");
         debug!(
+            "Current servicing type: {:?}",
+            datastore.host_status().servicing_type
+        );
+        debug!(
             "Current servicing state: {:?}",
             datastore.host_status().servicing_state
         );
@@ -371,7 +378,6 @@ impl Trident {
             info!("Setting boot order");
             bootentries::set_boot_order(datastore_path)?;
 
-            // Update host's servicing state to Provisioned; servicing type to None
             if datastore.host_status().servicing_type == Some(ServicingType::CleanInstall) {
                 info!(
                     "Clean install of runtime OS succeeded. Setting servicing state to Provisioned"
@@ -442,29 +448,129 @@ impl Trident {
         // container and /host is not mounted.
         container::is_running_in_container().message("Running in container check failed")?;
 
-        // If datastore is persistent, need to do A/B update, unless current servicing state is
-        // CleanInstallFailed: then, we need to re-try clean install.
-        if datastore.is_persistent()
-            && datastore.host_status().servicing_state != ServicingState::CleanInstallFailed
-        {
-            modules::update(cmd, datastore).message("Failed to update host")
-        } else {
-            // If HS.spec in the datastore is different from the new HC, delete the old HS and
-            // replace it with a new version, with the new HC.
+        debug!("Allowed operations: {:?}", cmd.allowed_operations);
+        // If Trident loads from a persistent datastore, firmware is booted from runtime OS
+        if datastore.is_persistent() {
+            // If HS.spec in the datastore is different from the new HC, need to both stage and
+            // finalize the update, regardless of state
             if datastore.host_status().spec != cmd.host_config {
-                datastore.with_host_status(|status| {
-                    *status = HostStatus {
-                        spec: cmd.host_config.clone(),
-                        servicing_state: ServicingState::DeploymentStaged,
-                        servicing_type: Some(ServicingType::CleanInstall),
-                        ..Default::default()
+                debug!("Host config has been updated");
+                // If allowed operations include StageDeployment, start update
+                if cmd.allowed_operations.contains(Operations::StageDeployment) {
+                    modules::update(cmd, datastore).message("Failed to run update()")
+                } else {
+                    warn!("Host config has been updated but allowed operations do not include StageDeployment. Add StageDeployment and re-run");
+                    Ok(())
+                }
+            } else {
+                debug!("Host config has not been updated");
+
+                // If host config has not been updated and a rollback occurred with this HC
+                // before, ask the user to update HC and re-run
+                if datastore.host_status().servicing_state == ServicingState::AbUpdateFailed {
+                    error!("Rollback occurred when Trident attempted A/B update with current host config. Update host config and re-run");
+                    return Err(TridentError::new(ManagementError::RollbackAbUpdate));
+                }
+
+                // If an update has been previously staged, only need to finalize the update
+                if datastore.host_status().servicing_state == ServicingState::DeploymentStaged {
+                    debug!("There is an update staged on the host");
+                    if cmd
+                        .allowed_operations
+                        .contains(Operations::FinalizeDeployment)
+                    {
+                        let new_root_path = modules::get_new_root_path();
+
+                        modules::finalize_update(
+                            datastore,
+                            &new_root_path,
+                            #[cfg(feature = "grpc-dangerous")]
+                            &mut cmd.sender,
+                        )
+                        .message("Failed to run finalize_update()")
+                    } else {
+                        debug!("Allowed operations do not include FinalizeDeployment. Skipping finalizing of update");
+                        Ok(())
                     }
-                })?;
+                } else {
+                    // If servicing state is Provisioned, need to refresh host status. If servicing
+                    // state is StagingDeployment OR FinalizingDeployment, need to re-do update.
+                    //
+                    // State cannot be NotProvisioned or DeploymentFinalized here; DeploymentStaged
+                    // and AbUpdateFailed were addressed above
+                    modules::update(cmd, datastore).message("Failed to run update()")
+                }
             }
-            // If HS.spec matches the new HS, run clean_install() without updating the datastore.
-            // TODO: When implementing the StageDeployment/FinalizeDeployment split, will only call
-            // finalize_clean_install() here.
-            modules::clean_install(cmd, datastore).message("Failed to do clean install on the host")
+        } else {
+            // If datastore is temporary, firmware booted from prov OS, so can only do clean
+            // install.
+            //
+            // If HS.spec in the datastore is different from the new HC, need to both stage and
+            // finalize the clean install
+            if datastore.host_status().spec != cmd.host_config {
+                debug!("Host config has been updated");
+
+                if cmd.allowed_operations.contains(Operations::StageDeployment) {
+                    // Only record start time if Trident is executing a "full" clean install, which
+                    // includes both staging and finalizing
+                    let clean_install_start_time = cmd
+                        .allowed_operations
+                        .contains(Operations::FinalizeDeployment)
+                        .then(Instant::now);
+                    modules::clean_install(cmd, datastore, clean_install_start_time)
+                        .message("Failed to run clean_install()")
+                } else {
+                    warn!("Host config has been updated but allowed operations do not include StageDeployment. Add StageDeployment and re-run");
+                    Ok(())
+                }
+            } else {
+                debug!("Host config has not been updated");
+
+                // If host config has not been updated but a rollback occurred before, return
+                if datastore.host_status().servicing_state == ServicingState::CleanInstallFailed {
+                    error!("Rollback occurred when Trident attempted clean install with current host config. Update host config and re-run");
+                    return Err(TridentError::new(ManagementError::RollbackCleanInstall));
+                }
+
+                // If HS.spec matches the new HS, only need to finalize the clean install
+                if datastore.host_status().servicing_state == ServicingState::DeploymentStaged {
+                    debug!("There is a clean install staged on the host");
+                    if cmd
+                        .allowed_operations
+                        .contains(Operations::FinalizeDeployment)
+                    {
+                        // Remount new root and custom mounts if we're finalizing a clean install
+                        let (new_root_path, _, _) =
+                            modules::initialize_new_root(datastore, &cmd.host_config)
+                                .message("Failed to remount new root")?;
+
+                        modules::finalize_clean_install(
+                            datastore,
+                            &new_root_path,
+                            None,
+                            #[cfg(feature = "grpc-dangerous")]
+                            &mut cmd.sender,
+                        )
+                        .message("Failed to run finalize_clean_install()")
+                    } else {
+                        debug!("Allowed operations do not include FinalizeDeployment. Skipping finalizing of clean install");
+                        Ok(())
+                    }
+                } else {
+                    // If servicing state is StagingDeployment OR FinalizingDeployment, need to
+                    // re-do update.
+                    //
+                    // State cannot be NotProvisioned, Provisioned, AbUpdateFailed, or
+                    // DeploymentFinalized here; DeploymentStaged and CleanInstallFailed were
+                    // addressed above.
+                    let clean_install_start_time = cmd
+                        .allowed_operations
+                        .contains(Operations::FinalizeDeployment)
+                        .then(Instant::now);
+                    modules::clean_install(cmd, datastore, clean_install_start_time)
+                        .message("Failed to run clean_install()")
+                }
+            }
         }
     }
 
@@ -635,7 +741,7 @@ mod functional_test {
 
     /// Validates that validate_reboot() correctly detects rollback when root is a partition.
     #[functional_test]
-    fn test_validate_reboot_partition() {
+    fn test_validate_reboot() {
         let mut host_status = HostStatus {
             spec: HostConfiguration {
                 storage: Storage {
@@ -768,111 +874,5 @@ mod functional_test {
             error_message7,
             "Reboot validation failed: Firmware rolled back into '/dev/sda3'"
         );
-    }
-
-    /// Validates that validate_reboot() correctly detects rollback when root is a verity device.
-    #[functional_test]
-    fn test_validate_reboot_verity() {
-        let mut _host_status = HostStatus {
-            spec: HostConfiguration {
-                storage: Storage {
-                    disks: vec![Disk {
-                        id: "os".to_owned(),
-                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        partitions: vec![
-                            Partition {
-                                id: "esp".to_owned(),
-                                size: PartitionSize::Fixed(100),
-                                partition_type: PartitionType::Esp,
-                            },
-                            Partition {
-                                id: "boot-a".to_owned(),
-                                size: PartitionSize::Fixed(200),
-                                partition_type: PartitionType::Xbootldr,
-                            },
-                            Partition {
-                                id: "root-a".to_owned(),
-                                size: PartitionSize::Fixed(900),
-                                partition_type: PartitionType::Root,
-                            },
-                            Partition {
-                                id: "root-hash-a".to_owned(),
-                                size: PartitionSize::Fixed(100),
-                                partition_type: PartitionType::RootVerity,
-                            },
-                            Partition {
-                                id: "trident-overlay-a".to_owned(),
-                                size: PartitionSize::Fixed(200),
-                                partition_type: PartitionType::LinuxGeneric,
-                            },
-                            Partition {
-                                id: "boot-b".to_owned(),
-                                size: PartitionSize::Fixed(200),
-                                partition_type: PartitionType::Xbootldr,
-                            },
-                            Partition {
-                                id: "root-b".to_owned(),
-                                size: PartitionSize::Fixed(9000),
-                                partition_type: PartitionType::Root,
-                            },
-                            Partition {
-                                id: "root-hash-b".to_owned(),
-                                size: PartitionSize::Fixed(100),
-                                partition_type: PartitionType::RootVerity,
-                            },
-                            Partition {
-                                id: "trident-overlay-b".to_owned(),
-                                size: PartitionSize::Fixed(200),
-                                partition_type: PartitionType::LinuxGeneric,
-                            },
-                            Partition {
-                                id: "trident".to_owned(),
-                                size: PartitionSize::Fixed(200),
-                                partition_type: PartitionType::LinuxGeneric,
-                            },
-                            Partition {
-                                id: "home".to_owned(),
-                                size: PartitionSize::Fixed(200),
-                                partition_type: PartitionType::LinuxGeneric,
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    ab_update: Some(AbUpdate {
-                        volume_pairs: vec![
-                            AbVolumePair {
-                                id: "boot".to_string(),
-                                volume_a_id: "boot-a".to_string(),
-                                volume_b_id: "boot-b".to_string(),
-                            },
-                            AbVolumePair {
-                                id: "root".to_string(),
-                                volume_a_id: "root-a".to_string(),
-                                volume_b_id: "root-b".to_string(),
-                            },
-                            AbVolumePair {
-                                id: "root-hash".to_string(),
-                                volume_a_id: "root-hash-a".to_string(),
-                                volume_b_id: "root-hash-b".to_string(),
-                            },
-                            AbVolumePair {
-                                id: "trident-overlay".to_string(),
-                                volume_a_id: "trident-overlay-a".to_string(),
-                                volume_b_id: "trident-overlay-b".to_string(),
-                            },
-                        ],
-                    }),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: HostStorage {
-                block_devices: [].into(),
-                ..Default::default()
-            },
-            servicing_state: ServicingState::DeploymentFinalized,
-            servicing_type: Some(ServicingType::CleanInstall),
-            ..Default::default()
-        };
     }
 }
