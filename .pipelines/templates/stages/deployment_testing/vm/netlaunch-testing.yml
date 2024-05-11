@@ -159,6 +159,7 @@ stages:
               deploymentEnvironment: virtualMachine
               tridentConfigurationName: $(tridentConfigurationName)
               metricsFile: $(tridentSourceDirectory)/trident-metrics.json
+              runOnFailure: true
               ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: main
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:

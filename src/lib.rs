@@ -1,8 +1,5 @@
 use std::fs;
-use std::{
-    path::{Path, PathBuf},
-    time::Instant,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error, info, warn};
@@ -297,7 +294,6 @@ impl Trident {
             return Err(e);
         }
 
-        tracing::info!(metric_name = "clean_install_success", value = true,);
         if let Some(ref orchestrator) = orchestrator {
             orchestrator.report_success(Some(
                 serde_yaml::to_string(&datastore.host_status())
@@ -382,6 +378,7 @@ impl Trident {
                 info!(
                     "Clean install of runtime OS succeeded. Setting servicing state to Provisioned"
                 );
+                tracing::info!(metric_name = "clean_install_success", value = true);
             } else {
                 info!("A/B update succeeded. Setting servicing state to Provisioned");
             }
@@ -511,14 +508,7 @@ impl Trident {
                 debug!("Host config has been updated");
 
                 if cmd.allowed_operations.contains(Operations::StageDeployment) {
-                    // Only record start time if Trident is executing a "full" clean install, which
-                    // includes both staging and finalizing
-                    let clean_install_start_time = cmd
-                        .allowed_operations
-                        .contains(Operations::FinalizeDeployment)
-                        .then(Instant::now);
-                    modules::clean_install(cmd, datastore, clean_install_start_time)
-                        .message("Failed to run clean_install()")
+                    modules::clean_install(cmd, datastore).message("Failed to run clean_install()")
                 } else {
                     warn!("Host config has been updated but allowed operations do not include StageDeployment. Add StageDeployment and re-run");
                     Ok(())
@@ -563,12 +553,7 @@ impl Trident {
                     // State cannot be NotProvisioned, Provisioned, AbUpdateFailed, or
                     // DeploymentFinalized here; DeploymentStaged and CleanInstallFailed were
                     // addressed above.
-                    let clean_install_start_time = cmd
-                        .allowed_operations
-                        .contains(Operations::FinalizeDeployment)
-                        .then(Instant::now);
-                    modules::clean_install(cmd, datastore, clean_install_start_time)
-                        .message("Failed to run clean_install()")
+                    modules::clean_install(cmd, datastore).message("Failed to run clean_install()")
                 }
             }
         }

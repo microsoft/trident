@@ -26,20 +26,27 @@ parameters:
     type: string
     default: "trident_mapping"
 
+  - name: runOnFailure
+    type: boolean
+    default: false
+
 steps:
   - bash: |
       set -eux
       python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/process_trident_metrics.py --trident-config ${{ parameters.tridentConfigPath }}/trident-config.yaml --metrics-file ${{ parameters.metricsFile }}
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    condition: succeededOrFailed()
     displayName: "Process Trident metrics"
+    condition: or(succeeded(), and(succeededOrFailed(), eq('${{ parameters.runOnFailure }}', true)))
     env:
       TRIDENT_CONFIGURATION_NAME: ${{ parameters.tridentConfigurationName }}
       SOURCE_BRANCH_NAME: $(Build.SourceBranchName)
       MACHINE_TYPE: ${{ parameters.deploymentEnvironment }}
+      PIPELINE_NAME: $(Build.DefinitionName)
 
   - task: AzureCLI@2.236.0
     displayName: Azure CLI
+    condition: or(succeeded(), and(succeededOrFailed(), eq('${{ parameters.runOnFailure }}', true)))
+    retryCountOnTaskFailure: 3
     inputs:
       azureSubscription: bmp_perf_poc_service_connection
       scriptType: bash
@@ -56,3 +63,4 @@ steps:
       kustoTableName: ${{ parameters.kustoTableName }}
       kustoTableMapping: ${{ parameters.kustoTableMapping }}
       metricsFile: ${{ parameters.metricsFile }}
+      runOnFailure: ${{ parameters.runOnFailure }}

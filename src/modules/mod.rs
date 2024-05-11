@@ -156,7 +156,6 @@ lazy_static::lazy_static! {
 pub(super) fn clean_install(
     command: HostUpdateCommand,
     state: &mut DataStore,
-    clean_install_start_time: Option<Instant>,
 ) -> Result<(), TridentError> {
     let HostUpdateCommand {
         ref host_config,
@@ -185,6 +184,8 @@ pub(super) fn clean_install(
     }
 
     info!("Starting clean_install");
+    tracing::info!(metric_name = "clean_install_start", value = true);
+    let clean_install_start_time = Instant::now();
     let mut modules = MODULES.lock().unwrap();
 
     info!("Refreshing host status");
@@ -218,7 +219,7 @@ pub(super) fn clean_install(
         finalize_clean_install(
             state,
             &new_root_path,
-            clean_install_start_time,
+            Some(clean_install_start_time),
             #[cfg(feature = "grpc-dangerous")]
             &mut sender,
         )?;

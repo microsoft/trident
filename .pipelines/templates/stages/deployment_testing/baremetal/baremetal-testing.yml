@@ -165,6 +165,7 @@ stages:
               deploymentEnvironment: bareMetal
               tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
               metricsFile: $(TRIDENT_SOURCE_DIR)/trident-metrics.json
+              runOnFailure: true
               ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: main
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:

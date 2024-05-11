@@ -31,6 +31,9 @@ def process_metrics(metrics_file, fields_status):
     with open(metrics_file, "r") as file:
         for line in file:
             metric = json.loads(line)
+            metric["platform_info"]["pipeline_name"] = os.environ.get(
+                "PIPELINE_NAME", "Unknown"
+            )
             metric["platform_info"]["pipeline_build_id"] = os.environ.get(
                 "BUILD_BUILDID", "Unknown"
             )
