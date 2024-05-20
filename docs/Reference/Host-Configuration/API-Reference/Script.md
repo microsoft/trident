@@ -18,9 +18,9 @@ Name of the script.
 | -------------- | -------- |
 | Type           | `string` |
 
-### `servicingTypeSelection` **<span style="color:orange;">(required)</span>**
+### `runOn` **<span style="color:orange;">(required)</span>**
 
-Selection of servicing types to run the script with.
+List of servicing types that the script should run on.
 
 | Characteristic | Value   |
 | -------------- | ------- |

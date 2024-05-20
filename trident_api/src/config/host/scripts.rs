@@ -41,9 +41,9 @@ pub struct Script {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub name: String,
 
-    /// Selection of servicing types to run the script with.
+    /// List of servicing types that the script should run on.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub servicing_type_selection: Vec<ServicingTypeSelection>,
+    pub run_on: Vec<ServicingTypeSelection>,
 
     /// Binary to run the script with. The default is `/bin/sh`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,24 +78,19 @@ pub struct Script {
 impl Script {
     /// Returns true if servicing type is enabled for this script.
     pub fn should_run(&self, servicing_type: &ServicingType) -> bool {
-        if self
-            .servicing_type_selection
-            .contains(&ServicingTypeSelection::All)
-        {
+        if self.run_on.contains(&ServicingTypeSelection::All) {
             return true;
         }
         match servicing_type {
-            ServicingType::CleanInstall => self
-                .servicing_type_selection
-                .contains(&ServicingTypeSelection::CleanInstall),
-            ServicingType::NormalUpdate => self
-                .servicing_type_selection
-                .contains(&ServicingTypeSelection::NormalUpdate),
-            ServicingType::AbUpdate => self
-                .servicing_type_selection
-                .contains(&ServicingTypeSelection::AbUpdate),
+            ServicingType::CleanInstall => {
+                self.run_on.contains(&ServicingTypeSelection::CleanInstall)
+            }
+            ServicingType::NormalUpdate => {
+                self.run_on.contains(&ServicingTypeSelection::NormalUpdate)
+            }
+            ServicingType::AbUpdate => self.run_on.contains(&ServicingTypeSelection::AbUpdate),
             ServicingType::UpdateAndReboot => self
-                .servicing_type_selection
+                .run_on
                 .contains(&ServicingTypeSelection::UpdateAndReboot),
             _ => false,
         }
@@ -169,7 +164,7 @@ mod tests {
     fn test_should_run_true() {
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
             content: Some("echo test".into()),
             environment_variables: HashMap::new(),
@@ -183,7 +178,7 @@ mod tests {
     fn test_should_run_false() {
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
             content: Some("echo test".into()),
             environment_variables: HashMap::new(),
@@ -197,7 +192,7 @@ mod tests {
     fn test_should_run_all() {
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::All],
+            run_on: vec![ServicingTypeSelection::All],
             interpreter: Some("/bin/bash".into()),
             content: Some("echo test".into()),
             environment_variables: HashMap::new(),

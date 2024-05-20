@@ -725,7 +725,7 @@
       "type": "object",
       "required": [
         "name",
-        "servicingTypeSelection"
+        "runOn"
       ],
       "properties": {
         "content": {
@@ -759,8 +759,8 @@
           "type": "string",
           "nullable": true
         },
-        "servicingTypeSelection": {
-          "description": "Selection of servicing types to run the script with.",
+        "runOn": {
+          "description": "List of servicing types that the script should run on.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ServicingTypeSelection"

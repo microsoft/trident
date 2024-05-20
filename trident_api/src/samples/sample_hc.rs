@@ -180,14 +180,14 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
             scripts: Scripts {
                 post_provision: vec![Script {
                     name: "sample-provision-script".into(),
-                    servicing_type_selection: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                    run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
                     content: Some("ls /mnt/newroot".into()),
                     log_file_path: Some("/var/log/sample-provision-script.log".into()),
                     ..Default::default()
                 }],
                 post_configure: vec![Script {
                     name: "sample-configure-script".into(),
-                    servicing_type_selection: vec![ServicingTypeSelection::All],
+                    run_on: vec![ServicingTypeSelection::All],
                     content: Some("/var/config-script.sh".into()),
                     environment_variables: HashMap::from([(
                         "SAMPLE_VARIABLE".into(),
@@ -385,14 +385,14 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
             scripts: Scripts {
                 post_provision: vec![Script {
                     name: "sample-provision-script".into(),
-                    servicing_type_selection: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                    run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
                     content: Some("ls /mnt/newroot".into()),
                     log_file_path: Some("/var/log/sample-provision-script.log".into()),
                     ..Default::default()
                 }],
                 post_configure: vec![Script {
                     name: "sample-configure-script".into(),
-                    servicing_type_selection: vec![ServicingTypeSelection::All],
+                    run_on: vec![ServicingTypeSelection::All],
                     content: Some("/var/config-script.sh".into()),
                     environment_variables: HashMap::from([(
                         "SAMPLE_VARIABLE".into(),
@@ -616,7 +616,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
             scripts: Scripts {
                 post_configure: vec![Script {
                     name: "rw-overlay".into(),
-                    servicing_type_selection: vec![ServicingTypeSelection::All],
+                    run_on: vec![ServicingTypeSelection::All],
                     content: Some("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
                     ..Default::default()
                 }],
@@ -1145,7 +1145,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
             scripts: Scripts {
                 post_configure: vec![Script {
                     name: "rw-overlay".into(),
-                    servicing_type_selection: vec![ServicingTypeSelection::All],
+                    run_on: vec![ServicingTypeSelection::All],
                     content: Some("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
                     ..Default::default()
                 }],
@@ -1312,7 +1312,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 scripts: Scripts {
                     post_configure: vec![Script {
                         name: "wheel".into(),
-                        servicing_type_selection: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                        run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
                         content: Some(
                             "echo \"%wheel ALL=(ALL:ALL) NOPASSWD: ALL\" > /etc/sudoers.d/wheel"
                                 .into(),
@@ -1460,7 +1460,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 scripts: Scripts {
                     post_configure: vec![Script {
                         name: "wheel".into(),
-                        servicing_type_selection: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                        run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
                         content: Some(
                             "echo \"%wheel ALL=(ALL:ALL) NOPASSWD: ALL\" > /etc/sudoers.d/wheel"
                                 .into(),

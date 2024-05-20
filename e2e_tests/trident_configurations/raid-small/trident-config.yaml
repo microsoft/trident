@@ -115,14 +115,14 @@ hostConfiguration:
   scripts:
     postProvision:
       - name: sample-provision-script
-        servicingTypeSelection:
+        runOn:
           - clean-install
           - ab-update
         content: echo 'Post provision!'
         logFilePath: /var/log/sample-provision-script.log
     postConfigure:
       - name: testing-privilege
-        servicingTypeSelection:
+        runOn:
           - clean-install
           - ab-update
         content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user

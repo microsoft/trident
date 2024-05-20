@@ -326,7 +326,7 @@ mod tests {
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
             content: Some("mkdir $TEST_DIR".into()),
             environment_variables,
@@ -358,7 +358,7 @@ mod tests {
             scripts: Scripts {
                 post_provision: vec![Script {
                     name: "test-script".into(),
-                    servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+                    run_on: vec![ServicingTypeSelection::CleanInstall],
                     interpreter: Some("/bin/bash".into()),
                     path: Some(script_path),
                     environment_variables: hashmap! {
@@ -410,7 +410,7 @@ mod tests {
 
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
             content: Some("cat nonexisting.txt".into()),
             ..Default::default()
@@ -434,7 +434,7 @@ mod tests {
 
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::CleanInstall],
+            run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/nonexisting".into()),
             content: Some("mkdir test-directory".into()),
             ..Default::default()
@@ -463,7 +463,7 @@ mod tests {
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
             name: "test-script".into(),
-            servicing_type_selection: vec![ServicingTypeSelection::NormalUpdate],
+            run_on: vec![ServicingTypeSelection::NormalUpdate],
             interpreter: Some("/bin/bash".into()),
             content: Some("mkdir $TEST_DIR_NAME".into()),
             environment_variables,
