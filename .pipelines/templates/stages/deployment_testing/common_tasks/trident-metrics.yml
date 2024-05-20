@@ -43,20 +43,6 @@ steps:
       MACHINE_TYPE: ${{ parameters.deploymentEnvironment }}
       PIPELINE_NAME: $(Build.DefinitionName)
 
-  - task: AzureCLI@2.236.0
-    displayName: Azure CLI
-    condition: or(succeeded(), and(succeededOrFailed(), eq('${{ parameters.runOnFailure }}', true)))
-    retryCountOnTaskFailure: 3
-    inputs:
-      azureSubscription: bmp_perf_poc_service_connection
-      scriptType: bash
-      scriptLocation: inlineScript
-      inlineScript: |
-        az --version
-        az account show
-        azToken=$(az account get-access-token --resource "https://api.kusto.windows.net" | jq -r '.accessToken')
-        echo "##vso[task.setvariable variable=AZ_TOKEN]$azToken" 
-
   - template: pipelines/templates/upload-metrics-step.yml@afo-telemetry
     parameters:
       kustoDatabaseName: ${{ parameters.kustoDatabaseName }}
