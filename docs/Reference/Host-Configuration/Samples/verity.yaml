@@ -10,7 +10,7 @@ trident:
 storage:
   disks:
   - id: os
-    device: /dev/disk/by-path/pci-0000:00:1f.2-ata-1.0
+    device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2.0
     partitionTableType: gpt
     partitions:
     - id: esp
@@ -106,7 +106,7 @@ storage:
     type: ext4
     mountPoint:
       path: /
-      options: defaults
+      options: ro
 scripts:
   postConfigure:
   - name: rw-overlay

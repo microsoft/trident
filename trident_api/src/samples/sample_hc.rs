@@ -27,7 +27,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 storage: Storage {
                     disks: vec![Disk {
                         id: "os".to_string(),
-                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0".into(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
                         partition_table_type: PartitionTableType::Gpt,
                         partitions: vec![
                             Partition {
@@ -88,7 +88,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0".into(),
+                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: vec![
                         Partition {
@@ -206,7 +206,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0".into(),
+                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: vec![
                         Partition {
@@ -411,7 +411,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
             storage: Storage {
                 disks: vec![Disk {
                     id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1.0".into(),
+                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: vec![
                         Partition {
@@ -571,7 +571,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     fs_type: FileSystemType::Ext4,
                     mount_point: MountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                        options: MountOptions::defaults(),
+                        options: MountOptions::new("ro"),
                     },
                 }],
                 ..Default::default()
@@ -632,7 +632,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 disks: vec![
                     Disk {
                         id: "disk1".to_string(),
-                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-1".into(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
                         partition_table_type: PartitionTableType::Gpt,
                         partitions: vec![
                             Partition {
@@ -720,7 +720,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                     Disk {
                         id: "disk2".to_string(),
-                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-3".into(),
                         partition_table_type: PartitionTableType::Gpt,
                         partitions: vec![
                             Partition {
@@ -1022,15 +1022,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         }),
                     },
                     FileSystem {
-                        device_id: Some("srv".into()),
-                        fs_type: FileSystemType::Ext4,
-                        mount_point: Some(MountPoint {
-                            path: "/srv".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                        source: FileSystemSource::Create,
-                    },
-                    FileSystem {
                         device_id: Some("swap1".into()),
                         fs_type: FileSystemType::Swap,
                         source: FileSystemSource::Create,
@@ -1100,7 +1091,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     fs_type: FileSystemType::Ext4,
                     mount_point: MountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                        options: MountOptions::defaults(),
+                        options: MountOptions::new("ro"),
                     },
                 }],
                 ..Default::default()
