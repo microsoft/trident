@@ -14,7 +14,7 @@ Scripts that can be run on the host during Trident stages. These scripts are run
 
 Scripts to be run after Trident configuration stage is complete.
 
-These scripts are run from within a chroot of the target OS.
+These scripts are run from within a chroot of the target OS. The *$TARGET_ROOT* variable will be set to '/'. The *$EXEC_ROOT* variable will be set to the root of the filesystem Trident is being run from (or more specifically a directory within /tmp that is bind mounted to the root).
 
 | Characteristic | Value   |
 | -------------- | ------- |
@@ -31,7 +31,7 @@ These scripts are run from within a chroot of the target OS.
 
 Scripts to be run after Trident provision stage is complete.
 
-These scripts are run with the root filesystem of the target OS mounted at */mnt/newroot* and other partitions specified for the target OS mounted relative to that.
+These scripts are run with the root filesystem of the target OS mounted at *$TARGET_ROOT* and other partitions specified for the target OS mounted relative to that. The *$EXEC_ROOT* variable wil be set to '/' for consistency with post configure scripts.
 
 | Characteristic | Value   |
 | -------------- | ------- |

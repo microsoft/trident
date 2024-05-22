@@ -11,7 +11,7 @@ use log::{debug, info};
 use osutils::{files, scripts::ScriptRunner};
 use trident_api::{
     config::{HostConfiguration, Script},
-    constants::DEFAULT_SCRIPT_INTERPRETER,
+    constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
     status::{HostStatus, ServicingType},
 };
 
@@ -95,7 +95,7 @@ impl Module for HooksModule {
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
-        _mount_path: &std::path::Path,
+        mount_path: &Path,
     ) -> Result<(), Error> {
         info!("Running post-provision scripts");
         host_config
@@ -103,7 +103,12 @@ impl Module for HooksModule {
             .post_provision
             .iter()
             .try_for_each(|script| {
-                self.run_script(script, host_status)?;
+                self.run_script(
+                    script,
+                    host_status.servicing_type,
+                    mount_path,
+                    Path::new(ROOT_MOUNT_POINT_PATH),
+                )?;
                 Ok(())
             })?;
 
@@ -114,7 +119,7 @@ impl Module for HooksModule {
         &mut self,
         host_status: &mut HostStatus,
         host_config: &HostConfiguration,
-        _exec_root: &Path,
+        exec_root: &Path,
     ) -> Result<(), Error> {
         info!("Adding additional files");
         for file in &host_config.os.additional_files {
@@ -157,7 +162,12 @@ impl Module for HooksModule {
             .post_configure
             .iter()
             .try_for_each(|script| {
-                self.run_script(script, host_status)?;
+                self.run_script(
+                    script,
+                    host_status.servicing_type,
+                    Path::new(ROOT_MOUNT_POINT_PATH),
+                    exec_root,
+                )?;
                 Ok(())
             })?;
 
@@ -182,16 +192,21 @@ impl HooksModule {
         Ok(())
     }
 
-    fn run_script(&self, script: &Script, host_status: &HostStatus) -> Result<(), Error> {
+    fn run_script(
+        &self,
+        script: &Script,
+        servicing_type: Option<ServicingType>,
+        target_root: &Path,
+        exec_root: &Path,
+    ) -> Result<(), Error> {
         // Check if the script should be run for the current servicing type
-        if let Some(ref servicing_type) = host_status.servicing_type {
-            if !script.should_run(servicing_type) {
-                debug!(
-                    "Skipping script {} for servicing type {:?}",
-                    script.name, host_status.servicing_type
-                );
-                return Ok(());
-            }
+        let servicing_type = servicing_type.context("Servicing type not set")?;
+        if !script.should_run(&servicing_type) {
+            debug!(
+                "Skipping script {} for servicing type {:?}",
+                script.name, servicing_type
+            );
+            return Ok(());
         }
 
         let interpreter: PathBuf = script
@@ -222,7 +237,9 @@ impl HooksModule {
         set_env_vars(
             &mut script_runner,
             &script.environment_variables,
-            host_status,
+            servicing_type,
+            target_root,
+            exec_root,
         )
         .context("Failed to set environment variables for script")?;
         script_runner
@@ -235,7 +252,9 @@ impl HooksModule {
 fn set_env_vars(
     script_runner: &mut ScriptRunner,
     env_vars: &HashMap<String, String>,
-    host_status: &HostStatus,
+    servicing_type: ServicingType,
+    target_root: &Path,
+    exec_root: &Path,
 ) -> Result<(), Error> {
     for (key, value) in env_vars {
         script_runner.env_vars.insert(key.into(), value.into());
@@ -243,18 +262,14 @@ fn set_env_vars(
     // Add default environment variables from host status that can be used
     script_runner.env_vars.insert(
         "SERVICING_TYPE".into(),
-        match_servicing_type_env_var(host_status.servicing_type.as_ref().unwrap()),
+        match_servicing_type_env_var(&servicing_type),
     );
-    script_runner.env_vars.insert(
-        "TARGET_ROOT".into(),
-        host_status
-            .storage
-            .root_device_path
-            .clone()
-            .context("Host Status has no root device path")
-            .context("Error setting host status value for TARGET_ROOT")?
-            .into(),
-    );
+    script_runner
+        .env_vars
+        .insert("TARGET_ROOT".into(), target_root.into());
+    script_runner
+        .env_vars
+        .insert("EXEC_ROOT".into(), exec_root.into());
     Ok(())
 }
 
@@ -312,16 +327,6 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_dir = temp_dir.path().join("test-directory");
 
-        let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
-            storage: Storage {
-                root_device_path: Some("/dev/sda".into()),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let mut environment_variables = HashMap::new();
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
@@ -333,7 +338,12 @@ mod tests {
             ..Default::default()
         };
         HooksModule::default()
-            .run_script(&script, &host_status)
+            .run_script(
+                &script,
+                Some(ServicingType::CleanInstall),
+                Path::new("/mnt/newroot"),
+                Path::new("/"),
+            )
             .unwrap();
         assert!(test_dir.exists());
         // Cleanup
@@ -398,16 +408,6 @@ mod tests {
 
     #[test]
     fn test_run_script_that_always_fails() {
-        let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
-            storage: Storage {
-                root_device_path: Some("/dev/sda".into()),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let script = Script {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
@@ -416,22 +416,17 @@ mod tests {
             ..Default::default()
         };
         assert!(HooksModule::default()
-            .run_script(&script, &host_status)
+            .run_script(
+                &script,
+                Some(ServicingType::CleanInstall),
+                Path::new("/mnt/newroot"),
+                Path::new("/")
+            )
             .is_err());
     }
 
     #[test]
     fn test_run_script_with_non_existing_interpreter() {
-        let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
-            storage: Storage {
-                root_device_path: Some("/dev/sda".into()),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let script = Script {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
@@ -440,7 +435,12 @@ mod tests {
             ..Default::default()
         };
         assert!(HooksModule::default()
-            .run_script(&script, &host_status)
+            .run_script(
+                &script,
+                Some(ServicingType::CleanInstall),
+                Path::new("/mnt/newroot"),
+                Path::new("/")
+            )
             .is_err());
     }
 
@@ -448,16 +448,6 @@ mod tests {
     fn test_run_script_that_always_skips() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_dir = temp_dir.path().join("test-directory");
-
-        let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
-            storage: Storage {
-                root_device_path: Some("/dev/sda".into()),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
 
         let mut environment_variables = HashMap::new();
         environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
@@ -471,7 +461,12 @@ mod tests {
         };
         // Check that the test-directory does not exist since the script should not be run
         HooksModule::default()
-            .run_script(&script, &host_status)
+            .run_script(
+                &script,
+                Some(ServicingType::CleanInstall),
+                Path::new("/mnt/newroot"),
+                Path::new("/"),
+            )
             .unwrap();
         assert!(!test_dir.exists());
         // Cleanup
@@ -484,23 +479,51 @@ mod tests {
             ScriptRunner::new_interpreter(PathBuf::from("/bin/bash"), "echo $TEST_VAR".as_bytes());
         let mut env_vars = HashMap::new();
         env_vars.insert("TEST_VAR".into(), "test-value".into());
-        let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
-            storage: Storage {
-                root_device_path: Some("/dev/sda".into()),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        set_env_vars(&mut script_runner, &env_vars, &host_status).unwrap();
+        set_env_vars(
+            &mut script_runner,
+            &env_vars,
+            ServicingType::CleanInstall,
+            Path::new("/mnt/newroot"),
+            Path::new("/"),
+        )
+        .unwrap();
         // Check that the environment variables are set in script_runner after the function call
         let expected_env_vars = hashmap! {
             "TEST_VAR".into() => "test-value".into(),
             "SERVICING_TYPE".into() => "clean_install".into(),
-            "TARGET_ROOT".into() => "/dev/sda".into()
+            "TARGET_ROOT".into() => "/mnt/newroot".into(),
+            "EXEC_ROOT".into() => "/".into()
         };
         assert_eq!(script_runner.env_vars, expected_env_vars);
+    }
+
+    #[test]
+    fn test_paths_set() {
+        let target_root = tempfile::tempdir().unwrap();
+        let exec_root = tempfile::tempdir().unwrap();
+
+        let script = Script {
+            name: "test-script".into(),
+            run_on: vec![ServicingTypeSelection::CleanInstall],
+            interpreter: Some("/bin/bash".into()),
+            content: Some("touch $TARGET_ROOT/a && touch $EXEC_ROOT/b".into()),
+            ..Default::default()
+        };
+        HooksModule::default()
+            .run_script(
+                &script,
+                Some(ServicingType::CleanInstall),
+                target_root.path(),
+                exec_root.path(),
+            )
+            .unwrap();
+
+        assert!(target_root.path().join("a").exists());
+        assert!(exec_root.path().join("b").exists());
+
+        // Cleanup
+        target_root.close().unwrap();
+        exec_root.close().unwrap();
     }
 
     #[test]

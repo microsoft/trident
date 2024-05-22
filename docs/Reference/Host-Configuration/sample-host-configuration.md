@@ -103,7 +103,7 @@ scripts:
     runOn:
     - clean-install
     - ab-update
-    content: ls /mnt/newroot
+    content: ls $TARGET_ROOT
     logFilePath: /var/log/sample-provision-script.log
   postConfigure:
   - name: sample-configure-script

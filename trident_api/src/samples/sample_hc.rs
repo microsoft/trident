@@ -181,7 +181,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 post_provision: vec![Script {
                     name: "sample-provision-script".into(),
                     run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                    content: Some("ls /mnt/newroot".into()),
+                    content: Some("ls $TARGET_ROOT".into()),
                     log_file_path: Some("/var/log/sample-provision-script.log".into()),
                     ..Default::default()
                 }],
@@ -386,7 +386,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 post_provision: vec![Script {
                     name: "sample-provision-script".into(),
                     run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                    content: Some("ls /mnt/newroot".into()),
+                    content: Some("ls $TARGET_ROOT".into()),
                     log_file_path: Some("/var/log/sample-provision-script.log".into()),
                     ..Default::default()
                 }],
