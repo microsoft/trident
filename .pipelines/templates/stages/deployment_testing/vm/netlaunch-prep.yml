@@ -18,18 +18,11 @@ steps:
       artifactName: "trident-verity-testimage"
       targetPath: "$(System.ArtifactsDirectory)/verity-testimage"
 
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      buildType: current
-      artifactName: "containerhost-testimage"
-      targetPath: "$(System.ArtifactsDirectory)/containerhost-testimage"
-
   - template: ../common_tasks/rename-test-images.yml
     parameters:
       targetDirectory: artifacts/test-image
       testImageDir: $(System.ArtifactsDirectory)/testimage
       verityTestImageDir: $(System.ArtifactsDirectory)/verity-testimage
-      containerhostTestImageDir: $(System.ArtifactsDirectory)/containerhost-testimage
 
   - task: DownloadPipelineArtifact@2
     displayName: "Download go-tools/netlaunch"

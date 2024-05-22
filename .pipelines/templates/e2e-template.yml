@@ -23,25 +23,20 @@ stages:
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
 
-  - template: stages/runtime_os/trident-testimg.yml
+  - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: build/trident-installer-testimage.iso
       outputArtifactName: trident-installer-testimage
 
-  - template: stages/runtime_os/trident-testimg.yml
+  - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: trident-testimage
       outputArtifactName: trident-testimage
 
-  - template: stages/runtime_os/trident-testimg.yml
+  - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: trident-verity-testimage
       outputArtifactName: trident-verity-testimage
-
-  - template: stages/runtime_os/trident-testimg.yml
-    parameters:
-      imageName: containerhost-testimage
-      outputArtifactName: containerhost-testimage
 
   - template: stages/building_tools/building-tools.yml
 

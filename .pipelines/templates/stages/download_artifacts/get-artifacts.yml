@@ -78,27 +78,6 @@ stages:
               artifactName: "trident-verity-testimage"
               targetPath: $(ob_outputDirectory)
 
-      - job: ContainerhostTestimage
-        displayName: "Download containerhost-testimage"
-        timeoutInMinutes: 10
-        pool:
-          type: linux
-      
-        variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/build
-          ob_artifactBaseName: "containerhost-testimage"
-
-        steps:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: specific
-              project: ECF
-              definition: ${{ parameters.definition }}
-              buildVersionToDownload: "latestFromBranch"
-              branchName: "refs/heads/${{ parameters.branch }}"
-              artifactName: "containerhost-testimage"
-              targetPath: $(ob_outputDirectory)
-
       - job: Gotools
         displayName: "Download go-tools"
         timeoutInMinutes: 10

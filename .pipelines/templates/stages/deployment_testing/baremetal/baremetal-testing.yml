@@ -42,7 +42,6 @@ parameters:
       - TridentTestImg_trident_installer_testimage
       - TridentTestImg_trident_testimage
       - TridentTestImg_trident_verity_testimage
-      - TridentTestImg_containerhost_testimage
 
   - name: buildPurpose
     type: string

@@ -11,10 +11,6 @@ parameters:
     type: string
     default: ""
 
-  - name: containerhostTestImageDir
-    type: string
-    default: ""
-
 steps:
   - bash: |
       set -eux
@@ -34,12 +30,5 @@ steps:
         mv ${{ parameters.verityTestImageDir }}/root.raw.zst ${{ parameters.targetDirectory }}/verity_root.rawzst
         mv ${{ parameters.verityTestImageDir }}/root-hash.raw.zst ${{ parameters.targetDirectory }}/verity_roothash.rawzst
         mv ${{ parameters.verityTestImageDir }}/var.raw.zst ${{ parameters.targetDirectory }}/verity_var.rawzst
-      fi
-
-      # If containerhostTestImageDir is not null, rename the Trident containerhost test images
-      if [ -n "${{ parameters.containerhostTestImageDir }}" ]; then
-        # Containerhost image for e2e testing
-        mv ${{ parameters.containerhostTestImageDir }}/esp.raw.zst ${{ parameters.targetDirectory }}/containerhost_esp.rawzst
-        mv ${{ parameters.containerhostTestImageDir }}/root.raw.zst ${{ parameters.targetDirectory }}/containerhost_root.rawzst
       fi
     displayName: "Rename Trident test images for A/B update testing"
