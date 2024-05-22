@@ -1543,7 +1543,7 @@ mod tests {
         }
 
         assert_eq!(host_configuration.storage.raid.software.len(), 14);
-        assert_eq!(host_configuration.storage.filesystems.len(), 11);
+        assert_eq!(host_configuration.storage.filesystems.len(), 10);
         assert_eq!(host_configuration.storage.verity_filesystems.len(), 1);
         assert!(host_configuration.storage.ab_update.is_some());
         assert!(host_configuration.os.network.is_some());
