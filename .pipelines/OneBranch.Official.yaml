@@ -54,8 +54,8 @@ resources:
       type: git
       name: test-images
 
-    - repository: afo-telemetry
-      name: afo-telemetry
+    - repository: platform-telemetry
+      name: platform-telemetry
       type: git
       ref : refs/heads/main
 

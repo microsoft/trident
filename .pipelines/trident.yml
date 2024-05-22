@@ -39,8 +39,8 @@ resources:
       name: platform-pipelines
       ref: refs/heads/main
 
-    - repository: afo-telemetry
-      name: afo-telemetry
+    - repository: platform-telemetry
+      name: platform-telemetry
       type: git
       ref : refs/heads/main
 

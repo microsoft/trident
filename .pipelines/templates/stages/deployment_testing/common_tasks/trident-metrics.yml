@@ -43,7 +43,7 @@ steps:
       MACHINE_TYPE: ${{ parameters.deploymentEnvironment }}
       PIPELINE_NAME: $(Build.DefinitionName)
 
-  - template: pipelines/templates/upload-metrics-step.yml@afo-telemetry
+  - template: pipelines/templates/upload-metrics-step.yml@platform-telemetry
     parameters:
       kustoDatabaseName: ${{ parameters.kustoDatabaseName }}
       kustoTableName: ${{ parameters.kustoTableName }}
