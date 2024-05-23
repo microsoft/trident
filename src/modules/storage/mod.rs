@@ -6,18 +6,12 @@ use std::{
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{
-    block_devices, mountpoint,
-    partition_types::DiscoverablePartitionType,
-    repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
-    sfdisk::SfDisk,
-    udevadm,
-};
+use osutils::mountpoint;
 use trident_api::{
-    config::{HostConfiguration, PartitionSize, PartitionType},
+    config::HostConfiguration,
     constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
-    status::{self, AbVolumeSelection, BlockDeviceContents, HostStatus, ServicingType},
+    status::{AbVolumeSelection, BlockDeviceContents, HostStatus, ServicingType},
     BlockDeviceId,
 };
 
@@ -28,146 +22,10 @@ use tabfile::DEFAULT_FSTAB_PATH;
 mod encryption;
 mod filesystem;
 pub mod image;
+mod partitioning;
 pub mod raid;
 pub mod tabfile;
 mod verity;
-
-fn create_partitions(
-    host_status: &mut HostStatus,
-    host_config: &HostConfiguration,
-) -> Result<(), Error> {
-    for disk in &host_config.storage.disks {
-        let disk_path = disk.device.canonicalize().context(format!(
-            "Failed to lookup device '{}'",
-            disk.device.display()
-        ))?;
-
-        let disk_bus_path =
-            block_devices::find_symlink_for_target(&disk_path, Path::new("/dev/disk/by-path"))
-                .context(format!(
-                    "Failed to find bus path of '{}'",
-                    disk_path.display()
-                ))?;
-
-        // Generate a hash map of {key: partition_id, value: partlabel},
-        // so that sdrepart.rs can give initial "old-version" labels, i.e.
-        // "_empty", to partitions that are inside any volume-pairs. This is so
-        // that when sysupdate is invoked, it interprets PARTLABEL of the
-        // partition to be updated as "old" enough.
-
-        // Initialize an empty hash map, where key is BlockDeviceId,
-        // value is String
-        let mut partlabels: HashMap<BlockDeviceId, String> = HashMap::new();
-
-        // TODO: Potentially, provide support for custom user-provided
-        // PARTLABELs, if required by the users. Related ADO task:
-        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6125.
-
-        // Iterate through host_status.storage.ab_update.volume_pairs. For each
-        // volume_pair, add each partition_id to the hash map, where value for
-        // volume-a-id (active) is "a" and value for volume-b-id (inactive) is
-        // "_empty". On next run of sysupdate, "_empty" will be updated.
-        if cfg!(feature = "sysupdate") {
-            if let Some(ab_update) = &host_config.storage.ab_update {
-                for volume_pair in &ab_update.volume_pairs {
-                    // For volume-a-id
-                    partlabels.insert(volume_pair.volume_a_id.clone(), "_empty".to_string());
-                    // For volume-b-id
-                    partlabels.insert(volume_pair.volume_b_id.clone(), "_empty".to_string());
-                }
-            }
-        }
-
-        let mut repart = SystemdRepartInvoker::new(disk_path, RepartMode::Force);
-
-        for partition in &disk.partitions {
-            let partlabel = partlabels.get(&partition.id).unwrap_or(&partition.id);
-            let size = match partition.size {
-                PartitionSize::Grow => None,
-                PartitionSize::Fixed(s) => Some(s),
-            };
-
-            repart.push_partition_entry(RepartPartitionEntry {
-                partition_type: config_part_type_into_discoverable(partition.partition_type),
-                label: Some(partlabel.clone()),
-                size_max_bytes: size,
-                size_min_bytes: size,
-            })
-        }
-
-        info!("Creating partitions for disk {}", disk.id);
-
-        let created_partitions = repart
-            .execute()
-            .context(format!("Failed to create partitions for disk {}", disk.id))?;
-
-        let disk_information = SfDisk::get_info(&disk_bus_path).context(format!(
-            "Failed to retrieve information for disk {}",
-            disk.id
-        ))?;
-
-        // TODO: Track uuid from `disk_information.id`. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7321/
-        host_status.storage.block_devices.insert(
-            disk.id.clone(),
-            status::BlockDeviceInfo {
-                path: disk_bus_path.clone(),
-                size: disk_information.capacity,
-                contents: BlockDeviceContents::Unknown,
-            },
-        );
-
-        for (index, partition) in disk.partitions.iter().enumerate() {
-            let partition_uuid = created_partitions[index].uuid;
-            let part_path = Path::new("/dev/disk/by-partuuid").join(partition_uuid.to_string());
-            udevadm::wait(&part_path).context(format!(
-                "Failed waiting for '{}' to appear",
-                part_path.display()
-            ))?;
-            if !part_path.exists() {
-                bail!(
-                    "Partition {} partuuid symlink {} does not exist",
-                    partition.id,
-                    part_path.display()
-                );
-            }
-
-            // TODO: also store start and UUID.
-            let size = created_partitions[index].size;
-            host_status.storage.block_devices.insert(
-                partition.id.clone(),
-                status::BlockDeviceInfo {
-                    path: part_path.clone(),
-                    size,
-                    contents: BlockDeviceContents::Unknown,
-                },
-            );
-        }
-
-        host_status
-            .storage
-            .block_devices
-            .get_mut(&disk.id)
-            .context(format!("Failed to find disk {} in host status", disk.id))?
-            .contents = status::BlockDeviceContents::Initialized;
-    }
-    Ok(())
-}
-
-fn config_part_type_into_discoverable(part_type: PartitionType) -> DiscoverablePartitionType {
-    match part_type {
-        PartitionType::Esp => DiscoverablePartitionType::Esp,
-        PartitionType::Home => DiscoverablePartitionType::Home,
-        PartitionType::LinuxGeneric => DiscoverablePartitionType::LinuxGeneric,
-        PartitionType::Root => DiscoverablePartitionType::Root,
-        PartitionType::RootVerity => DiscoverablePartitionType::RootVerity,
-        PartitionType::Srv => DiscoverablePartitionType::Srv,
-        PartitionType::Swap => DiscoverablePartitionType::Swap,
-        PartitionType::Tmp => DiscoverablePartitionType::Tmp,
-        PartitionType::Usr => DiscoverablePartitionType::Usr,
-        PartitionType::Var => DiscoverablePartitionType::Var,
-        PartitionType::Xbootldr => DiscoverablePartitionType::Xbootldr,
-    }
-}
 
 #[derive(Default, Debug)]
 pub(super) struct StorageModule;
@@ -369,7 +227,7 @@ pub(super) fn initialize_block_devices(
             .structured(ManagementError::CleanupVerity)?;
         raid::stop_pre_existing_raid_arrays(host_config)
             .structured(ManagementError::CleanupRaid)?;
-        create_partitions(host_status, host_config)
+        partitioning::create_partitions(host_status, host_config)
             .structured(ManagementError::CreatePartitions)?;
         raid::create_sw_raid(host_status, host_config).structured(ManagementError::CreateRaid)?;
         encryption::provision(host_status, host_config)

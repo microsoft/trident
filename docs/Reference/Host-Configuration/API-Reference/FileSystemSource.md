@@ -77,3 +77,22 @@ Supported schemes are: `file`, `http`, and `https`.
 | -------------- | -------- |
 | Type           | `string` |
 
+### variant-3
+
+Filesystem from an adopted partition.
+
+Use an existing file system from an adopted partition.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
+
+### Properties
+
+#### `type` **<span style="color:orange;">(required)</span>**
+
+| Characteristic | Value     |
+| -------------- | --------- |
+| Type           | `string`  |
+| Value          | `adopted` |
+

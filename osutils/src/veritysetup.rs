@@ -444,7 +444,7 @@ mod functional_test {
         grub::GrubConfig,
         mount::{self, MountGuard},
         partition_types::DiscoverablePartitionType,
-        repart::{RepartMode, RepartPartitionEntry, SystemdRepartInvoker},
+        repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
         testutils::{
             image,
             repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
@@ -487,15 +487,17 @@ mod functional_test {
                 .unwrap()
         };
 
-        let repart = SystemdRepartInvoker::new(block_device_path, RepartMode::Force)
+        let repart = SystemdRepartInvoker::new(block_device_path, RepartEmptyMode::Force)
             .with_partition_entries(vec![
                 RepartPartitionEntry {
+                    id: "root".to_string(),
                     partition_type: DiscoverablePartitionType::Root,
                     label: None,
                     size_min_bytes: Some(1024 * 1024 * 1024),
                     size_max_bytes: None,
                 },
                 RepartPartitionEntry {
+                    id: "root-verity".to_string(),
                     partition_type: DiscoverablePartitionType::RootVerity,
                     label: None,
                     // When min==max==None, it's a grow partition

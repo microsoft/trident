@@ -4,6 +4,8 @@
 
 Settings to adopt a pre-existing partition.
 
+Only ONE match criteria should be provided.
+
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `object` |
@@ -21,79 +23,17 @@ This is a user defined string that allows to link the partition to the mount poi
 | Type           | `string`          |
 | Format         | `Block Device ID` |
 
-### `size` **<span style="color:orange;">(required)</span>**
+### `matchLabel` (optional)
 
-Optionally resize the partition.
-
-Note: Only expanding is supported for adoption. Trying to shrink a partition will result in an error.
-
-Format: String `<number>[<unit>]`
-
-Accepted values:
-
-- `grow`: Use all available space. It is recommended to ONLY use this for the last partition on the disk.
-
-- A number with optional unit suffixes: K, M, G, T (to the base of 1024), bytes by default when no unit is specified. For new partitions, it will attempt to create a partition of this size. If a partition is being adopted, size MUST NOT be less than the size of the partition being adopted. Only expanding is supported for adoption.
-
-Examples:
-
-- `1G`
-
-- `200M`
-
-- `grow`
+Partition label to look for when matching against the existing partitions.
 
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `string` |
 
-### `continue_if_no_match` (optional)
+### `matchUuid` (optional)
 
-Set to true to continue if a match could not be made, otherwise produce an error and stop installation if no match was found.
-
-| Characteristic | Value     |
-| -------------- | --------- |
-| Type           | `boolean` |
-
-### `name` (optional)
-
-Match a specific partition by its name.
-
-Look for a partition with the given name and adopt it.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
-### `next_of_type` (optional)
-
-Match the first partition with the given type.
-
-**Use as a last resort.**
-
-| Characteristic | Value                               |
-| -------------- | ----------------------------------- |
-| Type           | `PartitionType`                     |
-| Link           | [PartitionType](./PartitionType.md) |
-
-### `position` (optional)
-
-Match a specific partition by its current position on the partition table.
-
-Look for a partition at the given position in the partition table and adopt it. The position is 0-based.
-
-| Characteristic | Value     |
-| -------------- | --------- |
-| Type           | `integer` |
-| Format         | `uint64`  |
-
-### `uuid` (optional)
-
-Match a specific partition by its UUID.
-
-Look for a partition with the given UUID and adopt it.
-
-**This is the best option, use whenever possible.**
+Partition UUID to look for when matching against the existing partitions.
 
 | Characteristic | Value    |
 | -------------- | -------- |

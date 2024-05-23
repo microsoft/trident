@@ -36,7 +36,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var listen_port int16
+var listen_port uint16
+var serveFolder string
 
 // Filepath to store metrics from Trident
 var TRIDENT_METRICS_PATH = "trident-metrics.json"
@@ -67,6 +68,10 @@ var rootCmd = &cobra.Command{
 		// Set up listening for tracestream
 		phonehome.SetupTraceStream(TRIDENT_METRICS_PATH)
 
+		if len(serveFolder) != 0 {
+			http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(serveFolder))))
+		}
+
 		// Start the HTTP server
 		go server.Serve(listen)
 		log.WithField("address", listen.Addr().String()).Info("Listening...")
@@ -80,7 +85,8 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().Int16VarP(&listen_port, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
+	rootCmd.PersistentFlags().Uint16VarP(&listen_port, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
+	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
 	rootCmd.MarkFlagRequired("port")
 	log.SetLevel(log.DebugLevel)
 }

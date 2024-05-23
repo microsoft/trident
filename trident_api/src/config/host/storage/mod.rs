@@ -103,8 +103,15 @@ impl Storage {
         // Add disks
         for disk in &self.disks {
             builder.add_node(disk.into());
+
+            // Add partitions
             for partition in &disk.partitions {
                 builder.add_node(partition.into());
+            }
+
+            // Add adopted partitions
+            for adopted_partition in &disk.adopted_partitions {
+                builder.add_node(adopted_partition.into());
             }
         }
 
@@ -180,13 +187,16 @@ impl Storage {
         Ok(())
     }
 
-    /// Validate that a volume is present and backed by an image.
+    /// Validate that a volume is present and backed by an image or an adopted
+    /// filesystem.
     fn validate_volume_presence(
         graph: &BlockDeviceGraph,
         path: impl AsRef<Path>,
     ) -> Result<(), InvalidHostConfigurationError> {
         match graph.get_volume_status(path.as_ref()) {
-            VolumeStatus::PresentAndBackedByImage => Ok(()),
+            VolumeStatus::PresentAndBackedByImage | VolumeStatus::PresentAndBackedByAdoptedFs => {
+                Ok(())
+            }
             VolumeStatus::PresentButNotBackedByImage => {
                 Err(InvalidHostConfigurationError::MountPointNotBackedByImage {
                     mount_point_path: path.as_ref().to_string_lossy().to_string(),
@@ -865,7 +875,7 @@ mod tests {
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::FilesystemNonExistentReference {
                     target_id: "disk99".into(),
-                    fs_type: FileSystemType::Ext4
+                    fs_desc: bad_filesystem_target.filesystems[0].description()
                 }
             )
         );
@@ -1011,7 +1021,7 @@ mod tests {
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::FilesystemNonExistentReference {
                     target_id: "disk4".into(),
-                    fs_type: FileSystemType::Vfat,
+                    fs_desc: storage.filesystems[0].description(),
                 }
             ),
         );
@@ -1023,7 +1033,7 @@ mod tests {
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::FilesystemInvalidReference {
-                    fs_type: FileSystemType::Vfat,
+                    fs_desc: storage.filesystems[0].description(),
                     target_id: "disk1".into(),
                     target_kind: BlkDevKind::Disk,
                     valid_references: BlkDevReferrerKind::FileSystem.valid_target_kinds()
@@ -1975,7 +1985,7 @@ mod tests {
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::FilesystemInvalidReference {
-                    fs_type: FileSystemType::Vfat,
+                    fs_desc: storage.filesystems[0].description(),
                     target_id: "esp".into(),
                     target_kind: BlkDevKind::Partition,
                     valid_references: BlkDevReferrerKind::FileSystemSysupdate.valid_target_kinds()

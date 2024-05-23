@@ -96,7 +96,7 @@ pub enum BlockDeviceGraphBuildError {
         body: String,
     },
 
-    #[error("Internal error")]
+    #[error("Internal error: {body}")]
     InternalError { body: String },
 
     #[error(
@@ -127,52 +127,52 @@ pub enum BlockDeviceGraphBuildError {
     FilesystemUnexpectedMountPoint(FileSystemType),
 
     #[error(
-        "Filesystem of type '{fs_type}' references non-existent block device \
+        "Filesystem [{fs_desc}] references non-existent block device \
             '{target_id}'"
     )]
     FilesystemNonExistentReference {
         target_id: BlockDeviceId,
-        fs_type: FileSystemType,
+        fs_desc: String,
     },
 
     #[error(
-        "Filesystem of type '{fs_type}' has invalid source type '{fs_source}', \
+        "Filesystem [{fs_desc}] has invalid source type '{fs_source}', \
             acceptable sources are: {fs_acceptable_sources}"
     )]
     FilesystemInvalidSource {
-        fs_type: FileSystemType,
+        fs_desc: String,
         fs_source: FileSystemSourceKind,
         fs_acceptable_sources: FileSystemSourceKindList,
     },
 
     #[error(
-        "Filesystem of type '{fs_type}' references block device '{target_id}' \
+        "Filesystem [{fs_desc}] references block device '{target_id}' \
             of invalid kind '{target_kind}', acceptable kinds are: {valid_references}"
     )]
     FilesystemInvalidReference {
-        fs_type: FileSystemType,
+        fs_desc: String,
         target_id: BlockDeviceId,
         target_kind: BlkDevKind,
         valid_references: BlkDevKindFlag,
     },
 
     #[error(
-        "Filesystem of type '{fs_type}' references block device '{target_id}' \
-            that is already associated with a filesystem of type '{other_fs_type}'"
+        "Filesystem [{fs_desc}] references block device '{target_id}' \
+            that is already associated with a filesystem [{fs_desc}]"
     )]
     FilesystemReferenceInUse {
-        fs_type: FileSystemType,
+        fs_desc: String,
         target_id: BlockDeviceId,
-        other_fs_type: FileSystemType,
+        other_fs_desc: String,
     },
 
     #[error(
-        "Filesystem of type '{fs_type}' references block device '{target_id}' \
+        "Filesystem [{fs_desc}] references block device '{target_id}' \
             that is already associated with verity filesystem '{other_vfs_name}' \
             of type '{other_vfs_type}'"
     )]
     FilesystemReferenceInUseVerity {
-        fs_type: FileSystemType,
+        fs_desc: String,
         target_id: BlockDeviceId,
         other_vfs_name: String,
         other_vfs_type: FileSystemType,
@@ -269,24 +269,24 @@ pub enum BlockDeviceGraphBuildError {
     },
 
     #[error(
-        "Referrer '{referrer}' of kind '{fs_type}' references partition(s) \
+        "Referrer '{referrer}' [{fs_desc}] references partition(s) \
             of invalid type '{partition_type}', acceptable \
             types are: {valid_types}"
     )]
     FilesystemInvalidPartitionType {
         referrer: BlkDevReferrerKind,
-        fs_type: FileSystemType,
+        fs_desc: String,
         partition_type: PartitionType,
         valid_types: AllowedPartitionTypes,
     },
 
     #[error(
-        "Referrer '{referrer}' of kind '{fs_type}' references partitions of \
+        "Referrer '{referrer}' [{fs_desc}] references partitions of \
             different types"
     )]
     FilesystemHeterogenousPartitionTypes {
         referrer: BlkDevReferrerKind,
-        fs_type: FileSystemType,
+        fs_desc: String,
     },
 
     #[error(

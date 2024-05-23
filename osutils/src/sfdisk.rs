@@ -1,11 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use anyhow::{Context, Error};
-use duct::cmd;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::partition_types::DiscoverablePartitionType;
+use crate::{exe::RunAndCheck, partition_types::DiscoverablePartitionType};
 
 #[derive(Debug, PartialEq, Deserialize)]
 struct SfdiskOutput {
@@ -51,7 +53,7 @@ impl SfDisk {
     }
 }
 
-#[derive(Debug, PartialEq, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Clone, Hash)]
 pub struct SfPartition {
     /// Partition device path
     pub node: PathBuf,
@@ -77,6 +79,14 @@ pub struct SfPartition {
     /// Partition size in bytes
     #[serde(skip)]
     pub size: u64,
+
+    /// Parent disk path
+    #[serde(skip)]
+    pub parent: PathBuf,
+
+    /// Partition number in the partition table
+    #[serde(skip)]
+    pub number: usize,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -96,8 +106,10 @@ impl SfDisk {
     where
         S: AsRef<Path>,
     {
-        let sfdisk_output_json = cmd!("sfdisk", "-J", disk_bus_path.as_ref())
-            .read()
+        let sfdisk_output_json = Command::new("sfdisk")
+            .arg("-J")
+            .arg(disk_bus_path.as_ref())
+            .output_and_check()
             .context(format!(
                 "Failed to fetch disk information for {}",
                 disk_bus_path.as_ref().display()
@@ -116,11 +128,47 @@ impl SfDisk {
 
         // Update capacity and partition sizes
         disk.capacity = (disk.lastlba - disk.firstlba + 1) * disk.sectorsize;
-        disk.partitions.iter_mut().for_each(|part| {
+        disk.partitions.iter_mut().try_for_each(|part| {
             part.size = part.size_sectors * disk.sectorsize;
-        });
+            part.parent = disk.device.clone();
+            part.number = part
+                .node
+                .as_os_str()
+                .to_string_lossy()
+                .rsplit_once(|c: char| !c.is_ascii_digit())
+                .map(|(_, n)| n)
+                .context(format!(
+                    "Failed to extract partition number from {}",
+                    part.node.display()
+                ))?
+                .parse()
+                .context(format!(
+                    "Failed to parse partition number from {}",
+                    part.node.display()
+                ))?;
+            Ok::<(), Error>(())
+        })?;
 
         Ok(disk)
+    }
+}
+
+impl SfPartition {
+    pub fn path_by_uuid(&self) -> PathBuf {
+        Path::new("/dev/disk/by-partuuid").join(self.id.hyphenated().to_string())
+    }
+
+    pub fn delete(&self) -> Result<(), Error> {
+        Command::new("sfdisk")
+            .arg("--delete")
+            .arg(&self.parent)
+            .arg(self.number.to_string())
+            .run_and_check()
+            .context(format!(
+                "Failed to delete partition {}",
+                self.node.display()
+            ))?;
+        Ok(())
     }
 }
 
@@ -149,7 +197,7 @@ mod tests {
                      "uuid": "F764E91F-9D15-4F6E-8508-0AFC1D0DF0B5",
                      "name": "esp"
                   },{
-                     "node": "/dev/sda2",
+                     "node": "/dev/sda3",
                      "start": 20480,
                      "size": 266315776,
                      "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
@@ -181,15 +229,19 @@ mod tests {
                         partition_type: DiscoverablePartitionType::Esp,
                         id: Uuid::parse_str("F764E91F-9D15-4F6E-8508-0AFC1D0DF0B5").unwrap(),
                         name: Some("esp".to_string()),
+                        parent: PathBuf::from("/dev/sda"),
+                        number: 1,
                     },
                     SfPartition {
-                        node: PathBuf::from("/dev/sda2"),
+                        node: PathBuf::from("/dev/sda3"),
                         start: 20480,
                         size_sectors: 266_315_776,
                         size: 136_353_677_312,
                         partition_type: DiscoverablePartitionType::LinuxGeneric,
                         id: Uuid::parse_str("4D8C2A88-1411-4021-804D-EB8C40F054AA").unwrap(),
                         name: Some("rootfs".to_string()),
+                        parent: PathBuf::from("/dev/sda"),
+                        number: 3,
                     }
                 ],
             },
@@ -397,6 +449,8 @@ mod functional_test {
                 partition_type: DiscoverablePartitionType::Esp.resolve(),
                 id: Uuid::nil(),
                 name: Some("esp".to_string()),
+                parent: PathBuf::from("/dev/sda"),
+                number: 1,
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda2"),
@@ -406,6 +460,8 @@ mod functional_test {
                 partition_type: DiscoverablePartitionType::Root.resolve(),
                 id: Uuid::nil(),
                 name: Some("root-a".to_string()),
+                parent: PathBuf::from("/dev/sda"),
+                number: 2,
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda3"),
@@ -415,6 +471,8 @@ mod functional_test {
                 partition_type: DiscoverablePartitionType::Root.resolve(),
                 id: Uuid::nil(),
                 name: Some("root-b".to_string()),
+                parent: PathBuf::from("/dev/sda"),
+                number: 3,
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda4"),
@@ -424,6 +482,8 @@ mod functional_test {
                 partition_type: DiscoverablePartitionType::Swap.resolve(),
                 id: Uuid::nil(),
                 name: Some("swap".to_string()),
+                parent: PathBuf::from("/dev/sda"),
+                number: 4,
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda5"),
@@ -433,6 +493,8 @@ mod functional_test {
                 partition_type: DiscoverablePartitionType::LinuxGeneric.resolve(),
                 id: Uuid::nil(),
                 name: Some("trident".to_string()),
+                parent: PathBuf::from("/dev/sda"),
+                number: 5,
             },
         ];
 

@@ -1,20 +1,34 @@
 use std::{
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     process::Command,
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error, Ok};
 use configparser::ini::Ini;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{exe::OutputChecker, partition_types::DiscoverablePartitionType};
+use crate::{exe::RunAndCheck, partition_types::DiscoverablePartitionType};
 
 /// Representation of a partition created by `systemd-repart`.
 #[derive(Debug, Deserialize)]
 pub struct RepartPartition {
+    /// Type of the partition
+    #[serde(alias = "type")]
+    pub partition_type: DiscoverablePartitionType,
+
+    /// Label of the partition
+    pub label: Option<String>,
+
     /// UUID of the partition
     pub uuid: Uuid,
+
+    /// Definition file of the partition
+    pub file: PathBuf,
+
+    /// Node of the partition
+    pub node: PathBuf,
 
     /// Offset of the partition in bytes
     #[serde(alias = "offset")]
@@ -23,14 +37,59 @@ pub struct RepartPartition {
     /// Size of the partition in bytes
     #[serde(alias = "raw_size")]
     pub size: u64,
+
+    /// systemd-repart's activity
+    pub activity: RepartActivity,
+
+    /// Internal ID used only for tracking, not used by `systemd-repart`.
+    /// It will match the ID of the partition entry in the configuration.
+    #[serde(skip)]
+    pub id: String,
+}
+
+/// Representation of a partition created by `systemd-repart`.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RepartActivity {
+    /// The partition was created
+    /// https://github.com/systemd/systemd/blob/762412f/src/partition/repart.c#L3037
+    Create,
+
+    /// The partition was unchanged
+    /// https://github.com/systemd/systemd/blob/762412f/src/partition/repart.c#L3080
+    Unchanged,
+
+    /// The partition was resized
+    /// https://github.com/systemd/systemd/blob/762412f/src/partition/repart.c#L3039
+    Resize,
+}
+
+impl RepartPartition {
+    pub fn is_new(&self) -> bool {
+        matches!(self.activity, RepartActivity::Create)
+    }
+
+    pub fn path_by_uuid(&self) -> PathBuf {
+        Path::new("/dev/disk/by-partuuid").join(self.uuid.hyphenated().to_string())
+    }
 }
 
 /// Representation of a partition entry in the `systemd-repart` configuration.
 #[derive(Debug, Clone)]
 pub struct RepartPartitionEntry {
+    /// Internal ID used only for tracking, not used by `systemd-repart`.
+    pub id: String,
+
+    /// Type of the partition to be passed to `systemd-repart`.
     pub partition_type: DiscoverablePartitionType,
+
+    /// Label of the partition to be passed to `systemd-repart`.
     pub label: Option<String>,
+
+    /// Minimum size of the partition in bytes to be passed to `systemd-repart`.
     pub size_min_bytes: Option<u64>,
+
+    /// Maximum size of the partition in bytes to be passed to `systemd-repart`.
     pub size_max_bytes: Option<u64>,
 }
 
@@ -74,19 +133,42 @@ impl RepartPartitionEntry {
 }
 
 /// Possible values for the `--empty` flag of `systemd-repart`.
-pub enum RepartMode {
+pub enum RepartEmptyMode {
+    /// Use `--empty=refuse` when calling `systemd-repart`.
+    /// > The command requires that the block device it shall operate on already
+    /// > carries a partition table and refuses operation if none is found
+    Refuse,
+
+    /// Use `--empty=allow` when calling `systemd-repart`.
+    /// > The command will extend an existing partition table or create a new
+    /// > one if none exists.
+    Allow,
+
+    /// Use `--empty=require` (the default) when calling `systemd-repart`.
+    /// > The command will create a new partition table if none exists so far,
+    /// > and refuse operation if one already exists.
+    Require,
+
     /// Use `--empty=force` when calling `systemd-repart`.
+    /// > The command will create a fresh partition table unconditionally,
+    /// > erasing the disk fully in effect. No existing partitions will be taken
+    /// > into account or survive the operation.
     Force,
 
-    /// Use `--empty=required` (the default) when calling `systemd-repart`.
-    Required,
+    /// Use `--empty=create` when calling `systemd-repart`.
+    /// > A new loopback file is create under the path passed via the device
+    /// > node parameter
+    Create,
 }
 
-impl RepartMode {
+impl RepartEmptyMode {
     pub fn to_str(&self) -> &'static str {
         match self {
-            RepartMode::Force => "force",
-            RepartMode::Required => "required",
+            RepartEmptyMode::Refuse => "refuse",
+            RepartEmptyMode::Allow => "allow",
+            RepartEmptyMode::Require => "require",
+            RepartEmptyMode::Force => "force",
+            RepartEmptyMode::Create => "create",
         }
     }
 }
@@ -94,12 +176,13 @@ impl RepartMode {
 /// Invokes `systemd-repart` to create partitions on a disk.
 pub struct SystemdRepartInvoker {
     disk: PathBuf,
-    mode: RepartMode,
+    mode: RepartEmptyMode,
     partition_entries: Vec<RepartPartitionEntry>,
 }
 
 impl SystemdRepartInvoker {
-    pub fn new<S>(disk: S, mode: RepartMode) -> Self
+    /// Create a new `SystemdRepartInvoker` for the given disk.
+    pub fn new<S>(disk: S, mode: RepartEmptyMode) -> Self
     where
         S: AsRef<Path>,
     {
@@ -110,16 +193,35 @@ impl SystemdRepartInvoker {
         }
     }
 
+    /// Set the partition entries for the `systemd-repart` invocation.
     pub fn with_partition_entries(mut self, partition_entries: Vec<RepartPartitionEntry>) -> Self {
         self.partition_entries = partition_entries;
         self
     }
 
+    /// Set the empty mode for the `systemd-repart` invocation.
+    pub fn set_empty_mode(&mut self, mode: RepartEmptyMode) {
+        self.mode = mode;
+    }
+
+    /// Add a partition entry to the `systemd-repart` invocation.
     pub fn push_partition_entry(&mut self, partition_entry: RepartPartitionEntry) {
         self.partition_entries.push(partition_entry);
     }
 
+    /// Get current partition entries.
+    pub fn partition_entries(&self) -> &[RepartPartitionEntry] {
+        &self.partition_entries
+    }
+
+    /// Execute the `systemd-repart` command.
+    ///
+    /// Returns the list of partitions in the disk after repart is done in
+    /// logical order.
     pub fn execute(&self) -> Result<Vec<RepartPartition>, Error> {
+        self.check_unique_ids()
+            .context("Repart configuration has duplicate IDs")?;
+
         self.execute_inner().with_context(|| {
             format!(
                 "Failed to execute systemd-repart on {}",
@@ -128,11 +230,26 @@ impl SystemdRepartInvoker {
         })
     }
 
+    fn check_unique_ids(&self) -> Result<(), Error> {
+        // Check that all partition entries have unique IDs
+        let mut unique_ids: HashSet<String> = HashSet::new();
+        for partition_entry in &self.partition_entries {
+            ensure!(
+                unique_ids.insert(partition_entry.id.clone()),
+                "Duplicate partition ID: {}",
+                partition_entry.id
+            );
+        }
+        Ok(())
+    }
+
     fn execute_inner(&self) -> Result<Vec<RepartPartition>, Error> {
         let repart_root = tempfile::tempdir()
             .context("Failed to create temporary directory for systemd-repart files")?;
 
-        self.generate_config(repart_root.path())
+        // Populate a temporary directory with the partition definitions
+        let id_mapping = self
+            .generate_config(repart_root.path())
             .context("Failed to generate systemd-repart config")?;
 
         let repart_output_json = Command::new("systemd-repart")
@@ -143,15 +260,42 @@ impl SystemdRepartInvoker {
             .arg("--json=short")
             .arg("--definitions")
             .arg(repart_root.path())
-            .output()
-            .check_output()
+            .output_and_check()
             .context("Failed to execute systemd-repart")?;
 
-        serde_json::from_str(&repart_output_json)
-            .context("Failed to deserialize output of systemd-repart")
+        let mut repart_output: Vec<RepartPartition> = serde_json::from_str(&repart_output_json)
+            .context("Failed to deserialize output of systemd-repart")?;
+
+        // Update the IDs of the partitions to match the IDs of the partition entries
+        repart_output
+            .iter_mut()
+            .try_for_each(|partition| {
+                partition.id = id_mapping
+                    .get(&partition.file)
+                    .with_context(|| {
+                        format!(
+                            "Failed to find ID mapping for partition definition file {}",
+                            partition.file.display()
+                        )
+                    })?
+                    .clone();
+                Ok(())
+            })
+            .context("Failed to synchronize partition IDs")?;
+
+        Ok(repart_output)
     }
 
-    fn generate_config(&self, root: &Path) -> Result<(), Error> {
+    /// Generate the configuration files for the partitions.
+    ///
+    /// It expects the root directory where the configuration files will be
+    /// written to. Then writes the configuration files with names that will
+    /// force repart to read them in the same order as they are declared in the
+    /// local list.
+    ///
+    /// Returns a mapping of the paths to the generated configuration files to
+    /// the IDs of the partitions.
+    fn generate_config(&self, root: &Path) -> Result<HashMap<PathBuf, String>, Error> {
         if self.partition_entries.len() > 1000 {
             bail!(
                 "Too many partitions ({}), this library only supports up to 1000 partitions",
@@ -159,11 +303,14 @@ impl SystemdRepartInvoker {
             )
         }
 
+        let mut id_mapping = HashMap::new();
+
         self.partition_entries
             .iter()
             .enumerate()
             .try_for_each(|(index, partition_entry)| {
                 let path = root.join(format!("{:03}.conf", index));
+                id_mapping.insert(path.clone(), partition_entry.id.clone());
                 partition_entry
                     .generate_repart_config()
                     .write(&path)
@@ -174,8 +321,15 @@ impl SystemdRepartInvoker {
                             index,
                             partition_entry.partition_type.to_str()
                         )
-                    })
-            })
+                    })?;
+
+                log::trace!("Generated systemd-repart config for partition #{}:\n {}", index,
+                    std::fs::read_to_string(path).unwrap_or("(error)".to_string())
+                );
+                Ok(())
+            }).context("Failed to generate systemd-repart config")?;
+
+        Ok(id_mapping)
     }
 }
 
@@ -187,29 +341,45 @@ mod tests {
     fn test_parse_partitions() {
         let partitions_status = serde_json::json!([
             {
-                "uuid": "123e4567-e89b-12d3-a456-426614174000",
-                "offset": 2048,
-                "raw_size": 1048576,
+                "type": "esp",
+                "label": "esp-a",
+                "uuid": "30bd5cbc-a4b8-437e-88ae-04944fdaf792",
+                "file": "/tmp/.tmp2jMRKF/000.conf",
+                "node": "/dev/sda1",
+                "offset": 1048576usize,
+                "old_size": 52428800usize,
+                "raw_size": 52428800usize,
+                "old_padding": 0,
+                "raw_padding": 0,
+                "activity": "unchanged"
             },
             {
-                "uuid": "123e4567-e89b-12d3-a456-426614174001",
-                "offset": 2049,
-                "raw_size": 1048577,
-            }
+                "type": "root-x86-64",
+                "label": "root-a",
+                "uuid": "84f91880-2765-4a24-a7fa-cda1328a9214",
+                "file": "/tmp/.tmp2jMRKF/001.conf",
+                "node": "/dev/sda2",
+                "offset": 53477376,
+                "old_size": 5368709120usize,
+                "raw_size": 5368709120usize,
+                "old_padding": 28937531392usize,
+                "raw_padding": 23516393472usize,
+                "activity": "create"
+            },
         ]);
 
         let partitions = serde_json::from_value::<Vec<RepartPartition>>(partitions_status).unwrap();
         assert_eq!(partitions.len(), 2);
         assert_eq!(
             partitions[0].uuid.to_string(),
-            "123e4567-e89b-12d3-a456-426614174000"
+            "30bd5cbc-a4b8-437e-88ae-04944fdaf792"
         );
-        assert_eq!(partitions[0].start, 2048);
-        assert_eq!(partitions[0].size, 1048576);
+        assert_eq!(partitions[0].start, 1048576);
+        assert_eq!(partitions[0].size, 52428800);
 
         // input is not an array
         let partition_status = serde_json::json!({
-            "uuid": "123e4567-e89b-12d3-a456-426614174000",
+            "uuid": "84f91880-2765-4a24-a7fa-cda1328a9214",
             "offset": 2048,
             "raw_size": 1048576,
         });
@@ -220,18 +390,30 @@ mod tests {
     #[test]
     fn test_parse_partition() {
         let partition_status = serde_json::json!({
-            "uuid": "123e4567-e89b-12d3-a456-426614174000",
-            "offset": 2048,
-            "raw_size": 1048576,
+            "type": "esp",
+            "label": "esp-a",
+            "uuid": "30bd5cbc-a4b8-437e-88ae-04944fdaf792",
+            "file": "/tmp/.tmp2jMRKF/000.conf",
+            "node": "/dev/sda1",
+            "offset": 1048576,
+            "old_size": 52428800,
+            "raw_size": 52428800,
+            "old_padding": 0,
+            "raw_padding": 0,
+            "activity": "unchanged"
         });
 
         let partition = serde_json::from_value::<RepartPartition>(partition_status).unwrap();
         assert_eq!(
             partition.uuid.to_string(),
-            "123e4567-e89b-12d3-a456-426614174000"
+            "30bd5cbc-a4b8-437e-88ae-04944fdaf792"
         );
-        assert_eq!(partition.start, 2048);
-        assert_eq!(partition.size, 1048576);
+        assert_eq!(partition.start, 1048576);
+        assert_eq!(partition.size, 52428800);
+        assert_eq!(partition.activity, RepartActivity::Unchanged);
+        assert_eq!(partition.partition_type, DiscoverablePartitionType::Esp);
+        assert_eq!(partition.label.as_deref(), Some("esp-a"));
+        assert_eq!(partition.file, PathBuf::from("/tmp/.tmp2jMRKF/000.conf"));
 
         // missing uuid
         let partition_status = serde_json::json!({
@@ -267,6 +449,7 @@ mod tests {
     #[test]
     fn test_partition_config_to_repart_config() {
         let mut partition = RepartPartitionEntry {
+            id: "test".to_owned(),
             partition_type: DiscoverablePartitionType::Esp,
             label: None,
             size_min_bytes: Some(1048576),
@@ -325,6 +508,7 @@ mod tests {
     #[test]
     fn test_partition_config_to_repart_config_grow() {
         let partition = RepartPartitionEntry {
+            id: "test".to_owned(),
             partition_type: DiscoverablePartitionType::LinuxGeneric,
             label: None,
             size_min_bytes: None,
@@ -348,18 +532,21 @@ mod tests {
     fn test_generate_repart_config() {
         let partitions = vec![
             RepartPartitionEntry {
+                id: "test1".to_owned(),
                 partition_type: DiscoverablePartitionType::Esp,
                 label: None,
                 size_min_bytes: Some(8388608), // 8 MiB
                 size_max_bytes: Some(8388608),
             },
             RepartPartitionEntry {
+                id: "test2".to_owned(),
                 partition_type: DiscoverablePartitionType::Esp,
                 label: None,
                 size_min_bytes: Some(10737418240), // 10 GiB
                 size_max_bytes: Some(10737418240),
             },
             RepartPartitionEntry {
+                id: "test3".to_owned(),
                 partition_type: DiscoverablePartitionType::LinuxGeneric,
                 label: Some("testpart".into()),
                 size_min_bytes: None,
@@ -370,7 +557,7 @@ mod tests {
         let repart_root = tempfile::tempdir()
             .expect("Failed to create temporary directory for systemd-repart files");
 
-        SystemdRepartInvoker::new("/dev/null", RepartMode::Force)
+        SystemdRepartInvoker::new("/dev/null", RepartEmptyMode::Force)
             .with_partition_entries(partitions.clone())
             .generate_config(repart_root.path())
             .expect("Failed to generate systemd-repart config");
@@ -468,6 +655,7 @@ mod tests {
         let mut partitions = Vec::new();
         for _ in 0..1001 {
             partitions.push(RepartPartitionEntry {
+                id: "test".to_owned(),
                 partition_type: DiscoverablePartitionType::Esp,
                 label: None,
                 size_min_bytes: Some(8388608), // 8 MiB
@@ -478,7 +666,7 @@ mod tests {
         let repart_root = tempfile::tempdir()
             .expect("Failed to create temporary directory for systemd-repart files");
 
-        let result = SystemdRepartInvoker::new("/dev/null", RepartMode::Force)
+        let result = SystemdRepartInvoker::new("/dev/null", RepartEmptyMode::Force)
             .with_partition_entries(partitions)
             .generate_config(repart_root.path());
 
@@ -516,7 +704,7 @@ mod functional_test {
 
         let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
 
-        let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartMode::Force)
+        let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartEmptyMode::Force)
             .with_partition_entries(partition_definition.clone());
 
         let partitions = repart.execute().unwrap();
@@ -582,7 +770,7 @@ mod functional_test {
     #[functional_test(feature = "helpers", negative = true)]
     fn test_execute_fails_on_non_block_device() {
         // Test that we can repartition /dev/null
-        let repart = SystemdRepartInvoker::new("/dev/null", RepartMode::Force)
+        let repart = SystemdRepartInvoker::new("/dev/null", RepartEmptyMode::Force)
             .with_partition_entries(repart::generate_partition_definition_esp_generic());
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/null: Block device required\n\n");
     }
@@ -590,7 +778,7 @@ mod functional_test {
     #[functional_test(feature = "helpers", negative = true)]
     fn test_execute_fails_on_missing_block_device() {
         // Test that we can repartition a non-existing device
-        let repart = SystemdRepartInvoker::new("/dev/does-not-exist", RepartMode::Force)
+        let repart = SystemdRepartInvoker::new("/dev/does-not-exist", RepartEmptyMode::Force)
             .with_partition_entries(repart::generate_partition_definition_esp_generic());
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/does-not-exist: No such file or directory\n\n");
     }
@@ -603,7 +791,7 @@ mod functional_test {
         partition_definition[1].size_min_bytes = Some(DISK_SIZE);
         partition_definition[1].size_max_bytes = Some(DISK_SIZE);
         let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
-        let repart = SystemdRepartInvoker::new(disk_bus_path, RepartMode::Force)
+        let repart = SystemdRepartInvoker::new(disk_bus_path, RepartEmptyMode::Force)
             .with_partition_entries(partition_definition);
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nCan't fit requested partitions into available free space (15.9G), refusing.\nAutomatically determined minimal disk image size as 16.0G, current image size is 16.0G.\n\n");
     }

@@ -20,7 +20,7 @@
 
 use std::os::unix::ffi::OsStrExt;
 
-use anyhow::Error;
+use anyhow::{bail, Error};
 
 use crate::config::{FileSystemType, PartitionType};
 
@@ -46,7 +46,15 @@ impl<'a> HostConfigBlockDevice<'a> {
         match self {
             Self::Disk(_) => (),
             Self::Partition(_) => (),
-            Self::AdoptedPartition => (),
+            Self::AdoptedPartition(ap) => match (&ap.match_label, &ap.match_uuid) {
+                (Some(_), Some(_)) => {
+                    bail!("Adopted partitions cannot have both matchLabel and matchUUID");
+                }
+                (None, None) => {
+                    bail!("Adopted partitions must have either matchLabel or matchUUID");
+                }
+                _ => (),
+            },
             Self::RaidArray(_) => (),
             Self::ABVolume(_) => (),
             Self::EncryptedVolume(_) => (),
@@ -75,6 +83,7 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
                     | BlkDevKindFlag::ABVolume
             }
+            Self::FileSystemAdopted => BlkDevKindFlag::AdoptedPartition,
             Self::FileSystemSysupdate => BlkDevKindFlag::ABVolume,
             Self::VerityFileSystemData | Self::VerityFileSystemHash => {
                 BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray | BlkDevKindFlag::ABVolume
@@ -95,6 +104,7 @@ impl BlkDevReferrerKind {
             // These are not really used, but we define them for
             // completeness
             Self::FileSystem => ValidCardinality::new_at_most(1),
+            Self::FileSystemAdopted => ValidCardinality::new_exact(1),
             Self::FileSystemSysupdate => ValidCardinality::new_exact(1),
             Self::VerityFileSystemData => ValidCardinality::new_exact(1),
             Self::VerityFileSystemHash => ValidCardinality::new_exact(1),
@@ -133,6 +143,7 @@ impl BlkDevReferrerKind {
             Self::ABVolume => BlkDevReferrerKindFlag::empty(),
             Self::EncryptedVolume => BlkDevReferrerKindFlag::empty(),
             Self::FileSystem
+            | Self::FileSystemAdopted
             | Self::FileSystemSysupdate
             | Self::VerityFileSystemData
             | Self::VerityFileSystemHash => BlkDevReferrerKindFlag::empty(),
@@ -144,7 +155,7 @@ impl FileSystemType {
     /// Returns whether a filesystem type requires a block device ID.
     pub fn requires_block_device_id(&self) -> bool {
         match self {
-            Self::Ext4 | Self::Xfs | Self::Vfat | Self::Iso9660 | Self::Swap => true,
+            Self::Ext4 | Self::Xfs | Self::Vfat | Self::Iso9660 | Self::Swap | Self::Auto => true,
             Self::Tmpfs | Self::Overlay => false,
         }
     }
@@ -155,20 +166,27 @@ impl FileSystemType {
             Self::Ext4 | Self::Xfs | Self::Vfat => FileSystemSourceKindList(vec![
                 FileSystemSourceKind::Create,
                 FileSystemSourceKind::Image,
+                FileSystemSourceKind::Adopted,
             ]),
-            Self::Swap => FileSystemSourceKindList(vec![FileSystemSourceKind::Create]),
-            Self::Iso9660 => FileSystemSourceKindList(vec![FileSystemSourceKind::Adopted]),
-            Self::Tmpfs => FileSystemSourceKindList(vec![FileSystemSourceKind::Create]),
-            Self::Overlay => FileSystemSourceKindList(vec![FileSystemSourceKind::Create]),
+            Self::Iso9660 | Self::Auto => {
+                FileSystemSourceKindList(vec![FileSystemSourceKind::Adopted])
+            }
+            Self::Swap | Self::Tmpfs | Self::Overlay => {
+                FileSystemSourceKindList(vec![FileSystemSourceKind::Create])
+            }
         }
     }
 
     /// Returns whether a filesystem type can have a mountpoint.
     pub fn can_have_mountpoint(&self) -> bool {
         match self {
-            Self::Ext4 | Self::Xfs | Self::Vfat | Self::Iso9660 | Self::Tmpfs | Self::Overlay => {
-                true
-            }
+            Self::Ext4
+            | Self::Xfs
+            | Self::Vfat
+            | Self::Iso9660
+            | Self::Tmpfs
+            | Self::Overlay
+            | Self::Auto => true,
             Self::Swap => false,
         }
     }
@@ -177,7 +195,9 @@ impl FileSystemType {
     pub fn supports_verity(&self) -> bool {
         match self {
             Self::Ext4 | Self::Xfs => true,
-            Self::Vfat | Self::Iso9660 | Self::Swap | Self::Tmpfs | Self::Overlay => false,
+            Self::Vfat | Self::Iso9660 | Self::Swap | Self::Tmpfs | Self::Overlay | Self::Auto => {
+                false
+            }
         }
     }
 }
@@ -195,8 +215,7 @@ impl<'a> HostConfigBlockDevice<'a> {
         match self {
             Self::Disk(disk) => Some(vec![("device", disk.device.as_os_str().as_bytes())]),
             Self::Partition(_) => None,
-            // Will be implemented in the future
-            Self::AdoptedPartition => todo!("AdoptedPartition unique fields"),
+            Self::AdoptedPartition(_) => None,
             Self::RaidArray(raid_array) => Some(vec![("name", raid_array.name.as_bytes())]),
             Self::ABVolume(_) => None,
             Self::EncryptedVolume(enc_vol) => {
@@ -213,12 +232,8 @@ impl BlkDevKind {
     /// that can't have them.
     pub(super) fn has_partition_type(self) -> bool {
         match self {
-            Self::Disk => false,
-            Self::Partition
-            | Self::AdoptedPartition
-            | Self::RaidArray
-            | Self::ABVolume
-            | Self::EncryptedVolume => true,
+            Self::Disk | Self::AdoptedPartition => false,
+            Self::Partition | Self::RaidArray | Self::ABVolume | Self::EncryptedVolume => true,
         }
     }
 }
@@ -238,7 +253,7 @@ impl BlkDevReferrerKind {
             Self::RaidArray | Self::ABVolume | Self::EncryptedVolume => true,
 
             // These only have one target, so enforcing this is meaningless.
-            Self::FileSystem | Self::FileSystemSysupdate => false,
+            Self::FileSystem | Self::FileSystemAdopted | Self::FileSystemSysupdate => false,
 
             // Only enforce it for the data partition, which will check both.
             // Do not enforce for the hash partition to avoid checking twice.
@@ -261,6 +276,7 @@ impl BlkDevReferrerKind {
             // Filesystems are special referrers because they are not nodes.
             // These rules are not checked, but included here for completeness.
             Self::FileSystem
+            | Self::FileSystemAdopted
             | Self::FileSystemSysupdate
             | Self::VerityFileSystemData
             | Self::VerityFileSystemHash => false,
@@ -279,6 +295,7 @@ impl BlkDevReferrerKind {
             Self::None | Self::EncryptedVolume => false,
             // Filesystems should always have homogeneous partition types.
             Self::FileSystem
+            | Self::FileSystemAdopted
             | Self::FileSystemSysupdate
             | Self::VerityFileSystemData
             | Self::VerityFileSystemHash => true,
@@ -296,7 +313,9 @@ impl BlkDevReferrerKind {
                 PartitionType::Root,
                 PartitionType::RootVerity,
             ]),
-            Self::FileSystem | Self::FileSystemSysupdate => AllowedPartitionTypes::Any,
+            Self::FileSystem | Self::FileSystemAdopted | Self::FileSystemSysupdate => {
+                AllowedPartitionTypes::Any
+            }
             Self::VerityFileSystemData => {
                 // TODO: add Usr when it's supported
                 AllowedPartitionTypes::Allow(vec![PartitionType::Root])
@@ -341,6 +360,7 @@ impl BlkDevReferrerKind {
             // Because of that, they have their own set of rules that are not
             // covered here, and this section is unreachable.
             Self::FileSystem
+            | Self::FileSystemAdopted
             | Self::FileSystemSysupdate
             | Self::VerityFileSystemData
             | Self::VerityFileSystemHash => (),

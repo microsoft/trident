@@ -81,8 +81,7 @@ pub enum FileSystemSource {
 
     /// Filesystem from an adopted partition.
     ///
-    /// DISABLED: This is not supported yet.
-    #[serde(skip)]
+    /// Use an existing file system from an adopted partition.
     Adopted,
 }
 
@@ -169,6 +168,12 @@ pub enum FileSystemType {
     /// [Kernel documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)
     Tmpfs,
 
+    /// # Auto
+    ///
+    /// Passed to `mount` to automatically detect the filesystem type. ONLY
+    /// supported for adopted partitions.
+    Auto,
+
     /// # Overlay file system
     ///
     /// Used internally but currently not exposed in the API.
@@ -214,7 +219,8 @@ impl FileSystemType {
             | FileSystemType::Swap
             | FileSystemType::Tmpfs
             | FileSystemType::Overlay
-            | FileSystemType::Iso9660 => false,
+            | FileSystemType::Iso9660
+            | FileSystemType::Auto => false,
         }
     }
 
@@ -232,4 +238,47 @@ pub struct MountPointInfo<'a> {
     pub fs_type: FileSystemType,
     pub is_verity: bool,
     pub device_id: Option<&'a BlockDeviceId>,
+}
+
+impl FileSystem {
+    /// Because filesystems don't have IDs that can uniquely identify them, this
+    /// function can be used to create a description of the specific filesystem
+    /// in lieu of an ID.
+    pub(crate) fn description(&self) -> String {
+        [
+            (
+                "src",
+                Some(
+                    match &self.source {
+                        FileSystemSource::Create => "new",
+                        FileSystemSource::Adopted => "adopted",
+                        FileSystemSource::Image(_) => "image",
+                    }
+                    .to_owned(),
+                ),
+            ),
+            ("type", Some(self.fs_type.to_string())),
+            ("dev", self.device_id.clone()),
+            (
+                "mnt",
+                self.mount_point
+                    .as_ref()
+                    .map(|mp| mp.path.to_string_lossy().to_string()),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|v| format!("{}:{}", k, v)))
+        .collect::<Vec<_>>()
+        .join(", ")
+    }
+}
+
+impl VerityFileSystem {
+    /// Provide a quick description of the filesystem.
+    pub(crate) fn description(&self) -> String {
+        format!(
+            "'{}' on devices data: '{}', hash: '{}'",
+            self.name, self.data_device_id, self.hash_device_id
+        )
+    }
 }

@@ -57,6 +57,7 @@ impl MountFileSystemType {
 
     pub fn from_api_type(api_type: FileSystemType) -> Result<Self, anyhow::Error> {
         Ok(match api_type {
+            FileSystemType::Auto => MountFileSystemType::Auto,
             FileSystemType::Ext4 => MountFileSystemType::Ext4,
             FileSystemType::Xfs => MountFileSystemType::Xfs,
             FileSystemType::Vfat => MountFileSystemType::Vfat,
@@ -102,7 +103,8 @@ impl MkfsFileSystemType {
             FileSystemType::Swap
             | FileSystemType::Iso9660
             | FileSystemType::Tmpfs
-            | FileSystemType::Overlay => {
+            | FileSystemType::Overlay
+            | FileSystemType::Auto => {
                 bail!(
                     "'{}' filesystem type cannot be used for creating new filesystems",
                     api_type
@@ -143,6 +145,7 @@ impl TabFileSystemType {
             FileSystemType::Tmpfs => Self::Tmpfs,
             FileSystemType::Overlay => Self::Overlay,
             FileSystemType::Swap => Self::Swap,
+            FileSystemType::Auto => Self::Auto,
         }
     }
 }

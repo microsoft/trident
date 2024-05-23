@@ -22,8 +22,13 @@ pub struct BlockDeviceGraph<'a> {
 pub(crate) enum VolumeStatus {
     /// The volume is present and backed by an image
     PresentAndBackedByImage,
+
+    /// The volume is present and backed by an adopted filesystem
+    PresentAndBackedByAdoptedFs,
+
     /// The volume is present but not backed by an image
     PresentButNotBackedByImage,
+
     /// The volume is not present
     NotPresent,
 }
@@ -65,6 +70,8 @@ impl<'a> BlockDeviceGraph<'a> {
             .map(|fs| {
                 if fs.is_image_backed() {
                     VolumeStatus::PresentAndBackedByImage
+                } else if fs.is_adopted_backed() {
+                    VolumeStatus::PresentAndBackedByAdoptedFs
                 } else {
                     VolumeStatus::PresentButNotBackedByImage
                 }
@@ -113,11 +120,18 @@ impl<'a> BlockDeviceGraph<'a> {
                 })?;
 
         Ok(match node.host_config_ref {
-            HostConfigBlockDevice::Disk(_) => None, // Disks are not partitions
+            // Disks are not partitions
+            HostConfigBlockDevice::Disk(_) => None,
+
+            // Partitions are, well... partitions
             HostConfigBlockDevice::Partition(p) => {
                 Some(PartitionAttributeList::new(&p.id, func(p)))
             }
-            HostConfigBlockDevice::AdoptedPartition => None, // We may not know this!
+
+            // We don't know the partition type of an adopted partition
+            HostConfigBlockDevice::AdoptedPartition(_) => None,
+
+            // Composite nodes
             HostConfigBlockDevice::RaidArray(_)
             | HostConfigBlockDevice::ABVolume(_)
             | HostConfigBlockDevice::EncryptedVolume(_) => {

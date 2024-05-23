@@ -485,7 +485,7 @@ mod verity {
             builder.build().unwrap_err(),
             BlockDeviceGraphBuildError::FilesystemInvalidPartitionType {
                 referrer: BlkDevReferrerKind::VerityFileSystemData,
-                fs_type: FileSystemType::Ext4,
+                fs_desc: vfs.description(),
                 partition_type: PartitionType::LinuxGeneric,
                 valid_types: BlkDevReferrerKind::VerityFileSystemData.allowed_partition_types()
             }

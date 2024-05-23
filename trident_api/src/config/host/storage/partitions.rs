@@ -6,7 +6,7 @@ use uuid::Uuid;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{constants::PARTITION_SIZE_GROW, is_default, BlockDeviceId};
+use crate::{constants::PARTITION_SIZE_GROW, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::block_device_id_schema;
@@ -53,7 +53,10 @@ pub struct Partition {
 }
 
 /// Settings to adopt a pre-existing partition.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+///
+/// Only ONE match criteria should be provided.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct AdoptedPartition {
     /// A unique identifier for the partition.
@@ -64,65 +67,11 @@ pub struct AdoptedPartition {
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
-    /// Optionally resize the partition.
-    ///
-    /// Note: Only expanding is supported for adoption. Trying to shrink a
-    /// partition will result in an error.
-    ///
-    /// Format: String `<number>[<unit>]`
-    ///
-    /// Accepted values:
-    ///
-    /// - `grow`: Use all available space. It is recommended to ONLY use this
-    ///   for the last partition on the disk.
-    ///
-    /// - A number with optional unit suffixes: K, M, G, T (to the base of
-    ///   1024), bytes by default when no unit is specified. For new partitions,
-    ///   it will attempt to create a partition of this size. If a partition is
-    ///   being adopted, size MUST NOT be less than the size of the partition
-    ///   being adopted. Only expanding is supported for adoption.
-    ///
-    /// Examples:
-    ///
-    /// - `1G`
-    ///
-    /// - `200M`
-    ///
-    /// - `grow`
-    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
-    pub size: Option<PartitionSize>,
+    /// Partition label to look for when matching against the existing partitions.
+    pub match_label: Option<String>,
 
-    /// Match a specific partition by its UUID.
-    ///
-    /// Look for a partition with the given UUID and adopt it.
-    ///
-    /// **This is the best option, use whenever possible.**
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub uuid: Option<Uuid>,
-
-    /// Match a specific partition by its name.
-    ///
-    /// Look for a partition with the given name and adopt it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// Match a specific partition by its current position on the partition table.
-    ///
-    /// Look for a partition at the given position in the partition table and adopt it.
-    /// The position is 0-based.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub position: Option<u64>,
-
-    /// Match the first partition with the given type.
-    ///
-    /// **Use as a last resort.**
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_of_type: Option<PartitionType>,
-
-    /// Set to true to continue if a match could not be made, otherwise produce
-    /// an error and stop installation if no match was found.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub continue_if_no_match: bool,
+    /// Partition UUID to look for when matching against the existing partitions.
+    pub match_uuid: Option<Uuid>,
 }
 
 /// Partition types as defined by The Discoverable Partitions Specification (<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).

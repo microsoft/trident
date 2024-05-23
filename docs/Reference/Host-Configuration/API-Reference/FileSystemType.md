@@ -47,3 +47,12 @@ File system types.
 | Type           | `string` |
 | Value          | `tmpfs`  |
 
+### Auto
+
+Passed to `mount` to automatically detect the filesystem type. ONLY supported for adopted partitions.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `auto`   |
+

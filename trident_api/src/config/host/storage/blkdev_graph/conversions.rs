@@ -1,8 +1,8 @@
 //! Conversions from config types to BlkDevNode
 
 use crate::config::{
-    AbVolumePair, Disk, EncryptedVolume, FileSystem, FileSystemSource, ImageFormat, Partition,
-    SoftwareRaidArray,
+    AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource,
+    ImageFormat, Partition, SoftwareRaidArray,
 };
 
 use super::types::{BlkDevNode, BlkDevReferrerKind, FileSystemSourceKind, HostConfigBlockDevice};
@@ -26,6 +26,19 @@ where
         Self::new_base(
             partition.id.clone(),
             HostConfigBlockDevice::Partition(partition),
+        )
+    }
+}
+
+/// Get a BlkDevNode from an AdoptedPartition reference
+impl<'a, 'b> From<&'a AdoptedPartition> for BlkDevNode<'b>
+where
+    'a: 'b,
+{
+    fn from(partition: &'a AdoptedPartition) -> Self {
+        Self::new_base(
+            partition.id.clone(),
+            HostConfigBlockDevice::AdoptedPartition(partition),
         )
     }
 }
@@ -81,8 +94,8 @@ impl From<&FileSystem> for BlkDevReferrerKind {
                 // If we're creating a filesystem, then it's a regular filesystem referrer
                 FileSystemSource::Create => BlkDevReferrerKind::FileSystem,
 
-                // TODO: Implement this when adopted partitions are supported
-                FileSystemSource::Adopted => BlkDevReferrerKind::FileSystem,
+                // If we're adopting a filesystem, then it's an adopted filesystem referrer
+                FileSystemSource::Adopted => BlkDevReferrerKind::FileSystemAdopted,
 
                 // If it's an image, then it depends on the image format
                 FileSystemSource::Image(img) => match img.format {

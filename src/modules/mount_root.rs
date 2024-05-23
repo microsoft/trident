@@ -196,7 +196,7 @@ mod functional_test {
     use osutils::{
         hashing_reader::HashingReader,
         image_streamer, mountpoint,
-        repart::{RepartMode, SystemdRepartInvoker},
+        repart::{RepartEmptyMode, SystemdRepartInvoker},
         testutils::repart::{
             self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, PART1_SIZE, TEST_DISK_DEVICE_PATH,
         },
@@ -347,7 +347,7 @@ mod functional_test {
         // Partition test drive
         let partition_definition = repart::generate_partition_definition_esp_generic();
         let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
-        let repart = SystemdRepartInvoker::new(disk_bus_path, RepartMode::Force)
+        let repart = SystemdRepartInvoker::new(disk_bus_path, RepartEmptyMode::Force)
             .with_partition_entries(partition_definition.clone());
         let _ = repart.execute().unwrap();
         udevadm::settle().unwrap();

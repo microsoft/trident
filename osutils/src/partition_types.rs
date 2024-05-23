@@ -10,7 +10,7 @@ use strum_macros::EnumIter;
 /// Partition types supported by `systemd-repart`.
 ///
 /// Note: Secondary arch partition types are intentionally ignored.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
 #[cfg_attr(test, derive(EnumIter))]
 pub enum DiscoverablePartitionType {
     /// EFI System Partition

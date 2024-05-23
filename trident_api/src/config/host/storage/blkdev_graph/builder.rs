@@ -298,7 +298,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 let fs_src_kind = FileSystemSourceKind::from(&fs.source);
                 if !valid_sources.contains(fs_src_kind) {
                     return Err(BlockDeviceGraphBuildError::FilesystemInvalidSource {
-                        fs_type: fs.fs_type,
+                        fs_desc: fs.description(),
                         fs_source: fs_src_kind,
                         fs_acceptable_sources: valid_sources,
                     });
@@ -318,7 +318,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 let node = nodes.get_mut(device_id).ok_or_else(|| {
                     BlockDeviceGraphBuildError::FilesystemNonExistentReference {
                         target_id: device_id.clone(),
-                        fs_type: fs.fs_type,
+                        fs_desc: fs.description(),
                     }
                 })?;
 
@@ -328,7 +328,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 // Check that the node is of a valid kind.
                 if !valid_references.contains(node.kind.as_flag()) {
                     return Err(BlockDeviceGraphBuildError::FilesystemInvalidReference {
-                        fs_type: fs.fs_type,        // The image's path.
+                        fs_desc: fs.description(),  // The filesystem's description.
                         target_id: node.id.clone(), // The node being referenced.
                         target_kind: node.kind,     // The node's kind.
                         valid_references,           // The valid kinds of nodes for an image.
@@ -706,7 +706,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 return Err(
                     BlockDeviceGraphBuildError::FilesystemHeterogenousPartitionTypes {
                         referrer: BlkDevReferrerKind::from(fs),
-                        fs_type: node.filesystem.as_ref().unwrap().fs_type(),
+                        fs_desc: fs.description(),
                     },
                 );
             }
@@ -720,7 +720,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
         graph: &BlockDeviceGraph<'a>,
     ) -> Result<(), BlockDeviceGraphBuildError> {
         // Iterate over all nodes that can have partition kinds.
-        // This mostly means skip disks.
+        // This means skip disks and adopted partitions.
         for node in graph
             .nodes
             .values()
@@ -783,7 +783,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 if !valid_part_types.contains(*partition_type) {
                     return Err(BlockDeviceGraphBuildError::FilesystemInvalidPartitionType {
                         referrer: BlkDevReferrerKind::from(node_fs),
-                        fs_type: node_fs.fs_type(),
+                        fs_desc: node_fs.description(),
                         partition_type: *partition_type,
                         valid_types: valid_part_types.clone(),
                     });
@@ -813,7 +813,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                     .get_homogeneous().ok_or({
                         BlockDeviceGraphBuildError::FilesystemHeterogenousPartitionTypes {
                             referrer: BlkDevReferrerKind::VerityFileSystemHash,
-                            fs_type: vfs.fs_type,
+                            fs_desc: vfs.description(),
                         }
                     })?;
 
@@ -905,15 +905,15 @@ fn update_node_filesystem<'a>(
         }
         Some(NodeFileSystem::Regular(other_fs)) => {
             Err(BlockDeviceGraphBuildError::FilesystemReferenceInUse {
-                fs_type: nfs.fs_type(),
+                fs_desc: nfs.description(),
                 target_id: node.id.clone(),
-                other_fs_type: other_fs.fs_type,
+                other_fs_desc: other_fs.description(),
             })
         }
         Some(NodeFileSystem::VerityData(other_vfs))
         | Some(NodeFileSystem::VerityHash(other_vfs)) => {
             Err(BlockDeviceGraphBuildError::FilesystemReferenceInUseVerity {
-                fs_type: nfs.fs_type(),
+                fs_desc: nfs.description(),
                 target_id: node.id.clone(),
                 other_vfs_name: other_vfs.name.clone(),
                 other_vfs_type: other_vfs.fs_type,

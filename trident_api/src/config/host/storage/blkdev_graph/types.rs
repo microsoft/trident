@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{
-        AbVolumePair, Disk, EncryptedVolume, FileSystem, FileSystemSource, FileSystemType,
-        MountPoint, Partition, SoftwareRaidArray, VerityFileSystem,
+        AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource,
+        FileSystemType, MountPoint, Partition, SoftwareRaidArray, VerityFileSystem,
     },
     BlockDeviceId,
 };
@@ -65,10 +65,7 @@ pub enum HostConfigBlockDevice<'a> {
     Partition(&'a Partition),
 
     /// An existing physical partition that is being adopted
-    ///
-    /// Not yet implemented!
-    #[allow(dead_code)]
-    AdoptedPartition,
+    AdoptedPartition(&'a AdoptedPartition),
 
     /// A RAID array
     RaidArray(&'a SoftwareRaidArray),
@@ -105,6 +102,9 @@ pub enum BlkDevReferrerKind {
     /// A regular filesystem
     FileSystem,
 
+    /// An adopted filesystem
+    FileSystemAdopted,
+
     /// A filesystem for sysupdate
     FileSystemSysupdate,
 
@@ -126,9 +126,10 @@ bitflags::bitflags! {
         const ABVolume = 1 << 1;
         const EncryptedVolume = 1 << 2;
         const FileSystem = 1 << 3;
-        const FileSystemSysupdate = 1 << 4;
-        const VerityFileSystemData = 1 << 5;
-        const VerityFileSystemHash = 1 << 6;
+        const FileSystemAdopted = 1 << 4;
+        const FileSystemSysupdate = 1 << 5;
+        const VerityFileSystemData = 1 << 6;
+        const VerityFileSystemHash = 1 << 7;
 
         // Groups:
         // Example:
@@ -178,6 +179,17 @@ impl<'a> NodeFileSystem<'a> {
         }
     }
 
+    /// Return whether this filesystem is backed by an adopted block device
+    pub fn is_adopted_backed(&self) -> bool {
+        match self {
+            NodeFileSystem::Regular(fs) => fs.source == FileSystemSource::Adopted,
+            // Verity filesystems are always image backed, they cannot be adopted.
+            // This code should break if this ever changes :)
+            NodeFileSystem::VerityData(vfs) => vfs.data_device_id.is_empty(),
+            NodeFileSystem::VerityHash(vfs) => vfs.hash_device_id.is_empty(),
+        }
+    }
+
     pub fn targets(&self) -> Vec<BlockDeviceId> {
         match self {
             NodeFileSystem::Regular(fs) => fs.device_id.iter().cloned().collect(),
@@ -205,6 +217,13 @@ impl<'a> NodeFileSystem<'a> {
                 out
             }
             NodeFileSystem::VerityData(vfs) | NodeFileSystem::VerityHash(vfs) => vfs.name.clone(),
+        }
+    }
+
+    pub fn description(&self) -> String {
+        match self {
+            NodeFileSystem::Regular(fs) => fs.description(),
+            NodeFileSystem::VerityData(vfs) | NodeFileSystem::VerityHash(vfs) => vfs.description(),
         }
     }
 }
@@ -248,7 +267,7 @@ impl HostConfigBlockDevice<'_> {
         match self {
             HostConfigBlockDevice::Disk(_) => BlkDevKind::Disk,
             HostConfigBlockDevice::Partition(_) => BlkDevKind::Partition,
-            HostConfigBlockDevice::AdoptedPartition => BlkDevKind::AdoptedPartition,
+            HostConfigBlockDevice::AdoptedPartition(_) => BlkDevKind::AdoptedPartition,
             HostConfigBlockDevice::RaidArray(_) => BlkDevKind::RaidArray,
             HostConfigBlockDevice::ABVolume(_) => BlkDevKind::ABVolume,
             HostConfigBlockDevice::EncryptedVolume(_) => BlkDevKind::EncryptedVolume,
@@ -336,6 +355,7 @@ impl BlkDevReferrerKind {
             Self::ABVolume => BlkDevReferrerKindFlag::ABVolume,
             Self::EncryptedVolume => BlkDevReferrerKindFlag::EncryptedVolume,
             Self::FileSystem => BlkDevReferrerKindFlag::FileSystem,
+            Self::FileSystemAdopted => BlkDevReferrerKindFlag::FileSystemAdopted,
             Self::FileSystemSysupdate => BlkDevReferrerKindFlag::FileSystemSysupdate,
             Self::VerityFileSystemData => BlkDevReferrerKindFlag::VerityFileSystemData,
             Self::VerityFileSystemHash => BlkDevReferrerKindFlag::VerityFileSystemHash,
@@ -448,6 +468,7 @@ impl Display for BlkDevReferrerKind {
             BlkDevReferrerKind::ABVolume => write!(f, "ab-volume"),
             BlkDevReferrerKind::EncryptedVolume => write!(f, "encrypted-volume"),
             BlkDevReferrerKind::FileSystem => write!(f, "filesystem"),
+            BlkDevReferrerKind::FileSystemAdopted => write!(f, "filesystem-adopted"),
             BlkDevReferrerKind::FileSystemSysupdate => write!(f, "filesystem-sysupdate"),
             BlkDevReferrerKind::VerityFileSystemData => write!(f, "verity-filesystem-data"),
             BlkDevReferrerKind::VerityFileSystemHash => write!(f, "verity-filesystem-hash"),
@@ -508,6 +529,7 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 BlkDevReferrerKindFlag::ABVolume => BlkDevReferrerKind::ABVolume,
                 BlkDevReferrerKindFlag::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
                 BlkDevReferrerKindFlag::FileSystem => BlkDevReferrerKind::FileSystem,
+                BlkDevReferrerKindFlag::FileSystemAdopted => BlkDevReferrerKind::FileSystemAdopted,
                 BlkDevReferrerKindFlag::FileSystemSysupdate => {
                     BlkDevReferrerKind::FileSystemSysupdate
                 }

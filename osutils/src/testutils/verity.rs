@@ -6,7 +6,7 @@ use crate::{
     filesystems::MountFileSystemType,
     grub::GrubConfig,
     mount::{self, MountGuard},
-    repart::{RepartMode, SystemdRepartInvoker},
+    repart::{RepartEmptyMode, SystemdRepartInvoker},
     udevadm, veritysetup,
 };
 
@@ -65,7 +65,7 @@ pub fn setup_verity_volumes() -> String {
             .unwrap()
     };
 
-    let repart = SystemdRepartInvoker::new(block_device_path, RepartMode::Force)
+    let repart = SystemdRepartInvoker::new(block_device_path, RepartEmptyMode::Force)
         .with_partition_entries(repart::generate_partition_definition_boot_root_verity());
 
     repart.execute().unwrap();

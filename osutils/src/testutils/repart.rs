@@ -18,12 +18,14 @@ pub const CDROM_MOUNT_PATH: &str = "/mnt/cdrom";
 pub fn generate_partition_definition_esp_generic() -> Vec<RepartPartitionEntry> {
     vec![
         RepartPartitionEntry {
+            id: "esp".to_string(),
             partition_type: DiscoverablePartitionType::Esp,
             label: None,
             size_min_bytes: Some(PART1_SIZE),
             size_max_bytes: Some(PART1_SIZE),
         },
         RepartPartitionEntry {
+            id: "root".to_string(),
             partition_type: DiscoverablePartitionType::LinuxGeneric,
             label: None,
             // When min==max==None, it's a grow partition
@@ -36,18 +38,21 @@ pub fn generate_partition_definition_esp_generic() -> Vec<RepartPartitionEntry> 
 pub fn generate_partition_definition_esp_root_generic() -> Vec<RepartPartitionEntry> {
     vec![
         RepartPartitionEntry {
+            id: "esp".to_string(),
             partition_type: DiscoverablePartitionType::Esp,
             label: None,
             size_min_bytes: Some(PART1_SIZE),
             size_max_bytes: Some(PART1_SIZE),
         },
         RepartPartitionEntry {
+            id: "root".to_string(),
             partition_type: DiscoverablePartitionType::Root,
             label: None,
             size_min_bytes: Some(PART2_SIZE),
             size_max_bytes: Some(PART2_SIZE),
         },
         RepartPartitionEntry {
+            id: "generic".to_string(),
             partition_type: DiscoverablePartitionType::LinuxGeneric,
             label: None,
             // When min==max==None, it's a grow partition
@@ -60,18 +65,21 @@ pub fn generate_partition_definition_esp_root_generic() -> Vec<RepartPartitionEn
 pub fn generate_partition_definition_boot_root_verity() -> Vec<RepartPartitionEntry> {
     vec![
         RepartPartitionEntry {
+            id: "boot".to_string(),
             partition_type: DiscoverablePartitionType::Xbootldr,
             label: None,
             size_min_bytes: Some(1024 * 1024 * 1024),
             size_max_bytes: None,
         },
         RepartPartitionEntry {
+            id: "root-verity".to_string(),
             partition_type: DiscoverablePartitionType::RootVerity,
             label: None,
             size_min_bytes: Some(1024 * 1024 * 1024),
             size_max_bytes: None,
         },
         RepartPartitionEntry {
+            id: "root".to_string(),
             partition_type: DiscoverablePartitionType::Root,
             label: None,
             // When min==max==None, it's a grow partition
@@ -84,24 +92,28 @@ pub fn generate_partition_definition_boot_root_verity() -> Vec<RepartPartitionEn
 pub fn generate_partition_definition_esp_root_raid_single_disk() -> Vec<RepartPartitionEntry> {
     vec![
         RepartPartitionEntry {
+            id: "esp".to_string(),
             partition_type: DiscoverablePartitionType::Esp,
             label: None,
             size_min_bytes: Some(PART1_SIZE),
             size_max_bytes: Some(PART1_SIZE),
         },
         RepartPartitionEntry {
+            id: "root-a".to_string(),
             partition_type: DiscoverablePartitionType::Root,
             label: None,
             size_min_bytes: Some(PART2_SIZE),
             size_max_bytes: Some(PART2_SIZE),
         },
         RepartPartitionEntry {
+            id: "root-b".to_string(),
             partition_type: DiscoverablePartitionType::Root,
             label: None,
             size_min_bytes: Some(PART2_SIZE),
             size_max_bytes: Some(PART2_SIZE),
         },
         RepartPartitionEntry {
+            id: "generic".to_string(),
             partition_type: DiscoverablePartitionType::LinuxGeneric,
             label: None,
             // When min==max==None, it's a grow partition

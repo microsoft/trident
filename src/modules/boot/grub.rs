@@ -242,7 +242,7 @@ mod functional_test {
         filesystems::MkfsFileSystemType,
         lsblk::{self, BlockDevice},
         mkfs,
-        repart::{RepartMode, SystemdRepartInvoker},
+        repart::{RepartEmptyMode, SystemdRepartInvoker},
         testutils::repart::{self, DISK_SIZE, PART1_SIZE, PART2_SIZE, TEST_DISK_DEVICE_PATH},
         udevadm,
     };
@@ -263,7 +263,7 @@ mod functional_test {
                 repart::generate_partition_definition_esp_root_raid_single_disk();
         }
 
-        let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartMode::Force)
+        let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartEmptyMode::Force)
             .with_partition_entries(partition_definition.clone());
 
         let partitions = repart.execute().unwrap();
