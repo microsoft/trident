@@ -29,7 +29,6 @@ hostConfiguration:
           devices:
             - root-a1
             - root-a2
-          metadataVersion: "1.0"
     filesystems:
       - deviceId: root-a
         type: ext4

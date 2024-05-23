@@ -49,14 +49,12 @@ hostConfiguration:
           devices:
             - web-a-e-1
             - web-a-e-2
-          metadataVersion: "1.2"
         - id: web-b-e
           name: web-b-e
           level: raid1
           devices:
             - web-b-e-1
             - web-b-e-2
-          metadataVersion: "1.2"
     abUpdate:
       volumePairs:
         - id: web

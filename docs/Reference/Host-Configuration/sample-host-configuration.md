@@ -53,7 +53,6 @@ storage:
       devices:
       - raid-a
       - raid-b
-      metadataVersion: '1.0'
   abUpdate:
     volumePairs:
     - id: root

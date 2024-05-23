@@ -53,21 +53,18 @@ hostConfiguration:
           devices:
             - root-1
             - root-2
-          metadataVersion: "1.2"
         - id: root-hash
           name: root-hash
           level: raid1
           devices:
             - root-hash-1
             - root-hash-2
-          metadataVersion: "1.2"
         - id: trident-overlay
           name: trident-overlay
           level: raid1
           devices:
             - trident-overlay-1
             - trident-overlay-2
-          metadataVersion: "1.2"
     filesystems:
       - deviceId: trident-overlay
         type: ext4

@@ -34,7 +34,6 @@ hostConfiguration:
           devices:
             - web-e-1
             - web-e-2
-          metadataVersion: "1.2"
     filesystems:
       - deviceId: esp
         type: vfat

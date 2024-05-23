@@ -381,7 +381,6 @@ mod tests {
                         id: "my-raid1".to_owned(),
                         name: "my-raid".to_owned(),
                         level: RaidLevel::Raid1,
-                        metadata_version: "1.2".to_owned(),
                         devices: vec!["part3".to_owned(), "part4".to_owned()],
                     }],
                 },

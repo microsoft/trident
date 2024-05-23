@@ -57,16 +57,6 @@ Supported and tested values are `raid0`, `raid1`. Other possible values yet to b
 | Type           | `RaidLevel`                 |
 | Link           | [RaidLevel](./RaidLevel.md) |
 
-### `metadataVersion` **<span style="color:orange;">(required)</span>**
-
-Metadata of the RAID array.
-
-Supported and tested values are `1.0`. Note that this is a string attribute.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
 ### `name` **<span style="color:orange;">(required)</span>**
 
 Name of the RAID array.

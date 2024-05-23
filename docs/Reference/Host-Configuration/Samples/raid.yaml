@@ -43,7 +43,6 @@ storage:
       devices:
       - root1
       - root2
-      metadataVersion: '1.0'
   filesystems:
   - deviceId: esp1
     type: vfat

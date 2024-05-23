@@ -40,13 +40,8 @@ fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Result<(), Err
     let device_paths =
         get_device_paths(host_status, devices).context("Failed to get device paths")?;
 
-    mdadm::create(
-        &raid_path,
-        &config.level,
-        &config.metadata_version,
-        device_paths,
-    )
-    .context("Failed to create RAID array")?;
+    mdadm::create(&raid_path, &config.level, device_paths)
+        .context("Failed to create RAID array")?;
     Ok(())
 }
 
@@ -82,7 +77,7 @@ pub(super) fn get_raid_details(
     let raid_level = &config.level;
     let raid_array_name = &config.name;
     let devices = &config.devices;
-    let metadata_version = &config.metadata_version;
+    let metadata_version = mdadm::METADATA_VERSION;
     let raid_id = &config.id;
     let raid_path = PathBuf::from(format!("/dev/md/{}", raid_array_name));
     let device_paths =
@@ -107,7 +102,7 @@ pub(super) fn get_raid_details(
         level: *raid_level,
         state: RaidState::from_str(&array_state)?,
         num_devices: raid_disks.parse::<u32>()?,
-        metadata_version: metadata_version.clone(),
+        metadata_version: metadata_version.to_owned(),
         size: array_size,
     };
 

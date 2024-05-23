@@ -477,7 +477,6 @@ mod functional_test {
             name: "md0".into(),
             devices: vec!["root1".to_string(), "root2".to_string()],
             level: RaidLevel::Raid1,
-            metadata_version: "1.2".into(),
         };
         create_sw_raid_array(&mut host_status, &raid_array).unwrap();
         let root_device_path = PathBuf::from(format!("/dev/md/{}", &raid_array.name));

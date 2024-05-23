@@ -66,11 +66,6 @@ pub struct SoftwareRaidArray {
         schemars(schema_with = "block_device_id_list_schema")
     )]
     pub devices: Vec<BlockDeviceId>,
-
-    /// Metadata of the RAID array.
-    ///
-    /// Supported and tested values are `1.0`. Note that this is a string attribute.
-    pub metadata_version: String,
 }
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]

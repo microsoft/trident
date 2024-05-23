@@ -41,7 +41,6 @@ fn test_basic_graph() {
         name: "md0".into(),
         devices: vec!["partition1".into(), "partition2".into()],
         level: RaidLevel::Raid1,
-        metadata_version: "1.2".into(),
     };
     builder.add_node((&raid_array).into());
 
@@ -130,7 +129,6 @@ fn test_duplicate_member() {
         name: "md0".into(),
         devices: vec!["partition".into(), "partition".into()],
         level: RaidLevel::Raid1,
-        metadata_version: "1.2".into(),
     };
 
     builder.add_node((&raid_array).into());
@@ -293,7 +291,6 @@ fn valid_target_count() {
         name: "md0".into(),
         devices: vec!["partition1".into(), "partition2".into()],
         level: RaidLevel::Raid1,
-        metadata_version: "1.2".into(),
     };
 
     let mut builder = base_builder.clone();
@@ -307,7 +304,6 @@ fn valid_target_count() {
         name: "md0".into(),
         devices: vec![],
         level: RaidLevel::Raid1,
-        metadata_version: "1.2".into(),
     };
 
     let mut builder = base_builder.clone();
@@ -324,7 +320,6 @@ fn valid_target_count() {
         name: "md0".into(),
         devices: vec!["partition1".into()],
         level: RaidLevel::Raid1,
-        metadata_version: "1.2".into(),
     };
 
     let mut builder = base_builder.clone();
@@ -408,7 +403,6 @@ mod verity {
             name: "md0".into(),
             devices: vec!["part1".into(), "part2".into()],
             level: RaidLevel::Raid1,
-            metadata_version: "1.2".into(),
         };
         builder.add_node((&raid).into());
 

@@ -11,10 +11,11 @@ use trident_api::config::RaidLevel;
 
 use crate::{exe::RunAndCheck, lsblk};
 
+pub const METADATA_VERSION: &str = "1.0";
+
 pub fn create(
     raid_path: &PathBuf,
     level: &RaidLevel,
-    metadata_version: &String,
     device_paths: Vec<PathBuf>,
 ) -> Result<(), Error> {
     info!("Creating RAID array '{}'", &raid_path.display());
@@ -26,7 +27,7 @@ pub fn create(
         .arg(format!("--level={}", &level))
         .arg(format!("--raid-devices={}", &device_paths.len()))
         .args(&device_paths)
-        .arg(format!("--metadata={}", &metadata_version));
+        .arg(format!("--metadata={METADATA_VERSION}"));
 
     mdadm_command
         .run_and_check()

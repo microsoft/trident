@@ -842,7 +842,6 @@
         "devices",
         "id",
         "level",
-        "metadataVersion",
         "name"
       ],
       "properties": {
@@ -866,10 +865,6 @@
               "$ref": "#/definitions/RaidLevel"
             }
           ]
-        },
-        "metadataVersion": {
-          "description": "Metadata of the RAID array.\n\nSupported and tested values are `1.0`. Note that this is a string attribute.",
-          "type": "string"
         },
         "name": {
           "description": "Name of the RAID array.\n\nThis is used to reference the RAID array on the system. For example, `some-raid` will result in `/dev/md/some-raid` on the system.",

@@ -127,98 +127,84 @@ storage:
       devices:
       - boot-a1
       - boot-a2
-      metadataVersion: '1.0'
     - id: boot-b
       name: boot-b
       level: raid1
       devices:
       - boot-b1
       - boot-b2
-      metadataVersion: '1.0'
     - id: root-a
       name: root-a
       level: raid1
       devices:
       - root-a1
       - root-a2
-      metadataVersion: '1.0'
     - id: root-b
       name: root-b
       level: raid1
       devices:
       - root-b1
       - root-b2
-      metadataVersion: '1.0'
     - id: root-hash-a
       name: root-hash-a
       level: raid1
       devices:
       - root-hash-a1
       - root-hash-a2
-      metadataVersion: '1.0'
     - id: root-hash-b
       name: root-hash-b
       level: raid1
       devices:
       - root-hash-b1
       - root-hash-b2
-      metadataVersion: '1.0'
     - id: trident
       name: trident
       level: raid1
       devices:
       - trident1
       - trident2
-      metadataVersion: '1.0'
     - id: trident-overlay-a
       name: trident-overlay-a
       level: raid1
       devices:
       - trident-overlay-a1
       - trident-overlay-a2
-      metadataVersion: '1.0'
     - id: trident-overlay-b
       name: trident-overlay-b
       level: raid1
       devices:
       - trident-overlay-b1
       - trident-overlay-b2
-      metadataVersion: '1.0'
     - id: var-a
       name: var-a
       level: raid1
       devices:
       - var-a1
       - var-a2
-      metadataVersion: '1.0'
     - id: run-a
       name: run-a
       level: raid1
       devices:
       - run-a1
       - run-a2
-      metadataVersion: '1.0'
     - id: var-b
       name: var-b
       level: raid1
       devices:
       - var-b1
       - var-b2
-      metadataVersion: '1.0'
     - id: run-b
       name: run-b
       level: raid1
       devices:
       - run-b1
       - run-b2
-      metadataVersion: '1.0'
     - id: enc-home
       name: home
       level: raid1
       devices:
       - enc-home1
       - enc-home2
-      metadataVersion: '1.0'
   abUpdate:
     volumePairs:
     - id: boot

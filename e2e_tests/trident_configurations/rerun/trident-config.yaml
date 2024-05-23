@@ -80,56 +80,48 @@ hostConfiguration:
           devices:
             - home-a-e-1
             - home-a-e-2
-          metadataVersion: "1.2"
         - id: home-b-e
           name: home-b-e
           level: raid1
           devices:
             - home-b-e-1
             - home-b-e-2
-          metadataVersion: "1.2"
         - id: root-a
           name: root-a
           level: raid1
           devices:
             - root-a-1
             - root-a-2
-          metadataVersion: "1.2"
         - id: root-b
           name: root-b
           level: raid1
           devices:
             - root-b-1
             - root-b-2
-          metadataVersion: "1.2"
         - id: root-hash-a
           name: root-hash-a
           level: raid1
           devices:
             - root-hash-a-1
             - root-hash-a-2
-          metadataVersion: "1.2"
         - id: root-hash-b
           name: root-hash-b
           level: raid1
           devices:
             - root-hash-b-1
             - root-hash-b-2
-          metadataVersion: "1.2"
         - id: trident-overlay-a
           name: trident-overlay-a
           level: raid1
           devices:
             - trident-overlay-a-1
             - trident-overlay-a-2
-          metadataVersion: "1.2"
         - id: trident-overlay-b
           name: trident-overlay-b
           level: raid1
           devices:
             - trident-overlay-b-1
             - trident-overlay-b-2
-          metadataVersion: "1.2"
     abUpdate:
       volumePairs:
         - id: boot

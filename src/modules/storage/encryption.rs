@@ -501,7 +501,6 @@ mod tests {
                             devices: vec!["root".to_string(), "rootb".to_string()],
                             name: "raid1".to_string(),
                             level: RaidLevel::Raid1,
-                            metadata_version: "1".to_string(),
                         }],
                     },
                     ..Default::default()

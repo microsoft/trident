@@ -50,28 +50,24 @@ hostConfiguration:
           devices:
             - root-a1
             - root-a2
-          metadataVersion: "1.0"
         - id: root-b
           name: root-b
           level: raid1
           devices:
             - root-b1
             - root-b2
-          metadataVersion: "1.0"
         - id: home
           name: home
           level: raid1
           devices:
             - home1
             - home2
-          metadataVersion: "1.0"
         - id: trident
           name: trident
           level: raid1
           devices:
             - trident1
             - trident2
-          metadataVersion: "1.0"
     abUpdate:
       volumePairs:
         - id: root
