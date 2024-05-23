@@ -61,7 +61,7 @@ if match:
 
         if args.commit:
             short_commit = get_git_revision_short_hash()
-            print(f"{version}.{date}{id:02d}-{short_commit.strip()}")
+            print(f"{version}.{date}{id:02d}-v{short_commit.strip()}")
         else:
             print(f"{version}.{date}{id:02d}")
 else:
