@@ -360,15 +360,33 @@ def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
 
 
 def pytest_collection_modifyitems(session, config, items: List[pytest.Item]):
-    """Modifies the collection of test items."""
+    """Artificially force the setup tests to run first."""
 
-    # Artificially force the setup tests to run first.
+    # Get all the setup items.
     setup_items = [item for item in items if "test_setup.py" in item.nodeid]
+
+    # Before we do anything, we need to remove the setup items from the list.
+    for item in setup_items:
+        items.remove(item)
+
+    # Because of how pytest is invoked, we may have duplicate setup items.
+    # We should only keep one of each. First we make a set of the nodeids.
+    unique_nodeids = set([item.nodeid for item in setup_items])
+
+    # Filter out the unique setup items.
+    def is_unique(item):
+        """Returns True if the item hasn't been checked, and removes it from the
+        unique items set, False otherwise."""
+        if item.nodeid in unique_nodeids:
+            unique_nodeids.remove(item.nodeid)
+            return True
+        return False
+
+    setup_items = list(filter(is_unique, setup_items))
 
     # Reverse to push them to the front of the list in the order they were added.
     setup_items.reverse()
 
     # Remove the setup items from the list and add them back in the front.
     for item in setup_items:
-        items.remove(item)
         items.insert(0, item)
