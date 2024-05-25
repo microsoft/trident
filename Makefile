@@ -230,7 +230,7 @@ ifeq ($(wildcard bin/trident-mos.iso),)
 	$(error INSTALLER_ISO_PATH is not set and bin/trident-mos.iso is not present in the bin directory)
 endif
 endif
-	python3 -u -m pytest functional_tests/test_setup.py functional_tests/$(FILTER) -v -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload
+	python3 -u -m pytest functional_tests/test_setup.py functional_tests/$(FILTER) --keep-duplicates -v -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --force-upload
 
 .PHONY: patch-functional-test
 patch-functional-test: build-functional-test-cc generate-functional-test-manifest
