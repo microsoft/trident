@@ -265,102 +265,170 @@ See [Host Configuration Validation](docs/How-To-Guides/Host-Configuration-Valida
 
 ## A/B Update
 
-Currently, **a basic A/B update flow via direct streaming** is available with
-Trident. Users can request Trident to perform the initial deployment and A/B
-upgrades of a disk partition, a RAID array, or an encrypted volume that is part
-of an A/B volume pair. The image has to be published as a local raw file
-compressed using the zstd compression algorithm.
+Trident now offers **A/B update** via direct image streaming. Users can request
+Trident to perform the initial deployment and A/B update of a disk partition, a
+RAID array, or an encrypted volume that is part of an A/B volume pair. The
+image has to be published as a local raw file compressed using the zstd
+compression algorithm.
+
+A key feature of A/B update with Trident is that **staging of new OS images**
+**is decoupled from the reboot into the image**. In other words, the user can
+first request Trident to stage deployment and then, separately, to finalize it.
+After the new image has been staged, the user can repeatedly request to have
+another OS image staged instead, before requesting to boot into the updated OS
+image.
+
+This decoupled logic is implemented for **both clean install and A/B update.**
+This is achieved by splitting `allowedOperations`, where the user defines which
+actions are permitted/desired, into `StageDeployment` and `FinalizeDeployment`.
 
 ### Getting Started with A/B Update
 
 First, the OS image payload needs to be made available for Trident to operate
 on as a local file. For example, the OS image can be bundled with the installer
-OS and referenced from the initial HostConfiguration as follows:
+OS and referenced from the initial host configuration as follows:
 
-   ```yaml
-    storage:
-      disks:
-        - id: os
-          device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-          partitionTableType: gpt
-          partitions:
-            - id: esp
-              type: esp
-              size: 1G
-            - id: root-a
-              type: root
-              size: 8G
-            - id: root-b
-              type: root
-              size: 8G
-      mountPoints:
-        - path: /boot/efi
-          targetId: esp
-          filesystem: vfat
-          options: ["umask=0077"]
-        - path: /
-          targetId: root
-          filesystem: ext4
-          options: ["defaults"]
-      images:
-        - url: file:///trident_cdrom/data/esp.rawzst
-          sha256: e8c938d2bc312893fe5a230d8d92434876cf96feb6499129a08b8b9d97590231
-          format: raw-zst
-          targetId: esp
-        - url: file:///trident_cdrom/data/root.rawzst
-          sha256: f1373b6216fc1597533040dcb320d9e859da849d99d030ee2e8b6778156f82f3
-          format: raw-zst
-          targetId: root
-      abUpdate:
-        volumePairs:
-          - id: root
-            volumeAId: root-a
-            volumeBId: root-b
-   ```
+  ```yaml
+      hostConfiguration:
+        storage:
+          disks:
+            - id: os
+              device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+              partitionTableType: gpt
+              partitions:
+                - id: esp
+                  type: esp
+                  size: 1G
+                - id: root-a
+                  type: root
+                  size: 8G
+                - id: root-b
+                  type: root
+                  size: 8G
+                - id: swap
+                  type: swap
+                  size: 2G
+                - id: home
+                  type: home
+                  size: 1G
+                - id: trident
+                  type: linux-generic
+                  size: 1G
+            - id: disk2
+              device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+              partitionTableType: gpt
+              partitions: []
+        abUpdate:
+          volumePairs:
+            - id: root
+              volumeAId: root-a
+              volumeBId: root-b
+        filesystems:
+          - deviceId: swap
+            type: swap
+          - deviceId: trident
+            type: ext4
+            mountPoint:
+              path: /var/lib/trident
+              options: defaults
+          - deviceId: home
+            type: ext4
+            mountPoint:
+              path: /home
+              options: defaults
+          - deviceId: esp
+            type: vfat
+            source:
+              type: image
+              url: file:///trident_cdrom/data/esp.rawzst
+              sha256: ignored
+              format: raw-zst
+            mountPoint:
+              path: /boot/efi
+              options: umask=0077
+          - deviceId: root
+            type: ext4
+            source:
+              type: image
+              url: file:///trident_cdrom/data/root.rawzst
+              sha256: ignored
+              format: raw-zst
+            mountPoint:
+              path: /
+              options: defaults
+        scripts:
+          postConfigure:
+            - name: testing-privilege
+              runOn:
+                - clean-install
+                - ab-update
+              content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+        os:
+          network:
+            version: 2
+            ethernets:
+              vmeths:
+                match:
+                  name: enp*
+                dhcp4: true
+        users:
+          - name: testing-user
+            sshPublicKeys: []
+            sshMode: key-only
+  ```
 
-In the sample HostConfiguration above, we're requesting Trident to create
-**two copies of the root** partition, i.e., a volume pair with id root that
-contains two partitions root-a and root-b, and to place an image in the raw
-zstd format onto root. However, as mentioned, the user can create volume pairs
+In the sample host configuration above, we're requesting Trident to create
+**two copies of the root** partition, i.e., a volume pair with id `root` that
+contains two partitions `root-a` and `root-b`, and to place an image in the raw
+zstd format onto `root`. However, as mentioned, the user can create volume pairs
 of different types. In particular, each volume pair can contain two disk
-partitions of any type, two RAID arrays, or two encrypted volumes.
+partitions of any type except for ESP, two RAID arrays, or two encrypted volumes.
 
 When the installation of the initial runtime OS is completed, the user will be
 able to log or ssh into the baremetal host, or the VM simulating a BM host. The
-user can now request an A/B update by applying an edited Trident HostConfig. To
-do so, the user needs to update the **storage.images** section with the
-information on the new OS images, including their local URL links and sha256
-hashes.
+user can now request an A/B update by applying an edited Trident host config.
+To do so, the user needs to update the `filesystems` section with the info on
+the new OS images, including their local URL links and sha256 hashes.
 
-- To overwrite the Trident HostConfig, the user can use the following command:
+- To overwrite the Trident HostConfig, the user can either use vim or the sed
+command, for example:
 
     ```bash
-    cat > /etc/trident/config.yaml << EOF
-    <body of the updated HostConfig>
-    EOF
+    sed -i 's|file:///trident_cdrom/data/esp.rawzst|<local_url>/esp_v2.rawzst|' /etc/trident/config.yaml
+    sed -i 's|file:///trident_cdrom/data/root.rawzst|<local_url>/root_v2.rawzst|' /etc/trident/config.yaml
     ```
 
-    After overwriting the HostConfiguration, the user needs to apply the
-    HostConfig by restarting Trident with the following command:
+- After overwriting the host configuration, the user needs to apply the new
+host config by restarting Trident with the following command:
 
     ```bash
     sudo systemctl restart trident.service
-    ```
-
-    The user can view the Trident logs live with the following command:
-
-    ```bash
     sudo journalctl -u trident.service -f
     ```
 
-When the A/B update completes and the baremetal host, or a VM simulating a BM
+or:
+
+    ```bash
+    sudo trident run -v trace
+    ```
+
+- When the A/B update completes and the baremetal host, or a VM simulating a BM
 host, reboots, the user will be able to log or ssh back into the host. Now, the
 user can view the changes to the system by fetching the host's status:
-`trident get`.
+`trident get`. The user can also use commands such as `blkid` and `mount` to
+confirm that the volume pairs have been correctly updated and that the correct
+block devices have been mounted at the designated mountpoints.
 
-The user can also use commands such as `blkid` and `mount` to confirm that the
-volume pairs have been correctly updated and that the correct block devices
-have been mounted at the designated mountpoints.
+- If the user wants to separately stage or finalize a clean install or an A/B
+update, `allowedOperations` also need to be updated, in addition to the image
+info:
+1. To only stage a new deployment, update the image info and set:
+`allowedOperations: StageDeployment`.
+2. To only finalize the staged deployment, set:
+`allowedOperations: FinalizeDeployment`.
+3. To both stage a new deployment and then immediately finalize it, update the
+image info and set:
+`allowedOperations: StageDeployment | FinalizeDeployment`.
 
 ## dm-verity Support
 
