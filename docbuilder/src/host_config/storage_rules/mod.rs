@@ -69,6 +69,7 @@ pub(crate) fn write(dest: Option<impl AsRef<Path>>) -> Result<(), Error> {
         referrers::valid_targets_table(),
         referrers::reference_count_table(),
         referrers::reference_sharing_table(),
+        devices::unique_field_value_constraints(),
         filesystems::requires_block_device(),
         filesystems::sources(),
         filesystems::can_be_mounted(),

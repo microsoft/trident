@@ -20,7 +20,7 @@ pub enum BlockDeviceGraphBuildError {
     #[error("Block device '{0}' is defined more than once")]
     DuplicateDeviceId(String),
 
-    #[error("Block device '{node_id}' of kind '{kind}' is invalid")]
+    #[error("Block device '{node_id}' of kind '{kind}' is invalid: {body}")]
     BasicCheckFailed {
         node_id: String,
         kind: BlkDevKind,

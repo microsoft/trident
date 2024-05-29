@@ -16,7 +16,7 @@ use crate::{
 /// Enum for supported block device types
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "documentation", derive(strum_macros::EnumIter))]
+#[cfg_attr(any(test, feature = "documentation"), derive(strum_macros::EnumIter))]
 pub enum BlkDevKind {
     /// A disk
     Disk,
@@ -25,9 +25,6 @@ pub enum BlkDevKind {
     Partition,
 
     /// An existing physical partition that is being adopted
-    ///
-    /// Not yet implemented!
-    #[allow(dead_code)]
     AdoptedPartition,
 
     /// A RAID array
@@ -56,7 +53,7 @@ bitflags::bitflags! {
 }
 
 /// Enum for holding HostConfiguration definitions
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum HostConfigBlockDevice<'a> {
     /// A disk
     Disk(&'a Disk),
@@ -245,9 +242,6 @@ pub struct BlkDevNode<'a> {
     /// The ID of the block device
     pub id: BlockDeviceId,
 
-    /// The kind of block device
-    pub kind: BlkDevKind,
-
     /// A reference to the original object in the host configuration
     pub host_config_ref: HostConfigBlockDevice<'a>,
 
@@ -271,6 +265,14 @@ impl HostConfigBlockDevice<'_> {
             HostConfigBlockDevice::RaidArray(_) => BlkDevKind::RaidArray,
             HostConfigBlockDevice::ABVolume(_) => BlkDevKind::ABVolume,
             HostConfigBlockDevice::EncryptedVolume(_) => BlkDevKind::EncryptedVolume,
+        }
+    }
+
+    pub(super) fn unwrap_adopted_partition(&self) -> Result<&AdoptedPartition, Error> {
+        if let HostConfigBlockDevice::AdoptedPartition(partition) = self {
+            Ok(partition)
+        } else {
+            bail!("Block device is not an adopted partition")
         }
     }
 
@@ -368,7 +370,6 @@ impl<'a> BlkDevNode<'a> {
     pub(super) fn new_base(id: BlockDeviceId, hc_ref: HostConfigBlockDevice<'a>) -> Self {
         Self {
             id,
-            kind: hc_ref.kind(),
             host_config_ref: hc_ref,
             filesystem: None,
             targets: Vec::new(),
@@ -387,12 +388,15 @@ impl<'a> BlkDevNode<'a> {
     {
         Self {
             id,
-            kind: hc_ref.kind(),
             host_config_ref: hc_ref,
             filesystem: None,
             targets: members.into_iter().cloned().collect(),
             dependents: Vec::new(),
         }
+    }
+
+    pub(super) fn kind(&self) -> BlkDevKind {
+        self.host_config_ref.kind()
     }
 }
 
@@ -576,14 +580,28 @@ mod documentation {
         /// Returns whether a referrer kind flag should be included in the public
         /// documentation
         pub fn document(&self) -> bool {
-            !matches!(self, BlkDevKind::AdoptedPartition)
+            true
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{BitFlagsBackingEnumVec, BlkDevKindFlag, BlkDevReferrerKindFlag};
+    use std::str::FromStr;
+
+    use anyhow::Context;
+    use serde::Serialize;
+    use strum::IntoEnumIterator;
+    use uuid::Uuid;
+
+    use crate::config::{
+        AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Partition, PartitionSize,
+        PartitionTableType, PartitionType, RaidLevel, SoftwareRaidArray,
+    };
+
+    use super::{
+        BitFlagsBackingEnumVec, BlkDevKind, BlkDevKindFlag, BlkDevNode, BlkDevReferrerKindFlag,
+    };
 
     #[test]
     fn test_backing_enum_block_dev_kind() {
@@ -609,5 +627,118 @@ mod test {
                 flag
             );
         });
+    }
+
+    #[test]
+    fn test_block_dev_kind_sync() {
+        /// Check attributes common to all block device types.
+        ///
+        /// We take a reference to the block device, the expected ID and the expected kind.
+        fn check_common<'a, T>(hc_blkdev: &'a T, expected_id: &str, expected_kind: BlkDevKind)
+        where
+            T: Serialize + 'a,
+            BlkDevNode<'a>: From<&'a T>,
+        {
+            let node: BlkDevNode = hc_blkdev.into();
+            // Check basic attributes
+            assert_eq!(node.id, expected_id);
+            assert_eq!(node.kind(), expected_kind);
+            assert_eq!(node.host_config_ref.kind(), expected_kind);
+
+            // Get the object and check the fields
+            let hc_value = serde_json::to_value(hc_blkdev).unwrap();
+            let hc_object = hc_value.as_object().unwrap();
+
+            // Check the uniqueness constraints for the kind
+            node.kind()
+                .uniqueness_constraints()
+                .into_iter()
+                .flatten()
+                .for_each(|(field_name, extractor)| {
+                    // TODO: validate that the field name exists in the object schema!
+                    // Will probably need to use schemars for this.
+
+                    // Test the extractor
+                    let value = extractor(&node.host_config_ref)
+                        .context(format!(
+                            "Failed to extract field '{}' from host config",
+                            field_name
+                        ))
+                        .unwrap();
+
+                    // Check if there even _is_ a value to check, if not the
+                    // field probably does not exist in the object. When it does
+                    // exist, assert that the field name exists in the object.
+                    assert!(
+                        value.is_none() || hc_object.contains_key(field_name),
+                        "Field '{}' not found in block device '{}':\n{:#?}",
+                        field_name,
+                        node.id,
+                        hc_object,
+                    );
+                });
+        }
+
+        // This iter+match combo forces the test to check all variants of BlkDevKind to compile
+        for kind in BlkDevKind::iter() {
+            match kind {
+                BlkDevKind::Disk => {
+                    let disk = Disk {
+                        id: "disk0".into(),
+                        device: "/dev/sda".into(),
+                        partition_table_type: PartitionTableType::Gpt,
+                        partitions: Default::default(),
+                        adopted_partitions: Default::default(),
+                    };
+                    check_common(&disk, &disk.id, BlkDevKind::Disk);
+                }
+                BlkDevKind::Partition => {
+                    let partition = Partition {
+                        id: "part0".into(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: PartitionSize::Fixed(1024),
+                    };
+                    check_common(&partition, &partition.id, BlkDevKind::Partition);
+                }
+                BlkDevKind::AdoptedPartition => {
+                    let adopted = AdoptedPartition {
+                        id: "adopted0".into(),
+                        // Note: feeding both matches so that we can test the
+                        // uniqueness constraints. This would be invalid in a
+                        // real config.
+                        match_label: Some("label".into()),
+                        match_uuid: Some(
+                            Uuid::from_str("abf2b9a1-2f94-4f3f-8e4f-0f3f5e4f5f3e").unwrap(),
+                        ),
+                    };
+                    check_common(&adopted, &adopted.id, BlkDevKind::AdoptedPartition);
+                }
+                BlkDevKind::RaidArray => {
+                    let raid_array = SoftwareRaidArray {
+                        id: "raid0".into(),
+                        devices: Default::default(),
+                        level: RaidLevel::Raid1,
+                        name: "raid0".into(),
+                    };
+                    check_common(&raid_array, &raid_array.id, BlkDevKind::RaidArray);
+                }
+                BlkDevKind::ABVolume => {
+                    let abvol = AbVolumePair {
+                        id: "abvol0".into(),
+                        volume_a_id: "vol0".into(),
+                        volume_b_id: "vol1".into(),
+                    };
+                    check_common(&abvol, &abvol.id, BlkDevKind::ABVolume);
+                }
+                BlkDevKind::EncryptedVolume => {
+                    let encryption = EncryptedVolume {
+                        id: "enc0".into(),
+                        device_name: "enc0".into(),
+                        target_id: "target0".into(),
+                    };
+                    check_common(&encryption, &encryption.id, BlkDevKind::EncryptedVolume);
+                }
+            }
+        }
     }
 }

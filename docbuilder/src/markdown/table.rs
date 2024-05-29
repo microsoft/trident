@@ -13,6 +13,14 @@ impl MdTable {
         }
     }
 
+    pub fn with_rows(
+        mut self,
+        new_rows: impl IntoIterator<Item = impl IntoIterator<Item = impl Into<String>>>,
+    ) -> Self {
+        new_rows.into_iter().for_each(|row| self.add_row(row));
+        self
+    }
+
     pub fn add_row(&mut self, row: impl IntoIterator<Item = impl Into<String>>) {
         let row: Vec<String> = row.into_iter().map(Into::into).collect();
         if row.len() != self.headers.len() {

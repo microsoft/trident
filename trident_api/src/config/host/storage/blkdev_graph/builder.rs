@@ -32,6 +32,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use anyhow::Context;
 use log::warn;
 
 use crate::{
@@ -173,7 +174,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
             node.host_config_ref.basic_check().map_err(|e| {
                 BlockDeviceGraphBuildError::BasicCheckFailed {
                     node_id: node.id.clone(),
-                    kind: node.kind,
+                    kind: node.kind(),
                     body: e.to_string(),
                 }
             })?;
@@ -184,8 +185,8 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 for target in node.targets.iter() {
                     if !unique_targets.insert(target) {
                         return Err(BlockDeviceGraphBuildError::DuplicateTargetId {
+                            kind: node.kind(),
                             node_id: node.id,
-                            kind: node.kind,
                             target_id: target.clone(),
                         });
                     }
@@ -194,13 +195,13 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
 
             // Check that we have a valid number of members.
             {
-                let valid_cardinality = node.kind.as_blkdev_referrer().valid_target_count();
+                let valid_cardinality = node.kind().as_blkdev_referrer().valid_target_count();
                 let target_count = node.targets.len();
 
                 if !valid_cardinality.contains(target_count) {
                     return Err(BlockDeviceGraphBuildError::InvalidTargetCount {
+                        kind: node.kind(),
                         node_id: node.id,
-                        kind: node.kind,
                         target_count,
                         expected: valid_cardinality,
                     });
@@ -213,21 +214,21 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 let target_node = nodes.get_mut(target).ok_or_else(|| {
                     BlockDeviceGraphBuildError::NonExistentReference {
                         node_id: node.id.clone(),
-                        kind: node.kind,
+                        kind: node.kind(),
                         target_id: target.clone(),
                     }
                 })?;
 
                 // Get the valid references for the current node.
-                let valid_references = node.kind.as_blkdev_referrer().valid_target_kinds();
+                let valid_references = node.kind().as_blkdev_referrer().valid_target_kinds();
 
                 // Check that the target is of a valid kind.
-                if !valid_references.contains(target_node.kind.as_flag()) {
+                if !valid_references.contains(target_node.kind().as_flag()) {
                     return Err(BlockDeviceGraphBuildError::InvalidReferenceKind {
+                        kind: node.kind(),
                         node_id: node.id,
-                        kind: node.kind,
                         target_id: target.clone(),
-                        target_kind: target_node.kind,
+                        target_kind: target_node.kind(),
                         valid_references,
                     });
                 }
@@ -326,11 +327,11 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 let valid_references = BlkDevReferrerKind::from(*fs).valid_target_kinds();
 
                 // Check that the node is of a valid kind.
-                if !valid_references.contains(node.kind.as_flag()) {
+                if !valid_references.contains(node.kind().as_flag()) {
                     return Err(BlockDeviceGraphBuildError::FilesystemInvalidReference {
                         fs_desc: fs.description(),  // The filesystem's description.
                         target_id: node.id.clone(), // The node being referenced.
-                        target_kind: node.kind,     // The node's kind.
+                        target_kind: node.kind(),   // The node's kind.
                         valid_references,           // The valid kinds of nodes for an image.
                     });
                 }
@@ -394,13 +395,13 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 BlkDevReferrerKind::VerityFileSystemData.valid_target_kinds();
 
             // Check that the node is of a valid kind.
-            if !data_valid_references.contains(data_node.kind.as_flag()) {
+            if !data_valid_references.contains(data_node.kind().as_flag()) {
                 return Err(
                     BlockDeviceGraphBuildError::VerityFilesystemInvalidReferenceData {
                         name: vfs.name.clone(),
                         fs_type: vfs.fs_type,
                         target_id: data_node.id.clone(),
-                        target_kind: data_node.kind,
+                        target_kind: data_node.kind(),
                         valid_references: data_valid_references,
                     },
                 );
@@ -422,13 +423,13 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 BlkDevReferrerKind::VerityFileSystemData.valid_target_kinds();
 
             // Check that the node is of a valid kind.
-            if !hash_valid_references.contains(hash_node.kind.as_flag()) {
+            if !hash_valid_references.contains(hash_node.kind().as_flag()) {
                 return Err(
                     BlockDeviceGraphBuildError::VerityFilesystemInvalidReferenceHash {
                         name: vfs.name.clone(),
                         fs_type: vfs.fs_type,
                         target_id: hash_node.id.clone(),
-                        target_kind: hash_node.kind,
+                        target_kind: hash_node.kind(),
                         valid_references: hash_valid_references,
                     },
                 );
@@ -446,7 +447,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
     ) -> Result<(), BlockDeviceGraphBuildError> {
         // Get all the nodes for which we need to check the homogeneity of the dependents
         for node in graph.nodes.values().filter(|n| {
-            n.kind
+            n.kind()
                 .as_blkdev_referrer()
                 .enforce_homogeneous_reference_kinds()
         }) {
@@ -455,11 +456,12 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 .ok_or(BlockDeviceGraphBuildError::InternalError {
                     body: format!(
                         "Failed to get targets for node '{}' of kind '{}'",
-                        node.id, node.kind
+                        node.id,
+                        node.kind()
                     ),
                 })?
                 .iter()
-                .map(|target| target.kind)
+                .map(|target| target.kind())
                 .collect::<Vec<_>>();
 
             if target_kinds.is_empty() {
@@ -470,7 +472,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
             if !target_kinds.iter().all(|k| *k == first_kind) {
                 return Err(BlockDeviceGraphBuildError::ReferenceKindMismatch {
                     referrer: node.id.clone(),
-                    kind: node.kind.as_blkdev_referrer(),
+                    kind: node.kind().as_blkdev_referrer(),
                 });
             }
         }
@@ -503,7 +505,10 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 return Ok(()); // Nothing to check
             }
 
-            let target_kinds = targets.iter().map(|target| target.kind).collect::<Vec<_>>();
+            let target_kinds = targets
+                .iter()
+                .map(|target| target.kind())
+                .collect::<Vec<_>>();
             let first_kind = target_kinds[0];
             if !target_kinds.iter().all(|k| *k == first_kind) {
                 return Err(BlockDeviceGraphBuildError::ReferenceKindMismatch {
@@ -536,11 +541,11 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 for dependent_b in dependents.iter().skip(i + 1) {
                     check_mutual_sharing_peers(
                         &node.id,
-                        node.kind,
+                        node.kind(),
                         &dependent_a.id,
-                        dependent_a.kind.as_blkdev_referrer(),
+                        dependent_a.kind().as_blkdev_referrer(),
                         &dependent_b.id,
-                        dependent_b.kind.as_blkdev_referrer(),
+                        dependent_b.kind().as_blkdev_referrer(),
                     )?;
                 }
             }
@@ -550,11 +555,11 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 for dependent in dependents.iter() {
                     check_mutual_sharing_peers(
                         &node.id,
-                        node.kind,
+                        node.kind(),
                         fs.identity(),
                         BlkDevReferrerKind::from(fs),
                         &dependent.id,
-                        dependent.kind.as_blkdev_referrer(),
+                        dependent.kind().as_blkdev_referrer(),
                     )?;
                 }
             }
@@ -564,26 +569,55 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
 
     /// Check unique field values requirements
     fn check_unique_fields(graph: &BlockDeviceGraph<'a>) -> Result<(), BlockDeviceGraphBuildError> {
+        // Create a hash map to keep track of field uniqueness.
         let mut unique_fields: HashMap<BlkDevKind, HashMap<&'static str, HashMap<&[u8], &str>>> =
             HashMap::new();
+
+        // Iterate over all nodes and check for unique fields.
         for (id, node) in graph.nodes.iter() {
-            if let Some(uniqueness_constraint) = node.host_config_ref.uniqueness_constraints() {
-                let kind = node.host_config_ref.kind();
-                for (field_name, field_value) in uniqueness_constraint {
-                    if let Some(other_id) = unique_fields
-                        .entry(kind)
-                        .or_default()
-                        .entry(field_name)
-                        .or_default()
-                        .insert(field_value, id)
-                    {
-                        return Err(BlockDeviceGraphBuildError::UniqueFieldConstraintError {
-                            node_id: id.clone(),
-                            other_id: other_id.into(),
-                            kind,
-                            field_name: field_name.into(),
-                            value: String::from_utf8_lossy(field_value).into(),
-                        });
+            // Check if we have uniqueness constraints for this node kind
+            if let Some(uniqueness_constraint) = node.kind().uniqueness_constraints() {
+                // Iterate over each uniqueness constraint and check if the field is unique
+                for (field_name, extractor) in uniqueness_constraint {
+                    // For every contrained field, extract its value using the provided extractor function.
+                    let opt_field_value = extractor(&node.host_config_ref)
+                        // Add some context about what we were doing.
+                        .with_context(|| {
+                            format!(
+                                "Failed to extract field '{}' from node '{}' of kind '{}'",
+                                field_name,
+                                id,
+                                node.kind()
+                            )
+                        })
+                        // Map the error to an internal error, this should never happen.
+                        .map_err(|err| BlockDeviceGraphBuildError::InternalError {
+                            body: format!("{:?}", err),
+                        })?;
+
+                    // We only care to check if there is a value for the field
+                    if let Some(field_value) = opt_field_value {
+                        // Check if the field value is unique
+                        if let Some(other_id) = unique_fields
+                            // First get the map of this specific node kind
+                            .entry(node.kind())
+                            .or_default()
+                            // Then get the entry of this specific field
+                            .entry(field_name)
+                            .or_default()
+                            // Finally, try to insert the field value
+                            .insert(field_value, id)
+                        {
+                            // If we got here, another node od the same kind had
+                            // the same value for this field :(
+                            return Err(BlockDeviceGraphBuildError::UniqueFieldConstraintError {
+                                node_id: id.clone(),
+                                other_id: other_id.into(),
+                                kind: node.kind(),
+                                field_name: field_name.into(),
+                                value: String::from_utf8_lossy(field_value).into(),
+                            });
+                        }
                     }
                 }
             }
@@ -596,7 +630,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
     ) -> Result<(), BlockDeviceGraphBuildError> {
         // Check partition size homogeneity for all nodes that require it
         for node in graph.nodes.values().filter(|node| {
-            node.kind
+            node.kind()
                 .as_blkdev_referrer()
                 .enforce_homogeneous_partition_sizes()
         }) {
@@ -604,7 +638,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 BlockDeviceGraphBuildError::InternalError {
                     body: format!(
                         "check_partition_homogeneity: Failed to get partitions for node '{}' of kind '{}'",
-                        node.id, node.kind
+                        node.id, node.kind()
                     ),
                 },
             )?;
@@ -613,7 +647,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 return Err(BlockDeviceGraphBuildError::InternalError {
                     body: format!(
                         "check_partition_homogeneity: partition_sizes is empty for node '{}' of kind '{}'",
-                        node.id, node.kind
+                        node.id, node.kind()
                     ),
                 });
             }
@@ -623,7 +657,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 if !matches!(attr.value, PartitionSize::Fixed(_)) {
                     return Err(BlockDeviceGraphBuildError::PartitionSizeNotFixed {
                         node_id: node.id.clone(),
-                        kind: node.kind,
+                        kind: node.kind(),
                         partition_id: attr.id.to_string(),
                     });
                 }
@@ -635,14 +669,14 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
             if !partition_sizes.is_homogeneous() {
                 return Err(BlockDeviceGraphBuildError::PartitionSizeMismatch {
                     node_id: node.id.clone(),
-                    kind: node.kind,
+                    kind: node.kind(),
                 });
             }
         }
 
         // Check partition type homogeneity for all nodes that require it
         for node in graph.nodes.values().filter(|node| {
-            node.kind
+            node.kind()
                 .as_blkdev_referrer()
                 .enforce_homogeneous_partition_types()
         }) {
@@ -650,7 +684,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 BlockDeviceGraphBuildError::InternalError {
                     body: format!(
                         "check_partition_homogeneity: Failed to get partitions for node '{}' of kind '{}'",
-                        node.id, node.kind
+                        node.id, node.kind()
                     ),
                 },
             )?;
@@ -659,7 +693,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 return Err(BlockDeviceGraphBuildError::InternalError {
                     body: format!(
                         "check_partition_homogeneity: partition_types is empty for node '{}' of kind '{}'",
-                        node.id, node.kind
+                        node.id, node.kind()
                     ),
                 });
             }
@@ -668,7 +702,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
             if !partition_types.is_homogeneous() {
                 return Err(BlockDeviceGraphBuildError::PartitionTypeMismatch {
                     node_id: node.id.clone(),
-                    kind: node.kind,
+                    kind: node.kind(),
                 });
             }
         }
@@ -686,7 +720,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 BlockDeviceGraphBuildError::InternalError {
                     body: format!(
                         "check_partition_homogeneity: Failed to get partitions for node '{}' of kind '{}'",
-                        node.id, node.kind
+                        node.id, node.kind()
                     ),
                 },
             )?;
@@ -696,7 +730,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 return Err(BlockDeviceGraphBuildError::InternalError {
                     body: format!(
                         "check_partition_homogeneity: partition_types is empty for node '{}' of kind '{}'",
-                        node.id, node.kind
+                        node.id, node.kind()
                     ),
                 });
             }
@@ -724,25 +758,25 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
         for node in graph
             .nodes
             .values()
-            .filter(|node| node.kind.has_partition_type())
+            .filter(|node| node.kind().has_partition_type())
         {
             // Get all partitions for the node
             let partition_types = graph.get_partition_type(&node.id)?.ok_or(
                 BlockDeviceGraphBuildError::InternalError {
                         body: format!(
                             "check_valid_partition_types: Failed to get partitions for node '{}' of kind '{}'",
-                            node.id, node.kind
+                            node.id, node.kind()
                         ),
                     },
                 )?;
 
             // Check that the node has a valid partition type
-            let valid_part_types = node.kind.as_blkdev_referrer().allowed_partition_types();
+            let valid_part_types = node.kind().as_blkdev_referrer().allowed_partition_types();
             partition_types.iter().try_for_each(|attr| {
                 if !valid_part_types.contains(attr.value) {
                     return Err(BlockDeviceGraphBuildError::InvalidPartitionType {
                         node_id: node.id.clone(),
-                        kind: node.kind,
+                        kind: node.kind(),
                         partition_id: attr.id.to_string(),
                         partition_type: attr.value,
                         valid_types: valid_part_types.clone(),
@@ -758,7 +792,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 let partition_type = partition_types.get_homogeneous().ok_or(
                     BlockDeviceGraphBuildError::InternalError { body: format!(
                         "check_valid_partition_types: Failed to get homogenous partition type for node '{}' of kind '{}'",
-                        node.id, node.kind
+                        node.id, node.kind()
                     ) },
                 )?;
 
@@ -805,7 +839,7 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                         BlockDeviceGraphBuildError::InternalError {
                             body: format!(
                                 "check_valid_partition_types: Failed to get partitions for node '{}' of kind '{}'",
-                                vfs.hash_device_id, node.kind
+                                vfs.hash_device_id, node.kind()
                             ),
                         },
                     )?
@@ -846,16 +880,17 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                     .ok_or(BlockDeviceGraphBuildError::InternalError {
                         body: format!(
                             "Failed to get targets for node '{}' of kind '{}'",
-                            node.id, node.kind
+                            node.id,
+                            node.kind()
                         ),
                     })?;
 
-            node.kind
+            node.kind()
                 .as_blkdev_referrer()
                 .check_targets(node, &targets, graph)
                 .map_err(|e| BlockDeviceGraphBuildError::InvalidTargets {
                     node_id: node.id.clone(),
-                    kind: node.kind,
+                    kind: node.kind(),
                     body: format!("{:#}", e),
                 })?;
         }

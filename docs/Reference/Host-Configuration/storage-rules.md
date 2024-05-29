@@ -7,6 +7,7 @@ Documentation about the rules used to validate the storage configuration.
 - [Reference Validity](#reference-validity)
 - [Reference Count](#reference-count)
 - [Reference Sharing](#reference-sharing)
+- [Unique Field Value Constraints](#unique-field-value-constraints)
 - [Filesystem Block Device Requirements](#filesystem-block-device-requirements)
 - [Filesystem Source Requirements](#filesystem-source-requirements)
 - [Filesystem Mounting](#filesystem-mounting)
@@ -28,15 +29,15 @@ that can be referenced.
 A single cell in the table represents whether a referrer of a certain type can
 reference a block device of a certain type.
 
-| Referrer \ Device      | disk | partition | raid-array | ab-volume | encrypted-volume |
-| ---------------------- | ---- | --------- | ---------- | --------- | ---------------- |
-| raid-array             | No   | Yes       | No         | No        | No               |
-| ab-volume              | No   | Yes       | Yes        | No        | Yes              |
-| encrypted-volume       | No   | Yes       | Yes        | No        | No               |
-| filesystem             | No   | Yes       | Yes        | Yes       | Yes              |
-| filesystem-adopted     | No   | No        | No         | No        | No               |
-| verity-filesystem-data | No   | Yes       | Yes        | Yes       | No               |
-| verity-filesystem-hash | No   | Yes       | Yes        | Yes       | No               |
+| Referrer \ Device      | disk | partition | adopted-partition | raid-array | ab-volume | encrypted-volume |
+| ---------------------- | ---- | --------- | ----------------- | ---------- | --------- | ---------------- |
+| raid-array             | No   | Yes       | No                | No         | No        | No               |
+| ab-volume              | No   | Yes       | No                | Yes        | No        | Yes              |
+| encrypted-volume       | No   | Yes       | No                | Yes        | No        | No               |
+| filesystem             | No   | Yes       | No                | Yes        | Yes       | Yes              |
+| filesystem-adopted     | No   | No        | Yes               | No         | No        | No               |
+| verity-filesystem-data | No   | Yes       | No                | Yes        | Yes       | No               |
+| verity-filesystem-hash | No   | Yes       | No                | Yes        | Yes       | No               |
 
 ## Reference Count
 
@@ -55,7 +56,7 @@ shows valid reference counts for each referrer type.
 
 ## Reference Sharing
 
-Mostg referrers claim exlusive access over their references. This table contains
+Most referrers claim exlusive access over their references. This table contains
 the rules for sharing references in the storage configuration.
 
 | Referrer type          | Valid sharing peers |
@@ -67,6 +68,19 @@ the rules for sharing references in the storage configuration.
 | filesystem-adopted     | (none)              |
 | verity-filesystem-data | (none)              |
 | verity-filesystem-hash | (none)              |
+
+## Unique Field Value Constraints
+
+Some block device types require that the value of a specific field be unique
+across all block devices of that type.
+
+| Device Kind       | Field Name |
+| ----------------- | ---------- |
+| disk              | device     |
+| adopted-partition | matchLabel |
+| adopted-partition | matchUuid  |
+| raid-array        | name       |
+| encrypted-volume  | deviceName |
 
 ## Filesystem Block Device Requirements
 

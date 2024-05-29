@@ -202,25 +202,74 @@ impl FileSystemType {
     }
 }
 
-/// This impl block contains validation rules for host-config objects
-impl<'a> HostConfigBlockDevice<'a> {
-    /// Return information about fields that must be unique across all block devices of a type.
+/// A function that extracts the value of a specific field from a block device.
+type UniqueValueExtractor =
+    Box<dyn for<'a> FnOnce(&'a HostConfigBlockDevice) -> Result<Option<&'a [u8]>, Error>>;
+
+/// This impl block contains validation rules for specific block device kinds
+impl BlkDevKind {
+    /// Return information about fields that must be unique across all block
+    /// devices of a type.
     ///
-    /// Some block devices define fields that must be unique across all block devices of the same
-    /// kind. This function returns a tuple of the field name, and field value (as bytes) for each
-    /// field that must be unique.
+    /// Some block devices define fields that must be unique across all block
+    /// devices of the same kind. This function returns a tuple of the field
+    /// name, and field value (as bytes) for each field that must be unique.
     ///
-    /// The caller will collect all these tuples and ensure the uniqueness of each field.
-    pub(super) fn uniqueness_constraints(&self) -> Option<Vec<(&'static str, &[u8])>> {
+    /// The caller will collect all these tuples and ensure the uniqueness of
+    /// each field.
+    ///
+    /// The returned function expects to be called with the associated
+    /// HostConfigBlockDevice variant, it will return an error if it gets called
+    /// with the wrong variant.
+    ///
+    /// The returned function will return None if the field is not set on the
+    /// block device. It will return Some(bytes) if the field is set.
+    pub fn uniqueness_constraints(&self) -> Option<Vec<(&'static str, UniqueValueExtractor)>> {
         match self {
-            Self::Disk(disk) => Some(vec![("device", disk.device.as_os_str().as_bytes())]),
-            Self::Partition(_) => None,
-            Self::AdoptedPartition(_) => None,
-            Self::RaidArray(raid_array) => Some(vec![("name", raid_array.name.as_bytes())]),
-            Self::ABVolume(_) => None,
-            Self::EncryptedVolume(enc_vol) => {
-                Some(vec![("deviceName", enc_vol.device_name.as_bytes())])
-            }
+            Self::Disk => Some(vec![(
+                "device",
+                Box::new(|blkdev: &HostConfigBlockDevice| {
+                    Ok(Some(blkdev.unwrap_disk()?.device.as_os_str().as_bytes()))
+                }),
+            )]),
+            Self::Partition => None,
+            Self::AdoptedPartition => Some(vec![
+                (
+                    "matchLabel",
+                    Box::new(|blkdev: &HostConfigBlockDevice| {
+                        Ok(blkdev
+                            .unwrap_adopted_partition()?
+                            .match_label
+                            .as_ref()
+                            .map(|s| s.as_bytes()))
+                    }),
+                ),
+                (
+                    "matchUuid",
+                    Box::new(|blkdev: &HostConfigBlockDevice| {
+                        Ok(blkdev
+                            .unwrap_adopted_partition()?
+                            .match_uuid
+                            .as_ref()
+                            .map(|u| u.as_bytes().as_slice()))
+                    }),
+                ),
+            ]),
+            Self::RaidArray => Some(vec![(
+                "name",
+                Box::new(|blkdev: &HostConfigBlockDevice| {
+                    Ok(Some(blkdev.unwrap_raid_array()?.name.as_bytes()))
+                }),
+            )]),
+            Self::ABVolume => None,
+            Self::EncryptedVolume => Some(vec![(
+                "deviceName",
+                Box::new(|blkdev: &HostConfigBlockDevice| {
+                    Ok(Some(
+                        blkdev.unwrap_encrypted_volume()?.device_name.as_bytes(),
+                    ))
+                }),
+            )]),
         }
     }
 }
