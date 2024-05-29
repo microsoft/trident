@@ -257,7 +257,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     volumes: vec![EncryptedVolume {
                         id: "srv".to_string(),
                         device_name: "luks-srv".to_string(),
-                        target_id: "enc-srv".to_string(),
+                        device_id: "enc-srv".to_string(),
                     }],
                 }),
                 raid: Raid {
@@ -905,7 +905,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     volumes: vec![EncryptedVolume {
                         id: "home".to_string(),
                         device_name: "home".to_string(),
-                        target_id: "enc-home".to_string(),
+                        device_id: "enc-home".to_string(),
                     }],
                 }),
                 ab_update: Some(AbUpdate {
@@ -1346,7 +1346,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         volumes: vec![EncryptedVolume {
                             id: "srv".to_string(),
                             device_name: "srv".to_string(),
-                            target_id: "luks-srv".to_string(),
+                            device_id: "luks-srv".to_string(),
                         }],
                     }),
                     ab_update: None,

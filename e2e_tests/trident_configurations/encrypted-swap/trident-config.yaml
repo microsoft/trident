@@ -22,7 +22,7 @@ hostConfiguration:
       volumes:
         - id: swap
           deviceName: swap
-          targetId: swap-e
+          deviceId: swap-e
     filesystems:
       - deviceId: swap
         type: swap

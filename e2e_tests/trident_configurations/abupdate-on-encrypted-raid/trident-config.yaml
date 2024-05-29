@@ -37,10 +37,10 @@ hostConfiguration:
       volumes:
         - id: web-a
           deviceName: web-a
-          targetId: web-a-e
+          deviceId: web-a-e
         - id: web-b
           deviceName: web-b
-          targetId: web-b-e
+          deviceId: web-b-e
     raid:
       software:
         - id: web-a-e

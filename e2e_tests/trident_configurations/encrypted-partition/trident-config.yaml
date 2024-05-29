@@ -22,7 +22,7 @@ hostConfiguration:
       volumes:
         - id: web
           deviceName: web
-          targetId: web-e
+          deviceId: web-e
     filesystems:
       - deviceId: web
         type: ext4

@@ -33,7 +33,7 @@ storage:
     volumes:
     - id: srv
       deviceName: srv
-      targetId: luks-srv
+      deviceId: luks-srv
   filesystems:
   - deviceId: esp
     type: vfat

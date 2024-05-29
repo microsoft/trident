@@ -509,7 +509,7 @@ mod tests {
                 volumes: vec![EncryptedVolume {
                     id: "srv".to_owned(),
                     device_name: "luks-srv".to_owned(),
-                    target_id: "srv-enc".to_owned(),
+                    device_id: "srv-enc".to_owned(),
                 }],
             }),
             raid: Raid {
@@ -1080,7 +1080,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "srv-b".to_owned(),
                 device_name: "alt-b".to_owned(),
-                target_id: "srv-b-enc".to_owned(),
+                device_id: "srv-b-enc".to_owned(),
             });
 
         // Delete mount point associated with "srv", otherwise this would fail
@@ -1127,7 +1127,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "alt-a".to_owned(),
                 device_name: "alt-a".to_owned(),
-                target_id: "alt-a-enc".to_owned(),
+                device_id: "alt-a-enc".to_owned(),
             });
         storage
             .encryption
@@ -1137,7 +1137,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "alt-b".to_owned(),
                 device_name: "alt-b".to_owned(),
-                target_id: "alt-b-enc".to_owned(),
+                device_id: "alt-b-enc".to_owned(),
             });
 
         // Add a new A/B update volume pair for the alt volumes
@@ -1262,7 +1262,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "srv".to_owned(),
                 device_name: "luks-alt".to_owned(),
-                target_id: "alt-enc".to_owned(),
+                device_id: "alt-enc".to_owned(),
             });
 
         assert_eq!(
@@ -1290,7 +1290,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "alt".to_owned(),
                 device_name: "luks-srv".to_owned(),
-                target_id: "alt-enc".to_owned(),
+                device_id: "alt-enc".to_owned(),
             });
         storage.filesystems.push(FileSystem {
             device_id: Some("alt".to_owned()),
@@ -1362,7 +1362,7 @@ mod tests {
             .retain(|fs| fs.device_id != Some("esp".into()));
 
         // Update the target ID of the encrypted volume to esp
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "esp".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "esp".to_owned();
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1399,7 +1399,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "alt".to_owned(),
                 device_name: "luks-alt".to_owned(),
-                target_id: "alt-root".to_owned(),
+                device_id: "alt-root".to_owned(),
             });
 
         assert_eq!(
@@ -1427,7 +1427,7 @@ mod tests {
             .volumes
             .get_mut(0)
             .unwrap()
-            .target_id = "root-b-verity".to_owned();
+            .device_id = "root-b-verity".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
@@ -1454,7 +1454,7 @@ mod tests {
             .retain(|mp| mp.device_id != Some("mnt".into()));
 
         // Switch the encryption target to the mnt RAID array
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt".to_owned();
 
         // Change the partition type of the mnt-raid-1/2 partitions to root
         storage.disks[1]
@@ -1479,7 +1479,7 @@ mod tests {
             .retain(|mp| mp.device_id != Some("mnt".into()));
 
         // Switch the encryption target to the mnt RAID array
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt".to_owned();
 
         // Change the partition type of the mnt-raid-1/2 partitions to root
         storage.disks[1]
@@ -1515,7 +1515,7 @@ mod tests {
             .retain(|mp| mp.device_id != Some("mnt".into()));
 
         // Switch the encryption target to the mnt RAID array
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt".to_owned();
 
         // Change the partition type of the mnt-raid-1/2 partitions to root
         storage.disks[1]
@@ -1551,7 +1551,7 @@ mod tests {
             .retain(|mp| mp.device_id != Some("mnt".into()));
 
         // Switch the encryption target to the mnt RAID array
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt".to_owned();
 
         // Change the partition type of the mnt-raid-1/2 partitions to root
         storage.disks[1]
@@ -1580,7 +1580,7 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_raid_no_devices_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt".to_owned();
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1599,7 +1599,7 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_raid_ab_update_volume_pair_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt".to_owned();
         storage.raid.software[0].devices = vec!["root".to_owned()];
         // Remove the first mount point
         assert_eq!(
@@ -1619,7 +1619,7 @@ mod tests {
     #[test]
     fn test_validate_encryption_target_id_disk_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "disk1".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
@@ -1644,7 +1644,7 @@ mod tests {
             .retain(|fs| fs.device_id != Some("mnt".into()));
 
         // Change the target ID of the encrypted volume to the RAID array
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt".to_owned();
 
         storage.validate(true).unwrap();
     }
@@ -1660,7 +1660,7 @@ mod tests {
             .retain(|fs| fs.device_id != Some("root".into()));
 
         // Change the target ID of the encrypted volume to the A/B update volume pair
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "root".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "root".to_owned();
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1688,7 +1688,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "alt".to_owned(),
                 device_name: "luks-alt".to_owned(),
-                target_id: "srv-enc".to_owned(),
+                device_id: "srv-enc".to_owned(),
             });
         storage.filesystems.push(FileSystem {
             device_id: Some("alt".to_owned()),
@@ -1757,7 +1757,7 @@ mod tests {
     #[test]
     fn test_validate_encryption_software_raid_target_part_id_equal_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "mnt-raid-1".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt-raid-1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
             InvalidHostConfigurationError::InvalidBlockDeviceGraph(
@@ -1781,7 +1781,7 @@ mod tests {
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_a_part_id_equal_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-a".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "root-a".to_owned();
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
         assert_eq!(
@@ -1807,7 +1807,7 @@ mod tests {
     #[test]
     fn test_validate_encryption_ab_update_volume_pair_b_part_id_equal_fail() {
         let mut storage: Storage = get_storage();
-        storage.encryption.as_mut().unwrap().volumes[0].target_id = "root-b".to_owned();
+        storage.encryption.as_mut().unwrap().volumes[0].device_id = "root-b".to_owned();
         storage.disks[1].partitions[1].partition_type = PartitionType::LinuxGeneric;
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
         assert_eq!(
@@ -1853,7 +1853,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "alt-a".to_owned(),
                 device_name: "alt-a".to_owned(),
-                target_id: "alt-a-enc".to_owned(),
+                device_id: "alt-a-enc".to_owned(),
             });
 
         // Add a new A/B update volume pair for the alt volumes
@@ -1911,7 +1911,7 @@ mod tests {
             .push(EncryptedVolume {
                 id: "alt-b".to_owned(),
                 device_name: "alt-b".to_owned(),
-                target_id: "alt-b-enc".to_owned(),
+                device_id: "alt-b-enc".to_owned(),
             });
 
         // Add a new A/B update volume pair for the alt volumes

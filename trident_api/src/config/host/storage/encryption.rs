@@ -119,7 +119,7 @@ pub struct EncryptedVolume {
     /// If it refers to a software raid array, the first disk partition of
     /// the software raid array must be of a supported type.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    pub target_id: BlockDeviceId,
+    pub device_id: BlockDeviceId,
 }
 
 impl Encryption {

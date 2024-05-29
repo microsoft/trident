@@ -104,7 +104,7 @@ pub fn provision(
         };
 
         debug!(
-            "Using key file '{}' to initialize all encrypted volume targets",
+            "Using key file '{}' to initialize all encrypted volumes",
             key_file_path.display()
         );
 
@@ -122,58 +122,58 @@ pub fn provision(
             .context("Failed to clear TPM 2.0 device")?;
 
         for ev in encryption.volumes.iter() {
-            // Get the block device indicated by target_id if it is a partition, or the first
-            // partition of target_id if it is a RAID array. Or return an error if target_id is
+            // Get the block device indicated by device_id if it is a partition, or the first
+            // partition of device_id if it is a RAID array. Or return an error if device_id is
             // neither a partition nor a RAID array.
-            let partition = get_first_backing_partition(host_status, &ev.target_id).context(format!(
-                "Underlying target of encrypted volume '{}' is not a partition or software RAID array",
+            let partition = get_first_backing_partition(host_status, &ev.device_id).context(format!(
+                "Underlying device of encrypted volume '{}' is not a partition or software RAID array",
                 ev.id
             ))?;
 
-            // TODO: Print the kind of block device that target_id points to. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7323/
+            // TODO: Print the kind of block device that device_id points to. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7323/
             info!(
-                "Encrypting underlying target '{}' of encrypted volume '{}' of type '{}'",
-                ev.target_id,
+                "Encrypting underlying device '{}' of encrypted volume '{}' of type '{}'",
+                ev.device_id,
                 ev.id,
                 partition.partition_type.to_sdrepart_part_type()
             );
 
-            // Set the content status of the target to unknown since we are about to encrypt the
+            // Set the content status of the device to unknown since we are about to encrypt the
             // block device and this may fail.
-            let target = host_status
+            let device = host_status
                 .storage
                 .block_devices
-                .get_mut(&ev.target_id)
+                .get_mut(&ev.device_id)
                 .context(format!(
-                    "Failed to find block device information for target of encrypted volume '{}'",
-                    ev.id
+                    "Failed to find device '{}' for encrypted volume '{}'",
+                    ev.device_id, ev.id
                 ))?;
 
-            target.contents = BlockDeviceContents::Unknown;
+            device.contents = BlockDeviceContents::Unknown;
 
-            encrypt_and_open_target(&target.path, &ev.device_name, &key_file_path).context(
+            encrypt_and_open_device(&device.path, &ev.device_name, &key_file_path).context(
                 format!(
-                    "Failed to encrypt and open target '{}' ({}) as {} for volume '{}'",
-                    target.path.display(),
-                    ev.target_id,
+                    "Failed to encrypt and open device '{}' ({}) as {} for volume '{}'",
+                    device.path.display(),
+                    ev.device_id,
                     ev.device_name,
                     ev.id
                 ),
             )?;
 
-            // Set the content status of the target to initialized since the block device now
+            // Set the content status of the device to initialized since the block device now
             // contains a valid LUKS volume.
-            target.contents = BlockDeviceContents::Initialized;
+            device.contents = BlockDeviceContents::Initialized;
 
             let header_offset_in_bytes: u64 =
-                get_luks_header_offset(&target.path).context(format!(
-                    "Failed to get LUKS header offset for target '{}'",
-                    target.path.display()
+                get_luks_header_offset(&device.path).context(format!(
+                    "Failed to get LUKS header offset for device '{}'",
+                    device.path.display()
                 ))?;
 
             // Add a representation of the created volume in the host status. The content status is
             // unknown since it is new and there isn't even an empty filesystem on it yet.
-            let size = target.size - header_offset_in_bytes;
+            let size = device.size - header_offset_in_bytes;
             host_status.storage.block_devices.insert(
                 ev.id.clone(),
                 BlockDeviceInfo {
@@ -188,12 +188,12 @@ pub fn provision(
     Ok(())
 }
 
-/// This function encrypts the target of a single encrypted volume by
-/// reformatting the target with a LUK2 header, enrolling a key file,
+/// This function encrypts the device of a single encrypted volume by
+/// reformatting the device with a LUK2 header, enrolling a key file,
 /// enrolling another randomly-generated key and sealing it in the TPM2
-/// device with PCR 7, then opening the target as a LUKS2 volume.
-fn encrypt_and_open_target(
-    target_path: &Path,
+/// device with PCR 7, then opening the device as a LUKS2 volume.
+fn encrypt_and_open_device(
+    device_path: &Path,
     device_name: &String,
     key_file: &Path,
 ) -> Result<(), Error> {
@@ -221,16 +221,16 @@ fn encrypt_and_open_target(
         .arg(format!("{}M", LUKS_HEADER_SIZE_IN_MIB))
         .arg("--type")
         .arg("luks2")
-        .arg(target_path.as_os_str())
+        .arg(device_path.as_os_str())
         .run_and_check()
         .context(format!(
-            "Failed to encrypt underlying target '{}'",
-            target_path.display()
+            "Failed to encrypt underlying device '{}'",
+            device_path.display()
         ))?;
 
     debug!(
-        "Enrolling TPM2 device for underlying target '{}'",
-        target_path.display()
+        "Enrolling TPM2 device for underlying device '{}'",
+        device_path.display()
     );
 
     Command::new("systemd-cryptenroll")
@@ -239,16 +239,16 @@ fn encrypt_and_open_target(
         .arg("--unlock-key-file")
         .arg(key_file.as_os_str())
         .arg("--wipe-slot=tpm2")
-        .arg(target_path.as_os_str())
+        .arg(device_path.as_os_str())
         .run_and_check()
         .context(format!(
-            "Failed to enroll TPM2 device for underlying target '{}'",
-            target_path.display()
+            "Failed to enroll TPM2 device for underlying device '{}'",
+            device_path.display()
         ))?;
 
     debug!(
-        "Opening underlying encrypted target '{}' as '{}'",
-        target_path.display(),
+        "Opening underlying encrypted device '{}' as '{}'",
+        device_path.display(),
         device_name
     );
 
@@ -256,12 +256,12 @@ fn encrypt_and_open_target(
         .arg("luksOpen")
         .arg("--key-file")
         .arg(key_file.as_os_str())
-        .arg(target_path.as_os_str())
+        .arg(device_path.as_os_str())
         .arg(device_name)
         .run_and_check()
         .context(format!(
-            "Failed to open underlying target '{}' as '{}'",
-            target_path.display(),
+            "Failed to open underlying device '{}' as '{}'",
+            device_path.display(),
             device_name
         ))?;
 
@@ -294,7 +294,7 @@ pub fn generate_recovery_key_file(path: &Path) -> Result<(), Error> {
 }
 
 /// This is an abbreviated representation of the JSON output of
-/// `cryptsetup luksDump --dump-json-metadata <target_path>`
+/// `cryptsetup luksDump --dump-json-metadata <device_path>`
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 struct LuksDump {
@@ -302,7 +302,7 @@ struct LuksDump {
 }
 
 /// This is a complete representation of the segment object in the JSON
-/// output of `cryptsetup luksDump --dump-json-metadata <target_path>`
+/// output of `cryptsetup luksDump --dump-json-metadata <device_path>`
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -317,13 +317,13 @@ struct LuksDumpSegment {
 }
 
 /// This function runs `cryptsetup luksDump --dump-json-metadata
-/// <target_path>` and parses the output and to return the offset of the
+/// <device_path>` and parses the output and to return the offset of the
 /// LUKS2 volume header in bytes.
-fn get_luks_header_offset(target_path: &Path) -> Result<u64, Error> {
+fn get_luks_header_offset(device_path: &Path) -> Result<u64, Error> {
     let luks_dump_output: String = Command::new("cryptsetup")
         .arg("luksDump")
         .arg("--dump-json-metadata")
-        .arg(target_path.as_os_str())
+        .arg(device_path.as_os_str())
         .output_and_check()?;
 
     let luks_dump_output: &[u8] = luks_dump_output.as_bytes();
@@ -332,7 +332,7 @@ fn get_luks_header_offset(target_path: &Path) -> Result<u64, Error> {
 }
 
 /// This function parses the JSON output of `cryptsetup luksDump
-/// --dump-json-metadata <target_path>` and returns the offset of the
+/// --dump-json-metadata <device_path>` and returns the offset of the
 /// LUKS2 volume header in bytes.
 fn parse_luks_dump_for_header_offset(luks_dump_output: &[u8]) -> Result<u64, Error> {
     let luks_dump: LuksDump = serde_json::from_slice::<LuksDump>(luks_dump_output)
@@ -362,14 +362,14 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
     };
 
     for ev in encryption.volumes.iter() {
-        let backing_partition = get_first_backing_partition(host_status, &ev.target_id).context(format!(
-            "Underlying target '{}' of encrypted volume '{}' is not a partition or software RAID array",
-            ev.target_id,
+        let backing_partition = get_first_backing_partition(host_status, &ev.device_id).context(format!(
+            "Underlying device '{}' of encrypted volume '{}' is not a partition or software RAID array",
+            ev.device_id,
             ev.id
         ))?;
-        let target_path = &host_status.storage.block_devices.get(&ev.target_id).context(format!(
-            "Failed to find block device information for underlying target '{}' of encrypted volume '{}'",
-            ev.target_id,
+        let device_path = &host_status.storage.block_devices.get(&ev.device_id).context(format!(
+            "Failed to find block device information for underlying device '{}' of encrypted volume '{}'",
+            ev.device_id,
             ev.id
         ))?.path;
 
@@ -390,14 +390,14 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
             contents.push_str(&format!(
                 "{}\t{}\t{}\tluks,swap\n",
                 ev.device_name,
-                target_path.display(),
+                device_path.display(),
                 "/dev/random"
             ));
         } else {
             contents.push_str(&format!(
                 "{}\t{}\t{}\tluks,tpm2-device=auto\n",
                 ev.device_name,
-                target_path.display(),
+                device_path.display(),
                 "none"
             ));
         }
@@ -602,7 +602,7 @@ mod tests {
                 volumes: vec![EncryptedVolume {
                     id: "srv".to_owned(),
                     device_name: "luks-srv".to_owned(),
-                    target_id: "srv-enc".to_owned(),
+                    device_id: "srv-enc".to_owned(),
                 }],
             }),
             ..Default::default()

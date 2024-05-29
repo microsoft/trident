@@ -734,7 +734,7 @@ mod test {
                     let encryption = EncryptedVolume {
                         id: "enc0".into(),
                         device_name: "enc0".into(),
-                        target_id: "target0".into(),
+                        device_id: "target0".into(),
                     };
                     check_common(&encryption, &encryption.id, BlkDevKind::EncryptedVolume);
                 }

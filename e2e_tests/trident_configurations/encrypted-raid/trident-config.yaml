@@ -25,7 +25,7 @@ hostConfiguration:
       volumes:
         - id: web
           deviceName: web
-          targetId: web-e
+          deviceId: web-e
     raid:
       software:
         - id: web-e

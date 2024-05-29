@@ -44,7 +44,7 @@ storage:
     volumes:
     - id: srv
       deviceName: luks-srv
-      targetId: enc-srv
+      deviceId: enc-srv
   raid:
     software:
     - id: some_raid

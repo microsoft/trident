@@ -411,7 +411,7 @@ mod tests {
                     volumes: vec![trident_api::config::EncryptedVolume {
                         id: "enc1".to_owned(),
                         device_name: "luks-enc".to_owned(),
-                        target_id: "part5".to_owned(),
+                        device_id: "part5".to_owned(),
                     }],
                 }),
                 ..Default::default()

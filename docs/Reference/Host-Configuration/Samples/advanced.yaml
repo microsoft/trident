@@ -118,7 +118,7 @@ storage:
     volumes:
     - id: home
       deviceName: home
-      targetId: enc-home
+      deviceId: enc-home
   raid:
     software:
     - id: boot-a

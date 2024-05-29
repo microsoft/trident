@@ -80,7 +80,7 @@ where
         Self::new_composite(
             volume.id.clone(),
             HostConfigBlockDevice::EncryptedVolume(volume),
-            [&volume.target_id],
+            [&volume.device_id],
         )
     }
 }

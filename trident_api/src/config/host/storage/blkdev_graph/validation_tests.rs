@@ -53,7 +53,7 @@ fn test_basic_graph() {
 
     let encrypted_volume = EncryptedVolume {
         id: "encrypted_volume".into(),
-        target_id: "partition5".into(),
+        device_id: "partition5".into(),
         device_name: "encrypted_volume".into(),
     };
     builder.add_node((&encrypted_volume).into());
@@ -558,7 +558,7 @@ mod ab {
         builder.add_node((&part2).into());
         let enc = EncryptedVolume {
             id: "enc".into(),
-            target_id: "part2".into(),
+            device_id: "part2".into(),
             device_name: "encrypted".into(),
         };
         builder.add_node((&enc).into());
