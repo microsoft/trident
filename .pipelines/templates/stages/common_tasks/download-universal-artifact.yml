@@ -29,10 +29,10 @@ steps:
       inlineScript: |
         set -eux
 
-        LATEST_VERSION=$(./scripts/get-packages.py \
+        LATEST_VERSION=$(./scripts/get-packages.py --debug \
             --package '${{ parameters.packageName }}' \
             --feed '${{ parameters.feedName }}' \
-            --action=latestVersion)
+            --action=latest)
 
         echo "Downloading version $LATEST_VERSION of ${{ parameters.packageName }}"
 

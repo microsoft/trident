@@ -61,17 +61,17 @@ stages:
               inlineScript: |
                 set -eux
 
-                alreadyPublished=$(./scripts/get-packages.py \
+                alreadyPublished=$(./scripts/get-packages.py --debug \
                     --package '${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}' \
                     --version '$(Build.BuildNumber)' \
-                    --action=isVersionInFeed)
+                    --action=exists)
 
                 # Save variable to know if package needs to be published
                 echo "##vso[task.setvariable variable=isVersionInFeed;]$alreadyPublished"
 
           - task: UniversalPackages@0
             displayName: "Publish rpms Universal Package"
-            condition: and(succeeded(), eq(variables.isVersionInFeed, False))
+            condition: and(succeeded(), eq(variables.isVersionInFeed, false))
             inputs:
               command: publish
               vstsFeedPublish: ${{ parameters.feed }}
