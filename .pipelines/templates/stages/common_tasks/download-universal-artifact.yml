@@ -30,9 +30,9 @@ steps:
         set -eux
 
         LATEST_VERSION=$(./scripts/get-packages.py \
-            -f '${{ parameters.packageName }}' \
+            --package '${{ parameters.packageName }}' \
             --feed '${{ parameters.feedName }}' \
-            | jq -r '.[0].latestVersion')
+            --action=latestVersion)
 
         echo "Downloading version $LATEST_VERSION of ${{ parameters.packageName }}"
 
@@ -40,14 +40,6 @@ steps:
         echo "##vso[task.setvariable variable=${{ parameters.outputVersionVariable }}]$LATEST_VERSION"
 
         mkdir -p ${{ parameters.downloadLocation }}
-        az artifacts universal download \
-          --organization "https://dev.azure.com/mariner-org/" \
-          --project "2311650c-e79e-4301-b4d2-96543fdd84ff" \
-          --scope project \
-          --feed "Trident" \
-          --name "${{ parameters.packageName }}" \
-          --version "$LATEST_VERSION" \
-          --path ${{ parameters.downloadLocation }}
 
   - task: UniversalPackages@0
     displayName: "Downloading ${{ parameters.packageName }} version $(${{ parameters.outputVersionVariable }})"
