@@ -111,3 +111,6 @@ pub const TRIDENT_OVERLAY_UPPER_RELATIVE_PATH: &str = "etc/upper";
 
 /// Dev Mapper path
 pub const DEV_MAPPER_PATH: &str = "/dev/mapper";
+
+/// Selinux config file path
+pub const SELINUX_CONFIG: &str = "/etc/selinux/config";

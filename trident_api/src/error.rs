@@ -196,6 +196,10 @@ pub enum ManagementError {
     RollbackAbUpdate,
     #[error("Failed to fetch device path for root from /proc/mounts")]
     RootMountPointDevPath,
+    #[error("Failed to get SELINUXTYPE")]
+    SelinuxTypeNotFound,
+    #[error("Failed to run setfiles command")]
+    RunSetFiles,
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]

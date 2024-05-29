@@ -61,6 +61,7 @@ pub mod bootentries;
 mod etc_overlay;
 mod kexec;
 mod mount_root;
+pub mod selinux;
 
 /// Bootentry name for A images
 const BOOT_ENTRY_A: &str = "AZLA";
@@ -283,7 +284,7 @@ fn stage_clean_install(
             configure(modules, state, host_config, &exec_root_path, use_overlay)?;
 
             regenerate_initrd(use_overlay)?;
-
+            selinux::execute_setfiles(host_config)?;
             root_device_path = Some(
                 get_root_block_device_path(state.host_status())
                     .structured(InternalError::GetRootBlockDevice)?,
@@ -517,7 +518,8 @@ fn stage_update(
                 info!("Running configure");
                 configure(modules, state, host_config, &exec_root_path, use_overlay)?;
 
-                regenerate_initrd(use_overlay)
+                regenerate_initrd(use_overlay)?;
+                selinux::execute_setfiles(host_config)
             })
             .message("Failed to execute in chroot")?;
 

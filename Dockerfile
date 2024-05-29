@@ -8,6 +8,7 @@ COPY trident.spec .
 COPY systemd ./systemd
 COPY bin/trident ./target/release/trident
 COPY artifacts/osmodifier /usr/src/mariner/SOURCES/osmodifier
+COPY trident-selinuxpolicies.cil /usr/src/mariner/SOURCES/trident-selinuxpolicies.cil
 
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0
