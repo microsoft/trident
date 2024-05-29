@@ -402,6 +402,14 @@
           "enum": [
             "auto"
           ]
+        },
+        {
+          "title": "Other",
+          "description": "Used for any other arbitrary data from an image or for filesystems not supported by Trident or Linux.",
+          "type": "string",
+          "enum": [
+            "other"
+          ]
         }
       ]
     },

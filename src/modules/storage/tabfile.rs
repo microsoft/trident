@@ -56,7 +56,8 @@ fn entry_from_mountpoint(hs: &HostStatus, mp: &InternalMountPoint) -> Result<Tab
                 _ => TabFileEntry::new_path(
                     device,
                     &mp.path,
-                    TabFileSystemType::from_api_type(fs_type),
+                    TabFileSystemType::from_api_type(fs_type)
+                        .context("Invalid file system type")?,
                 ),
             }
         }

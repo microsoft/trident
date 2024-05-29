@@ -1,4 +1,6 @@
-use anyhow::bail;
+use std::fmt::{Display, Formatter, Result as FmtResult};
+
+use anyhow::{bail, Error};
 use trident_api::config::FileSystemType;
 
 /// File system types for `mount`
@@ -57,22 +59,22 @@ impl MountFileSystemType {
 
     pub fn from_api_type(api_type: FileSystemType) -> Result<Self, anyhow::Error> {
         Ok(match api_type {
-            FileSystemType::Auto => MountFileSystemType::Auto,
-            FileSystemType::Ext4 => MountFileSystemType::Ext4,
-            FileSystemType::Xfs => MountFileSystemType::Xfs,
-            FileSystemType::Vfat => MountFileSystemType::Vfat,
-            FileSystemType::Iso9660 => MountFileSystemType::Iso9660,
-            FileSystemType::Tmpfs => MountFileSystemType::Tmpfs,
-            FileSystemType::Overlay => MountFileSystemType::Overlay,
-            FileSystemType::Swap => {
-                bail!("'swap' FS type cannot be used for mounting")
+            FileSystemType::Auto => Self::Auto,
+            FileSystemType::Ext4 => Self::Ext4,
+            FileSystemType::Xfs => Self::Xfs,
+            FileSystemType::Vfat => Self::Vfat,
+            FileSystemType::Iso9660 => Self::Iso9660,
+            FileSystemType::Tmpfs => Self::Tmpfs,
+            FileSystemType::Overlay => Self::Overlay,
+            FileSystemType::Swap | FileSystemType::Other => {
+                bail!("'{api_type}' filesystem type cannot be used for mounting")
             }
         })
     }
 }
 
-impl std::fmt::Display for MountFileSystemType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for MountFileSystemType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.name())
     }
 }
@@ -95,7 +97,7 @@ impl MkfsFileSystemType {
         }
     }
 
-    pub fn from_api_type(api_type: FileSystemType) -> Result<Self, anyhow::Error> {
+    pub fn from_api_type(api_type: FileSystemType) -> Result<Self, Error> {
         Ok(match api_type {
             FileSystemType::Ext4 => Self::Ext4,
             FileSystemType::Xfs => Self::Xfs,
@@ -104,18 +106,16 @@ impl MkfsFileSystemType {
             | FileSystemType::Iso9660
             | FileSystemType::Tmpfs
             | FileSystemType::Overlay
-            | FileSystemType::Auto => {
-                bail!(
-                    "'{}' filesystem type cannot be used for creating new filesystems",
-                    api_type
-                )
+            | FileSystemType::Auto
+            | FileSystemType::Other => {
+                bail!("'{api_type}' filesystem type cannot be used for creating new filesystems")
             }
         })
     }
 }
 
-impl std::fmt::Display for MkfsFileSystemType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for MkfsFileSystemType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.name())
     }
 }
@@ -136,8 +136,8 @@ impl TabFileSystemType {
         }
     }
 
-    pub fn from_api_type(api_type: FileSystemType) -> Self {
-        match api_type {
+    pub fn from_api_type(api_type: FileSystemType) -> Result<Self, Error> {
+        Ok(match api_type {
             FileSystemType::Ext4 => Self::Ext4,
             FileSystemType::Xfs => Self::Xfs,
             FileSystemType::Vfat => Self::Vfat,
@@ -146,6 +146,9 @@ impl TabFileSystemType {
             FileSystemType::Overlay => Self::Overlay,
             FileSystemType::Swap => Self::Swap,
             FileSystemType::Auto => Self::Auto,
-        }
+            FileSystemType::Other => {
+                bail!("'{api_type}' filesystem type cannot be used in fstab")
+            }
+        })
     }
 }

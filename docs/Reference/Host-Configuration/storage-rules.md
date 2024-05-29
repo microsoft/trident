@@ -95,6 +95,7 @@ block device.
 | swap             | Yes                   |
 | tmpfs            | No                    |
 | auto             | Yes                   |
+| other            | Yes                   |
 
 ## Filesystem Source Requirements
 
@@ -108,6 +109,7 @@ Depending on the type of a filesystem, they may have different source types.
 | swap             | create                     |
 | tmpfs            | create                     |
 | auto             | adopted                    |
+| other            | image                      |
 
 ## Filesystem Mounting
 
@@ -122,6 +124,7 @@ configured.
 | swap             | No                   |
 | tmpfs            | Yes                  |
 | auto             | Yes                  |
+| other            | No                   |
 
 ## Filesystem Verity Support
 
@@ -135,6 +138,7 @@ Depending on the type of a filesystem, they may or may not be used for verity.
 | swap             | No              |
 | tmpfs            | No              |
 | auto             | No              |
+| other            | No              |
 
 ## Homogeneous References
 

@@ -174,6 +174,12 @@ pub enum FileSystemType {
     /// supported for adopted partitions.
     Auto,
 
+    /// # Other
+    ///
+    /// Used for any other arbitrary data from an image or for filesystems not
+    /// supported by Trident or Linux.
+    Other,
+
     /// # Overlay file system
     ///
     /// Used internally but currently not exposed in the API.
@@ -213,14 +219,15 @@ impl FileSystemType {
         // Added all on purpose (no wildcards) so that we update this when we
         // add new filesystem.
         match self {
-            FileSystemType::Ext4 => true,
-            FileSystemType::Xfs
-            | FileSystemType::Vfat
-            | FileSystemType::Swap
-            | FileSystemType::Tmpfs
-            | FileSystemType::Overlay
-            | FileSystemType::Iso9660
-            | FileSystemType::Auto => false,
+            Self::Ext4 => true,
+            Self::Xfs
+            | Self::Vfat
+            | Self::Swap
+            | Self::Tmpfs
+            | Self::Overlay
+            | Self::Iso9660
+            | Self::Auto
+            | Self::Other => false,
         }
     }
 

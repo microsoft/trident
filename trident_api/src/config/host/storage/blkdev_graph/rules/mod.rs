@@ -155,7 +155,13 @@ impl FileSystemType {
     /// Returns whether a filesystem type requires a block device ID.
     pub fn requires_block_device_id(&self) -> bool {
         match self {
-            Self::Ext4 | Self::Xfs | Self::Vfat | Self::Iso9660 | Self::Swap | Self::Auto => true,
+            Self::Ext4
+            | Self::Xfs
+            | Self::Vfat
+            | Self::Iso9660
+            | Self::Swap
+            | Self::Auto
+            | Self::Other => true,
             Self::Tmpfs | Self::Overlay => false,
         }
     }
@@ -168,6 +174,7 @@ impl FileSystemType {
                 FileSystemSourceKind::Image,
                 FileSystemSourceKind::Adopted,
             ]),
+            Self::Other => FileSystemSourceKindList(vec![FileSystemSourceKind::Image]),
             Self::Iso9660 | Self::Auto => {
                 FileSystemSourceKindList(vec![FileSystemSourceKind::Adopted])
             }
@@ -187,7 +194,7 @@ impl FileSystemType {
             | Self::Tmpfs
             | Self::Overlay
             | Self::Auto => true,
-            Self::Swap => false,
+            Self::Swap | Self::Other => false,
         }
     }
 
@@ -195,9 +202,13 @@ impl FileSystemType {
     pub fn supports_verity(&self) -> bool {
         match self {
             Self::Ext4 | Self::Xfs => true,
-            Self::Vfat | Self::Iso9660 | Self::Swap | Self::Tmpfs | Self::Overlay | Self::Auto => {
-                false
-            }
+            Self::Vfat
+            | Self::Iso9660
+            | Self::Swap
+            | Self::Tmpfs
+            | Self::Overlay
+            | Self::Auto
+            | Self::Other => false,
         }
     }
 }
