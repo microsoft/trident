@@ -407,6 +407,45 @@ mod tests {
     }
 
     #[test]
+    fn test_run_script_from_nonexistent_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_dir = temp_dir.path().join("test-directory");
+        let host_config = HostConfiguration {
+            scripts: Scripts {
+                post_provision: vec![Script {
+                    name: "test-script".into(),
+                    run_on: vec![ServicingTypeSelection::CleanInstall],
+                    interpreter: Some("/bin/bash".into()),
+                    path: Some("nonexistent-file".into()),
+                    environment_variables: hashmap! {
+                        "TEST_DIR".into() => test_dir.to_str().unwrap().into()
+                    },
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut host_status = HostStatus {
+            spec: host_config.clone(),
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::StagingDeployment,
+            storage: Storage {
+                root_device_path: Some("/dev/sda".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut module = HooksModule::default();
+        let err = module.prepare(&mut host_status);
+        assert!(err.is_err());
+
+        // Cleanup
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
     fn test_run_script_that_always_fails() {
         let script = Script {
             name: "test-script".into(),
