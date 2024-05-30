@@ -20,3 +20,6 @@ trident_api = { path = "../trident_api" }
 [dev-dependencies]
 indoc = "2"
 tempfile = "3.10.1"
+
+[features]
+dangerous-options = []
