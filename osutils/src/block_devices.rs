@@ -9,13 +9,18 @@ use anyhow::{bail, Context, Error};
 use crate::lsblk;
 
 /// Returns the path of the first symlink in directory whose canonical path is target.
-/// Requires that target is already a canonical path.
 pub fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, Error> {
+    // Ensure that target path is canonicalized
+    let target_canonicalized = target.canonicalize().context(format!(
+        "Failed to canonicalize target path '{}'",
+        target.display()
+    ))?;
+
     fs::read_dir(directory)?
         .flatten()
         .filter_map(|f| {
             if let Ok(target_path) = f.path().canonicalize() {
-                if target_path == target {
+                if target_path == target_canonicalized {
                     return Some(f.path());
                 }
             }
@@ -25,7 +30,7 @@ pub fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBu
         .context(format!("Failed to find symlink for '{}'", target.display()))
 }
 
-/// Get the canonicalized path of a disk for a given partition
+/// Get the canonicalized path of a disk for a given partition.
 pub fn get_disk_for_partition(partition: &Path) -> Result<PathBuf, Error> {
     let partition_block_device =
         lsblk::run(partition).context("Failed to get partition metadata")?;
@@ -119,24 +124,39 @@ mod functional_test {
             symlink
         );
 
-        // pick the first symlink if there are multiple
+        // Pick the first symlink if there are multiple
         let symlink = temp_dir.path().join("asymlink");
         std::os::unix::fs::symlink(&target, &symlink).unwrap();
         assert_eq!(
             find_symlink_for_target(&target, temp_dir.path()).unwrap(),
             symlink
         );
+    }
 
-        // return error if no symlink found
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_find_symlink_for_target_fail_no_symlink() {
+        // Return error if no symlink found
+        let temp_dir = tempfile::tempdir().unwrap();
+        let target = temp_dir.path().canonicalize().unwrap();
         let temp_dir2 = tempfile::tempdir().unwrap();
         assert_eq!(
-            find_symlink_for_target(temp_dir2.path(), temp_dir.path())
+            find_symlink_for_target(&target, temp_dir2.path())
                 .unwrap_err()
                 .to_string(),
-            format!(
-                "Failed to find symlink for '{}'",
-                temp_dir2.path().display()
-            )
+            format!("Failed to find symlink for '{}'", target.display())
+        );
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_find_symlink_for_target_fail_bad_target() {
+        // Return error if target path is bad
+        let target = Path::new("/bad-target-path");
+        let temp_dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            find_symlink_for_target(target, temp_dir.path())
+                .unwrap_err()
+                .to_string(),
+            format!("Failed to canonicalize target path '{}'", target.display())
         );
     }
 
