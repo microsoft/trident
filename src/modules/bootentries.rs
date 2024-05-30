@@ -23,9 +23,9 @@ use super::BOOT64_EFI;
 ///
 pub fn call_set_boot_next_and_update_hs(
     host_status: &mut HostStatus,
-    new_root_path: &Path,
+    esp_path: &Path,
 ) -> Result<(), TridentError> {
-    set_boot_next(host_status, new_root_path).structured(ManagementError::SetBootNext)?;
+    set_boot_next(host_status, esp_path).structured(ManagementError::SetBootNext)?;
 
     // Get the output of efibootmgr
     let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
@@ -47,8 +47,10 @@ pub fn call_set_boot_next_and_update_hs(
 }
 
 /// Creates a boot entry for the updated AB partition and sets the `BootNext` variable to
-/// boot from the updated partition on next boot.
-fn set_boot_next(host_status: &HostStatus, new_root_path: &Path) -> Result<(), Error> {
+/// boot from the updated partition on next boot. Takes in the path where we expect to find
+/// AZLA/AZLB entry. During clean install, this corresponds to /mnt/newroot/boot/efi, but during
+/// A/B update, both A and B share a single ESP at /boot/efi.
+fn set_boot_next(host_status: &HostStatus, esp_path: &Path) -> Result<(), Error> {
     let (entry_label_new, bootloader_path_new) =
         get_label_and_path(host_status).context("Failed to get label and path")?;
     let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
@@ -76,15 +78,12 @@ fn set_boot_next(host_status: &HostStatus, new_root_path: &Path) -> Result<(), E
         }
     }
     let disk_path = get_first_partition_of_type(host_status, PartitionType::Esp)
-        .context("Failed to fetch esp disk path ")?;
+        .context("Failed to fetch esp disk path")?;
     debug!("Disk path of first esp partition {:?}", disk_path);
-    efibootmgr::create_boot_entry(
-        entry_label_new,
-        disk_path,
-        bootloader_path_new,
-        new_root_path,
-    )
-    .context("Failed to add boot entry")?;
+    efibootmgr::create_boot_entry(entry_label_new, disk_path, bootloader_path_new, esp_path)
+        .context(format!(
+            "Failed to add boot entry with label '{entry_label_new}'"
+        ))?;
     let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
 
     let added_entry_number = bootmgr_output
@@ -509,6 +508,8 @@ mod functional_test {
 
     use osutils::{
         efibootmgr::{self, EfiBootManagerOutput},
+        files::create_file,
+        path::join_relative,
         testutils::repart::OS_DISK_DEVICE_PATH,
     };
     use pytest_gen::functional_test;
@@ -533,24 +534,31 @@ mod functional_test {
     fn set_some_boot_entries() {
         // Create new boot entries for testing
         let tempdir = tempfile::tempdir().unwrap();
+        // Create bootloader path
+        let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
+        // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
+        // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
         efibootmgr::create_boot_entry(
             "TestBoot1",
             OS_DISK_DEVICE_PATH,
-            "/EFI/AZLA/bootx64.efi",
+            bootloader_path,
             tempdir.path(),
         )
         .unwrap();
         efibootmgr::create_boot_entry(
             "TestBoot2",
             OS_DISK_DEVICE_PATH,
-            "/EFI/AZLA/bootx64.efi",
+            bootloader_path,
             tempdir.path(),
         )
         .unwrap();
         efibootmgr::create_boot_entry(
             "TestBoot3",
             OS_DISK_DEVICE_PATH,
-            "/EFI/AZLA/bootx64.efi",
+            bootloader_path,
             tempdir.path(),
         )
         .unwrap();
@@ -745,6 +753,13 @@ mod functional_test {
             efibootmgr::delete_boot_entry(&boot_entry_num1).unwrap();
         }
         let tempdir = tempfile::tempdir().unwrap();
+
+        // set_boot_next() will eventually call is_valid_bootloader_path() to verify if file exists
+        // at {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_path = format!("/EFI/{}/bootx64.efi", entry_label);
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
         set_boot_next(host_status, tempdir.path()).unwrap();
         let bootmgr_output2: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();

@@ -19,7 +19,8 @@ use sys_mount::{Mount, MountFlags};
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
-        self, EXEC_ROOT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
+        self, ESP_MOUNT_POINT_PATH, EXEC_ROOT_PATH, ROOT_MOUNT_POINT_PATH,
+        UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{
         InitializationError, InternalError, InvalidInputError, ManagementError, ModuleError,
@@ -29,12 +30,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::{
-    chroot, container,
-    exe::RunAndCheck,
-    mkinitrd, mount,
-    path::{self, join_relative},
-};
+use osutils::{chroot, container, exe::RunAndCheck, mkinitrd, mount, path::join_relative};
 
 use crate::{
     datastore::DataStore,
@@ -184,7 +180,7 @@ pub(super) fn clean_install(
         }
     }
 
-    info!("Starting clean_install");
+    info!("Starting clean_install()");
     tracing::info!(metric_name = "clean_install_start", value = true);
     let clean_install_start_time = Instant::now();
     let mut modules = MODULES.lock().unwrap();
@@ -337,10 +333,12 @@ pub(super) fn finalize_clean_install(
         .datastore_path
         .clone()
         .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
-    state.persist(&path::join_relative(new_root_path, datastore_path))?;
+    state.persist(&join_relative(new_root_path, datastore_path))?;
 
     info!("Finalizing clean install");
-    finalize_deployment(state, new_root_path)?;
+    // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
+    let esp_path = join_relative(new_root_path, ESP_MOUNT_POINT_PATH);
+    finalize_deployment(state, &esp_path)?;
 
     // Metric for clean install provisioning time in seconds
     if let Some(start_time) = clean_install_start_time {
@@ -366,6 +364,7 @@ pub(super) fn update(
         mut sender,
     } = command;
 
+    info!("Starting update()");
     let mut modules = MODULES.lock().unwrap();
 
     info!("Refreshing host status");
@@ -425,7 +424,6 @@ pub(super) fn update(
             // Otherwise, finalize update
             finalize_update(
                 state,
-                &new_root_path,
                 #[cfg(feature = "grpc-dangerous")]
                 &mut sender,
             )?;
@@ -550,13 +548,11 @@ fn stage_update(
     Ok((new_root_path, mounts))
 }
 
-/// Finalizes an update. Takes in 3 arguments:
+/// Finalizes an update. Takes in 2 arguments:
 /// - state: A mutable reference to the DataStore.
-/// - new_root_path: New root device path.
 /// - sender: Optional mutable reference to the gRPC sender.
 pub(super) fn finalize_update(
     state: &mut DataStore,
-    new_root_path: &Path,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
@@ -570,7 +566,7 @@ pub(super) fn finalize_update(
     send_host_status_state(sender, state)?;
 
     info!("Finalizing update");
-    finalize_deployment(state, new_root_path)?;
+    finalize_deployment(state, Path::new(ESP_MOUNT_POINT_PATH))?;
 
     perform_reboot()?;
 
@@ -598,7 +594,7 @@ pub(super) fn get_root_block_device_path(host_status: &HostStatus) -> Option<Pat
     host_status
         .spec
         .storage
-        .path_to_mount_point(Path::new(constants::ROOT_MOUNT_POINT_PATH))
+        .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
         .and_then(|m| Some(get_block_device(host_status, &m.target_id, false)?.path))
 }
 
@@ -966,16 +962,13 @@ fn perform_reboot() -> Result<(), TridentError> {
 
 /// Finalizes deployment by setting bootNext and updating host status. Changes host's servicing state
 /// to DeploymentFinalized.
-fn finalize_deployment(
-    datastore: &mut DataStore,
-    new_root_path: &Path,
-) -> Result<(), TridentError> {
+fn finalize_deployment(datastore: &mut DataStore, esp_path: &Path) -> Result<(), TridentError> {
     // TODO: Delete boot entries. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/
 
     info!("Setting boot entries");
     datastore.try_with_host_status(|host_status| {
-        bootentries::call_set_boot_next_and_update_hs(host_status, new_root_path)
+        bootentries::call_set_boot_next_and_update_hs(host_status, esp_path)
     })?;
 
     debug!("Updating host's servicing state to DeploymentFinalized");
@@ -998,7 +991,6 @@ mod test {
             self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionSize,
             PartitionType,
         },
-        constants,
         status::{BlockDeviceContents, Storage},
     };
 
@@ -1037,7 +1029,7 @@ mod test {
                             target_id: "root".to_owned(),
                             filesystem: FileSystemType::Ext4,
                             options: vec![],
-                            path: PathBuf::from(constants::ROOT_MOUNT_POINT_PATH),
+                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         },
                     ],
                     ..Default::default()

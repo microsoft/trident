@@ -1,14 +1,8 @@
-use std::{
-    ffi::OsStr,
-    path::{Path, MAIN_SEPARATOR},
-    process::Command,
-};
+use std::{ffi::OsStr, path::Path, process::Command};
 
-use crate::exe::RunAndCheck;
+use crate::{exe::RunAndCheck, path::join_relative};
 use anyhow::{bail, Context, Error};
 use regex::Regex;
-
-use trident_api::constants::{ESP_MOUNT_POINT_PATH, ESP_RELATIVE_MOUNT_POINT_PATH};
 
 /// Represents an entry in the EFI Boot Manager.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -157,7 +151,7 @@ pub fn create_boot_entry(
     entry_label: impl AsRef<OsStr>,
     disk_path: impl AsRef<Path>,
     bootloader_path: impl AsRef<Path>,
-    new_root_path: impl AsRef<Path>,
+    esp_path: impl AsRef<Path>,
 ) -> Result<(), Error> {
     // Check if disk path is valid
     if !disk_path.as_ref().exists() {
@@ -166,26 +160,11 @@ pub fn create_boot_entry(
             disk_path.as_ref().display()
         );
     }
-    // Check if the path exists in root mount point
-    let mut valid = is_valid_bootloader_path(
-        Path::new(ESP_MOUNT_POINT_PATH),
-        bootloader_path.as_ref().to_str().context(format!(
-            "Failed to convert bootloader path '{}' to str",
-            entry_label.as_ref().to_string_lossy()
-        ))?,
-    );
 
-    if !valid {
-        // Check if the path exists in new root mount point as we should support creating boot
-        // entry in new root mount point before finalizing deployment.
-        valid = is_valid_bootloader_path(
-            &new_root_path.as_ref().join(ESP_RELATIVE_MOUNT_POINT_PATH),
-            bootloader_path.as_ref().to_str().context(format!(
-                "Failed to convert bootloader path {} to str",
-                bootloader_path.as_ref().to_string_lossy(),
-            ))?,
-        );
-    }
+    // Check if the bootloader path exists as we should support creating a boot entry in the new
+    // root mount point before finalizing deployment. During clean install, this corresponds to
+    // /mnt/newroot/boot/efi; during A/B update, both A and B share a single ESP at /boot/efi.
+    let valid = is_valid_bootloader_path(esp_path.as_ref(), bootloader_path.as_ref());
 
     // Check if the bootloader path exists
     if !valid {
@@ -263,8 +242,8 @@ pub fn delete_boot_entry(entry_number: &str) -> Result<(), Error> {
         .context("Failed to delete boot entry through efibootmgr")
 }
 
-fn is_valid_bootloader_path(esp_path: &Path, bootloader_path: &str) -> bool {
-    let full_path = esp_path.join(bootloader_path.trim_start_matches(MAIN_SEPARATOR));
+fn is_valid_bootloader_path(esp_path: &Path, bootloader_path: &Path) -> bool {
+    let full_path = join_relative(esp_path, bootloader_path);
 
     full_path.exists() && full_path.is_file()
 }
@@ -355,8 +334,8 @@ mod tests {
     fn test_valid_bootloader_path() {
         let temp_dir = tempdir().unwrap();
         let esp_path = temp_dir.path();
-        let bootloader_file_name = "bootx64.efi";
-        let bootloader_path = esp_path.join(bootloader_file_name);
+        let bootloader_file_name = Path::new("bootx64.efi");
+        let bootloader_path = join_relative(esp_path, bootloader_file_name);
 
         // Create a dummy bootloader file
         let mut file = File::create(bootloader_path).unwrap();
@@ -369,7 +348,7 @@ mod tests {
     fn test_invalid_bootloader_path_file_does_not_exist() {
         let temp_dir = tempdir().unwrap();
         let esp_path = temp_dir.path();
-        let bootloader_file_name = "nonexistent.efi";
+        let bootloader_file_name = Path::new("nonexistent.efi");
 
         assert!(!is_valid_bootloader_path(esp_path, bootloader_file_name));
     }
@@ -378,8 +357,8 @@ mod tests {
     fn test_invalid_bootloader_path_is_directory() {
         let temp_dir = tempdir().unwrap();
         let esp_path = temp_dir.path();
-        let bootloader_dir_name = "EFI";
-        let bootloader_path = esp_path.join(bootloader_dir_name);
+        let bootloader_dir_name = Path::new("EFI");
+        let bootloader_path = join_relative(esp_path, bootloader_dir_name);
 
         fs::create_dir(bootloader_path).unwrap();
 
@@ -433,6 +412,7 @@ mod functional_test {
     use tempfile;
 
     use crate::testutils::repart::OS_DISK_DEVICE_PATH;
+    use crate::{files::create_file, path::join_relative};
 
     #[functional_test(feature = "helpers")]
     fn test_efi_bootmgr_pass() {
@@ -448,6 +428,12 @@ mod functional_test {
 
         // Create a boot entry
         let tempdir = tempfile::tempdir().unwrap();
+
+        // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
+        // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
         create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
         let bootmgr_output1 = list_and_parse_bootmgr_entries().unwrap();
 
@@ -494,6 +480,12 @@ mod functional_test {
 
         // Create a boot entry
         let tempdir = tempfile::tempdir().unwrap();
+
+        // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
+        // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
         create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
         let bootmgr_output1 = list_and_parse_bootmgr_entries().unwrap();
 
@@ -532,6 +524,12 @@ mod functional_test {
 
         // Create a boot entry
         let tempdir = tempfile::tempdir().unwrap();
+
+        // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
+        // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
         create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
 
         // Creating a boot entry with the same label should fail
@@ -617,6 +615,12 @@ mod functional_test {
 
         // Create a boot entry
         let tempdir = tempfile::tempdir().unwrap();
+
+        // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
+        // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
         create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
 
         // Create another boot entry with the same label using duplicate function
@@ -648,6 +652,12 @@ mod functional_test {
 
         // Create a boot entry for TestBoot1
         let tempdir = tempfile::tempdir().unwrap();
+
+        // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
+        // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
         create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
 
         // Create another boot entry with the same label using duplicate function

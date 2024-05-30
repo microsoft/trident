@@ -476,11 +476,8 @@ impl Trident {
                         .allowed_operations
                         .contains(Operations::FinalizeDeployment)
                     {
-                        let new_root_path = modules::get_new_root_path();
-
                         modules::finalize_update(
                             datastore,
-                            &new_root_path,
                             #[cfg(feature = "grpc-dangerous")]
                             &mut cmd.sender,
                         )
