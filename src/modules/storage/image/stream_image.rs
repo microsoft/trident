@@ -19,11 +19,12 @@ pub const GET_TIMEOUT_SECS: u64 = 600;
 /// This function is called from image/mod.rs, to stream the bytes of an image onto a block device.
 /// The func takes the following arguments:
 /// 1. host_status: A mutable reference to HostStatus object, which is updated to communicate that
-/// the block device is being written to.
+///    the block device is being written to.
 /// 2. stream: A HashingReader instance, which wraps a stream of bytes.
 /// 3. destination_path: PathBuf of the block device or file.
 /// 4. destination_size: Option<u64>, which is the size of the block device.
 /// 5. block_device_id: BlockDeviceId of the block device.
+///
 /// The func returns a tuple of (String, u64), where the first element is the SHA256 hash of the
 /// stream, and the second element is the number of bytes written to the block device.
 pub(crate) fn stream_zstd_image(

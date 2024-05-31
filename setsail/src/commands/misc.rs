@@ -164,7 +164,6 @@ impl std::str::FromStr for KeyValList {
 
 // Tests
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use std::str::FromStr;
 

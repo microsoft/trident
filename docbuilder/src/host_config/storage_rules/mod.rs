@@ -82,6 +82,7 @@ pub(crate) fn write(dest: Option<impl AsRef<Path>>) -> Result<(), Error> {
         partitions::matching_hash_partition(),
     ];
 
+    #[allow(unknown_lints, clippy::needless_borrows_for_generic_args)]
     // "secretly" replace the body with the rendered section template
     rules
         .iter_mut()

@@ -526,7 +526,7 @@ mod tests {
             host_status
                 .storage
                 .block_devices
-                .get(&"os".to_owned())
+                .get("os")
                 .unwrap()
                 .contents,
             BlockDeviceContents::Unknown
@@ -535,7 +535,7 @@ mod tests {
             host_status
                 .storage
                 .block_devices
-                .get(&"root".to_owned())
+                .get("root")
                 .unwrap()
                 .contents,
             BlockDeviceContents::Unknown
@@ -549,7 +549,7 @@ mod tests {
             host_status
                 .storage
                 .block_devices
-                .get(&"os".to_owned())
+                .get("os")
                 .unwrap()
                 .contents,
             contents.clone()
@@ -566,7 +566,7 @@ mod tests {
             host_status
                 .storage
                 .block_devices
-                .get(&"efi".to_owned())
+                .get("efi")
                 .unwrap()
                 .contents,
             contents.clone()
@@ -583,7 +583,7 @@ mod tests {
             host_status
                 .storage
                 .block_devices
-                .get(&"root".to_owned())
+                .get("root")
                 .unwrap()
                 .contents,
             contents.clone()
@@ -601,7 +601,7 @@ mod tests {
             host_status
                 .storage
                 .block_devices
-                .get(&"root".to_owned())
+                .get("root")
                 .unwrap()
                 .contents,
             contents.clone()
@@ -619,7 +619,7 @@ mod tests {
             host_status
                 .storage
                 .block_devices
-                .get(&"root".to_owned())
+                .get("root")
                 .unwrap()
                 .contents,
             contents.clone()

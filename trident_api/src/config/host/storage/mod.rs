@@ -2182,7 +2182,7 @@ mod tests {
 
         let mount_point = host_config
             .storage
-            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
+            .path_to_mount_point_info(Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
             .unwrap();
         assert_eq!(mount_point.device_id, Some(&"part1".into()));
 
@@ -2199,20 +2199,20 @@ mod tests {
 
         let mount_point = host_config
             .storage
-            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
+            .path_to_mount_point_info(Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
             .unwrap();
         assert_eq!(mount_point.device_id, Some(&"part2".into()));
 
         // validate longer paths
         let mount_point = host_config
             .storage
-            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot/foo/bar"))
+            .path_to_mount_point_info(Path::new(ROOT_MOUNT_POINT_PATH).join("boot/foo/bar"))
             .unwrap();
         assert_eq!(mount_point.device_id, Some(&"part2".into()));
 
         let mount_point = host_config
             .storage
-            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar"))
+            .path_to_mount_point_info(Path::new(ROOT_MOUNT_POINT_PATH).join("foo/bar"))
             .unwrap();
         assert_eq!(mount_point.device_id, Some(&"part1".into()));
 
@@ -2220,7 +2220,7 @@ mod tests {
         host_config.storage.filesystems.clear();
         assert!(host_config
             .storage
-            .path_to_mount_point_info(&Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
+            .path_to_mount_point_info(Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
             .is_none());
     }
 

@@ -262,8 +262,8 @@ fn copy_boot_files(
 /// The func takes in 2 arg-s:
 /// 1. temp_mount_dir, which is the path to the directory where the ESP image is mounted to,
 /// 2. efi_filename_ending, which is the filename ending of the EFI executable. E.g., if the target
-/// architecture is x86_64, the arg needs to be "x64" since the EFI executable for x86_64 is named
-/// "grubx64.efi."
+///    architecture is x86_64, the arg needs to be "x64" since the EFI executable for x86_64 is
+///    named "grubx64.efi."
 fn generate_boot_filepaths(
     temp_mount_dir: &Path,
     efi_filename_ending: &str,

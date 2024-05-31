@@ -22,16 +22,16 @@ mod systemd_sysupdate;
 
 /// Function that streams images to block devices:
 /// 1. If image is a local file or an HTTP file published in RawZstd format, Trident will evoke a
-/// sub-module called Stream-Image, which will use HashingReader to write the bytes to the
-/// target block device.
+///    sub-module called Stream-Image, which will use HashingReader to write the bytes to the
+///    target block device.
 /// 2. If image is a local file or an HTTP file published in RawLzma format, Trident will run
-/// systemd-sysupdate.rs to download the image, if needed, and write it to the block device. The
-/// block device has to be a part of an A/B volume pair backed by partition block device. This is
-/// b/c sysupdate can only operate if there are 2+ copies of the partition type as the partition
-/// to be updated.
+///    systemd-sysupdate.rs to download the image, if needed, and write it to the block device. The
+///    block device has to be a part of an A/B volume pair backed by partition block device. This is
+///    b/c sysupdate can only operate if there are 2+ copies of the partition type as the partition
+///    to be updated.
 /// 3. TODO: If image is an HTTP file published as an OCI Artifact, ImageFormat OciArtifact,
-/// Trident will download the image from Azure container registry and pass it to
-/// systemd-sysupdate.rs. ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
+///    Trident will download the image from Azure container registry and pass it to
+///    systemd-sysupdate.rs. ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
 ///
 /// This function is called by the provision() function in the image submodule and
 /// returns an error if the image cannot be downloaded or installed correctly.
@@ -285,7 +285,7 @@ fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
 /// takes two arg-s:
 /// 1. host_status, which is a reference to HostStatus object.
 /// 2. target_id, which is a reference to a String representing the id of the block device.
-//
+///
 /// Returns `true` if the partition is of type ESP, `false` otherwise or if not found.
 pub(super) fn is_esp(host_config: &HostConfiguration, target_id: &BlockDeviceId) -> bool {
     // Iterate through all disks and partitions

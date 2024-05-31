@@ -499,7 +499,7 @@ mod test {
         let entries = repart.partition_entries();
         assert_eq!(entries.len(), 3);
 
-        let part1 = entries.get(0).unwrap();
+        let part1 = entries.first().unwrap();
         assert_eq!(part1.id, "part1");
         assert_eq!(part1.partition_type, DiscoverablePartitionType::Root);
         assert_eq!(part1.label, Some("part1".to_string()));

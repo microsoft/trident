@@ -1,8 +1,8 @@
 //! Systemd-sysupdate is a sub-module of Image module that provides A/B upgrade functionality by
 //! using sysupdate, a systemd component. This is v1, which supports the most basic e2e flow:
 //! 1. Trident delegates download of the image and update of partition to systemd-sysupdate.
-//! Currently, only partitions of type root and can be updated; boot can be written to. More
-//! info in README.md.
+//!    Currently, only partitions of type root and can be updated; boot can be written to. More
+//!    info in README.md.
 //! 2. Rollback and other advanced features are not yet implemented.
 
 // TODO: In a future iteration, systemd-sysupdate.rs needs to be refactored, to
@@ -149,9 +149,9 @@ impl ImageDeployment {
     /// from HostConfiguration. Accepts TWO optional arg-s:
     /// 1. local_update_dir, which is a local directory containing the update image,
     /// 2. local_update_file, which is a String representing the name of the image file downloaded
-    /// by Trident so that sysupdate can operate on it. This is to handle the case where
-    /// ImageFormat is OciArtifact.
-    /// Returns an instance of ImageDeployment, or an Error if failed to create one.
+    ///    by Trident so that sysupdate can operate on it. This is to handle the case where
+    ///    ImageFormat is OciArtifact.
+    ///    Returns an instance of ImageDeployment, or an Error if failed to create one.
     pub(super) fn new(
         update_image: &InternalImage,
         host_status: &HostStatus,
