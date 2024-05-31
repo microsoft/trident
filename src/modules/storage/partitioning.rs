@@ -640,14 +640,21 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use std::str::FromStr;
+
     use super::*;
-    use osutils::repart::RepartActivity;
+
+    use osutils::{
+        repart::RepartActivity,
+        testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
+    };
     use pytest_gen::functional_test;
+    use trident_api::config::{Partition, PartitionTableType};
 
     #[functional_test]
     fn test_wait_for_part_symlink() {
         // Get the first partition from /dev/sda.
-        let demo_part = SfDisk::get_info("/dev/sda")
+        let demo_part = SfDisk::get_info(OS_DISK_DEVICE_PATH)
             .unwrap()
             .partitions
             .pop()
@@ -667,5 +674,191 @@ mod functional_test {
         let res = wait_for_part_symlink(&repart).unwrap();
 
         assert_eq!(res, demo_part.path_by_uuid());
+    }
+
+    #[functional_test]
+    fn test_create_partitions() {
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "disk".to_string(),
+                    device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    partitions: vec![
+                        Partition {
+                            id: "part1".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1M").unwrap(),
+                        },
+                        Partition {
+                            id: "part2".to_string(),
+                            partition_type: PartitionType::Swap,
+                            size: PartitionSize::from_str("2M").unwrap(),
+                        },
+                        Partition {
+                            id: "part3".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::Grow,
+                        },
+                    ],
+                    partition_table_type: PartitionTableType::Gpt,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut host_status = HostStatus {
+            spec: host_config.clone(),
+            ..Default::default()
+        };
+
+        create_partitions(&mut host_status, &host_config).unwrap();
+
+        assert_eq!(host_status.storage.block_devices.len(), 4);
+        assert_eq!(
+            host_status
+                .storage
+                .block_devices
+                .get("disk")
+                .unwrap()
+                .contents,
+            BlockDeviceContents::Initialized
+        );
+
+        let check_part = |name: &str, size: Option<u64>| {
+            let part = host_status
+                .storage
+                .block_devices
+                .get(name)
+                .unwrap_or_else(|| panic!("Failed to find block device '{}' in status", name));
+            assert_eq!(
+                part.contents,
+                BlockDeviceContents::Unknown,
+                "Contents mismatch for '{}'",
+                name
+            );
+            if let Some(size) = size {
+                assert_eq!(part.size, size, "Size mismatch for '{}'", name);
+            }
+        };
+
+        check_part("part1", Some(1048576));
+        check_part("part2", Some(2 * 1048576));
+        check_part("part3", None);
+
+        osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
+    }
+
+    /// Create a test partition table on the test disk.
+    /// The partition table will contain two partitions:
+    /// - part1: 10 MiB, root partition, labeled "part1"
+    /// - part2: 20 MiB, swap partition, labeled "part2"
+    /// The partitions will be created with the force flag.
+    fn create_test_partitions() {
+        let repart = SystemdRepartInvoker::new(TEST_DISK_DEVICE_PATH, RepartEmptyMode::Force)
+            .with_partition_entries(vec![
+                RepartPartitionEntry {
+                    id: "part1".to_string(),
+                    partition_type: DiscoverablePartitionType::Root,
+                    label: Some("part1".to_string()),
+                    size_max_bytes: Some(10 * 1048576),
+                    size_min_bytes: Some(10 * 1048576),
+                },
+                RepartPartitionEntry {
+                    id: "part2".to_string(),
+                    partition_type: DiscoverablePartitionType::Swap,
+                    label: Some("part2".to_string()),
+                    size_max_bytes: Some(20 * 1048576),
+                    size_min_bytes: Some(20 * 1048576),
+                },
+            ]);
+
+        repart.execute().unwrap();
+    }
+
+    #[functional_test]
+    fn test_adopt_partitions() {
+        create_test_partitions();
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "disk".to_string(),
+                    device: PathBuf::from("/dev/sdb"),
+                    partitions: vec![Partition {
+                        id: "part3".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: PartitionSize::from_str("1M").unwrap(),
+                    }],
+                    partition_table_type: PartitionTableType::Gpt,
+                    adopted_partitions: vec![AdoptedPartition {
+                        id: "part1".to_string(),
+                        match_label: Some("part1".to_string()),
+                        match_uuid: None,
+                    }],
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut host_status = HostStatus {
+            spec: host_config.clone(),
+            ..Default::default()
+        };
+
+        create_partitions(&mut host_status, &host_config).unwrap();
+
+        assert_eq!(host_status.storage.block_devices.len(), 3);
+        assert!(
+            host_status.storage.block_devices.contains_key("part1"),
+            "part1 not found"
+        );
+        assert!(
+            !host_status.storage.block_devices.contains_key("part2"),
+            "part2 found"
+        );
+        assert!(
+            host_status.storage.block_devices.contains_key("part3"),
+            "part3 not found"
+        );
+
+        osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
+    }
+
+    #[functional_test(negative = true)]
+    fn test_adopt_bad_partitions() {
+        create_test_partitions();
+
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "disk".to_string(),
+                    device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    partitions: vec![Partition {
+                        id: "part3".to_string(),
+                        partition_type: PartitionType::Root,
+                        size: PartitionSize::from_str("1M").unwrap(),
+                    }],
+                    partition_table_type: PartitionTableType::Gpt,
+                    adopted_partitions: vec![AdoptedPartition {
+                        id: "part4".to_string(),
+                        match_label: Some("part4".to_string()),
+                        match_uuid: None,
+                    }],
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut host_status = HostStatus {
+            spec: host_config.clone(),
+            ..Default::default()
+        };
+
+        create_partitions(&mut host_status, &host_config).unwrap_err();
+
+        osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
     }
 }
