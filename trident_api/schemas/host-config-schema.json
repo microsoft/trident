@@ -80,7 +80,7 @@
       ],
       "properties": {
         "id": {
-          "description": "A unique identifier for the volume pair.\n\nThis is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just AB Volume Pairs.",
+          "description": "A unique identifier for the volume pair.\n\nThis is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just A/B Volume Pairs.",
           "type": "string",
           "format": "Block Device ID"
         },

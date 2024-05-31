@@ -16,7 +16,7 @@ Per A/B update volume pair configuration. Points to the underlying block devices
 
 A unique identifier for the volume pair.
 
-This is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just AB Volume Pairs.
+This is a user defined string that allows to link the volume pair to the results in the Host Status and to the mount points. The identifier needs to be unique across all types of devices, not just A/B Volume Pairs.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |

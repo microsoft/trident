@@ -80,7 +80,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_permissions() {
+    fn test_validate_additional_file() {
         let mut file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: Some("...".to_string()),
@@ -89,7 +89,27 @@ mod tests {
         };
         assert!(file.validate().is_ok());
 
-        file.permissions = Some("invalid".to_string());
+        file.permissions = None;
+        assert!(file.validate().is_ok());
+
+        // Providing path and setting content to None is also valid
+        file = AdditionalFile {
+            destination: PathBuf::from("/test"),
+            content: None,
+            path: Some(PathBuf::from("/test")),
+            permissions: None,
+        };
+        assert!(file.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_additional_file_fail_invalid_permissions() {
+        let mut file = AdditionalFile {
+            destination: PathBuf::from("/test"),
+            content: Some("...".to_string()),
+            path: None,
+            permissions: Some("invalid".to_string()),
+        };
         assert_eq!(
             file.validate().unwrap_err(),
             InvalidHostConfigurationError::AdditionalFileInvalidPermissions(
@@ -115,8 +135,33 @@ mod tests {
                 "/test".to_string()
             )
         );
+    }
 
-        file.permissions = None;
-        assert!(file.validate().is_ok());
+    #[test]
+    fn test_validate_fail_both_content_path() {
+        let file = AdditionalFile {
+            destination: PathBuf::from("/test"),
+            content: Some("test".to_string()),
+            path: Some(PathBuf::from("/test")),
+            permissions: None,
+        };
+        assert_eq!(
+            file.validate().unwrap_err(),
+            InvalidHostConfigurationError::AdditionalFileHasBothContentAndPath("/test".to_string())
+        );
+    }
+
+    #[test]
+    fn test_validate_fail_no_content_or_path() {
+        let file = AdditionalFile {
+            destination: PathBuf::from("/test"),
+            content: None,
+            path: None,
+            permissions: None,
+        };
+        assert_eq!(
+            file.validate().unwrap_err(),
+            InvalidHostConfigurationError::AdditionalFileHasNoContentOrPath("/test".to_string())
+        );
     }
 }

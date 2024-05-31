@@ -94,14 +94,12 @@ impl ManagementOs {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use users::Password;
 
     use super::*;
 
     #[test]
-    fn test_validate() {
+    fn test_validate_os_users() {
         let mut config = Os::default();
         assert!(config.validate().is_ok());
 
@@ -111,59 +109,27 @@ mod tests {
             ..Default::default()
         });
         assert!(config.validate().is_ok());
-
-        config.users.push(User {
-            name: "test".to_string(),
-            password: Password::Locked,
-            ..Default::default()
-        });
-        assert!(config.validate().is_err());
     }
 
     #[test]
-    fn test_validate_additional_files() {
+    fn test_validate_os_users_fail_duplicate_usernames() {
         let mut config = Os::default();
-        assert!(config.validate().is_ok());
-
-        config.additional_files.push(AdditionalFile {
-            destination: PathBuf::from("/test"),
-            content: Some("test".to_string()),
-            path: None,
-            permissions: None,
+        config.users.push(User {
+            name: "test".to_string(),
+            password: Password::Locked,
+            ..Default::default()
         });
-        assert!(config.validate().is_ok());
-
-        config.additional_files.clear();
-        config.additional_files.push(AdditionalFile {
-            destination: PathBuf::from("/test"),
-            content: None,
-            path: Some(PathBuf::from("/test")),
-            permissions: None,
+        config.users.push(User {
+            name: "test".to_string(),
+            password: Password::Locked,
+            ..Default::default()
         });
-        assert!(config.validate().is_ok());
 
-        config.additional_files.clear();
-        config.additional_files.push(AdditionalFile {
-            destination: PathBuf::from("/test"),
-            content: None,
-            path: None,
-            permissions: None,
-        });
         assert_eq!(
-            config.validate().unwrap_err(),
-            InvalidHostConfigurationError::AdditionalFileHasNoContentOrPath("/test".to_string())
-        );
-
-        config.additional_files.clear();
-        config.additional_files.push(AdditionalFile {
-            destination: PathBuf::from("/test"),
-            content: Some("test".to_string()),
-            path: Some(PathBuf::from("/test")),
-            permissions: None,
-        });
-        assert_eq!(
-            config.validate().unwrap_err(),
-            InvalidHostConfigurationError::AdditionalFileHasBothContentAndPath("/test".to_string())
+            config.validate(),
+            Err(InvalidHostConfigurationError::DuplicateUsernames(
+                "test".to_string()
+            ))
         );
     }
 }

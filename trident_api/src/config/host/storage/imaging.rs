@@ -34,10 +34,6 @@ pub struct Image {
 
     /// The format of the image.
     pub format: ImageFormat,
-    // TODO: REMOVE
-    // /// The ID of the partition that will be used to store the image.
-    // #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    // pub target_id: BlockDeviceId,
 }
 
 /// Image SHA256 checksum.
@@ -98,7 +94,7 @@ pub struct AbVolumePair {
     ///
     /// This is a user defined string that allows to link the volume pair
     /// to the results in the Host Status and to the mount points. The identifier
-    /// needs to be unique across all types of devices, not just AB Volume Pairs.
+    /// needs to be unique across all types of devices, not just A/B Volume Pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 

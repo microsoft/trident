@@ -143,3 +143,34 @@ impl Encryption {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_encryption() {
+        let mut config = Encryption::default();
+        assert!(config.validate().is_ok());
+
+        config.recovery_key_url = Some(Url::parse("file:///path/to/recovery.key").unwrap());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_encryption_fail_invalid_recovery_key_url() {
+        let config = Encryption {
+            recovery_key_url: Some(
+                Url::parse("http://example.com/invalid-recovery-key-http").unwrap(),
+            ),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.validate().unwrap_err(),
+            InvalidHostConfigurationError::InvalidEncryptionRecoveryKeyUrlScheme {
+                url: "http://example.com/invalid-recovery-key-http".to_string(),
+                scheme: "http".to_string(),
+            }
+        );
+    }
+}

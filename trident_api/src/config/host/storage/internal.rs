@@ -52,7 +52,7 @@ pub struct InternalMountPoint {
     /// point.
     ///
     /// This parameter is required. It must be the ID of a disk partition,
-    /// encrypted volume, software raid array, or a/b update volume pair.
+    /// encrypted volume, software raid array, or A/B update volume pair.
     pub target_id: BlockDeviceId,
 }
 
