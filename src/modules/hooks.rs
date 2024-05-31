@@ -91,6 +91,7 @@ impl Module for HooksModule {
         Ok(())
     }
 
+    #[tracing::instrument(name = "hooks_provision", skip_all)]
     fn provision(
         &mut self,
         host_status: &mut HostStatus,
@@ -115,6 +116,7 @@ impl Module for HooksModule {
         Ok(())
     }
 
+    #[tracing::instrument(name = "hooks_configure", skip_all)]
     fn configure(
         &mut self,
         host_status: &mut HostStatus,

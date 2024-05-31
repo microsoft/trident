@@ -217,6 +217,7 @@ fn get_root_verity_root_hash(
 }
 
 /// Setup verity devices; currently, only the root verity device is supported
+#[tracing::instrument(skip_all)]
 pub(super) fn setup_verity_devices(
     host_config: &HostConfiguration,
     host_status: &mut HostStatus,
@@ -286,6 +287,7 @@ fn get_verity_related_device_paths(
 
 /// Update the root data, hash and overlay davice paths in the GRUB config,
 /// along with the overlay configuration
+#[tracing::instrument(skip_all)]
 pub(super) fn update_root_verity_in_grub_config(
     host_status: &HostStatus,
     host_config: &HostConfiguration,
@@ -354,6 +356,7 @@ pub(super) fn update_root_verity_in_grub_config(
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) fn stop_pre_existing_verity_devices(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {

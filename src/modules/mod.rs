@@ -150,6 +150,7 @@ lazy_static::lazy_static! {
     ]);
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) fn clean_install(
     command: HostUpdateCommand,
     state: &mut DataStore,
@@ -235,6 +236,7 @@ pub(super) fn clean_install(
 /// - The current root device path.
 /// - The new root device path.
 /// - A vector of paths to custom mounts for the new root.
+#[tracing::instrument(skip_all)]
 fn stage_clean_install(
     modules: &mut MutexGuard<Vec<Box<dyn Module>>>,
     state: &mut DataStore,
@@ -311,6 +313,7 @@ fn stage_clean_install(
 /// - new_root_path: New root device path.
 /// - clean_install_start_time: Optional instant when clean install started.
 /// - sender: Optional mutable reference to the gRPC sender.
+#[tracing::instrument(skip_all)]
 pub(super) fn finalize_clean_install(
     state: &mut DataStore,
     new_root_path: &Path,
@@ -347,7 +350,6 @@ pub(super) fn finalize_clean_install(
             value = start_time.elapsed().as_secs_f64()
         );
     }
-
     perform_reboot()?;
 
     Ok(())
@@ -727,6 +729,7 @@ fn get_ab_active_volume(host_status: &HostStatus) -> Option<AbVolumeSelection> {
     }
 }
 
+#[tracing::instrument(skip_all)]
 fn refresh_host_status(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
@@ -746,6 +749,7 @@ fn refresh_host_status(
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 fn validate_host_config(
     modules: &[Box<dyn Module>],
     state: &DataStore,
@@ -825,6 +829,7 @@ pub(super) fn get_new_root_path() -> PathBuf {
     new_root_path.to_owned()
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) fn initialize_new_root(
     state: &mut DataStore,
     host_config: &HostConfiguration,
@@ -903,6 +908,7 @@ fn configure(
 }
 
 /// Regenerates the initrd for the host, using host-specific configuration.
+#[tracing::instrument(skip_all)]
 fn regenerate_initrd(use_overlay: bool) -> Result<(), TridentError> {
     // We could autodetect configurations on the fly, but for more predictable
     // behavior and speedier subsequent boots, we will regenerate the host-specific initrd
@@ -962,6 +968,7 @@ fn perform_reboot() -> Result<(), TridentError> {
 
 /// Finalizes deployment by setting bootNext and updating host status. Changes host's servicing state
 /// to DeploymentFinalized.
+#[tracing::instrument(skip_all)]
 fn finalize_deployment(datastore: &mut DataStore, esp_path: &Path) -> Result<(), TridentError> {
     // TODO: Delete boot entries. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/

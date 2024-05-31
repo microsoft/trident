@@ -592,6 +592,7 @@ impl Trident {
 
 /// Validates that the host correctly booted from the updated image after finalizing CleanInstall
 /// or A/B update. Otherwise, if a rollback occurred, returns an error.
+#[tracing::instrument(skip_all)]
 fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(), Error> {
     // Fetch mount point for root from host status and fetch target_id of root device
     let root_target_id = match host_status

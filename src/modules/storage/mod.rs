@@ -197,6 +197,7 @@ fn generate_fstab(
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) fn initialize_block_devices(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,

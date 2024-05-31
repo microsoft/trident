@@ -23,6 +23,7 @@ use super::image;
 /// block devices with assigned mount points and for A/B update, also devices
 /// the inactive block devices, that are part of A/B volume pairs, to make sure
 /// they are reinitialized when needed.
+#[tracing::instrument(skip_all)]
 pub(super) fn create_filesystems(host_status: &mut HostStatus) -> Result<(), Error> {
     debug!("Creating filesystems on block devices");
     get_block_devices_to_initialize(host_status)

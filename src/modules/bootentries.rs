@@ -164,6 +164,7 @@ fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error
 /// determines whether the boot order needs modification, and performs the necessary actions.
 ///
 // TODO - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807 needs refactoring
+#[tracing::instrument(skip_all)]
 pub fn set_boot_order(datastore_path: &Path) -> Result<(), TridentError> {
     let mut datastore = DataStore::open(datastore_path)
         .message("Failed to open datastore while setting boot order")?;
@@ -201,6 +202,7 @@ pub fn set_boot_order(datastore_path: &Path) -> Result<(), TridentError> {
 /// - `new_boot_order`: A string representing the new boot order after adjustments.
 /// - `clear_boot_next`: A boolean indicating whether the `boot_next` variable needs to be cleared.
 ///
+#[tracing::instrument(skip_all)]
 fn update_efi_boot_order(
     host_status: &HostStatus,
     bootmgr_output: &EfiBootManagerOutput,

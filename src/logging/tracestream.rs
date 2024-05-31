@@ -2,17 +2,18 @@ use std::{
     collections::BTreeMap,
     fs,
     sync::{Arc, RwLock},
+    time::Instant,
 };
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use log::info;
+use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sysinfo::System;
 use tracing::{
     field::{Field, Visit},
-    Event, Subscriber,
+    span, Event, Subscriber,
 };
 
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
@@ -117,6 +118,8 @@ pub struct TraceSender {
     client: reqwest::blocking::Client,
 }
 
+struct ExecutionTime(Instant);
+
 /// The TraceSender is a struct that holds the server URL and a reqwest client
 /// to send the trace entries to the server. It implements the Layer trait from
 /// the tracing-subscriber crate to handle the events and send them to the
@@ -168,14 +171,10 @@ where
             event.record(&mut visitor);
             let entry = TraceEntry {
                 timestamp: Utc::now(),
-                // TODO: This needs to be set based on the asset ID of the
-                // current run
                 asset_id: ASSET_ID.to_string(),
                 metric_name: visitor
                     .fields
                     .get("metric_name")
-                    //TODO: figure out how to make it required to have a
-                    //metric_name for now
                     .map_or("unknown_metric".to_string(), |v| {
                         v.as_str().unwrap_or_default().to_string()
                     }),
@@ -188,13 +187,66 @@ where
             let body = match serde_json::to_string(&entry) {
                 Ok(b) => b,
                 Err(e) => {
-                    eprintln!("Failed to serialize trace entry: {}", e);
+                    trace!("Failed to serialize trace entry: {}", e);
                     return;
                 }
             };
 
             if let Err(e) = self.client.post(target).body(body).send() {
-                eprintln!("Failed to send trace entry: {}", e);
+                trace!("Failed to send trace entry: {}", e);
+            }
+        }
+    }
+
+    /// When a span is created (either manually or using the tracing macros), this function is called
+    /// to handle creating the span with the start time.
+    fn on_enter(&self, id: &span::Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
+        let Some(span) = ctx.span(id) else {
+            trace!("Failed to get span with id: {:?}", id);
+            return;
+        };
+        span.extensions_mut().insert(ExecutionTime(Instant::now()));
+        trace!("Entered span: {:?}", span.name());
+    }
+
+    /// When a span is exited, this function is called to handle the span and set the elapsed time.
+    /// It will then formulate a metric request and send the span to the server.
+    fn on_exit(&self, id: &span::Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
+        let Some(span) = ctx.span(id) else {
+            trace!("Failed to get span with id: {:?}", id);
+            return;
+        };
+        let Some(ExecutionTime(start)) = span.extensions_mut().remove::<ExecutionTime>() else {
+            trace!("Failed to get start time for span: {:?}", span.name());
+            return;
+        };
+        let execution_time = start.elapsed().as_secs_f64();
+        trace!(
+            "Finished span: {:?}, execution_time: {:?}",
+            span.name(),
+            execution_time
+        );
+        if let Some(target) = self.get_server() {
+            let entry = TraceEntry {
+                timestamp: Utc::now(),
+                asset_id: ASSET_ID.to_string(),
+                metric_name: span.name().to_string(),
+                value: json!(execution_time),
+                os_release: OS_RELEASE.to_string(),
+                additional_fields: ADDITIONAL_FIELDS.clone(),
+                platform_info: PLATFORM_INFO.clone(),
+            };
+
+            let body = match serde_json::to_string(&entry) {
+                Ok(b) => b,
+                Err(e) => {
+                    trace!("Failed to serialize trace entry: {}", e);
+                    return;
+                }
+            };
+
+            if let Err(e) = self.client.post(target).body(body).send() {
+                trace!("Failed to send trace entry: {}", e);
             }
         }
     }
@@ -205,7 +257,7 @@ fn read_product_uuid(filepath: String) -> String {
     match fs::read_to_string(filepath.clone()) {
         Ok(uuid) => uuid.trim().to_string(),
         Err(_) => {
-            log::debug!("Failed to read product uuid from {}", filepath);
+            debug!("Failed to read product uuid from {}", filepath);
             "unknown".into()
         }
     }
@@ -227,12 +279,12 @@ fn get_os_release() -> String {
                 .and_then(|line| line.split_once('='))
                 .map(|(_, version)| version.replace('\"', "").to_string())
                 .unwrap_or_else(|| {
-                    log::debug!("Failed to find VERSION in os-release");
+                    debug!("Failed to find VERSION in os-release");
                     "unknown".into()
                 })
         }
         Err(_) => {
-            log::debug!("Failed to read os-release");
+            debug!("Failed to read os-release");
             "unknown".into()
         }
     }

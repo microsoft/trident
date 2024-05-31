@@ -288,7 +288,7 @@ run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netla
 	@mkdir -p artifacts/test-image
 	@cp bin/trident artifacts/test-image/
 	@cp artifacts/osmodifier artifacts/test-image/
-	@bin/netlaunch -i $(NETLAUNCH_ISO) -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
+	@bin/netlaunch -i $(NETLAUNCH_ISO) -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image -m trident-metrics.json
 
 .PHONY: run-netlaunch-container
 run-netlaunch-container: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.bin

@@ -552,6 +552,7 @@ pub(super) fn validate_undeployed_images(
     Ok(())
 }
 
+#[tracing::instrument(name = "image_provision", skip_all)]
 pub(super) fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,

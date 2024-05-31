@@ -350,3 +350,6 @@ remote-addr
 
 # Code Coverage files
 *.profraw
+
+# Metrics Output
+trident-metrics.json

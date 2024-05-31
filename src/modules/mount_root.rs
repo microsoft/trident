@@ -53,6 +53,7 @@ fn mount_points_map(host_status: &HostStatus) -> BTreeMap<&Path, &InternalMountP
         .collect::<BTreeMap<_, _>>()
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) fn mount_new_root(
     host_status: &HostStatus,
     root_mount_path: &Path,

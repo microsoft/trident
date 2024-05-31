@@ -135,6 +135,7 @@ fn get_device_paths(
         .collect()
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> {
     if !host_status.spec.storage.raid.software.is_empty() {
         info!("Creating mdadm config file");
@@ -227,6 +228,7 @@ fn get_raid_disks_internal(mdadm_detail: &mdadm::MdadmDetail) -> Result<HashSet<
     Ok(raid_disks)
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> Result<(), Error> {
     // If there is no mdstat file, there are no pre-existing RAID arrays
     if !Path::new("/proc/mdstat").exists() {
@@ -317,6 +319,7 @@ pub fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+#[tracing::instrument(name = "raid_creation", skip_all)]
 pub(super) fn create_sw_raid(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,

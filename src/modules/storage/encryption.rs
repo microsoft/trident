@@ -82,6 +82,7 @@ pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error
 }
 
 /// This function provisions all configured encrypted volumes.
+#[tracing::instrument(name = "encryption_provision", skip_all)]
 pub fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
@@ -353,6 +354,7 @@ fn parse_luks_dump_for_header_offset(luks_dump_output: &[u8]) -> Result<u64, Err
         .context(anyhow!("Failed to parse offset '{}' as u64", offset))
 }
 
+#[tracing::instrument(name = "encryption_configure", skip_all)]
 pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
     let path: PathBuf = PathBuf::from(CRYPTTAB_PATH);
     let mut contents: String = String::new();
