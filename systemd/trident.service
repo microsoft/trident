@@ -1,13 +1,10 @@
 [Unit]
 Description=Trident Agent
-StartLimitInterval=200
-StartLimitBurst=5
 After=network.target network-online.target systemd-udev-settle.service trident-network.service
 
 [Service]
 ExecStart=/usr/bin/trident run --verbosity INFO
-Restart=on-failure
-RestartSec=5s
+Type=oneshot
 
 [Install]
 WantedBy=multi-user.target

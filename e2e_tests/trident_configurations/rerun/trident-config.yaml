@@ -210,9 +210,11 @@ hostConfiguration:
         content: |
           import sys
           import os.path
+          import subprocess
           if not os.path.isfile("/run/already-run"):
             f = open('/run/already-run', 'x')
             f.close()
+            subprocess.run(["systemd-run", "--property=After=trident.service", "--no-block", "systemctl", "start", "trident.service"])
             sys.exit(1)
     postConfigure:
       - name: overlay

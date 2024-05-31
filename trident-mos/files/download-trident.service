@@ -1,7 +1,5 @@
 [Unit]
 Description=Trident Agent
-StartLimitInterval=200
-StartLimitBurst=5
 After=network.target network-online.target systemd-udev-settle.service
 
 [Service]
@@ -10,8 +8,7 @@ ExecStartPre=chmod +x /usr/bin/trident
 ExecStartPre=/bin/bash -c "curl $(grep -oP 'phonehome: \K.*(?=phonehome)' /etc/trident/config.yaml)files/osmodifier > /usr/bin/osmodifier"
 ExecStartPre=/bin/chmod +x /usr/bin/osmodifier
 ExecStart=/usr/bin/trident run --verbosity DEBUG
-Restart=on-failure
-RestartSec=5s
+Type=oneshot
 
 [Install]
 WantedBy=multi-user.target
