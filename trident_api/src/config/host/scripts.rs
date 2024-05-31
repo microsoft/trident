@@ -205,4 +205,38 @@ mod tests {
         };
         assert!(script.should_run(&ServicingType::AbUpdate));
     }
+
+    #[test]
+    fn test_invalid_script_with_no_content_or_path() {
+        let script = Script {
+            name: "test-script".into(),
+            run_on: vec![ServicingTypeSelection::CleanInstall],
+            interpreter: Some("/bin/bash".into()),
+            content: None,
+            environment_variables: HashMap::new(),
+            log_file_path: None,
+            path: None,
+        };
+        assert_eq!(
+            script.validate().unwrap_err().to_string(),
+            format!("Script '{}' has no content or path", script.name)
+        );
+    }
+
+    #[test]
+    fn test_invalid_script_with_both_content_and_path() {
+        let script = Script {
+            name: "test-script".into(),
+            run_on: vec![ServicingTypeSelection::CleanInstall],
+            interpreter: Some("/bin/bash".into()),
+            content: Some("echo test".into()),
+            environment_variables: HashMap::new(),
+            log_file_path: None,
+            path: Some("/path/to/script".into()),
+        };
+        assert_eq!(
+            script.validate().unwrap_err().to_string(),
+            format!("Script '{}' has both content and path", script.name)
+        );
+    }
 }
