@@ -9,6 +9,12 @@ parameters:
       - pre
       - rel
 
+  - name: specificVersion
+    type: string
+    displayName: |
+      Specific version of the package to download, leave empty to download latest.
+    default: ""
+
 stages:
   - stage: Trident
     displayName: Trident RPMs (Download)
@@ -45,6 +51,7 @@ stages:
               packageName: ${{ variables.rpmsPackageBaseName }}${{ variables.downloadArtifactSuffix }}
               downloadLocation: $(ob_outputDirectory)
               outputVersionVariable: trident_version
+              specificVersion: ${{ parameters.specificVersion }}
 
           - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
             displayName: Extract Trident binary

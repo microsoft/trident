@@ -11,12 +11,12 @@ parameters:
     values:
       - ci
       - pre
+      - rel
 
 stages:
   - stage: Publishing
     dependsOn:
       - Trident
-      - TridentTestImg_trident_installer_testimage
       - ${{ if eq(parameters.stageType, 'pre') }}:
           - DeploymentTesting
           - BaremetalDeploymentTesting
@@ -37,6 +37,8 @@ stages:
               value: "${{ variables.stage_ci_suffix }}"
             ${{ if eq(parameters.stageType, 'pre') }}:
               value: "${{ variables.stage_pre_suffix }}"
+            ${{ if eq(parameters.stageType, 'rel') }}:
+              value: "${{ variables.stage_rel_suffix }}"
 
         steps:
           - script: echo $(Build.BuildNumber)

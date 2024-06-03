@@ -1,7 +1,9 @@
 # TRIDENT PIPELINE SELECTOR
-# This template is used to select the pipeline to run based on the targetStage
-# parameter.
-# All pipeline definitions for Trident release stages should route through here.
+# This template is used to select the pipeline to run based on the
+# targetStage parameter.
+#
+# All pipeline definitions for Trident release stages (except release, for now at least)
+# should route through here.
 
 parameters:
   - name: targetStage
@@ -10,7 +12,6 @@ parameters:
       - "pr"
       - "ci"
       - "pre"
-      - "rel"
     displayName: "Stage to run"
 
   - name: blockPublishing
