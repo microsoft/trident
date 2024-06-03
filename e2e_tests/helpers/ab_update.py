@@ -133,11 +133,11 @@ def trident_run(connection, keys_file_path, ip_address, user_name):
 
 
 def update_host_trident_config(connection, image_dir, version):
-    """Update host's Trident config by editing /etc/trident/config.yaml via sed command"""
-    print("Original Trident configuration:")
+    """Updates host's Trident config by editing /etc/trident/config.yaml via sed command"""
     host_config_output = run_ssh_command(
         connection, f"sudo cat {HOST_TRIDENT_CONFIG_PATH}"
     ).strip()
+    print("Original Trident configuration:\n", host_config_output)
 
     # Get a list of images to be updated
     images_to_update = get_images_to_update(host_config_output)
@@ -160,8 +160,10 @@ def update_host_trident_config(connection, image_dir, version):
         f"sudo sed -i 's#selfUpgrade: true#selfUpgrade: false#g' {HOST_TRIDENT_CONFIG_PATH}",
     )
 
-    print("Updated Trident configuration:")
-    run_ssh_command(connection, f"sudo cat {HOST_TRIDENT_CONFIG_PATH}")
+    updated_host_config_output = run_ssh_command(
+        connection, f"sudo cat {HOST_TRIDENT_CONFIG_PATH}"
+    ).strip()
+    print("Updated Trident configuration:\n", updated_host_config_output)
 
 
 def get_images_to_update(host_config_output) -> List[Tuple[str, str]]:
