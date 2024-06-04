@@ -22,6 +22,81 @@ parameters:
     default: false
 
 stages:
+  - stage: FunctionalTesting
+    displayName: Functional Testing
+    dependsOn: ${{ parameters.stageDependencies }}
+    jobs:
+      - job: FunctionalTests
+        displayName: Functional Tests
+        timeoutInMinutes: 45
+        pool:
+          type: linux
+          name: Trident_Ubuntu
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
+
+        steps:
+          - checkout: argus-toolkit
+            fetchDepth: 1
+          - checkout: platform-tests
+            fetchDepth: 1
+
+          - template: netlaunch-prep.yml
+
+          - bash: |
+              set -eux
+
+              sudo apt install -y protobuf-compiler clang bc
+              sudo apt remove python3-openssl
+              pip install pytest assertpy paramiko pyopenssl
+            displayName: Install dependencies
+            retryCountOnTaskFailure: 3
+
+          - bash: |
+              set -eux
+
+              ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
+            displayName: Set up SSH Keys
+            retryCountOnTaskFailure: 3
+
+          - template: ../../common_tasks/rustup.yml
+
+          - bash: |
+              set -eux
+
+              # Copy files from platform-tests to functional_tests
+              cp platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
+              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+
+              # Run the core of the functional tests, which means only
+              # rebuilding the test binaries and invoking pytest. The regular
+              # target is meant for local use and does extra setup not required
+              # here.
+              sg libvirt "make functional-test-core INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimage.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
+            displayName: Execute Functional Tests
+
+          - template: ../../common_tasks/coverage.yml
+            parameters:
+              codeCoverageBaseline: 78 # Unit + functional tests
+              executeUnitTests: true
+              installNativeDependencies: false
+              rustup: false
+
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
+
+          - bash: |
+              set -eux
+
+              sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimg.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
+            displayName: Rerun Functional Tests
+
   - stage: DeploymentTesting
     displayName: Deployment Testing
     dependsOn: ${{ parameters.stageDependencies }}
@@ -183,74 +258,3 @@ stages:
             workingDirectory: $(tridentSourceDirectory)
             condition: failed()
             displayName: "Publish OS disk"
-
-      - job: FunctionalTests
-        displayName: Functional Tests
-        timeoutInMinutes: 45
-        pool:
-          type: linux
-          name: Trident_Ubuntu
-          hostArchitecture: amd64
-
-        variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/build
-          argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
-
-        steps:
-          - checkout: argus-toolkit
-            fetchDepth: 1
-          - checkout: platform-tests
-            fetchDepth: 1
-
-          - template: netlaunch-prep.yml
-
-          - bash: |
-              set -eux
-
-              sudo apt install -y protobuf-compiler clang bc
-              sudo apt remove python3-openssl
-              pip install pytest assertpy paramiko pyopenssl
-            displayName: Install dependencies
-            retryCountOnTaskFailure: 3
-
-          - bash: |
-              set -eux
-
-              ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
-            displayName: Set up SSH Keys
-            retryCountOnTaskFailure: 3
-
-          - template: ../../common_tasks/rustup.yml
-
-          - bash: |
-              set -eux
-
-              # Copy files from platform-tests to functional_tests
-              cp platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
-              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
-
-              # Run the core of the functional tests, which means only
-              # rebuilding the test binaries and invoking pytest. The regular
-              # target is meant for local use and does extra setup not required
-              # here.
-              sg libvirt "make functional-test-core INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimage.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
-            displayName: Execute Functional Tests
-
-          - template: ../../common_tasks/coverage.yml
-            parameters:
-              codeCoverageBaseline: 78 # Unit + functional tests
-              executeUnitTests: true
-              installNativeDependencies: false
-              rustup: false
-
-          - task: PublishTestResults@2
-            condition: succeededOrFailed()
-            inputs:
-              testResultsFormat: "JUnit"
-              testResultsFiles: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
-
-          - bash: |
-              set -eux
-
-              sg libvirt "make patch-functional-test INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimg.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
-            displayName: Rerun Functional Tests
