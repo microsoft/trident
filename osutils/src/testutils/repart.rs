@@ -9,6 +9,7 @@ use crate::{
 pub const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
 pub const PART1_SIZE: u64 = 50 * 1024 * 1024; // 50 MiB
 pub const PART2_SIZE: u64 = 2 * 1024 * 1024 * 1024; // 2 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
+pub const PART3_SIZE: u64 = 1024 * 1024 * 1024; // 1 GiB disk - 1 MiB prefix - 50 MiB ESP - 2 GiB root - 20 KiB (rounding?)
 
 pub const OS_DISK_DEVICE_PATH: &str = "/dev/sda";
 pub const TEST_DISK_DEVICE_PATH: &str = "/dev/sdb";
@@ -111,6 +112,41 @@ pub fn generate_partition_definition_esp_root_raid_single_disk() -> Vec<RepartPa
             label: None,
             size_min_bytes: Some(PART2_SIZE),
             size_max_bytes: Some(PART2_SIZE),
+        },
+        RepartPartitionEntry {
+            id: "generic".to_string(),
+            partition_type: DiscoverablePartitionType::LinuxGeneric,
+            label: None,
+            // When min==max==None, it's a grow partition
+            size_min_bytes: None,
+            size_max_bytes: None,
+        },
+    ]
+}
+
+pub fn generate_partition_definition_esp_root_raid_single_disk_unequal() -> Vec<RepartPartitionEntry>
+{
+    vec![
+        RepartPartitionEntry {
+            id: "esp".to_string(),
+            partition_type: DiscoverablePartitionType::Esp,
+            label: None,
+            size_min_bytes: Some(PART1_SIZE),
+            size_max_bytes: Some(PART1_SIZE),
+        },
+        RepartPartitionEntry {
+            id: "root-a".to_string(),
+            partition_type: DiscoverablePartitionType::Root,
+            label: None,
+            size_min_bytes: Some(PART2_SIZE),
+            size_max_bytes: Some(PART2_SIZE),
+        },
+        RepartPartitionEntry {
+            id: "root-b".to_string(),
+            partition_type: DiscoverablePartitionType::Root,
+            label: None,
+            size_min_bytes: Some(PART3_SIZE),
+            size_max_bytes: Some(PART3_SIZE),
         },
         RepartPartitionEntry {
             id: "generic".to_string(),

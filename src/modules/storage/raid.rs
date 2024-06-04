@@ -553,3 +553,103 @@ mod tests {
         assert_eq!(device_name, "md127");
     }
 }
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+
+    use crate::modules;
+
+    use super::*;
+    use const_format::formatcp;
+    use pytest_gen::functional_test;
+
+    use std::path::PathBuf;
+
+    use maplit::btreemap;
+    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
+    use trident_api::{
+        config::{
+            self, Disk, HostConfiguration, Partition, PartitionSize, PartitionType, RaidLevel,
+            SoftwareRaidArray,
+        },
+        status::{BlockDeviceContents, BlockDeviceInfo, Storage},
+    };
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_raid_creation_failure_unequal_partitions() {
+        modules::boot::grub::functional_test::test_execute_and_resulting_layout(true, true);
+
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "foo".into(),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        partitions: vec![
+                            Partition {
+                                id: "boot1".into(),
+                                size: PartitionSize::Fixed(2),
+                                partition_type: PartitionType::Esp,
+                            },
+                            Partition {
+                                id: "root1".into(),
+                                size: PartitionSize::Fixed(8),
+                                partition_type: PartitionType::Root,
+                            },
+                            Partition {
+                                id: "root2".into(),
+                                size: PartitionSize::Fixed(4),
+                                partition_type: PartitionType::Root,
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                        "foo".into() => BlockDeviceInfo {
+                            path: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                            size: 10,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "boot1".into() => BlockDeviceInfo {
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                            size: 2,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "root1".into() => BlockDeviceInfo {
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                            size: 8,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                        "root2".into() => BlockDeviceInfo {
+                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                            size: 4,
+                            contents: BlockDeviceContents::Initialized,
+                        },
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Create a raid array
+        let raid_array = SoftwareRaidArray {
+            id: "raid_array".into(),
+            name: "md0".into(),
+            devices: vec!["root1".to_string(), "root2".to_string()],
+            level: RaidLevel::Raid1,
+        };
+
+        assert_eq!(
+            create_sw_raid_array(&mut host_status, &raid_array)
+                .unwrap_err()
+                .to_string(),
+            "Failed to create RAID array 'md0'"
+        );
+    }
+}

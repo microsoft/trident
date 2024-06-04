@@ -229,7 +229,7 @@ mod tests {
 
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
+pub(crate) mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
 
@@ -243,7 +243,9 @@ mod functional_test {
         lsblk::{self, BlockDevice},
         mkfs,
         repart::{RepartEmptyMode, SystemdRepartInvoker},
-        testutils::repart::{self, DISK_SIZE, PART1_SIZE, PART2_SIZE, TEST_DISK_DEVICE_PATH},
+        testutils::repart::{
+            self, DISK_SIZE, PART1_SIZE, PART2_SIZE, PART3_SIZE, TEST_DISK_DEVICE_PATH,
+        },
         udevadm,
     };
     use trident_api::{
@@ -254,13 +256,18 @@ mod functional_test {
         status::{BlockDeviceContents, BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
 
-    pub fn test_execute_and_resulting_layout(is_single_disk_raid: bool) {
+    pub fn test_execute_and_resulting_layout(is_single_disk_raid: bool, unequal_partitions: bool) {
         let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
 
         let mut partition_definition = repart::generate_partition_definition_esp_root_generic();
-        if is_single_disk_raid {
+        let mut part3_size = PART2_SIZE;
+        if is_single_disk_raid & !unequal_partitions {
             partition_definition =
                 repart::generate_partition_definition_esp_root_raid_single_disk();
+        } else if is_single_disk_raid & unequal_partitions {
+            partition_definition =
+                repart::generate_partition_definition_esp_root_raid_single_disk_unequal();
+            part3_size = PART3_SIZE;
         }
 
         let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartEmptyMode::Force)
@@ -289,13 +296,17 @@ mod functional_test {
             let part3 = &partitions[2];
             let part3_start = part2_start + PART2_SIZE;
             assert_eq!(part3.start, part3_start);
-            assert_eq!(part3.size, PART2_SIZE);
-
+            assert_eq!(part3.size, part3_size);
             let part4 = &partitions[3];
-            assert_eq!(part4.start, part3_start + PART2_SIZE);
+            assert_eq!(part4.start, part3_start + part3_size);
             assert_eq!(
                 part4.size,
-                16 * 1024 * 1024 * 1024 - part1_start - PART1_SIZE - 2 * PART2_SIZE - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
+                16 * 1024 * 1024 * 1024
+                    - part1_start
+                    - PART1_SIZE
+                    - PART2_SIZE
+                    - part3_size
+                    - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
             );
 
             let expected_block_device = BlockDevice {
@@ -412,7 +423,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root on a raid array.
     fn test_update_grub_root_raided() {
-        test_execute_and_resulting_layout(true);
+        test_execute_and_resulting_layout(true, false);
 
         let mut host_status = HostStatus {
             spec: HostConfiguration {
@@ -526,7 +537,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root on a standalone partition.
     fn test_update_grub_root_standalone_partition() {
-        test_execute_and_resulting_layout(false);
+        test_execute_and_resulting_layout(false, false);
         let mut host_status = HostStatus {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -616,7 +627,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root as an ab volume partition.
     fn test_update_grub_root_abvolume() {
-        test_execute_and_resulting_layout(false);
+        test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
             servicing_state: ServicingState::StagingDeployment,
@@ -705,7 +716,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root on a standalone partition and setting root uuid empty so that the function bails on root_uuid being empty.
     fn test_update_grub_root_uuid_empty() {
-        test_execute_and_resulting_layout(false);
+        test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -769,7 +780,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root path empty so that the function bails on root path being None.
     fn test_update_grub_root_path_empty() {
-        test_execute_and_resulting_layout(false);
+        test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
             spec: HostConfiguration {
                 storage: config::Storage {
