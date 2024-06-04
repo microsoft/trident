@@ -20,9 +20,9 @@
 
 use std::os::unix::ffi::OsStrExt;
 
-use anyhow::{bail, Error};
+use anyhow::{bail, ensure, Error};
 
-use crate::config::{FileSystemType, PartitionType};
+use crate::config::{FileSystemType, InvalidHostConfigurationError, PartitionType};
 
 use super::{
     cardinality::ValidCardinality,
@@ -44,7 +44,14 @@ impl<'a> HostConfigBlockDevice<'a> {
     /// kind.
     pub(super) fn basic_check(&self) -> Result<(), Error> {
         match self {
-            Self::Disk(_) => (),
+            Self::Disk(disk) => {
+                ensure!(
+                    disk.device.is_absolute(),
+                    InvalidHostConfigurationError::PathNotAbsolute {
+                        path: disk.device.to_string_lossy().to_string(),
+                    }
+                );
+            }
             Self::Partition(_) => (),
             Self::AdoptedPartition(ap) => match (&ap.match_label, &ap.match_uuid) {
                 (Some(_), Some(_)) => {

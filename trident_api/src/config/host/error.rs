@@ -72,4 +72,7 @@ pub enum InvalidHostConfigurationError {
 
     #[error("Mount point '{mount_point_path}' is not backed by a block device")]
     MountPointNotBackedByBlockDevice { mount_point_path: String },
+
+    #[error("Path '{path}' is not absolute path")]
+    PathNotAbsolute { path: String },
 }

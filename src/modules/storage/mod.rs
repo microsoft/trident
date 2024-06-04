@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::mountpoint;
@@ -81,6 +81,13 @@ impl Module for StorageModule {
                 .device
                 .canonicalize()
                 .context(format!("Failed to canonicalize path of disk {}", disk.id))?;
+            if let Some(device_path_str) = device_path.to_str() {
+                ensure!(
+                    device_path_str.starts_with("/dev"),
+                    "The device path '{}' should start with '/dev' for valid block devices!",
+                    device_path_str
+                );
+            }
             if let Some(existing_disk_id) =
                 device_paths.insert(device_path.clone(), disk.id.clone())
             {
@@ -341,12 +348,12 @@ mod tests {
                 disks: vec![
                     DiskConfig {
                         id: "disk1".to_owned(),
-                        device: ROOT_MOUNT_POINT_PATH.into(),
+                        device: "/dev/sda".into(),
                         ..Default::default()
                     },
                     DiskConfig {
                         id: "disk2".to_owned(),
-                        device: "/tmp".into(),
+                        device: "/dev".into(),
                         partitions: vec![
                             PartitionConfig {
                                 id: "part1".to_owned(),
@@ -433,9 +440,10 @@ mod tests {
             .unwrap();
     }
 
-    // Disk devices must be unique.
+    /// Invalid disk device path should fail validation.
+    /// Disk device path should start with '/dev'.
     #[test]
-    fn tests_validate_host_config_duplicate_disk_path_fail() {
+    fn test_validate_host_config_invalid_disk_device_path_fail() {
         let host_status = get_host_status();
         let recovery_key_file = get_recovery_key_file();
         let mut host_config = get_host_config(&recovery_key_file);
@@ -447,7 +455,25 @@ mod tests {
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
                 .unwrap_err()
                 .to_string(),
-            "Disks 'disk2' and 'disk1' point to the same device '/tmp'"
+            "The device path '/tmp' should start with '/dev' for valid block devices!"
+        );
+    }
+
+    // Disk devices must be unique.
+    #[test]
+    fn tests_validate_host_config_duplicate_disk_path_fail() {
+        let host_status = get_host_status();
+        let recovery_key_file = get_recovery_key_file();
+        let mut host_config = get_host_config(&recovery_key_file);
+
+        host_config.storage.disks.get_mut(0).unwrap().device = "/dev".into();
+
+        assert_eq!(
+            StorageModule
+                .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+                .unwrap_err()
+                .to_string(),
+            "Disks 'disk2' and 'disk1' point to the same device '/dev'"
         );
     }
 

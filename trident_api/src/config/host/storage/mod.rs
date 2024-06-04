@@ -1054,6 +1054,30 @@ mod tests {
     }
 
     #[test]
+    fn test_device_paths_absolute() {
+        let mut storage = get_storage();
+        storage.disks[0].device = "/dev/sda".into();
+        // make sure it is ok
+        storage.validate(true).unwrap();
+    }
+
+    #[test]
+    fn test_device_paths_not_absolute() {
+        let mut storage = get_storage();
+        storage.disks[0].device = "disk1".into();
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::BasicCheckFailed {
+                    node_id: "disk1".into(),
+                    kind: BlkDevKind::Disk,
+                    body: "Path 'disk1' is not absolute path".into()
+                }
+            )
+        );
+    }
+
+    #[test]
     fn test_validate_encryption_pass() {
         let storage: Storage = get_storage();
         storage.validate(true).unwrap();
