@@ -11,7 +11,7 @@ use trident_api::error::{ManagementError, ReportError, TridentError, TridentResu
 use trident_api::status::{AbVolumeSelection, HostStatus};
 
 use crate::datastore::DataStore;
-use crate::modules::{self, BOOT_ENTRY_A, BOOT_ENTRY_B};
+use crate::modules::{BOOT_ENTRY_A, BOOT_ENTRY_B};
 
 use super::BOOT64_EFI;
 
@@ -136,7 +136,7 @@ fn get_first_partition_of_type(
 /// the label associated with the inactive A/B update volume and the path to its EFI boot loader.
 ///
 fn get_label_and_path(host_status: &HostStatus) -> Result<(&str, PathBuf), Error> {
-    match modules::get_ab_update_volume(host_status) {
+    match host_status.get_ab_update_volume() {
         Some(AbVolumeSelection::VolumeA) => Ok((
             BOOT_ENTRY_A,
             Path::new(constants::ROOT_MOUNT_POINT_PATH)

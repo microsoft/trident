@@ -35,10 +35,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::{
-    modules::{self, storage},
-    Path,
-};
+use crate::{modules::storage, Path};
 
 /// This struct describes an A/B update of a SINGLE image via systemd-sysupdate.
 pub(super) struct ImageDeployment {
@@ -556,7 +553,8 @@ fn get_update_partition_id(
     if let Some(ab_update) = &host_status.spec.storage.ab_update {
         // Call helper func from lib.rs, which returns AbVolumeSelection to be updated in this A/B
         // update, either VolumeA or VolumeB, depending on which volume is active now
-        let volume_selection: AbVolumeSelection = modules::get_ab_update_volume(host_status)
+        let volume_selection: AbVolumeSelection = host_status
+            .get_ab_update_volume()
             .context("Failed to determine which A/B volume is currently inactive")?;
         // Fetch volume pair for the target_id
         if let Some(volume_pair) = ab_update.volume_pairs.iter().find(|p| &p.id == target_id) {

@@ -97,7 +97,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     let mut bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_A);
     //Check if hoststatus has ab_update and update the grub config for the inactive volume
     if host_status.spec.storage.ab_update.is_some() {
-        match modules::get_ab_update_volume(host_status) {
+        match host_status.get_ab_update_volume() {
             Some(AbVolumeSelection::VolumeA) => {}
             Some(AbVolumeSelection::VolumeB) => {
                 bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_B);

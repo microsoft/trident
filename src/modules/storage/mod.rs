@@ -15,7 +15,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::modules::{self, Module};
+use crate::modules::Module;
 
 use tabfile::DEFAULT_FSTAB_PATH;
 
@@ -284,7 +284,7 @@ pub(super) fn set_host_status_block_device_contents(
             .iter()
             .find(|p| &p.id == block_device_id)
         {
-            let target_id = match modules::get_ab_update_volume(host_status) {
+            let target_id = match host_status.get_ab_update_volume() {
                 Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
                 Some(AbVolumeSelection::VolumeB) => Some(&ab_volume_pair.volume_b_id),
                 None => None,

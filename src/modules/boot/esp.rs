@@ -22,7 +22,6 @@ use trident_api::{
 };
 
 use crate::modules::{
-    self,
     constants::{
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
@@ -371,7 +370,8 @@ fn generate_efi_bin_base_dir_path(
         .join(ESP_EFI_DIRECTORY);
 
     // Based on which volume is being updated, determine how to name the dir
-    let esp_dir_path = match modules::get_ab_update_volume(host_status)
+    let esp_dir_path = match host_status
+        .get_ab_update_volume()
         .context("Failed to determine which A/B volume is currently inactive")?
     {
         AbVolumeSelection::VolumeA => Path::new(&esp_efi_path).join(BOOT_ENTRY_A),
