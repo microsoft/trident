@@ -62,7 +62,7 @@ hostConfiguration:
       - type: vfat
         deviceId: esp
         source:
-          type: image
+          type: esp-image
           format: raw-zst
           sha256: ignored
           url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst

@@ -65,7 +65,7 @@ pub struct VerityFileSystem {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields, tag = "type")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum FileSystemSource {
     /// # Create
@@ -76,10 +76,17 @@ pub enum FileSystemSource {
 
     /// # Image
     ///
-    /// Use an existing file system from a partition image.
+    /// Use an existing file system from a partition image. **Cannot** be used
+    /// for ESP/EFI partitions.
     Image(Image),
 
-    /// Filesystem from an adopted partition.
+    /// # ESP Image
+    ///
+    /// Use an existing file system from an ESP image. Can **only** be used for
+    /// ESP/EFI partitions.
+    EspImage(Image),
+
+    /// # Adopted
     ///
     /// Use an existing file system from an adopted partition.
     Adopted,
@@ -260,6 +267,7 @@ impl FileSystem {
                         FileSystemSource::Create => "new",
                         FileSystemSource::Adopted => "adopted",
                         FileSystemSource::Image(_) => "image",
+                        FileSystemSource::EspImage(_) => "esp-image",
                     }
                     .to_owned(),
                 ),

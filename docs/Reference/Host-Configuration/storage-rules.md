@@ -35,6 +35,7 @@ reference a block device of a certain type.
 | ab-volume              | No   | Yes       | No                | Yes        | No        | Yes              |
 | encrypted-volume       | No   | Yes       | No                | Yes        | No        | No               |
 | filesystem             | No   | Yes       | No                | Yes        | Yes       | Yes              |
+| filesystem-esp         | No   | Yes       | Yes               | No         | No        | No               |
 | filesystem-adopted     | No   | No        | Yes               | No         | No        | No               |
 | verity-filesystem-data | No   | Yes       | No                | Yes        | Yes       | No               |
 | verity-filesystem-hash | No   | Yes       | No                | Yes        | Yes       | No               |
@@ -50,6 +51,7 @@ shows valid reference counts for each referrer type.
 | ab-volume              | 2   | 2   |
 | encrypted-volume       | 1   | 1   |
 | filesystem             | 0   | 1   |
+| filesystem-esp         | 1   | 1   |
 | filesystem-adopted     | 1   | 1   |
 | verity-filesystem-data | 1   | 1   |
 | verity-filesystem-hash | 1   | 1   |
@@ -65,6 +67,7 @@ the rules for sharing references in the storage configuration.
 | ab-volume              | (none)              |
 | encrypted-volume       | (none)              |
 | filesystem             | (none)              |
+| filesystem-esp         | (none)              |
 | filesystem-adopted     | (none)              |
 | verity-filesystem-data | (none)              |
 | verity-filesystem-hash | (none)              |
@@ -101,15 +104,15 @@ block device.
 
 Depending on the type of a filesystem, they may have different source types.
 
-| File System Type | Valid Source Type          |
-| ---------------- | -------------------------- |
-| ext4             | create or image or adopted |
-| xfs              | create or image or adopted |
-| vfat             | create or image or adopted |
-| swap             | create                     |
-| tmpfs            | create                     |
-| auto             | adopted                    |
-| other            | image                      |
+| File System Type | Valid Source Type                       |
+| ---------------- | --------------------------------------- |
+| ext4             | create or image or adopted              |
+| xfs              | create or image or adopted              |
+| vfat             | create or image or adopted or esp-image |
+| swap             | create                                  |
+| tmpfs            | create                                  |
+| auto             | adopted                                 |
+| other            | image                                   |
 
 ## Filesystem Mounting
 
@@ -171,8 +174,9 @@ Some referrers only support specific underlying partitions types.
 | raid-array             | any                                        |
 | ab-volume              | any                                        |
 | encrypted-volume       | any type except esp or root or root-verity |
-| filesystem             | any                                        |
-| filesystem-adopted     | any                                        |
+| filesystem             | any type except esp                        |
+| filesystem-esp         | esp                                        |
+| filesystem-adopted     | any type except esp                        |
 | verity-filesystem-data | root                                       |
 | verity-filesystem-hash | root-verity                                |
 

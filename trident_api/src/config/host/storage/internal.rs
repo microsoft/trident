@@ -91,13 +91,16 @@ impl Storage {
         self.filesystems.iter().for_each(|fs| {
             let device_id = fs.device_id.as_deref().unwrap_or_default();
 
-            if let FileSystemSource::Image(img) = &fs.source {
-                self.internal_images.push(InternalImage {
-                    url: img.url.clone(),
-                    sha256: img.sha256.clone(),
-                    format: img.format.clone(),
-                    target_id: device_id.to_string(),
-                });
+            match &fs.source {
+                FileSystemSource::Image(img) | FileSystemSource::EspImage(img) => {
+                    self.internal_images.push(InternalImage {
+                        url: img.url.clone(),
+                        sha256: img.sha256.clone(),
+                        format: img.format.clone(),
+                        target_id: device_id.to_string(),
+                    });
+                }
+                FileSystemSource::Create | FileSystemSource::Adopted => {}
             }
 
             if let Some(mp) = fs.mount_point.as_ref() {

@@ -51,7 +51,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::Image(Image {
+                        source: FileSystemSource::EspImage(Image {
                             url: "file:///trident_cdrom/data/esp.rawzst".into(),
                             sha256: ImageSha256::Checksum(
                                 "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
@@ -112,7 +112,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::Image(Image {
+                        source: FileSystemSource::EspImage(Image {
                             url: "file:///trident_cdrom/data/esp.rawzst".into(),
                             sha256: ImageSha256::Checksum(
                                 "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
@@ -276,7 +276,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::Image(Image {
+                        source: FileSystemSource::EspImage(Image {
                             url: "file:///trident_cdrom/data/esp.rawzst".into(),
                             sha256: ImageSha256::Checksum(
                                 "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
@@ -469,7 +469,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::Image(Image {
+                        source: FileSystemSource::EspImage(Image {
                             url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
                             sha256: ImageSha256::Checksum(
                                 "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
@@ -950,7 +950,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             path: constants::ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::new("umask=0077"),
                         }),
-                        source: FileSystemSource::Image(Image {
+                        source: FileSystemSource::EspImage(Image {
                             url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
                             sha256: ImageSha256::Checksum(
                                 "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
@@ -963,7 +963,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         device_id: Some("esp2".into()),
                         fs_type: FileSystemType::Vfat,
                         mount_point: None,
-                        source: FileSystemSource::Image(Image {
+                        source: FileSystemSource::EspImage(Image {
                             url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
                             sha256: ImageSha256::Checksum(
                                 "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
@@ -1200,7 +1200,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
                             }),
-                            source: FileSystemSource::Image(Image {
+                            source: FileSystemSource::EspImage(Image {
                                 url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
                                 sha256: ImageSha256::Checksum(
                                     "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
@@ -1213,7 +1213,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             device_id: Some("esp2".into()),
                             fs_type: FileSystemType::Vfat,
                             mount_point: None,
-                            source: FileSystemSource::Image(Image {
+                            source: FileSystemSource::EspImage(Image {
                                 url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
                                 sha256: ImageSha256::Checksum(
                                     "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
@@ -1358,7 +1358,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: constants::ESP_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new("umask=0077"),
                             }),
-                            source: FileSystemSource::Image(Image {
+                            source: FileSystemSource::EspImage(Image {
                                 url: "file:///trident_cdrom/data/verity.rawzst".into(),
                                 sha256: ImageSha256::Checksum(
                                     "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"

@@ -89,26 +89,34 @@ where
 impl From<&FileSystem> for BlkDevReferrerKind {
     fn from(fs: &FileSystem) -> Self {
         if fs.fs_type.requires_block_device_id() {
-            // Filesystems that require a block device are filesystem referrers
+            // Filesystems that require a block device are filesystem referrers.
             match &fs.source {
-                // If we're creating a filesystem, then it's a regular filesystem referrer
+                // If we're creating a filesystem, then it's a regular
+                // filesystem referrer.
                 FileSystemSource::Create => BlkDevReferrerKind::FileSystem,
 
-                // If we're adopting a filesystem, then it's an adopted filesystem referrer
+                // If we're adopting a filesystem, then it's an adopted
+                // filesystem referrer.
                 FileSystemSource::Adopted => BlkDevReferrerKind::FileSystemAdopted,
 
-                // If it's an image, then it depends on the image format
+                // If we're creating a filesystem from an ESP bundle, then it's
+                // an ESP filesystem referrer.
+                FileSystemSource::EspImage(_) => BlkDevReferrerKind::FileSystemEsp,
+
+                // If it's an image, then it depends on the image format.
                 FileSystemSource::Image(img) => match img.format {
-                    // If we're creating the FS from a zst image, then it's a filesystem referrer
+                    // If we're creating the FS from a zst image, then it's a
+                    // filesystem referrer.
                     ImageFormat::RawZst => BlkDevReferrerKind::FileSystem,
 
-                    // If we're creating the FS from a lzma image, then it's a sysupdate referrer
+                    // If we're creating the FS from a lzma image, then it's a
+                    // sysupdate referrer.
                     #[cfg(feature = "sysupdate")]
                     ImageFormat::RawLzma => BlkDevReferrerKind::FileSystemSysupdate,
                 },
             }
         } else {
-            // Filesystems that do not require a block device are not referrers
+            // Filesystems that do not require a block device are not referrers.
             BlkDevReferrerKind::None
         }
     }
@@ -121,6 +129,7 @@ impl From<&FileSystemSource> for FileSystemSourceKind {
             FileSystemSource::Create => FileSystemSourceKind::Create,
             FileSystemSource::Image(_) => FileSystemSourceKind::Image,
             FileSystemSource::Adopted => FileSystemSourceKind::Adopted,
+            FileSystemSource::EspImage(_) => FileSystemSourceKind::EspBundle,
         }
     }
 }

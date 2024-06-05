@@ -27,7 +27,7 @@ Create a new file system.
 
 ### Image
 
-Use an existing file system from a partition image.
+Use an existing file system from a partition image. **Cannot** be used for ESP/EFI partitions.
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -77,9 +77,59 @@ Supported schemes are: `file`, `http`, and `https`.
 | -------------- | -------- |
 | Type           | `string` |
 
-### variant-3
+### ESP Image
 
-Filesystem from an adopted partition.
+Use an existing file system from an ESP image. Can **only** be used for ESP/EFI partitions.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `object` |
+
+### Properties
+
+#### `format` **<span style="color:orange;">(required)</span>**
+
+The format of the image.
+
+| Characteristic | Value                           |
+| -------------- | ------------------------------- |
+| Type           | `ImageFormat`                   |
+| Link           | [ImageFormat](./ImageFormat.md) |
+
+#### `sha256` **<span style="color:orange;">(required)</span>**
+
+The SHA256 checksum of the compressed image.
+
+The hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.
+
+Accepted values:
+
+- 64-character hexadecimal string (case insensitive)
+
+- `ignored` to skip the checksum verification
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
+#### `type` **<span style="color:orange;">(required)</span>**
+
+| Characteristic | Value       |
+| -------------- | ----------- |
+| Type           | `string`    |
+| Value          | `esp-image` |
+
+#### `url` **<span style="color:orange;">(required)</span>**
+
+The URL of the image.
+
+Supported schemes are: `file`, `http`, and `https`.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
+### Adopted
 
 Use an existing file system from an adopted partition.
 

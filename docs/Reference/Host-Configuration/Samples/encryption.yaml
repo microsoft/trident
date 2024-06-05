@@ -38,7 +38,7 @@ storage:
   - deviceId: esp
     type: vfat
     source:
-      type: image
+      type: esp-image
       url: file:///trident_cdrom/data/verity.rawzst
       sha256: e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae
       format: raw-zst

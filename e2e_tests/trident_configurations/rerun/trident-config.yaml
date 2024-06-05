@@ -163,7 +163,7 @@ hostConfiguration:
       - deviceId: esp
         type: vfat
         source:
-          type: image
+          type: esp-image
           url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
           sha256: ignored
           format: raw-zst

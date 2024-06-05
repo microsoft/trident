@@ -304,7 +304,7 @@
         },
         {
           "title": "Image",
-          "description": "Use an existing file system from a partition image.",
+          "description": "Use an existing file system from a partition image. **Cannot** be used for ESP/EFI partitions.",
           "type": "object",
           "required": [
             "format",
@@ -339,7 +339,44 @@
           "additionalProperties": false
         },
         {
-          "description": "Filesystem from an adopted partition.\n\nUse an existing file system from an adopted partition.",
+          "title": "ESP Image",
+          "description": "Use an existing file system from an ESP image. Can **only** be used for ESP/EFI partitions.",
+          "type": "object",
+          "required": [
+            "format",
+            "sha256",
+            "type",
+            "url"
+          ],
+          "properties": {
+            "format": {
+              "description": "The format of the image.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ImageFormat"
+                }
+              ]
+            },
+            "sha256": {
+              "description": "The SHA256 checksum of the compressed image.\n\nThe hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.\n\nAccepted values:\n\n- 64-character hexadecimal string (case insensitive)\n\n- `ignored` to skip the checksum verification",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "esp-image"
+              ]
+            },
+            "url": {
+              "description": "The URL of the image.\n\nSupported schemes are: `file`, `http`, and `https`.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "title": "Adopted",
+          "description": "Use an existing file system from an adopted partition.",
           "type": "object",
           "required": [
             "type"

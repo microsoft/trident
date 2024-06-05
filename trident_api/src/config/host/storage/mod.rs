@@ -524,7 +524,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("esp".to_owned()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::Image(Image {
+                    source: FileSystemSource::EspImage(Image {
                         url: "file:///esp.raw.zst".to_owned(),
                         sha256: ImageSha256::Ignored,
                         format: ImageFormat::RawZst,
@@ -747,7 +747,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("disk1-partition1".to_string()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::Image(Image {
+                    source: FileSystemSource::EspImage(Image {
                         url: "http://example.com/image".to_string(),
                         sha256: ImageSha256::Ignored,
                         format: ImageFormat::RawZst,
@@ -799,8 +799,8 @@ mod tests {
                 },
                 FileSystem {
                     device_id: Some("disk1-partition1".to_string()),
-                    fs_type: FileSystemType::Ext4,
-                    source: FileSystemSource::Image(Image {
+                    fs_type: FileSystemType::Vfat,
+                    source: FileSystemSource::EspImage(Image {
                         url: "http://example.com/image".to_string(),
                         sha256: ImageSha256::Ignored,
                         format: ImageFormat::RawZst,
@@ -936,7 +936,7 @@ mod tests {
                 FileSystem {
                     device_id: Some("part1".to_owned()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::Image(Image {
+                    source: FileSystemSource::EspImage(Image {
                         url: "https://some/url".to_owned(),
                         sha256: imaging::ImageSha256::Checksum("".into()),
                         format: ImageFormat::RawZst,
@@ -1034,7 +1034,7 @@ mod tests {
                     fs_desc: storage.filesystems[0].description(),
                     target_id: "disk1".into(),
                     target_kind: BlkDevKind::Disk,
-                    valid_references: BlkDevReferrerKind::FileSystem.valid_target_kinds()
+                    valid_references: BlkDevReferrerKind::FileSystemEsp.valid_target_kinds()
                 }
             ),
         );
@@ -2182,7 +2182,7 @@ mod tests {
                 filesystems: vec![FileSystem {
                     device_id: Some("part1".to_owned()),
                     fs_type: FileSystemType::Vfat,
-                    source: FileSystemSource::Image(Image {
+                    source: FileSystemSource::EspImage(Image {
                         url: "".to_owned(),
                         sha256: ImageSha256::Ignored,
                         format: ImageFormat::RawZst,

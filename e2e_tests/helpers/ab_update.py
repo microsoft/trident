@@ -205,7 +205,7 @@ def get_images_to_update(host_config_output) -> List[Tuple[str, str]]:
         if not device_id:
             continue
         source: Dict = fs.get("source", {})
-        if source.get("type") == "image":
+        if source.get("type") in ["image", "esp-image"]:
             all_images.append((source["url"], device_id))
 
     # Then check all verity filesystems:
