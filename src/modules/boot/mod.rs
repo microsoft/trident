@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Error};
 
-use trident_api::{config::HostConfiguration, status::HostStatus};
+use trident_api::status::HostStatus;
 
 use crate::modules::Module;
 
@@ -16,26 +16,16 @@ impl Module for BootModule {
         "boot"
     }
 
-    fn provision(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        mount_point: &Path,
-    ) -> Result<(), Error> {
+    fn provision(&mut self, host_status: &mut HostStatus, mount_point: &Path) -> Result<(), Error> {
         // Perform file-based update of ESP images, if needed, after filesystems have been mounted and
         // initialized
-        esp::update_images(host_status, host_config, mount_point)
+        esp::update_images(host_status, mount_point)
             .context("Failed to perform file-based update of ESP images")?;
 
         Ok(())
     }
 
-    fn configure(
-        &mut self,
-        host_status: &mut HostStatus,
-        _host_config: &HostConfiguration,
-        _exec_root: &Path,
-    ) -> Result<(), Error> {
+    fn configure(&mut self, host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
         grub::update_configs(host_status).context("Failed to update GRUB configs")?;
 
         Ok(())

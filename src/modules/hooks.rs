@@ -61,7 +61,7 @@ impl Module for HooksModule {
         Ok(())
     }
 
-    fn prepare(&mut self, host_status: &mut HostStatus) -> Result<(), Error> {
+    fn prepare(&mut self, host_status: &HostStatus) -> Result<(), Error> {
         for script in host_status
             .spec
             .scripts
@@ -92,14 +92,10 @@ impl Module for HooksModule {
     }
 
     #[tracing::instrument(name = "hooks_provision", skip_all)]
-    fn provision(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        mount_path: &Path,
-    ) -> Result<(), Error> {
+    fn provision(&mut self, host_status: &mut HostStatus, mount_path: &Path) -> Result<(), Error> {
         info!("Running post-provision scripts");
-        host_config
+        host_status
+            .spec
             .scripts
             .post_provision
             .iter()
@@ -117,14 +113,9 @@ impl Module for HooksModule {
     }
 
     #[tracing::instrument(name = "hooks_configure", skip_all)]
-    fn configure(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        exec_root: &Path,
-    ) -> Result<(), Error> {
+    fn configure(&mut self, host_status: &mut HostStatus, exec_root: &Path) -> Result<(), Error> {
         info!("Adding additional files");
-        for file in &host_config.os.additional_files {
+        for file in &host_status.spec.os.additional_files {
             let (content, original_mode) = if let Some(ref content) = file.content {
                 (content.as_bytes().to_vec(), None)
             } else if let Some(ref path) = file.path {
@@ -159,7 +150,8 @@ impl Module for HooksModule {
         }
 
         info!("Running post-configure scripts");
-        host_config
+        host_status
+            .spec
             .scripts
             .post_configure
             .iter()
@@ -366,24 +358,23 @@ mod tests {
         )
         .unwrap();
 
-        let host_config = HostConfiguration {
-            scripts: Scripts {
-                post_provision: vec![Script {
-                    name: "test-script".into(),
-                    run_on: vec![ServicingTypeSelection::CleanInstall],
-                    interpreter: Some("/bin/bash".into()),
-                    path: Some(script_path),
-                    environment_variables: hashmap! {
-                        "TEST_DIR".into() => test_dir.to_str().unwrap().into()
-                    },
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                scripts: Scripts {
+                    post_provision: vec![Script {
+                        name: "test-script".into(),
+                        run_on: vec![ServicingTypeSelection::CleanInstall],
+                        interpreter: Some("/bin/bash".into()),
+                        path: Some(script_path),
+                        environment_variables: hashmap! {
+                            "TEST_DIR".into() => test_dir.to_str().unwrap().into()
+                        },
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }],
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        };
-        let mut host_status = HostStatus {
-            spec: host_config.clone(),
             servicing_type: Some(ServicingType::CleanInstall),
             servicing_state: ServicingState::StagingDeployment,
             storage: Storage {
@@ -394,11 +385,10 @@ mod tests {
         };
 
         let mut module = HooksModule::default();
-        module.prepare(&mut host_status).unwrap();
+        module.prepare(&host_status).unwrap();
         module
             .provision(
                 &mut host_status,
-                &host_config,
                 Path::new(constants::ROOT_MOUNT_POINT_PATH),
             )
             .unwrap();
@@ -412,24 +402,23 @@ mod tests {
     fn test_run_script_from_nonexistent_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_dir = temp_dir.path().join("test-directory");
-        let host_config = HostConfiguration {
-            scripts: Scripts {
-                post_provision: vec![Script {
-                    name: "test-script".into(),
-                    run_on: vec![ServicingTypeSelection::CleanInstall],
-                    interpreter: Some("/bin/bash".into()),
-                    path: Some("nonexistent-file".into()),
-                    environment_variables: hashmap! {
-                        "TEST_DIR".into() => test_dir.to_str().unwrap().into()
-                    },
+        let host_status = HostStatus {
+            spec: HostConfiguration {
+                scripts: Scripts {
+                    post_provision: vec![Script {
+                        name: "test-script".into(),
+                        run_on: vec![ServicingTypeSelection::CleanInstall],
+                        interpreter: Some("/bin/bash".into()),
+                        path: Some("nonexistent-file".into()),
+                        environment_variables: hashmap! {
+                            "TEST_DIR".into() => test_dir.to_str().unwrap().into()
+                        },
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }],
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        };
-        let mut host_status = HostStatus {
-            spec: host_config.clone(),
             servicing_type: Some(ServicingType::CleanInstall),
             servicing_state: ServicingState::StagingDeployment,
             storage: Storage {
@@ -440,7 +429,7 @@ mod tests {
         };
 
         let mut module = HooksModule::default();
-        let err = module.prepare(&mut host_status);
+        let err = module.prepare(&host_status);
         assert!(err.is_err());
 
         // Cleanup
@@ -575,28 +564,23 @@ mod tests {
 
         // Content
         let mut module = HooksModule::default();
-        let host_config = HostConfiguration {
-            os: trident_api::config::Os {
-                additional_files: vec![trident_api::config::AdditionalFile {
-                    destination: test_file.clone(),
-                    content: Some(test_content.into()),
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                os: trident_api::config::Os {
+                    additional_files: vec![trident_api::config::AdditionalFile {
+                        destination: test_file.clone(),
+                        content: Some(test_content.into()),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }],
+                },
                 ..Default::default()
             },
             ..Default::default()
         };
-        let mut host_status = HostStatus {
-            spec: host_config.clone(),
-            ..Default::default()
-        };
-        module.prepare(&mut host_status).unwrap();
+        module.prepare(&host_status).unwrap();
         module
-            .configure(
-                &mut host_status,
-                &host_config,
-                Path::new(ROOT_MOUNT_POINT_PATH),
-            )
+            .configure(&mut host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
@@ -606,29 +590,24 @@ mod tests {
 
         // Content + permissions
         let mut module = HooksModule::default();
-        let host_config = HostConfiguration {
-            os: trident_api::config::Os {
-                additional_files: vec![trident_api::config::AdditionalFile {
-                    destination: test_file.clone(),
-                    content: Some(test_content.into()),
-                    permissions: Some("0744".into()),
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                os: trident_api::config::Os {
+                    additional_files: vec![trident_api::config::AdditionalFile {
+                        destination: test_file.clone(),
+                        content: Some(test_content.into()),
+                        permissions: Some("0744".into()),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }],
+                },
                 ..Default::default()
             },
             ..Default::default()
         };
-        let mut host_status = HostStatus {
-            spec: host_config.clone(),
-            ..Default::default()
-        };
-        module.prepare(&mut host_status).unwrap();
+        module.prepare(&host_status).unwrap();
         module
-            .configure(
-                &mut host_status,
-                &host_config,
-                Path::new(ROOT_MOUNT_POINT_PATH),
-            )
+            .configure(&mut host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
@@ -640,28 +619,23 @@ mod tests {
         let source_file = temp_dir.path().join("source-file");
         fs::write(&source_file, "\u{2603}").unwrap();
         let mut module = HooksModule::default();
-        let host_config = HostConfiguration {
-            os: trident_api::config::Os {
-                additional_files: vec![trident_api::config::AdditionalFile {
-                    destination: test_file.clone(),
-                    path: Some(source_file.clone()),
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                os: trident_api::config::Os {
+                    additional_files: vec![trident_api::config::AdditionalFile {
+                        destination: test_file.clone(),
+                        path: Some(source_file.clone()),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }],
+                },
                 ..Default::default()
             },
             ..Default::default()
         };
-        let mut host_status = HostStatus {
-            spec: host_config.clone(),
-            ..Default::default()
-        };
-        module.prepare(&mut host_status).unwrap();
+        module.prepare(&host_status).unwrap();
         module
-            .configure(
-                &mut host_status,
-                &host_config,
-                Path::new(ROOT_MOUNT_POINT_PATH),
-            )
+            .configure(&mut host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), "\u{2603}");
         assert_eq!(

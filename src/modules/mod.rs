@@ -109,7 +109,7 @@ trait Module: Send {
     }
 
     /// Perform non-destructive preparations for an update.
-    fn prepare(&mut self, _host_status: &mut HostStatus) -> Result<(), Error> {
+    fn prepare(&mut self, _host_status: &HostStatus) -> Result<(), Error> {
         Ok(())
     }
 
@@ -121,7 +121,6 @@ trait Module: Send {
     fn provision(
         &mut self,
         _host_status: &mut HostStatus,
-        _host_config: &HostConfiguration,
         _mount_path: &Path,
     ) -> Result<(), Error> {
         Ok(())
@@ -129,12 +128,7 @@ trait Module: Send {
 
     /// Configure the system as specified by the host configuration, and update the host status
     /// accordingly.
-    fn configure(
-        &mut self,
-        _host_status: &mut HostStatus,
-        _host_config: &HostConfiguration,
-        _exec_root: &Path,
-    ) -> Result<(), Error> {
+    fn configure(&mut self, _host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -262,7 +256,7 @@ fn stage_clean_install(
     let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
     info!("Running provision");
-    provision(modules, state, host_config, &new_root_path)?;
+    provision(modules, state, &new_root_path)?;
 
     info!("Entering '{}' chroot", new_root_path.display());
     let chroot = chroot::enter_update_chroot(&new_root_path).message("Failed to enter chroot")?;
@@ -279,7 +273,7 @@ fn stage_clean_install(
             let use_overlay = !host_config.storage.internal_verity.is_empty();
 
             info!("Running configure");
-            configure(modules, state, host_config, &exec_root_path, use_overlay)?;
+            configure(modules, state, &exec_root_path, use_overlay)?;
 
             regenerate_initrd(use_overlay)?;
             selinux::execute_setfiles(host_config)?;
@@ -504,7 +498,7 @@ fn stage_update(
         let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
         info!("Running provision");
-        provision(modules, state, host_config, &new_root_path)?;
+        provision(modules, state, &new_root_path)?;
 
         // If verity is present, it means that we are currently doing root
         // verity. For now, we can assume that /etc is readonly, so we setup
@@ -516,7 +510,7 @@ fn stage_update(
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 info!("Running configure");
-                configure(modules, state, host_config, &exec_root_path, use_overlay)?;
+                configure(modules, state, &exec_root_path, use_overlay)?;
 
                 regenerate_initrd(use_overlay)?;
                 selinux::execute_setfiles(host_config)
@@ -526,13 +520,7 @@ fn stage_update(
         (new_root_path, Some(mounts))
     } else {
         info!("Running configure");
-        configure(
-            modules,
-            state,
-            host_config,
-            Path::new(ROOT_MOUNT_POINT_PATH),
-            false,
-        )?;
+        configure(modules, state, Path::new(ROOT_MOUNT_POINT_PATH), false)?;
 
         regenerate_initrd(false)?;
 
@@ -720,13 +708,12 @@ fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(),
 fn provision(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
-    host_config: &HostConfiguration,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
     // If verity is present, it means that we are currently doing root
     // verity. For now, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
-    let use_overlay = !host_config.storage.internal_verity.is_empty();
+    let use_overlay = !state.host_status().spec.storage.internal_verity.is_empty();
 
     for module in modules {
         debug!("Starting stage 'Provision' for module '{}'", module.name());
@@ -740,7 +727,7 @@ fn provision(
         };
         state.try_with_host_status(|host_status| {
             module
-                .provision(host_status, host_config, new_root_path)
+                .provision(host_status, new_root_path)
                 .structured(ManagementError::from(ModuleError::Provision {
                     name: module.name(),
                 }))
@@ -810,7 +797,6 @@ pub(super) fn initialize_new_root(
 fn configure(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
-    host_config: &HostConfiguration,
     exec_root: &Path,
     use_overlay: bool,
 ) -> Result<(), TridentError> {
@@ -827,7 +813,7 @@ fn configure(
         };
         state.try_with_host_status(|s| {
             module
-                .configure(s, host_config, exec_root)
+                .configure(s, exec_root)
                 .structured(ManagementError::from(ModuleError::Configure {
                     name: module.name(),
                 }))

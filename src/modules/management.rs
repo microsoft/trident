@@ -64,19 +64,15 @@ impl Module for ManagementModule {
         Ok(())
     }
 
-    fn provision(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        mount_path: &Path,
-    ) -> Result<(), Error> {
-        if host_config.trident.disable {
+    fn provision(&mut self, host_status: &mut HostStatus, mount_path: &Path) -> Result<(), Error> {
+        if host_status.spec.trident.disable {
             info!("Not provisioning management module as it is disabled");
             return Ok(());
         }
 
         host_status.trident.datastore_path = Some(
-            host_config
+            host_status
+                .spec
                 .trident
                 .datastore_path
                 .as_deref()
@@ -85,7 +81,7 @@ impl Module for ManagementModule {
         );
         debug!("Datastore path: {:?}", host_status.trident.datastore_path);
 
-        if host_config.trident.self_upgrade {
+        if host_status.spec.trident.self_upgrade {
             info!("Copying Trident binary to runtime OS");
             fs::copy(
                 TRIDENT_BINARY_PATH,
@@ -97,13 +93,8 @@ impl Module for ManagementModule {
         Ok(())
     }
 
-    fn configure(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        _exec_root: &Path,
-    ) -> Result<(), Error> {
-        if host_config.trident.disable {
+    fn configure(&mut self, host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
+        if host_status.spec.trident.disable {
             return Ok(());
         }
 
@@ -118,7 +109,7 @@ impl Module for ManagementModule {
 
         create_trident_config(
             datastore_path,
-            host_config,
+            &host_status.spec,
             Path::new(TRIDENT_LOCAL_CONFIG_PATH),
         )?;
         debug!("Trident config created");

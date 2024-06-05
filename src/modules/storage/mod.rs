@@ -130,13 +130,8 @@ impl Module for StorageModule {
         None
     }
 
-    fn provision(
-        &mut self,
-        _host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        mount_point: &Path,
-    ) -> Result<(), Error> {
-        if verity::validate_compatibility(host_config, mount_point)? {
+    fn provision(&mut self, host_status: &mut HostStatus, mount_point: &Path) -> Result<(), Error> {
+        if verity::validate_compatibility(&host_status.spec, mount_point)? {
             debug!("Verity devices are compatible with the current system");
             verity::create_machine_id(mount_point)?;
         }
@@ -144,20 +139,11 @@ impl Module for StorageModule {
         Ok(())
     }
 
-    fn configure(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        _exec_root: &Path,
-    ) -> Result<(), Error> {
+    fn configure(&mut self, host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
         verity::configure_device_names(host_status)
             .context("Failed to finalize device names for Verity devices")?;
 
-        generate_fstab(
-            host_config,
-            host_status,
-            Path::new(tabfile::DEFAULT_FSTAB_PATH),
-        )?;
+        generate_fstab(host_status, Path::new(tabfile::DEFAULT_FSTAB_PATH))?;
 
         // TODO: update /etc/repart.d directly for the matching disk, derive
         // from where is the root located
@@ -170,12 +156,8 @@ impl Module for StorageModule {
             .context("Failed to create mdadm.conf file after RAID creation")?;
 
         // update paths for root verity devices in a grub config
-        verity::update_root_verity_in_grub_config(
-            host_status,
-            host_config,
-            Path::new(ROOT_MOUNT_POINT_PATH),
-        )
-        .context("Failed to update GRUB config file after Verity creation")?;
+        verity::update_root_verity_in_grub_config(host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+            .context("Failed to update GRUB config file after Verity creation")?;
 
         Ok(())
     }
@@ -183,13 +165,9 @@ impl Module for StorageModule {
 
 /// Create a tabfile that captures all the desired
 /// mountpoints as per Host Configuration
-fn generate_fstab(
-    host_config: &HostConfiguration,
-    host_status: &HostStatus,
-    path: &Path,
-) -> Result<(), Error> {
-    let mut mount_points = host_config.storage.internal_mount_points.clone();
-    if !host_config.storage.internal_verity.is_empty() {
+fn generate_fstab(host_status: &HostStatus, path: &Path) -> Result<(), Error> {
+    let mut mount_points = host_status.spec.storage.internal_mount_points.clone();
+    if !host_status.spec.storage.internal_verity.is_empty() {
         mount_points.push(verity::create_etc_overlay_mount_point());
     }
     let fstab = tabfile::from_mountpoints(host_status, &mount_points)
@@ -247,8 +225,7 @@ pub(super) fn initialize_block_devices(
 
     // Assumes that images are already in place (data and hash), so that it can
     // assemble the verity devices.
-    verity::setup_verity_devices(host_config, host_status)
-        .structured(ManagementError::CreateVerity)?;
+    verity::setup_verity_devices(host_status).structured(ManagementError::CreateVerity)?;
 
     Ok(())
 }
@@ -671,8 +648,8 @@ mod tests {
         // passing dummy file
         assert_eq!(
             generate_fstab(
-                &get_host_config(&temp_tabfile),
                 &HostStatus {
+                    spec: get_host_config(&temp_tabfile),
                     ..Default::default()
                 },
                 temp_tabfile.path(),
@@ -684,23 +661,8 @@ mod tests {
         );
 
         generate_fstab(
-            &get_host_config(&temp_tabfile),
             &HostStatus {
-                spec: HostConfiguration {
-                    storage: config::Storage {
-                        disks: vec![DiskConfig {
-                            id: "disk1".into(),
-                            partitions: vec![PartitionConfig {
-                                id: "part1".into(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1),
-                            }],
-                            ..Default::default()
-                        }],
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
+                spec: get_host_config(&temp_tabfile),
                 storage: Storage {
                     block_devices: btreemap! {
                         "part1".into() => BlockDeviceInfo {
@@ -735,23 +697,8 @@ mod tests {
         }];
 
         generate_fstab(
-            &hc,
             &HostStatus {
-                spec: HostConfiguration {
-                    storage: config::Storage {
-                        disks: vec![DiskConfig {
-                            id: "disk1".into(),
-                            partitions: vec![PartitionConfig {
-                                id: "part1".into(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1),
-                            }],
-                            ..Default::default()
-                        }],
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
+                spec: hc,
                 storage: Storage {
                     block_devices: btreemap! {
                         "part1".into() => BlockDeviceInfo {

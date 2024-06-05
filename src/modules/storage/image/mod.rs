@@ -39,7 +39,7 @@ fn update_images(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
-    for image in get_undeployed_images(host_status, host_config, false) {
+    for image in &get_undeployed_images(host_status, host_config, false) {
         // Validate that block device exists
         let block_device = modules::get_block_device(host_status, &image.target_id, false)
             .context(format!(
@@ -318,11 +318,11 @@ pub(super) fn is_esp(host_config: &HostConfiguration, target_id: &BlockDeviceId)
 /// If the target device is an A/B volume pair, then the active boolean is
 /// used to determine whether that resolves to the active volume or the
 /// inactive one.
-pub(crate) fn get_undeployed_images<'a>(
+pub(crate) fn get_undeployed_images(
     host_status: &HostStatus,
-    host_config: &'a HostConfiguration,
+    host_config: &HostConfiguration,
     active: bool,
-) -> Vec<&'a InternalImage> {
+) -> Vec<InternalImage> {
     host_config
         .storage
         .internal_images
@@ -342,6 +342,7 @@ pub(crate) fn get_undeployed_images<'a>(
             }
             true
         })
+        .cloned()
         .collect()
 }
 
@@ -691,7 +692,7 @@ mod tests {
             ImageSha256::Checksum("barfoo".to_string());
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&InternalImage {
+            vec![InternalImage {
                 url: "http://example.com/esp.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZst,
@@ -705,7 +706,7 @@ mod tests {
             "http://example.com/image2.img".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&InternalImage {
+            vec![InternalImage {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZst,
@@ -719,7 +720,7 @@ mod tests {
             ImageSha256::Checksum("foobar".to_string());
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&InternalImage {
+            vec![InternalImage {
                 url: "http://example.com/image2.img".to_string(),
                 target_id: "boot".to_string(),
                 format: ImageFormat::RawZst,
@@ -738,13 +739,13 @@ mod tests {
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
             vec![
-                &InternalImage {
+                InternalImage {
                     url: "http://example.com/image2.img".to_string(),
                     target_id: "boot".to_string(),
                     format: ImageFormat::RawZst,
                     sha256: ImageSha256::Checksum("foobar".to_string()),
                 },
-                &InternalImage {
+                InternalImage {
                     url: "http://example.com/image1.img".to_string(),
                     target_id: "root".to_string(),
                     format: ImageFormat::RawZst,
@@ -831,7 +832,7 @@ mod tests {
 
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&InternalImage {
+            vec![InternalImage {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZst,
@@ -842,7 +843,7 @@ mod tests {
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, true),
             // Vec::<&Image>::new()
-            vec![&InternalImage {
+            vec![InternalImage {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZst,
@@ -864,12 +865,12 @@ mod tests {
 
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<&InternalImage>::new()
+            Vec::<InternalImage>::new()
         );
 
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, true),
-            vec![&InternalImage {
+            vec![InternalImage {
                 url: "http://example.com/image1.img".to_string(),
                 target_id: "root".to_string(),
                 format: ImageFormat::RawZst,

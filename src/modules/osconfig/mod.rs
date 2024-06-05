@@ -4,10 +4,7 @@ use anyhow::{Context, Error};
 use log::{debug, warn};
 
 use osutils::path;
-use trident_api::{
-    config::HostConfiguration,
-    status::{HostStatus, ServicingType},
-};
+use trident_api::status::{HostStatus, ServicingType};
 
 use crate::{modules::Module, OS_MODIFIER_BINARY_PATH};
 
@@ -21,12 +18,7 @@ impl Module for OsConfigModule {
         "os-config"
     }
 
-    fn configure(
-        &mut self,
-        host_status: &mut HostStatus,
-        host_config: &HostConfiguration,
-        exec_root: &Path,
-    ) -> Result<(), Error> {
+    fn configure(&mut self, host_status: &mut HostStatus, exec_root: &Path) -> Result<(), Error> {
         // TODO: When we switch to MIC, figure out a strategy for handling
         // other kinds of updates. Limit operation to:
         // 1. ServicingType::CleanInstall,
@@ -46,13 +38,13 @@ impl Module for OsConfigModule {
             warn!("os-modifier binary not found at '{OS_MODIFIER_BINARY_PATH}'");
         }
 
-        if !host_config.os.users.is_empty() {
-            users::set_up_users(&host_config.os.users, &os_modifier_path)
+        if !host_status.spec.os.users.is_empty() {
+            users::set_up_users(&host_status.spec.os.users, &os_modifier_path)
                 .context("Failed to set up users")?;
         }
 
-        if let Some(hostname) = host_config.os.hostname.clone() {
-            hostname::set_up_hostname(&hostname, &os_modifier_path)
+        if let Some(ref hostname) = host_status.spec.os.hostname {
+            hostname::set_up_hostname(hostname, &os_modifier_path)
                 .context("Failed to set up hostname")?;
         }
 

@@ -754,6 +754,7 @@ mod functional_test {
     /// The partition table will contain two partitions:
     /// - part1: 10 MiB, root partition, labeled "part1"
     /// - part2: 20 MiB, swap partition, labeled "part2"
+    ///
     /// The partitions will be created with the force flag.
     fn create_test_partitions() {
         let repart = SystemdRepartInvoker::new(TEST_DISK_DEVICE_PATH, RepartEmptyMode::Force)

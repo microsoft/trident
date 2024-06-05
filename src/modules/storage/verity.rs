@@ -123,16 +123,15 @@ pub(super) fn configure_device_names(host_status: &mut HostStatus) -> Result<(),
 
 /// Setup the root verity device
 fn setup_root_verity_device(
-    host_config: &HostConfiguration,
     host_status: &HostStatus,
     root_verity_device: &config::InternalVerityDevice,
 ) -> Result<(BlockDeviceId, BlockDeviceInfo), Error> {
     // Extract the root hash from GRUB config
-    let root_hash = get_root_verity_root_hash(host_config, host_status)?;
+    let root_hash = get_root_verity_root_hash(host_status)?;
 
     // Get the verity data and hash device paths from the host status
     let (verity_data_path, verity_hash_path, _) =
-        get_verity_related_device_paths(host_status, host_config, root_verity_device)?;
+        get_verity_related_device_paths(host_status, root_verity_device)?;
 
     let updated_device_name = get_updated_device_name(&root_verity_device.device_name);
 
@@ -172,12 +171,10 @@ fn setup_root_verity_device(
 }
 
 /// Get the root verity root hash from the GRUB config
-fn get_root_verity_root_hash(
-    host_config: &HostConfiguration,
-    host_status: &HostStatus,
-) -> Result<String, Error> {
+fn get_root_verity_root_hash(host_status: &HostStatus) -> Result<String, Error> {
     // API check ensures there is a boot volume, look up its mount point
-    let boot_mount_point = &host_config
+    let boot_mount_point = &host_status
+        .spec
         .storage
         .internal_mount_points
         .iter()
@@ -218,19 +215,15 @@ fn get_root_verity_root_hash(
 
 /// Setup verity devices; currently, only the root verity device is supported
 #[tracing::instrument(skip_all)]
-pub(super) fn setup_verity_devices(
-    host_config: &HostConfiguration,
-    host_status: &mut HostStatus,
-) -> Result<(), Error> {
-    if host_config.storage.internal_verity.is_empty() {
+pub(super) fn setup_verity_devices(host_status: &mut HostStatus) -> Result<(), Error> {
+    if host_status.spec.storage.internal_verity.is_empty() {
         return Ok(());
     }
 
     // Validated from API there is only one verity device at the moment and it
     // is tied to the root volume
-    let root_verity_device = &host_config.storage.internal_verity[0];
-    let (id, verity_device_status) =
-        setup_root_verity_device(host_config, host_status, root_verity_device)?;
+    let root_verity_device = &host_status.spec.storage.internal_verity[0];
+    let (id, verity_device_status) = setup_root_verity_device(host_status, root_verity_device)?;
 
     // Update the host status
     host_status
@@ -247,7 +240,6 @@ pub(super) fn setup_verity_devices(
 /// overlay is curently hardcoded to TRIDENT_OVERLAY_PATH (/var/lib/trident-overlay).
 fn get_verity_related_device_paths(
     host_status: &HostStatus,
-    host_config: &HostConfiguration,
     verity_device: &config::InternalVerityDevice,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), Error> {
     let verity_data_path =
@@ -266,7 +258,8 @@ fn get_verity_related_device_paths(
             ))?
             .path;
 
-    let overlay_target_id = &host_config
+    let overlay_target_id = &host_status
+        .spec
         .storage
         .internal_mount_points
         .iter()
@@ -290,15 +283,14 @@ fn get_verity_related_device_paths(
 #[tracing::instrument(skip_all)]
 pub(super) fn update_root_verity_in_grub_config(
     host_status: &HostStatus,
-    host_config: &HostConfiguration,
     root_mount_path: &Path,
 ) -> Result<(), Error> {
-    if host_config.storage.internal_verity.is_empty() {
+    if host_status.spec.storage.internal_verity.is_empty() {
         return Ok(());
     }
 
     // We currently only support a single verity device, which is the root
-    let verity_device = &host_config.storage.internal_verity[0];
+    let verity_device = &host_status.spec.storage.internal_verity[0];
 
     let mut grub_config = GrubConfig::read(
         root_mount_path
@@ -310,7 +302,7 @@ pub(super) fn update_root_verity_in_grub_config(
     grub_config.check_linux_command_line_count()?;
 
     let (verity_data_path, verity_hash_path, mnt_device_path) =
-        get_verity_related_device_paths(host_status, host_config, verity_device)?;
+        get_verity_related_device_paths(host_status, verity_device)?;
 
     // Update the root data device path
     grub_config.update_linux_command_line_argument(
@@ -586,25 +578,6 @@ mod test {
 
     #[test]
     fn test_get_verity_related_device_paths() {
-        let host_config = HostConfiguration {
-            storage: Storage {
-                internal_mount_points: vec![config::InternalMountPoint {
-                    path: PathBuf::from("/var/lib/trident-overlay"),
-                    filesystem: FileSystemType::Ext4,
-                    target_id: "overlay".to_string(),
-                    options: vec!["defaults".to_string()],
-                }],
-                internal_verity: vec![config::InternalVerityDevice {
-                    id: "root-verity".into(),
-                    device_name: "root".into(),
-                    data_target_id: "root".into(),
-                    hash_target_id: "root-hash".into(),
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let host_status = HostStatus {
             spec: HostConfiguration {
                 storage: Storage {
@@ -634,6 +607,18 @@ mod test {
                             },
                         ],
                         ..Default::default()
+                    }],
+                    internal_mount_points: vec![config::InternalMountPoint {
+                        path: PathBuf::from("/var/lib/trident-overlay"),
+                        filesystem: FileSystemType::Ext4,
+                        target_id: "overlay".to_string(),
+                        options: vec!["defaults".to_string()],
+                    }],
+                    internal_verity: vec![config::InternalVerityDevice {
+                        id: "root-verity".into(),
+                        device_name: "root".into(),
+                        data_target_id: "root".into(),
+                        hash_target_id: "root-hash".into(),
                     }],
                     ..Default::default()
                 },
@@ -670,8 +655,7 @@ mod test {
         let (verity_data_path, verity_hash_path, overlay_device_path) =
             get_verity_related_device_paths(
                 &host_status,
-                &host_config,
-                &host_config.storage.internal_verity[0],
+                &host_status.spec.storage.internal_verity[0],
             )
             .unwrap();
         assert_eq!(verity_data_path, PathBuf::from("/dev/sdb2"));
@@ -679,16 +663,16 @@ mod test {
         assert_eq!(overlay_device_path, PathBuf::from("/dev/sdb4"));
 
         // test no overlay mount point
-        let mut host_config_no_overlay = host_config.clone();
-        host_config_no_overlay
+        let mut host_status_no_overlay = host_status.clone();
+        host_status_no_overlay
+            .spec
             .storage
             .internal_mount_points
             .retain(|mp| mp.path != PathBuf::from("/var/lib/trident-overlay"));
         assert_eq!(
             get_verity_related_device_paths(
-                &host_status,
-                &host_config_no_overlay,
-                &host_config.storage.internal_verity[0]
+                &host_status_no_overlay,
+                &host_status.spec.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -696,8 +680,9 @@ mod test {
         );
 
         // test no verity data target id
-        let mut host_config_no_verity_data = host_config.clone();
-        host_config_no_verity_data
+        let mut host_status_no_verity_data = host_status.clone();
+        host_status_no_verity_data
+            .spec
             .storage
             .internal_verity
             .get_mut(0)
@@ -705,9 +690,8 @@ mod test {
             .data_target_id = "non-existing".into();
         assert_eq!(
             get_verity_related_device_paths(
-                &host_status,
-                &host_config_no_verity_data,
-                &host_config_no_verity_data.storage.internal_verity[0]
+                &host_status_no_verity_data,
+                &host_status_no_verity_data.spec.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -715,8 +699,9 @@ mod test {
         );
 
         // test no verity hash target id
-        let mut host_config_no_verity_hash = host_config.clone();
-        host_config_no_verity_hash
+        let mut host_status_no_verity_hash = host_status.clone();
+        host_status_no_verity_hash
+            .spec
             .storage
             .internal_verity
             .get_mut(0)
@@ -724,9 +709,8 @@ mod test {
             .hash_target_id = "non-existing".into();
         assert_eq!(
             get_verity_related_device_paths(
-                &host_status,
-                &host_config_no_verity_hash,
-                &host_config_no_verity_hash.storage.internal_verity[0]
+                &host_status_no_verity_hash,
+                &host_status_no_verity_hash.spec.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -751,8 +735,7 @@ mod test {
         assert_eq!(
             get_verity_related_device_paths(
                 &host_status_no_overlay,
-                &host_config,
-                &host_config.storage.internal_verity[0]
+                &host_status_no_overlay.spec.storage.internal_verity[0]
             )
             .unwrap_err()
             .to_string(),
@@ -1042,7 +1025,7 @@ mod functional_test {
         };
 
         assert_eq!(
-            get_root_verity_root_hash(&host_status.spec, &host_status).unwrap(),
+            get_root_verity_root_hash(&host_status).unwrap(),
             expected_root_hash
         );
 
@@ -1054,7 +1037,7 @@ mod functional_test {
             .internal_mount_points
             .retain(|mp| mp.path != PathBuf::from("/boot"));
         assert_eq!(
-            get_root_verity_root_hash(&host_status_no_boot_mount.spec, &host_status_no_boot_mount)
+            get_root_verity_root_hash(&host_status_no_boot_mount)
                 .unwrap_err()
                 .to_string(),
             "Cannot find boot volume"
@@ -1075,7 +1058,7 @@ mod functional_test {
             .block_devices
             .remove("boot");
         assert_eq!(
-            get_root_verity_root_hash(&host_status_no_boot_part.spec, &host_status_no_boot_part)
+            get_root_verity_root_hash(&host_status_no_boot_part)
                 .unwrap_err()
                 .to_string(),
             "Failed to find boot device boot"
@@ -1102,7 +1085,7 @@ mod functional_test {
             files::write_file(grub_config_path, 0o644, grub_config.as_bytes()).unwrap();
         }
 
-        assert!(get_root_verity_root_hash(&host_status.spec, &host_status)
+        assert!(get_root_verity_root_hash(&host_status)
             .unwrap_err()
             .to_string()
             .starts_with("Failed to find 'roothash' on linux command line in '"));
@@ -1208,7 +1191,6 @@ mod functional_test {
 
         {
             let (bdi, vd) = setup_root_verity_device(
-                &host_status.spec,
                 &host_status,
                 &host_status.spec.storage.internal_verity[0],
             )
@@ -1255,13 +1237,9 @@ mod functional_test {
         }
 
         assert_eq!(
-            setup_root_verity_device(
-                &host_status.spec,
-                &host_status,
-                &host_status.spec.storage.internal_verity[0]
-            )
-            .unwrap_err()
-            .to_string(),
+            setup_root_verity_device(&host_status, &host_status.spec.storage.internal_verity[0])
+                .unwrap_err()
+                .to_string(),
             "Failed to activate verity device 'root', status: 'corrupted'"
         );
         assert!(!verity_device_path.exists());
@@ -1271,7 +1249,7 @@ mod functional_test {
     fn test_setup_verity_devices() {
         // test no verity devices
         let mut host_status = HostStatus::default();
-        setup_verity_devices(&Default::default(), &mut host_status).unwrap();
+        setup_verity_devices(&mut host_status).unwrap();
 
         assert!(host_status.storage.block_devices.is_empty());
 
@@ -1374,7 +1352,7 @@ mod functional_test {
 
         {
             let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&host_status_golden.spec, &mut host_status).unwrap();
+            setup_verity_devices(&mut host_status).unwrap();
             let _verityguard = VerityGuard {
                 device_name: "root_new",
             };
@@ -1423,7 +1401,7 @@ mod functional_test {
 
         let mut host_status = host_status_golden.clone();
         assert_eq!(
-            setup_verity_devices(&host_status_golden.spec, &mut host_status)
+            setup_verity_devices(&mut host_status)
                 .unwrap_err()
                 .to_string(),
             "Failed to activate verity device 'root', status: 'corrupted'"
@@ -1462,8 +1440,7 @@ mod functional_test {
             let grub_config_path = boot_path.join("grub2/grub.cfg");
             let grub_config_original = fs::read_to_string(&grub_config_path).unwrap();
 
-            update_root_verity_in_grub_config(&host_status, &host_status.spec, mount_dir.path())
-                .unwrap();
+            update_root_verity_in_grub_config(&host_status, mount_dir.path()).unwrap();
 
             let grub_config_updated = fs::read_to_string(grub_config_path).unwrap();
             assert_eq!(grub_config_original, grub_config_updated);
@@ -1573,8 +1550,7 @@ mod functional_test {
                 mount_dir: &boot_path,
             };
 
-            update_root_verity_in_grub_config(&host_status, &host_status.spec, mount_dir.path())
-                .unwrap();
+            update_root_verity_in_grub_config(&host_status, mount_dir.path()).unwrap();
 
             let grub_config_path = boot_path.join("grub2/grub.cfg");
             let mut grub_config = GrubConfig::read(grub_config_path).unwrap();
@@ -1627,7 +1603,7 @@ mod functional_test {
             grub_config = grub_config.replace("systemd.verity_root_data", "foobar");
             files::write_file(grub_config_path, 0o644, grub_config.as_bytes()).unwrap();
 
-            assert_eq!(update_root_verity_in_grub_config(&host_status, &host_status.spec, mount_dir.path())
+            assert_eq!(update_root_verity_in_grub_config(&host_status, mount_dir.path())
                 .unwrap_err().root_cause().to_string(), format!("Unable to find systemd.verity_root_data on linux command line in '{}/boot/grub2/grub.cfg'", mount_dir.path().display()));
         }
     }
@@ -1730,7 +1706,7 @@ mod functional_test {
         // root verity opened
         {
             let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&host_status_golden.spec, &mut host_status).unwrap();
+            setup_verity_devices(&mut host_status).unwrap();
             assert!(verity_root_path.exists());
             stop_pre_existing_verity_devices(&host_status.spec).unwrap();
             assert!(!verity_root_path.exists());
@@ -1739,7 +1715,7 @@ mod functional_test {
         // root verity opened & mounted
         {
             let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&host_status_golden.spec, &mut host_status).unwrap();
+            setup_verity_devices(&mut host_status).unwrap();
             assert!(verity_root_path.exists());
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(

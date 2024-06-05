@@ -383,13 +383,9 @@ fn generate_efi_bin_base_dir_path(
 
 /// Function that fetches the list of ESP images that need to be updated and performs file-based
 /// update of standalone ESP partition.
-pub(super) fn update_images(
-    host_status: &mut HostStatus,
-    host_config: &HostConfiguration,
-    mount_point: &Path,
-) -> Result<(), Error> {
+pub(super) fn update_images(host_status: &mut HostStatus, mount_point: &Path) -> Result<(), Error> {
     // Fetch the list of ESP images that need to be updated/deployed
-    for image in get_undeployed_images(host_status, host_config, false) {
+    for image in &get_undeployed_images(host_status, &host_status.spec, false) {
         debug!(
             "Updating ESP filesystem on block device id '{}'",
             &image.target_id
@@ -450,11 +446,11 @@ pub(super) fn update_images(
 ///
 /// Uses get_undeployed_images() to fetch the list of images that need to be updated/deployed and
 /// then filters the vector to find images that corresponds to ESP partition.
-fn get_undeployed_images<'a>(
+fn get_undeployed_images(
     host_status: &HostStatus,
-    host_config: &'a HostConfiguration,
+    host_config: &HostConfiguration,
     active: bool,
-) -> Vec<&'a InternalImage> {
+) -> Vec<InternalImage> {
     // Fetch the list of images that need to be updated/deployed
     let undeployed_images = image::get_undeployed_images(host_status, host_config, active);
 
@@ -711,7 +707,7 @@ mod tests {
         // Test case 1: ESP partition does not need to be updated
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<&InternalImage>::new(),
+            Vec::<InternalImage>::new(),
             "Incorrectly identified ESP partition as needing an update"
         );
 
@@ -722,7 +718,7 @@ mod tests {
             "http://example.com/esp_2.img".to_string();
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![&InternalImage {
+            vec![InternalImage {
                 url: "http://example.com/esp_2.img".to_string(),
                 target_id: "esp".to_string(),
                 format: ImageFormat::RawZst,
@@ -746,7 +742,7 @@ mod tests {
             .partition_type = PartitionType::Swap;
         assert_eq!(
             get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<&InternalImage>::new(),
+            Vec::<InternalImage>::new(),
             "Incorrectly identified ESP partition as needing an update"
         );
     }
