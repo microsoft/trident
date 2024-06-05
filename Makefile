@@ -448,6 +448,7 @@ artifacts/imagecustomizer:
 
 bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/iso.yaml artifacts/systemd/systemd-254-3.cm2.x86_64.rpm trident-mos/files/* trident-mos/post-install.sh
 	BUILD_DIR=`mktemp -d`; \
+		mkdir -p bin; \
 		sudo ./artifacts/imagecustomizer \
 			--log-level=debug \
 			--rpm-source ./artifacts/systemd \
@@ -460,6 +461,7 @@ bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-
 	sudo rm -r artifacts/systemd/repodata
 bin/trident-containerhost-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/containerhost-iso.yaml trident-mos/files/* trident-mos/post-install.sh
 	BUILD_DIR=`mktemp -d`; \
+		mkdir -p bin; \
 		sudo ./artifacts/imagecustomizer \
 			--log-level=debug \
 			--build-dir $$BUILD_DIR \
