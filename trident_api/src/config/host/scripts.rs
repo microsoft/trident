@@ -154,6 +154,14 @@ impl Script {
             (None, None) => Err(InvalidHostConfigurationError::ScriptHasNoContentOrPath(
                 self.name.clone(),
             )),
+            (None, Some(path)) => {
+                if !path.is_absolute() {
+                    return Err(InvalidHostConfigurationError::PathNotAbsolute {
+                        path: path.clone().to_string_lossy().to_string(),
+                    });
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -218,8 +226,8 @@ mod tests {
             path: None,
         };
         assert_eq!(
-            script.validate().unwrap_err().to_string(),
-            format!("Script '{}' has no content or path", script.name)
+            script.validate().unwrap_err(),
+            InvalidHostConfigurationError::ScriptHasNoContentOrPath(script.name)
         );
     }
 
@@ -235,8 +243,41 @@ mod tests {
             path: Some("/path/to/script".into()),
         };
         assert_eq!(
-            script.validate().unwrap_err().to_string(),
-            format!("Script '{}' has both content and path", script.name)
+            script.validate().unwrap_err(),
+            InvalidHostConfigurationError::ScriptHasBothContentAndPath(script.name)
+        );
+    }
+
+    #[test]
+    fn test_valid_script_with_absolute_path() {
+        let script = Script {
+            name: "test-script".into(),
+            run_on: vec![ServicingTypeSelection::CleanInstall],
+            interpreter: Some("/bin/bash".into()),
+            content: None,
+            environment_variables: HashMap::new(),
+            log_file_path: None,
+            path: Some("/path/to/script".into()),
+        };
+        assert!(script.validate().is_ok());
+    }
+
+    #[test]
+    fn test_invalid_script_with_relative_path() {
+        let script = Script {
+            name: "test-script".into(),
+            run_on: vec![ServicingTypeSelection::CleanInstall],
+            interpreter: Some("/bin/bash".into()),
+            content: None,
+            environment_variables: HashMap::new(),
+            log_file_path: None,
+            path: Some("path/to/script".into()),
+        };
+        assert_eq!(
+            script.validate().unwrap_err(),
+            InvalidHostConfigurationError::PathNotAbsolute {
+                path: "path/to/script".into()
+            }
         );
     }
 }
