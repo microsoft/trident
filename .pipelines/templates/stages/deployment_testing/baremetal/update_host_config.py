@@ -49,7 +49,7 @@ def update_trident_host_config(
     for fs in host_configuration.get("storage").get("filesystems", []):
         logging.info(f"Checking filesystem: {fs}")
         source = fs.get("source")
-        if source and source.get("type") == "image":
+        if source and source.get("type") in ["image", "esp-image"]:
             update_image_url(source)
 
     logging.info("Updating source url in verity filesystems")
