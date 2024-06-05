@@ -126,16 +126,12 @@ steps:
     displayName: "Boot baremetal lab machine"
 
   - bash: |
-      set -xe
-      cat ./bm-deployment.log
-    displayName: "Displaying logs collected from the netlisten process"
-
-  - bash: |
       set -eux
       ls -ltr .
       if [[ -f ./bm-deployment.log ]]; then
+        cat ./bm-deployment.log
         mkdir -p $(ob_outputDirectory)
         sudo cp ./bm-deployment.log $(ob_outputDirectory)/bm-deployment.log
       fi
     condition: succeededOrFailed()
-    displayName: "Publish deployment.log"
+    displayName: "Display and publish logs collected from the netlisten process"
