@@ -42,15 +42,8 @@ const VERITY_ROOT_DATA: &str = "systemd.verity_root_data";
 /// Points to a block device with root volume dm-verity hash tree.
 const VERITY_ROOT_HASH: &str = "systemd.verity_root_hash";
 
-/// Polints to a block device used to hold overlay data.
-const OVERLAYFS_PERSISTENT_VOLUME: &str = "rd.overlayfs_persistent_volume";
-
 /// Holds a comma-separated list of overlayfs paths.
 const OVERLAYS: &str = "rd.overlayfs";
-
-/// Holds a comma-separated list of overlayfs paths.
-pub const OVERLAYS_VALUE: &str =
-    formatcp!("{TRIDENT_OVERLAY_LOWER_RELATIVE_PATH},{TRIDENT_OVERLAY_UPPER_RELATIVE_PATH},{TRIDENT_OVERLAY_WORK_RELATIVE_PATH}");
 
 /// Checks if verity is enabled in the GRUB config
 pub(super) fn check_verity_enabled(grub_config_path: &Path) -> Result<bool, Error> {
@@ -322,24 +315,24 @@ pub(super) fn update_root_verity_in_grub_config(
         ))?,
     )?;
 
-    // Update the overlay configuration
-    if grub_config.contains_linux_command_line_argument(OVERLAYS)? {
-        grub_config.update_linux_command_line_argument(OVERLAYS, OVERLAYS_VALUE)?;
-    } else {
-        grub_config.append_linux_command_line_argument(OVERLAYS, OVERLAYS_VALUE)?;
-    }
-
-    // Update the overlay device path
+    // Dynamically build the OVERLAYS value including the mount device path
     let volume_value = mnt_device_path.to_str().context(format!(
         "Failed to convert mnt device path '{}' to string",
         mnt_device_path.display()
     ))?;
-    if grub_config.contains_linux_command_line_argument(OVERLAYFS_PERSISTENT_VOLUME)? {
-        grub_config
-            .update_linux_command_line_argument(OVERLAYFS_PERSISTENT_VOLUME, volume_value)?;
+    let overlays_value = format!(
+        "{},{},{},{}",
+        TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
+        TRIDENT_OVERLAY_UPPER_RELATIVE_PATH,
+        TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
+        volume_value
+    );
+
+    // Update the overlay configuration
+    if grub_config.contains_linux_command_line_argument(OVERLAYS)? {
+        grub_config.update_linux_command_line_argument(OVERLAYS, &overlays_value)?;
     } else {
-        grub_config
-            .append_linux_command_line_argument(OVERLAYFS_PERSISTENT_VOLUME, volume_value)?;
+        grub_config.append_linux_command_line_argument(OVERLAYS, &overlays_value)?;
     }
 
     // Write down updated grub config
@@ -1571,13 +1564,7 @@ mod functional_test {
                 grub_config
                     .read_linux_command_line_argument("rd.overlayfs")
                     .unwrap(),
-                "etc,etc/upper,etc/work"
-            );
-            assert_eq!(
-                grub_config
-                    .read_linux_command_line_argument("rd.overlayfs_persistent_volume")
-                    .unwrap(),
-                formatcp!("{TEST_DISK_DEVICE_PATH}4")
+                format!("etc,etc/upper,etc/work,{TEST_DISK_DEVICE_PATH}4")
             );
         }
 
