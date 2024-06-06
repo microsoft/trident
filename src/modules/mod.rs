@@ -17,7 +17,7 @@ use log::{debug, error, info};
 use sys_mount::{Mount, MountFlags};
 
 use trident_api::{
-    config::{HostConfiguration, Operations},
+    config::HostConfiguration,
     constants::{
         self, ESP_MOUNT_POINT_PATH, EXEC_ROOT_PATH, ROOT_MOUNT_POINT_PATH,
         UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
@@ -201,7 +201,7 @@ pub(super) fn clean_install(
     // Switch datastore back to the old path
     state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH))?;
 
-    if !allowed_operations.contains(Operations::FinalizeDeployment) {
+    if !allowed_operations.has_finalize() {
         info!("Finalizing of clean install not requested, skipping finalizing and reboot");
         state.close();
 
@@ -409,7 +409,7 @@ pub(super) fn update(
 
     match servicing_type {
         ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
-            if !allowed_operations.contains(Operations::FinalizeDeployment) {
+            if !allowed_operations.has_finalize() {
                 info!("Finalizing of update not requested, skipping reboot");
                 if let Some(mounts) = mounts {
                     mount_root::unmount_new_root(mounts, &new_root_path)?;

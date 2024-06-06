@@ -1,11 +1,11 @@
 graph TD
-A[Provisioned] --> |Received a new valid HC & StageDeployment in AllowedOperations|B[StagingDeployment]
+A[Provisioned] --> |Received a new valid HC & 'stage' in 'allowedOperations'|B[StagingDeployment]
 B --> |Staging succeeded|C[DeploymentStaged]
 B --> |Staging failed|B
-C --> |Received FinalizeDeployment in AO|E[FinalizingDeployment]
-C --> |Received a new valid HC & StageDeployment in AO|B
+C --> |Received 'finalize' in 'allowedOperations'|E[FinalizingDeployment]
+C --> |Received a new valid HC & 'stage' in 'allowedOperations'|B
 E --> |Finalizing succeeded|F[DeploymentFinalized]
 E --> |Finalizing failed|B
 F --> |Reboot into new OS image succeeded|A
 F --> |Rollback into old OS occurred|D[CleanInstallFailed]
-D --> |Received a new valid HC & StageDeployment in AO|B
+D --> |Received a new valid HC & 'stage' in 'allowedOperations'|B

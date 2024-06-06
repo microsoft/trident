@@ -34,7 +34,6 @@ can be leveraged outside of that as well.
     - [Validator](#validator)
   - [A/B Update](#ab-update)
     - [Getting Started with A/B Update](#getting-started-with-ab-update)
-    - [TODO: Next Steps](#todo-next-steps)
   - [dm-verity Support](#dm-verity-support)
   - [Running from container](#running-from-container)
   - [Running from Azure VM](#running-from-azure-vm)
@@ -165,10 +164,10 @@ creating a file named `override-trident-safety-check` in the root directory.
 This configuration file is used by the Trident agent to configure itself. It is
 composed of the following sections:
 
-- **allowedOperations**: a combination of flags representing allowed operations.
-  This is a list of operations that Trident is allowed to perform on the host.
+- **allowedOperations**: a list of flags representing allowed operations.
+  This is a set of operations that Trident is allowed to perform on the host.
   Supported flags are:
-   - **StageDeployment**: Trident will stage the changes required by the updated
+  - **stage**: Trident will stage the changes required by the updated
     host configuration, including deployment of the new runtime OS image onto
     block devices during a clean install or an A/B update. However, Trident
     will not reboot the host into the newly deployed runtime OS. This is useful
@@ -176,7 +175,7 @@ composed of the following sections:
     or delay the reboot until a later point in time. After the new runtime OS
     image has been staged, Trident will update the host's status to
     DeploymentStaged.
-  - **FinalizeDeployment**: Trident will reboot the host into the newly deployed
+  - **finalize**: Trident will reboot the host into the newly deployed
     runtime OS image to complete a clean install or A/B update. Trident will
     first manage the UEFI firmware variables, to ensure that post reboot, the
     firmware will boot into the updated runtime OS image. Then, Trident will
@@ -186,9 +185,29 @@ composed of the following sections:
     rollback into the provisioning OS or the old runtime image has occurred,
     Trident will notify the user and set the host's state to DeploymentFailed.
 
-  You can pass multiple flags, separated by `|`. Example:
-  `StageDeployment | FinalizeDeployment`. You can pass `''` to disable all
-  operations, which would result in getting refreshed Host Status, but no
+  You can pass one, multiple, or no flags as a YAML list, for example:
+
+    ```yaml
+    # Inline List
+    allowedOperations: [stage, finalize]
+
+    # Inline list, just one value
+    allowedOperations: [finalize]
+
+    # Multiline list
+    allowedOperations:
+      - stage
+      - finalize
+
+    # Multiline list, just one value
+    allowedOperations:
+      - finalize
+
+    # No operations
+    allowedOperations: []
+    ```
+
+  When no operations are allowed, trident will refres Host Status, but no
   operations performed on the host.
 - **datastore**: if present, indicates the path to an existing datastore Trident
   should load its state from. This field should not be included when Trident is
@@ -280,7 +299,7 @@ image.
 
 This decoupled logic is implemented for **both clean install and A/B update.**
 This is achieved by splitting `allowedOperations`, where the user defines which
-actions are permitted/desired, into `StageDeployment` and `FinalizeDeployment`.
+actions are permitted/desired, into `stage` and `finalize`.
 
 ### Getting Started with A/B Update
 
@@ -422,13 +441,12 @@ block devices have been mounted at the designated mountpoints.
 - If the user wants to separately stage or finalize a clean install or an A/B
 update, `allowedOperations` also need to be updated, in addition to the image
 info:
+
 1. To only stage a new deployment, update the image info and set:
-`allowedOperations: StageDeployment`.
-2. To only finalize the staged deployment, set:
-`allowedOperations: FinalizeDeployment`.
-3. To both stage a new deployment and then immediately finalize it, update the
-image info and set:
-`allowedOperations: StageDeployment | FinalizeDeployment`.
+   `allowedOperations: [stage]`.
+1. To only finalize the staged deployment, set: `allowedOperations: finalize`.
+1. To both stage a new deployment and then immediately finalize it, update the
+image info and set: `allowedOperations: [stage, finalize]`.
 
 ## dm-verity Support
 
@@ -510,7 +528,7 @@ to prevent data loss. As such, the current implementation will not allow to run
 Trident from a non-live OS. To override this, create an empty override file
 `sudo touch /override-trident-safety-check`.
 
-Unless `allowed-operations` are limited, upon completing the deployment, Trident
+Unless `allowedOperations` are limited, upon completing the deployment, Trident
 will reboot the VM into the new OS.
 
 ## gRPC Interface
@@ -525,7 +543,7 @@ via the following commands:
 
 ```bash
 # Generate command.json from input/hc.yaml
-jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: "stageDeployment | finalizeDeployment" }' > command.json
+jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: ["stage", "finalize"] }' > command.json
 
 # Issue gRPC request and pretty print the output as it is streamed back
 evans --host <target-ip-adddress> --proto path/to/trident/proto/trident.proto cli call --file command.json UpdateHost | jq -r .status

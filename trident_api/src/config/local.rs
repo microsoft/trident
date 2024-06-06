@@ -1,8 +1,10 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use anyhow::{bail, Error};
 use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 use crate::is_default;
 
@@ -45,7 +47,7 @@ pub struct LocalConfigFile {
     /// list of operations that Trident is allowed to perform on the host.
     ///
     /// You can pass multiple flags, separated by `|`. Example:
-    /// `StageDeployment | FinalizeDeployment`.
+    /// `stage | finalize`.
     /// You can pass `''` to disable all operations, which would result in getting
     /// refreshed Host Status, but no operations performed on the host.
     #[serde(default)]
@@ -207,25 +209,37 @@ pub struct GrpcConfiguration {
     pub listen_port: Option<u16>,
 }
 
-bitflags::bitflags! {
-    #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    pub struct Operations: u32 {
-        /// Trident will stage the deployment, during a clean install or an A/B update, based on
-        /// the host configuration, but it will not reboot the host into the newly deployed runtime
-        /// OS image. This is useful if you want to drive additional operations on the host outside
-        /// of Trident.
-        const StageDeployment = 0b1;
-        /// Trident will finalize the deployment, during a clean install or an A/B update, i.e.
-        /// set UEFI firmware variables. Then, Trident will reboot the host into the newly deployed
-        /// runtime OS image.
-        const FinalizeDeployment = 0b10;
-    }
-}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "kebab-case", transparent)]
+pub struct Operations(HashSet<Operation>);
+
 impl Default for Operations {
     fn default() -> Self {
-        Operations::all()
+        Self(Operation::iter().collect())
     }
+}
+
+impl Operations {
+    pub fn contains(&self, op: Operation) -> bool {
+        self.0.contains(&op)
+    }
+
+    pub fn has_finalize(&self) -> bool {
+        self.contains(Operation::Finalize)
+    }
+
+    pub fn has_stage(&self) -> bool {
+        self.contains(Operation::Stage)
+    }
+}
+
+#[derive(
+    Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter,
+)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Operation {
+    Stage,
+    Finalize,
 }
 
 #[cfg(test)]

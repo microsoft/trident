@@ -46,7 +46,7 @@ impl host_management_server::HostManagement for HostManagementImpl {
         let (tx, rx) = mpsc::unbounded_channel();
         self.0
             .send(HostUpdateCommand {
-                allowed_operations: Operations::all(), // TODO
+                allowed_operations: Operations::default(), // TODO
                 host_config,
                 sender: Some(tx),
             })

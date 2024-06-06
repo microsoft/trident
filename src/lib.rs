@@ -258,7 +258,7 @@ impl Trident {
             info!("Applying host configuration from local config");
             sender
                 .blocking_send(HostUpdateCommand {
-                    allowed_operations: self.config.allowed_operations,
+                    allowed_operations: self.config.allowed_operations.clone(),
                     host_config: *host_config,
                     #[cfg(feature = "grpc-dangerous")]
                     sender: None,
@@ -452,11 +452,11 @@ impl Trident {
             // finalize the update, regardless of state
             if datastore.host_status().spec != cmd.host_config {
                 debug!("Host config has been updated");
-                // If allowed operations include StageDeployment, start update
-                if cmd.allowed_operations.contains(Operations::StageDeployment) {
+                // If allowed operations include 'stage', start update
+                if cmd.allowed_operations.has_stage() {
                     modules::update(cmd, datastore).message("Failed to run update()")
                 } else {
-                    warn!("Host config has been updated but allowed operations do not include StageDeployment. Add StageDeployment and re-run");
+                    warn!("Host config has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run");
                     Ok(())
                 }
             } else {
@@ -472,10 +472,7 @@ impl Trident {
                 // If an update has been previously staged, only need to finalize the update
                 if datastore.host_status().servicing_state == ServicingState::DeploymentStaged {
                     debug!("There is an update staged on the host");
-                    if cmd
-                        .allowed_operations
-                        .contains(Operations::FinalizeDeployment)
-                    {
+                    if cmd.allowed_operations.has_finalize() {
                         modules::finalize_update(
                             datastore,
                             #[cfg(feature = "grpc-dangerous")]
@@ -483,7 +480,7 @@ impl Trident {
                         )
                         .message("Failed to run finalize_update()")
                     } else {
-                        debug!("Allowed operations do not include FinalizeDeployment. Skipping finalizing of update");
+                        debug!("Allowed operations do not include 'finalize'. Skipping finalizing of update");
                         Ok(())
                     }
                 } else {
@@ -504,10 +501,10 @@ impl Trident {
             if datastore.host_status().spec != cmd.host_config {
                 debug!("Host config has been updated");
 
-                if cmd.allowed_operations.contains(Operations::StageDeployment) {
+                if cmd.allowed_operations.has_stage() {
                     modules::clean_install(cmd, datastore).message("Failed to run clean_install()")
                 } else {
-                    warn!("Host config has been updated but allowed operations do not include StageDeployment. Add StageDeployment and re-run");
+                    warn!("Host config has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run");
                     Ok(())
                 }
             } else {
@@ -522,10 +519,7 @@ impl Trident {
                 // If HS.spec matches the new HS, only need to finalize the clean install
                 if datastore.host_status().servicing_state == ServicingState::DeploymentStaged {
                     debug!("There is a clean install staged on the host");
-                    if cmd
-                        .allowed_operations
-                        .contains(Operations::FinalizeDeployment)
-                    {
+                    if cmd.allowed_operations.has_finalize() {
                         // Remount new root and custom mounts if we're finalizing a clean install
                         let (new_root_path, _, _) =
                             modules::initialize_new_root(datastore, &cmd.host_config)
@@ -540,7 +534,7 @@ impl Trident {
                         )
                         .message("Failed to run finalize_clean_install()")
                     } else {
-                        debug!("Allowed operations do not include FinalizeDeployment. Skipping finalizing of clean install");
+                        debug!("Allowed operations do not include 'finalize'. Skipping finalizing of clean install");
                         Ok(())
                     }
                 } else {

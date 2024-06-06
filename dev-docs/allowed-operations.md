@@ -1,4 +1,4 @@
-# Allowed Operations: StageDeployment vs FinalizeDeployment
+# Allowed Operations: stage vs finalize
 A key feature of A/B upgrade with Trident is that **staging of new OS images**
 **is decoupled from the reboot into the image**. In other words, the host does
 not need to be rebooted immediately after the new OS image has been staged.
@@ -11,17 +11,17 @@ appropriate OS image becomes available.
 
 This decoupled logic is implemented for **both clean install and A/B update.**
 This is achieved by splitting **allowed operations**, where the user defines which
-actions are permitted/desired, into `StageDeployment` and `FinalizeDeployment`:
+actions are permitted/desired, into `stage` and `finalize`:
 
-1. If the user includes `StageDeployment` into allowed operations, Trident will
+1. If the user includes `stage` into allowed operations, Trident will
 stage the new OS image.
-2. If `FinalizeDeployment` is included, Trident will finalize the deployment,
+2. If `finalize` is included, Trident will finalize the deployment,
 by setting UEFI variables, and trigger the host's reboot into the new OS image.
 
 
 # Servicing Type and Servicing State
 To track the progress of clean install or A/B upgrade and enable decoupling of
-`StageDeployment` from `FinalizeDeployment`, Trident uses **TWO** objects:
+`stage` from `finalize`, Trident uses **TWO** objects:
 
 1. **Servicing type**: `ServicingType` describes the type of changes required
 based on the host status and the updated host configuration. In host status,
