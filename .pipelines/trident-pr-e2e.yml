@@ -8,11 +8,7 @@
 # Support:        https://aka.ms/onebranchsup                                   #
 #################################################################################
 
-trigger:
-  batch: true
-  branches:
-    include:
-      - main
+trigger: none
 
 resources:
   repositories:
@@ -42,7 +38,7 @@ resources:
     - repository: platform-telemetry
       name: platform-telemetry
       type: git
-      ref : refs/heads/main
+      ref: refs/heads/main
 
 extends:
   template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
