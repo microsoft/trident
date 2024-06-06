@@ -8,10 +8,12 @@
 # # # # # # # # # # # # # # # # # # # # #
 
 import argparse
+from dataclasses import dataclass
 import subprocess
 import sys
 import tempfile
 import json
+from typing import Any, Dict
 
 parser = argparse.ArgumentParser(description="Preview a pipeline run")
 
@@ -36,11 +38,26 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-pipeline_id_map = {"pr": 2113, "ci": 2195, "pre": 2648, "rel": -1}
 
-pipeline_id = pipeline_id_map[args.pipeline]
+@dataclass
+class PipelineMetadata:
+    id: int
+    parameters: Dict[str, Any] = None
 
-if pipeline_id == -1:
+
+pipeline_metadata_map: Dict[str, PipelineMetadata] = {
+    "pr": PipelineMetadata(id=2113),
+    "ci": PipelineMetadata(id=2195),
+    "pre": PipelineMetadata(id=2648),
+    "rel": PipelineMetadata(
+        id=3370,
+        parameters={"specificVersion": "1.0.0"},
+    ),
+}
+
+pipeline_metadata = pipeline_metadata_map[args.pipeline]
+
+if pipeline_metadata.id == -1:
     print("Pipeline does not exist yet", file=sys.stderr)
     exit(2)
 
@@ -59,7 +76,7 @@ else:
     )
 
 print(
-    f"Checking pipeline '{args.pipeline}' with ID '{pipeline_id}' on branch '{selected_branch}'",
+    f"Checking pipeline '{args.pipeline}' with ID '{pipeline_metadata.id}' on branch '{selected_branch}'",
     file=sys.stderr,
 )
 
@@ -67,6 +84,9 @@ payload = {
     "previewRun": True,
     "resources": {"repositories": {"self": {"refName": selected_branch}}},
 }
+
+if pipeline_metadata.parameters:
+    payload["templateParameters"] = pipeline_metadata.parameters
 
 with tempfile.NamedTemporaryFile() as payload_file:
     payload_file.write(json.dumps(payload).encode("utf-8"))
@@ -86,7 +106,7 @@ with tempfile.NamedTemporaryFile() as payload_file:
         "runs",
         "--route-parameters",
         "project=ECF",
-        f"pipelineId={pipeline_id}",
+        f"pipelineId={pipeline_metadata.id}",
         "--http-method",
         "POST",
         "--in-file",
