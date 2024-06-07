@@ -491,7 +491,7 @@ mod tests {
     fn test_set_host_status_block_device_contents() {
         let mut host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {
                     ab_update: Some(AbUpdate {

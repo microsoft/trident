@@ -167,23 +167,22 @@ composed of the following sections:
 - **allowedOperations**: a list of flags representing allowed operations.
   This is a set of operations that Trident is allowed to perform on the host.
   Supported flags are:
-  - **stage**: Trident will stage the changes required by the updated
-    host configuration, including deployment of the new runtime OS image onto
-    block devices during a clean install or an A/B update. However, Trident
-    will not reboot the host into the newly deployed runtime OS. This is useful
-    if you want to drive additional operations on the host outside of Trident
-    or delay the reboot until a later point in time. After the new runtime OS
-    image has been staged, Trident will update the host's status to
-    DeploymentStaged.
-  - **finalize**: Trident will reboot the host into the newly deployed
-    runtime OS image to complete a clean install or A/B update. Trident will
-    first manage the UEFI firmware variables, to ensure that post reboot, the
+  - **stage**: Trident will stage a new runtime OS as required by the updated
+    host configuration. However, Trident will not reboot the host into the newly
+    stage runtime OS. This is useful if you want to drive additional operations
+    on the host outside of Trident or delay the reboot until a later point in
+    time. After the new runtime OS image has been staged, Trident will update
+    the host's status to Staged.
+  - **finalize**: Trident will reboot the host into the newly staged runtime
+    OS image to finalize a clean install or A/B update. Trident will first
+    manage the UEFI firmware variables, to ensure that post reboot, the
     firmware will boot into the updated runtime OS image. Then, Trident will
-    set the host's servicing state to DeploymentFinalized and reboot. After the
-    host comes back up, Trident will confirm that firmware booted from the
-    correct block device and change the host's state to Ready. Otherwise, if a
-    rollback into the provisioning OS or the old runtime image has occurred,
-    Trident will notify the user and set the host's state to DeploymentFailed.
+    set the host's servicing state to Finalized and reboot. After the host
+    comes back up, Trident will confirm that firmware correctly booted from the
+    updated runtime OS image and change the host's state to Provisioned.
+    Otherwise, if a rollback into the provisioning OS or the old runtime image
+    has occurred, Trident will notify the user and set the host's state to
+    CleanInstallFailed or AbUpdateFailed.
 
   You can pass one, multiple, or no flags as a YAML list, for example:
 

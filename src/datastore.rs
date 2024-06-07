@@ -243,7 +243,7 @@ mod functional_test {
                 .with_host_status(|s| s.servicing_type = Some(ServicingType::CleanInstall))
                 .unwrap();
             datastore
-                .with_host_status(|s| s.servicing_state = ServicingState::StagingDeployment)
+                .with_host_status(|s| s.servicing_state = ServicingState::Staging)
                 .unwrap();
 
             assert_eq!(
@@ -252,7 +252,7 @@ mod functional_test {
             );
             assert_eq!(
                 datastore.host_status().servicing_state,
-                ServicingState::StagingDeployment
+                ServicingState::Staging
             );
         }
 
@@ -266,7 +266,7 @@ mod functional_test {
             );
             assert_eq!(
                 datastore.host_status().servicing_state,
-                ServicingState::StagingDeployment
+                ServicingState::Staging
             );
 
             datastore
@@ -288,7 +288,7 @@ mod functional_test {
         let mut datastore = DataStore::open(&datastore_path).unwrap();
         assert_eq!(
             datastore.host_status().servicing_state,
-            ServicingState::StagingDeployment
+            ServicingState::Staging
         );
 
         datastore

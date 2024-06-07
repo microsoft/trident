@@ -378,7 +378,7 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             storage: Storage {
                 root_device_path: Some("/dev/sda".into()),
                 ..Default::default()
@@ -422,7 +422,7 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             storage: Storage {
                 root_device_path: Some("/dev/sda".into()),
                 ..Default::default()

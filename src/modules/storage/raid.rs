@@ -408,7 +408,7 @@ mod tests {
     fn test_get_device_paths() {
         let host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {

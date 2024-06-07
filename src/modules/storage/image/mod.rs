@@ -590,7 +590,7 @@ mod tests {
     fn test_get_undeployed_images() {
         let mut host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     internal_mount_points: vec![
@@ -757,7 +757,7 @@ mod tests {
         // root config is not matching root status
         let mut host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     internal_mount_points: vec![
@@ -952,7 +952,7 @@ mod tests {
         // Setup HostStatus with predefined mount points
         let host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -1007,7 +1007,7 @@ mod tests {
         // Initialize a HostStatus object
         let mut host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -1169,7 +1169,7 @@ mod tests {
         // this scenario
         let mut host_status_2 = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {

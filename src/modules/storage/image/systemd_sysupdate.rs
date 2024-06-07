@@ -1023,7 +1023,7 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             ..Default::default()
         };
 
@@ -1100,7 +1100,7 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             ..Default::default()
         };
 
@@ -1202,7 +1202,7 @@ mod tests {
         // Scenario 3: No partitions available
         let host_status2 = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![
@@ -1247,7 +1247,7 @@ mod tests {
     fn test_get_parent_disk() {
         let host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {

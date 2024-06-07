@@ -513,7 +513,7 @@ mod tests {
     fn test_generate_esp_dir_path() {
         let mut host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {
@@ -622,7 +622,7 @@ mod tests {
         // Initialize a HostStatus object with ESP and root partitions
         let mut host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {

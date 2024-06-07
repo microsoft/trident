@@ -62,16 +62,16 @@ pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
     #[default]
     NotProvisioned,
-    /// Trident is now staging a new deployment, for the current servicing.
-    StagingDeployment,
-    /// Deployment has been staged, i.e., the updated runtime OS image has been deployed to block
+    /// Trident is now staging a new servicing.
+    Staging,
+    /// Servicing has been staged, i.e., the updated runtime OS image has been deployed onto block
     /// devices.
-    DeploymentStaged,
-    /// Trident is now finalizing the new deployment.
-    FinalizingDeployment,
-    /// Deployment has been finalized, i.e., UEFI variables have been set, so that firmware boots
+    Staged,
+    /// Trident is finalizing the ongoing servicing.
+    Finalizing,
+    /// Servicing has been finalized, i.e., UEFI variables have been set, so that firmware boots
     /// from the updated runtime OS image after reboot.
-    DeploymentFinalized,
+    Finalized,
     /// Servicing of type CleanInstall has failed.
     CleanInstallFailed,
     /// Servicing of type AbUpdate has failed.
@@ -158,10 +158,10 @@ impl HostStatus {
             | ServicingState::Provisioned
             | ServicingState::AbUpdateFailed => None,
             // If host is in any different servicing state, determine based on servicing type
-            ServicingState::StagingDeployment
-            | ServicingState::DeploymentStaged
-            | ServicingState::FinalizingDeployment
-            | ServicingState::DeploymentFinalized => {
+            ServicingState::Staging
+            | ServicingState::Staged
+            | ServicingState::Finalizing
+            | ServicingState::Finalized => {
                 match self.servicing_type {
                     Some(ServicingType::HotPatch)
                     | Some(ServicingType::NormalUpdate)
@@ -196,10 +196,10 @@ impl HostStatus {
             ServicingState::Provisioned | ServicingState::AbUpdateFailed => {
                 self.storage.ab_active_volume
             }
-            ServicingState::StagingDeployment
-            | ServicingState::DeploymentStaged
-            | ServicingState::FinalizingDeployment
-            | ServicingState::DeploymentFinalized => {
+            ServicingState::Staging
+            | ServicingState::Staged
+            | ServicingState::Finalizing
+            | ServicingState::Finalized => {
                 match self.servicing_type {
                     // If host is executing a deployment of any type, active volume is in host status.
                     Some(ServicingType::HotPatch)
@@ -290,25 +290,25 @@ mod tests {
 
         // 5. If host is doing CleanInstall, update volume is always A
         host_status.servicing_type = Some(ServicingType::CleanInstall);
-        host_status.servicing_state = ServicingState::StagingDeployment;
+        host_status.servicing_state = ServicingState::Staging;
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeA)
         );
 
-        host_status.servicing_state = ServicingState::DeploymentStaged;
+        host_status.servicing_state = ServicingState::Staged;
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeA)
         );
 
-        host_status.servicing_state = ServicingState::FinalizingDeployment;
+        host_status.servicing_state = ServicingState::Finalizing;
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeA)
         );
 
-        host_status.servicing_state = ServicingState::DeploymentFinalized;
+        host_status.servicing_state = ServicingState::Finalized;
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeA)
@@ -317,7 +317,7 @@ mod tests {
         // 6. If host is doing HotPatch, NormalUpdate, or UpdateAndReboot, update volume is always
         // the currently active volume
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        host_status.servicing_state = ServicingState::StagingDeployment;
+        host_status.servicing_state = ServicingState::Staging;
         host_status.servicing_type = Some(ServicingType::HotPatch);
         assert_eq!(
             host_status.get_ab_update_volume(),
@@ -364,7 +364,7 @@ mod tests {
         );
 
         // If servicing state changes, the update volume should not change
-        host_status.servicing_state = ServicingState::DeploymentStaged;
+        host_status.servicing_state = ServicingState::Staged;
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeB)
@@ -377,7 +377,7 @@ mod tests {
         );
 
         // If servicing state changes, the update volume should not change
-        host_status.servicing_state = ServicingState::FinalizingDeployment;
+        host_status.servicing_state = ServicingState::Finalizing;
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeA)
@@ -428,10 +428,10 @@ mod tests {
 
         // 5. If host is doing CleanInstall, active volume is always None
         host_status.servicing_type = Some(ServicingType::CleanInstall);
-        host_status.servicing_state = ServicingState::StagingDeployment;
+        host_status.servicing_state = ServicingState::Staging;
         assert_eq!(host_status.get_ab_active_volume(), None);
 
-        host_status.servicing_state = ServicingState::DeploymentStaged;
+        host_status.servicing_state = ServicingState::Staged;
         assert_eq!(host_status.get_ab_active_volume(), None);
 
         // 6. If host is doing HotPatch, NormalUpdate, UpdateAndReboot, or AbUpdate, the active
@@ -462,7 +462,7 @@ mod tests {
         );
 
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        host_status.servicing_state = ServicingState::FinalizingDeployment;
+        host_status.servicing_state = ServicingState::Finalizing;
         host_status.servicing_type = Some(ServicingType::HotPatch);
         assert_eq!(
             host_status.get_ab_active_volume(),

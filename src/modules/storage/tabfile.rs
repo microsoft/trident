@@ -150,7 +150,7 @@ mod tests {
     fn get_host_status() -> HostStatus {
         HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -407,7 +407,7 @@ mod tests {
 
         let host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: host_config.clone(),
             storage: StorageStatus {
                 block_devices: btreemap! {

@@ -271,7 +271,7 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             ..Default::default()
         };
 
@@ -781,7 +781,7 @@ mod functional_test {
     fn test_set_boot_entries() {
         let mut host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {

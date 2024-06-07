@@ -630,7 +630,7 @@ pub(crate) mod functional_test {
         test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {

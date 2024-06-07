@@ -37,7 +37,7 @@ and rebooting.
 - `Incompatible`: Update that cannot be applied given the current state of the
 system. This status will never be reflected in the host status: Trident will
 inform the user that the servicing type requested is incompatible, and will set
-`servicingState` back to Ready.
+`servicingState` back to Provisioned.
 
 2. **Servicing state**: `ServicingState` describes the current state of the
 servicing done by Trident. The host will transition through a different
@@ -48,13 +48,12 @@ executing. In the host status, `servicingState` describes the progress of the
 the host is still running in the provisioning OS and has not yet been
 provisioned by Trident.
 - `CleanInstallFailed`: Servicing of type CleanInstall has failed.
-- `StagingDeployment`: Trident is now staging a new deployment.
-- `DeploymentStaged`: Deployment has been staged, i.e., the updated runtime OS
-image has been deployed to block devices.
-- `FinalizingDeployment`: Trident is now finalizing the new deployment.
-- `DeploymentFinalized`: Deployment has been finalized i.e., UEFI variables
-have been set, so that firmware boots from the updated runtime OS image after
-reboot.
+- `Staging`: Trident is finalizing the ongoing servicing.
+- `Staged`: Servicing has been staged, i.e., the updated runtime OS image has
+been deployed onto block devices.
+- `Finalizing`: Trident is finalizing the ongoing servicing.
+- `Finalized`: Servicing has been finalized i.e., UEFI variables have been set,
+so that firmware boots from the updated runtime OS image after reboot.
 - `AbUpdateFailed`: Servicing of type AbUpdate has failed.
 - `Provisioned`: Servicing has been completed, and the host succesfully booted
 from the updated runtime OS image. Trident is ready to begin a new servicing.

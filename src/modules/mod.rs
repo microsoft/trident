@@ -240,10 +240,10 @@ fn stage_clean_install(
     >,
 ) -> Result<(PathBuf, Vec<PathBuf>), TridentError> {
     debug!("Setting host's servicing type to CleanInstall");
-    debug!("Updating host's servicing state to StagingDeployment");
+    debug!("Updating host's servicing state to Staging");
     state.with_host_status(|host_status| {
         host_status.servicing_type = Some(ServicingType::CleanInstall);
-        host_status.servicing_state = ServicingState::StagingDeployment;
+        host_status.servicing_state = ServicingState::Staging;
         host_status.spec = host_config.clone();
     })?;
     #[cfg(feature = "grpc-dangerous")]
@@ -283,9 +283,9 @@ fn stage_clean_install(
             );
 
             // At this point, clean install has been staged, so update servicing state
-            debug!("Updating host's servicing state to DeploymentStaged");
+            debug!("Updating host's servicing state to Staged");
             state.with_host_status(|host_status| {
-                host_status.servicing_state = ServicingState::DeploymentStaged
+                host_status.servicing_state = ServicingState::Staged
             })?;
             #[cfg(feature = "grpc-dangerous")]
             send_host_status_state(sender, state)?;
@@ -316,10 +316,9 @@ pub(super) fn finalize_clean_install(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    debug!("Updating host's servicing state to FinalizingDeployment");
-    state.with_host_status(|host_status| {
-        host_status.servicing_state = ServicingState::FinalizingDeployment
-    })?;
+    debug!("Updating host's servicing state to Finalizing");
+    state
+        .with_host_status(|host_status| host_status.servicing_state = ServicingState::Finalizing)?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
@@ -481,10 +480,10 @@ fn stage_update(
 
     // Update host status and copy new host config to the spec field
     debug!("Setting host's servicing type to {:?}", servicing_type);
-    debug!("Updating host's servicing state to StagingDeployment");
+    debug!("Updating host's servicing state to Staging");
     state.with_host_status(|host_status| {
         host_status.servicing_type = Some(servicing_type);
-        host_status.servicing_state = ServicingState::StagingDeployment;
+        host_status.servicing_state = ServicingState::Staging;
         host_status.spec = host_config.clone();
     })?;
     #[cfg(feature = "grpc-dangerous")]
@@ -528,10 +527,8 @@ fn stage_update(
     };
 
     // At this point, deployment has been staged, so update servicing state
-    debug!("Updating host's servicing state to DeploymentStaged");
-    state.with_host_status(|host_status| {
-        host_status.servicing_state = ServicingState::DeploymentStaged
-    })?;
+    debug!("Updating host's servicing state to Staged");
+    state.with_host_status(|host_status| host_status.servicing_state = ServicingState::Staged)?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
@@ -547,10 +544,9 @@ pub(super) fn finalize_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    debug!("Updating host's servicing state to FinalizingDeployment");
-    state.with_host_status(|host_status| {
-        host_status.servicing_state = ServicingState::FinalizingDeployment
-    })?;
+    debug!("Updating host's servicing state to Finalizing");
+    state
+        .with_host_status(|host_status| host_status.servicing_state = ServicingState::Finalizing)?;
 
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
@@ -758,7 +754,7 @@ pub(super) fn initialize_new_root(
     let new_root_path = get_new_root_path();
 
     // Only initialize block devices if currently staging a deployment
-    if state.host_status().servicing_state == ServicingState::StagingDeployment {
+    if state.host_status().servicing_state == ServicingState::Staging {
         state.try_with_host_status(|host_status| {
             storage::initialize_block_devices(host_status, host_config, &new_root_path)
         })?;
@@ -887,7 +883,7 @@ fn perform_reboot() -> Result<(), TridentError> {
 }
 
 /// Finalizes deployment by setting bootNext and updating host status. Changes host's servicing state
-/// to DeploymentFinalized.
+/// to Finalized.
 #[tracing::instrument(skip_all)]
 fn finalize_deployment(datastore: &mut DataStore, esp_path: &Path) -> Result<(), TridentError> {
     // TODO: Delete boot entries. Related ADO task:
@@ -898,9 +894,8 @@ fn finalize_deployment(datastore: &mut DataStore, esp_path: &Path) -> Result<(),
         bootentries::call_set_boot_next_and_update_hs(host_status, esp_path)
     })?;
 
-    debug!("Updating host's servicing state to DeploymentFinalized");
-    datastore
-        .with_host_status(|status| status.servicing_state = ServicingState::DeploymentFinalized)?;
+    debug!("Updating host's servicing state to Finalized");
+    datastore.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
 
     info!("Closing datastore");
     datastore.close();
@@ -1149,7 +1144,7 @@ mod test {
 
         // Now, set servicing type to AbUpdate; servicing state to Staging Deployment.
         host_status.servicing_type = Some(ServicingType::AbUpdate);
-        host_status.servicing_state = ServicingState::StagingDeployment;
+        host_status.servicing_state = ServicingState::Staging;
         // When active=true, should return VolumeA; when active=false, return VolumeB.
         assert_eq!(
             get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),

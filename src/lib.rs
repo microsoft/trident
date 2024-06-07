@@ -323,9 +323,9 @@ impl Trident {
             }
         })?;
 
-        // If host's servicing state is DeploymentFinalized, need to verify if firmware correctly
-        // booted into the updated runtime OS image.
-        if datastore.host_status().servicing_state == ServicingState::DeploymentFinalized {
+        // If host's servicing state is Finalized, need to verify if firmware correctly booted from
+        // the updated runtime OS image.
+        if datastore.host_status().servicing_state == ServicingState::Finalized {
             // Get device path of root mount point
             let root_dev_path = match tabfile::get_device_path(
                 Path::new("/proc/mounts"),
@@ -467,7 +467,7 @@ impl Trident {
                 }
 
                 // If an update has been previously staged, only need to finalize the update
-                if datastore.host_status().servicing_state == ServicingState::DeploymentStaged {
+                if datastore.host_status().servicing_state == ServicingState::Staged {
                     debug!("There is an update staged on the host");
                     if cmd.allowed_operations.has_finalize() {
                         modules::finalize_update(
@@ -482,10 +482,10 @@ impl Trident {
                     }
                 } else {
                     // If servicing state is Provisioned, need to refresh host status. If servicing
-                    // state is StagingDeployment OR FinalizingDeployment, need to re-do update.
+                    // state is Staging OR Finalizing, need to re-do update.
                     //
-                    // State cannot be NotProvisioned or DeploymentFinalized here; DeploymentStaged
-                    // and AbUpdateFailed were addressed above
+                    // State cannot be NotProvisioned or Finalized here; Staged and AbUpdateFailed
+                    // were addressed above
                     modules::update(cmd, datastore).message("Failed to run update()")
                 }
             }
@@ -514,7 +514,7 @@ impl Trident {
                 }
 
                 // If HS.spec matches the new HS, only need to finalize the clean install
-                if datastore.host_status().servicing_state == ServicingState::DeploymentStaged {
+                if datastore.host_status().servicing_state == ServicingState::Staged {
                     debug!("There is a clean install staged on the host");
                     if cmd.allowed_operations.has_finalize() {
                         // Remount new root and custom mounts if we're finalizing a clean install
@@ -535,12 +535,10 @@ impl Trident {
                         Ok(())
                     }
                 } else {
-                    // If servicing state is StagingDeployment OR FinalizingDeployment, need to
-                    // re-do update.
+                    // If servicing state is Staging OR Finalizing, need to re-do update.
                     //
                     // State cannot be NotProvisioned, Provisioned, AbUpdateFailed, or
-                    // DeploymentFinalized here; DeploymentStaged and CleanInstallFailed were
-                    // addressed above.
+                    // Finalized here; Staged and CleanInstallFailed were addressed above.
                     modules::clean_install(cmd, datastore).message("Failed to run clean_install()")
                 }
             }
@@ -756,7 +754,7 @@ mod functional_test {
                 block_devices: [].into(),
                 ..Default::default()
             },
-            servicing_state: ServicingState::DeploymentFinalized,
+            servicing_state: ServicingState::Finalized,
             servicing_type: Some(ServicingType::CleanInstall),
             ..Default::default()
         };
@@ -819,7 +817,7 @@ mod functional_test {
 
         // Test case #4: After A/B update from A to B, Trident correctly booted into root-b.
         host_status.servicing_type = Some(ServicingType::AbUpdate);
-        host_status.servicing_state = ServicingState::DeploymentFinalized;
+        host_status.servicing_state = ServicingState::Finalized;
         // Update root_device_path to /dev/sda2 and active volume to VolumeA
         host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda2"));
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);

@@ -201,7 +201,7 @@ mod test {
         // Setup HostStatus where image is requested for volume pair with id root
         let host_status_golden = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::StagingDeployment,
+            servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
