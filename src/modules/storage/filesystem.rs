@@ -85,7 +85,7 @@ fn get_block_devices_to_initialize(
             // If the current servicing is of type CleanInstall, we need to special case ESP and
             // initialize it here
                 || (host_status.servicing_type == Some(ServicingType::CleanInstall)
-                    && image::is_esp(&host_status.spec, &mount_point.target_id))
+                    && image::is_esp(host_status, &mount_point.target_id))
         });
 
     // Select mount points that have been uninitialized or in case of A/B

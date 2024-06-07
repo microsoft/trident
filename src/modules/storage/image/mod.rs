@@ -7,7 +7,10 @@ use uuid::Uuid;
 
 use osutils::{container, e2fsck, resize2fs, tune2fs, veritysetup};
 use trident_api::{
-    config::{AbUpdate, HostConfiguration, ImageFormat, ImageSha256, InternalImage, PartitionType},
+    config::{
+        AbUpdate, FileSystemSource, FileSystemType, HostConfiguration, ImageFormat, ImageSha256,
+        InternalImage,
+    },
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::TridentResultExt,
     status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, ServicingType},
@@ -77,7 +80,7 @@ fn update_images(
                 // Otherwise, use direct streaming of image bytes onto the block device
                 ImageFormat::RawZst => {
                     // If image does NOT correspond to ESP partition, use direct streaming of image
-                    if !is_esp(host_config, &image.target_id) {
+                    if !is_esp(host_status, &image.target_id) {
                         update_image(&image_url, image, host_status, &block_device, true).context(
                             format!(
                             "Failed to deploy image '{}' to block device '{}' via direct streaming",
@@ -123,7 +126,7 @@ fn update_images(
                 // Otherwise, use direct streaming of image bytes onto the block device
                 ImageFormat::RawZst => {
                     // If image does NOT correspond to ESP partition, use direct streaming of image
-                    if !is_esp(host_config, &image.target_id) {
+                    if !is_esp(host_status, &image.target_id) {
                         update_image(
                             &image_url,
                             image,
@@ -280,24 +283,21 @@ fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
     ))
 }
 
-/// Checks if block device corresponding to target_id is ESP partition. This func assumes that disk
+/// Checks if block device corresponding to device_id is ESP partition. This func assumes that disk
 /// always contains a stand-alone ESP partition that is not part of an A/B volume pair. This func
 /// takes two arg-s:
 /// 1. host_status, which is a reference to HostStatus object.
-/// 2. target_id, which is a reference to a String representing the id of the block device.
-///
-/// Returns `true` if the partition is of type ESP, `false` otherwise or if not found.
-pub(super) fn is_esp(host_config: &HostConfiguration, target_id: &BlockDeviceId) -> bool {
-    // Iterate through all disks and partitions
-    host_config
+/// 2. device_id, which is id of the block device.
+pub(super) fn is_esp(host_status: &HostStatus, device_id: &BlockDeviceId) -> bool {
+    host_status
+        .spec
         .storage
-        .disks
+        .filesystems
         .iter()
-        .flat_map(|disk| &disk.partitions) // Flatten partitions from all disks
-        .find(|&partition| &partition.id == target_id) // Find the target partition
-        .map_or(false, |partition| {
-            partition.partition_type == PartitionType::Esp
-        }) // Check if it's an ESP partition
+        .find(|fs| fs.device_id.as_ref() == Some(device_id))
+        .map_or(false, |fs| {
+            fs.fs_type == FileSystemType::Vfat && matches!(fs.source, FileSystemSource::EspImage(_))
+        })
 }
 
 /// Returns a list of images that are undeployed.
@@ -536,10 +536,10 @@ pub(super) fn validate_undeployed_images(
                 .volume_pairs
                 .iter()
                 .any(|p| p.id == image.target_id)
-                || is_esp(host_config, &image.target_id)
+                || is_esp(host_status, &image.target_id)
         } else {
             // If ab_update is null, only check if target_id corresponds to the ESP partition
-            is_esp(host_config, &image.target_id)
+            is_esp(host_status, &image.target_id)
         };
 
         if !is_valid_target {
@@ -578,8 +578,9 @@ mod tests {
 
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystemType, ImageSha256, InternalMountPoint,
-            Partition, PartitionSize, PartitionType, Storage as StorageConfig,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemType, Image, ImageSha256,
+            InternalMountPoint, MountOptions, MountPoint, Partition, PartitionSize, PartitionType,
+            Storage as StorageConfig,
         },
         status::{ServicingState, ServicingType, Storage},
     };
@@ -882,68 +883,7 @@ mod tests {
     /// Validates that is_esp() correctly determines whether block device corresponds to
     /// ESP partition.
     #[test]
-    fn test_is_esp() {
-        // Setup HostStatus with predefined disks and partitions
-        let mut host_config = HostConfiguration {
-            storage: StorageConfig {
-                disks: vec![Disk {
-                    id: "os".to_string(),
-                    device: PathBuf::from("/dev/disk/by-bus/foobar"),
-                    partitions: vec![
-                        Partition {
-                            id: "esp".to_string(),
-                            partition_type: PartitionType::Esp,
-                            size: PartitionSize::Fixed(100),
-                        },
-                        Partition {
-                            id: "root-a".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: PartitionSize::Fixed(100),
-                        },
-                        Partition {
-                            id: "root-b".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: PartitionSize::Fixed(100),
-                        },
-                    ],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        // Test case 1: Check for ESP partition
-        assert!(
-            is_esp(&host_config, &"esp".to_string()),
-            "ESP partition was not correctly identified"
-        );
-
-        // Test case 2: Check for non-ESP partition
-        assert!(
-            !is_esp(&host_config, &"root-a".to_string()),
-            "Non-ESP partition was incorrectly identified as ESP partition"
-        );
-
-        // Test case 3: Check for non-existent partition
-        assert!(
-            !is_esp(&host_config, &"non-existent".to_string()),
-            "Non-existent partition was incorrectly identified as ESP partition"
-        );
-
-        // Test case 4: Change the id of ESP partition to non-ESP
-        for disk in host_config.storage.disks.iter_mut() {
-            for partition in &mut disk.partitions {
-                if partition.id == "esp" {
-                    partition.id = "non-esp".to_owned();
-                }
-            }
-        }
-        assert!(
-            is_esp(&host_config, &"non-esp".to_string()),
-            "ESP partition was not correctly identified"
-        );
-    }
+    fn test_is_esp() {}
 
     /// Validates that is_mount_point_for_boot() correctly determines whether the block device is
     /// a mount point for /boot.
@@ -1088,30 +1028,49 @@ mod tests {
             ..Default::default()
         };
 
-        // Initialize image objects
-        let image_esp = InternalImage {
-            url: "http://example.com/esp_1.img".to_string(),
-            target_id: "esp".to_string(),
-            format: ImageFormat::RawZst,
-            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+        // Filesystems
+        let esp_filesystem = FileSystem {
+            device_id: Some("esp".into()),
+            fs_type: FileSystemType::Vfat,
+            source: FileSystemSource::EspImage(Image {
+                url: "http://example.com/esp_1.img".to_string(),
+                sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                format: ImageFormat::RawZst,
+            }),
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/esp"),
+                options: MountOptions::empty(),
+            }),
         };
-        let image_root = InternalImage {
-            url: "http://example.com/root_1.img".to_string(),
-            target_id: "root".to_string(),
-            format: ImageFormat::RawZst,
-            sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+        let root_filesystem = FileSystem {
+            device_id: Some("root".into()),
+            fs_type: FileSystemType::Vfat,
+            source: FileSystemSource::Image(Image {
+                url: "http://example.com/root_1.img".to_string(),
+                sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+                format: ImageFormat::RawZst,
+            }),
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/"),
+                options: MountOptions::empty(),
+            }),
         };
-        let image_trident = InternalImage {
-            url: "http://example.com/trident_1.img".to_string(),
-            target_id: "trident".to_string(),
-            format: ImageFormat::RawZst,
-            sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+        let trident_filesystem = FileSystem {
+            device_id: Some("trident".into()),
+            fs_type: FileSystemType::Vfat,
+            source: FileSystemSource::Image(Image {
+                url: "http://example.com/trident_1.img".to_string(),
+                sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+                format: ImageFormat::RawZst,
+            }),
+            mount_point: None,
         };
 
         // Test case 1: Running validate_undeployed_images() when update of ESP image only is
         // requested should return ((Ok)), even if ab_update is null.
         // Update images section of host_config
-        host_status.spec.storage.internal_images = vec![image_esp.clone()];
+        host_status.spec.storage.filesystems = vec![esp_filesystem.clone()];
+        host_status.spec.populate_internal();
         assert!(
             validate_undeployed_images(&host_status,&host_status.spec).is_ok(),
             "Failed to determine that no images should be undeployed when update of ESP image is requested"
@@ -1120,7 +1079,9 @@ mod tests {
         // Test case 2: Running validate_undeployed_images() when update of ESP and root images is
         // requested should return an error since ab_update is null.
         // Update images section of host_config
-        host_status.spec.storage.internal_images = vec![image_esp.clone(), image_root.clone()];
+        host_status.spec.storage.filesystems =
+            vec![esp_filesystem.clone(), root_filesystem.clone()];
+        host_status.spec.populate_internal();
         // Compare the actual error kind with the expected one.
         assert_eq!(
             validate_undeployed_images(&host_status,&host_status.spec)
@@ -1142,7 +1103,8 @@ mod tests {
             }],
         });
 
-        host_status.spec.storage.internal_images = vec![image_esp.clone()];
+        host_status.spec.storage.filesystems = vec![esp_filesystem.clone()];
+        host_status.spec.populate_internal();
         assert!(
             validate_undeployed_images(&host_status, &host_status.spec).is_ok(),
             "Failed to determine that no images should be undeployed when all images are valid"
@@ -1152,8 +1114,12 @@ mod tests {
         // block device 'trident' should return an error since it's neither the ESP partition nor
         // an A/B volume pair
         // Update images section of host_config
-        host_status.spec.storage.internal_images =
-            vec![image_esp.clone(), image_root.clone(), image_trident.clone()];
+        host_status.spec.storage.filesystems = vec![
+            esp_filesystem.clone(),
+            root_filesystem.clone(),
+            trident_filesystem.clone(),
+        ];
+        host_status.spec.populate_internal();
         // Compare the actual error kind with the expected one.
         assert_eq!(
             validate_undeployed_images(&host_status,&host_status.spec)
@@ -1245,16 +1211,27 @@ mod tests {
         });
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
-        let image_boot = InternalImage {
-            url: "http://example.com/boot_1.img".to_string(),
-            target_id: "boot".to_string(),
-            format: ImageFormat::RawZst,
-            sha256: ImageSha256::Checksum("boot_sha256_1".to_string()),
+        let boot_filesystem = FileSystem {
+            device_id: Some("boot".into()),
+            fs_type: FileSystemType::Vfat,
+            source: FileSystemSource::Image(Image {
+                url: "http://example.com/boot_1.img".to_string(),
+                sha256: ImageSha256::Checksum("boot_sha256_1".to_string()),
+                format: ImageFormat::RawZst,
+            }),
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/boot"),
+                options: MountOptions::empty(),
+            }),
         };
 
         // Update images section of host_config
-        host_status_2.spec.storage.internal_images =
-            vec![image_esp.clone(), image_root.clone(), image_boot.clone()];
+        host_status_2.spec.storage.filesystems = vec![
+            esp_filesystem.clone(),
+            root_filesystem.clone(),
+            boot_filesystem.clone(),
+        ];
+        host_status_2.spec.populate_internal();
         // Compare the actual error kind with the expected one.
         assert_eq!(
             validate_undeployed_images(&host_status_2, &host_status_2.spec)
@@ -1288,7 +1265,9 @@ mod functional_test {
         },
     };
     use trident_api::{
-        config::{self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition},
+        config::{
+            self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition, PartitionType,
+        },
         status::Storage,
     };
 

@@ -87,6 +87,11 @@ impl Storage {
     /// - `filesystems`
     /// - `verity_filesystems`
     pub fn populate_internal(&mut self) {
+        // Clear any previous internal configuration
+        self.internal_images.clear();
+        self.internal_mount_points.clear();
+        self.internal_verity.clear();
+
         // First, go over all filesystems
         self.filesystems.iter().for_each(|fs| {
             let device_id = fs.device_id.as_deref().unwrap_or_default();
