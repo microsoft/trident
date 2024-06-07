@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum InvalidHostConfigurationError {
+pub enum HostConfigurationStaticValidationError {
     #[error("Failed to parse host configuration")]
     FailedToParse,
 
@@ -73,6 +73,59 @@ pub enum InvalidHostConfigurationError {
     #[error("Mount point '{mount_point_path}' is not backed by a block device")]
     MountPointNotBackedByBlockDevice { mount_point_path: String },
 
+    #[error("Cannot self-upgrade Trident when a read-only verity filesystem is mounted at '/'")]
+    SelfUpgradeOnReadOnlyRootVerityFsError,
+
+    #[error("Datastore file extension should be '{expected}', but got '{got}'")]
+    DatastorePathInvalidExtension { expected: String, got: String },
+
+    #[error("Datastore path '{datastore_path}' is not in any known volume")]
+    DatastorePathNotInAnyKnownVolume { datastore_path: String },
+
+    #[error("Datastore path '{datastore_path}' is in an A/B update volume: '{volume_id}'")]
+    DatastorePathInABVolume {
+        datastore_path: String,
+        volume_id: String,
+    },
+
     #[error("Path '{path}' is not absolute path")]
     PathNotAbsolute { path: String },
+}
+
+#[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum HostConfigurationDynamicValidationError {
+    #[error("Datastore path cannot be changed. Current: '{current}'. New: '{new}'")]
+    ChangedDatastorePath { current: String, new: String },
+
+    #[error("File for script '{name}' not found on host at '{path}'")]
+    ScriptNotFound { name: String, path: String },
+
+    #[error("The disk '{name}' refers to device '{device}' which is not under '/dev'")]
+    BadBlockDevicePath { name: String, device: String },
+
+    #[error(
+        "Multiple disk definitions refer to the same device '{device}': '{disk1}' and '{disk2}'"
+    )]
+    DiskDefinitionsReferToSameDevice {
+        disk1: String,
+        disk2: String,
+        device: String,
+    },
+
+    #[error("Encryption configuration is incorrect:\n{0}")]
+    EncryptionIncorrect(String),
+
+    #[error("Failed to parse host configuration")]
+    ImagesIncorrect(String),
+
+    #[error("Uncategorized error: {0}")]
+    Other(String),
+}
+
+/// Temporary helper to convert existing code to the new error types.
+impl From<anyhow::Error> for HostConfigurationDynamicValidationError {
+    fn from(value: anyhow::Error) -> Self {
+        Self::Other(format!("{:#}", value))
+    }
 }

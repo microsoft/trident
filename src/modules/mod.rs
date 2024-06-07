@@ -17,7 +17,7 @@ use log::{debug, error, info};
 use sys_mount::{Mount, MountFlags};
 
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::{
         self, ESP_MOUNT_POINT_PATH, EXEC_ROOT_PATH, ROOT_MOUNT_POINT_PATH,
         UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
@@ -104,7 +104,7 @@ trait Module: Send {
         _host_status: &HostStatus,
         _host_config: &HostConfiguration,
         _planned_servicing_type: ServicingType,
-    ) -> Result<(), Error> {
+    ) -> Result<(), HostConfigurationDynamicValidationError> {
         Ok(())
     }
 
@@ -679,11 +679,14 @@ fn validate_host_config(
         debug!("Starting stage 'Validate' for module '{}'", module.name());
         module
             .validate_host_config(state.host_status(), host_config, planned_servicing_type)
-            .structured(ManagementError::from(
-                ModuleError::ValidateHostConfiguration {
-                    name: module.name(),
-                },
-            ))?;
+            .map_err(|e| {
+                TridentError::new(ManagementError::from(
+                    ModuleError::ValidateHostConfiguration {
+                        name: module.name(),
+                        inner: e,
+                    },
+                ))
+            })?;
         debug!("Finished stage 'Validate' for module '{}'", module.name());
     }
     info!("Host config validated");

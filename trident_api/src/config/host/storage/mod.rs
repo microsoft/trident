@@ -12,7 +12,7 @@ use crate::{
     is_default, BlockDeviceId,
 };
 
-use super::error::InvalidHostConfigurationError;
+use super::error::HostConfigurationStaticValidationError;
 
 pub mod blkdev_graph;
 pub mod disks;
@@ -153,7 +153,7 @@ impl Storage {
     pub fn validate(
         &self,
         require_root_mount_point: bool,
-    ) -> Result<(), InvalidHostConfigurationError> {
+    ) -> Result<(), HostConfigurationStaticValidationError> {
         // Check basic constraints
 
         if let Some(encryption) = &self.encryption {
@@ -192,21 +192,21 @@ impl Storage {
     fn validate_volume_presence(
         graph: &BlockDeviceGraph,
         path: impl AsRef<Path>,
-    ) -> Result<(), InvalidHostConfigurationError> {
+    ) -> Result<(), HostConfigurationStaticValidationError> {
         match graph.get_volume_status(path.as_ref()) {
             VolumeStatus::PresentAndBackedByImage | VolumeStatus::PresentAndBackedByAdoptedFs => {
                 Ok(())
             }
-            VolumeStatus::PresentButNotBackedByImage => {
-                Err(InvalidHostConfigurationError::MountPointNotBackedByImage {
+            VolumeStatus::PresentButNotBackedByImage => Err(
+                HostConfigurationStaticValidationError::MountPointNotBackedByImage {
                     mount_point_path: path.as_ref().to_string_lossy().to_string(),
-                })
-            }
-            VolumeStatus::NotPresent => {
-                Err(InvalidHostConfigurationError::ExpectedMountPointNotFound {
+                },
+            ),
+            VolumeStatus::NotPresent => Err(
+                HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
                     mount_point_path: path.as_ref().to_string_lossy().to_string(),
-                })
-            }
+                },
+            ),
         }
     }
 
@@ -215,7 +215,7 @@ impl Storage {
     fn validate_verity(
         &self,
         graph: &BlockDeviceGraph,
-    ) -> Result<(), InvalidHostConfigurationError> {
+    ) -> Result<(), HostConfigurationStaticValidationError> {
         // Return early if no verity filesystems are present
         if self.verity_filesystems.is_empty() {
             return Ok(());
@@ -224,7 +224,7 @@ impl Storage {
         // Verity is only supported for root volume, verify the input is not
         // asking for something else
         if self.verity_filesystems.len() > 1 {
-            return Err(InvalidHostConfigurationError::UnsupportedVerityDevices);
+            return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
         }
 
         // Get the root verity fs
@@ -232,7 +232,7 @@ impl Storage {
 
         // Ensure the verity fs is mounted at root
         if vfs.mount_point.path != Path::new(ROOT_MOUNT_POINT_PATH) {
-            return Err(InvalidHostConfigurationError::UnsupportedVerityDevices);
+            return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
         }
 
         // If root verity is required, we also require dedicated /boot
@@ -249,15 +249,16 @@ impl Storage {
         // partition for the overlay. /var/lib/trident-overlay needs to be
         // backed by an A/B update volume pair and not reside on a read-only
         // volume.
-        let overlay_support_mount_point = self
-            .path_to_mount_point_info(TRIDENT_OVERLAY_PATH)
-            .ok_or(InvalidHostConfigurationError::ExpectedMountPointNotFound {
-                mount_point_path: TRIDENT_OVERLAY_PATH.into(),
-            })?;
+        let overlay_support_mount_point =
+            self.path_to_mount_point_info(TRIDENT_OVERLAY_PATH).ok_or(
+                HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
+                    mount_point_path: TRIDENT_OVERLAY_PATH.into(),
+                },
+            )?;
 
         // Make sure the overlay is backed by a block device
         let overlay_block_device_id = overlay_support_mount_point.device_id.ok_or(
-            InvalidHostConfigurationError::MountPointNotBackedByBlockDevice {
+            HostConfigurationStaticValidationError::MountPointNotBackedByBlockDevice {
                 mount_point_path: TRIDENT_OVERLAY_PATH.into(),
             },
         )?;
@@ -271,7 +272,7 @@ impl Storage {
                 .any(|p| p.id == *overlay_block_device_id)
             {
                 return Err(
-                    InvalidHostConfigurationError::MountPointNotBackedByAbUpdateVolumePair {
+                    HostConfigurationStaticValidationError::MountPointNotBackedByAbUpdateVolumePair {
                         mount_point_path: TRIDENT_OVERLAY_PATH.into(),
                     },
                 );
@@ -284,14 +285,16 @@ impl Storage {
             .options
             .contains("ro")
         {
-            return Err(InvalidHostConfigurationError::OverlayOnReadOnlyVolume {
-                mount_point_path: overlay_support_mount_point
-                    .mount_point
-                    .path
-                    .to_string_lossy()
-                    .to_string(),
-                overlay_path: TRIDENT_OVERLAY_PATH.into(),
-            });
+            return Err(
+                HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
+                    mount_point_path: overlay_support_mount_point
+                        .mount_point
+                        .path
+                        .to_string_lossy()
+                        .to_string(),
+                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
+                },
+            );
         }
 
         // Ensure the overlay is not on a verity protected volume
@@ -300,30 +303,36 @@ impl Storage {
             .iter()
             .any(|v| v.data_device_id.as_str() == overlay_block_device_id)
         {
-            return Err(InvalidHostConfigurationError::OverlayOnReadOnlyVolume {
-                mount_point_path: overlay_support_mount_point
-                    .mount_point
-                    .path
-                    .to_string_lossy()
-                    .to_string(),
-                overlay_path: TRIDENT_OVERLAY_PATH.into(),
-            });
+            return Err(
+                HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
+                    mount_point_path: overlay_support_mount_point
+                        .mount_point
+                        .path
+                        .to_string_lossy()
+                        .to_string(),
+                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
+                },
+            );
         }
 
         // Ensure the root verity fs name is set to `root`, as that is what
         // the dracut verity module expects.
         if vfs.name != "root" {
-            return Err(InvalidHostConfigurationError::RootVerityDeviceNameInvalid {
-                device_name: vfs.name.clone(),
-            });
+            return Err(
+                HostConfigurationStaticValidationError::RootVerityDeviceNameInvalid {
+                    device_name: vfs.name.clone(),
+                },
+            );
         }
 
         // Ensure the root verity device is mounted read-only at /.
         if !vfs.mount_point.options.contains("ro") {
-            return Err(InvalidHostConfigurationError::VerityDeviceReadWrite {
-                device_name: vfs.name.clone(),
-                mount_point_path: vfs.mount_point.path.to_string_lossy().to_string(),
-            });
+            return Err(
+                HostConfigurationStaticValidationError::VerityDeviceReadWrite {
+                    device_name: vfs.name.clone(),
+                    mount_point_path: vfs.mount_point.path.to_string_lossy().to_string(),
+                },
+            );
         }
 
         Ok(())
@@ -827,7 +836,7 @@ mod tests {
         };
         assert_eq!(
             bad_volume_pair.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateTargetId {
                     node_id: "ab-update-volume-pair".into(),
                     kind: BlkDevKind::ABVolume,
@@ -848,7 +857,7 @@ mod tests {
         };
         assert_eq!(
             bad_volume_pair_id.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
             )
         );
@@ -871,7 +880,7 @@ mod tests {
         };
         assert_eq!(
             bad_filesystem_target.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::FilesystemNonExistentReference {
                     target_id: "disk99".into(),
                     fs_desc: bad_filesystem_target.filesystems[0].description()
@@ -982,7 +991,7 @@ mod tests {
         }];
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateDeviceId("part1".into())
             ),
         );
@@ -992,7 +1001,7 @@ mod tests {
         storage.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
             ),
         );
@@ -1002,7 +1011,7 @@ mod tests {
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "disk4".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::NonExistentReference {
                     node_id: "ab1".into(),
                     kind: BlkDevKind::ABVolume,
@@ -1016,7 +1025,7 @@ mod tests {
         storage.filesystems[0].device_id = Some("disk4".into());
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::FilesystemNonExistentReference {
                     target_id: "disk4".into(),
                     fs_desc: storage.filesystems[0].description(),
@@ -1029,7 +1038,7 @@ mod tests {
         storage.filesystems[0].device_id = Some("disk1".into());
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::FilesystemInvalidReference {
                     fs_desc: storage.filesystems[0].description(),
                     target_id: "disk1".into(),
@@ -1044,7 +1053,7 @@ mod tests {
         storage.disks[1].partitions[3].size = PartitionSize::from_str("2G").unwrap();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::PartitionSizeMismatch {
                     node_id: "my-raid1".into(),
                     kind: BlkDevKind::RaidArray
@@ -1067,7 +1076,7 @@ mod tests {
         storage.disks[0].device = "disk1".into();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::BasicCheckFailed {
                     node_id: "disk1".into(),
                     kind: BlkDevKind::Disk,
@@ -1186,7 +1195,7 @@ mod tests {
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidTargetCount {
                     node_id: "mnt".into(),
                     kind: BlkDevKind::RaidArray,
@@ -1205,7 +1214,7 @@ mod tests {
         eprintln!("{:?}", storage.validate(true).unwrap_err());
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidReferenceKind {
                     node_id: "mnt".into(),
                     kind: BlkDevKind::RaidArray,
@@ -1224,7 +1233,7 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
             )
         );
@@ -1237,7 +1246,7 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].id = "esp".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateDeviceId("esp".into())
             )
         );
@@ -1250,7 +1259,7 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].id = "mnt".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateDeviceId("mnt".into())
             )
         );
@@ -1263,7 +1272,7 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].id = "root".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateDeviceId("root".into())
             )
         );
@@ -1291,7 +1300,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::DuplicateDeviceId("srv".into())
             )
         );
@@ -1327,7 +1336,7 @@ mod tests {
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::UniqueFieldConstraintError {
                     node_id: "srv".into(),
                     other_id: "alt".into(),
@@ -1356,7 +1365,7 @@ mod tests {
             Some(Url::parse("https://www.example.com/recovery.key").unwrap());
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidEncryptionRecoveryKeyUrlScheme {
+            HostConfigurationStaticValidationError::InvalidEncryptionRecoveryKeyUrlScheme {
                 url: "https://www.example.com/recovery.key".into(),
                 scheme: "https".into(),
             }
@@ -1390,7 +1399,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidPartitionType {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
@@ -1428,7 +1437,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidPartitionType {
                     node_id: "alt".into(),
                     kind: BlkDevKind::EncryptedVolume,
@@ -1454,7 +1463,7 @@ mod tests {
             .device_id = "root-b-verity".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidPartitionType {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
@@ -1516,7 +1525,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidPartitionType {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
@@ -1552,7 +1561,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidPartitionType {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
@@ -1588,7 +1597,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidPartitionType {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
@@ -1608,7 +1617,7 @@ mod tests {
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidTargetCount {
                     node_id: "mnt".into(),
                     kind: BlkDevKind::RaidArray,
@@ -1628,7 +1637,7 @@ mod tests {
         // Remove the first mount point
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidTargetCount {
                     node_id: "mnt".into(),
                     kind: BlkDevKind::RaidArray,
@@ -1646,7 +1655,7 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].device_id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidReferenceKind {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
@@ -1688,7 +1697,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::InvalidReferenceKind {
                     node_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
@@ -1725,7 +1734,7 @@ mod tests {
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "srv-enc".into(),
                     target_kind: BlkDevKind::Partition,
@@ -1760,7 +1769,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "srv-enc".into(),
                     target_kind: BlkDevKind::Partition,
@@ -1784,7 +1793,7 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt-raid-1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "mnt-raid-1".into(),
                     target_kind: BlkDevKind::Partition,
@@ -1810,7 +1819,7 @@ mod tests {
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "root-a".into(),
                     target_kind: BlkDevKind::Partition,
@@ -1836,7 +1845,7 @@ mod tests {
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "root-b".into(),
                     target_kind: BlkDevKind::Partition,
@@ -1894,7 +1903,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "alt-a-enc".into(),
                     target_kind: BlkDevKind::Partition,
@@ -1952,7 +1961,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "alt-b-enc".into(),
                     target_kind: BlkDevKind::Partition,
@@ -2005,7 +2014,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::InvalidBlockDeviceGraph(
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
                 BlockDeviceGraphBuildError::FilesystemInvalidReference {
                     fs_desc: storage.filesystems[0].description(),
                     target_id: "esp".into(),
@@ -2050,7 +2059,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::VerityDeviceReadWrite {
+            HostConfigurationStaticValidationError::VerityDeviceReadWrite {
                 mount_point_path: "/".into(),
                 device_name: "root".into(),
             }
@@ -2066,7 +2075,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::RootVerityDeviceNameInvalid {
+            HostConfigurationStaticValidationError::RootVerityDeviceNameInvalid {
                 device_name: "verity-root-a".into()
             }
         );
@@ -2081,7 +2090,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::MountPointNotBackedByImage {
+            HostConfigurationStaticValidationError::MountPointNotBackedByImage {
                 mount_point_path: "/boot".into()
             },
         );
@@ -2098,7 +2107,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::ExpectedMountPointNotFound {
+            HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
                 mount_point_path: "/boot".into()
             },
         );
@@ -2121,7 +2130,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            InvalidHostConfigurationError::OverlayOnReadOnlyVolume {
+            HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
                 mount_point_path: "/var/lib/trident-overlay".into(),
                 overlay_path: "/var/lib/trident-overlay".into()
             }

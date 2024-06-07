@@ -1,16 +1,17 @@
 use std::{
     collections::HashMap,
     ffi::OsString,
+    ops::Not,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error, Ok};
+use anyhow::{bail, Context, Error};
 use log::{debug, info};
 
 use osutils::{files, scripts::ScriptRunner};
 use trident_api::{
-    config::{HostConfiguration, Script},
+    config::{HostConfiguration, HostConfigurationDynamicValidationError, Script},
     constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
     status::{HostStatus, ServicingType},
 };
@@ -41,23 +42,26 @@ impl Module for HooksModule {
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
         planned_servicing_type: ServicingType,
-    ) -> Result<(), Error> {
-        for script in host_config
+    ) -> Result<(), HostConfigurationDynamicValidationError> {
+        // Ensure that all scripts that should be run and have a path actually exist
+        host_config
             .scripts
             .post_configure
             .iter()
             .chain(&host_config.scripts.post_provision)
-        {
-            if let Some(ref path) = script.path {
-                if script.should_run(&planned_servicing_type) && !path.exists() {
-                    bail!(
-                        "Script '{}' not found at '{}' on host system",
-                        script.name,
-                        path.display()
-                    );
-                }
-            }
-        }
+            .filter(|script| script.should_run(planned_servicing_type))
+            .filter_map(|script| {
+                script.path.as_ref().and_then(|path| {
+                    (path.exists() && path.is_file()).not().then_some(Err(
+                        HostConfigurationDynamicValidationError::ScriptNotFound {
+                            name: script.name.clone(),
+                            path: path.display().to_string(),
+                        },
+                    ))
+                })
+            })
+            .collect::<Result<_, _>>()?;
+
         Ok(())
     }
 
@@ -70,7 +74,7 @@ impl Module for HooksModule {
             .chain(&host_status.spec.scripts.post_provision)
         {
             if let Some(ref path) = script.path {
-                if let Some(ref servicing_type) = host_status.servicing_type {
+                if let Some(servicing_type) = host_status.servicing_type {
                     if script.should_run(servicing_type) {
                         self.stage_file(path.to_owned())
                             .context(format!("Failed to load script '{}'", script.name,))?;
@@ -105,8 +109,7 @@ impl Module for HooksModule {
                     host_status.servicing_type,
                     mount_path,
                     Path::new(ROOT_MOUNT_POINT_PATH),
-                )?;
-                Ok(())
+                )
             })?;
 
         Ok(())
@@ -161,8 +164,7 @@ impl Module for HooksModule {
                     host_status.servicing_type,
                     Path::new(ROOT_MOUNT_POINT_PATH),
                     exec_root,
-                )?;
-                Ok(())
+                )
             })?;
 
         Ok(())
@@ -195,7 +197,7 @@ impl HooksModule {
     ) -> Result<(), Error> {
         // Check if the script should be run for the current servicing type
         let servicing_type = servicing_type.context("Servicing type not set")?;
-        if !script.should_run(&servicing_type) {
+        if !script.should_run(servicing_type) {
             debug!(
                 "Skipping script {} for servicing type {:?}",
                 script.name, servicing_type

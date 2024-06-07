@@ -5,7 +5,9 @@ use std::{borrow::Cow, panic::Location};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use crate::config::InvalidHostConfigurationError;
+use crate::config::{
+    HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
+};
 
 /// Trident failed to initialize.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
@@ -51,9 +53,9 @@ pub enum InvalidInputError {
     LoadKickstart { path: String },
     #[error("Failed to translate kickstart")]
     KickstartTranslation,
-    #[error("Invalid host configuration: {inner}")]
+    #[error("Host configuration failed static validation: {inner}")]
     InvalidHostConfiguration {
-        inner: InvalidHostConfigurationError,
+        inner: HostConfigurationStaticValidationError,
     },
     #[error("Host configuration is incompatible with current install")]
     IncompatibleHostConfiguration,
@@ -99,8 +101,11 @@ pub enum DatastoreError {
 pub enum ModuleError {
     #[error("{name} module failed to refresh host status")]
     RefreshHostStatus { name: &'static str },
-    #[error("{name} module failed to validate host configuration")]
-    ValidateHostConfiguration { name: &'static str },
+    #[error("{name} failed to perform dynamic validation on host configuration: {inner}")]
+    ValidateHostConfiguration {
+        name: &'static str,
+        inner: HostConfigurationDynamicValidationError,
+    },
     #[error("{name} module failed to prepare")]
     Prepare { name: &'static str },
     #[error("{name} module failed to provision")]

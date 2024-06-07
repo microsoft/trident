@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use super::error::InvalidHostConfigurationError;
+use super::error::HostConfigurationStaticValidationError;
 
 pub mod additional_files;
 mod network;
@@ -60,11 +60,11 @@ pub struct ManagementOs {
 }
 
 impl Os {
-    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+    pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         let mut usernames = HashSet::new();
         for user in &self.users {
             if !usernames.insert(&user.name) {
-                return Err(InvalidHostConfigurationError::DuplicateUsernames(
+                return Err(HostConfigurationStaticValidationError::DuplicateUsernames(
                     user.name.clone(),
                 ));
             }
@@ -83,7 +83,7 @@ impl Os {
 }
 
 impl ManagementOs {
-    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+    pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         if let Some(network) = self.network.as_ref() {
             network::validate_netplan(network)?;
         }
@@ -127,7 +127,7 @@ mod tests {
 
         assert_eq!(
             config.validate(),
-            Err(InvalidHostConfigurationError::DuplicateUsernames(
+            Err(HostConfigurationStaticValidationError::DuplicateUsernames(
                 "test".to_string()
             ))
         );

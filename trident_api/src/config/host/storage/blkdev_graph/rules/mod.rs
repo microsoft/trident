@@ -22,7 +22,7 @@ use std::os::unix::ffi::OsStrExt;
 
 use anyhow::{bail, ensure, Error};
 
-use crate::config::{FileSystemType, InvalidHostConfigurationError, PartitionType};
+use crate::config::{FileSystemType, HostConfigurationStaticValidationError, PartitionType};
 
 use super::{
     cardinality::ValidCardinality,
@@ -47,7 +47,7 @@ impl<'a> HostConfigBlockDevice<'a> {
             Self::Disk(disk) => {
                 ensure!(
                     disk.device.is_absolute(),
-                    InvalidHostConfigurationError::PathNotAbsolute {
+                    HostConfigurationStaticValidationError::PathNotAbsolute {
                         path: disk.device.to_string_lossy().to_string(),
                     }
                 );

@@ -1,9 +1,11 @@
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::is_default;
+use crate::{constants::ROOT_MOUNT_POINT_PATH, is_default};
 
 pub(crate) mod error;
 pub(crate) mod os;
@@ -16,7 +18,7 @@ use scripts::Scripts;
 use storage::Storage;
 use trident::Trident;
 
-use error::InvalidHostConfigurationError;
+use error::HostConfigurationStaticValidationError;
 
 use self::os::ManagementOs;
 
@@ -48,7 +50,7 @@ pub struct HostConfiguration {
 }
 
 impl HostConfiguration {
-    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+    pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         let require_root_mount_point = self.trident != Trident::default()
             || self.scripts != Scripts::default()
             || self.os != Os::default()
@@ -57,6 +59,62 @@ impl HostConfiguration {
         self.os.validate()?;
         self.scripts.validate()?;
         self.management_os.validate()?;
+        self.trident.validate()?;
+
+        // If self-upgrade is requested, ensure that root is not a RO verity filesystem b/c Trident
+        // will not be able to copy itself into the FS.
+        if self.trident.self_upgrade
+            && self.storage.verity_filesystems.iter().any(|v| {
+                v.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH)
+                    && v.mount_point.options.contains("ro")
+            })
+        {
+            return Err(
+                HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFsError,
+            );
+        }
+
+        self.validate_datastore_location()?;
+
+        Ok(())
+    }
+
+    fn validate_datastore_location(&self) -> Result<(), HostConfigurationStaticValidationError> {
+        // Nothing to do if trident is disabled on the runtime OS.
+        if self.trident.disable {
+            return Ok(());
+        }
+
+        let datastore_path = &self.trident.datastore_path;
+
+        // Ensure that the datastore path is in a known volume.
+        let datastore_block_device_id = &self
+            .storage
+            .path_to_mount_point_info(datastore_path)
+            .and_then(|mp| mp.device_id)
+            .ok_or(
+                HostConfigurationStaticValidationError::DatastorePathNotInAnyKnownVolume {
+                    datastore_path: datastore_path.to_string_lossy().to_string(),
+                },
+            )?;
+
+        // Ensure that the datastore path is not in an A/B update volume.
+        if self
+            .storage
+            .ab_update
+            .as_ref()
+            .map(|ab| ab.volume_pairs.iter())
+            .into_iter()
+            .flatten()
+            .any(|p| &p.id == *datastore_block_device_id)
+        {
+            return Err(
+                HostConfigurationStaticValidationError::DatastorePathInABVolume {
+                    datastore_path: datastore_path.to_string_lossy().to_string(),
+                    volume_id: datastore_block_device_id.to_string(),
+                },
+            );
+        }
 
         Ok(())
     }
@@ -96,5 +154,174 @@ impl HostConfiguration {
         remove_network(&mut schema, "ManagementOs");
 
         schema
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        config::{
+            AbUpdate, AbVolumePair, FileSystem, FileSystemSource, FileSystemType, MountOptions,
+            MountPoint,
+        },
+        constants::TRIDENT_DATASTORE_PATH_DEFAULT,
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_validate_datastore_location() {
+        // Datastore in default location
+        HostConfiguration {
+            storage: Storage {
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        mount_point: Some(MountPoint {
+                            path: ROOT_MOUNT_POINT_PATH.into(),
+                            options: MountOptions::defaults(),
+                        }),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Create,
+                    },
+                    FileSystem {
+                        device_id: Some("bar".into()),
+                        mount_point: Some(MountPoint {
+                            path: "/bar".into(),
+                            options: MountOptions::defaults(),
+                        }),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Create,
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .validate_datastore_location()
+        .unwrap();
+
+        // Add AB Volume
+        HostConfiguration {
+            storage: Storage {
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        mount_point: Some(MountPoint {
+                            path: ROOT_MOUNT_POINT_PATH.into(),
+                            options: MountOptions::defaults(),
+                        }),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Create,
+                    },
+                    FileSystem {
+                        device_id: Some("bar".into()),
+                        mount_point: Some(MountPoint {
+                            path: "/bar".into(),
+                            options: MountOptions::defaults(),
+                        }),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Create,
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![AbVolumePair {
+                        id: "bar".into(),
+                        volume_a_id: "barA".into(),
+                        volume_b_id: "barB".into(),
+                    }],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .validate_datastore_location()
+        .unwrap();
+
+        // Make root an AB Volume, but move datastore to /bar
+        HostConfiguration {
+            storage: Storage {
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        mount_point: Some(MountPoint {
+                            path: ROOT_MOUNT_POINT_PATH.into(),
+                            options: MountOptions::defaults(),
+                        }),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Create,
+                    },
+                    FileSystem {
+                        device_id: Some("bar".into()),
+                        mount_point: Some(MountPoint {
+                            path: "/bar".into(),
+                            options: MountOptions::defaults(),
+                        }),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Create,
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![AbVolumePair {
+                        id: "root".into(),
+                        volume_a_id: "roota".into(),
+                        volume_b_id: "rootb".into(),
+                    }],
+                }),
+                ..Default::default()
+            },
+            trident: Trident {
+                datastore_path: Path::new("/bar/trident.sqlite").to_path_buf(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .validate_datastore_location()
+        .unwrap();
+
+        // Make root an AB Volume, but keep datastore in default location
+        let err = HostConfiguration {
+            storage: Storage {
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        mount_point: Some(MountPoint {
+                            path: ROOT_MOUNT_POINT_PATH.into(),
+                            options: MountOptions::defaults(),
+                        }),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Create,
+                    },
+                    FileSystem {
+                        device_id: Some("bar".into()),
+                        mount_point: Some(MountPoint {
+                            path: "/bar".into(),
+                            options: MountOptions::defaults(),
+                        }),
+                        fs_type: FileSystemType::Ext4,
+                        source: FileSystemSource::Create,
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![AbVolumePair {
+                        id: "root".into(),
+                        volume_a_id: "roota".into(),
+                        volume_b_id: "rootb".into(),
+                    }],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .validate_datastore_location()
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            HostConfigurationStaticValidationError::DatastorePathInABVolume {
+                datastore_path: TRIDENT_DATASTORE_PATH_DEFAULT.into(),
+                volume_id: "root".into(),
+            }
+        );
     }
 }

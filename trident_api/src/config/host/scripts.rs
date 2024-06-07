@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 
 use crate::status::ServicingType;
 
-use super::error::InvalidHostConfigurationError;
+use super::error::HostConfigurationStaticValidationError;
 
 /// Scripts that can be run on the host during Trident stages.
 /// These scripts are run in the order they are defined.
@@ -81,7 +81,7 @@ pub struct Script {
 
 impl Script {
     /// Returns true if servicing type is enabled for this script.
-    pub fn should_run(&self, servicing_type: &ServicingType) -> bool {
+    pub fn should_run(&self, servicing_type: ServicingType) -> bool {
         if self.run_on.contains(&ServicingTypeSelection::All) {
             return true;
         }
@@ -136,7 +136,7 @@ pub enum ServicingTypeSelection {
 }
 
 impl Scripts {
-    pub(crate) fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+    pub(crate) fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         self.post_provision
             .iter()
             .chain(self.post_configure.iter())
@@ -146,17 +146,19 @@ impl Scripts {
 }
 
 impl Script {
-    pub(crate) fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+    pub(crate) fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         match (&self.content, &self.path) {
-            (Some(_), Some(_)) => Err(InvalidHostConfigurationError::ScriptHasBothContentAndPath(
-                self.name.clone(),
-            )),
-            (None, None) => Err(InvalidHostConfigurationError::ScriptHasNoContentOrPath(
-                self.name.clone(),
-            )),
+            (Some(_), Some(_)) => Err(
+                HostConfigurationStaticValidationError::ScriptHasBothContentAndPath(
+                    self.name.clone(),
+                ),
+            ),
+            (None, None) => Err(
+                HostConfigurationStaticValidationError::ScriptHasNoContentOrPath(self.name.clone()),
+            ),
             (None, Some(path)) => {
                 if !path.is_absolute() {
-                    return Err(InvalidHostConfigurationError::PathNotAbsolute {
+                    return Err(HostConfigurationStaticValidationError::PathNotAbsolute {
                         path: path.clone().to_string_lossy().to_string(),
                     });
                 }
@@ -183,7 +185,7 @@ mod tests {
             log_file_path: None,
             path: None,
         };
-        assert!(script.should_run(&ServicingType::CleanInstall));
+        assert!(script.should_run(ServicingType::CleanInstall));
     }
 
     #[test]
@@ -197,7 +199,7 @@ mod tests {
             log_file_path: None,
             path: None,
         };
-        assert!(!script.should_run(&ServicingType::NormalUpdate));
+        assert!(!script.should_run(ServicingType::NormalUpdate));
     }
 
     #[test]
@@ -211,7 +213,7 @@ mod tests {
             log_file_path: None,
             path: None,
         };
-        assert!(script.should_run(&ServicingType::AbUpdate));
+        assert!(script.should_run(ServicingType::AbUpdate));
     }
 
     #[test]
@@ -227,7 +229,7 @@ mod tests {
         };
         assert_eq!(
             script.validate().unwrap_err(),
-            InvalidHostConfigurationError::ScriptHasNoContentOrPath(script.name)
+            HostConfigurationStaticValidationError::ScriptHasNoContentOrPath(script.name)
         );
     }
 
@@ -244,7 +246,7 @@ mod tests {
         };
         assert_eq!(
             script.validate().unwrap_err(),
-            InvalidHostConfigurationError::ScriptHasBothContentAndPath(script.name)
+            HostConfigurationStaticValidationError::ScriptHasBothContentAndPath(script.name)
         );
     }
 
@@ -275,7 +277,7 @@ mod tests {
         };
         assert_eq!(
             script.validate().unwrap_err(),
-            InvalidHostConfigurationError::PathNotAbsolute {
+            HostConfigurationStaticValidationError::PathNotAbsolute {
                 path: "path/to/script".into()
             }
         );

@@ -2,7 +2,7 @@ pub(crate) mod host;
 pub(crate) mod local;
 
 pub use host::{
-    error::InvalidHostConfigurationError,
+    error::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
     os::{
         additional_files::AdditionalFile,
         users::{Password, SshMode, User},

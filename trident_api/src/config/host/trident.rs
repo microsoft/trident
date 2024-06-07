@@ -1,15 +1,20 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::is_default;
+use crate::{
+    constants::{DATASTORE_FILE_EXTENSION, TRIDENT_DATASTORE_PATH_DEFAULT},
+    is_default,
+};
+
+use super::error::HostConfigurationStaticValidationError;
 
 /// The Trident Management configuration controls the installation of the
 /// Trident agent onto the runtime OS.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Trident {
@@ -34,12 +39,98 @@ pub struct Trident {
     /// Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with
     /// `.sqlite`, cannot be an existing file and cannot reside on a read-only
     /// filesystem or A/B volume.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub datastore_path: Option<PathBuf>,
+    #[serde(
+        default = "Trident::default_datastore_path",
+        skip_serializing_if = "Trident::is_default_datastore_path"
+    )]
+    pub datastore_path: PathBuf,
 
     /// URL to reach out to when runtime OS networking is up, so Trident can report
     /// its status. If not specified, the value from the Trident configuration will
     /// be used. This is useful for debugging and monitoring purposes, say by an
     /// orchestrator.
     pub phonehome: Option<String>,
+}
+
+impl Default for Trident {
+    fn default() -> Self {
+        Self {
+            disable: Default::default(),
+            self_upgrade: Default::default(),
+            enable_grpc: Default::default(),
+            datastore_path: Trident::default_datastore_path(),
+            phonehome: Default::default(),
+        }
+    }
+}
+
+impl Trident {
+    /// Returns the default Trident datastore path.
+    pub(crate) fn default_datastore_path() -> PathBuf {
+        PathBuf::from(TRIDENT_DATASTORE_PATH_DEFAULT)
+    }
+
+    fn is_default_datastore_path(other: &Path) -> bool {
+        other == Path::new(TRIDENT_DATASTORE_PATH_DEFAULT)
+    }
+
+    /// Validate the Trident Management configuration.
+    pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
+        // Nothing to do if trident is disabled on the runtime OS.
+        if self.disable {
+            return Ok(());
+        }
+
+        if self
+            .datastore_path
+            .extension()
+            .and_then(|e| (e == DATASTORE_FILE_EXTENSION).then_some(()))
+            .is_none()
+        {
+            return Err(
+                HostConfigurationStaticValidationError::DatastorePathInvalidExtension {
+                    expected: DATASTORE_FILE_EXTENSION.into(),
+                    got: self
+                        .datastore_path
+                        .extension()
+                        .map(|e| e.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "<none>".into()),
+                },
+            );
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_datastore_path() {
+        let mut trident = Trident {
+            datastore_path: PathBuf::from("/var/lib/trident/datastore.sqlite"),
+            ..Default::default()
+        };
+        trident.validate().unwrap();
+
+        trident.datastore_path = PathBuf::from("/var/lib/trident/datastore");
+        assert_eq!(
+            trident.validate().unwrap_err(),
+            HostConfigurationStaticValidationError::DatastorePathInvalidExtension {
+                expected: DATASTORE_FILE_EXTENSION.into(),
+                got: "<none>".into(),
+            }
+        );
+
+        trident.datastore_path = PathBuf::from("/var/lib/trident/datastore.docx");
+        assert_eq!(
+            trident.validate().unwrap_err(),
+            HostConfigurationStaticValidationError::DatastorePathInvalidExtension {
+                expected: DATASTORE_FILE_EXTENSION.into(),
+                got: "docx".into(),
+            }
+        );
+    }
 }

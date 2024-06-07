@@ -4,7 +4,7 @@ use url::Url;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{config::InvalidHostConfigurationError, BlockDeviceId};
+use crate::{config::HostConfigurationStaticValidationError, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::block_device_id_schema;
@@ -127,12 +127,12 @@ impl Encryption {
     ///
     /// This function will validate the encryption configuration and
     /// return an error if the configuration is invalid.
-    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+    pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         // Encryption recovery key URLs must start with file://
         if let Some(recovery_key_url) = &self.recovery_key_url {
             if recovery_key_url.scheme() != "file" {
                 return Err(
-                    InvalidHostConfigurationError::InvalidEncryptionRecoveryKeyUrlScheme {
+                    HostConfigurationStaticValidationError::InvalidEncryptionRecoveryKeyUrlScheme {
                         url: recovery_key_url.to_string(),
                         scheme: recovery_key_url.scheme().to_string(),
                     },
@@ -167,7 +167,7 @@ mod tests {
         };
         assert_eq!(
             config.validate().unwrap_err(),
-            InvalidHostConfigurationError::InvalidEncryptionRecoveryKeyUrlScheme {
+            HostConfigurationStaticValidationError::InvalidEncryptionRecoveryKeyUrlScheme {
                 url: "http://example.com/invalid-recovery-key-http".to_string(),
                 scheme: "http".to_string(),
             }

@@ -23,6 +23,12 @@ pub const NONE_MOUNT_POINT: &str = "none";
 /// Swap mount point.
 pub const SWAP_MOUNT_POINT: &str = NONE_MOUNT_POINT;
 
+/// Datastore file extension.
+pub const DATASTORE_FILE_EXTENSION: &str = "sqlite";
+
+/// Default Trident datastore path. Used from the runtime OS.
+pub const TRIDENT_DATASTORE_PATH_DEFAULT: &str = "/var/lib/trident/datastore.sqlite";
+
 // Block of volume agnostic path constants
 
 /// Boot directory name.

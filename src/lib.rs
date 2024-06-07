@@ -9,8 +9,8 @@ use tokio::sync::mpsc::{self};
 use osutils::{container, path};
 use setsail::KsTranslator;
 use trident_api::config::{
-    HostConfiguration, HostConfigurationSource, InvalidHostConfigurationError, LocalConfigFile,
-    Operations,
+    HostConfiguration, HostConfigurationSource, HostConfigurationStaticValidationError,
+    LocalConfigFile, Operations,
 };
 use trident_api::constants::ROOT_MOUNT_POINT_PATH;
 use trident_api::error::{
@@ -45,9 +45,6 @@ pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
 
 /// Default Trident configuration file path.
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
-
-/// Default Trident datastore path. Used from the runtime OS.
-pub const TRIDENT_DATASTORE_PATH: &str = "/var/lib/trident/datastore.sqlite";
 
 /// Location to store the Trident datastore on the provisioning OS.
 pub const TRIDENT_TEMPORARY_DATASTORE_PATH: &str = "/var/lib/trident/tmp-datastore.sqlite";
@@ -153,7 +150,7 @@ impl Trident {
         config
             .get_host_configuration_source()
             .structured(InvalidInputError::InvalidHostConfiguration {
-                inner: InvalidHostConfigurationError::FailedToParse,
+                inner: HostConfigurationStaticValidationError::FailedToParse,
             })?
             .as_ref()
             .map(Self::load_host_config)
@@ -212,7 +209,7 @@ impl Trident {
             | HostConfigurationSource::KickstartEmbedded(_),
         ) = self.config.get_host_configuration_source().structured(
             InvalidInputError::InvalidHostConfiguration {
-                inner: InvalidHostConfigurationError::FailedToParse,
+                inner: HostConfigurationStaticValidationError::FailedToParse,
             },
         )? {
             warn!("Cannot set up network early when using kickstart");

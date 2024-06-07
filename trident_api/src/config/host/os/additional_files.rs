@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::config::InvalidHostConfigurationError;
+use crate::config::HostConfigurationStaticValidationError;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -33,14 +33,14 @@ pub struct AdditionalFile {
 }
 
 impl AdditionalFile {
-    pub fn validate(&self) -> Result<(), InvalidHostConfigurationError> {
+    pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         if let Some(permissions) = &self.permissions {
             // This catches a fun gotcha: If the permissions field is an octal *integer* value, some
             // YAML tooling will convert it to a decimal integer. Subsquent parsing assumpting it
             // was an octal value would fail.
             if !permissions.starts_with('0') {
                 return Err(
-                    InvalidHostConfigurationError::AdditionalFileInvalidPermissions(
+                    HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
                         permissions.to_string(),
                         self.destination.display().to_string(),
                     ),
@@ -50,7 +50,7 @@ impl AdditionalFile {
                 Ok(v) if v <= 0o777 => (),
                 _ => {
                     return Err(
-                        InvalidHostConfigurationError::AdditionalFileInvalidPermissions(
+                        HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
                             permissions.to_string(),
                             self.destination.display().to_string(),
                         ),
@@ -61,12 +61,12 @@ impl AdditionalFile {
 
         match (&self.content, &self.path) {
             (Some(_), Some(_)) => Err(
-                InvalidHostConfigurationError::AdditionalFileHasBothContentAndPath(
+                HostConfigurationStaticValidationError::AdditionalFileHasBothContentAndPath(
                     self.destination.display().to_string(),
                 ),
             ),
             (None, None) => Err(
-                InvalidHostConfigurationError::AdditionalFileHasNoContentOrPath(
+                HostConfigurationStaticValidationError::AdditionalFileHasNoContentOrPath(
                     self.destination.display().to_string(),
                 ),
             ),
@@ -112,7 +112,7 @@ mod tests {
         };
         assert_eq!(
             file.validate().unwrap_err(),
-            InvalidHostConfigurationError::AdditionalFileInvalidPermissions(
+            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
                 "invalid".to_string(),
                 "/test".to_string()
             )
@@ -121,7 +121,7 @@ mod tests {
         file.permissions = Some("0999".to_string());
         assert_eq!(
             file.validate().unwrap_err(),
-            InvalidHostConfigurationError::AdditionalFileInvalidPermissions(
+            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
                 "0999".to_string(),
                 "/test".to_string()
             )
@@ -130,7 +130,7 @@ mod tests {
         file.permissions = Some("1555".to_string());
         assert_eq!(
             file.validate().unwrap_err(),
-            InvalidHostConfigurationError::AdditionalFileInvalidPermissions(
+            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
                 "1555".to_string(),
                 "/test".to_string()
             )
@@ -147,7 +147,9 @@ mod tests {
         };
         assert_eq!(
             file.validate().unwrap_err(),
-            InvalidHostConfigurationError::AdditionalFileHasBothContentAndPath("/test".to_string())
+            HostConfigurationStaticValidationError::AdditionalFileHasBothContentAndPath(
+                "/test".to_string()
+            )
         );
     }
 
@@ -161,7 +163,9 @@ mod tests {
         };
         assert_eq!(
             file.validate().unwrap_err(),
-            InvalidHostConfigurationError::AdditionalFileHasNoContentOrPath("/test".to_string())
+            HostConfigurationStaticValidationError::AdditionalFileHasNoContentOrPath(
+                "/test".to_string()
+            )
         );
     }
 }

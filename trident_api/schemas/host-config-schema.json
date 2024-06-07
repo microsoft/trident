@@ -998,8 +998,7 @@
       "properties": {
         "datastorePath": {
           "description": "Describes where to place the datastore Trident will use to store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.",
-          "type": "string",
-          "nullable": true
+          "type": "string"
         },
         "disable": {
           "description": "When set to `true`, prevents Trident from being enabled on the runtime OS. In that case, the remaining fields are ignored.",

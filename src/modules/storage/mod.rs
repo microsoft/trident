@@ -3,12 +3,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
 use osutils::mountpoint;
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
     status::{AbVolumeSelection, BlockDeviceContents, HostStatus, ServicingType},
@@ -72,7 +72,7 @@ impl Module for StorageModule {
         host_status: &HostStatus,
         host_config: &HostConfiguration,
         planned_servicing_type: ServicingType,
-    ) -> Result<(), Error> {
+    ) -> Result<(), HostConfigurationDynamicValidationError> {
         // Ensure any two disks point to different devices. This requires canonicalizing the device
         // paths, which can only be done on the target system.
         let mut device_paths = HashMap::<PathBuf, BlockDeviceId>::new();
@@ -81,21 +81,25 @@ impl Module for StorageModule {
                 .device
                 .canonicalize()
                 .context(format!("Failed to canonicalize path of disk {}", disk.id))?;
-            if let Some(device_path_str) = device_path.to_str() {
-                ensure!(
-                    device_path_str.starts_with("/dev"),
-                    "The device path '{}' should start with '/dev' for valid block devices!",
-                    device_path_str
+
+            if !device_path.starts_with("/dev") {
+                return Err(
+                    HostConfigurationDynamicValidationError::BadBlockDevicePath {
+                        name: disk.id.clone(),
+                        device: device_path.display().to_string(),
+                    },
                 );
             }
+
             if let Some(existing_disk_id) =
                 device_paths.insert(device_path.clone(), disk.id.clone())
             {
-                bail!(
-                    "Disks '{}' and '{}' point to the same device '{}'",
-                    disk.id,
-                    existing_disk_id,
-                    device_path.display()
+                return Err(
+                    HostConfigurationDynamicValidationError::DiskDefinitionsReferToSameDevice {
+                        disk1: existing_disk_id,
+                        disk2: disk.id.clone(),
+                        device: device_path.display().to_string(),
+                    },
                 );
             }
         }
@@ -108,12 +112,14 @@ impl Module for StorageModule {
             // HostConfiguration targets either the ESP partition or an A/B volume pair. An invalid HC
             // should be rejected since Trident cannot overwrite the image on a volume that is shared
             // between A and B.
-            image::validate_undeployed_images(host_status, host_config)
-                .context("Validation of host configuration failed: HC requests update of images that cannot be overwritten")?;
+            image::validate_undeployed_images(host_status, host_config).map_err(|e| {
+                HostConfigurationDynamicValidationError::ImagesIncorrect(format!("{:?}", e))
+            })?;
         }
 
-        encryption::validate_host_config(host_config)
-            .context("Encryption host configuration validation failed")?;
+        encryption::validate_host_config(host_config).map_err(|e| {
+            HostConfigurationDynamicValidationError::EncryptionIncorrect(format!("{:?}", e))
+        })?;
 
         Ok(())
     }
@@ -430,9 +436,11 @@ mod tests {
         assert_eq!(
             StorageModule
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
-                .unwrap_err()
-                .to_string(),
-            "The device path '/tmp' should start with '/dev' for valid block devices!"
+                .unwrap_err(),
+            HostConfigurationDynamicValidationError::BadBlockDevicePath {
+                name: "disk1".to_owned(),
+                device: "/tmp".to_owned()
+            }
         );
     }
 
@@ -448,9 +456,12 @@ mod tests {
         assert_eq!(
             StorageModule
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
-                .unwrap_err()
-                .to_string(),
-            "Disks 'disk2' and 'disk1' point to the same device '/dev'"
+                .unwrap_err(),
+            HostConfigurationDynamicValidationError::DiskDefinitionsReferToSameDevice {
+                disk1: "disk1".to_owned(),
+                disk2: "disk2".to_owned(),
+                device: "/dev".to_owned()
+            }
         );
     }
 
@@ -467,9 +478,11 @@ mod tests {
         assert_eq!(
             StorageModule
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
-                .unwrap_err()
-                .to_string(),
-            "Encryption host configuration validation failed"
+                .unwrap_err(),
+            HostConfigurationDynamicValidationError::EncryptionIncorrect(format!(
+                "Recovery key file '{}' does not exist",
+                recovery_key_file.path().display()
+            ))
         );
     }
 
