@@ -710,7 +710,7 @@ mod test {
                     let partition = Partition {
                         id: "part0".into(),
                         partition_type: PartitionType::LinuxGeneric,
-                        size: PartitionSize::Fixed(1024),
+                        size: PartitionSize::Fixed(1024.into()),
                     };
                     check_common(&partition, &partition.id, BlkDevKind::Partition);
                 }

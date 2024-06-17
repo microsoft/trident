@@ -480,7 +480,7 @@ mod tests {
     use maplit::btreemap;
 
     use trident_api::{
-        config::{self, AbUpdate, AbVolumePair, PartitionSize, PartitionType},
+        config::{self, AbUpdate, AbVolumePair, PartitionType},
         constants::{ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
         status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
@@ -522,17 +522,17 @@ mod tests {
                             config::Partition {
                                 id: "efi".to_owned(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "root".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "rootb".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                         ],
                         ..Default::default()
@@ -631,12 +631,12 @@ mod tests {
                             config::Partition {
                                 id: "esp".to_string(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                         ],
                         ..Default::default()

@@ -909,10 +909,7 @@ mod test {
     use maplit::btreemap;
 
     use trident_api::{
-        config::{
-            self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionSize,
-            PartitionType,
-        },
+        config::{self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionType},
         status::{BlockDeviceContents, Storage},
     };
 
@@ -929,12 +926,12 @@ mod test {
                         partitions: vec![
                             Partition {
                                 id: "boot".to_owned(),
-                                size: PartitionSize::Fixed(2),
+                                size: 2.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root".to_owned(),
-                                size: PartitionSize::Fixed(7),
+                                size: 7.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],
@@ -1002,17 +999,17 @@ mod test {
                             partitions: vec![
                                 Partition {
                                     id: "efi".to_owned(),
-                                    size: PartitionSize::Fixed(100),
+                                    size: 100.into(),
                                     partition_type: PartitionType::Esp,
                                 },
                                 Partition {
                                     id: "root".to_owned(),
-                                    size: PartitionSize::Fixed(900),
+                                    size: 900.into(),
                                     partition_type: PartitionType::Root,
                                 },
                                 Partition {
                                     id: "rootb".to_owned(),
-                                    size: PartitionSize::Fixed(9000),
+                                    size: 9000.into(),
                                     partition_type: PartitionType::Root,
                                 },
                             ],

@@ -847,10 +847,7 @@ mod functional_test {
         },
     };
     use trident_api::{
-        config::{
-            Disk, FileSystemType, InternalVerityDevice, Partition, PartitionSize, PartitionType,
-            Storage,
-        },
+        config::{Disk, FileSystemType, InternalVerityDevice, Partition, PartitionType, Storage},
         status::{self, BlockDeviceContents},
     };
 
@@ -956,17 +953,17 @@ mod functional_test {
                             Partition {
                                 id: "boot".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root-verity".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                         ],
                         ..Default::default()
@@ -1105,22 +1102,22 @@ mod functional_test {
                             Partition {
                                 id: "boot".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root-hash".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "overlay".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                         ],
                         ..Default::default()
@@ -1266,22 +1263,22 @@ mod functional_test {
                             Partition {
                                 id: "boot".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root-hash".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "overlay".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                         ],
                         ..Default::default()
@@ -1450,22 +1447,22 @@ mod functional_test {
                             Partition {
                                 id: "boot".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root-hash".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "overlay".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                         ],
                         ..Default::default()
@@ -1608,22 +1605,22 @@ mod functional_test {
                             Partition {
                                 id: "boot".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root-hash".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "overlay".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                         ],
                         ..Default::default()

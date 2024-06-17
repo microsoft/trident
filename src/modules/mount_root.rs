@@ -204,9 +204,7 @@ mod functional_test {
         udevadm,
     };
     use trident_api::{
-        config::{
-            self, Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionType,
-        },
+        config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
         error::ErrorKind,
         status::{BlockDeviceContents, BlockDeviceInfo, Storage},
     };
@@ -234,7 +232,7 @@ mod functional_test {
                         partitions: vec![Partition {
                             id: "sr0".to_string(),
                             partition_type: PartitionType::Esp,
-                            size: PartitionSize::Fixed(0),
+                            size: 0.into(),
                         }],
                         ..Default::default()
                     }],
@@ -294,12 +292,12 @@ mod functional_test {
                             Partition {
                                 id: "esp".to_string(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(0),
+                                size: 0.into(),
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(0),
+                                size: 0.into(),
                             },
                         ],
                         ..Default::default()
@@ -449,7 +447,7 @@ mod functional_test {
                         partitions: vec![Partition {
                             id: "sr0".to_string(),
                             partition_type: PartitionType::Esp,
-                            size: PartitionSize::Fixed(0),
+                            size: 0.into(),
                         }],
                         ..Default::default()
                     }],
@@ -549,7 +547,7 @@ mod functional_test {
                         partitions: vec![Partition {
                             id: "sr0".to_string(),
                             partition_type: PartitionType::Esp,
-                            size: PartitionSize::Fixed(0),
+                            size: 0.into(),
                         }],
                         ..Default::default()
                     }],

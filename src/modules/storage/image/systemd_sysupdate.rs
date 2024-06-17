@@ -836,7 +836,7 @@ mod tests {
     use maplit::btreemap;
 
     use trident_api::{
-        config::{self, AbUpdate, AbVolumePair, HostConfiguration, PartitionSize},
+        config::{self, AbUpdate, AbVolumePair, HostConfiguration},
         status::{ServicingState, ServicingType, Storage},
     };
 
@@ -966,17 +966,17 @@ mod tests {
                             config::Partition {
                                 id: "efi".to_owned(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "root".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "rootb".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                         ],
                         ..Default::default()
@@ -1059,12 +1059,12 @@ mod tests {
                             config::Partition {
                                 id: "efi".to_owned(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "root".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                         ],
                         ..Default::default()
@@ -1125,17 +1125,17 @@ mod tests {
                             config::Partition {
                                 id: "efi".to_owned(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "root".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "rootb".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                         ],
                         ..Default::default()
@@ -1256,17 +1256,17 @@ mod tests {
                             config::Partition {
                                 id: "efi".to_owned(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "root".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                             config::Partition {
                                 id: "rootb".to_owned(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                             },
                         ],
                         ..Default::default()

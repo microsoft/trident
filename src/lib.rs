@@ -706,7 +706,7 @@ mod functional_test {
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition,
-            PartitionSize, PartitionType, Storage,
+            PartitionType, Storage,
         },
         status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Storage as HostStorage},
     };
@@ -723,17 +723,17 @@ mod functional_test {
                         partitions: vec![
                             Partition {
                                 id: "esp".to_owned(),
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root-a".to_owned(),
-                                size: PartitionSize::Fixed(900),
+                                size: 900.into(),
                                 partition_type: PartitionType::Root,
                             },
                             Partition {
                                 id: "root-b".to_owned(),
-                                size: PartitionSize::Fixed(9000),
+                                size: 9000.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],

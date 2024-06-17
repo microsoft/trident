@@ -73,7 +73,7 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Ve
                     PartitionSize::Grow
                 } else if let Some(size) = part.size {
                     // Transform MiB to bytes
-                    PartitionSize::Fixed(size << 20)
+                    PartitionSize::Fixed((size << 20).into())
                 } else {
                     errors.push(SetsailError::new_translation(
                         part.line.clone(),

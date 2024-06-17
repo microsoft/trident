@@ -12,9 +12,9 @@ use crate::{
     config::{
         AbUpdate, AbVolumePair, AdditionalFile, Disk, EncryptedVolume, Encryption, FileSystem,
         FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256,
-        MountOptions, MountPoint, Os, Partition, PartitionSize, PartitionTableType, PartitionType,
-        Raid, RaidLevel, Script, Scripts, ServicingTypeSelection, SoftwareRaidArray, SshMode,
-        Storage, User, VerityFileSystem,
+        MountOptions, MountPoint, Os, Partition, PartitionTableType, PartitionType, Raid,
+        RaidLevel, Script, Scripts, ServicingTypeSelection, SoftwareRaidArray, SshMode, Storage,
+        User, VerityFileSystem,
     },
     constants,
 };
@@ -33,12 +33,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             Partition {
                                 id: "esp".to_string(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(0x4000000), // 64MiB
+                                size: 0x4000000.into(), // 64MiB
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(0x200000000), // 8GiB
+                                size: 0x200000000.into(), // 8GiB
                             },
                         ],
                         adopted_partitions: vec![],
@@ -94,12 +94,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         Partition {
                             id: "esp".to_string(),
                             partition_type: PartitionType::Esp,
-                            size: PartitionSize::Fixed(0x4000000), // 64MiB
+                            size: 0x4000000.into(), // 64MiB
                         },
                         Partition {
                             id: "root".to_string(),
                             partition_type: PartitionType::Root,
-                            size: PartitionSize::Fixed(0x200000000), // 8GiB
+                            size: 0x200000000.into(), // 8GiB
                         },
                     ],
                     adopted_partitions: vec![],
@@ -212,42 +212,42 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         Partition {
                             id: "esp".to_string(),
                             partition_type: PartitionType::Esp,
-                            size: PartitionSize::Fixed(0x4000000), // 64MiB
+                            size: 0x4000000.into(), // 64MiB
                         },
                         Partition {
                             id: "root-a".to_string(),
                             partition_type: PartitionType::Root,
-                            size: PartitionSize::Fixed(0x200000000), // 8GiB
+                            size: 0x200000000.into(), // 8GiB
                         },
                         Partition {
                             id: "root-b".to_string(),
                             partition_type: PartitionType::Root,
-                            size: PartitionSize::Fixed(0x200000000), // 8GiB
+                            size: 0x200000000.into(), // 8GiB
                         },
                         Partition {
                             id: "swap".to_string(),
                             partition_type: PartitionType::Swap,
-                            size: PartitionSize::Fixed(0x80000000), // 2GiB
+                            size: 0x80000000.into(), // 2GiB
                         },
                         Partition {
                             id: "trident".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x8000000), // 1GiB
+                            size: 0x8000000.into(), // 1GiB
                         },
                         Partition {
                             id: "enc-srv".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x40000000), // 128MiB
+                            size: 0x40000000.into(), // 128MiB
                         },
                         Partition {
                             id: "raid-a".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x40000000), // 1GiB
+                            size: 0x40000000.into(), // 1GiB
                         },
                         Partition {
                             id: "raid-b".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x40000000), // 1GiB
+                            size: 0x40000000.into(), // 1GiB
                         },
                     ],
                     adopted_partitions: vec![],
@@ -416,47 +416,47 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         Partition {
                             id: "esp".to_string(),
                             partition_type: PartitionType::Esp,
-                            size: PartitionSize::Fixed(0x4000000), // 64MiB
+                            size: 0x4000000.into(), // 64MiB
                         },
                         Partition {
                             id: "boot".to_string(),
                             partition_type: PartitionType::Xbootldr,
-                            size: PartitionSize::Fixed(0x20000000), // 512MiB
+                            size: 0x20000000.into(), // 512MiB
                         },
                         Partition {
                             id: "root".to_string(),
                             partition_type: PartitionType::Root,
-                            size: PartitionSize::Fixed(0x200000000), // 8GiB
+                            size: 0x200000000.into(), // 8GiB
                         },
                         Partition {
                             id: "root-hash".to_string(),
                             partition_type: PartitionType::RootVerity,
-                            size: PartitionSize::Fixed(0x19000000), // 400MiB
+                            size: 0x19000000.into(), // 400MiB
                         },
                         Partition {
                             id: "trident".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x8000000), // 128MiB
+                            size: 0x8000000.into(), // 128MiB
                         },
                         Partition {
                             id: "trident-overlay".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x8000000), // 128MiB
+                            size: 0x8000000.into(), // 128MiB
                         },
                         Partition {
                             id: "var".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x40000000), // 1GiB
+                            size: 0x40000000.into(), // 1GiB
                         },
                         Partition {
                             id: "run".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x40000000), // 1GiB
+                            size: 0x40000000.into(), // 1GiB
                         },
                         Partition {
                             id: "home".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
-                            size: PartitionSize::Fixed(0x40000000), // 1GiB
+                            size: 0x40000000.into(), // 1GiB
                         },
                     ],
                     adopted_partitions: vec![],
@@ -637,82 +637,82 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             Partition {
                                 id: "esp1".to_string(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(0x4000000), // 64MiB
+                                size: 0x4000000.into(), // 64MiB
                             },
                             Partition {
                                 id: "boot-a1".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(0x20000000), // 512MiB
+                                size: 0x20000000.into(), // 512MiB
                             },
                             Partition {
                                 id: "boot-b1".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(0x20000000), // 512MiB
+                                size: 0x20000000.into(), // 512MiB
                             },
                             Partition {
                                 id: "root-a1".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(0x100000000), // 4GiB
+                                size: 0x100000000.into(), // 4GiB
                             },
                             Partition {
                                 id: "root-b1".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(0x100000000), // 4GiB
+                                size: 0x100000000.into(), // 4GiB
                             },
                             Partition {
                                 id: "root-hash-a1".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(0x19000000), // 400MiB
+                                size: 0x19000000.into(), // 400MiB
                             },
                             Partition {
                                 id: "root-hash-b1".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(0x19000000), // 400MiB
+                                size: 0x19000000.into(), // 400MiB
                             },
                             Partition {
                                 id: "swap1".to_string(),
                                 partition_type: PartitionType::Swap,
-                                size: PartitionSize::Fixed(0x80000000), // 2GiB
+                                size: 0x80000000.into(), // 2GiB
                             },
                             Partition {
                                 id: "trident1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x8000000), // 128MiB
+                                size: 0x8000000.into(), // 128MiB
                             },
                             Partition {
                                 id: "trident-overlay-a1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x8000000), // 128MiB
+                                size: 0x8000000.into(), // 128MiB
                             },
                             Partition {
                                 id: "trident-overlay-b1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x8000000), // 128MiB
+                                size: 0x8000000.into(), // 128MiB
                             },
                             Partition {
                                 id: "var-a1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
                                 id: "run-a1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
                                 id: "var-b1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
                                 id: "run-b1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
                                 id: "enc-home1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                         ],
                         ..Default::default()
@@ -725,82 +725,82 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             Partition {
                                 id: "esp2".to_string(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(0x4000000), // 64MiB
+                                size: 0x4000000.into(), // 64MiB
                             },
                             Partition {
                                 id: "boot-a2".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(0x20000000), // 512MiB
+                                size: 0x20000000.into(), // 512MiB
                             },
                             Partition {
                                 id: "boot-b2".to_string(),
                                 partition_type: PartitionType::Xbootldr,
-                                size: PartitionSize::Fixed(0x20000000), // 512MiB
+                                size: 0x20000000.into(), // 512MiB
                             },
                             Partition {
                                 id: "root-a2".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(0x100000000), // 4GiB
+                                size: 0x100000000.into(), // 4GiB
                             },
                             Partition {
                                 id: "root-b2".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(0x100000000), // 4GiB
+                                size: 0x100000000.into(), // 4GiB
                             },
                             Partition {
                                 id: "root-hash-a2".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(0x19000000), // 400MiB
+                                size: 0x19000000.into(), // 400MiB
                             },
                             Partition {
                                 id: "root-hash-b2".to_string(),
                                 partition_type: PartitionType::RootVerity,
-                                size: PartitionSize::Fixed(0x19000000), // 400MiB
+                                size: 0x19000000.into(), // 400MiB
                             },
                             Partition {
                                 id: "swap2".to_string(),
                                 partition_type: PartitionType::Swap,
-                                size: PartitionSize::Fixed(0x80000000), // 2GiB
+                                size: 0x80000000.into(), // 2GiB
                             },
                             Partition {
                                 id: "trident2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x8000000), // 128MiB
+                                size: 0x8000000.into(), // 128MiB
                             },
                             Partition {
                                 id: "trident-overlay-a2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x8000000), // 128MiB
+                                size: 0x8000000.into(), // 128MiB
                             },
                             Partition {
                                 id: "trident-overlay-b2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x8000000), // 128MiB
+                                size: 0x8000000.into(), // 128MiB
                             },
                             Partition {
                                 id: "var-a2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
                                 id: "run-a2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
                                 id: "var-b2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
                                 id: "run-b2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
                                 id: "enc-home2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(0x40000000), // 1GiB
+                                size: 0x40000000.into(), // 1GiB
                             },
                         ],
                         ..Default::default()
@@ -1143,17 +1143,17 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 Partition {
                                     id: "esp1".to_string(),
                                     partition_type: PartitionType::Esp,
-                                    size: PartitionSize::Fixed(0x4000000), // 64MiB
+                                    size: 0x4000000.into(), // 64MiB
                                 },
                                 Partition {
                                     id: "root1".to_string(),
                                     partition_type: PartitionType::Root,
-                                    size: PartitionSize::Fixed(0x100000000), // 4GiB
+                                    size: 0x100000000.into(), // 4GiB
                                 },
                                 Partition {
                                     id: "swap1".to_string(),
                                     partition_type: PartitionType::Swap,
-                                    size: PartitionSize::Fixed(0x80000000), // 2GiB
+                                    size: 0x80000000.into(), // 2GiB
                                 },
                             ],
                             adopted_partitions: vec![],
@@ -1166,17 +1166,17 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 Partition {
                                     id: "esp2".to_string(),
                                     partition_type: PartitionType::Esp,
-                                    size: PartitionSize::Fixed(0x4000000), // 64MiB
+                                    size: 0x4000000.into(), // 64MiB
                                 },
                                 Partition {
                                     id: "root2".to_string(),
                                     partition_type: PartitionType::Root,
-                                    size: PartitionSize::Fixed(0x100000000), // 4GiB
+                                    size: 0x100000000.into(), // 4GiB
                                 },
                                 Partition {
                                     id: "swap2".to_string(),
                                     partition_type: PartitionType::Swap,
-                                    size: PartitionSize::Fixed(0x80000000), // 2GiB
+                                    size: 0x80000000.into(), // 2GiB
                                 },
                             ],
                             adopted_partitions: vec![],
@@ -1312,22 +1312,22 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 Partition {
                                     id: "esp".to_string(),
                                     partition_type: PartitionType::Esp,
-                                    size: PartitionSize::Fixed(0x4000000), // 64MiB
+                                    size: 0x4000000.into(), // 64MiB
                                 },
                                 Partition {
                                     id: "root".to_string(),
                                     partition_type: PartitionType::Root,
-                                    size: PartitionSize::Fixed(0x100000000), // 4GiB
+                                    size: 0x100000000.into(), // 4GiB
                                 },
                                 Partition {
                                     id: "swap".to_string(),
                                     partition_type: PartitionType::Swap,
-                                    size: PartitionSize::Fixed(0x80000000), // 2GiB
+                                    size: 0x80000000.into(), // 2GiB
                                 },
                                 Partition {
                                     id: "luks-srv".to_string(),
                                     partition_type: PartitionType::LinuxGeneric,
-                                    size: PartitionSize::Fixed(0x4000000), // 64MiB
+                                    size: 0x4000000.into(), // 64MiB
                                 },
                             ],
                             adopted_partitions: vec![],

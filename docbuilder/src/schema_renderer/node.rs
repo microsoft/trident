@@ -62,7 +62,7 @@ pub(crate) struct SchemaNodeModel {
 ///
 /// Does not necessarily correspond to the kind of node that can exist in JSON
 /// Schema, but rather what we consider it to be.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NodeKind {
     // * * * * * * * * *
     // * Complex types *
@@ -108,6 +108,9 @@ pub(crate) enum NodeKind {
     /// created by schemars to represent a variant of a complex enum.
     WrapperEnum(InstanceType),
 
+    /// Node is a compound scalar.
+    CompoundScalar(Vec<InstanceType>),
+
     /// The node is a number.
     Number,
 
@@ -132,23 +135,39 @@ pub(crate) enum NodeKind {
 
 impl NodeKind {
     /// Friendly user-facing name of the node kind.
-    pub(super) fn name(&self) -> &'static str {
+    pub(super) fn name(&self) -> String {
         match self {
-            Self::Object => "object",
-            Self::DefinitionReference => "reference",
-            Self::Enum => "enum",
-            Self::Map(_) => "map",
-            Self::SimpleObject => "object",
-            Self::SimpleEnum(_) => "enum",
-            Self::Number => "number",
-            Self::Integer => "integer",
-            Self::String => "string",
-            Self::Array => "array",
-            Self::Boolean => "boolean",
-            Self::Reference => "reference",
-            Self::Null => "null",
-            Self::WrapperEnum(s) => instance_type_name(*s),
+            Self::Object => "object".into(),
+            Self::DefinitionReference => "reference".into(),
+            Self::Enum => "enum".into(),
+            Self::Map(_) => "map".into(),
+            Self::SimpleObject => "object".into(),
+            Self::SimpleEnum(_) => "enum".into(),
+            Self::Number => "number".into(),
+            Self::Integer => "integer".into(),
+            Self::String => "string".into(),
+            Self::Array => "array".into(),
+            Self::Boolean => "boolean".into(),
+            Self::Reference => "reference".into(),
+            Self::Null => "null".into(),
+            Self::CompoundScalar(l) => l
+                .iter()
+                .map(|it| instance_type_name(*it))
+                .collect::<Vec<_>>()
+                .join("/"),
+            Self::WrapperEnum(s) => instance_type_name(*s).into(),
         }
+    }
+}
+
+fn is_scalar(it: InstanceType) -> bool {
+    match it {
+        InstanceType::Null
+        | InstanceType::Boolean
+        | InstanceType::Number
+        | InstanceType::String
+        | InstanceType::Integer => true,
+        InstanceType::Array | InstanceType::Object => false,
     }
 }
 
@@ -184,25 +203,41 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
 
     fn try_from(mut schema: SchemaObject) -> Result<Self, Error> {
         // Get the reported instance type.
-        let instance_type = get_schema_object_instance_type(&schema)
-            .context("Failed to get instance type for node")?;
+        let instance_type = schema.instance_type.as_ref();
 
         // Try to deduce the type of node.
         let kind = if let Some(ref enum_values) = schema.enum_values {
             ensure!(!enum_values.is_empty(), "Enum has no values");
-            // If the schema has a simple enum defined, then it's an simple enum.
-            if enum_values.len() == 1 {
-                NodeKind::WrapperEnum(instance_type.context("Wrapper enum has no instance type")?)
-            } else {
-                NodeKind::SimpleEnum(instance_type.context("Simple enum has no instance type")?)
+            match instance_type {
+                Some(SingleOrVec::Single(single_instance_type)) => {
+                    // If the schema has a simple enum defined, then it's an simple enum.
+                    if enum_values.len() == 1 {
+                        NodeKind::WrapperEnum(**single_instance_type)
+                    } else {
+                        NodeKind::SimpleEnum(**single_instance_type)
+                    }
+                }
+                Some(SingleOrVec::Vec(_)) => bail!("Enum has multiple instance types"),
+                None => bail!("Enum has no valid instance type"),
             }
         } else if schema.is_ref() {
             NodeKind::Reference
         } else {
             // Otherwise we need to figure out the kind of node.
             match instance_type {
-                // If the instance type is Some, then we can easily translate.
-                Some(instance_type) => match instance_type {
+                // If the instance type is Some(Vec(_)), then we have to check thatg all values are scalar.
+                Some(SingleOrVec::Vec(vec)) => {
+                    if vec.iter().all(|it| is_scalar(*it)) {
+                        // If all values are scalar, then it's a compound scalar.
+                        NodeKind::CompoundScalar(vec.clone())
+                    } else {
+                        // Otherwise it's a complex type which we don't support yet.
+                        bail!("Unsupported complex instance type:\n{:#?}", vec);
+                    }
+                }
+
+                // If the instance type is Some(Single(_)), then we can easily translate.
+                Some(SingleOrVec::Single(single_instance_type)) => match **single_instance_type {
                     InstanceType::Null => NodeKind::Null,
                     InstanceType::Boolean => NodeKind::Boolean,
                     InstanceType::Array => NodeKind::Array,
@@ -281,11 +316,11 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
 
 impl SchemaNodeModel {
     pub(super) fn type_name(&self) -> Result<String, Error> {
-        Ok(match self.kind {
+        Ok(match &self.kind {
             NodeKind::DefinitionReference | NodeKind::Reference => {
                 self.get_reference().context("Failed to get reference")?
             }
-            s => s.name().to_owned(),
+            s => s.name(),
         })
     }
 
@@ -365,6 +400,19 @@ impl SchemaNodeModel {
         // Info for simple enums
         if let NodeKind::SimpleEnum(instance_type) = self.kind {
             characteristics.push("Variants", instance_type_name(instance_type));
+        }
+
+        // Examples!
+        if !self.examples.is_empty() {
+            characteristics.push_markdown(
+                "Examples",
+                self.examples
+                    .iter()
+                    .map(|v| serde_yaml::to_string(v).map(|s| format!("`{}`", s.trim())))
+                    .collect::<Result<Vec<_>, _>>()
+                    .context("Could not serialize examples")?
+                    .join("<br>"),
+            );
         }
 
         Ok(characteristics)

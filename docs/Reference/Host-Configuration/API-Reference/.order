@@ -15,6 +15,7 @@ ManagementOs
 MountPoint
 Os
 Partition
+PartitionSize
 PartitionTableType
 PartitionType
 Password

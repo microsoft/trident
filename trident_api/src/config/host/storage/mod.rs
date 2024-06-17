@@ -705,7 +705,10 @@ mod tests {
 
         assert_eq!(partition.id, "disk1-partition1");
         assert_eq!(partition.partition_type, crate::config::PartitionType::Esp);
-        assert_eq!(partition.size, crate::config::PartitionSize::Fixed(1048576));
+        assert_eq!(
+            partition.size,
+            crate::config::PartitionSize::Fixed(1048576.into())
+        );
 
         let partition = storage.get_partition(&"non_existing_partition".to_string());
         assert_eq!(partition, None);

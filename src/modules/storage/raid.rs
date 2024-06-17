@@ -417,12 +417,12 @@ mod tests {
                         partitions: vec![
                             Partition {
                                 id: "boot".to_string(),
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root".to_string(),
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                                 partition_type: PartitionType::Root,
                             },
                             Partition {
@@ -570,8 +570,7 @@ mod functional_test {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use trident_api::{
         config::{
-            self, Disk, HostConfiguration, Partition, PartitionSize, PartitionType, RaidLevel,
-            SoftwareRaidArray,
+            self, Disk, HostConfiguration, Partition, PartitionType, RaidLevel, SoftwareRaidArray,
         },
         status::{BlockDeviceContents, BlockDeviceInfo, Storage},
     };
@@ -589,17 +588,17 @@ mod functional_test {
                         partitions: vec![
                             Partition {
                                 id: "boot1".into(),
-                                size: PartitionSize::Fixed(2),
+                                size: 2.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root1".into(),
-                                size: PartitionSize::Fixed(8),
+                                size: 8.into(),
                                 partition_type: PartitionType::Root,
                             },
                             Partition {
                                 id: "root2".into(),
-                                size: PartitionSize::Fixed(4),
+                                size: 4.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],

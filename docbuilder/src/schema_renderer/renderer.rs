@@ -66,6 +66,7 @@ impl NodeRenderer {
             NodeKind::Object => self.render_object(id, node),
             NodeKind::Enum => self.render_enum(id, node),
             NodeKind::SimpleEnum(_) => self.render_simple_enum(id, node),
+            NodeKind::CompoundScalar(_) | NodeKind::String => self.render_scalar(id, node),
             s => bail!("Unsupported top-level schema type: {:?}", s),
         }
         .context(format!("Failed to render documentation for '{id}'",))?;
@@ -137,13 +138,7 @@ impl NodeRenderer {
 
         context.insert("properties", &properties);
 
-        self.tera
-            .render("object.md.jinja2", &context)
-            .context("Failed to render object")
-            .map(|s| {
-                let re = Regex::new(r"\n{3,}").unwrap();
-                re.replace_all(&s, "\n\n").to_string()
-            })
+        self.tera_render("object.md.jinja2", &context)
     }
 
     /// Render a page for this node, assuming it's an enum.
@@ -197,13 +192,7 @@ impl NodeRenderer {
 
         context.insert("variants", &variants);
 
-        self.tera
-            .render("enum.md.jinja2", &context)
-            .context("Failed to render enum")
-            .map(|s| {
-                let re = Regex::new(r"\n{3,}").unwrap();
-                re.replace_all(&s, "\n\n").to_string()
-            })
+        self.tera_render("enum.md.jinja2", &context)
     }
 
     /// Render a page for this node, assuming it's a simple enum.
@@ -231,9 +220,29 @@ impl NodeRenderer {
 
         context.insert("variants", &variants);
 
+        self.tera_render("simple_enum.md.jinja2", &context)
+    }
+
+    fn render_scalar(&self, id: &str, node: SchemaNodeModel) -> Result<String, Error> {
+        debug!("Rendering scalar: {}", id);
+        let mut context = self.global_context();
+        context.insert("title", id);
+        context.insert("description", &node.description);
+        context.insert(
+            "characteristics",
+            &node
+                .get_characteristics()
+                .context(format!("Failed to get characteristics for '{id}'",))?,
+        );
+
+        self.tera_render("scalar.md.jinja2", &context)
+    }
+
+    /// Render the page.
+    fn tera_render(&self, template_name: &str, context: &TeraCxt) -> Result<String, Error> {
         self.tera
-            .render("simple_enum.md.jinja2", &context)
-            .context("Failed to render simple enum")
+            .render(template_name, context)
+            .with_context(|| format!("Failed to render {}", template_name))
             .map(|s| {
                 let re = Regex::new(r"\n{3,}").unwrap();
                 re.replace_all(&s, "\n\n").to_string()
@@ -258,7 +267,7 @@ impl NodeRenderer {
         context.insert("description", &node.description);
 
         // Get the template to use for this node.
-        let template = match node.kind {
+        let template = match &node.kind {
             NodeKind::DefinitionReference => "sections/reference.md.jinja2",
             NodeKind::Reference => "sections/reference.md.jinja2",
             NodeKind::SimpleObject => "sections/simple_object.md.jinja2",
@@ -321,6 +330,9 @@ impl NodeRenderer {
                 self.section_customize_simple_object(node, context, characteristics)
             }
             NodeKind::Map(_) => self.section_customize_map(node, context, characteristics),
+            NodeKind::CompoundScalar(_) => {
+                self.section_customize_compount_scalar(node, context, characteristics)
+            }
             NodeKind::Number => self.section_customize_number(node, context, characteristics),
             NodeKind::Integer => self.section_customize_integer(node, context, characteristics),
             NodeKind::String => self.section_customize_string(node, context, characteristics),
@@ -573,6 +585,16 @@ impl NodeRenderer {
         _: &mut Characteristics,
     ) -> Result<(), Error> {
         context.insert("todo", "context for string");
+        Ok(())
+    }
+
+    fn section_customize_compount_scalar(
+        &self,
+        _: SchemaNodeModel,
+        context: &mut TeraCxt,
+        _: &mut Characteristics,
+    ) -> Result<(), Error> {
+        context.insert("todo", "context for compound scalar");
         Ok(())
     }
 

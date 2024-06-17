@@ -25,25 +25,10 @@ This is a user defined string that allows to link the partition to the mount poi
 
 Size of the partition.
 
-Format: String `<number>[<unit>]`
-
-Accepted values:
-
-- `grow`: Use all available space.
-
-- A number with optional unit suffixes: K, M, G, T (to the base of 1024), bytes by default when no unit is specified.
-
-Examples:
-
-- `1G`
-
-- `200M`
-
-- `grow`
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
+| Characteristic | Value                               |
+| -------------- | ----------------------------------- |
+| Type           | `PartitionSize`                     |
+| Link           | [PartitionSize](./PartitionSize.md) |
 
 ### `type` **<span style="color:orange;">(required)</span>**
 

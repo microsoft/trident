@@ -182,7 +182,7 @@ mod tests {
         let part1 = Partition {
             id: "foo1".into(),
             partition_type: PartitionType::Root,
-            size: crate::config::PartitionSize::Fixed(0),
+            size: crate::config::PartitionSize::Fixed(0.into()),
         };
         let mut node1 = BlkDevNode::from(&part1);
 
@@ -204,7 +204,7 @@ mod tests {
         let part2 = Partition {
             id: "foo2".into(),
             partition_type: PartitionType::Root,
-            size: crate::config::PartitionSize::Fixed(0),
+            size: crate::config::PartitionSize::Fixed(0.into()),
         };
         let mut node2 = BlkDevNode::from(&part2);
 

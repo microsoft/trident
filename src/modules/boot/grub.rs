@@ -251,7 +251,7 @@ pub(crate) mod functional_test {
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk, HostConfiguration, InternalMountPoint, Partition,
-            PartitionSize, PartitionType, RaidLevel, SoftwareRaidArray,
+            PartitionType, RaidLevel, SoftwareRaidArray,
         },
         status::{BlockDeviceContents, BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
@@ -434,17 +434,17 @@ pub(crate) mod functional_test {
                         partitions: vec![
                             Partition {
                                 id: "boot1".into(),
-                                size: PartitionSize::Fixed(2),
+                                size: 2.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root1".into(),
-                                size: PartitionSize::Fixed(8),
+                                size: 8.into(),
                                 partition_type: PartitionType::Root,
                             },
                             Partition {
                                 id: "root2".into(),
-                                size: PartitionSize::Fixed(8),
+                                size: 8.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],
@@ -547,12 +547,12 @@ pub(crate) mod functional_test {
                         partitions: vec![
                             Partition {
                                 id: "boot".into(),
-                                size: PartitionSize::Fixed(2),
+                                size: 2.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root".into(),
-                                size: PartitionSize::Fixed(8),
+                                size: 8.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],
@@ -639,17 +639,17 @@ pub(crate) mod functional_test {
                         partitions: vec![
                             Partition {
                                 id: "efi".into(),
-                                size: PartitionSize::Fixed(1),
+                                size: 1.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root-a".into(),
-                                size: PartitionSize::Fixed(9),
+                                size: 9.into(),
                                 partition_type: PartitionType::Root,
                             },
                             Partition {
                                 id: "root-b".into(),
-                                size: PartitionSize::Fixed(9),
+                                size: 9.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],
@@ -726,12 +726,12 @@ pub(crate) mod functional_test {
                         partitions: vec![
                             Partition {
                                 id: "boot".into(),
-                                size: PartitionSize::Fixed(2),
+                                size: 2.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root".into(),
-                                size: PartitionSize::Fixed(8),
+                                size: 8.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],
@@ -790,12 +790,12 @@ pub(crate) mod functional_test {
                         partitions: vec![
                             Partition {
                                 id: "boot".into(),
-                                size: PartitionSize::Fixed(2),
+                                size: 2.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root".into(),
-                                size: PartitionSize::Fixed(8),
+                                size: 8.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],

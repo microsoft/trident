@@ -570,8 +570,12 @@
           "format": "Block Device ID"
         },
         "size": {
-          "description": "Size of the partition.\n\nFormat: String `<number>[<unit>]`\n\nAccepted values:\n\n- `grow`: Use all available space.\n\n- A number with optional unit suffixes: K, M, G, T (to the base of 1024), bytes by default when no unit is specified.\n\nExamples:\n\n- `1G`\n\n- `200M`\n\n- `grow`",
-          "type": "string"
+          "description": "Size of the partition.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PartitionSize"
+            }
+          ]
         },
         "type": {
           "description": "The type of the partition.\n\nAs defined by the [Discoverable Partitions Specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).",
@@ -583,6 +587,38 @@
         }
       },
       "additionalProperties": false
+    },
+    "PartitionSize": {
+      "description": "Partition size. Fixed or grow to use all available space.",
+      "oneOf": [
+        {
+          "title": "Grow",
+          "description": "Grow a partition to use all available space..",
+          "type": "string",
+          "enum": [
+            "grow"
+          ]
+        },
+        {
+          "title": "Fixed",
+          "description": "A byte count with an optional suffix (K, M, G, T, to the base of 1024).",
+          "examples": [
+            0,
+            1,
+            102,
+            104576,
+            "1K",
+            "1M",
+            "5G",
+            "4T"
+          ],
+          "type": [
+            "string",
+            "number"
+          ],
+          "format": "\\d+\\s*[KMGT]?"
+        }
+      ]
     },
     "PartitionTableType": {
       "description": "Partition table type. Currently only GPT is supported.",

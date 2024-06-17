@@ -185,8 +185,7 @@ mod test {
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk, HostConfiguration, ImageFormat, ImageSha256,
-            InternalImage, InternalMountPoint, Partition, PartitionSize, PartitionType,
-            Storage as StorageConfig,
+            InternalImage, InternalMountPoint, Partition, PartitionType, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
         status::{AbVolumeSelection, BlockDeviceInfo, ServicingState, Storage},
@@ -210,17 +209,17 @@ mod test {
                         partitions: vec![
                             Partition {
                                 id: "esp".to_owned(),
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root-a".to_owned(),
-                                size: PartitionSize::Fixed(1000),
+                                size: 1000.into(),
                                 partition_type: PartitionType::Root,
                             },
                             Partition {
                                 id: "root-b".to_owned(),
-                                size: PartitionSize::Fixed(10000),
+                                size: 10000.into(),
                                 partition_type: PartitionType::Root,
                             },
                         ],

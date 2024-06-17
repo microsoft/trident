@@ -579,7 +579,7 @@ mod tests {
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemType, Image, ImageSha256,
-            InternalMountPoint, MountOptions, MountPoint, Partition, PartitionSize, PartitionType,
+            InternalMountPoint, MountOptions, MountPoint, Partition, PartitionType,
             Storage as StorageConfig,
         },
         status::{ServicingState, ServicingType, Storage},
@@ -629,12 +629,12 @@ mod tests {
                             Partition {
                                 id: "boot".to_string(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                         ],
                         ..Default::default()
@@ -957,22 +957,22 @@ mod tests {
                             Partition {
                                 id: "esp".to_string(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root-a".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root-b".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "trident".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                         ],
                         ..Default::default()
@@ -1145,22 +1145,22 @@ mod tests {
                             Partition {
                                 id: "esp".to_string(),
                                 partition_type: PartitionType::Esp,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "boot-a".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                             Partition {
                                 id: "boot-b".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
-                                size: PartitionSize::Fixed(100),
+                                size: 100.into(),
                             },
                         ],
                         ..Default::default()
@@ -1344,7 +1344,7 @@ mod functional_test {
             partitions: vec![Partition {
                 id: "root-a".to_owned(),
                 partition_type: PartitionType::Root,
-                size: config::PartitionSize::Fixed(100),
+                size: 100.into(),
             }],
         }];
         host_status.storage.block_devices.insert(
@@ -1379,7 +1379,7 @@ mod functional_test {
             .push(Partition {
                 id: "root-b".to_owned(),
                 partition_type: PartitionType::Root,
-                size: config::PartitionSize::Fixed(100),
+                size: 100.into(),
             });
         host_status.storage.block_devices.insert(
             "root-b".to_string(),
@@ -1522,7 +1522,7 @@ mod functional_test {
             partitions: vec![Partition {
                 id: "root-data-a".to_owned(),
                 partition_type: PartitionType::Root,
-                size: config::PartitionSize::Fixed(100),
+                size: 100.into(),
             }],
         }];
         host_status.storage.block_devices.insert(
@@ -1547,7 +1547,7 @@ mod functional_test {
             .push(Partition {
                 id: "root-data-b".to_owned(),
                 partition_type: PartitionType::Root,
-                size: config::PartitionSize::Fixed(100),
+                size: 100.into(),
             });
         host_status.storage.block_devices.insert(
             "root-data-b".to_string(),

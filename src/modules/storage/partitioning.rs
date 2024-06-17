@@ -239,7 +239,7 @@ fn add_repart_entries(
     for partition in &disk.partitions {
         let size = match partition.size {
             PartitionSize::Grow => None,
-            PartitionSize::Fixed(s) => Some(s),
+            PartitionSize::Fixed(s) => Some(s.bytes()),
         };
 
         repart.push_partition_entry(RepartPartitionEntry {
@@ -473,12 +473,12 @@ mod test {
                 Partition {
                     id: "part1".to_string(),
                     partition_type: PartitionType::Root,
-                    size: PartitionSize::Fixed(1024),
+                    size: 1024.into(),
                 },
                 Partition {
                     id: "part2".to_string(),
                     partition_type: PartitionType::Swap,
-                    size: PartitionSize::Fixed(2048),
+                    size: 2048.into(),
                 },
                 Partition {
                     id: "part3".to_string(),

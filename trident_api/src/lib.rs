@@ -6,6 +6,7 @@ pub mod config;
 pub mod constants;
 pub mod error;
 pub mod misc;
+pub mod primitives;
 pub mod status;
 
 /// Identifier for a block device. Needs to be unique across all types of devices.
