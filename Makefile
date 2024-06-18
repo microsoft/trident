@@ -292,7 +292,7 @@ run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netla
 
 .PHONY: run-netlaunch-container
 run-netlaunch-container: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.bin
-	@bin/netlaunch -i bin/trident-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
+	@bin/netlaunch -i bin/trident-containerhost-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 # This target leverages the samples that are automatically generated as part of
 # the build-api-docs target. The HC sample is selected by setting the
