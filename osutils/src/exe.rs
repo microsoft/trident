@@ -203,10 +203,10 @@ impl RunAndCheck for Command {
     fn run_and_check(&mut self) -> Result<(), Error> {
         let result = self.output();
         trace!(
-            "Executed '{}': {}. Details: {:?}",
+            "Executed '{}': {}. Report:\n{}",
             self.render_command(),
             result.explain_exit(),
-            &result
+            result.output_report(),
         );
         result
             .check()
@@ -216,10 +216,10 @@ impl RunAndCheck for Command {
     fn output_and_check(&mut self) -> Result<String, Error> {
         let result = self.output();
         trace!(
-            "Executed '{}': {}. Details: {:?}",
+            "Executed '{}': {}. Report:\n{}",
             self.render_command(),
             result.explain_exit(),
-            &result
+            result.output_report(),
         );
         result
             .check_output()
@@ -230,10 +230,10 @@ impl RunAndCheck for Command {
         // Run the process and store the result.
         let result = self.output();
         trace!(
-            "Executed '{}': {}. Details: {:?}",
+            "Executed '{}': {}. Report:\n{}",
             self.render_command(),
             result.explain_exit(),
-            &result
+            result.output_report(),
         );
 
         // Check the result to be sure it's Ok(output) and that the subprocess
