@@ -60,3 +60,4 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: ci
+          blockPublishing: true
