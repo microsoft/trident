@@ -1,0 +1,137 @@
+hostConfiguration:
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+        partitionTableType: gpt
+        partitions:
+          - id: esp1
+            type: esp
+            size: 100M
+          - id: root-a1
+            type: root
+            size: 4G
+          - id: root-b1
+            type: root
+            size: 1G
+          - id: swap1
+            type: swap
+            size: 1G
+          - id: home1
+            type: home
+            size: 100M
+          - id: trident1
+            type: linux-generic
+            size: 100M
+          - id: root-a2
+            type: root
+            size: 4G
+          - id: root-b2
+            type: root
+            size: 1G
+          - id: swap2
+            type: swap
+            size: 1G
+          - id: home2
+            type: home
+            size: 100M
+          - id: trident2
+            type: linux-generic
+            size: 100M
+      - id: disk2
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+        partitionTableType: gpt
+        partitions: []
+    raid:
+      syncTimeout: 300
+      software:
+        - id: root-a
+          name: root-a
+          level: raid1
+          devices:
+            - root-a1
+            - root-a2
+        - id: root-b
+          name: root-b
+          level: raid1
+          devices:
+            - root-b1
+            - root-b2
+        - id: home
+          name: home
+          level: raid1
+          devices:
+            - home1
+            - home2
+        - id: trident
+          name: trident
+          level: raid1
+          devices:
+            - trident1
+            - trident2
+    abUpdate:
+      volumePairs:
+        - id: root
+          volumeAId: root-a
+          volumeBId: root-b
+    filesystems:
+      - deviceId: trident
+        type: ext4
+        mountPoint:
+          path: /var/lib/trident
+          options: defaults
+      - deviceId: root
+        type: ext4
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /
+          options: defaults
+      - deviceId: home
+        type: ext4
+        mountPoint:
+          path: /home
+          options: defaults
+      - deviceId: swap1
+        type: swap
+      - deviceId: esp1
+        type: vfat
+        source:
+          type: esp-image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /boot/efi
+          options: umask=0077
+      - deviceId: swap2
+        type: swap
+  scripts:
+    postProvision:
+      - name: sample-provision-script
+        runOn:
+          - clean-install
+          - ab-update
+        content: echo 'Post provision!'
+        logFilePath: /var/log/sample-provision-script.log
+    postConfigure:
+      - name: testing-privilege
+        runOn:
+          - clean-install
+          - ab-update
+        content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+  os:
+    network:
+      version: 2
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+    users:
+      - name: testing-user
+        sshPublicKeys: []
+        sshMode: key-only

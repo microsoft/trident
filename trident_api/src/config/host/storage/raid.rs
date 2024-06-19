@@ -17,6 +17,17 @@ pub struct Raid {
     /// Individual software raid configurations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub software: Vec<SoftwareRaidArray>,
+
+    /// Timeout in seconds to wait for RAID arrays to sync.
+    /// By default, Trident will NOT wait for RAID arrays to finish syncing
+    /// before continuing on with provisioning. This is because RAID arrays are
+    /// supposed to be usable immediately after creation. If the user provides a
+    /// value for this field and the RAID arrays do NOT finish syncing within the
+    /// specified timeout, Trident will fail the provisioning process and return
+    /// an error. The user will need to increase their timeout value if the RAID
+    /// arrays are taking longer to sync than expected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_timeout: Option<u64>,
 }
 
 /// Software RAID configuration.

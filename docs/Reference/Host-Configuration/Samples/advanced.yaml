@@ -205,6 +205,7 @@ storage:
       devices:
       - enc-home1
       - enc-home2
+    syncTimeout: 180
   abUpdate:
     volumePairs:
     - id: boot

@@ -528,6 +528,7 @@ mod tests {
                     level: RaidLevel::Raid1,
                     devices: vec!["mnt-raid-1".to_owned(), "mnt-raid-2".to_owned()],
                 }],
+                ..Default::default()
             },
             filesystems: vec![
                 FileSystem {
@@ -943,6 +944,7 @@ mod tests {
                     level: RaidLevel::Raid1,
                     devices: vec!["part3".to_owned(), "part4".to_owned()],
                 }],
+                ..Default::default()
             },
             filesystems: vec![
                 FileSystem {
@@ -2190,6 +2192,7 @@ mod tests {
                         level: RaidLevel::Raid1,
                         devices: vec!["part3".to_owned(), "part4".to_owned()],
                     }],
+                    ..Default::default()
                 },
                 filesystems: vec![FileSystem {
                     device_id: Some("part1".to_owned()),

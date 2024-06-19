@@ -374,6 +374,7 @@ mod tests {
                         level: RaidLevel::Raid1,
                         devices: vec!["part3".to_owned(), "part4".to_owned()],
                     }],
+                    ..Default::default()
                 },
                 internal_verity: vec![],
                 internal_mount_points: vec![InternalMountPoint {

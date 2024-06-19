@@ -2,6 +2,7 @@ bareMetal:
   daily:
     - base
     - raid-big
+    - raid-resync-small
     - abupdate-on-encrypted-raid
     - abupdate-on-encrypted-partitions
     - abupdate-with-verity
@@ -15,6 +16,7 @@ bareMetal:
   validation:
     - base
     - raid-big
+    - raid-resync-small
     - abupdate-on-encrypted-raid
     - abupdate-on-encrypted-partitions
     - abupdate-with-verity
@@ -35,6 +37,7 @@ virtualMachine:
     - encrypted-raid
     - encrypted-swap
     - raid-small
+    - raid-resync-small
     - rerun
     - simple
     - verity
@@ -48,6 +51,7 @@ virtualMachine:
     - encrypted-raid
     - encrypted-swap
     - raid-small
+    - raid-resync-small
     - rerun
     - simple
     - verity
@@ -61,6 +65,7 @@ virtualMachine:
     - encrypted-raid
     - encrypted-swap
     - raid-small
+    - raid-resync-small
     - rerun
     - simple
     - verity
@@ -74,6 +79,7 @@ virtualMachine:
     - encrypted-raid
     - encrypted-swap
     - raid-small
+    - raid-resync-small
     - rerun
     - simple
     - verity

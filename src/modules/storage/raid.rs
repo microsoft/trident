@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Error};
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
@@ -7,6 +7,8 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     str::FromStr,
+    thread::sleep,
+    time::{Duration, Instant},
 };
 use strum_macros::{Display, EnumString};
 use trident_api::{
@@ -333,6 +335,12 @@ pub(super) fn create_sw_raid(
                 software_raid_config.name
             ))?;
         }
+
+        if let Some(sync_timeout) = host_config.storage.raid.sync_timeout {
+            wait_for_raid_sync(host_status, sync_timeout)
+                .context("Failed to wait for RAID sync")?;
+        }
+
         udevadm::trigger().context("Udev failed while scanning for new devices")?;
 
         for software_raid_config in &host_config.storage.raid.software {
@@ -387,6 +395,84 @@ pub fn create_sw_raid_array(
         ))?
     }
 
+    Ok(())
+}
+
+/// This function checks if the sync_action file has a value "idle" for all RAID
+/// devices, and waits for all RAID devices to sync within the given timeout. If
+/// the RAID arrays have not finished their sync within the timeout, an error is
+/// returned.
+fn wait_for_raid_sync(host_status: &mut HostStatus, sync_timeout: u64) -> Result<(), Error> {
+    info!("Waiting for RAID arrays to sync");
+
+    let start_time = Instant::now();
+    let sync_timeout_secs = std::time::Duration::from_secs(sync_timeout);
+
+    // Exponential backoff for sleep duration
+    let mut sleep_duration = Duration::from_secs(5);
+    let max_sleep_duration = Duration::from_secs(60);
+
+    let raid_device_ids: Vec<String> = host_status
+        .spec
+        .storage
+        .raid
+        .software
+        .iter()
+        .map(|raid_array| raid_array.id.clone())
+        .collect();
+
+    let mut raid_devices: Vec<(String, String)> = get_device_paths(host_status, &raid_device_ids)
+        .context("Failed to get RAID device paths")?
+        .iter()
+        .map(|raid_path| {
+            let symlink_path = raid_path.canonicalize().context(format!(
+                "Failed to get RAID device resolved path for RAID array '{}'",
+                raid_path.display()
+            ))?;
+            let device_name = get_raid_device_name(&symlink_path)?;
+            Ok((device_name, "".to_string()))
+        })
+        .collect::<Result<Vec<(String, String)>, Error>>()?;
+
+    loop {
+        // Check if any RAID devices are not idle
+        raid_devices
+            .iter_mut()
+            .filter(|(_, sync_status)| *sync_status != "idle")
+            .for_each(|(raid_device, sync_status)| {
+                if let Ok(sync_action) = osutils::files::read_file_trim(&PathBuf::from(format!(
+                    "/sys/devices/virtual/block/{}/md/sync_action",
+                    raid_device
+                ))) {
+                    sync_status.clone_from(&sync_action);
+                } else {
+                    warn!("Failed to read RAID device sync status");
+                }
+            });
+
+        if raid_devices
+            .iter()
+            .all(|(_, sync_status)| sync_status == "idle")
+        {
+            break;
+        } else if start_time.elapsed() >= sync_timeout_secs {
+            bail!("Timed out waiting for RAID arrays to sync!");
+        }
+
+        if start_time.elapsed() + sleep_duration >= sync_timeout_secs {
+            sleep_duration = sync_timeout_secs - start_time.elapsed();
+        } else if sleep_duration < max_sleep_duration {
+            sleep_duration *= 2;
+        } else {
+            sleep_duration = max_sleep_duration;
+        }
+
+        debug!(
+            "Still waiting for RAID arrays to sync. Checking again after {:?} seconds",
+            sleep_duration.as_secs()
+        );
+        sleep(sleep_duration);
+    }
     Ok(())
 }
 
@@ -558,27 +644,181 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
 
-    use crate::modules;
-
     use super::*;
-    use const_format::formatcp;
     use pytest_gen::functional_test;
 
     use std::path::PathBuf;
 
-    use maplit::btreemap;
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
-    use trident_api::{
-        config::{
-            self, Disk, HostConfiguration, Partition, PartitionType, RaidLevel, SoftwareRaidArray,
-        },
-        status::{BlockDeviceContents, BlockDeviceInfo, Storage},
+    use trident_api::config::{
+        self, Disk, HostConfiguration, Partition, PartitionSize, PartitionType, RaidLevel,
+        SoftwareRaidArray, Storage,
     };
+
+    #[functional_test]
+    fn test_raid_creation_without_sync_timeout() {
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "disk".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
+                        partitions: vec![
+                            Partition {
+                                id: "root-a".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    raid: config::Raid {
+                        software: vec![SoftwareRaidArray {
+                            id: "raid_array".into(),
+                            name: "md0".into(),
+                            devices: vec!["root-a".to_string(), "root-b".to_string()],
+                            level: RaidLevel::Raid1,
+                        }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let spec = &host_status.spec.clone();
+
+        let err = stop_pre_existing_raid_arrays(spec);
+        assert!(err.is_ok());
+
+        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        assert!(err.is_ok());
+
+        create_sw_raid(&mut host_status, spec).unwrap();
+
+        // cleanup the RAID array
+        let err = stop_pre_existing_raid_arrays(spec);
+        assert!(err.is_ok());
+    }
+
+    #[functional_test]
+    fn test_raid_creation_with_sync_timeout() {
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "disk".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
+                        partitions: vec![
+                            Partition {
+                                id: "root-a".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    raid: config::Raid {
+                        software: vec![SoftwareRaidArray {
+                            id: "raid_array".into(),
+                            name: "md0".into(),
+                            devices: vec!["root-a".to_string(), "root-b".to_string()],
+                            level: RaidLevel::Raid1,
+                        }],
+                        sync_timeout: Some(180),
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let spec = &host_status.spec.clone();
+        let err = stop_pre_existing_raid_arrays(spec);
+        assert!(err.is_ok());
+
+        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        assert!(err.is_ok());
+
+        create_sw_raid(&mut host_status, spec).unwrap();
+
+        // cleanup the RAID array
+        let err = stop_pre_existing_raid_arrays(spec);
+        assert!(err.is_ok());
+    }
+
+    #[functional_test(negative = true)]
+    fn test_raid_creation_with_sync_timeout_failing() {
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "disk".to_string(),
+                        device: PathBuf::from("/dev/sdb"),
+                        partitions: vec![
+                            Partition {
+                                id: "root-a".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    raid: config::Raid {
+                        software: vec![SoftwareRaidArray {
+                            id: "raid_array".into(),
+                            name: "md0".into(),
+                            devices: vec!["root-a".to_string(), "root-b".to_string()],
+                            level: RaidLevel::Raid1,
+                        }],
+                        sync_timeout: Some(0),
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let spec = &host_status.spec.clone();
+        let err = stop_pre_existing_raid_arrays(spec);
+        assert!(err.is_ok());
+
+        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        assert!(err.is_ok());
+
+        assert_eq!(
+            create_sw_raid(&mut host_status, spec)
+                .unwrap_err()
+                .to_string(),
+            "Failed to wait for RAID sync"
+        );
+
+        // cleanup the RAID array in case it was created
+        let err = stop_pre_existing_raid_arrays(spec);
+        assert!(err.is_ok());
+    }
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_raid_creation_failure_unequal_partitions() {
-        modules::boot::grub::functional_test::test_execute_and_resulting_layout(true, true);
-
         let mut host_status = HostStatus {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -588,48 +828,23 @@ mod functional_test {
                         partitions: vec![
                             Partition {
                                 id: "boot1".into(),
-                                size: 2.into(),
+                                size: PartitionSize::from_str("2G").unwrap(),
                                 partition_type: PartitionType::Esp,
                             },
                             Partition {
                                 id: "root1".into(),
-                                size: 8.into(),
+                                size: PartitionSize::from_str("8G").unwrap(),
                                 partition_type: PartitionType::Root,
                             },
                             Partition {
                                 id: "root2".into(),
-                                size: 4.into(),
+                                size: PartitionSize::from_str("4G").unwrap(),
                                 partition_type: PartitionType::Root,
                             },
                         ],
                         ..Default::default()
                     }],
                     ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: Storage {
-                block_devices: btreemap! {
-                        "foo".into() => BlockDeviceInfo {
-                            path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                            size: 10,
-                            contents: BlockDeviceContents::Initialized,
-                        },
-                        "boot1".into() => BlockDeviceInfo {
-                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                            size: 2,
-                            contents: BlockDeviceContents::Initialized,
-                        },
-                        "root1".into() => BlockDeviceInfo {
-                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                            size: 8,
-                            contents: BlockDeviceContents::Initialized,
-                        },
-                        "root2".into() => BlockDeviceInfo {
-                            path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                            size: 4,
-                            contents: BlockDeviceContents::Initialized,
-                        },
                 },
                 ..Default::default()
             },
@@ -643,6 +858,13 @@ mod functional_test {
             devices: vec!["root1".to_string(), "root2".to_string()],
             level: RaidLevel::Raid1,
         };
+
+        let spec = &host_status.spec.clone();
+        let err = stop_pre_existing_raid_arrays(spec);
+        assert!(err.is_ok());
+
+        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        assert!(err.is_ok());
 
         assert_eq!(
             create_sw_raid_array(&mut host_status, &raid_array)

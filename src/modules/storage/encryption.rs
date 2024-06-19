@@ -504,6 +504,7 @@ mod tests {
                             name: "raid1".to_string(),
                             level: RaidLevel::Raid1,
                         }],
+                        ..Default::default()
                     },
                     ..Default::default()
                 },
@@ -556,8 +557,6 @@ mod tests {
                 ],
                 ..Default::default()
             }],
-            internal_verity: vec![],
-            raid: Raid { software: vec![] },
             internal_mount_points: vec![
                 InternalMountPoint {
                     path: PathBuf::from("/boot/efi"),

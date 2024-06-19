@@ -43,6 +43,7 @@ storage:
       devices:
       - root1
       - root2
+    syncTimeout: 180
   filesystems:
   - deviceId: esp1
     type: vfat

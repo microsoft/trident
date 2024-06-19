@@ -268,6 +268,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         level: RaidLevel::Raid1,
                         devices: vec!["raid-a".to_string(), "raid-b".to_string()],
                     }],
+                    ..Default::default()
                 },
                 filesystems: vec![
                     FileSystem {
@@ -808,6 +809,8 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     },
                 ],
                 raid: Raid {
+                    // add 3 minute timeout for syncing
+                    sync_timeout: Some(180), // 180 seconds, 3 minutes
                     software: vec![
                         SoftwareRaidArray {
                             id: "boot-a".to_string(),
@@ -1184,6 +1187,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         },
                     ],
                     raid: Raid {
+                        sync_timeout: Some(180), // 180 seconds, 3 minutes
                         software: vec![SoftwareRaidArray {
                             id: "root".to_string(),
                             name: "root".to_string(),
@@ -1344,7 +1348,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             adopted_partitions: vec![],
                         },
                     ],
-                    raid: Raid { software: vec![] },
+                    raid: Raid { software: vec![], sync_timeout: None },
                     encryption: Some(Encryption {
                         recovery_key_url: None,
                         volumes: vec![EncryptedVolume {
