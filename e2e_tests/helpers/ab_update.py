@@ -7,8 +7,9 @@ import yaml
 from invoke.exceptions import CommandTimedOut
 from invoke.watchers import StreamWatcher
 from io import StringIO
+import os
 
-HOST_TRIDENT_CONFIG_PATH = "/etc/trident/config.yaml"
+LOCAL_TRIDENT_CONFIG_PATH = "/etc/trident/config.yaml"
 TRIDENT_EXECUTABLE_PATH = "/usr/bin/trident"
 RETRY_INTERVAL = 60
 MAX_RETRIES = 5
@@ -46,7 +47,7 @@ def run_ssh_command(connection, command):
         raise
 
 
-def trident_run(connection, keys_file_path, ip_address, user_name):
+def trident_run(connection, keys_file_path, ip_address, user_name, trident_config):
     """
     Runs "trident run" to trigger A/B update on the host and ensure that the
     host reached the reboot stage successfully
@@ -57,9 +58,10 @@ def trident_run(connection, keys_file_path, ip_address, user_name):
     out_stream = StringIO()
     err_stream = StringIO()
     try:
-        # Set warn=True to continue execution even if the command has a non-zero exit code
+        # Set warn=True to continue execution even if the command has a non-zero exit code.
+        # Provide -c arg, the full path to the RW Trident config.
         result = connection.run(
-            f"sudo {TRIDENT_EXECUTABLE_PATH} run -v trace",
+            f"sudo {TRIDENT_EXECUTABLE_PATH} run -v trace -c {trident_config}",
             warn=True,
             out_stream=out_stream,
             err_stream=err_stream,
@@ -132,41 +134,48 @@ def trident_run(connection, keys_file_path, ip_address, user_name):
     return
 
 
-def update_host_trident_config(connection, image_dir, version):
-    """Updates host's Trident config by editing /etc/trident/config.yaml via sed command"""
-    host_config_output = run_ssh_command(
-        connection, f"sudo cat {HOST_TRIDENT_CONFIG_PATH}"
+def update_trident_config(connection, destination_directory, trident_config, version):
+    """Updates the RW Trident config via sed command"""
+    # If file at path trident_config does not exist, copy it over from LOCAL_TRIDENT_CONFIG_PATH
+    result = connection.run(f"test -f {trident_config}", warn=True, hide="both")
+    if not result.ok:  # If the test failed (file does not exist)
+        print(
+            f"File {trident_config} does not exist. Copying from {LOCAL_TRIDENT_CONFIG_PATH}"
+        )
+        run_ssh_command(
+            connection,
+            f"sudo cp {LOCAL_TRIDENT_CONFIG_PATH} {trident_config}",
+        )
+
+    trident_config_output = run_ssh_command(
+        connection, f"sudo cat {trident_config}"
     ).strip()
-    print("Original Trident configuration:\n", host_config_output)
+    print("Original Trident configuration:\n", trident_config_output)
 
     # Get a list of images to be updated
-    images_to_update = get_images_to_update(host_config_output)
-    image_dir = image_dir.strip("/")
+    images_to_update = get_images_to_update(trident_config_output)
+    destination_directory = destination_directory.strip("/")
 
     for old_url, image_name in images_to_update:
-        new_url = f"file:///{image_dir}/{image_name}_v{version}.rawzst"
+        new_url = f"file:///{destination_directory}/{image_name}_v{version}.rawzst"
         print(f"Updating URL {old_url} to new URL {new_url}")
-        sed_command = (
-            f"sudo sed -i 's#{old_url}#{new_url}#g' {HOST_TRIDENT_CONFIG_PATH}"
-        )
+        sed_command = f"sudo sed -i 's#{old_url}#{new_url}#g' {trident_config}"
         run_ssh_command(connection, sed_command)
 
     # Remove phonehome and selfUpgrade fields from the Trident config
-    run_ssh_command(
-        connection, f"sudo sed -i -r 's#phonehome:.+##g' {HOST_TRIDENT_CONFIG_PATH}"
-    )
+    run_ssh_command(connection, f"sudo sed -i -r 's#phonehome:.+##g' {trident_config}")
     run_ssh_command(
         connection,
-        f"sudo sed -i 's#selfUpgrade: true#selfUpgrade: false#g' {HOST_TRIDENT_CONFIG_PATH}",
+        f"sudo sed -i 's#selfUpgrade: true#selfUpgrade: false#g' {trident_config}",
     )
 
-    updated_host_config_output = run_ssh_command(
-        connection, f"sudo cat {HOST_TRIDENT_CONFIG_PATH}"
+    updated_trident_config_output = run_ssh_command(
+        connection, f"sudo cat {trident_config}"
     ).strip()
-    print("Updated Trident configuration:\n", updated_host_config_output)
+    print("Updated Trident configuration:\n", updated_trident_config_output)
 
 
-def get_images_to_update(host_config_output) -> List[Tuple[str, str]]:
+def get_images_to_update(trident_config_output) -> List[Tuple[str, str]]:
     """
     Based on the local Trident config, returns a list of tuples (URL, image_name), representing
     images that need to be updated. An image can only be updated if it corresponds to (1) the ESP
@@ -181,11 +190,11 @@ def get_images_to_update(host_config_output) -> List[Tuple[str, str]]:
     ].
     """
     YamlSafeLoader.add_constructor("!image", YamlSafeLoader.accept_image)
-    host_config = yaml.load(host_config_output, Loader=YamlSafeLoader)
+    trident_config = yaml.load(trident_config_output, Loader=YamlSafeLoader)
 
     # Determine targetId of ESP partition
     esp_partition_target_id = None
-    for disk in host_config["hostConfiguration"]["storage"]["disks"]:
+    for disk in trident_config["hostConfiguration"]["storage"]["disks"]:
         for partition in disk["partitions"]:
             if partition["type"] == "esp":
                 esp_partition_target_id = partition["id"]
@@ -193,14 +202,16 @@ def get_images_to_update(host_config_output) -> List[Tuple[str, str]]:
 
     # Collect IDs of A/B volume pairs
     ab_volume_pair_ids = []
-    for pair in host_config["hostConfiguration"]["storage"]["abUpdate"]["volumePairs"]:
+    for pair in trident_config["hostConfiguration"]["storage"]["abUpdate"][
+        "volumePairs"
+    ]:
         ab_volume_pair_ids.append(pair["id"])
 
     # Collect list of all devices with images: (image URL, deviceId)
     all_images: List[Tuple[str, str]] = []
 
     # First check all filesystems
-    for fs in host_config["hostConfiguration"]["storage"].get("filesystems") or []:
+    for fs in trident_config["hostConfiguration"]["storage"].get("filesystems") or []:
         device_id = fs.get("deviceId")
         if not device_id:
             continue
@@ -210,7 +221,7 @@ def get_images_to_update(host_config_output) -> List[Tuple[str, str]]:
 
     # Then check all verity filesystems:
     for fs in (
-        host_config["hostConfiguration"]["storage"].get("verityFilesystems") or []
+        trident_config["hostConfiguration"]["storage"].get("verityFilesystems") or []
     ):
         all_images.append((fs["dataImage"]["url"], fs["dataDeviceId"]))
         all_images.append((fs["hashImage"]["url"], fs["hashDeviceId"]))
@@ -233,18 +244,25 @@ def get_images_to_update(host_config_output) -> List[Tuple[str, str]]:
     return urls_to_update
 
 
-def trigger_ab_update(ip_address, user_name, keys_file_path, image_dir, version):
-    """Connects to the host via SSH, updates the local Trident config, and triggers A/B update"""
+def trigger_ab_update(
+    ip_address,
+    user_name,
+    keys_file_path,
+    destination_directory,
+    trident_config,
+    version,
+):
+    """Connects to the host via SSH, updates the Trident config, and triggers A/B update"""
     # Set up SSH client
     config = Config(overrides={"connect_kwargs": {"key_filename": keys_file_path}})
     connection = Connection(host=ip_address, user=user_name, config=config)
 
-    # Update host's Trident config
-    update_host_trident_config(connection, image_dir, version)
+    # Update Trident config
+    update_trident_config(connection, destination_directory, trident_config, version)
 
     # Re-run Trident and capture logs
     print("Re-running Trident to trigger A/B update", flush=True)
-    trident_run(connection, keys_file_path, ip_address, user_name)
+    trident_run(connection, keys_file_path, ip_address, user_name, trident_config)
     connection.close()
 
 
@@ -274,9 +292,15 @@ def main():
     )
     parser.add_argument(
         "-d",
-        "--image-dir",
+        "--destination-directory",
         type=str,
-        help="Directory on the host that contains the runtime OS images for the A/B update.",
+        help="Read-write directory on the host that contains the runtime OS images for the A/B update.",
+    )
+    parser.add_argument(
+        "-c",
+        "--trident-config",
+        type=str,
+        help="File name of read-write Trident config on the host.",
     )
     parser.add_argument(
         "-v",
@@ -292,7 +316,8 @@ def main():
         args.ip_address,
         args.user_name,
         args.keys_file_path,
-        args.image_dir,
+        args.destination_directory,
+        args.trident_config,
         args.version,
     )
 
