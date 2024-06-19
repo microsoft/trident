@@ -44,6 +44,16 @@ See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netpla
 | Type           | `object`       |
 | Format         | `Netplan YAML` |
 
+### `selinux` (optional)
+
+SELinux configuration for the host.
+
+| Characteristic | Value                   |
+| -------------- | ----------------------- |
+| Type           | `Selinux`               |
+| Default        | `{"mode":null}`         |
+| Link           | [Selinux](./Selinux.md) |
+
 ### `users` (optional)
 
 Users to configure on the host.

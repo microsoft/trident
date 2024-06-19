@@ -9,6 +9,8 @@ hostConfiguration:
             name: enp*
           dhcp4: true
       version: 2
+    selinux:
+      mode: permissive  
     users:
       - name: testuser
         secondaryGroups:

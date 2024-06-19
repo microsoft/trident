@@ -77,6 +77,8 @@ os:
         match:
           name: enp*
         dhcp4: true
+  selinux:
+    mode: permissive
   users:
   - name: my-custom-user
     sshPublicKeys:

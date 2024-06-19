@@ -67,6 +67,8 @@ hostConfiguration:
           - clean-install
         content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
   os:
+    selinux:
+      mode: permissive  
     network:
       version: 2
       ethernets:

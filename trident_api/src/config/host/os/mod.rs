@@ -30,6 +30,10 @@ pub struct Os {
     )]
     pub network: Option<NetworkConfig>,
 
+    /// SELinux configuration for the host.
+    #[serde(default)]
+    pub selinux: Selinux,
+
     /// Users to configure on the host.
     #[serde(default)]
     pub users: Vec<User>,
@@ -41,6 +45,40 @@ pub struct Os {
     /// Hostname of the system.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
+}
+
+/// Configuration for selinux mode
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub struct Selinux {
+    /// Override the SELinux mode. When not provided, no changes will be made to
+    /// the existing configuration.
+    pub mode: Option<SelinuxMode>,
+}
+
+/// SELinux mode
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum SelinuxMode {
+    /// # Disabled
+    ///
+    /// Set SELinux to disabled. The mode is set by appending `selinux=0` to the
+    /// kernel command line.
+    Disabled,
+
+    /// # Permissive
+    ///
+    /// Set SELinux to permissive. The mode is set by appending `selinux=1
+    /// enforcing=0` to the kernel command line.
+    Permissive,
+
+    /// # Enforcing
+    ///
+    /// Set SELinux to enforcing. The mode is set by appending `selinux=1
+    /// enforcing=1` to the kernel command line.
+    Enforcing,
 }
 
 /// Configuration for the management OS.

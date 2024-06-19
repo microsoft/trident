@@ -4,7 +4,9 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use log::debug;
 use regex::Regex;
+use trident_api::config::SelinuxMode;
 use uuid::Uuid;
 
 /// Represents the GRUB configuration file. Support simple validation and
@@ -58,9 +60,28 @@ impl GrubConfig {
     ///
     /// Will be removed in the future
     /// TODO(6775): re-enable selinux
-    pub fn set_selinux_permissive(&mut self) {
-        if self.contents.contains("selinux=1") {
-            self.contents = self.contents.replace("selinux=1", "selinux=1 enforcing=0");
+    pub fn set_selinux_mode(&mut self, mode: SelinuxMode) {
+        if !self.contents.contains("selinux=1") {
+            // If "selinux=1" is not found, handle accordingly
+            debug!(
+                "selinux setting not found in kernel command line, skipping selinux mode change"
+            );
+            return;
+        }
+
+        match mode {
+            SelinuxMode::Disabled => {
+                debug!("Setting SELinux to disabled");
+                self.contents = self.contents.replace("selinux=1", "selinux=0");
+            }
+            SelinuxMode::Permissive => {
+                debug!("Setting SELinux to permissive");
+                self.contents = self.contents.replace("selinux=1", "selinux=1 enforcing=0");
+            }
+            SelinuxMode::Enforcing => {
+                debug!("Setting SELinux to enforcing");
+                self.contents = self.contents.replace("selinux=1", "selinux=1 enforcing=1");
+            }
         }
     }
 

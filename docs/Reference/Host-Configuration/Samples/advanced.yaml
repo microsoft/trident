@@ -317,6 +317,8 @@ os:
         match:
           name: enp*
         dhcp4: true
+  selinux:
+    mode: null
   users:
   - name: my-custom-user
     sshPublicKeys:

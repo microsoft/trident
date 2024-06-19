@@ -544,6 +544,17 @@
           "format": "Netplan YAML",
           "nullable": true
         },
+        "selinux": {
+          "description": "SELinux configuration for the host.",
+          "default": {
+            "mode": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Selinux"
+            }
+          ]
+        },
         "users": {
           "description": "Users to configure on the host.",
           "default": [],
@@ -870,6 +881,51 @@
         }
       },
       "additionalProperties": false
+    },
+    "Selinux": {
+      "description": "Configuration for selinux mode",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "Override the SELinux mode. When not provided, no changes will be made to the existing configuration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SelinuxMode"
+            }
+          ],
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "SelinuxMode": {
+      "description": "SELinux mode",
+      "oneOf": [
+        {
+          "title": "Disabled",
+          "description": "Set SELinux to disabled. The mode is set by appending `selinux=0` to the kernel command line.",
+          "type": "string",
+          "enum": [
+            "disabled"
+          ]
+        },
+        {
+          "title": "Permissive",
+          "description": "Set SELinux to permissive. The mode is set by appending `selinux=1 enforcing=0` to the kernel command line.",
+          "type": "string",
+          "enum": [
+            "permissive"
+          ]
+        },
+        {
+          "title": "Enforcing",
+          "description": "Set SELinux to enforcing. The mode is set by appending `selinux=1 enforcing=1` to the kernel command line.",
+          "type": "string",
+          "enum": [
+            "enforcing"
+          ]
+        }
+      ]
     },
     "ServicingTypeSelection": {
       "description": "The selection of servicing types performed by Trident that can be used for any user-facing API. Currently, it is used to allow the user to select when to run a custom Script.",

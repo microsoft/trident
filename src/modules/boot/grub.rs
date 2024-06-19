@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Error};
 use log::debug;
 use osutils::{blkid, grub::GrubConfig};
 use trident_api::{
-    config::FileSystemType,
+    config::{FileSystemType, SelinuxMode},
     constants::{
         BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
         GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH,
@@ -34,6 +34,7 @@ fn update_grub_config_boot(
     grub_config_path: &Path,
     boot_fs_uuid: &Uuid,
     root_device_path: &Path,
+    selinux_mode: Option<SelinuxMode>,
 ) -> Result<(), Error> {
     debug!(
         "Updating GRUB config at path '{}' with UUID '{}' and root device '{}'",
@@ -41,10 +42,12 @@ fn update_grub_config_boot(
         boot_fs_uuid,
         root_device_path.display()
     );
+
     let mut grub_config = GrubConfig::read(grub_config_path)?;
 
-    // TODO(6775): re-enable selinux
-    grub_config.set_selinux_permissive();
+    if let Some(mode) = selinux_mode {
+        grub_config.set_selinux_mode(mode);
+    }
 
     grub_config.update_search(boot_fs_uuid)?;
 
@@ -85,14 +88,20 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
 
     let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_info.path)?;
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
+    //Get selinux mode from host status
+    let selinux_mode = host_status.spec.os.selinux.mode;
 
     // Update GRUB config on the boot device (volume holding /boot)
-    update_grub_config_boot(&boot_grub_config_path, &boot_uuid, &root_device_path).context(
-        format!(
-            "Failed to update GRUB config at path '{}'",
-            boot_grub_config_path.display()
-        ),
-    )?;
+    update_grub_config_boot(
+        &boot_grub_config_path,
+        &boot_uuid,
+        &root_device_path,
+        selinux_mode,
+    )
+    .context(format!(
+        "Failed to update GRUB config at path '{}'",
+        boot_grub_config_path.display()
+    ))?;
     let esp_efi_dir_path = Path::new(ESP_MOUNT_POINT_PATH).join(ESP_EFI_DIRECTORY);
     let mut bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_A);
     //Check if hoststatus has ab_update and update the grub config for the inactive volume
@@ -199,8 +208,8 @@ mod tests {
         let random_uuid_grub_boot = Uuid::new_v4();
         let random_uuid_grub_esp = Uuid::new_v4();
         let root_path = Path::new("/dev/sda1");
-
-        update_grub_config_boot(temp_file_path_grub, &random_uuid_grub_boot, root_path).unwrap();
+        update_grub_config_boot(temp_file_path_grub, &random_uuid_grub_boot, root_path, None)
+            .unwrap();
 
         // Read back the content of the file
         let updated_content_grub = fs::read_to_string(temp_file_path_grub).unwrap();

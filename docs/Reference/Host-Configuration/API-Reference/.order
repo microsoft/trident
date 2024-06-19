@@ -23,6 +23,8 @@ Raid
 RaidLevel
 Script
 Scripts
+Selinux
+SelinuxMode
 ServicingTypeSelection
 SoftwareRaidArray
 SshMode

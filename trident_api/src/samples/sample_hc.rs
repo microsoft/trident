@@ -10,6 +10,7 @@ use netplan_types::{
 
 use crate::{
     config::{
+        host::os::{Selinux, SelinuxMode},
         AbUpdate, AbVolumePair, AdditionalFile, Disk, EncryptedVolume, Encryption, FileSystem,
         FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256,
         MountOptions, MountPoint, Os, Partition, PartitionTableType, PartitionType, Raid,
@@ -1254,6 +1255,9 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     ..Default::default()
                 },
                 os: Os {
+                    selinux: Selinux {
+                        mode: Some(SelinuxMode::Permissive),
+                    },
                     users: vec![User {
                         name: "my-custom-user".into(),
                         ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
@@ -1402,6 +1406,9 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     ..Default::default()
                 },
                 os: Os {
+                    selinux: Selinux {
+                        mode: Some(SelinuxMode::Permissive),
+                    },
                     users: vec![User {
                         name: "my-custom-user".into(),
                         ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
