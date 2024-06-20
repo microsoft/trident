@@ -1,11 +1,12 @@
 [Unit]
 Description=Trident Agent
-After=network.target network-online.target systemd-udev-settle.service
+After=network.target network-online.target systemd-udev-settle.service docker.service
+Requires=docker.service
 
 [Service]
 ExecStartPre=/bin/bash -c "curl $(grep -oP 'phonehome: \K.*(?=phonehome)' /etc/trident/config.yaml)files/trident-container.bin > /trident-container.bin"
 ExecStartPre=-docker load --input /trident-container.bin
-ExecStart=docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys --pid host trident/trident:latest run --verbosity INFO
+ExecStart=docker run --privileged -v /etc/trident:/etc/trident -v /run/initramfs/live:/trident_cdrom -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys --pid host trident/trident:latest run --verbosity INFO
 Type=oneshot
 
 [Install]
