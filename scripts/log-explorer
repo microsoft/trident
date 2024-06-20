@@ -1,0 +1,138 @@
+#!/usr/bin/python3
+
+import argparse
+import json
+import shutil
+import subprocess
+import textwrap
+import re
+from enum import Enum
+from pathlib import Path
+
+
+class RustLogLevel(Enum):
+    TRACE = "trace"
+    DEBUG = "debug"
+    INFO = "info"
+    WARN = "warn"
+    ERROR = "error"
+
+
+class RustLog:
+    def __init__(self, raw_data: str):
+        try:
+            data = json.loads(raw_data)
+        except json.JSONDecodeError as ex:
+            print(f"Failed to parse line: {line}")
+            exit(1)
+        self.level = RustLogLevel(data["level"])
+        self.target = data["target"]
+        self.message: str = data["message"]
+        self.module = data["module"]
+        self.file = data["file"]
+        self.line = data["line"]
+
+
+class Logger:
+    def __init__(self, trace_logs: bool = False, search: re.Pattern = None):
+        self.width = shutil.get_terminal_size().columns
+        self.trace_logs = trace_logs
+        self.search = search
+
+    def color(log_level: RustLogLevel) -> str:
+        if log_level == RustLogLevel.TRACE:
+            return "\033[38;5;176m"
+        elif log_level == RustLogLevel.DEBUG:
+            return "\033[0;36m"
+        elif log_level == RustLogLevel.INFO:
+            return "\033[0;32m"
+        elif log_level == RustLogLevel.WARN:
+            return "\033[0;33m"
+        elif log_level == RustLogLevel.ERROR:
+            return "\033[0;31m"
+        else:
+            return "\033[0;37m"
+
+    def color_match() -> str:
+        return "\033[38;5;196m"
+
+    def color_reset() -> str:
+        return "\033[0m"
+
+    def log(self, log: RustLog):
+        if log.level == RustLogLevel.TRACE and not self.trace_logs:
+            return
+
+        msg = textwrap.wrap(
+            log.message, width=(self.width - 2), replace_whitespace=False
+        )
+        msg = "\n".join(msg)
+
+        # If we have a search pattern
+        if self.search:
+            # Highlight the search pattern
+            msg, replacements = self.search.subn(
+                lambda match: f"{Logger.color_match()}{match.group(0)}{Logger.color_reset()}",
+                msg,
+            )
+
+            # If the message doesn't match the search pattern, skip
+            if replacements == 0:
+                return
+
+        print(
+            f"{Logger.color(log.level)}{log.level.value.upper()}{Logger.color_reset()} at \033[1m{log.file}:{log.line}\033[22m:"
+        )
+        msg = textwrap.indent(msg, "  ")
+        print(msg)
+
+
+parser = argparse.ArgumentParser(description="Parse and colorize rust logs")
+parser.add_argument(
+    "target",
+    type=str,
+    help="The log file to parse or <user>@<host> to extract the file from a remote host.",
+)
+parser.add_argument("-t", "--trace", action="store_true", help="Show trace logs.")
+parser.add_argument(
+    "-s", "--search", default=None, help="Search for a specific log (regex)"
+)
+args = parser.parse_args()
+
+
+search_pattern = None
+
+if args.search:
+    search_pattern = re.compile(args.search)
+
+logger = Logger(args.trace, search_pattern)
+
+lines = []
+
+if "@" in args.target:
+    result = subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            args.target,
+            "cat /var/log/trident-full.log",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    result.check_returncode()
+    lines = result.stdout.splitlines()
+
+else:
+    with open(args.target, "r") as log_file:
+        lines = log_file.readlines()
+
+if lines:
+    for line in lines:
+        log = RustLog(line)
+        logger.log(log)
+else:
+    print("No logs found")
