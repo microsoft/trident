@@ -298,6 +298,8 @@ fn stage_clean_install(
         root_device_path.structured(InternalError::Internal("Failed to get root block device"))?;
     debug!("Root device path: {:#?}", root_device_path);
 
+    info!("Staging of clean install succeeded");
+
     // Return the new root device path and the list of mounts
     Ok((new_root_path, mounts))
 }
@@ -531,6 +533,8 @@ fn stage_update(
     state.with_host_status(|host_status| host_status.servicing_state = ServicingState::Staged)?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
+
+    info!("Staging of update '{:?}' succeeded", servicing_type);
 
     Ok((new_root_path, mounts))
 }
