@@ -1,7 +1,12 @@
 parameters:
   - name: buildPurpose
     type: string
-    default: validation
+    default: "post_merge"
+    values:
+      - daily
+      - pullrequest
+      - post_merge
+      - validation
 
   - name: tridentConfigurationName
     type: string

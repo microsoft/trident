@@ -1,9 +1,8 @@
 parameters:
   - name: buildPurpose
     type: string
-    default: "AUTO"
+    default: "post_merge"
     values:
-      - AUTO
       - daily
       - pullrequest
       - post_merge
@@ -119,7 +118,6 @@ stages:
           matrix: $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
 
         variables:
-          buildPurpose: $[ dependencies.DefineTests.outputs['setBuildPurpose.buildPurpose'] ]
           tridentConfigurationName: $(configuration)
 
           tridentSourceDirectory: $(Build.SourcesDirectory)
@@ -241,7 +239,7 @@ stages:
 
           - template: ../common_tasks/e2e-test-run.yml
             parameters:
-              buildPurpose: $(buildPurpose)
+              buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: virtualMachine
               tridentConfigurationName: $(tridentConfigurationName)
               hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)

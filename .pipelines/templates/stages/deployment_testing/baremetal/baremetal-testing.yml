@@ -47,7 +47,6 @@ parameters:
     type: string
     default: "daily"
     values:
-      - AUTO
       - daily
       - pullrequest
       - post_merge
