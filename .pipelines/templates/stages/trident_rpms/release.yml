@@ -53,8 +53,6 @@ steps:
   - script: ./scripts/extract-binary.sh /usr/src/mariner/RPMS/x86_64 $(ob_outputDirectory)
     displayName: Extract Trident binary
 
-  - template: common/setup-registries-template.yaml@platform-pipelines
-
   - script: |
       set -eux
 
@@ -65,16 +63,5 @@ steps:
       cp -r /usr/src/mariner/RPMS bin/
       DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
-      # ado redacts random strings (like `ecfafoncpriv`). To still be able
-      # to show some useful logs, we replace some parts so that ado does not
-      # exclude them.
-      #
-      echo "container_registry_rw_user    :" $(container_registry_rw_user)
-      echo "container_registry_pub        :" $(echo $(container_registry_pub) | sed 's/afo/___/g')
-
-      docker login "$(container_registry_pub)" -u "$(container_registry_rw_user)" -p "$(container_registry_rw_pswd)"
-      TAG="$(container_registry_pub)"/trident:$(Build.BuildNumber)
-      docker tag trident/trident:latest $TAG
-      docker push $TAG
-    displayName: Build and publish Docker image
+    displayName: Build Docker image
     retryCountOnTaskFailure: 3
