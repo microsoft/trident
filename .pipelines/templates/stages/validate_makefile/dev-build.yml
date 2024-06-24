@@ -32,13 +32,14 @@ stages:
               make bin/trident-rpms.tar.gz docker-build validate-configs generate-mermaid-diagrams
             displayName: Invoke make
 
-          - task: AzureCLI@2
-            displayName: "Validating pipeline templates work"
-            inputs:
-              azureSubscription: CoreOS_ECF_Kubernetes_dev (b8a0db63-c5fa-4198-8e2a-f9d6ff52465e)
-              scriptType: "bash"
-              workingDirectory: $(Build.SourcesDirectory)
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -eux
-                make check-pipelines BRANCH=$(Build.SourceBranch)
+          # Disabled per #7966
+          # - task: AzureCLI@2
+          #   displayName: "Validating pipeline templates work"
+          #   inputs:
+          #     azureSubscription: CoreOS_ECF_Kubernetes_dev (b8a0db63-c5fa-4198-8e2a-f9d6ff52465e)
+          #     scriptType: "bash"
+          #     workingDirectory: $(Build.SourcesDirectory)
+          #     scriptLocation: inlineScript
+          #     inlineScript: |
+          #       set -eux
+          #       make check-pipelines BRANCH=$(Build.SourceBranch)
