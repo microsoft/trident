@@ -1,0 +1,135 @@
+parameters:
+  - name: buildPurpose
+    type: string
+    default: "post_merge"
+    values:
+      - daily
+      - pullrequest
+      - post_merge
+      - validation
+
+  - name: tridentConfigurationName
+    type: string
+    default: ""
+  
+  - name: deploymentEnvironment
+    type: string
+    default: virtualMachine
+
+  - name: hostIp
+    type: string
+    default: ""
+
+  - name: tridentConfigPath
+    type: string
+
+  - name: jUnitXMLIdentifier
+    type: string
+    default: trident_e2e_tests
+
+  - name: sshKeyPath
+    type: string
+    default: $(Build.SourcesDirectory)/e2e_tests/helpers/key
+
+  - name: userName
+    type: string
+    default: 'testing-user'
+
+  - name: artifactsDirectory
+    type: string
+    default: artifacts/test-image
+
+steps:
+  - bash: |
+      ls -ltr $(System.ArtifactsDirectory)
+      $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/copy-runtime-os-images.sh \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.artifactsDirectory }}" \
+          $(localTempDirectory) \
+          $(destinationDirectory) \
+          $(version) \
+          $(verityRequired)
+    displayName: "Copy runtime OS images to the host for A/B update testing"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eu
+      echo "Running script to stage A/B update..."
+      python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
+          --ip-address ${{ parameters.hostIp }} \
+          --user-name ${{ parameters.userName }} \
+          --keys-file-path ${{ parameters.sshKeyPath }} \
+          --destination-directory $(destinationDirectory) \
+          --trident-config $(tridentConfigFile) \
+          --version $(version) \
+          --stage-ab-update
+    timeoutInMinutes: 5
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: "Stage A/B update"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      python3 -u -m pytest \
+          -m "ab_update_staged" \
+          --capture=no \
+          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml \
+          --host ${{ parameters.hostIp }} \
+          --configuration ${{ parameters.tridentConfigPath }} \
+          --ab-active-volume $(abActiveVolume)
+    timeoutInMinutes: 10
+    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    displayName: "Run tests to validate staging of A/B update"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eu
+      echo "Running script to finalize A/B update..."
+      python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
+          --ip-address ${{ parameters.hostIp }} \
+          --user-name ${{ parameters.userName }} \
+          --keys-file-path ${{ parameters.sshKeyPath }} \
+          --destination-directory $(destinationDirectory) \
+          --trident-config $(tridentConfigFile) \
+          --version $(version) \
+          --finalize-ab-update
+      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+      current_version=$(echo $(version))
+      new_version=$((current_version + 1))
+      echo "##vso[task.setvariable variable=version]$new_version"
+    timeoutInMinutes: 5
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: "Finalize A/B update into runtime OS B"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.hostIp }}"
+    displayName: "Check SSH connection after booting into runtime OS B"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      python3 -u -m pytest \
+          -m "${{ parameters.buildPurpose }}" \
+          --capture=no \
+          --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml \
+          --host ${{ parameters.hostIp }} \
+          --configuration ${{ parameters.tridentConfigPath }} \
+          --ab-active-volume $(abActiveVolume)
+    timeoutInMinutes: 5
+    workingDirectory: $(Build.SourcesDirectory)/e2e_tests
+    displayName: "Run Trident E2E tests after A/B update into runtime OS B"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+  
+  - task: PublishTestResults@2
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: ./e2e_tests/${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml
+      testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_stage_finalize_ab_update_B_$(System.JobAttempt)
+    displayName: "Publish test results for A/B update into runtime OS A that was staged and finalized independently"

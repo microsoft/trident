@@ -169,6 +169,10 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
     HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
     host_status = yaml.load(host_status_output, Loader=HostStatusSafeLoader)
 
+    # Check that servicingType, servicingState are as expected
+    assert host_status["servicingType"] == None
+    assert host_status["servicingState"] == "provisioned"
+
     # Check partitions size and type
     for partition_id in expected_partitions:
         # Partition present

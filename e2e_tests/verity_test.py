@@ -1,5 +1,3 @@
-import json
-import math
 import os
 import pytest
 import yaml

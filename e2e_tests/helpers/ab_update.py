@@ -7,7 +7,6 @@ import yaml
 from invoke.exceptions import CommandTimedOut
 from invoke.watchers import StreamWatcher
 from io import StringIO
-import os
 
 LOCAL_TRIDENT_CONFIG_PATH = "/etc/trident/config.yaml"
 TRIDENT_EXECUTABLE_PATH = "/usr/bin/trident"
@@ -88,13 +87,23 @@ def trident_run(connection, keys_file_path, ip_address, user_name, trident_confi
 
     output = result.stdout + result.stderr
     output_lines = output.strip().split("\n")
-    # Check the exit code: if -1, host rebooted
+
+    # Check the exit code: if 0, staging of A/B update succeeded.
     if (
+        result.return_code == 0
+        and "[INFO  trident::modules] Staging of update 'AbUpdate' succeeded"
+        in output_lines
+    ):
+        print(
+            "Received expected output with exit code 0. Staging of A/B update succeeded."
+        )
+    # If exit code is -1, host rebooted.
+    elif (
         result.return_code == -1
         and "[INFO  trident::modules] Rebooting system" in output_lines
     ):
         print("Received expected output with exit code -1. Host rebooted successfully.")
-    # If non-zero exit code but host was running the rerun script, keep reconnecting
+    # If exit code is non 0 but host was running the rerun script, keep reconnecting.
     elif (
         result.return_code != 0
         and "[DEBUG trident::modules::hooks] Running script fail-on-the-first-run-to-force-rerun with interpreter /usr/bin/python3"
@@ -134,11 +143,13 @@ def trident_run(connection, keys_file_path, ip_address, user_name, trident_confi
     return
 
 
-def update_trident_config(connection, destination_directory, trident_config, version):
-    """Updates the RW Trident config via sed command"""
+def update_host_config_images(
+    connection, destination_directory, trident_config, version
+):
+    """Updates the images in the host configuration in the RW Trident config via sed command."""
     # If file at path trident_config does not exist, copy it over from LOCAL_TRIDENT_CONFIG_PATH
     result = connection.run(f"test -f {trident_config}", warn=True, hide="both")
-    if not result.ok:  # If the test failed (file does not exist)
+    if not result.ok:
         print(
             f"File {trident_config} does not exist. Copying from {LOCAL_TRIDENT_CONFIG_PATH}"
         )
@@ -244,6 +255,38 @@ def get_images_to_update(trident_config_output) -> List[Tuple[str, str]]:
     return urls_to_update
 
 
+def update_allowed_operations(
+    connection, trident_config, stage_ab_update, finalize_ab_update
+):
+    """
+    Updates the allowed operations in the Trident config to stage and/or finalize the A/B update.
+    """
+    # Determine the allowed operations to set
+    allowed_operations = []
+    if stage_ab_update:
+        print("Staging of A/B update requested. Adding 'stage' to allowed operations.")
+        allowed_operations.append("stage")
+    if finalize_ab_update:
+        print(
+            "Finalizing of A/B update requested. Adding 'finalize' to allowed operations."
+        )
+        allowed_operations.append("finalize")
+
+    # Create the allowed operations string for the sed command
+    allowed_operations_str = "\\n".join(f"- {op}" for op in allowed_operations)
+    # Construct the sed command to update the allowed operations
+    sed_command = f"sudo sed -i '/allowedOperations:/,/hostConfiguration:/c\\allowedOperations:\\n{allowed_operations_str}\\nhostConfiguration:' {trident_config}"
+
+    # Run the sed command to update the configuration
+    run_ssh_command(connection, sed_command)
+
+    # Print out updated Trident configuration
+    updated_host_config_output = run_ssh_command(
+        connection, f"sudo cat {trident_config}"
+    ).strip()
+    print("Updated allowed operations in Trident config:\n", updated_host_config_output)
+
+
 def trigger_ab_update(
     ip_address,
     user_name,
@@ -251,14 +294,27 @@ def trigger_ab_update(
     destination_directory,
     trident_config,
     version,
+    stage_ab_update,
+    finalize_ab_update,
 ):
-    """Connects to the host via SSH, updates the Trident config, and triggers A/B update"""
+    """Connects to the host via SSH, updates the local Trident config, and re-runs Trident"""
     # Set up SSH client
     config = Config(overrides={"connect_kwargs": {"key_filename": keys_file_path}})
     connection = Connection(host=ip_address, user=user_name, config=config)
 
-    # Update Trident config
-    update_trident_config(connection, destination_directory, trident_config, version)
+    # If staging of A/B update is required, update the images
+    if stage_ab_update:
+        update_host_config_images(
+            connection, destination_directory, trident_config, version
+        )
+
+    # Update allowed operations in the Trident config
+    update_allowed_operations(
+        connection,
+        trident_config,
+        stage_ab_update,
+        finalize_ab_update,
+    )
 
     # Re-run Trident and capture logs
     print("Re-running Trident to trigger A/B update", flush=True)
@@ -300,7 +356,7 @@ def main():
         "-c",
         "--trident-config",
         type=str,
-        help="File name of read-write Trident config on the host.",
+        help="File name of the custom read-write Trident config on the host to point Trident to.",
     )
     parser.add_argument(
         "-v",
@@ -308,8 +364,24 @@ def main():
         type=str,
         help="Version of runtime OS images for the A/B update.",
     )
+    parser.add_argument(
+        "-s",
+        "--stage-ab-update",
+        action="store_true",
+        help="Controls whether A/B update should be staged.",
+    )
+    parser.add_argument(
+        "-f",
+        "--finalize-ab-update",
+        action="store_true",
+        help="Controls whether A/B update should be finalized.",
+    )
 
     args = parser.parse_args()
+
+    # Set to False if flags not provided
+    stage_ab_update = getattr(args, "stage_ab_update", False)
+    finalize_ab_update = getattr(args, "finalize_ab_update", False)
 
     # Call helper func that triggers A/B update
     trigger_ab_update(
@@ -319,6 +391,8 @@ def main():
         args.destination_directory,
         args.trident_config,
         args.version,
+        stage_ab_update,
+        finalize_ab_update,
     )
 
 

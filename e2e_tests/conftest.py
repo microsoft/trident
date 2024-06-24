@@ -3,7 +3,6 @@ import json
 import os
 import pytest
 import yaml
-import time
 
 
 # A key in the following path and the user name in the hostConfiguration are expected

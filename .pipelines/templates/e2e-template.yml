@@ -40,14 +40,19 @@ stages:
 
   - template: stages/building_tools/building-tools.yml
 
-  - template: stages/deployment_testing/vm/netlaunch-testing.yml
-    parameters:
-      buildPurpose: post_merge
-
   - ${{ if eq(parameters.stageType, 'pre') }}:
+      - template: stages/deployment_testing/vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "daily"
+  
       - template: stages/deployment_testing/baremetal/baremetal-testing.yml
         parameters:
-          buildPurpose: daily
+          buildPurpose: "daily"
+  
+  - ${{ else }}:
+      - template: stages/deployment_testing/vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "post_merge"
 
   - ${{ if eq(parameters.blockPublishing, false) }}:
       - template: stages/publishing/publish.yml
