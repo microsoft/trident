@@ -53,23 +53,20 @@ stages:
               artifactName: trident-binaries
             displayName: "Download Trident RPMs"
 
-          - task: AzureCLI@2
-            displayName: "Check if package version has already been published in the Feed."
-            inputs:
-              azureSubscription: CoreOS_ECF_Kubernetes_dev (b8a0db63-c5fa-4198-8e2a-f9d6ff52465e)
-              scriptType: "bash"
-              workingDirectory: $(Build.SourcesDirectory)
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -eux
+          - script: |
+              set -eux
 
-                alreadyPublished=$(./scripts/get-packages.py --debug \
-                    --package '${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}' \
-                    --version '$(Build.BuildNumber)' \
-                    --action=exists)
+              alreadyPublished=$(./scripts/get-packages.py --debug \
+                  --package '${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}' \
+                  --version '$(Build.BuildNumber)' \
+                  --action=exists)
 
-                # Save variable to know if package needs to be published
-                echo "##vso[task.setvariable variable=isVersionInFeed;]$alreadyPublished"
+              # Save variable to know if package needs to be published
+              echo "##vso[task.setvariable variable=isVersionInFeed;]$alreadyPublished"
+            displayName: "Check if package version has already been published in the feed."
+            workingDirectory: $(Build.SourcesDirectory)
+            env:
+              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
           - task: UniversalPackages@0
             displayName: "Publish rpms Universal Package"

@@ -26,27 +26,25 @@ parameters:
 
 steps:
   - ${{ if eq(parameters.specificVersion, '')}}:
-      - task: AzureCLI@2
+      - script: |
+          set -eux
+
+          LATEST_VERSION=$(./scripts/get-packages.py --debug \
+              --package '${{ parameters.packageName }}' \
+              --feed '${{ parameters.feedName }}' \
+              --action=latest)
+
+          echo "Downloading version $LATEST_VERSION of ${{ parameters.packageName }}"
+
+          # Set the desired variable to the latest version
+          echo "##vso[task.setvariable variable=${{ parameters.outputVersionVariable }}]$LATEST_VERSION"
+
+          mkdir -p ${{ parameters.downloadLocation }}
         displayName: "Getting latest version of ${{ parameters.packageName }} from Trident feed"
-        inputs:
-          azureSubscription: CoreOS_ECF_Kubernetes_dev (b8a0db63-c5fa-4198-8e2a-f9d6ff52465e)
-          scriptType: "bash"
-          workingDirectory: $(Build.SourcesDirectory)
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -eux
+        workingDirectory: $(Build.SourcesDirectory)
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
-            LATEST_VERSION=$(./scripts/get-packages.py --debug \
-                --package '${{ parameters.packageName }}' \
-                --feed '${{ parameters.feedName }}' \
-                --action=latest)
-
-            echo "Downloading version $LATEST_VERSION of ${{ parameters.packageName }}"
-
-            # Set the desired variable to the latest version
-            echo "##vso[task.setvariable variable=${{ parameters.outputVersionVariable }}]$LATEST_VERSION"
-
-            mkdir -p ${{ parameters.downloadLocation }}
   - ${{ else }}:
       - script: |
           echo "Downloading version ${{ parameters.specificVersion }} of ${{ parameters.packageName }}"
