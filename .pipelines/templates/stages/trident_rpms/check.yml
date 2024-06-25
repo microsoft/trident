@@ -37,3 +37,9 @@ steps:
 
   - script: cargo check --locked --all-features 2>&1
     displayName: Check with all features
+
+  - script: cargo install --locked cargo-deny@0.14.11
+    displayName: Install cargo-deny
+
+  - script: cargo deny --all-features --workspace check licenses
+    displayName: Check licenses
