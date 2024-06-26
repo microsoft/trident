@@ -302,8 +302,8 @@ mod tests {
             )
         );
 
-        // Test that servicing type Incompatible will return None
-        host_status.servicing_type = Some(ServicingType::Incompatible);
+        // Test that servicing type None will return None
+        host_status.servicing_type = None;
         let error_message = get_label_and_path(&host_status).unwrap_err().to_string();
         assert_eq!(error_message, "Unsupported A/B volume selection");
     }

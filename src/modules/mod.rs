@@ -94,8 +94,8 @@ trait Module: Send {
         &self,
         _host_status: &HostStatus,
         _host_config: &HostConfiguration,
-    ) -> Option<ServicingType> {
-        None
+    ) -> Result<Option<ServicingType>, TridentError> {
+        Ok(None)
     }
 
     /// Validate the host config.
@@ -364,17 +364,10 @@ pub(super) fn update(
     info!("Determining servicing type");
     let servicing_type = modules
         .iter()
-        .filter_map(|m| {
-            let servicing_type = m.select_servicing_type(state.host_status(), host_config);
-            if let Some(servicing_type) = servicing_type {
-                info!(
-                    "Module '{}' selected servicing type: {:?}",
-                    m.name(),
-                    servicing_type
-                );
-            }
-            servicing_type
-        })
+        .map(|m| m.select_servicing_type(state.host_status(), host_config))
+        .collect::<Result<Vec<_>, TridentError>>()?
+        .into_iter()
+        .flatten()
         .max();
     let Some(servicing_type) = servicing_type else {
         info!("No updates required");
@@ -428,9 +421,9 @@ pub(super) fn update(
             info!("Update complete");
             Ok(())
         }
-        ServicingType::Incompatible | ServicingType::CleanInstall => {
-            unreachable!()
-        }
+        ServicingType::CleanInstall => Err(TridentError::internal(
+            "Impossible servicing type for update",
+        )),
     }
 }
 
@@ -458,11 +451,6 @@ fn stage_update(
         ServicingType::NormalUpdate => info!("Performing normal update"),
         ServicingType::UpdateAndReboot => info!("Performing update and reboot"),
         ServicingType::AbUpdate => info!("Performing A/B update"),
-        ServicingType::Incompatible => {
-            return Err(TridentError::new(
-                InvalidInputError::IncompatibleHostConfiguration,
-            ));
-        }
         ServicingType::CleanInstall => {
             return Err(TridentError::new(
                 InvalidInputError::CleanInstallRequestedForProvisionedHost,

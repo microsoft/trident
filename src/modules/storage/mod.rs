@@ -128,12 +128,12 @@ impl Module for StorageModule {
         &self,
         host_status: &HostStatus,
         host_config: &HostConfiguration,
-    ) -> Option<ServicingType> {
+    ) -> Result<Option<ServicingType>, TridentError> {
         if image::needs_ab_update(host_status, host_config) {
-            return Some(ServicingType::AbUpdate);
+            return Ok(Some(ServicingType::AbUpdate));
         }
 
-        None
+        Ok(None)
     }
 
     fn provision(&mut self, host_status: &mut HostStatus, mount_point: &Path) -> Result<(), Error> {

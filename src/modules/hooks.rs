@@ -276,7 +276,6 @@ fn match_servicing_type_env_var(servicing_type: &ServicingType) -> OsString {
         ServicingType::UpdateAndReboot => "update_and_reboot",
         ServicingType::AbUpdate => "ab_update",
         ServicingType::CleanInstall => "clean_install",
-        ServicingType::Incompatible => "incompatible",
     }
     .into()
 }

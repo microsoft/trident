@@ -287,6 +287,11 @@ impl TridentError {
         self
     }
 
+    #[track_caller]
+    pub fn internal(message: &'static str) -> Self {
+        Self::new(InternalError::Internal(message))
+    }
+
     pub fn unstructured(self, context: impl Into<Cow<'static, str>>) -> anyhow::Error {
         match self.0.source {
             Some(source) => source.context(self.0.kind).context(context.into()),

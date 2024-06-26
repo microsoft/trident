@@ -46,8 +46,6 @@ pub enum ServicingType {
     AbUpdate = 3,
     /// Clean install of the runtime OS image when the host is booted from the provisioning OS.
     CleanInstall = 4,
-    // Update that cannot be applied given the current state of the system.
-    Incompatible = 5,
 }
 
 /// ServicingState describes the progress of the servicing that the Trident agent is executing on
@@ -168,9 +166,9 @@ impl HostStatus {
                     }
                     // If host is executing a clean install, update volume is always A
                     Some(ServicingType::CleanInstall) => Some(AbVolumeSelection::VolumeA),
-                    // In host status, servicing type will never be set to Incompatible OR be None if
-                    // servicing state is one of the above.
-                    Some(ServicingType::Incompatible) | None => None,
+                    // In host status, servicing type will never be None if servicing state is one
+                    // of the above.
+                    None => None,
                 }
             }
         }
@@ -199,9 +197,9 @@ impl HostStatus {
                     | Some(ServicingType::AbUpdate) => self.storage.ab_active_volume,
                     // If host is executing a clean install, there is no active volume yet.
                     Some(ServicingType::CleanInstall) => None,
-                    // In host status, servicing type will never be set to Incompatible OR be None if
-                    // servicing state is one of the above.
-                    Some(ServicingType::Incompatible) | None => unreachable!(),
+                    // In host status, servicing type will never be None if servicing state is one
+                    // of the above.
+                    None => None,
                 }
             }
         }
