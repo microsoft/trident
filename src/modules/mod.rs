@@ -180,12 +180,9 @@ pub(super) fn clean_install(
     let clean_install_start_time = Instant::now();
     let mut modules = MODULES.lock().unwrap();
 
-    info!("Refreshing host status");
     refresh_host_status(&mut modules, state, true)?;
-
-    info!("Validating host configuration against system state");
-    // Since we're in clean_install(), the only possible servicing type is CleanInstall.
     validate_host_config(&modules, state, host_config, ServicingType::CleanInstall)?;
+
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(&mut sender, state)?;
 
@@ -249,13 +246,11 @@ fn stage_clean_install(
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    info!("Running prepare");
     prepare(modules, state)?;
 
     info!("Preparing storage to mount new root");
     let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
-    info!("Running provision");
     provision(modules, state, &new_root_path)?;
 
     info!("Entering '{}' chroot", new_root_path.display());
@@ -364,7 +359,6 @@ pub(super) fn update(
     info!("Starting update()");
     let mut modules = MODULES.lock().unwrap();
 
-    info!("Refreshing host status");
     refresh_host_status(&mut modules, state, false)?;
 
     #[cfg(feature = "grpc-dangerous")]
@@ -395,7 +389,6 @@ pub(super) fn update(
         servicing_type
     );
 
-    info!("Validating host configuration against system state");
     validate_host_config(&modules, state, host_config, servicing_type)?;
 
     // Stage update
@@ -491,14 +484,12 @@ fn stage_update(
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    info!("Running prepare");
     prepare(modules, state)?;
 
     let (new_root_path, mounts) = if let ServicingType::AbUpdate = servicing_type {
         info!("Preparing storage to mount new root");
         let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
-        info!("Running provision");
         provision(modules, state, &new_root_path)?;
 
         // If verity is present, it means that we are currently doing root
@@ -510,7 +501,6 @@ fn stage_update(
         chroot::enter_update_chroot(&new_root_path)
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
-                info!("Running configure");
                 configure(modules, state, &exec_root_path, use_overlay)?;
 
                 regenerate_initrd(use_overlay)?;
@@ -654,6 +644,7 @@ fn refresh_host_status(
     state: &mut DataStore,
     clean_install: bool,
 ) -> Result<(), TridentError> {
+    info!("Starting stage 'Refresh'");
     for module in modules {
         debug!("Starting stage 'Refresh' for module '{}'", module.name());
         state.try_with_host_status(|s| {
@@ -663,8 +654,8 @@ fn refresh_host_status(
                     name: module.name(),
                 }))
         })?;
-        debug!("Finished stage 'Refresh' for module '{}'", module.name());
     }
+    debug!("Finished stage 'Refresh'");
     Ok(())
 }
 
@@ -675,6 +666,7 @@ fn validate_host_config(
     host_config: &HostConfiguration,
     planned_servicing_type: ServicingType,
 ) -> Result<(), TridentError> {
+    info!("Starting stage 'Validate'");
     for module in modules {
         debug!("Starting stage 'Validate' for module '{}'", module.name());
         module
@@ -687,13 +679,13 @@ fn validate_host_config(
                     },
                 ))
             })?;
-        debug!("Finished stage 'Validate' for module '{}'", module.name());
     }
-    info!("Host config validated");
+    debug!("Finished stage 'Validate'");
     Ok(())
 }
 
 fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(), TridentError> {
+    info!("Starting stage 'Prepare'");
     for module in modules {
         debug!("Starting stage 'Prepare' for module '{}'", module.name());
         state.try_with_host_status(|s| {
@@ -703,8 +695,8 @@ fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(),
                     name: module.name(),
                 }))
         })?;
-        debug!("Finished stage 'Prepare' for module '{}'", module.name());
     }
+    debug!("Finished stage 'Prepare'");
     Ok(())
 }
 
@@ -718,6 +710,7 @@ fn provision(
     // a writable overlay for it.
     let use_overlay = !state.host_status().spec.storage.internal_verity.is_empty();
 
+    info!("Starting stage 'Provision'");
     for module in modules {
         debug!("Starting stage 'Provision' for module '{}'", module.name());
         let _etc_overlay_mount = if use_overlay {
@@ -735,9 +728,8 @@ fn provision(
                     name: module.name(),
                 }))
         })?;
-        debug!("Finished stage 'Provision' for module '{}'", module.name());
     }
-
+    debug!("Finished stage 'Provision'");
     Ok(())
 }
 
@@ -803,6 +795,7 @@ fn configure(
     exec_root: &Path,
     use_overlay: bool,
 ) -> Result<(), TridentError> {
+    info!("Starting stage 'Configure'");
     for module in modules {
         debug!("Starting stage 'Configure' for module '{}'", module.name());
         // unmount on drop
@@ -821,8 +814,8 @@ fn configure(
                     name: module.name(),
                 }))
         })?;
-        debug!("Finished stage 'Configure' for module '{}'", module.name());
     }
+    debug!("Finished stage 'Configure'");
 
     Ok(())
 }
