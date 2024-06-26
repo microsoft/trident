@@ -26,6 +26,8 @@ pub fn stream_zstd(
     // Buffer small writes to the disk, ensuring we write blocks of at least 4MB.
     let mut file = BufWriter::with_capacity(4 << 20, file);
 
+    let t = std::time::Instant::now();
+
     // Decompress the image and write it to the block device. If destination is a block device and
     // destination_size is provided, ensure that no more than destination_size bytes are written
     let bytes_copied = match destination_size {
@@ -36,9 +38,10 @@ pub fn stream_zstd(
     };
 
     info!(
-        "Copied {} bytes to {}",
+        "Copied {} bytes to {} in {:.2} seconds",
         bytes_copied,
-        destination_path.display()
+        destination_path.display(),
+        t.elapsed().as_secs_f32()
     );
 
     file.into_inner()

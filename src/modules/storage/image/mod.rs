@@ -1,11 +1,20 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
 use reqwest::Url;
+use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
 use uuid::Uuid;
 
-use osutils::{container, e2fsck, resize2fs, tune2fs, veritysetup};
+use osutils::{
+    container, e2fsck, hashing_reader::HashingReader, image_streamer, resize2fs, tune2fs,
+    veritysetup,
+};
 use trident_api::{
     config::{
         AbUpdate, FileSystemSource, FileSystemType, HostConfiguration, ImageFormat, ImageSha256,
@@ -13,11 +22,14 @@ use trident_api::{
     },
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::TridentResultExt,
-    status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus, ServicingType},
+    status::{AbVolumeSelection, BlockDeviceContents, HostStatus, ServicingType},
     BlockDeviceId,
 };
 
-use crate::modules::{self, storage::tabfile};
+use crate::modules::{
+    self,
+    storage::{self, tabfile},
+};
 
 pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
@@ -43,6 +55,12 @@ fn update_images(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     for image in &get_undeployed_images(host_status, host_config, false) {
+        // If image corresponds to ESP partition, no need to deploy image directly; instead, perform
+        // file-based update of ESP later
+        if is_esp(host_status, &image.target_id) {
+            continue;
+        }
+
         // Validate that block device exists
         let block_device = modules::get_block_device(host_status, &image.target_id, false)
             .context(format!(
@@ -54,11 +72,146 @@ fn update_images(
         let image_url =
             Url::parse(&image.url).context(format!("Failed to parse image URL '{}'", image.url))?;
 
-        if image_url.scheme() == "file" {
-            match image.format {
-                // If image is of format RawLzma, the target-id must be an A/B volume pair.
-                #[cfg(feature = "sysupdate")]
-                ImageFormat::RawLzma => {
+        let stream: Box<dyn Read> = match image_url.scheme() {
+            "file" => Box::new(
+                File::open(image_url.path()).context(format!("Failed to open {}", image_url))?,
+            ),
+            "http" | "https" => {
+                // For remote files, perform a blocking GET request
+                exponential_backoff_get(
+                    &image_url,
+                    GET_MAX_RETRIES,
+                    Duration::from_secs(GET_TIMEOUT_SECS),
+                )?
+            }
+            "oci" => {
+                // TODO: Need to implement downloading images as OCI artifacts from Azure container
+                // registry and passing them to sysupdate. This functionality will be implemented in
+                // download_oci.rs. After the artifact is downloaded locally, Trident will evoke
+                // systemd-sysupdate.rs to install the image, providing 2 extra arg-s:
+                // 1. local_update_dir, which is a TempDir object pointing to a local directory
+                // containing the update image,
+                // 2. local_update_file, which is a String representing the name of the image file
+                // downloaded by Trident so that sysupdate can operate on it.
+                //
+                // Related ADO task:
+                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
+                bail!("Downloading images as OCI artifacts from Azure container registry is not implemented")
+            }
+            _ => bail!("Unsupported URL scheme"),
+        };
+
+        match image.format {
+            ImageFormat::RawZst => {
+                info!(
+                    "Deploying image from URL '{}' to block device '{}'",
+                    image.url, image.target_id
+                );
+
+                // Initialize HashingReader instance on stream
+                let stream = HashingReader::new(stream);
+                info!("Writing image to block device");
+
+                // Mark the block device as having unknown contents in case the write operation is interrupted.
+                storage::set_host_status_block_device_contents(
+                    host_status,
+                    &image.target_id,
+                    BlockDeviceContents::Unknown,
+                )
+                .context(format!(
+                    "Failed to set block device contents for '{}'",
+                    image.target_id
+                ))?;
+
+                let (computed_sha256, bytes_copied) = image_streamer::stream_zstd(
+                    stream,
+                    &block_device.path,
+                    Some(block_device.size),
+                )?;
+
+                // Update HostStatus
+                storage::set_host_status_block_device_contents(
+                    host_status,
+                    &image.target_id,
+                    BlockDeviceContents::Image {
+                        sha256: computed_sha256.clone(),
+                        length: bytes_copied,
+                        url: image_url.to_string(),
+                    },
+                )?;
+
+                // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
+                // SHA256 matches SHA256 in HostConfig
+                match image.sha256 {
+                    ImageSha256::Ignored => {
+                        info!("Ignoring SHA256 for image from '{}'", image_url);
+                    }
+                    ImageSha256::Checksum(ref expected_sha256) => {
+                        if computed_sha256 != *expected_sha256 {
+                            bail!(
+                                "SHA256 mismatch for disk image {}: expected {}, got {}",
+                                image_url,
+                                expected_sha256,
+                                computed_sha256
+                            );
+                        }
+                    }
+                }
+
+                // If target_id corresponds to a block device that serves as the mount point for /boot,
+                // assign a new randomized FS UUID to that updated volume. This is necessary so that the grub
+                // boot loader can select the correct volume to load the kernel and initrd from, when the
+                // firmware reboots after the A/B update (and in generally, so that grub
+                // picks the right /boot volume to boot from).
+                if is_mount_point_for_boot(host_status, &image.target_id) {
+                    info!(
+                        "Identified block device with id '{}' as the mount point for /boot",
+                        image.target_id
+                    );
+
+                    let new_fs_uuid = update_fs_uuid(&block_device.path)
+                        .context(format!(
+                            "Failed to assign a new randomized filesystem UUID to updated volume on block device '{}'",
+                            &image.target_id
+                        ))?;
+
+                    info!(
+                        "Assigned a new randomized filesystem UUID '{}' to updated volume at path '{}'",
+                        new_fs_uuid,
+                        block_device.path.display()
+                    );
+                }
+
+                // If the image has ext* filesystem and is not to be mounted read-only,
+                // resize the filesystem. For now, we determine the filesystem by looking at
+                // the corresponding mountpoint.
+                let mount_point = host_status
+                    .spec
+                    .storage
+                    .internal_mount_points
+                    .iter()
+                    .find(|mp| mp.target_id == image.target_id);
+                if let Some(mount_point) = mount_point {
+                    if mount_point.filesystem.is_ext()
+                        && !mount_point.options.contains(&"ro".into())
+                    {
+                        // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
+                        info!("Checking filesystem on block device '{}'", &image.target_id);
+                        e2fsck::run(&block_device.path).context(format!(
+                            "Failed to check filesystem on block device '{}'",
+                            &image.target_id
+                        ))?;
+                        info!("Resizing filesystem on block device '{}'", &image.target_id);
+                        resize_ext_fs(&block_device.path).context(format!(
+                            "Failed to resize filesystem on block device '{}'",
+                            &image.target_id
+                        ))?;
+                    }
+                }
+            }
+            #[cfg(feature = "sysupdate")]
+            ImageFormat::RawLzma => {
+                if image_url.scheme() == "file" {
                     // Fetch directory and filename from image URL
                     let (directory, filename, computed_sha256) =
                         systemd_sysupdate::get_local_image(&image_url, image)?;
@@ -75,34 +228,15 @@ fn update_images(
                         "Failed to deploy image {} via sysupdate",
                         image.url
                     ))?;
-                }
+                } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
+                    // If image is of format RawLzma AND target-id corresponds to an A/B volume pair,
+                    // use systemd-sysupdate.rs to write to the partition.
+                    //
+                    // TODO: Instead of delegating the download of the payload and hash verification to
+                    // systemd-sysupdate, do it from Trident, to support more format types and avoid
+                    // the SHA256SUMS overhead for the user. Related ADO task:
+                    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6175.
 
-                // Otherwise, use direct streaming of image bytes onto the block device
-                ImageFormat::RawZst => {
-                    // If image does NOT correspond to ESP partition, use direct streaming of image
-                    if !is_esp(host_status, &image.target_id) {
-                        update_image(&image_url, image, host_status, &block_device, true).context(
-                            format!(
-                            "Failed to deploy image '{}' to block device '{}' via direct streaming",
-                            image.url, image.target_id
-                        ),
-                        )?;
-                    }
-                    // If image corresponds to ESP partition, no need to deploy image directly; instead,
-                    // perform file-based update of ESP later
-                }
-            }
-        } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
-            match image.format {
-                // If image is of format RawLzma AND target-id corresponds to an A/B volume pair,
-                // use systemd-sysupdate.rs to write to the partition.
-                //
-                // TODO: Instead of delegating the download of the payload and hash verification to
-                // systemd-sysupdate, do it from Trident, to support more format types and avoid
-                // the SHA256SUMS overhead for the user. Related ADO task:
-                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6175.
-                #[cfg(feature = "sysupdate")]
-                ImageFormat::RawLzma => {
                     // Determine if target-id corresponds to an A/B volume pair; if helper
                     // func returns None, then set bool to false
                     let targets_ab_volume_pair = host_status
@@ -113,7 +247,7 @@ fn update_images(
                     // correspond to an A/B volume pair, report an error
                     if !targets_ab_volume_pair {
                         bail!("Block device with id {} is not part of an A/B volume pair, so image in raw lzma format cannot be written to it.\nRaw lzma is not supported for block devices that do not correspond to A/B volume pairs",
-                            &image.target_id)
+                                    &image.target_id)
                     }
                     // Run helper func systemd_sysupdate::deploy() to execute A/B update; directory and file
                     // name arg-s are None to communicate that update image is published via URL,
@@ -121,124 +255,12 @@ fn update_images(
                     systemd_sysupdate::deploy(image, host_status, None, None, None).context(
                         format!("Failed to deploy image {} via sysupdate", image.url),
                     )?;
-                }
-
-                // Otherwise, use direct streaming of image bytes onto the block device
-                ImageFormat::RawZst => {
-                    // If image does NOT correspond to ESP partition, use direct streaming of image
-                    if !is_esp(host_status, &image.target_id) {
-                        update_image(
-                            &image_url,
-                            image,
-                            host_status,
-                            &block_device,
-                            // Set is_local to false since image is not a local file
-                            false,
-                        )
-                        .context(format!(
-                            "Failed to deploy image '{}' to block device '{}' via direct streaming",
-                            image.url, image.target_id
-                        ))?;
-                    }
-                    // If image corresponds to ESP partition, no need to deploy image directly; instead,
-                    // perform file-based update of ESP later
-                }
+                } else {
+                    bail!("Unsupported URL scheme")
+                };
             }
-        } else if image_url.scheme() == "oci" {
-            // TODO: Need to implement downloading images as OCI artifacts from Azure container
-            // registry and passing them to sysupdate. This functionality will be implemented in
-            // download_oci.rs. After the artifact is downloaded locally, Trident will evoke
-            // systemd-sysupdate.rs to install the image, providing 2 extra arg-s:
-            // 1. local_update_dir, which is a TempDir object pointing to a local directory
-            // containing the update image,
-            // 2. local_update_file, which is a String representing the name of the image file
-            // downloaded by Trident so that sysupdate can operate on it.
-            //
-            // Related ADO task:
-            // https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
-            bail!("Downloading images as OCI artifacts from Azure container registry is not implemented")
-        } else {
-            bail!("Unsupported URL scheme")
-        };
-    }
-    Ok(())
-}
-
-/// Invokes stream_image::deploy() to deploy an image onto a non-ESP volume. If the volume is the
-/// mount point for /boot, assigns a new randomized FS UUID to the updated volume. Accepts 5 arg-s:
-/// 1. image_url: Url, which is the URL of the image to be deployed,
-/// 2. image: &Image, which is the Image object from HostConfig,
-/// 3. host_status,
-/// 4. block_device: BlockDeviceInfo of the volume on which the image will be deployed,
-/// 5. is_local: bool indicating whether the image is a local file or not.
-fn update_image(
-    image_url: &Url,
-    image: &InternalImage,
-    host_status: &mut HostStatus,
-    block_device: &BlockDeviceInfo,
-    is_local: bool,
-) -> Result<(), Error> {
-    info!(
-        "Deploying image from URL '{}' to block device '{}'",
-        image.url, image.target_id
-    );
-
-    stream_image::deploy(image_url, image, host_status, block_device, is_local).context(
-        format!(
-            "Failed to deploy image '{}' to block device '{}' via direct streaming",
-            image.url, image.target_id
-        ),
-    )?;
-
-    // If target_id corresponds to a block device that serves as the mount point for /boot,
-    // assign a new randomized FS UUID to that updated volume. This is necessary so that the grub
-    // boot loader can select the correct volume to load the kernel and initrd from, when the
-    // firmware reboots after the A/B update (and in generally, so that grub
-    // picks the right /boot volume to boot from).
-    if is_mount_point_for_boot(host_status, &image.target_id) {
-        info!(
-            "Identified block device with id '{}' as the mount point for /boot",
-            image.target_id
-        );
-
-        let new_fs_uuid = update_fs_uuid(&block_device.path)
-            .context(format!(
-                "Failed to assign a new randomized filesystem UUID to updated volume on block device '{}'",
-                &image.target_id
-            ))?;
-
-        info!(
-            "Assigned a new randomized filesystem UUID '{}' to updated volume at path '{}'",
-            new_fs_uuid,
-            block_device.path.display()
-        );
-    }
-
-    // If the image has ext* filesystem and is not to be mounted read-only,
-    // resize the filesystem. For now, we determine the filesystem by looking at
-    // the corresponding mountpoint.
-    let mount_point = host_status
-        .spec
-        .storage
-        .internal_mount_points
-        .iter()
-        .find(|mp| mp.target_id == image.target_id);
-    if let Some(mount_point) = mount_point {
-        if mount_point.filesystem.is_ext() && !mount_point.options.contains(&"ro".into()) {
-            // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
-            info!("Checking filesystem on block device '{}'", &image.target_id);
-            e2fsck::run(&block_device.path).context(format!(
-                "Failed to check filesystem on block device '{}'",
-                &image.target_id
-            ))?;
-            info!("Resizing filesystem on block device '{}'", &image.target_id);
-            resize_ext_fs(&block_device.path).context(format!(
-                "Failed to resize filesystem on block device '{}'",
-                &image.target_id
-            ))?;
         }
     }
-
     Ok(())
 }
 
@@ -582,7 +604,7 @@ mod tests {
             InternalMountPoint, MountOptions, MountPoint, Partition, PartitionType,
             Storage as StorageConfig,
         },
-        status::{ServicingState, ServicingType, Storage},
+        status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
 
     use super::*;
@@ -1268,7 +1290,7 @@ mod functional_test {
         config::{
             self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition, PartitionType,
         },
-        status::Storage,
+        status::{BlockDeviceInfo, Storage},
     };
 
     /// Validates that run() correctly assigns a new UUID to the filesystem.
