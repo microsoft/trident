@@ -9,29 +9,26 @@ Tags: comma,separated,list,of,tags
 
 # Trident
 
-Deployment and update Agent for Mariner OS, allowing for inplace image
-deployments and atomic updates. Initial focus is on Bare Metal deployments, but
-can be leveraged outside of that as well.
+Trident is a deployment and update agent for Azure Linux, allowing for inplace
+image deployments and atomic updates. Initial focus is on Bare Metal
+deployments, but can be leveraged outside of that as well.
 
 ## Contents
 
 - [Trident](#trident)
   - [Contents](#contents)
-  - [Docs](#docs)
+  - [Background](#background)
   - [Getting Started](#getting-started)
-    - [Custom builds](#custom-builds)
-    - [Pre-built artifacts](#pre-built-artifacts)
-    - [Trident Environments](#trident-environments)
-    - [Trident RPMs](#trident-rpms)
-      - [Dependencies](#dependencies)
+    - [Download artifacts](#download-artifacts)
+    - [Install Trident](#install-trident)
+    - [Dependencies](#dependencies)
   - [Running Trident](#running-trident)
+    - [Trident Environments](#trident-environments)
     - [Safety check](#safety-check)
   - [Trident Configuration](#trident-configuration)
-  - [Host Configuration](#host-configuration)
-    - [Documentation](#documentation)
-    - [Schema](#schema)
-    - [Sample](#sample)
-    - [Validator](#validator)
+    - [Host Configuration](#host-configuration)
+    - [User Options](#user-options)
+    - [Internal Fields](#internal-fields)
   - [A/B Update](#ab-update)
     - [Getting Started with A/B Update](#getting-started-with-ab-update)
   - [dm-verity Support](#dm-verity-support)
@@ -45,7 +42,7 @@ can be leveraged outside of that as well.
   - [License](#license)
   - [Acknowledgments](#acknowledgments)
 
-## Docs
+## Background
 
 - [BOM Agnostic Single Node Provisioning
 Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shared%20Documents/General/BareMetal/BOM%20Agnostic%20Single%20Node%20Provisioning%20Architecture.docx?web=1).
@@ -54,35 +51,20 @@ Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shar
 
 ## Getting Started
 
-### Custom builds
+### Download artifacts
 
-If you want to build the bits yourself or leverage any custom build from our pipelines, please follow the [Deployment
-instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/README.md&_a=preview).
-
-### Pre-built artifacts
-
-This is generally more recommended for most users. You can download the latest
-Trident release from the [releases wiki
+You can download the latest Trident release from the [releases wiki
 page](https://dev.azure.com/mariner-org/ECF/_wiki/wikis/MarinerHCI.wiki/3306/Trident-Release).
 And you can learn more how to integrate it with MIC for building the
 runtime/target image and the provisioning image on the [BareMetal Platform Tools
 wiki
 page](https://dev.azure.com/mariner-org/ECF/_wiki/wikis/MarinerHCI.wiki/3607/BareMetal-Platform-Tools).
 
-### Trident Environments
+(If you instead want to build the bits yourself or leverage any custom build from
+our pipelines, please follow the [Deployment
+instructions](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit?path=/README.md&_a=preview).)
 
-Trident can be run in two environments:
-
-- Provisioning: Trident is run from the provisioning OS (management OS) to provision the target
-  OS. The provisioning OS is typically a live OS running from a CD or USB stick.
-  It can be also a live OS running from a network boot or from a preprovisioned
-  bootstrap OS.
-
-- Runtime: Trident is run from the target/runtime/application OS to apply and updates.
-
-In both cases, Trident can be manually invoked, started using SystemD or run from a container.
-
-### Trident RPMs
+### Install Trident
 
 Trident is shipped as an RPM package. There are three main packages:
 
@@ -100,7 +82,7 @@ Trident is shipped as an RPM package. There are three main packages:
   `trident-provisioning` during provisioning, you will also want to use
   `trident-service`, as only the latter triggers the actual provisioning.
 
-#### Dependencies
+### Dependencies
 
 `trident` package has several optional dependencies. These are not enforced, as
 not all customers will need all features. You will need to install these
@@ -127,10 +109,6 @@ Trident can be automatically started using SystemD (see the [service
 definitions](systemd)) or directly started manually. Trident support the
 following commands (input as a command line parameter):
 
-- `start-network`: Uses the `network` or `networkOverride` configuration (see
-  below for details, loaded from `/etc/trident/config.yaml`) to configure
-  networking in the currently running OS. This is mainly use to startup network
-  during initial provisioning when default DHCP configuration is not sufficient.
 - `run`: Runs Trident in the current OS. This is the main command to use to
   start Trident. Trident will load its configuration from
   `/etc/trident/config.yaml` and start applying the desired HostConfiguration.
@@ -140,6 +118,11 @@ following commands (input as a command line parameter):
   using this command. This will print the HostStatus to standard output. If you
   in addition pass `--status <path-to-output-file>`, Trident will write the Host
   Status into the specified file instead.
+- `start-network`: Uses the `network` or `networkOverride` configuration (see
+  below for details, loaded from `/etc/trident/config.yaml`) to configure
+  networking in the currently running OS. This is mainly used to startup
+  networking during initial provisioning when the default DHCP configuration is
+  not sufficient.
 
 For any of the commands, you can change logging verbosity from the default
 `WARN` by passing `--verbosity` and appending one of the following values:
@@ -151,6 +134,19 @@ parameter.
 For debugging and troubleshooting, you can [view the full log of
 Trident](./docs/How-To-Guides/View-Trident's-Background-Log.md).
 
+### Trident Environments
+
+Trident can be run in two environments:
+
+- Provisioning: Trident is run from the provisioning OS (management OS) to provision the target
+  OS. The provisioning OS is typically a live OS running from a CD or USB stick.
+  It can be also a live OS running from a network boot or from a preprovisioned
+  bootstrap OS.
+
+- Runtime: Trident is run from the target/runtime/application OS to apply an update.
+
+In both cases, Trident can be manually invoked, started using SystemD or run from a container.
+
 ### Safety check
 
 Trident may destroy user data if run from dev machine or other system that is
@@ -161,8 +157,54 @@ creating a file named `override-trident-safety-check` in the root directory.
 
 ## Trident Configuration
 
-This configuration file is used by the Trident agent to configure itself. It is
-composed of the following sections:
+Trident is controlled by an input file containing both the desired state of the
+host and some configuration options. By default, this YAML file is read from
+`/etc/trident/config.yaml` though the path can be overridden using the
+`--config` command line option.
+
+There is a `validate` subcommand that can be easily used to validate a config
+file. It is intended to enable fast iteration and can be run from a dev machine
+or other Linux system. Trident also supports validating a standalone Host
+Configuration file. For more details, see [Host Configuration
+Validation](docs/How-To-Guides/Host-Configuration-Validation.md).
+
+The validator can check the configuration for syntax errors, but also for many
+kinds of semantic errors. However, there are certain kinds of issues, like
+referencing disks that do not exist, that cannot be caught by the validator.
+Trident will catch these issues at runtime.
+
+### Host Configuration
+
+The desired state of the machine is described by passing one of the following:
+
+- **hostConfiguration**: describes the host configuration. This is the
+  configuration that Trident will apply to the host (same payload as
+  `hostConfigurationFile`, but directly embedded in the Trident configuration).
+- **hostConfigurationFile**: path to the host configuration file. This is a YAML
+  file that describes the host configuration in the Host Configuration format.
+- **kickstart**: describes the host configuration in the kickstart format. This
+  is the configuration that Trident will apply to the host (same payload as
+  `kickstartFile`, but directly embedded in the Trident configuration). WIP,
+  early preview only.
+- **kickstartFile**: path to the kickstart file. This is a kickstart file that
+  describes the host configuration in the kickstart format. WIP, early preview
+  only. TODO: document what is supported.
+
+For more details on the Host Configuration format:
+
+- An example Host Configuration YAML MD file is available here:
+[sample-host-configuration](docs/Reference/Host-Configuration/sample-host-configuration.md).
+
+- Additional raw YAML configuration samples are available in [Samples](docs/Reference/Host-Configuration/Samples).
+
+- The full schema is available here:
+[HostConfiguration.md](docs/Reference/Host-Configuration/API-Reference/HostConfiguration.md).
+
+- And also as a JSON Schema here:
+[host-config-schema.json](trident_api/schemas/host-config-schema.json)
+
+
+### User Options
 
 - **allowedOperations**: a list of flags representing allowed operations.
   This is a set of operations that Trident is allowed to perform on the host.
@@ -206,11 +248,8 @@ composed of the following sections:
     allowedOperations: []
     ```
 
-  When no operations are allowed, trident will refres Host Status, but no
-  operations performed on the host.
-- **datastore**: if present, indicates the path to an existing datastore Trident
-  should load its state from. This field should not be included when Trident is
-  running from the provisioning OS.
+  When no operations are allowed, trident will refresh the Host Status, but no
+  operations will be performed on the host.
 - **phonehome**: optional URL to reach out to when networking is up, so Trident
   can report its status. This is useful for debugging and monitoring purposes,
   say by an orchestrator. Note that separately the updates to the Host Status
@@ -220,15 +259,6 @@ composed of the following sections:
 - **networkOverride**: optional network configuration for the bootstrap OS. If
   not specified, the network configuration from Host Configuration (see below)
   will be used otherwise.
-- **grpc**: If present (to make it present, add `listenPort` attribute which can
-  be `null` for the default port 50051 or the port number to be used for
-  incoming gRPC connections), this indicates that Trident should start a gRPC
-  server to listen for commands. The protocol is described by
-  [proto/trident.proto](proto/trident.proto). This only applies to the current
-  run of Trident. During provisioning, you can control whether gRPC is enabled
-  on the runtime OS via the `enableGrpc` field within the Trident Management
-  section of the Host Configuration. TODO: implement and document authorization
-  for accessing the gRPC endpoint.
 - **waitForProvisioningNetwork**: USE WITH CAUTION!! IT WILL INCREASE BOOT TIMES
   IF THE NETWORK CONFIGURATION IS NOT PERFECT. (Only affects clean installs)
   When set to `true`, Trident will start `systemd-networkd-wait-online` to wait
@@ -238,48 +268,16 @@ composed of the following sections:
   avoid matching interfaces you don't want to. E.g. `eth0` instead of `eth*` to
   avoid matching `eth1` and `eth2` as well.
 
-Additionally, to configure the host, the desired host configuration can be
-provided through either one of the following options:
+<!-- There is also a grpc field, but it is not enabled in release builds -->
 
-- **hostConfigurationFile**: path to the host configuration file. This is a YAML
-  file that describes the host configuration in the Host Configuration format.
-  See below details.
-- **hostConfiguration**: describes the host configuration. This is the
-  configuration that Trident will apply to the host (same payload as
-  `hostConfigurationFile`, but directly embedded in the Trident configuration).
-  See below details.
-- **kickstartFile**: path to the kickstart file. This is a kickstart file that
-  describes the host configuration in the kickstart format. WIP, early preview
-  only. TODO: document what is supported.
-- **kickstart**: describes the host configuration in the kickstart format. This
-  is the configuration that Trident will apply to the host (same payload as
-  `kickstartFile`, but directly embedded in the Trident configuration). WIP,
-  early preview only.
+### Internal Fields
 
-## Host Configuration
+- **datastore**: if present, indicates the path to an existing datastore Trident
+  should load its state from. This field should not be included when Trident is
+  running from the provisioning OS. Trident interprets this field to mean that
+  it is running from an already provisioned system and thus should perform
+  updates rather than a clean install.
 
-Host Configuration describes the desired state of the host.
-
-### Documentation
-
-The full schema is available here:
-[HostConfiguration.md](docs/Reference/Host-Configuration/API-Reference/HostConfiguration.md).
-
-### Schema
-
-The raw JSON Schema for Host configuration is here:
-[host-config-schema.json](trident_api/schemas/host-config-schema.json)
-
-### Sample
-
-An example Host Configuration YAML MD file is available here:
-[sample-host-configuration](docs/Reference/Host-Configuration/sample-host-configuration.md).
-Additional raw YAML configuration samples are available in [Samples](docs/Reference/Host-Configuration/Samples).
-
-### Validator
-
-Trident supports the `validate` subcommand to validate a Host Configuration YAML.
-See [Host Configuration Validation](docs/How-To-Guides/Host-Configuration-Validation.md).
 
 ## A/B Update
 
