@@ -320,7 +320,7 @@ download-runtime-partition-images:
 	$(eval RUN_ID ?= $(shell az pipelines runs list \
 		--org 'https://dev.azure.com/mariner-org' \
 		--project "ECF" \
-		--pipeline-ids 2195 \
+		--pipeline-ids 3371 \
 		--branch $(BRANCH) \
 		--query-order QueueTimeDesc \
 		--result succeeded \

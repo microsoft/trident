@@ -6,12 +6,17 @@ parameters:
 
   - name: definition
     type: number
-    default: 2195
+    default: 3371 # trident-ci
     values:
+      # trident-ci
+      - 3371
+      # trident-pr-e2e
       - 2195
+      # trident-prerelease
       - 2648
+      # trident-testing
       - 3262
-      - 2113
+      # trident-pipeline-tester
       - 3210
     displayName: Pipeline definition ID
 

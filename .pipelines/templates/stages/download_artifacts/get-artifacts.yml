@@ -1,7 +1,7 @@
 parameters:
   - name: definition
     type: number
-    default: 2195
+    default: 3371 # trident-ci
     displayName: Pipeline definition ID
 
   - name: branch
