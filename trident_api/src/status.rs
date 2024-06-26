@@ -21,9 +21,6 @@ pub struct HostStatus {
     pub servicing_state: ServicingState,
 
     #[serde(default)]
-    pub trident: Trident,
-
-    #[serde(default)]
     pub storage: Storage,
 
     /// BootNext variable of efibootmgr.
@@ -79,12 +76,6 @@ pub enum ServicingState {
     /// Servicing has been completed, and the host succesfully booted from the updated runtime OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct Trident {
-    pub datastore_path: Option<PathBuf>,
 }
 
 /// Storage status of a host.

@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{Context, Error};
 use log::{debug, info};
+use osutils::path;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError, LocalConfigFile},
     status::{HostStatus, ServicingType},
@@ -31,61 +32,39 @@ impl Module for ManagementModule {
             return Ok(());
         }
 
-        if let Some(ref current_datastore_path) = host_status.trident.datastore_path {
-            if current_datastore_path != &host_config.trident.datastore_path {
-                return Err(
-                    HostConfigurationDynamicValidationError::ChangedDatastorePath {
-                        current: current_datastore_path.to_string_lossy().to_string(),
-                        new: host_config
-                            .trident
-                            .datastore_path
-                            .to_string_lossy()
-                            .to_string(),
-                    },
-                );
-            }
+        let current_path = &host_status.spec.trident.datastore_path;
+        let new_path = &host_config.trident.datastore_path;
+        if current_path != new_path {
+            return Err(
+                HostConfigurationDynamicValidationError::ChangedDatastorePath {
+                    current: current_path.display().to_string(),
+                    new: new_path.display().to_string(),
+                },
+            );
         }
 
         Ok(())
     }
 
-    fn provision(&mut self, host_status: &mut HostStatus, mount_path: &Path) -> Result<(), Error> {
+    fn configure(&mut self, host_status: &mut HostStatus, exec_root: &Path) -> Result<(), Error> {
         if host_status.spec.trident.disable {
-            info!("Not provisioning management module as it is disabled");
             return Ok(());
         }
-
-        host_status.trident.datastore_path = Some(host_status.spec.trident.datastore_path.clone());
-        debug!("Datastore path: {:?}", host_status.trident.datastore_path);
 
         if host_status.spec.trident.self_upgrade {
             info!("Copying Trident binary to runtime OS");
             fs::copy(
+                path::join_relative(exec_root, TRIDENT_BINARY_PATH),
                 TRIDENT_BINARY_PATH,
-                mount_path.join(&TRIDENT_BINARY_PATH[1..]),
             )
             .context("Failed to copy Trident binary to runtime OS")?;
-        }
-
-        Ok(())
-    }
-
-    fn configure(&mut self, host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
-        if host_status.spec.trident.disable {
-            return Ok(());
         }
 
         fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
             .context("Failed to create trident config directory")?;
 
-        let datastore_path = host_status
-            .trident
-            .datastore_path
-            .as_ref()
-            .context("Datastore path missing from host status")?;
-
         create_trident_config(
-            datastore_path,
+            &host_status.spec.trident.datastore_path,
             &host_status.spec,
             Path::new(TRIDENT_LOCAL_CONFIG_PATH),
         )?;
@@ -135,7 +114,7 @@ mod tests {
             .unwrap();
 
         // Setting the datastore path should pass
-        host_status.trident.datastore_path = Some(Path::new("/foo").to_path_buf());
+        host_status.spec.trident.datastore_path = Path::new("/foo").into();
         host_config.trident.datastore_path = Path::new("/foo").to_path_buf();
         mgmt_mod
             .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)

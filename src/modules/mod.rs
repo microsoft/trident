@@ -320,13 +320,10 @@ pub(super) fn finalize_clean_install(
     send_host_status_state(sender, state)?;
 
     // Persist and close the datastore
-    let datastore_path = state
-        .host_status()
-        .trident
-        .datastore_path
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("/tmp/datastore.sqlite"));
-    state.persist(&join_relative(new_root_path, datastore_path))?;
+    state.persist(&join_relative(
+        new_root_path,
+        &state.host_status().spec.trident.datastore_path,
+    ))?;
 
     info!("Finalizing clean install");
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
