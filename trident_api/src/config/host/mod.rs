@@ -45,6 +45,9 @@ pub struct HostConfiguration {
     pub os: Os,
 
     /// OS Configuration for the management OS.
+    ///
+    /// These settings are only applicable for clean install servicing. They are
+    /// ignored on updates.
     #[serde(default, skip_serializing_if = "is_default")]
     pub management_os: ManagementOs,
 }

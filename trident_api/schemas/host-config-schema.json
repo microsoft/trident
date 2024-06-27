@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "managementOs": {
-      "description": "OS Configuration for the management OS.",
+      "description": "OS Configuration for the management OS.\n\nThese settings are only applicable for clean install servicing. They are ignored on updates.",
       "allOf": [
         {
           "$ref": "#/definitions/ManagementOs"
@@ -500,6 +500,14 @@
           "type": "object",
           "format": "Netplan YAML",
           "nullable": true
+        },
+        "users": {
+          "description": "Users to configure on the management OS.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/User"
+          }
         }
       },
       "additionalProperties": false

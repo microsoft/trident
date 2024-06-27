@@ -95,6 +95,10 @@ pub struct ManagementOs {
         schemars(schema_with = "network::schema_helpers::make_placeholder_netplan_schema")
     )]
     pub network: Option<NetworkConfig>,
+
+    /// Users to configure on the management OS.
+    #[serde(default)]
+    pub users: Vec<User>,
 }
 
 impl Os {

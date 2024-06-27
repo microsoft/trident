@@ -1,7 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use anyhow::{Context, Error};
 use duct::cmd;
+
+use crate::exe::RunAndCheck;
 
 pub const MOUNT_UNIT_SUFFIX: &str = "mount";
 
@@ -25,6 +30,18 @@ where
     .context("Failed to escape unit name")?
     .trim()
     .into())
+}
+
+/// Restart a systemd unit.
+pub fn restart_unit<S>(unit: S) -> Result<(), Error>
+where
+    S: AsRef<str>,
+{
+    Command::new("systemctl")
+        .arg("restart")
+        .arg(unit.as_ref())
+        .run_and_check()
+        .with_context(|| format!("Failed to restart unit: {}", unit.as_ref()))
 }
 
 #[cfg(test)]

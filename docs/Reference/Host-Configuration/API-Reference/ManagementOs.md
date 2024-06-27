@@ -21,3 +21,19 @@ See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netpla
 | Type           | `object`       |
 | Format         | `Netplan YAML` |
 
+### `users` (optional)
+
+Users to configure on the management OS.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+| Default        | `[]`    |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value             |
+   | -------------- | ----------------- |
+   | Type           | `User`            |
+   | Link           | [User](./User.md) |
+

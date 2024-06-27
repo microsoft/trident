@@ -1,5 +1,3 @@
-#[cfg(feature = "grpc-dangerous")]
-use crate::grpc;
 use std::{
     fs::{self},
     path::{Path, PathBuf},
@@ -8,14 +6,15 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
 use anyhow::Error;
 use log::{debug, error, info};
-
 use sys_mount::{Mount, MountFlags};
 
+use osutils::{chroot, container, exe::RunAndCheck, mkinitrd, mount, path::join_relative};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::{
@@ -30,19 +29,20 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::{chroot, container, exe::RunAndCheck, mkinitrd, mount, path::join_relative};
-
+#[cfg(feature = "grpc-dangerous")]
+use crate::grpc::{self, protobufs::HostStatusState};
 use crate::{
     datastore::DataStore,
     modules::{
-        boot::BootModule, hooks::HooksModule, management::ManagementModule, network::NetworkModule,
-        osconfig::OsConfigModule, storage::StorageModule,
+        boot::BootModule,
+        hooks::HooksModule,
+        management::ManagementModule,
+        network::NetworkModule,
+        osconfig::{MosConfigModule, OsConfigModule},
+        storage::StorageModule,
     },
     HostUpdateCommand,
 };
-
-#[cfg(feature = "grpc-dangerous")]
-use crate::grpc::protobufs::HostStatusState;
 
 // Trident modules
 pub mod boot;
@@ -135,6 +135,7 @@ trait Module: Send {
 
 lazy_static::lazy_static! {
     static ref MODULES: Mutex<Vec<Box<dyn Module>>> = Mutex::new(vec![
+        Box::<MosConfigModule>::default(),
         Box::<StorageModule>::default(),
         Box::<BootModule>::default(),
         Box::<NetworkModule>::default(),

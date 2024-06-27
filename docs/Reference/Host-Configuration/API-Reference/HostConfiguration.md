@@ -14,6 +14,8 @@ HostConfiguration is the configuration for a host. Trident agent will use this t
 
 OS Configuration for the management OS.
 
+These settings are only applicable for clean install servicing. They are ignored on updates.
+
 | Characteristic | Value                             |
 | -------------- | --------------------------------- |
 | Type           | `ManagementOs`                    |

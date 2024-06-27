@@ -119,6 +119,9 @@ pub enum HostConfigurationDynamicValidationError {
     #[error("Failed to parse host configuration")]
     ImagesIncorrect(String),
 
+    #[error("Failed to find OS Modifier binary at '{0}'")]
+    MissingOsModifierBinary(String),
+
     #[error("Uncategorized error: {0}")]
     Other(String),
 }

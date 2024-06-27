@@ -234,7 +234,5 @@ fn ssh_global_config(users: &[User]) -> Result<(), Error> {
     osutils::files::create_file(path)
         .context("Failed to create sshd config file for global config")?
         .write_all(buffer.join("\n").as_bytes())
-        .context("Failed to write global user sshd config")?;
-
-    Ok(())
+        .context("Failed to write global user sshd config")
 }

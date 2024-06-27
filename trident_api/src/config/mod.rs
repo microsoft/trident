@@ -6,7 +6,7 @@ pub use host::{
     os::{
         additional_files::AdditionalFile,
         users::{Password, SshMode, User},
-        ManagementOs, Os, SelinuxMode,
+        ManagementOs, Os, Selinux, SelinuxMode,
     },
     scripts::{Script, Scripts, ServicingTypeSelection},
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},
