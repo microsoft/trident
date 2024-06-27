@@ -18,33 +18,31 @@ stages:
       type: linux
 
     variables:
-      ob_outputDirectory: $(Build.SourcesDirectory)/test-images/output
+      ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
       ob_artifactBaseName: ${{ parameters.outputArtifactName }}
-      mic_package: DEFAULT
-      mic_version: DEFAULT
-      mic_commit: DEFAULT
-      baseimg_package: DEFAULT
-      baseimg_version: DEFAULT
+      micBuildType: "preview"
+      micVersion: "*.*.*"
+      baseimgBuildType: "release"
+      baseimgVersion: "*.*.*"
+      baseimgAzureLinuxVersion: "2.0"
 
     steps:
-    - checkout: test-images
-      fetchDepth: 1
-
     - task: DownloadPipelineArtifact@2
       inputs:
         buildType: current
         artifactName: trident-binaries
-        targetPath: '$(Build.SourcesDirectory)/test-images/base/trident'
-        branchName: 'refs/heads/main'
+        targetPath: "$(Build.ArtifactStagingDirectory)/trident"
       displayName: Download Trident RPMs
 
     - template: .pipelines/templates/trident-testimg-template.yml@test-images
-      parameters:
-        tridentImgSourceDirectory: $(Build.SourcesDirectory)/test-images
-        outputDirectory: ${{ variables.ob_outputDirectory }}
-        mic_package: ${{ variables.mic_package }}
-        mic_version: ${{ variables.mic_version }}
-        mic_commit: ${{ variables.mic_commit }}
-        baseimg_package: ${{ variables.baseimg_package }}
-        baseimg_version: ${{ variables.baseimg_version }}
+      parameters:        
         target: ${{ parameters.imageName }}
+        outputDirectory: ${{ variables.ob_outputDirectory }}
+        testImagesRepo: test-images
+        micBuildType: ${{ variables.micBuildType }}
+        micVersion: ${{ variables.micVersion }}
+        baseimgBuildType: ${{ variables.baseimgBuildType }}
+        baseimgVersion: ${{ variables.baseimgVersion }}
+        baseimgAzureLinuxVersion: ${{ variables.baseimgAzureLinuxVersion }}
+        downloadTrident: false
+   
