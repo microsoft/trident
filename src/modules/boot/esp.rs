@@ -11,6 +11,7 @@ use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
+    arch::SystemArchitecture,
     filesystems::MountFileSystemType,
     hashing_reader::HashingReader,
     image_streamer,
@@ -111,13 +112,10 @@ fn copy_file_artifacts(
 
     // Call helper func to copy files from mounted img dir to esp_dir_path
     info!("Writing boot files to directory {}", esp_dir_path.display());
-    // Generate file name of EFI executable based on target architecture
-    let arch_str = generate_arch_str()
-        .context("Failed to generate arch string based on target architecture")?;
 
     // Generate list of filepaths to the boot files. Pass in the temp dir path where the image is
     // mounted to as an argument
-    let boot_files = generate_boot_filepaths(temp_mount_dir, &arch_str)
+    let boot_files = generate_boot_filepaths(temp_mount_dir, SystemArchitecture::current())
         .context("Failed to generate boot filepaths")?;
 
     // Clear esp_dir_path if it exists
@@ -136,14 +134,28 @@ fn copy_file_artifacts(
         ))?;
     }
 
-    let is_mariner_2_0 =
-        check_mariner_2_0().context("Failed to check if the system is mariner 2.0")?;
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files, is_mariner_2_0).context(format!(
-        "Failed to copy boot files from directory {} to directory {}",
-        temp_mount_dir.display(),
-        esp_dir_path.display()
-    ))?;
+    let grub_noprefix =
+        copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
+            "Failed to copy boot files from directory {} to directory {}",
+            temp_mount_dir.display(),
+            esp_dir_path.display()
+        ))?;
+
+    // Fail if no-prefix is not used on Azure Linux 2.0
+    if grub_noprefix {
+        info!("grub-noprefix.efi is used");
+
+    // Check if we are on Azure Linux 2.0
+    } else if osutils::osrelease::is_azl2()
+        .context("Failed to check if the system is Azure Linux 2.0")?
+    {
+        bail!("grub-noprefix.efi should be used on Azure Linux 2.0 images for trident");
+
+    // Otherwise, log message and continue
+    } else {
+        debug!("grub-noprefix.efi is not used and the system is not on Azure Linux 2.0");
+    }
 
     // Update HostStatus.
     // TODO: Setting BlockDeviceContents to Image contents, like for any volume, while updating the
@@ -182,20 +194,14 @@ fn copy_file_artifacts(
     Ok(())
 }
 
-//function to encapsulate the version check
-fn check_mariner_2_0() -> Result<bool, Error> {
-    let version = fs::read_to_string("/etc/mariner-release")
-        .context("Failed to read /etc/mariner-release")?;
-    Ok(version.contains("2.0"))
-}
-
 /// Copies boot files from temp_mount_dir, where image was mounted to, to given dir esp_dir.
+///
+/// Returns a boolean indicating whether grub-noprefix.efi is used.
 fn copy_boot_files(
     temp_mount_dir: &Path,
     esp_dir: &Path,
     boot_files: Vec<PathBuf>,
-    is_mariner_2_0: bool,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     // Track whether grub-noprefix.efi is used
     let mut no_prefix = false;
     // Copy the specified files from temp_mount_path to esp_dir_path
@@ -227,11 +233,11 @@ fn copy_boot_files(
         ))?;
 
         // Rename grub-noprefix efi to grub efi
-        if file_name == format!("grub{}-noprefix.efi", generate_arch_str()?).as_str() {
+        if file_name == format!("grub{}-noprefix.efi", current_arch_efi_str()?).as_str() {
             fs::rename(
                 &destination_path,
                 esp_dir
-                    .join(format!("grub{}.efi", generate_arch_str()?))
+                    .join(format!("grub{}.efi", current_arch_efi_str()?))
                     .to_str()
                     .context("Failed to convert path to string")?,
             )
@@ -240,19 +246,7 @@ fn copy_boot_files(
         }
     }
 
-    // Fail if no-prefix is not used on mariner 2.0
-    if !no_prefix {
-        // Check if we are on mariner 2.0
-        if is_mariner_2_0 {
-            bail!("grub-noprefix.efi should be used on mariner 2.0 images for trident");
-        } else {
-            debug!("grub-noprefix.efi is not used and the system is not on mariner 2.0");
-        }
-    } else {
-        info!("grub-noprefix.efi is used");
-    }
-
-    Ok(())
+    Ok(no_prefix)
 }
 
 /// Generates a list of filepaths to the boot files that need to be copied to implement file-based
@@ -265,9 +259,11 @@ fn copy_boot_files(
 ///    named "grubx64.efi."
 fn generate_boot_filepaths(
     temp_mount_dir: &Path,
-    efi_filename_ending: &str,
+    arch: SystemArchitecture,
 ) -> Result<Vec<PathBuf>, Error> {
     let mut paths = Vec::new();
+
+    let efi_filename_ending = get_arch_efi_str(arch)?;
 
     // Check if grub.cfg exists in EFI_DEFAULT_BIN_RELATIVE_PATH, otherwise use GRUB2_RELATIVE_PATH
     let efi_boot_grub_path = Path::new(temp_mount_dir)
@@ -336,21 +332,19 @@ fn generate_boot_filepaths(
     Ok(paths)
 }
 
-/// Returns the arch string based on the target architecture.
-///
-/// E.g., if the target architecture is x86_64, the function returns "x64" since the EFI executable
-/// for x86_64 is named "grubx64.efi."
-fn generate_arch_str() -> Result<String, Error> {
-    let arch_string = match () {
-        _ if cfg!(target_arch = "x86_64") => "x64",
-        _ if cfg!(target_arch = "x86") => "ia32",
-        _ if cfg!(target_arch = "arm") => "arm",
-        _ if cfg!(target_arch = "aarch64") => "aa64",
-        // Add more architectures as needed
-        _ => bail!("Failed to generate the filename of EFI executable as the target architecture is not supported"),
-    };
+fn current_arch_efi_str() -> Result<&'static str, Error> {
+    get_arch_efi_str(SystemArchitecture::current())
+}
 
-    Ok(arch_string.to_string())
+/// Returns the name of the given architecture for use in EFI.
+fn get_arch_efi_str(arch: SystemArchitecture) -> Result<&'static str, Error> {
+    Ok(match arch {
+        SystemArchitecture::X86 => "ia32",
+        SystemArchitecture::Amd64 => "x64",
+        SystemArchitecture::Arm => "arm",
+        SystemArchitecture::Aarch64 => "aa64",
+        SystemArchitecture::Other => bail!("Failed to generate the filename of EFI executable as the target architecture is not supported"),
+    })
 }
 
 /// Returns the path to the ESP directory where the boot files need to be copied to.
@@ -477,11 +471,13 @@ fn get_undeployed_images(
 mod tests {
     use super::*;
 
+    use std::io::Write;
+
     use maplit::btreemap;
 
     use trident_api::{
         config::{self, AbUpdate, AbVolumePair, PartitionType},
-        constants::{ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
+        constants::{GRUB2_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
         status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
 
@@ -498,10 +494,10 @@ mod tests {
         } else if cfg!(target_arch = "aarch64") {
             expected_arch = "aa64";
         } else {
-            assert!(generate_arch_str().is_err(), "generate_arch_str() should return an error if target architecture is not supported");
+            assert!(current_arch_efi_str().is_err(), "generate_arch_str() should return an error if target architecture is not supported");
         };
 
-        let generated_arch = generate_arch_str().unwrap();
+        let generated_arch = current_arch_efi_str().unwrap();
         assert_eq!(
             generated_arch, expected_arch,
             "Architecture string does not match expected value"
@@ -746,16 +742,6 @@ mod tests {
             "Incorrectly identified ESP partition as needing an update"
         );
     }
-}
-
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-    use std::io::Write;
-
-    use pytest_gen::functional_test;
-    use trident_api::constants::GRUB2_RELATIVE_PATH;
 
     /// Creates mock boot files in temp_mount_dir
     fn create_boot_files(temp_mount_dir: &Path, boot_files: &[PathBuf]) {
@@ -780,8 +766,8 @@ mod functional_test {
     }
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir
-    #[functional_test(feature = "abupdate")]
-    fn test_copy_boot_files_without_noprefix_not_mariner_2_0() {
+    #[test]
+    fn test_copy_boot_files_without_noprefix() {
         let temp_mount_dir = TempDir::new().unwrap();
         let esp_dir = TempDir::new().unwrap();
 
@@ -795,13 +781,12 @@ mod functional_test {
         // Call helper func to create mock boot files in temp_mount_dir
         create_boot_files(temp_mount_dir.path(), &file_names);
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
-        copy_boot_files(
-            temp_mount_dir.path(),
-            esp_dir.path(),
-            file_names.clone(),
-            false,
-        )
-        .unwrap();
+        let noprefix =
+            copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
+        assert!(
+            !noprefix,
+            "grub-noprefix.efi is not in the list of files, so it should not be detected"
+        );
 
         for file_name in file_names {
             // Create full path of source_path
@@ -818,36 +803,9 @@ mod functional_test {
         }
     }
 
-    #[functional_test(feature = "abupdate")]
-    fn test_copy_boot_files_without_noprefix_mariner_2_0() {
-        let temp_mount_dir = TempDir::new().unwrap();
-        let esp_dir = TempDir::new().unwrap();
-
-        // Create a list of boot files
-        let file_names = vec![
-            PathBuf::from(GRUB2_CONFIG_FILENAME),
-            PathBuf::from("grubx64.efi"),
-            PathBuf::from("bootx64.efi"),
-        ];
-
-        // Call helper func to create mock boot files in temp_mount_dir
-        create_boot_files(temp_mount_dir.path(), &file_names);
-
-        // returns an error if no-prefix is not used on mariner 2.0
-        assert!(
-            copy_boot_files(
-                temp_mount_dir.path(),
-                esp_dir.path(),
-                file_names.clone(),
-                true
-            )
-            .is_err(),
-            "grub-noprefix.efi should be used on mariner 2.0 images for trident"
-        );
-    }
-
-    /// Validates that copy_boot_files() correctly copies boot files with grub-noprefix from temp_mount_dir to esp_dir
-    #[functional_test(feature = "abupdate")]
+    /// Validates that copy_boot_files() correctly copies boot files with
+    /// grub-noprefix from temp_mount_dir to esp_dir
+    #[test]
     fn test_copy_boot_files_grub_noprefix() {
         let temp_mount_dir = TempDir::new().unwrap();
         let esp_dir = TempDir::new().unwrap();
@@ -862,40 +820,15 @@ mod functional_test {
         // Call helper func to create mock boot files in temp_mount_dir
         create_boot_files(temp_mount_dir.path(), &file_names);
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
-        copy_boot_files(
-            temp_mount_dir.path(),
-            esp_dir.path(),
-            file_names.clone(),
-            true,
-        )
-        .unwrap();
+        let noprefix =
+            copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
+
+        assert!(
+            noprefix,
+            "grub-noprefix.efi is in the list of files, so it should be detected"
+        );
 
         for file_name in file_names.clone() {
-            // Create full path of source_path
-            let source_path = temp_mount_dir.path().join(file_name.clone());
-            // Create full path of destination_path
-            let mut destination_path = esp_dir.path().join(file_name.clone());
-
-            if file_name == PathBuf::from("grubx64-noprefix.efi") {
-                destination_path = esp_dir.path().join("grubx64.efi");
-            }
-
-            assert!(
-                files_are_identical(&source_path, &destination_path),
-                "Files are not identical: {} and {}",
-                source_path.display(),
-                destination_path.display()
-            );
-        }
-
-        copy_boot_files(
-            temp_mount_dir.path(),
-            esp_dir.path(),
-            file_names.clone(),
-            false,
-        )
-        .unwrap();
-        for file_name in file_names {
             // Create full path of source_path
             let source_path = temp_mount_dir.path().join(file_name.clone());
             // Create full path of destination_path
@@ -915,34 +848,36 @@ mod functional_test {
     }
 
     /// Validates that generate_boot_filepaths() returns the correct filepaths based on target
-    #[functional_test(feature = "abupdate")]
+    #[test]
     fn test_generate_boot_filepaths() {
         // Test case 1: Run generate_boot_filepaths() with GRUB under EFI_DEFAULT_BIN_RELATIVE_PATH
         // Create a temp dir
         let temp_mount_dir = TempDir::new().unwrap();
-        // Fetch the path of temp dir
-        let temp_mount_path = temp_mount_dir.path();
 
         // Create a GRUB config inside of the temp dir
-        let efi_boot_grub_path = Path::new(temp_mount_path)
+        let efi_boot_grub_path = temp_mount_dir
+            .path()
             .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
             .join(GRUB2_CONFIG_FILENAME);
         fs::create_dir_all(efi_boot_grub_path.parent().unwrap()).unwrap();
         File::create(&efi_boot_grub_path).unwrap();
 
         // Create a grub EFI executable inside of the temp dir
-        let grub_efi_path = Path::new(temp_mount_path)
+        let grub_efi_path = temp_mount_dir
+            .path()
             .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
             .join("grubx64.efi");
         File::create(&grub_efi_path).unwrap();
 
         // Create a boot EFI executable inside of the temp dir
-        let boot_efi_path = Path::new(temp_mount_path)
+        let boot_efi_path = temp_mount_dir
+            .path()
             .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
             .join("bootx64.efi");
         File::create(&boot_efi_path).unwrap();
 
-        let generated_paths_efi_boot = generate_boot_filepaths(temp_mount_path, "x64").unwrap();
+        let generated_paths_efi_boot =
+            generate_boot_filepaths(temp_mount_dir.path(), SystemArchitecture::Amd64).unwrap();
         // Define your expected paths here when file exists
         let expected_paths_efi_boot = vec![
             efi_boot_grub_path.clone(),
@@ -958,7 +893,7 @@ mod functional_test {
         // Remove the GRUB config from the temp dir and create a new one, under GRUB2_RELATIVE_PATH
         fs::remove_file(&efi_boot_grub_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_path, "x64")
+            generate_boot_filepaths(temp_mount_dir.path(), SystemArchitecture::Amd64)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -967,13 +902,15 @@ mod functional_test {
         );
 
         // Test case 3: Run generate_boot_filepaths() with GRUB under GRUB2_RELATIVE_PATH
-        let boot_grub2_grub_path = Path::new(temp_mount_path)
+        let boot_grub2_grub_path = temp_mount_dir
+            .path()
             .join(GRUB2_RELATIVE_PATH)
             .join(GRUB2_CONFIG_FILENAME);
         fs::create_dir_all(boot_grub2_grub_path.parent().unwrap()).unwrap();
         File::create(&boot_grub2_grub_path).unwrap();
 
-        let generated_paths_boot_grub2 = generate_boot_filepaths(temp_mount_path, "x64").unwrap();
+        let generated_paths_boot_grub2 =
+            generate_boot_filepaths(temp_mount_dir.path(), SystemArchitecture::Amd64).unwrap();
         // Define expected paths here when EFI/BOOT/grub.cfg does not exist and boot/grub2/grub.cfg
         // is used instead
         let expected_paths_boot_grub2 = vec![
@@ -990,7 +927,7 @@ mod functional_test {
         // Remove old grub EFI executable
         fs::remove_file(&grub_efi_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_path, "x64")
+            generate_boot_filepaths(temp_mount_dir.path(), SystemArchitecture::Amd64)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -999,12 +936,14 @@ mod functional_test {
 
         // Test case 5: Run generate_boot_filepaths() with a grub EFI executable with noprefix name
         // Create a grub EFI executable with the noprefix name inside of the temp dir
-        let grub_efi_noprefix_path = Path::new(temp_mount_path)
+        let grub_efi_noprefix_path = temp_mount_dir
+            .path()
             .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
             .join("grubx64-noprefix.efi");
         File::create(&grub_efi_noprefix_path).unwrap();
 
-        let generated_paths_noprefix = generate_boot_filepaths(temp_mount_path, "x64").unwrap();
+        let generated_paths_noprefix =
+            generate_boot_filepaths(temp_mount_dir.path(), SystemArchitecture::Amd64).unwrap();
         // Define expected paths here when EFI/BOOT/grub.cfg does not exist and boot/grub2/grub.cfg
         // is used instead
         let expected_paths_noprefix = vec![
@@ -1021,7 +960,7 @@ mod functional_test {
         // Remove old boot EFI executable
         fs::remove_file(&boot_efi_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_path, "x64")
+            generate_boot_filepaths(temp_mount_dir.path(), SystemArchitecture::Amd64)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),

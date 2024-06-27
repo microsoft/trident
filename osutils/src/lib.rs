@@ -1,3 +1,4 @@
+pub mod arch;
 pub mod blkid;
 pub mod block_devices;
 pub mod chroot;
@@ -18,6 +19,7 @@ pub mod mkinitrd;
 pub mod mkswap;
 pub mod mount;
 pub mod mountpoint;
+pub mod osrelease;
 pub mod overlay;
 pub mod partition_types;
 pub mod path;
