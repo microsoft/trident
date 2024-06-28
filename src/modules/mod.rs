@@ -1,5 +1,5 @@
 use std::{
-    fs::{self},
+    fs,
     path::{Path, PathBuf},
     process::Command,
     sync::{Mutex, MutexGuard},
@@ -11,7 +11,7 @@ use std::{
 use tokio::sync::mpsc;
 
 use anyhow::Error;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use sys_mount::{Mount, MountFlags};
 
 use osutils::{chroot, container, exe::RunAndCheck, mount, path::join_relative};
@@ -43,7 +43,7 @@ use crate::{
         selinux::SelinuxModule,
         storage::StorageModule,
     },
-    HostUpdateCommand,
+    HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH,
 };
 
 // Trident modules
@@ -64,14 +64,12 @@ pub mod selinux;
 
 /// Bootentry name for A images
 const BOOT_ENTRY_A: &str = "AZLA";
+
 /// Bootentry name for B images
 const BOOT_ENTRY_B: &str = "AZLB";
+
 /// Boot efi executable
 const BOOT64_EFI: &str = "bootx64.efi";
-/// Trident will by default prevent running Clean Install on deployments other
-/// than from the Provisioning ISO, to limit chances of accidental data loss. To
-/// override, user can create this file on the host.
-const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 
 trait Module: Send {
     fn name(&self) -> &'static str;
@@ -162,28 +160,16 @@ pub(super) fn clean_install(
         mut sender,
     } = command;
 
-    {
-        // TODO: needs to be refactored once we have a way to preserve existing partitions
-        // This is a safety check so that nobody accidentally formats their dev
-        // machine.
-        let cmdline =
-            fs::read_to_string("/proc/cmdline").structured(InitializationError::SafetyCheck)?;
-        if !cmdline.contains("root=/dev/ram0")
-            && !cmdline.contains("root=live:LABEL=CDROM")
-            && (container::is_running_in_container()? // if running on the host, check for this path
-                || !Path::new(SAFETY_OVERRIDE_CHECK_PATH).exists())
-            && (!container::is_running_in_container()? // if running in a container, check for this path
-                || !container::get_host_root_path()?
-                    .join(SAFETY_OVERRIDE_CHECK_PATH.trim_start_matches(ROOT_MOUNT_POINT_PATH))
-                    .exists())
-        {
-            return Err(TridentError::new(InitializationError::SafetyCheck));
-        }
-    }
-
-    info!("Starting clean_install()");
+    info!("Starting clean install!");
     tracing::info!(metric_name = "clean_install_start", value = true);
     let clean_install_start_time = Instant::now();
+
+    // This is a safety check so that nobody accidentally formats their dev
+    // machine.
+    info!("Performing safety check for clean install.");
+    clean_install_safety_check(&command.host_config)?;
+    info!("Safety check passed, continuing with clean install.");
+
     let mut modules = MODULES.lock().unwrap();
 
     refresh_host_status(&mut modules, state, true)?;
@@ -221,6 +207,52 @@ pub(super) fn clean_install(
     }
 
     Ok(())
+}
+
+/// Performs a safety check to ensure that the clean install can proceed.
+fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), TridentError> {
+    // Check if Trident is running from a live image
+    let cmdline =
+        fs::read_to_string("/proc/cmdline").structured(InitializationError::ReadCmdline)?;
+    if cmdline.contains("root=/dev/ram0") || cmdline.contains("root=live:LABEL=CDROM") {
+        info!("Trident is running from a live image.");
+        return Ok(());
+    }
+
+    warn!("Trident is running from an OS installed on persistent storage.");
+
+    // Check if we have adopted partitions in the host config
+    if host_config
+        .storage
+        .disks
+        .iter()
+        .any(|d| !d.adopted_partitions.is_empty())
+    {
+        info!("Partitions are marked for adoption.");
+        return Ok(());
+    }
+
+    warn!("No partitions are marked for adoption.");
+
+    // Check if we are running in a container and if so, adjust the path to the safety
+    // override file accordingly.
+    let safety_override_path = if container::is_running_in_container()
+        .message("Failed to check if Trident is running in a container.")?
+    {
+        container::get_host_root_path()
+            .message("Failed to get host root path.")?
+            .join(SAFETY_OVERRIDE_CHECK_PATH.trim_start_matches(ROOT_MOUNT_POINT_PATH))
+    } else {
+        PathBuf::from(SAFETY_OVERRIDE_CHECK_PATH)
+    };
+
+    if safety_override_path.exists() {
+        info!("Safety override file is present.");
+        return Ok(());
+    }
+
+    error!("Safety override file is not present, aborting clean install.");
+    Err(TridentError::new(InitializationError::SafetyCheck))
 }
 
 /// Stages a clean install. Takes in 4 arguments:

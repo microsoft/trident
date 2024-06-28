@@ -249,7 +249,7 @@ pub(crate) mod functional_test {
     use modules::storage::raid::create_sw_raid_array;
     use osutils::{
         filesystems::MkfsFileSystemType,
-        lsblk::{self, BlockDevice},
+        lsblk::{self, BlockDevice, PartitionTableType},
         mkfs,
         repart::{RepartEmptyMode, SystemdRepartInvoker},
         testutils::repart::{
@@ -320,54 +320,43 @@ pub(crate) mod functional_test {
 
             let expected_block_device = BlockDevice {
                 name: TEST_DISK_DEVICE_PATH.into(),
-                fstype: None,
-                fssize: None,
-                part_uuid: None,
                 size: DISK_SIZE,
-                parent_kernel_name: None,
-                mountpoints: vec![None],
-                children: Some(vec![
+                partition_table_type: Some(PartitionTableType::Gpt),
+                children: vec![
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
-                        fstype: None,
-                        fssize: None,
                         part_uuid: Some(part1.uuid),
                         size: part1.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                        children: None,
-                        mountpoints: vec![None],
+                        partition_table_type: None,
+                        ..Default::default()
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
-                        fstype: None,
-                        fssize: None,
                         part_uuid: Some(part2.uuid),
                         size: part2.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                        children: None,
-                        mountpoints: vec![None],
+                        partition_table_type: None,
+                        ..Default::default()
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
-                        fstype: None,
-                        fssize: None,
                         part_uuid: Some(part3.uuid),
                         size: part3.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                        children: None,
-                        mountpoints: vec![None],
+                        partition_table_type: None,
+                        ..Default::default()
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}4").into(),
-                        fstype: None,
-                        fssize: None,
                         part_uuid: Some(part4.uuid),
                         size: part4.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                        children: None,
-                        mountpoints: vec![None],
+                        partition_table_type: None,
+                        ..Default::default()
                     },
-                ]),
+                ],
+                ..Default::default()
             };
 
             let block_device = lsblk::run(&disk_bus_path).unwrap();
@@ -384,44 +373,35 @@ pub(crate) mod functional_test {
 
             let expected_block_device = BlockDevice {
                 name: TEST_DISK_DEVICE_PATH.into(),
-                fstype: None,
-                fssize: None,
-                part_uuid: None,
                 size: DISK_SIZE,
-                parent_kernel_name: None,
-                mountpoints: vec![None],
-                children: Some(vec![
+                partition_table_type: Some(PartitionTableType::Gpt),
+                children: vec![
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
-                        fstype: None,
-                        fssize: None,
                         part_uuid: Some(part1.uuid),
                         size: part1.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                        children: None,
-                        mountpoints: vec![None],
+                        partition_table_type: None,
+                        ..Default::default()
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
-                        fstype: None,
-                        fssize: None,
                         part_uuid: Some(part2.uuid),
                         size: part2.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                        children: None,
-                        mountpoints: vec![None],
+                        partition_table_type: None,
+                        ..Default::default()
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
-                        fstype: None,
-                        fssize: None,
                         part_uuid: Some(part3.uuid),
                         size: part3.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
-                        children: None,
-                        mountpoints: vec![None],
+                        partition_table_type: None,
+                        ..Default::default()
                     },
-                ]),
+                ],
+                ..Default::default()
             };
 
             let block_device = lsblk::run(&disk_bus_path).unwrap();

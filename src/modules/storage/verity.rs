@@ -409,7 +409,7 @@ pub(super) fn stop_pre_existing_verity_devices(
         );
         let mount_points = block_device.mountpoints;
         if !mount_points.is_empty() {
-            for mount_point in mount_points.iter().flatten() {
+            for mount_point in mount_points.iter() {
                 mount::umount(mount_point, true)?;
             }
         }

@@ -58,6 +58,11 @@ pub const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
 /// Trident background log path.
 pub const TRIDENT_BACKGROUND_LOG_PATH: &str = "/var/log/trident-full.log";
 
+/// Trident will by default prevent running Clean Install on deployments other
+/// than from the Provisioning ISO, to limit chances of accidental data loss. To
+/// override, user can create this file on the host.
+const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
+
 /// A command to update the host configuration.
 ///
 /// This struct is used to communicate between the gRPC server and the main trident thread. It

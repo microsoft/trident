@@ -1,13 +1,13 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace};
 
 use osutils::{
-    block_devices,
+    block_devices, lsblk,
     partition_types::DiscoverablePartitionType,
     repart::{RepartEmptyMode, RepartPartition, RepartPartitionEntry, SystemdRepartInvoker},
     sfdisk::{SfDisk, SfPartition},
@@ -19,34 +19,70 @@ use trident_api::{
     BlockDeviceId,
 };
 
+struct ResolvedDisk<'a> {
+    /// Shortcut to the disk id.
+    id: &'a str,
+
+    /// Reference to the disk configuration.
+    spec: &'a Disk,
+
+    /// Path to the disk in /dev.
+    /// Will probably be used in the future.
+    #[allow(dead_code)]
+    dev_path: PathBuf,
+
+    /// Path to the disk in /dev/disk/by-path.
+    bus_path: PathBuf,
+}
+
 /// Given a host configuration, adopt and create partitions on the disks.
 #[tracing::instrument(skip_all)]
 pub fn create_partitions(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
-    for disk in &host_config.storage.disks {
-        let disk_path = disk.device.canonicalize().context(format!(
-            "Failed to lookup device '{}'",
-            disk.device.display()
-        ))?;
+    // Resolve the disk paths to ensure that all disks in the configuration exist.
+    let resolved_disks = host_config
+        .storage
+        .disks
+        .iter()
+        .map(|disk| {
+            // Find the real path of the disk in /dev.
+            let dev_path = disk.device.canonicalize().context(format!(
+                "Failed to lookup device '{}'",
+                disk.device.display()
+            ))?;
 
-        let disk_bus_path =
-            block_devices::find_symlink_for_target(&disk_path, Path::new("/dev/disk/by-path"))
-                .context(format!(
-                    "Failed to find bus path of '{}'",
-                    disk_path.display()
-                ))?;
+            // Find the symlink path of the disk in /dev/disk/by-path.
+            let bus_path = block_devices::block_device_by_path(&dev_path).context(format!(
+                "Failed to find bus path of '{}'",
+                dev_path.display()
+            ))?;
 
-        let mut repart = SystemdRepartInvoker::new(&disk_bus_path, RepartEmptyMode::Force);
+            Ok(ResolvedDisk {
+                id: &disk.id,
+                spec: disk,
+                dev_path,
+                bus_path,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()
+        .context("Failed to resolve disk paths")?;
+
+    // Do a non-destructive first pass of adoption to detect any issues before
+    // we start making changes.
+    partitioning_safety_check(&resolved_disks).context("Partitioning safety check failed")?;
+
+    for disk in &resolved_disks {
+        let mut repart = SystemdRepartInvoker::new(&disk.bus_path, RepartEmptyMode::Force);
 
         // If the disk has adopted partitions we need to match them and delete the rest.
-        adopt_partitions(disk, &disk_bus_path, &mut repart)
+        adopt_partitions(disk, &mut repart)
             .with_context(|| format!("Failed to adopt partitions for disk '{}'", disk.id))?;
 
         // Populate repart with entries for partitions that are to be created.
         add_repart_entries(
-            disk,
+            disk.spec,
             &generate_sysupdate_partlabels(&host_config.storage),
             &mut repart,
         );
@@ -60,7 +96,7 @@ pub fn create_partitions(
         ))?;
 
         // Get the updated disk information.
-        let disk_information = SfDisk::get_info(&disk_bus_path).context(format!(
+        let disk_information = SfDisk::get_info(&disk.bus_path).context(format!(
             "Failed to retrieve information for disk '{}'",
             disk.id
         ))?;
@@ -71,9 +107,9 @@ pub fn create_partitions(
             disk.id
         );
         host_status.storage.block_devices.insert(
-            disk.id.clone(),
+            disk.id.into(),
             BlockDeviceInfo {
-                path: disk_bus_path.clone(),
+                path: disk.bus_path.clone(),
                 size: disk_information.capacity,
                 contents: BlockDeviceContents::Unknown,
             },
@@ -116,9 +152,72 @@ pub fn create_partitions(
         host_status
             .storage
             .block_devices
-            .get_mut(&disk.id)
+            .get_mut(disk.id)
             .context(format!("Failed to find disk '{}' in host status", disk.id))?
             .contents = BlockDeviceContents::Initialized;
+    }
+    Ok(())
+}
+
+/// Perform a runtime safety check.
+///
+/// This function will go through all requested disk changes to ensure that they
+/// do not destroy partitions that are currently mounted.
+fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
+    for disk in disks {
+        // Check if the disk has a partition table.
+        if lsblk::run(&disk.bus_path)
+            .context("Failed to retrieve partition table information")?
+            .partition_table_type
+            .is_none()
+        {
+            debug!(
+                "Disk '{}' has no partition table, skipping safety check for this disk.",
+                disk.id
+            );
+            continue;
+        }
+
+        let disk_info = SfDisk::get_info(&disk.bus_path).context(format!(
+            "Failed to retrieve information for disk '{}', the partition table could be missing or corrupted.",
+            disk.id
+        ))?;
+
+        let mut adopter = PartitionAdopter::new(&disk_info);
+
+        // Try to perform matching for all adopted partitions.
+        disk.spec
+            .adopted_partitions
+            .iter()
+            .try_for_each(|adopted_part| {
+                adopter
+                    .adopt(adopted_part)
+                    .context(format!("Failed to adopt partition '{}'", adopted_part.id))
+            })?;
+
+        // Ensure that none of the unmatched partitions are mounted.
+        adopter
+            .get_unmatched_partitions()
+            .try_for_each(|part| {
+                let part_info = osutils::lsblk::run(&part.node).with_context(|| {
+                    format!(
+                        "Failed to retrieve information for partition '{}' on disk '{}'.",
+                        part.node.display(),
+                        disk.id
+                    )
+                })?;
+
+                // Check if the partition is mounted.
+                part_info.mountpoint.map_or(Ok(()), |mnt_pt| {
+                    bail!(
+                        "Partition '{}' on disk '{}' was not adopted, but it is currently mounted at '{}'.",
+                        part.node.display(),
+                        disk.id,
+                        mnt_pt.display(),
+                    )
+                })
+            })
+            .context("Currently mounted partitions would be deleted by re-partitioning.")?;
     }
     Ok(())
 }
@@ -129,23 +228,19 @@ pub fn create_partitions(
 /// adopted partitions. If a partition is matched, it will be kept. If a
 /// partition is not matched, it will be deleted. Matched partitions are saved
 /// to host status.
-fn adopt_partitions(
-    disk: &Disk,
-    disk_bus_path: &Path,
-    repart: &mut SystemdRepartInvoker,
-) -> Result<(), Error> {
-    if disk.adopted_partitions.is_empty() {
+fn adopt_partitions(disk: &ResolvedDisk, repart: &mut SystemdRepartInvoker) -> Result<(), Error> {
+    if disk.spec.adopted_partitions.is_empty() {
         // Nothing to do :)
         return Ok(());
     }
 
     info!(
         "Trying to adopt {} partitions on disk '{}'",
-        disk.adopted_partitions.len(),
+        disk.spec.adopted_partitions.len(),
         disk.id
     );
 
-    let disk_info = SfDisk::get_info(disk_bus_path).context(format!(
+    let disk_info = SfDisk::get_info(&disk.bus_path).context(format!(
         "Failed to retrieve information for disk '{}', the partition table could be missing or corrupted.",
         disk.id
     ))?;
@@ -165,7 +260,8 @@ fn adopt_partitions(
     let mut adopter = PartitionAdopter::new(&disk_info);
 
     // Try to perform matching for all adopted partitions.
-    disk.adopted_partitions
+    disk.spec
+        .adopted_partitions
         .iter()
         .try_for_each(|adopted_part| {
             adopter
@@ -775,7 +871,18 @@ mod functional_test {
                 },
             ]);
 
-        repart.execute().unwrap();
+        let output = repart.execute().unwrap();
+        println!("Created partitions:\n{:#?}", output);
+
+        // Wait for the partitions to appear.
+        for part in output.iter() {
+            println!(
+                "Waiting for partition symlink '{}': {}",
+                part.id,
+                part.path_by_uuid().display()
+            );
+            wait_for_part_symlink(part).unwrap();
+        }
     }
 
     #[functional_test]

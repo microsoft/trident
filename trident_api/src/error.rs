@@ -23,6 +23,8 @@ pub enum InitializationError {
     StartTraceStream,
     #[error("Failed to get host root path")]
     GetHostRootPath,
+    #[error("Failed to read /proc/cmdline")]
+    ReadCmdline,
     #[error("Trident directed to perform clean install but safety check failed")]
     SafetyCheck,
     #[error("Container configuration check failed")]

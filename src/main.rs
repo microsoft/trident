@@ -18,7 +18,7 @@ struct Cli {
     config: Option<PathBuf>,
 
     /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-    #[arg(global = true, short, long, default_value_t = LevelFilter::Warn)]
+    #[arg(global = true, short, long, default_value_t = LevelFilter::Info)]
     verbosity: LevelFilter,
 
     #[clap(subcommand)]
@@ -91,7 +91,9 @@ fn run_trident(
                 }
             }
         }
+
         Commands::ParseKickstart { path } => return validation::validate_setsail(path),
+
         #[cfg(feature = "pytest-generator")]
         Commands::Pytest => {
             pytest::generate_functional_test_manifest();

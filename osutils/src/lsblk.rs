@@ -14,18 +14,61 @@ pub struct LsBlkOutput {
     pub blockdevices: Vec<BlockDevice>,
 }
 
+/// Represents a block device as returned by `lsblk --json`. See `man lsblk` for
+/// more information. Descriptions are copied from the output of `lsblk --help`
+/// in AzL 2.0.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct BlockDevice {
+    /// Device name
     pub name: String,
+
+    /// Filesystem type
     pub fstype: Option<String>,
+
+    /// Filesystem size
     pub fssize: Option<String>,
+
+    /// Partition UUID
     #[serde(rename = "partuuid")]
     pub part_uuid: Option<Uuid>,
+
+    /// Size of the device
     pub size: u64,
+
+    /// Internal parent kernel device name
     #[serde(rename = "pkname")]
     pub parent_kernel_name: Option<PathBuf>,
-    pub children: Option<Vec<BlockDevice>>,
-    pub mountpoints: Vec<Option<String>>,
+
+    /// List of children devices
+    ///
+    /// Not a column, only displayed if --json is specified. Contains a list of
+    /// all children devices. (e.g. partitions of a disk device)
+    #[serde(default)]
+    pub children: Vec<BlockDevice>,
+
+    /// Where the device is mounted
+    #[serde(default)]
+    pub mountpoint: Option<PathBuf>,
+
+    /// All locations where device is mounted
+    #[serde(default, deserialize_with = "skip_nulls")]
+    pub mountpoints: Vec<PathBuf>,
+
+    /// Partition table type
+    #[serde(rename = "pttype")]
+    pub partition_table_type: Option<PartitionTableType>,
+}
+
+/// Partition table types recognized by `lsblk`
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartitionTableType {
+    /// GUID Partition Table
+    #[serde(rename = "gpt")]
+    Gpt,
+
+    /// Master Boot Record
+    #[serde(rename = "mbr", alias = "dos")]
+    Mbr,
 }
 
 pub fn run(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
@@ -58,21 +101,32 @@ fn parse_lsblk_output(output: &str) -> Result<Vec<BlockDevice>, Error> {
     Ok(parsed.blockdevices)
 }
 
+fn skip_nulls<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    let v: Vec<Option<T>> = serde::Deserialize::deserialize(deserializer)?;
+    Ok(v.into_iter().flatten().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_parse_lsblk_output() {
+        // Output obtained from running `lsblk --json --bytes --output-all --path /dev/sda` on the functional test VM
+        // AzL 2.0, lsblk from util-linux 2.37.4
         let output = indoc::indoc!(
             r#"
             {
                 "blockdevices": [
                     {
-                        "name": "/dev/nvme0n1",
-                        "kname": "/dev/nvme0n1",
-                        "path": "/dev/nvme0n1",
-                        "maj:min": "259:0",
+                        "name": "/dev/sda",
+                        "kname": "/dev/sda",
+                        "path": "/dev/sda",
+                        "maj:min": "8:0",
                         "fsavail": null,
                         "fssize": null,
                         "fstype": null,
@@ -88,7 +142,7 @@ mod tests {
                         ],
                         "label": null,
                         "uuid": null,
-                        "ptuuid": "fc6eb27a-2dfa-4acb-b5d6-7c5e1c821b71",
+                        "ptuuid": "a8dbca6f-77a6-485c-8c67-b653758a8928",
                         "pttype": "gpt",
                         "parttype": null,
                         "parttypename": null,
@@ -99,10 +153,10 @@ mod tests {
                         "ro": false,
                         "rm": false,
                         "hotplug": false,
-                        "model": "SAMSUNG MZVPV512HDGL-000H1",
-                        "serial": "S27FNYAH407000",
-                        "size": 512110190592,
-                        "state": "live",
+                        "model": "QEMU HARDDISK   ",
+                        "serial": null,
+                        "size": 17179869184,
+                        "state": "running",
                         "owner": "root",
                         "group": "disk",
                         "mode": "brw-rw----",
@@ -111,52 +165,52 @@ mod tests {
                         "opt-io": 0,
                         "phy-sec": 512,
                         "log-sec": 512,
-                        "rota": false,
-                        "sched": "none",
-                        "rq-size": 1023,
+                        "rota": true,
+                        "sched": "mq-deadline",
+                        "rq-size": 64,
                         "type": "disk",
                         "disc-aln": 0,
                         "disc-gran": 512,
-                        "disc-max": 2199023255040,
+                        "disc-max": 2147450880,
                         "disc-zero": false,
                         "wsame": 0,
-                        "wwn": "eui.002538646100e442",
-                        "rand": false,
+                        "wwn": null,
+                        "rand": true,
                         "pkname": null,
-                        "hctl": null,
-                        "tran": "nvme",
-                        "subsystems": "block:nvme:pci",
-                        "rev": null,
-                        "vendor": null,
+                        "hctl": "1:0:0:0",
+                        "tran": "sata",
+                        "subsystems": "block:scsi:pci",
+                        "rev": "2.5+",
+                        "vendor": "ATA     ",
                         "zoned": "none",
                         "dax": false,
                         "children": [
                             {
-                            "name": "/dev/nvme0n1p1",
-                            "kname": "/dev/nvme0n1p1",
-                            "path": "/dev/nvme0n1p1",
-                            "maj:min": "259:1",
-                            "fsavail": "529436672",
-                            "fssize": "535805952",
+                            "name": "/dev/sda1",
+                            "kname": "/dev/sda1",
+                            "path": "/dev/sda1",
+                            "maj:min": "8:1",
+                            "fsavail": "49911808",
+                            "fssize": "52293632",
                             "fstype": "vfat",
-                            "fsused": "6369280",
-                            "fsuse%": "1%",
+                            "fsused": "2381824",
+                            "fsuse%": "5%",
                             "fsroots": [
                                 "/"
                             ],
-                            "fsver": "FAT32",
+                            "fsver": null,
                             "mountpoint": "/boot/efi",
                             "mountpoints": [
                                 "/boot/efi"
                             ],
                             "label": null,
-                            "uuid": "84A0-088E",
-                            "ptuuid": "fc6eb27a-2dfa-4acb-b5d6-7c5e1c821b71",
-                            "pttype": "gpt",
+                            "uuid": "C19C-752D",
+                            "ptuuid": null,
+                            "pttype": null,
                             "parttype": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
-                            "parttypename": "EFI System",
-                            "partlabel": "EFI System Partition",
-                            "partuuid": "b46b76eb-b2f9-441a-9686-8b24fa2b2161",
+                            "parttypename": null,
+                            "partlabel": "esp",
+                            "partuuid": "24d90361-7b1f-47db-b5bb-7d3893ac6ab0",
                             "partflags": null,
                             "ra": 128,
                             "ro": false,
@@ -164,7 +218,7 @@ mod tests {
                             "hotplug": false,
                             "model": null,
                             "serial": null,
-                            "size": 536870912,
+                            "size": 52428800,
                             "state": null,
                             "owner": "root",
                             "group": "disk",
@@ -174,59 +228,59 @@ mod tests {
                             "opt-io": 0,
                             "phy-sec": 512,
                             "log-sec": 512,
-                            "rota": false,
-                            "sched": "none",
-                            "rq-size": 1023,
+                            "rota": true,
+                            "sched": "mq-deadline",
+                            "rq-size": 64,
                             "type": "part",
                             "disc-aln": 0,
                             "disc-gran": 512,
-                            "disc-max": 2199023255040,
+                            "disc-max": 2147450880,
                             "disc-zero": false,
                             "wsame": 0,
-                            "wwn": "eui.002538646100e442",
-                            "rand": false,
-                            "pkname": "/dev/nvme0n1",
+                            "wwn": null,
+                            "rand": true,
+                            "pkname": "/dev/sda",
                             "hctl": null,
-                            "tran": "nvme",
-                            "subsystems": "block:nvme:pci",
+                            "tran": null,
+                            "subsystems": "block:scsi:pci",
                             "rev": null,
                             "vendor": null,
                             "zoned": "none",
                             "dax": false
                             },{
-                            "name": "/dev/nvme0n1p2",
-                            "kname": "/dev/nvme0n1p2",
-                            "path": "/dev/nvme0n1p2",
-                            "maj:min": "259:2",
-                            "fsavail": "60132933632",
-                            "fssize": "502392610816",
+                            "name": "/dev/sda2",
+                            "kname": "/dev/sda2",
+                            "path": "/dev/sda2",
+                            "maj:min": "8:2",
+                            "fsavail": "3427942400",
+                            "fssize": "5264343040",
                             "fstype": "ext4",
-                            "fsused": "416664305664",
-                            "fsuse%": "83%",
+                            "fsused": "1551220736",
+                            "fsuse%": "29%",
                             "fsroots": [
-                                "/usr/share/hunspell", "/"
+                                "/"
                             ],
-                            "fsver": "1.0",
+                            "fsver": null,
                             "mountpoint": "/",
                             "mountpoints": [
-                                "/var/snap/firefox/common/host-hunspell", "/"
+                                "/"
                             ],
                             "label": null,
-                            "uuid": "f4c40183-0a2d-4d97-b71e-25a4043ce01f",
-                            "ptuuid": "fc6eb27a-2dfa-4acb-b5d6-7c5e1c821b71",
-                            "pttype": "gpt",
-                            "parttype": "0fc63daf-8483-4772-8e79-3d69d8477de4",
-                            "parttypename": "Linux filesystem",
-                            "partlabel": null,
-                            "partuuid": "af002b41-3dbe-4044-82d2-f0560ef58b7a",
-                            "partflags": null,
+                            "uuid": "278a7e61-8212-4c84-8103-c8b2fd299670",
+                            "ptuuid": null,
+                            "pttype": null,
+                            "parttype": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+                            "parttypename": null,
+                            "partlabel": "root-a",
+                            "partuuid": "13fe614e-f738-4025-bc7f-8c71a3b8242a",
+                            "partflags": "0x800000000000000",
                             "ra": 128,
                             "ro": false,
                             "rm": false,
                             "hotplug": false,
                             "model": null,
                             "serial": null,
-                            "size": 511571918848,
+                            "size": 5368709120,
                             "state": null,
                             "owner": "root",
                             "group": "disk",
@@ -236,21 +290,207 @@ mod tests {
                             "opt-io": 0,
                             "phy-sec": 512,
                             "log-sec": 512,
-                            "rota": false,
-                            "sched": "none",
-                            "rq-size": 1023,
+                            "rota": true,
+                            "sched": "mq-deadline",
+                            "rq-size": 64,
                             "type": "part",
                             "disc-aln": 0,
                             "disc-gran": 512,
-                            "disc-max": 2199023255040,
+                            "disc-max": 2147450880,
                             "disc-zero": false,
                             "wsame": 0,
-                            "wwn": "eui.002538646100e442",
-                            "rand": false,
-                            "pkname": "/dev/nvme0n1",
+                            "wwn": null,
+                            "rand": true,
+                            "pkname": "/dev/sda",
                             "hctl": null,
-                            "tran": "nvme",
-                            "subsystems": "block:nvme:pci",
+                            "tran": null,
+                            "subsystems": "block:scsi:pci",
+                            "rev": null,
+                            "vendor": null,
+                            "zoned": "none",
+                            "dax": false
+                            },{
+                            "name": "/dev/sda3",
+                            "kname": "/dev/sda3",
+                            "path": "/dev/sda3",
+                            "maj:min": "8:3",
+                            "fsavail": null,
+                            "fssize": null,
+                            "fstype": null,
+                            "fsused": null,
+                            "fsuse%": null,
+                            "fsroots": [
+                                null
+                            ],
+                            "fsver": null,
+                            "mountpoint": null,
+                            "mountpoints": [
+                                null
+                            ],
+                            "label": null,
+                            "uuid": null,
+                            "ptuuid": null,
+                            "pttype": null,
+                            "parttype": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+                            "parttypename": null,
+                            "partlabel": "root-b",
+                            "partuuid": "8fa573dd-b810-4aa0-bdc6-736e157cf9be",
+                            "partflags": "0x800000000000000",
+                            "ra": 128,
+                            "ro": false,
+                            "rm": false,
+                            "hotplug": false,
+                            "model": null,
+                            "serial": null,
+                            "size": 2147483648,
+                            "state": null,
+                            "owner": "root",
+                            "group": "disk",
+                            "mode": "brw-rw----",
+                            "alignment": 0,
+                            "min-io": 512,
+                            "opt-io": 0,
+                            "phy-sec": 512,
+                            "log-sec": 512,
+                            "rota": true,
+                            "sched": "mq-deadline",
+                            "rq-size": 64,
+                            "type": "part",
+                            "disc-aln": 0,
+                            "disc-gran": 512,
+                            "disc-max": 2147450880,
+                            "disc-zero": false,
+                            "wsame": 0,
+                            "wwn": null,
+                            "rand": true,
+                            "pkname": "/dev/sda",
+                            "hctl": null,
+                            "tran": null,
+                            "subsystems": "block:scsi:pci",
+                            "rev": null,
+                            "vendor": null,
+                            "zoned": "none",
+                            "dax": false
+                            },{
+                            "name": "/dev/sda4",
+                            "kname": "/dev/sda4",
+                            "path": "/dev/sda4",
+                            "maj:min": "8:4",
+                            "fsavail": null,
+                            "fssize": null,
+                            "fstype": "swap",
+                            "fsused": null,
+                            "fsuse%": null,
+                            "fsroots": [
+                                null
+                            ],
+                            "fsver": null,
+                            "mountpoint": "[SWAP]",
+                            "mountpoints": [
+                                "[SWAP]"
+                            ],
+                            "label": null,
+                            "uuid": "fdb10022-0907-411c-b0a6-9847c8d2b32e",
+                            "ptuuid": null,
+                            "pttype": null,
+                            "parttype": "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f",
+                            "parttypename": null,
+                            "partlabel": "swap",
+                            "partuuid": "84dfeee4-7225-4379-ac73-b4a20c0a178d",
+                            "partflags": null,
+                            "ra": 128,
+                            "ro": false,
+                            "rm": false,
+                            "hotplug": false,
+                            "model": null,
+                            "serial": null,
+                            "size": 2147483648,
+                            "state": null,
+                            "owner": "root",
+                            "group": "disk",
+                            "mode": "brw-rw----",
+                            "alignment": 0,
+                            "min-io": 512,
+                            "opt-io": 0,
+                            "phy-sec": 512,
+                            "log-sec": 512,
+                            "rota": true,
+                            "sched": "mq-deadline",
+                            "rq-size": 64,
+                            "type": "part",
+                            "disc-aln": 0,
+                            "disc-gran": 512,
+                            "disc-max": 2147450880,
+                            "disc-zero": false,
+                            "wsame": 0,
+                            "wwn": null,
+                            "rand": true,
+                            "pkname": "/dev/sda",
+                            "hctl": null,
+                            "tran": null,
+                            "subsystems": "block:scsi:pci",
+                            "rev": null,
+                            "vendor": null,
+                            "zoned": "none",
+                            "dax": false
+                            },{
+                            "name": "/dev/sda5",
+                            "kname": "/dev/sda5",
+                            "path": "/dev/sda5",
+                            "maj:min": "8:5",
+                            "fsavail": "85109760",
+                            "fssize": "92500992",
+                            "fstype": "ext4",
+                            "fsused": "51200",
+                            "fsuse%": "0%",
+                            "fsroots": [
+                                "/"
+                            ],
+                            "fsver": null,
+                            "mountpoint": "/var/lib/trident",
+                            "mountpoints": [
+                                "/var/lib/trident"
+                            ],
+                            "label": null,
+                            "uuid": "bd7cd9c1-3a16-4c75-a429-7540eb7f0c60",
+                            "ptuuid": null,
+                            "pttype": null,
+                            "parttype": "0fc63daf-8483-4772-8e79-3d69d8477de4",
+                            "parttypename": null,
+                            "partlabel": "trident",
+                            "partuuid": "60c8f863-0857-47c4-b427-ba44654c93fe",
+                            "partflags": null,
+                            "ra": 128,
+                            "ro": false,
+                            "rm": false,
+                            "hotplug": false,
+                            "model": null,
+                            "serial": null,
+                            "size": 104857600,
+                            "state": null,
+                            "owner": "root",
+                            "group": "disk",
+                            "mode": "brw-rw----",
+                            "alignment": 0,
+                            "min-io": 512,
+                            "opt-io": 0,
+                            "phy-sec": 512,
+                            "log-sec": 512,
+                            "rota": true,
+                            "sched": "mq-deadline",
+                            "rq-size": 64,
+                            "type": "part",
+                            "disc-aln": 0,
+                            "disc-gran": 512,
+                            "disc-max": 2147450880,
+                            "disc-zero": false,
+                            "wsame": 0,
+                            "wwn": null,
+                            "rand": true,
+                            "pkname": "/dev/sda",
+                            "hctl": null,
+                            "tran": null,
+                            "subsystems": "block:scsi:pci",
                             "rev": null,
                             "vendor": null,
                             "zoned": "none",
@@ -262,44 +502,81 @@ mod tests {
             }
         "#
         );
+
         let expected_block_device_list = vec![BlockDevice {
-            name: "/dev/nvme0n1".into(),
+            name: "/dev/sda".into(),
             fstype: None,
             fssize: None,
             part_uuid: None,
-            size: 512110190592,
+            size: 17179869184,
             parent_kernel_name: None,
-            mountpoints: vec![None],
-            children: Some(vec![
+            children: vec![
                 BlockDevice {
-                    name: "/dev/nvme0n1p1".into(),
+                    name: "/dev/sda1".into(),
                     fstype: Some("vfat".into()),
-                    fssize: Some("535805952".into()),
-                    part_uuid: Some(
-                        Uuid::parse_str("b46b76eb-b2f9-441a-9686-8b24fa2b2161").unwrap(),
-                    ),
-                    size: 536870912,
-                    parent_kernel_name: Some(PathBuf::from("/dev/nvme0n1")),
-                    children: None,
-                    mountpoints: vec![Some("/boot/efi".into())],
+                    fssize: Some("52293632".into()),
+                    part_uuid: Some("24d90361-7b1f-47db-b5bb-7d3893ac6ab0".try_into().unwrap()),
+                    size: 52428800,
+                    parent_kernel_name: Some("/dev/sda".into()),
+                    children: vec![],
+                    mountpoint: Some("/boot/efi".into()),
+                    mountpoints: vec!["/boot/efi".into()],
+                    partition_table_type: None,
                 },
                 BlockDevice {
-                    name: "/dev/nvme0n1p2".into(),
+                    name: "/dev/sda2".into(),
                     fstype: Some("ext4".into()),
-                    fssize: Some("502392610816".into()),
-                    part_uuid: Some(
-                        Uuid::parse_str("af002b41-3dbe-4044-82d2-f0560ef58b7a").unwrap(),
-                    ),
-                    size: 511571918848,
-                    parent_kernel_name: Some(PathBuf::from("/dev/nvme0n1")),
-                    children: None,
-                    mountpoints: vec![
-                        Some("/var/snap/firefox/common/host-hunspell".into()),
-                        Some("/".into()),
-                    ],
+                    fssize: Some("5264343040".into()),
+                    part_uuid: Some("13fe614e-f738-4025-bc7f-8c71a3b8242a".try_into().unwrap()),
+                    size: 5368709120,
+                    parent_kernel_name: Some("/dev/sda".into()),
+                    children: vec![],
+                    mountpoint: Some("/".into()),
+                    mountpoints: vec!["/".into()],
+                    partition_table_type: None,
                 },
-            ]),
+                BlockDevice {
+                    name: "/dev/sda3".into(),
+                    fstype: None,
+                    fssize: None,
+                    part_uuid: Some("8fa573dd-b810-4aa0-bdc6-736e157cf9be".try_into().unwrap()),
+                    size: 2147483648,
+                    parent_kernel_name: Some("/dev/sda".into()),
+                    children: vec![],
+                    mountpoint: None,
+                    mountpoints: vec![],
+                    partition_table_type: None,
+                },
+                BlockDevice {
+                    name: "/dev/sda4".into(),
+                    fstype: Some("swap".into()),
+                    fssize: None,
+                    part_uuid: Some("84dfeee4-7225-4379-ac73-b4a20c0a178d".try_into().unwrap()),
+                    size: 2147483648,
+                    parent_kernel_name: Some("/dev/sda".into()),
+                    children: vec![],
+                    mountpoint: Some("[SWAP]".into()),
+                    mountpoints: vec!["[SWAP]".into()],
+                    partition_table_type: None,
+                },
+                BlockDevice {
+                    name: "/dev/sda5".into(),
+                    fstype: Some("ext4".into()),
+                    fssize: Some("92500992".into()),
+                    part_uuid: Some("60c8f863-0857-47c4-b427-ba44654c93fe".try_into().unwrap()),
+                    size: 104857600,
+                    parent_kernel_name: Some("/dev/sda".into()),
+                    children: vec![],
+                    mountpoint: Some("/var/lib/trident".into()),
+                    mountpoints: vec!["/var/lib/trident".into()],
+                    partition_table_type: None,
+                },
+            ],
+            mountpoint: None,
+            mountpoints: vec![],
+            partition_table_type: Some(PartitionTableType::Gpt),
         }];
+
         let block_device_list = parse_lsblk_output(output).unwrap();
         assert_eq!(block_device_list, expected_block_device_list);
 
@@ -319,7 +596,7 @@ mod functional_test {
         let block_device = super::run(Path::new("/dev/sda")).unwrap();
 
         assert_eq!(block_device.name, "/dev/sda");
-        assert_eq!(block_device.children.as_ref().unwrap().len(), 5);
+        assert_eq!(block_device.children.len(), 5);
     }
 
     #[functional_test(feature = "helpers", negative = true)]

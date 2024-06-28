@@ -8,6 +8,11 @@ use anyhow::{bail, Context, Error};
 
 use crate::lsblk;
 
+/// Retrieves the symlink for a given block device in '/dev/disk/by-path'.
+pub fn block_device_by_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
+    find_symlink_for_target(path.as_ref(), Path::new("/dev/disk/by-path"))
+}
+
 /// Returns the path of the first symlink in directory whose canonical path is target.
 pub fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, Error> {
     // Ensure that target path is canonicalized
