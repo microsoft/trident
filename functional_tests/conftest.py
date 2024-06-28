@@ -194,8 +194,23 @@ def run_rust_functional_test(vm, wipe_sdb, crate, module_path, test_case):
 def wipe_sdb(vm: SshNode):
     """Wipes the SDB on the VM."""
     vm.execute("sudo wipefs -af /dev/sdb")
+
     yield
+
+    # Clean sdb
     vm.execute("sudo wipefs -af /dev/sdb")
+    assert_clean_disk(vm, "sdb")
+
+
+def assert_clean_disk(vm: SshNode, kernel_name: str):
+    res = vm.execute(f"sudo lsblk /dev/{kernel_name} --json --bytes --output-all")
+    res.assert_exit_code()
+    info = json.loads(res.stdout)["blockdevices"][0]
+    print(f"Disk {kernel_name} info:\n{json.dumps(info, indent=2)}")
+
+    children = [child for child in info.get("children", []) if child]
+    assert len(children) == 0, f"Disk {kernel_name} is not clean!"
+    assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
 
 
 def fetch_code_coverage(ssh_node):
