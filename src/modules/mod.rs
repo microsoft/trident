@@ -14,7 +14,7 @@ use anyhow::Error;
 use log::{debug, error, info};
 use sys_mount::{Mount, MountFlags};
 
-use osutils::{chroot, container, exe::RunAndCheck, mkinitrd, mount, path::join_relative};
+use osutils::{chroot, container, exe::RunAndCheck, mount, path::join_relative};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::{
@@ -22,8 +22,8 @@ use trident_api::{
         UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{
-        InitializationError, InternalError, InvalidInputError, ManagementError, ModuleError,
-        ReportError, TridentError, TridentResultExt,
+        InitializationError, InvalidInputError, ManagementError, ModuleError, ReportError,
+        TridentError, TridentResultExt,
     },
     status::{AbVolumeSelection, BlockDeviceInfo, HostStatus, ServicingState, ServicingType},
     BlockDeviceId,
@@ -36,9 +36,11 @@ use crate::{
     modules::{
         boot::BootModule,
         hooks::HooksModule,
+        initrd::InitrdModule,
         management::ManagementModule,
         network::NetworkModule,
         osconfig::{MosConfigModule, OsConfigModule},
+        selinux::SelinuxModule,
         storage::StorageModule,
     },
     HostUpdateCommand,
@@ -47,6 +49,7 @@ use crate::{
 // Trident modules
 pub mod boot;
 pub mod hooks;
+pub mod initrd;
 pub mod management;
 pub mod network;
 pub mod osconfig;
@@ -142,6 +145,8 @@ lazy_static::lazy_static! {
         Box::<OsConfigModule>::default(),
         Box::<ManagementModule>::default(),
         Box::<HooksModule>::default(),
+        Box::<InitrdModule>::default(),
+        Box::<SelinuxModule>::default(),
     ]);
 }
 
@@ -255,10 +260,8 @@ fn stage_clean_install(
     provision(modules, state, &new_root_path)?;
 
     info!("Entering '{}' chroot", new_root_path.display());
-    let chroot = chroot::enter_update_chroot(&new_root_path).message("Failed to enter chroot")?;
-    let mut root_device_path = None;
-
-    chroot
+    chroot::enter_update_chroot(&new_root_path)
+        .message("Failed to enter chroot")?
         .execute_and_exit(|| {
             info!("Entered chroot");
             state.switch_datastore_to_path(&exec_root_path)?;
@@ -267,16 +270,7 @@ fn stage_clean_install(
             // verity. For now, we can assume that /etc is readonly, so we setup
             // a writable overlay for it.
             let use_overlay = !host_config.storage.internal_verity.is_empty();
-
-            info!("Running configure");
             configure(modules, state, &exec_root_path, use_overlay)?;
-
-            regenerate_initrd(use_overlay)?;
-            selinux::execute_setfiles(host_config)?;
-            root_device_path = Some(
-                get_root_block_device_path(state.host_status())
-                    .structured(InternalError::GetRootBlockDevice)?,
-            );
 
             // At this point, clean install has been staged, so update servicing state
             debug!("Updating host's servicing state to Staged");
@@ -289,10 +283,6 @@ fn stage_clean_install(
             Ok(())
         })
         .message("Failed to execute in chroot")?;
-
-    let root_device_path =
-        root_device_path.structured(InternalError::Internal("Failed to get root block device"))?;
-    debug!("Root device path: {:#?}", root_device_path);
 
     info!("Staging of clean install succeeded");
 
@@ -486,21 +476,13 @@ fn stage_update(
         info!("Entering '{}' chroot", new_root_path.display());
         chroot::enter_update_chroot(&new_root_path)
             .message("Failed to enter chroot")?
-            .execute_and_exit(|| {
-                configure(modules, state, &exec_root_path, use_overlay)?;
-
-                regenerate_initrd(use_overlay)?;
-                selinux::execute_setfiles(host_config)
-            })
+            .execute_and_exit(|| configure(modules, state, &exec_root_path, use_overlay))
             .message("Failed to execute in chroot")?;
 
         (new_root_path, Some(mounts))
     } else {
         info!("Running configure");
         configure(modules, state, Path::new(ROOT_MOUNT_POINT_PATH), false)?;
-
-        regenerate_initrd(false)?;
-
         (PathBuf::from(ROOT_MOUNT_POINT_PATH), None)
     };
 
@@ -544,6 +526,8 @@ fn send_host_status_state(
     sender: &mut Option<mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>>,
     state: &DataStore,
 ) -> Result<(), TridentError> {
+    use trident_api::error::InternalError;
+
     if let Some(ref mut sender) = sender {
         sender
             .send(Ok(HostStatusState {
@@ -804,26 +788,6 @@ fn configure(
     debug!("Finished stage 'Configure'");
 
     Ok(())
-}
-
-/// Regenerates the initrd for the host, using host-specific configuration.
-#[tracing::instrument(skip_all)]
-fn regenerate_initrd(use_overlay: bool) -> Result<(), TridentError> {
-    // We could autodetect configurations on the fly, but for more predictable
-    // behavior and speedier subsequent boots, we will regenerate the host-specific initrd
-    // here.
-
-    // At the moment, this is needed for RAID, encryption, adding a root
-    // password into initrd and to update the hardcoded UUID of the ESP.
-
-    let _etc_overlay_mount = if use_overlay {
-        Some(etc_overlay::create(Path::new("/"), false)?)
-    } else {
-        None
-    };
-
-    info!("Regenerating initrd");
-    mkinitrd::execute()
 }
 
 pub fn reboot() -> Result<(), TridentError> {

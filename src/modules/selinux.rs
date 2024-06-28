@@ -8,10 +8,12 @@ use std::{
 use anyhow::{bail, Error};
 use osutils::exe::RunAndCheck;
 use trident_api::{
-    config::{FileSystemType, HostConfiguration},
+    config::FileSystemType,
     constants::SELINUX_CONFIG,
-    error::{ManagementError, ReportError, TridentError},
+    status::{HostStatus, ServicingType},
 };
+
+use super::Module;
 
 /// Gets the seinux type from the selinux config file.
 fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Error> {
@@ -31,36 +33,48 @@ fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Err
     );
 }
 
-/// Executes the setfiles command to set the file contexts for the filesystems.
-pub fn execute_setfiles(host_config: &HostConfiguration) -> Result<(), TridentError> {
-    // Get the mount points for the filesystems that are not of type vfat as setfiles does not support vfat
-    let mount_paths: Vec<&trident_api::config::MountPoint> = host_config
-        .storage
-        .filesystems
-        .iter()
-        .filter(|filesystem| filesystem.fs_type != FileSystemType::Vfat)
-        .filter_map(|filesystem| filesystem.mount_point.as_ref())
-        .collect();
+#[derive(Default)]
+pub struct SelinuxModule;
+impl Module for SelinuxModule {
+    fn name(&self) -> &'static str {
+        "selinux"
+    }
 
-    let selinux_type =
-        get_selinux_type(SELINUX_CONFIG).structured(ManagementError::SelinuxTypeNotFound)?;
-
-    Command::new("setfiles")
-        .arg("-m")
-        .arg("-v")
-        .arg(
-            Path::new("/etc/selinux")
-                .join(selinux_type)
-                .join("contexts/files/file_contexts"),
-        )
-        .args(
-            mount_paths
+    fn configure(&mut self, host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
+        if let Some(ServicingType::CleanInstall) | Some(ServicingType::AbUpdate) =
+            host_status.servicing_type
+        {
+            // Get the mount points for the filesystems that are not of type vfat as setfiles does
+            // not support vfat
+            let mount_paths: Vec<&trident_api::config::MountPoint> = host_status
+                .spec
+                .storage
+                .filesystems
                 .iter()
-                .map(|mount_point| mount_point.path.as_os_str()),
-        )
-        .run_and_check()
-        .structured(ManagementError::RunSetFiles)?;
-    Ok(())
+                .filter(|filesystem| filesystem.fs_type != FileSystemType::Vfat)
+                .filter_map(|filesystem| filesystem.mount_point.as_ref())
+                .collect();
+
+            let selinux_type = get_selinux_type(SELINUX_CONFIG)?;
+
+            Command::new("setfiles")
+                .arg("-m")
+                .arg("-v")
+                .arg(
+                    Path::new("/etc/selinux")
+                        .join(selinux_type)
+                        .join("contexts/files/file_contexts"),
+                )
+                .args(
+                    mount_paths
+                        .iter()
+                        .map(|mount_point| mount_point.path.as_os_str()),
+                )
+                .run_and_check()?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
