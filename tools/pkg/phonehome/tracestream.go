@@ -53,18 +53,6 @@ func SetupTraceStream(filepath string) {
 			return
 		}
 
-		log.WithFields(
-			log.Fields{
-				"timestamp":       traceEntry.Timestamp,
-				"asset_id":        traceEntry.AssetId,
-				"metric_name":     traceEntry.MetricName,
-				"value":           traceEntry.Value,
-				"additional_info": traceEntry.AdditionalFields,
-				"platform_info":   traceEntry.PlatformInfo,
-				"os_release":      traceEntry.OsRelease,
-			},
-		).Debug("Received a tracing event")
-
 		// if no file is provided, don't write the trace data to a file
 		if traceFile == nil {
 			return
@@ -76,6 +64,5 @@ func SetupTraceStream(filepath string) {
 			log.WithError(err).Fatalf("failed to write trace data to file")
 			return
 		}
-		log.Debug("Wrote trace event to file")
 	})
 }
