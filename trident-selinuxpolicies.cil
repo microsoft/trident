@@ -1,55 +1,137 @@
+; Allow auditctl_t to manage auditd_etc_t files
+(allow auditctl_t auditd_etc_t (file (map)))
+(allow auditctl_t proc_t (filesystem (getattr)))
+
+; Allow chkpwd_t to access sysctl_kernel_t directories and files for password verification
+(allow chkpwd_t proc_t (filesystem (getattr)))
+(allow chkpwd_t sysctl_kernel_t (dir (search)))
+(allow chkpwd_t sysctl_kernel_t (file (open read)))
+
+; Allow cloud_init_t to perform various operations for cloud instance initialization
+; cloud-init
+(allow cloud_init_t file_context_t (file (getattr open read map)))
 (allow cloud_init_t gpg_secret_t (file (getattr)))
+(allow cloud_init_t security_t (security (check_context)))
+(allow cloud_init_t self (capability (net_admin )))
+(allow cloud_init_t selinux_config_t (file (getattr open read)))
+(allow cloud_init_t sshd_key_t (file (relabelto)))
 (allow cloud_init_t user_home_t (file (getattr)))
+
+; Allow fsadm_t to manage efivarfs_t files for filesystem administration
+; efibootmgr
 (allow fsadm_t efivarfs_t (dir (read)))
 (allow fsadm_t efivarfs_t (file (getattr open read write)))
 (allow fsadm_t efivarfs_t (filesystem (getattr)))
-(allow mount_t auditd_etc_t (dir (add_name create rename reparent setattr write)))
-(allow mount_t auditd_etc_t (file (create setattr write)))
-(allow mount_t chronyd_conf_t (file (getattr open read)))
-(allow mount_t chronyd_keys_t (file (getattr open read)))
-(allow mount_t dbusd_etc_t (dir (read)))
-(allow mount_t dbusd_etc_t (file (getattr open read)))
-(allow mount_t default_context_t (file (getattr open read)))
-(allow mount_t etc_t (dir (create relabelto rename reparent setattr)))
-(allow mount_t etc_t (file (create execute link relabelto rename setattr write)))
-(allow mount_t initrc_exec_t (file (getattr)))
-(allow mount_t iptables_conf_t (file (getattr open read)))
-(allow mount_t modules_conf_t (dir (read)))
-(allow mount_t modules_conf_t (file (getattr open read)))
-(allow mount_t shadow_lock_t (file (getattr read)))
-(allow mount_t shadow_lock_t (file (link open setattr write)))
-(allow mount_t shadow_t (file (create getattr link open read rename setattr unlink write)))
-(allow mount_t sshd_key_t (file (create write)))
-(allow mount_t sshd_key_t (file (getattr open read)))
-(allow mount_t system_cron_spool_t (dir (read)))
-(allow mount_t system_cron_spool_t (file (getattr open read)))
-(allow mount_t systemd_user_unit_t (dir (read)))
-(allow mount_t udev_rules_t (dir (read)))
-(allow mount_t udev_rules_t (file (getattr open read)))
-(allow syslogd_t cgroup_t (dir (read)))
-(allow systemd_logind_t proc_t (file (write)))
-(allow systemd_networkd_t proc_t (file (write)))
-(allow systemd_resolved_t howl_port_t (udp_socket (name_bind)))
-(allow systemd_resolved_t proc_t (file (write)))
-(allow systemd_resolved_t tmpfs_t (dir (search)))
-(allow systemd_userdbd_t kernel_t (unix_stream_socket (connectto)))
-(allow systemd_userdbd_t proc_t (file (write)))
-(allow systemd_userdbd_t self (capability (sys_resource)))
-(allow systemd_userdbd_t self (process (getcap)))
-(allow udev_t init_runtime_t (dir (read)))
-(allow udev_t proc_t (file (write)))
+
+; Load/Save OS Random Seed
+(allow kernel_t self (capability2 (checkpoint_restore)))
+
+; Allow kmod_t to read iptables_runtime_t files for kernel module management
+(allow kmod_t iptables_runtime_t (file (read)))
+
+; Allow lvm_t to perform various operations for logical volume management
+; Disk Encryption
 (allow lvm_t bpf_t (dir (search)))
 (allow lvm_t cgroup_t (dir (search)))
 (allow lvm_t cgroup_t (filesystem (getattr)))
 (allow lvm_t init_t (key (search)))
+(allow lvm_t kernel_t (key (search)))
 (allow lvm_t proc_t (filesystem (getattr)))
 (allow lvm_t pstore_t (dir (search)))
-(allow lvm_t kernel_t ( key (search)))
-(allow lvm_t tmpfs_t (filesystem (getattr)))
-(allow lvm_t systemd_passwd_runtime_t (dir ( getattr search)))
-(allow lvm_t tpm_device_t (chr_file ( read write open ioctl)))
-(allow lvm_t var_run_t (dir (create)))
 (allow lvm_t self (capability (dac_read_search)))
+(allow lvm_t systemd_passwd_runtime_t (dir (getattr search)))
+(allow lvm_t tmpfs_t (filesystem (getattr)))
+(allow lvm_t tpm_device_t (chr_file (read write open ioctl)))
 (allow lvm_t user_home_dir_t (dir (search)))
-(allow useradd_t proc_t (filesystem (getattr)))
+(allow lvm_t var_run_t (dir (create)))
+
+; Allow mdadm_t to perform RAID operations using the mdadm utility
+(allow mdadm_t debugfs_t (dir (search read write add_name remove_name getattr open)))
+(allow mdadm_t device_t (lnk_file (create read write getattr open link rename setattr unlink)))
+(allow mdadm_t event_device_t (chr_file (getattr)))
+(allow mdadm_t lvm_control_t (chr_file (getattr)))
+(allow mdadm_t nvram_device_t (chr_file (getattr)))
+(allow mdadm_t udev_runtime_t (dir (search read write add_name remove_name getattr open)))
+(allow mdadm_t vfio_device_t (chr_file (getattr)))
+(allow mdadm_t vhost_device_t (chr_file (getattr)))
+
+(allow ntpd_t proc_t (file (write)))
+
+; Allow passwd_t to manage proc files for password updates
+(allow passwd_t proc_t (filesystem (getattr)))
+
+; Allow semanage_t and setfiles_t to get attributes of the proc_t filesystem
+(allow semanage_t proc_t (filesystem (getattr)))
+(allow setfiles_t proc_t (filesystem (getattr)))
+
+; Allow ssh_keygen_t to manage files and directories for SSH key generation
+(allow ssh_keygen_t security_t (filesystem (getattr)))
+(allow ssh_keygen_t selinux_config_t (dir (search)))
+
+; Allow sshd_t to get attributes of the proc_t filesystem for SSH daemon
+(allow sshd_t proc_t (filesystem (getattr)))
+(allow sshd_t self (capability (net_admin)))
+
+; Allow syslogd_t to manage logging files and directories
+(allow syslogd_t cgroup_t (dir (read)))
+(allow syslogd_t proc_t (file (write read append getattr lock open)))
+(allow syslogd_t systemd_journal_t (file (relabelfrom relabelto)))
+
+; Allow systemd_cgroups_t to manage proc_t filesystem
+(allow systemd_cgroups_t proc_t (filesystem (getattr)))
+
+; Allow systemd_generator_t to manage home_root_t directories and selinux_config_t directories
+(allow systemd_generator_t home_root_t (dir (read search write add_name remove_name getattr open)))
+(allow systemd_generator_t self (capability (sys_rawio)))
 (allow systemd_generator_t selinux_config_t (dir (search)))
+
+; Allow systemd_hw_t to manage capabilities for systemd hardware management
+(allow systemd_hw_t self (capability (dac_override)))
+
+; Allow systemd_locale_t to manage selinux_config_t files for locale settings
+(allow systemd_locale_t selinux_config_t (file (getattr open read)))
+
+; Allow systemd_logind_t to manage various directories and files for login daemon
+(allow systemd_logind_t proc_t (file (write )))
+(allow systemd_logind_t proc_t (filesystem (getattr)))
+
+; Allow systemd_networkd_t to manage various directories and files for network management
+(allow systemd_networkd_t proc_t (file (write)))
+(allow systemd_networkd_t selinux_config_t (dir (search)))
+
+; Allow systemd_resolved_t to perform name binding on howl_port_t, write to proc_t files, and search tmpfs_t directories for DNS resolution
+(allow systemd_resolved_t howl_port_t (udp_socket (name_bind)))
+(allow systemd_resolved_t proc_t (file (write)))
+(allow systemd_resolved_t tmpfs_t (dir (search)))
+
+(allow systemd_sessions_t self (capability (net_admin)))
+
+; Allow systemd_sysctl_t to manage selinux_config_t directories and perform various operations on tmpfs_t directories for system configuration
+(allow systemd_sysctl_t selinux_config_t (dir (search)))
+(allow systemd_sysctl_t tmpfs_t (dir (search read write add_name remove_name getattr open)))
+
+; Allow systemd_tmpfiles_t to manage etc_t symbolic links and various directories and files for temporary file management
+(allow systemd_tmpfiles_t etc_t (lnk_file (relabelto relabelfrom)))
+(allow systemd_tmpfiles_t init_var_lib_t (dir (create)))
+(allow systemd_tmpfiles_t user_home_dir_t (dir (write relabelto relabelfrom)))
+
+(allow systemd_update_done_t self (capability (net_admin)))
+
+; Allow systemd_user_runtime_dir_t to get attributes of the proc_t filesystem for user runtime directory management
+(allow systemd_user_runtime_dir_t proc_t (filesystem (getattr)))
+(allow systemd_user_runtime_dir_t self (capability (net_admin)))
+
+; Allow systemd_userdbd_t to connect to kernel_t Unix stream sockets, write to proc_t files for user database operations
+(allow systemd_userdbd_t kernel_t (unix_stream_socket (connectto)))
+(allow systemd_userdbd_t proc_t (file (write)))
+(allow systemd_userdbd_t self (capability (sys_resource)))
+(allow systemd_userdbd_t self (process (getcap)))
+
+; Allow udev_t to manage init_runtime_t directories, write to proc_t files for device management
+; udev
+(allow udev_t init_runtime_t (dir (read)))
+(allow udev_t proc_t (file (write)))
+
+; Allow useradd_t to manage shadow_t files for user addition
+; OSModifier
+(allow useradd_t shadow_t (file (open read)))
