@@ -249,7 +249,7 @@ pub(crate) mod functional_test {
     use modules::storage::raid::create_sw_raid_array;
     use osutils::{
         filesystems::MkfsFileSystemType,
-        lsblk::{self, BlockDevice, PartitionTableType},
+        lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType},
         mkfs,
         repart::{RepartEmptyMode, SystemdRepartInvoker},
         testutils::repart::{
@@ -322,6 +322,8 @@ pub(crate) mod functional_test {
                 name: TEST_DISK_DEVICE_PATH.into(),
                 size: DISK_SIZE,
                 partition_table_type: Some(PartitionTableType::Gpt),
+                readonly: false,
+                blkdev_type: BlockDeviceType::Disk,
                 children: vec![
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
@@ -329,6 +331,8 @@ pub(crate) mod functional_test {
                         size: part1.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
+                        readonly: false,
+                        blkdev_type: BlockDeviceType::Partition,
                         ..Default::default()
                     },
                     BlockDevice {
@@ -337,6 +341,8 @@ pub(crate) mod functional_test {
                         size: part2.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
+                        readonly: false,
+                        blkdev_type: BlockDeviceType::Partition,
                         ..Default::default()
                     },
                     BlockDevice {
@@ -345,6 +351,8 @@ pub(crate) mod functional_test {
                         size: part3.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
+                        readonly: false,
+                        blkdev_type: BlockDeviceType::Partition,
                         ..Default::default()
                     },
                     BlockDevice {
@@ -353,6 +361,8 @@ pub(crate) mod functional_test {
                         size: part4.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
+                        readonly: false,
+                        blkdev_type: BlockDeviceType::Partition,
                         ..Default::default()
                     },
                 ],
@@ -375,6 +385,8 @@ pub(crate) mod functional_test {
                 name: TEST_DISK_DEVICE_PATH.into(),
                 size: DISK_SIZE,
                 partition_table_type: Some(PartitionTableType::Gpt),
+                readonly: false,
+                blkdev_type: BlockDeviceType::Disk,
                 children: vec![
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
@@ -382,6 +394,8 @@ pub(crate) mod functional_test {
                         size: part1.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
+                        readonly: false,
+                        blkdev_type: BlockDeviceType::Partition,
                         ..Default::default()
                     },
                     BlockDevice {
@@ -390,6 +404,8 @@ pub(crate) mod functional_test {
                         size: part2.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
+                        readonly: false,
+                        blkdev_type: BlockDeviceType::Partition,
                         ..Default::default()
                     },
                     BlockDevice {
@@ -398,6 +414,8 @@ pub(crate) mod functional_test {
                         size: part3.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
+                        readonly: false,
+                        blkdev_type: BlockDeviceType::Partition,
                         ..Default::default()
                     },
                 ],

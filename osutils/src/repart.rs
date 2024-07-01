@@ -687,7 +687,7 @@ mod functional_test {
 
     use pytest_gen::functional_test;
 
-    use crate::lsblk::{self, BlockDevice, PartitionTableType};
+    use crate::lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType};
     use crate::testutils::repart::{
         self, DISK_SIZE, OS_DISK_DEVICE_PATH, PART1_SIZE, TEST_DISK_DEVICE_PATH,
     };
@@ -741,6 +741,8 @@ mod functional_test {
             partition_table_type: Some(PartitionTableType::Gpt),
             mountpoint: None,
             mountpoints: vec![],
+            readonly: false,
+            blkdev_type: BlockDeviceType::Disk,
             children: vec![
                 BlockDevice {
                     name: format!("{TEST_DISK_DEVICE_PATH}1"),
@@ -753,6 +755,8 @@ mod functional_test {
                     children: vec![],
                     mountpoint: None,
                     mountpoints: vec![],
+                    readonly: false,
+                    blkdev_type: BlockDeviceType::Partition,
                 },
                 BlockDevice {
                     name: format!("{TEST_DISK_DEVICE_PATH}2"),
@@ -765,6 +769,8 @@ mod functional_test {
                     children: vec![],
                     mountpoint: None,
                     mountpoints: vec![],
+                    readonly: false,
+                    blkdev_type: BlockDeviceType::Partition,
                 },
             ],
         };

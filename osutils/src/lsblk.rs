@@ -57,6 +57,50 @@ pub struct BlockDevice {
     /// Partition table type
     #[serde(rename = "pttype")]
     pub partition_table_type: Option<PartitionTableType>,
+
+    // Read-only device
+    #[serde(default, rename = "ro")]
+    pub readonly: bool,
+
+    // Device type
+    #[serde(default, rename = "type")]
+    pub blkdev_type: BlockDeviceType,
+}
+
+/// All possible device types returned by lsblk
+/// https://github.com/util-linux/util-linux/blob/master/misc-utils/lsblk.c#L402-L456
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum BlockDeviceType {
+    #[serde(alias = "part")]
+    Partition,
+    Lvm,
+    Crypt,
+    Dmraid,
+    Mpath,
+    Dm,
+    Path,
+    Md,
+    Loop,
+    Disk,
+    Tape,
+    Printer,
+    Processor,
+    Worm,
+    Rom,
+    Scanner,
+    MoDisk,
+    Charger,
+    Comm,
+    Raid,
+    Enclosure,
+    Rbc,
+    Osd,
+    NoLun,
+
+    #[default]
+    #[serde(other)]
+    Unknown,
 }
 
 /// Partition table types recognized by `lsblk`
@@ -510,6 +554,8 @@ mod tests {
             part_uuid: None,
             size: 17179869184,
             parent_kernel_name: None,
+            readonly: false,
+            blkdev_type: BlockDeviceType::Disk,
             children: vec![
                 BlockDevice {
                     name: "/dev/sda1".into(),
@@ -522,6 +568,8 @@ mod tests {
                     mountpoint: Some("/boot/efi".into()),
                     mountpoints: vec!["/boot/efi".into()],
                     partition_table_type: None,
+                    readonly: false,
+                    blkdev_type: BlockDeviceType::Partition,
                 },
                 BlockDevice {
                     name: "/dev/sda2".into(),
@@ -534,6 +582,8 @@ mod tests {
                     mountpoint: Some("/".into()),
                     mountpoints: vec!["/".into()],
                     partition_table_type: None,
+                    readonly: false,
+                    blkdev_type: BlockDeviceType::Partition,
                 },
                 BlockDevice {
                     name: "/dev/sda3".into(),
@@ -546,6 +596,8 @@ mod tests {
                     mountpoint: None,
                     mountpoints: vec![],
                     partition_table_type: None,
+                    readonly: false,
+                    blkdev_type: BlockDeviceType::Partition,
                 },
                 BlockDevice {
                     name: "/dev/sda4".into(),
@@ -558,6 +610,8 @@ mod tests {
                     mountpoint: Some("[SWAP]".into()),
                     mountpoints: vec!["[SWAP]".into()],
                     partition_table_type: None,
+                    readonly: false,
+                    blkdev_type: BlockDeviceType::Partition,
                 },
                 BlockDevice {
                     name: "/dev/sda5".into(),
@@ -570,6 +624,8 @@ mod tests {
                     mountpoint: Some("/var/lib/trident".into()),
                     mountpoints: vec!["/var/lib/trident".into()],
                     partition_table_type: None,
+                    readonly: false,
+                    blkdev_type: BlockDeviceType::Partition,
                 },
             ],
             mountpoint: None,
