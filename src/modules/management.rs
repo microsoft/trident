@@ -26,21 +26,24 @@ impl Module for ManagementModule {
         &self,
         host_status: &HostStatus,
         host_config: &HostConfiguration,
-        _planned_servicing_type: ServicingType,
+        planned_servicing_type: ServicingType,
     ) -> Result<(), HostConfigurationDynamicValidationError> {
         if host_config.trident.disable {
             return Ok(());
         }
 
-        let current_path = &host_status.spec.trident.datastore_path;
-        let new_path = &host_config.trident.datastore_path;
-        if current_path != new_path {
-            return Err(
-                HostConfigurationDynamicValidationError::ChangedDatastorePath {
-                    current: current_path.display().to_string(),
-                    new: new_path.display().to_string(),
-                },
-            );
+        // Changing the datastore path is only allowed in clean installs.
+        if planned_servicing_type != ServicingType::CleanInstall {
+            let current_path = &host_status.spec.trident.datastore_path;
+            let new_path = &host_config.trident.datastore_path;
+            if current_path != new_path {
+                return Err(
+                    HostConfigurationDynamicValidationError::ChangedDatastorePath {
+                        current: current_path.display().to_string(),
+                        new: new_path.display().to_string(),
+                    },
+                );
+            }
         }
 
         Ok(())
@@ -120,11 +123,17 @@ mod tests {
             .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
             .unwrap();
 
+        // Default pathbuf (happens on clean install)
+        host_config.trident.datastore_path = Default::default();
+        mgmt_mod
+            .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+            .unwrap();
+
         // Different Paths
         host_config.trident.datastore_path = Path::new("/bar").to_path_buf();
         assert_eq!(
             mgmt_mod
-                .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+                .validate_host_config(&host_status, &host_config, ServicingType::AbUpdate)
                 .unwrap_err(),
             HostConfigurationDynamicValidationError::ChangedDatastorePath {
                 current: "/foo".to_string(),
