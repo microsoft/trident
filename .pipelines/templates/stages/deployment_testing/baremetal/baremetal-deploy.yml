@@ -23,7 +23,7 @@ parameters:
 
   - name: bmcIp
     type: string
-    default: "10.8.3.18"
+    default: "10.8.3.20" # TODO: Once original BMC 10.8.3.18 is fixed, this will be switched back. ADO Task: https://dev.azure.com/mariner-org/ECF/_sprints/taskboard/Crew%20-%20Trident/ECF/2407?workitem=8027
 
   - name: oamIp
     type: string

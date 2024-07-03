@@ -18,10 +18,12 @@ def update_trident_host_config(
     ssh_pub_key,
     interface_name,
     host_interface,
+    oam_gateway="",
 ):
     logging.info("Updating host config section of trident.yaml")
     logging.info("iso_httpd_ip: %s", iso_httpd_ip)
     logging.info("oam_ip: %s", oam_ip)
+    logging.info("oam_gateway: %s", oam_gateway)
     host_configuration = trident_yaml_content.get("hostConfiguration")
     os = host_configuration.setdefault("os", {})
     network = os.setdefault("network", {})
@@ -29,6 +31,10 @@ def update_trident_host_config(
     eno_interface = ethernets.setdefault(interface_name, {})
     eno_interface.setdefault("addresses", []).append(oam_ip + "/23")
     eno_interface["dhcp4"] = True
+    if oam_gateway:
+        eno_interface.setdefault("routes", []).append(
+            {"to": "0.0.0.0/0", "via": oam_gateway}
+        )
 
     logging.info("Updating os disks device in trident.yaml")
     disks = host_configuration.get("storage", {}).get("disks", [])
@@ -112,6 +118,9 @@ def main():
         default="eth0",
         help="Host interface to use for netlisten. Default: eth0",
     )
+    parser.add_argument(
+        "--oam-gateway", default="", help="IP address of the OAM gateway."
+    )
     args = parser.parse_args()
     with open(args.ssh_pub_key) as f:
         ssh_pub_key_content = f.read()
@@ -126,6 +135,7 @@ def main():
         ssh_pub_key_content.strip().strip("\n"),
         args.interface_name,
         args.host_interface,
+        args.oam_gateway,
     )
     with open(args.trident_yaml, "w") as f:
         yaml.dump(trident_yaml_content, f, default_flow_style=False)

@@ -7,6 +7,10 @@ parameters:
     type: string
     default: "10.8.4.50"
 
+  - name: oamGateway
+    type: string
+    default: "10.8.4.1"
+
   - name: sshKeyFile
     type: string
 
@@ -31,6 +35,7 @@ steps:
             --trident-yaml ${{ parameters.tridentConfigFile }} \
             --iso-httpd-ip ${{ parameters.isoHttpdServerIp }} \
             --oam-ip ${{ parameters.oamIp }} \
+            --oam-gateway ${{ parameters.oamGateway }} \
             --ssh-pub-key ${{ parameters.sshKeyFile }}.pub  \
             --interface-name ${{ parameters.interfaceForOamIp }}
       cat ${{ parameters.tridentConfigFile }}
