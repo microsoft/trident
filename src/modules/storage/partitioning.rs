@@ -491,7 +491,7 @@ impl<'a> PartitionAdopter<'a> {
             // Match by UUID
             (None, Some(uuid)) => self
                 .available_candidates_by_logical()
-                .find(|cand| &cand.id == uuid),
+                .find(|cand| cand.id.match_uuid(uuid)),
 
             // Invalid match criteria
             _ => bail!(
@@ -649,7 +649,9 @@ mod test {
     fn test_partition_adopter() {
         let disk_info = SfDisk {
             label: SfDiskLabel::Gpt,
-            id: Uuid::parse_str("3E6494F9-91E1-426B-A25A-0A8101E464A4").unwrap(),
+            id: Uuid::parse_str("3E6494F9-91E1-426B-A25A-0A8101E464A4")
+                .unwrap()
+                .into(),
             device: PathBuf::from("/dev/sda"),
             unit: SfDiskUnit::Sectors,
             firstlba: 34,
@@ -663,7 +665,9 @@ mod test {
                     size_sectors: 16_384,
                     size: 8_388_608,
                     partition_type: DiscoverablePartitionType::Esp,
-                    id: Uuid::parse_str("F764E91F-9D15-4F6E-8508-0AFC1D0DF0B5").unwrap(),
+                    id: Uuid::parse_str("F764E91F-9D15-4F6E-8508-0AFC1D0DF0B5")
+                        .unwrap()
+                        .into(),
                     name: Some("esp".to_string()),
                     parent: PathBuf::from("/dev/sda"),
                     number: 1,
@@ -674,7 +678,9 @@ mod test {
                     size_sectors: 266_315_776,
                     size: 136_353_677_312,
                     partition_type: DiscoverablePartitionType::LinuxGeneric,
-                    id: Uuid::parse_str("4D8C2A88-1411-4021-804D-EB8C40F054AA").unwrap(),
+                    id: Uuid::parse_str("4D8C2A88-1411-4021-804D-EB8C40F054AA")
+                        .unwrap()
+                        .into(),
                     name: Some("rootfs".to_string()),
                     parent: PathBuf::from("/dev/sda"),
                     number: 3,
@@ -759,7 +765,7 @@ mod functional_test {
             id: "part1".to_string(),
             partition_type: demo_part.partition_type,
             label: demo_part.name.clone(),
-            uuid: demo_part.id,
+            uuid: demo_part.id.as_uuid().unwrap(),
             file: PathBuf::from("/some/file"),
             node: demo_part.node.clone(),
             start: demo_part.start,

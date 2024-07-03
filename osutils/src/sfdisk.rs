@@ -5,9 +5,8 @@ use std::{
 
 use anyhow::{Context, Error};
 use serde::Deserialize;
-use uuid::Uuid;
 
-use crate::{exe::RunAndCheck, partition_types::DiscoverablePartitionType};
+use crate::{exe::RunAndCheck, osuuid::OsUuid, partition_types::DiscoverablePartitionType};
 
 #[derive(Debug, PartialEq, Deserialize)]
 struct SfdiskOutput {
@@ -20,7 +19,7 @@ pub struct SfDisk {
     pub label: SfDiskLabel,
 
     /// Disk UUID
-    pub id: Uuid,
+    pub id: OsUuid,
 
     /// Disk device path
     pub device: PathBuf,
@@ -71,7 +70,7 @@ pub struct SfPartition {
 
     /// Partition UUID
     #[serde(rename = "uuid")]
-    pub id: Uuid,
+    pub id: OsUuid,
 
     /// Partition name
     pub name: Option<String>,
@@ -155,7 +154,7 @@ impl SfDisk {
 
 impl SfPartition {
     pub fn path_by_uuid(&self) -> PathBuf {
-        Path::new("/dev/disk/by-partuuid").join(self.id.hyphenated().to_string())
+        Path::new("/dev/disk/by-partuuid").join(self.id.to_string())
     }
 
     pub fn delete(&self) -> Result<(), Error> {
@@ -174,6 +173,8 @@ impl SfPartition {
 
 #[cfg(test)]
 mod tests {
+    use uuid::Uuid;
+
     use super::*;
 
     #[test]
@@ -213,7 +214,9 @@ mod tests {
             parsed,
             SfDisk {
                 label: SfDiskLabel::Gpt,
-                id: Uuid::parse_str("3E6494F9-91E1-426B-A25A-0A8101E464A4").unwrap(),
+                id: Uuid::parse_str("3E6494F9-91E1-426B-A25A-0A8101E464A4")
+                    .unwrap()
+                    .into(),
                 device: PathBuf::from("/dev/sda"),
                 unit: SfDiskUnit::Sectors,
                 firstlba: 34,
@@ -227,7 +230,9 @@ mod tests {
                         size_sectors: 16_384,
                         size: 8_388_608,
                         partition_type: DiscoverablePartitionType::Esp,
-                        id: Uuid::parse_str("F764E91F-9D15-4F6E-8508-0AFC1D0DF0B5").unwrap(),
+                        id: Uuid::parse_str("F764E91F-9D15-4F6E-8508-0AFC1D0DF0B5")
+                            .unwrap()
+                            .into(),
                         name: Some("esp".to_string()),
                         parent: PathBuf::from("/dev/sda"),
                         number: 1,
@@ -238,7 +243,9 @@ mod tests {
                         size_sectors: 266_315_776,
                         size: 136_353_677_312,
                         partition_type: DiscoverablePartitionType::LinuxGeneric,
-                        id: Uuid::parse_str("4D8C2A88-1411-4021-804D-EB8C40F054AA").unwrap(),
+                        id: Uuid::parse_str("4D8C2A88-1411-4021-804D-EB8C40F054AA")
+                            .unwrap()
+                            .into(),
                         name: Some("rootfs".to_string()),
                         parent: PathBuf::from("/dev/sda"),
                         number: 3,
@@ -262,7 +269,12 @@ mod tests {
             }
         }"#;
 
-        assert!(SfDisk::parse_sfdisk_output(sfdisk_output_json).is_err());
+        let parsed = SfDisk::parse_sfdisk_output(sfdisk_output_json).unwrap();
+        assert_eq!(
+            parsed.id,
+            OsUuid::Relaxed("3E6494F9-91E1-426B-A25A-0A81".into()),
+            "malformed UUID should be nil"
+        );
 
         // missing firstlba
         let sfdisk_output_json = r#"{
@@ -274,7 +286,7 @@ mod tests {
             }
         }"#;
 
-        assert!(SfDisk::parse_sfdisk_output(sfdisk_output_json).is_err());
+        SfDisk::parse_sfdisk_output(sfdisk_output_json).unwrap_err();
 
         // missing lastlba
         let sfdisk_output_json = r#"{
@@ -288,7 +300,7 @@ mod tests {
             }
         }"#;
 
-        assert!(SfDisk::parse_sfdisk_output(sfdisk_output_json).is_err());
+        SfDisk::parse_sfdisk_output(sfdisk_output_json).unwrap_err();
 
         // missing sector size
         let sfdisk_output_json = r#"{
@@ -322,7 +334,7 @@ mod tests {
             }
         }"#;
 
-        assert!(SfDisk::parse_sfdisk_output(sfdisk_output_json).is_err());
+        SfDisk::parse_sfdisk_output(sfdisk_output_json).unwrap_err();
 
         // unsuported unit
         let sfdisk_output_json = r#"{
@@ -335,7 +347,7 @@ mod tests {
             }
         }"#;
 
-        assert!(SfDisk::parse_sfdisk_output(sfdisk_output_json).is_err());
+        SfDisk::parse_sfdisk_output(sfdisk_output_json).unwrap_err();
     }
 }
 
@@ -345,6 +357,7 @@ mod functional_test {
     use std::path::PathBuf;
 
     use pytest_gen::functional_test;
+    use uuid::Uuid;
 
     use super::*;
 
@@ -447,7 +460,7 @@ mod functional_test {
                 size_sectors: 102400,
                 size: 52428800,
                 partition_type: DiscoverablePartitionType::Esp.resolve(),
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 name: Some("esp".to_string()),
                 parent: PathBuf::from("/dev/sda"),
                 number: 1,
@@ -458,7 +471,7 @@ mod functional_test {
                 size_sectors: 10485760,
                 size: 5368709120,
                 partition_type: DiscoverablePartitionType::Root.resolve(),
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 name: Some("root-a".to_string()),
                 parent: PathBuf::from("/dev/sda"),
                 number: 2,
@@ -469,7 +482,7 @@ mod functional_test {
                 size_sectors: 4194304,
                 size: 2147483648,
                 partition_type: DiscoverablePartitionType::Root.resolve(),
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 name: Some("root-b".to_string()),
                 parent: PathBuf::from("/dev/sda"),
                 number: 3,
@@ -480,7 +493,7 @@ mod functional_test {
                 size_sectors: 4194304,
                 size: 2147483648,
                 partition_type: DiscoverablePartitionType::Swap.resolve(),
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 name: Some("swap".to_string()),
                 parent: PathBuf::from("/dev/sda"),
                 number: 4,
@@ -491,7 +504,7 @@ mod functional_test {
                 size_sectors: 204800,
                 size: 104857600,
                 partition_type: DiscoverablePartitionType::LinuxGeneric.resolve(),
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 name: Some("trident".to_string()),
                 parent: PathBuf::from("/dev/sda"),
                 number: 5,

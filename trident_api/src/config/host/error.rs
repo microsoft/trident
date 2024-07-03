@@ -122,6 +122,9 @@ pub enum HostConfigurationDynamicValidationError {
     #[error("Failed to find OS Modifier binary at '{0}'")]
     MissingOsModifierBinary(String),
 
+    #[error("Partitions are being adopted on disk '{0}', but it is not using GPT partitioning")]
+    AdoptionOnNonGptPartitionedDisk(String),
+
     #[error("Uncategorized error: {0}")]
     Other(String),
 }

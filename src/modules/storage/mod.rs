@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::mountpoint;
+use osutils::{lsblk, mountpoint};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::ROOT_MOUNT_POINT_PATH,
@@ -101,6 +101,20 @@ impl Module for StorageModule {
                         device: device_path.display().to_string(),
                     },
                 );
+            }
+
+            // If we are adopting partitions on a disk, ensure that the disk is GPT partitioned.
+            if !disk.adopted_partitions.is_empty() {
+                let disk_data = lsblk::run(device_path.as_path())
+                    .context("Failed to get block device information")?;
+                match disk_data.partition_table_type {
+                    Some(lsblk::PartitionTableType::Gpt) => {} // OK!
+                    _ => return Err(
+                        HostConfigurationDynamicValidationError::AdoptionOnNonGptPartitionedDisk(
+                            disk.id.clone(),
+                        ),
+                    ),
+                }
             }
         }
 

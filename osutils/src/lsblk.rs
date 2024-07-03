@@ -5,9 +5,8 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-use crate::exe::RunAndCheck;
+use crate::{exe::RunAndCheck, osuuid::OsUuid};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct LsBlkOutput {
@@ -30,7 +29,7 @@ pub struct BlockDevice {
 
     /// Partition UUID
     #[serde(rename = "partuuid")]
-    pub part_uuid: Option<Uuid>,
+    pub part_uuid: Option<OsUuid>,
 
     /// Size of the device
     pub size: u64,
@@ -561,7 +560,7 @@ mod tests {
                     name: "/dev/sda1".into(),
                     fstype: Some("vfat".into()),
                     fssize: Some("52293632".into()),
-                    part_uuid: Some("24d90361-7b1f-47db-b5bb-7d3893ac6ab0".try_into().unwrap()),
+                    part_uuid: Some("24d90361-7b1f-47db-b5bb-7d3893ac6ab0".into()),
                     size: 52428800,
                     parent_kernel_name: Some("/dev/sda".into()),
                     children: vec![],
@@ -575,7 +574,7 @@ mod tests {
                     name: "/dev/sda2".into(),
                     fstype: Some("ext4".into()),
                     fssize: Some("5264343040".into()),
-                    part_uuid: Some("13fe614e-f738-4025-bc7f-8c71a3b8242a".try_into().unwrap()),
+                    part_uuid: Some("13fe614e-f738-4025-bc7f-8c71a3b8242a".into()),
                     size: 5368709120,
                     parent_kernel_name: Some("/dev/sda".into()),
                     children: vec![],
@@ -589,7 +588,7 @@ mod tests {
                     name: "/dev/sda3".into(),
                     fstype: None,
                     fssize: None,
-                    part_uuid: Some("8fa573dd-b810-4aa0-bdc6-736e157cf9be".try_into().unwrap()),
+                    part_uuid: Some("8fa573dd-b810-4aa0-bdc6-736e157cf9be".into()),
                     size: 2147483648,
                     parent_kernel_name: Some("/dev/sda".into()),
                     children: vec![],
@@ -603,7 +602,7 @@ mod tests {
                     name: "/dev/sda4".into(),
                     fstype: Some("swap".into()),
                     fssize: None,
-                    part_uuid: Some("84dfeee4-7225-4379-ac73-b4a20c0a178d".try_into().unwrap()),
+                    part_uuid: Some("84dfeee4-7225-4379-ac73-b4a20c0a178d".into()),
                     size: 2147483648,
                     parent_kernel_name: Some("/dev/sda".into()),
                     children: vec![],
@@ -617,7 +616,7 @@ mod tests {
                     name: "/dev/sda5".into(),
                     fstype: Some("ext4".into()),
                     fssize: Some("92500992".into()),
-                    part_uuid: Some("60c8f863-0857-47c4-b427-ba44654c93fe".try_into().unwrap()),
+                    part_uuid: Some("60c8f863-0857-47c4-b427-ba44654c93fe".into()),
                     size: 104857600,
                     parent_kernel_name: Some("/dev/sda".into()),
                     children: vec![],
@@ -636,7 +635,121 @@ mod tests {
         let block_device_list = parse_lsblk_output(output).unwrap();
         assert_eq!(block_device_list, expected_block_device_list);
 
-        assert!(parse_lsblk_output("bad output").is_err());
+        parse_lsblk_output("bad output").unwrap_err();
+    }
+
+    #[test]
+    fn test_skip_nulls() {
+        #[derive(Debug, Deserialize, PartialEq, Eq)]
+        struct TestStruct {
+            #[serde(default, deserialize_with = "skip_nulls")]
+            mountpoints: Vec<String>,
+        }
+
+        let actual = serde_json::from_str::<TestStruct>(indoc::indoc!(
+            r#"
+            {
+                "mountpoints": [
+                    "a",
+                    null,
+                    "b",
+                    null
+                ]
+            }"#,
+        ))
+        .unwrap();
+
+        let expected = TestStruct {
+            mountpoints: vec!["a".into(), "b".into()],
+        };
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_bad_uuids_parsing() {
+        let output = indoc::indoc!(
+            r#"
+            {
+                "blockdevices": [
+                    {
+                        "name": "/dev/sda1",
+                        "kname": "/dev/sda1",
+                        "path": "/dev/sda1",
+                        "maj:min": "8:1",
+                        "fsavail": "49911808",
+                        "fssize": "52293632",
+                        "fstype": "vfat",
+                        "fsused": "2381824",
+                        "fsuse%": "5%",
+                        "fsroots": [
+                            "/"
+                        ],
+                        "fsver": null,
+                        "mountpoint": "/boot/efi",
+                        "mountpoints": [
+                            "/boot/efi"
+                        ],
+                        "label": null,
+                        "uuid": "B333-37D9",
+                        "ptuuid": null,
+                        "pttype": null,
+                        "parttype": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+                        "parttypename": null,
+                        "partlabel": "esp",
+                        "partuuid": "3a9c2054-02",
+                        "partflags": null,
+                        "ra": 128,
+                        "ro": false,
+                        "rm": false,
+                        "hotplug": false,
+                        "model": null,
+                        "serial": null,
+                        "size": 52428800,
+                        "state": null,
+                        "owner": "root",
+                        "group": "disk",
+                        "mode": "brw-rw----",
+                        "alignment": 0,
+                        "min-io": 512,
+                        "opt-io": 0,
+                        "phy-sec": 512,
+                        "log-sec": 512,
+                        "rota": true,
+                        "sched": "mq-deadline",
+                        "rq-size": 64,
+                        "type": "part",
+                        "disc-aln": 0,
+                        "disc-gran": 512,
+                        "disc-max": 2147450880,
+                        "disc-zero": false,
+                        "wsame": 0,
+                        "wwn": null,
+                        "rand": true,
+                        "pkname": "/dev/sda",
+                        "hctl": null,
+                        "tran": null,
+                        "subsystems": "block:scsi:pci",
+                        "rev": null,
+                        "vendor": null,
+                        "zoned": "none",
+                        "dax": false
+                    }
+                ]
+            }
+        "#
+        );
+
+        let block_device_list = parse_lsblk_output(output).unwrap();
+
+        assert_eq!(block_device_list.len(), 1);
+
+        let block_device = &block_device_list[0];
+
+        assert_eq!(
+            block_device.part_uuid,
+            Some(OsUuid::Relaxed("3a9c2054-02".into()))
+        );
     }
 }
 

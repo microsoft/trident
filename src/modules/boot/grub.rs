@@ -327,7 +327,7 @@ pub(crate) mod functional_test {
                 children: vec![
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
-                        part_uuid: Some(part1.uuid),
+                        part_uuid: Some(part1.uuid.into()),
                         size: part1.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -337,7 +337,7 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
-                        part_uuid: Some(part2.uuid),
+                        part_uuid: Some(part2.uuid.into()),
                         size: part2.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -347,7 +347,7 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
-                        part_uuid: Some(part3.uuid),
+                        part_uuid: Some(part3.uuid.into()),
                         size: part3.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -357,7 +357,7 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}4").into(),
-                        part_uuid: Some(part4.uuid),
+                        part_uuid: Some(part4.uuid.into()),
                         size: part4.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -390,7 +390,7 @@ pub(crate) mod functional_test {
                 children: vec![
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
-                        part_uuid: Some(part1.uuid),
+                        part_uuid: Some(part1.uuid.into()),
                         size: part1.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -400,7 +400,7 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
-                        part_uuid: Some(part2.uuid),
+                        part_uuid: Some(part2.uuid.into()),
                         size: part2.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -410,7 +410,7 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
-                        part_uuid: Some(part3.uuid),
+                        part_uuid: Some(part3.uuid.into()),
                         size: part3.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,

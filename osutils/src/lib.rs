@@ -20,6 +20,7 @@ pub mod mkswap;
 pub mod mount;
 pub mod mountpoint;
 pub mod osrelease;
+pub mod osuuid;
 pub mod overlay;
 pub mod partition_types;
 pub mod path;
