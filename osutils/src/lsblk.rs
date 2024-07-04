@@ -66,6 +66,21 @@ pub struct BlockDevice {
     pub blkdev_type: BlockDeviceType,
 }
 
+impl BlockDevice {
+    /// Gets a list of all mountpoints for this device and its children.
+    pub fn get_all_mountpoints_recursive(&self) -> Vec<&Path> {
+        self.mountpoints
+            .iter()
+            .map(|p| p.as_path())
+            .chain(
+                self.children
+                    .iter()
+                    .flat_map(|ch| ch.get_all_mountpoints_recursive()),
+            )
+            .collect()
+    }
+}
+
 /// All possible device types returned by lsblk
 /// https://github.com/util-linux/util-linux/blob/master/misc-utils/lsblk.c#L402-L456
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -155,14 +170,13 @@ where
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
-    #[test]
-    fn test_parse_lsblk_output() {
-        // Output obtained from running `lsblk --json --bytes --output-all --path /dev/sda` on the functional test VM
-        // AzL 2.0, lsblk from util-linux 2.37.4
-        let output = indoc::indoc!(
-            r#"
+    /// Output obtained from running `lsblk --json --bytes --output-all --path /dev/sda`
+    /// on the functional test VM AzL 2.0, lsblk from util-linux 2.37.4
+    const SAMPLE_LSBLK_OUTPUT: &str = indoc::indoc! {
+        r#"
             {
                 "blockdevices": [
                     {
@@ -543,9 +557,11 @@ mod tests {
                     }
                 ]
             }
-        "#
-        );
+        "#,
+    };
 
+    #[test]
+    fn test_parse_lsblk_output() {
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/sda".into(),
             fstype: None,
@@ -632,10 +648,26 @@ mod tests {
             partition_table_type: Some(PartitionTableType::Gpt),
         }];
 
-        let block_device_list = parse_lsblk_output(output).unwrap();
+        let block_device_list = parse_lsblk_output(SAMPLE_LSBLK_OUTPUT).unwrap();
         assert_eq!(block_device_list, expected_block_device_list);
 
         parse_lsblk_output("bad output").unwrap_err();
+    }
+
+    #[test]
+    fn test_get_all_mountpoints_recursive() {
+        let parsed = parse_lsblk_output(SAMPLE_LSBLK_OUTPUT).unwrap();
+        assert_eq!(parsed.len(), 1);
+        let block_device = &parsed[0];
+
+        let mount_point_list = block_device.get_all_mountpoints_recursive();
+        println!("{:#?}", mount_point_list);
+        assert_eq!(mount_point_list.len(), 4, "Expected 4 mount points");
+
+        assert!(mount_point_list.contains(&Path::new("/boot/efi")));
+        assert!(mount_point_list.contains(&Path::new("/")));
+        assert!(mount_point_list.contains(&Path::new("[SWAP]")));
+        assert!(mount_point_list.contains(&Path::new("/var/lib/trident")));
     }
 
     #[test]

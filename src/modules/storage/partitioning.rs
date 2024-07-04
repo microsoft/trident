@@ -164,18 +164,36 @@ pub fn create_partitions(
 /// This function will go through all requested disk changes to ensure that they
 /// do not destroy partitions that are currently mounted.
 fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
+    // Validation has already verified that any disk with adopted partitions will have
+    // a GPT partition table, so we can safely assume that here.
+
     for disk in disks {
-        // Check if the disk has a partition table.
-        if lsblk::run(&disk.bus_path)
-            .context("Failed to retrieve partition table information")?
-            .partition_table_type
-            .is_none()
-        {
-            debug!(
-                "Disk '{}' has no partition table, skipping safety check for this disk.",
-                disk.id
-            );
+        let blkdev_info =
+            lsblk::run(&disk.bus_path).context("Failed to retrieve partition table information")?;
+
+        // Figure out if anything in the disk is mounted.
+        if blkdev_info.get_all_mountpoints_recursive().is_empty() {
+            // Nothing is mounted, we can safely proceed.
             continue;
+        }
+
+        // We have mountpoints, so we can only proceed if the disk uses GPT partitioning.
+        if blkdev_info.partition_table_type != Some(lsblk::PartitionTableType::Gpt) {
+            // If the disk has mount points, but does not use GPT partitioning, we cannot proceed.
+            bail!(
+                "Disk '{}' has mount points, but does not use GPT partitioning [{:?}]. Refusing to proceed with partitioning.",
+                disk.id,
+                blkdev_info.partition_table_type,
+            );
+        }
+
+        // If the disk itself is mounted we cannot proceed because we can only adopt partitions.
+        if blkdev_info.mountpoint.is_some() {
+            bail!(
+                "Disk '{}' is currently mounted at '{}', cannot proceed with partitioning.",
+                disk.id,
+                blkdev_info.mountpoint.unwrap().display()
+            );
         }
 
         let disk_info = SfDisk::get_info(&disk.bus_path).context(format!(

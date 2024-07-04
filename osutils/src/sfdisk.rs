@@ -92,6 +92,10 @@ pub struct SfPartition {
 pub enum SfDiskLabel {
     #[serde(rename = "gpt")]
     Gpt,
+
+    /// Master Boot Record
+    #[serde(rename = "mbr", alias = "dos")]
+    Mbr,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
