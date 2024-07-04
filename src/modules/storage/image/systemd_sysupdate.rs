@@ -30,7 +30,7 @@ use osutils::{
     udevadm,
 };
 use trident_api::{
-    config::{ImageSha256, InternalImage, PartitionType},
+    config::{Image, ImageSha256, PartitionType},
     status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
@@ -148,16 +148,18 @@ impl ImageDeployment {
     /// 2. local_update_file, which is a String representing the name of the image file downloaded
     ///    by Trident so that sysupdate can operate on it. This is to handle the case where
     ///    ImageFormat is OciArtifact.
-    ///    Returns an instance of ImageDeployment, or an Error if failed to create one.
+    ///   
+    /// Returns an instance of ImageDeployment, or an Error if failed to create one.
     pub(super) fn new(
-        update_image: &InternalImage,
+        update_image: &Image,
+        device_id: &BlockDeviceId,
         host_status: &HostStatus,
         local_update_dir: Option<&Path>,
         local_update_file: Option<&str>,
     ) -> Result<Self, Error> {
         // Construct instances of Transfer, Source, and Target
-        debug!("Constructing ImageDeployment instance for update of block device with id {} to image {}...",
-            &update_image.target_id, &update_image.url);
+        debug!("Constructing ImageDeployment instance for update of block device with id '{}' to image {}...",
+            &device_id, &update_image.url);
 
         let transfer = Transfer {
             min_version: None,
@@ -204,11 +206,11 @@ impl ImageDeployment {
         };
 
         // Call get_update_partition_id(), to determine id of partition to update in this A/B
-        // update, based on update_image.target_id, volume pairs, and active volume currently
-        let partition_id_to_update = get_update_partition_id(host_status, &update_image.target_id)
-            .context(format!(
-                "Failed to fetch partition id for update image with target_id '{}'",
-                &update_image.target_id
+        // update, based on device_id, volume pairs, and active volume.
+        let partition_id_to_update =
+            get_update_partition_id(host_status, device_id).context(format!(
+                "Failed to fetch partition id for update image with device_id '{}'",
+                &device_id
             ))?;
         // Fetch block device path of the entire disk that the target partition belongs to, from
         // HostStatus and partition_id_to_update
@@ -258,8 +260,8 @@ impl ImageDeployment {
             transfer_config_dir,
             status: Status::Pending,
         };
-        debug!("Successfully constructed ImageDeployment instance for update of block device with id {} to image{}.",
-            &update_image.target_id, &update_image.url);
+        debug!("Successfully constructed ImageDeployment instance for update of block device with id '{}' to image {}.",
+            &device_id, &update_image.url);
 
         // Call write_transfer_config() to generate a transfer config file and get the path
         let transfer_config_path = img_deploy_instance
@@ -310,7 +312,7 @@ impl ImageDeployment {
 
         // Call sysupdate_update() to trigger update
         debug!(
-            "Triggering update of partition with id {} and path {} from version {} to version {} with sysupdate",
+            "Triggering update of partition with id '{}' and path {} from version '{}' to version '{}' with sysupdate",
             &self.partition_id_to_update, &partition_path, &old_partlabel, &self.version
         );
 
@@ -318,7 +320,7 @@ impl ImageDeployment {
             Err(e) => {
                 // If update failed, set status to Failed
                 self.status = Status::Failed;
-                Err(e.context(format!("Failed to update partition with id {} and path {} from version {} to version {} with sysupdate",
+                Err(e.context(format!("Failed to update partition with id '{}' and path '{}' from version '{}' to version '{}' with sysupdate",
                     &self.partition_id_to_update, &partition_path, &old_partlabel, &self.version
                 )))
             }
@@ -333,17 +335,17 @@ impl ImageDeployment {
                     ))?;
                 if actual_partlabel != self.version {
                     bail!(
-                        "Success reported by sysupdate, but verification failed. Expected partition with id {} to have PARTLABEL {} but current PARTLABEL is set to {}",
+                        "Success reported by sysupdate, but verification failed. Expected partition with id '{}' to have PARTLABEL '{}' but current PARTLABEL is set to '{}'",
                         &self.partition_id_to_update, &self.version, &actual_partlabel
                     );
                 }
                 debug!(
-                    "PARTLABEL of updated partition with id {} successfully updated from {} to {}",
+                    "PARTLABEL of updated partition with id '{}' successfully updated from '{}' to '{}'",
                     &self.partition_id_to_update, &old_partlabel, &self.version
                 );
 
                 debug!(
-                    "Update of partition with id {} from version {} to version {} with sysupdate succeeded",
+                    "Update of partition with id '{}' from version '{}' to version '{}' with sysupdate succeeded",
                     &self.partition_id_to_update, &old_partlabel, &self.version
                 );
 
@@ -540,12 +542,12 @@ fn get_partition_type(
     bail!("Failed to find partition with id '{}'", &partition_id);
 }
 
-/// Returns the id of partition to be updated, based on target_id of the image provided in HC.
-/// Assumes that target_id corresponds to a valid partition inside of an A/B volume pair, b/c
-/// func stream_images() in image/mod.rs already varifies that.
+/// Returns the id of partition to be updated, based on device_id provided in HC. Assumes that
+/// device_id corresponds to a valid partition inside of an A/B volume pair, b/c func
+/// stream_images() in image/mod.rs already verifies that.
 fn get_update_partition_id(
     host_status: &HostStatus,
-    target_id: &BlockDeviceId,
+    device_id: &BlockDeviceId,
 ) -> Result<BlockDeviceId, Error> {
     // Iterate through storage.ab-update.volume-pairs and return the correct volume-id, i.e. id of
     // partition to be updated; when ServicingType is AbUpdate, get_ab_update_volume() already returns
@@ -556,17 +558,17 @@ fn get_update_partition_id(
         let volume_selection: AbVolumeSelection = host_status
             .get_ab_update_volume()
             .context("Failed to determine which A/B volume is currently inactive")?;
-        // Fetch volume pair for the target_id
-        if let Some(volume_pair) = ab_update.volume_pairs.iter().find(|p| &p.id == target_id) {
+        // Fetch volume pair for the device_id
+        if let Some(volume_pair) = ab_update.volume_pairs.iter().find(|p| &p.id == device_id) {
             return match volume_selection {
                 AbVolumeSelection::VolumeA => Ok(volume_pair.volume_a_id.clone()),
                 AbVolumeSelection::VolumeB => Ok(volume_pair.volume_b_id.clone()),
             };
         }
     }
-    // If there is no volume pair for the target_id OR if ab-update is None, it means that we are
-    // using systemd_sysupdate.rs to clean-install the runtime OS image; return target_id itself
-    Ok(target_id.clone())
+    // If there is no volume pair for the device_id OR if ab-update is None, it means that we are
+    // using systemd_sysupdate.rs to clean-install the runtime OS image; return device_id itself.
+    Ok(device_id.clone())
 }
 
 /// Returns string representations of directory path and file name from URL of update image.
@@ -730,7 +732,7 @@ fn get_partlabel_from_path(partition_path: &str) -> Result<String, Error> {
 /// is a PathBuf, filename is a String, and sha256 is a String.
 pub(super) fn get_local_image(
     image_url: &Url,
-    image: &InternalImage,
+    image: &Image,
 ) -> Result<(PathBuf, String, String), Error> {
     // Open local image file and read it into a stream of bytes
     let stream: Box<dyn Read> =
@@ -783,7 +785,8 @@ pub(super) fn get_local_image(
 
 /// Call into systemd-sysupdate to update the partition with the given image.
 pub(super) fn deploy(
-    image: &InternalImage,
+    image: &Image,
+    device_id: &BlockDeviceId,
     host_status: &mut HostStatus,
     directory: Option<&Path>,
     filename: Option<&str>,
@@ -791,24 +794,26 @@ pub(super) fn deploy(
 ) -> Result<(), Error> {
     debug!("Calling Systemd-Sysupdate sub-module to execute A/B update");
     // Create ImageDeployment instance
-    let mut img_deploy_instance = ImageDeployment::new(image, host_status, directory, filename)
-        .context(format!(
-            "Failed to create ImageDeployment instance for block device with id '{}'",
-            &image.target_id
-        ))?;
+    let mut img_deploy_instance =
+        ImageDeployment::new(image, device_id, host_status, directory, filename).context(
+            format!(
+                "Failed to create ImageDeployment instance for block device with id '{}'",
+                &device_id
+            ),
+        )?;
     // Call run_sysupdate(); save return value as number of bytes written
     let image_length = img_deploy_instance
         .run_sysupdate(host_status)
         .context(format!(
-            "Failed to run systemd-sysupdate: Failed to update partition with id {} to version {}.",
-            &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
-        ))?;
+        "Failed to run systemd-sysupdate: Failed to update partition with id '{}' to version '{}'.",
+        &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
+    ))?;
     // If A/B update succeeded, update HostStatus
     if image_length > 0 && img_deploy_instance.status == Status::Succeeded {
         // If sysupdate succeeds, update contents of HostStatus
         storage::set_host_status_block_device_contents(
             host_status,
-            &image.target_id,
+            device_id,
             BlockDeviceContents::Image {
                 // When available, use computed hash, otherwise do a best effort and use hash from HostConfig
                 sha256: sha256
@@ -819,12 +824,12 @@ pub(super) fn deploy(
             },
         )?;
         info!(
-            "Systemd-Sysupdate sub-module successfully updated partition with id {} to version {}",
+            "Systemd-Sysupdate sub-module successfully updated partition with id '{}' to version '{}'",
             &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
         );
     } else {
         // If image_length is not 0 or status is Failed, A/B update failed
-        bail!("Update of partition with id {} to version {} failed. Returned image_length: {}; returned status: {:?}.",
+        bail!("Update of partition with id '{}' to version '{}' failed. Returned image_length: {}; returned status: {:?}.",
             &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version, image_length, &img_deploy_instance.status
         );
     }
@@ -955,7 +960,7 @@ mod tests {
 
     #[test]
     /// Validates that get_update_partition_id() correctly returns the id of the partition that is
-    /// inactive, or to be updated, based on target_id of the Image object.
+    /// inactive, or to be updated, based on device_id.
     fn test_get_update_partition_id() {
         let mut host_status = HostStatus {
             spec: HostConfiguration {

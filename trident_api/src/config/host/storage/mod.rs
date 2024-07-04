@@ -33,7 +33,7 @@ use self::{
     disks::Disk,
     encryption::Encryption,
     filesystem::{FileSystem, MountPointInfo, VerityFileSystem},
-    imaging::AbUpdate,
+    imaging::{AbUpdate, Image},
     internal::{InternalImage, InternalMountPoint, InternalVerityDevice},
     partitions::Partition,
     raid::Raid,
@@ -378,6 +378,60 @@ impl Storage {
             let rel_path = path.strip_prefix(&mpi.mount_point.path).ok()?;
             Some((mpi, rel_path))
         })
+    }
+
+    /// Returns a list of tuples (device ID, image) that represent images to be deployed onto the
+    /// block devices. Takes in an optional filter function that determines which images to
+    /// include.
+    pub fn get_images_from_filesystems(
+        &self,
+        filter: Option<impl Fn(&BlockDeviceId) -> bool>,
+    ) -> Vec<(BlockDeviceId, Image)> {
+        // If no filter is provided, include all images
+        let apply_filter = |device_id: &BlockDeviceId| match &filter {
+            Some(f) => f(device_id),
+            None => true,
+        };
+
+        let mut images = self
+            .filesystems
+            .iter()
+            .filter_map(|fs| fs.device_id.clone().zip(fs.source.image().cloned()))
+            .filter(|(device_id, _)| apply_filter(device_id))
+            .collect::<Vec<_>>();
+
+        let verity_images = self
+            .verity_filesystems
+            .iter()
+            .flat_map(|vf| {
+                let mut imgs = vec![];
+                if apply_filter(&vf.data_device_id) {
+                    imgs.push((vf.data_device_id.clone(), vf.data_image.clone()));
+                }
+                if apply_filter(&vf.hash_device_id) {
+                    imgs.push((vf.hash_device_id.clone(), vf.hash_image.clone()));
+                }
+                imgs
+            })
+            .collect::<Vec<_>>();
+
+        images.extend(verity_images);
+        images
+    }
+
+    /// Returns a list of tuples (device ID, image) that represent all images on the block devices,
+    /// excluding ESP partitions. This includes images on A/B volume pairs and standalone volumes.
+    pub fn get_images(&self) -> Vec<(BlockDeviceId, Image)> {
+        self.get_images_from_filesystems(None::<fn(&BlockDeviceId) -> bool>)
+    }
+
+    /// Returns a list of tuples (device ID, image) that represent the ESP images on the ESP
+    /// partitions.
+    pub fn get_esp_images(&self) -> Vec<(String, Image)> {
+        self.filesystems
+            .iter()
+            .filter_map(|fs| fs.device_id.clone().zip(fs.source.esp_image().cloned()))
+            .collect::<Vec<_>>()
     }
 
     /// INTERNAL FUNCTION!

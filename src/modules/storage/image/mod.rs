@@ -17,8 +17,8 @@ use osutils::{
 };
 use trident_api::{
     config::{
-        AbUpdate, FileSystemSource, FileSystemType, HostConfiguration, ImageFormat, ImageSha256,
-        InternalImage,
+        AbUpdate, FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat,
+        ImageSha256,
     },
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::TridentResultExt,
@@ -35,10 +35,12 @@ pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
 mod systemd_sysupdate;
 
-/// Function that streams images to block devices:
-/// 1. If image is a local file or an HTTP file published in RawZstd format, Trident will evoke a
-///    sub-module called Stream-Image, which will use HashingReader to write the bytes to the
-///    target block device.
+/// Updates images on block devices that are not ESP partitions, as ESP image deployments are
+/// handled separately by the boot module.
+///
+/// Depending on the image format, Trident will use different strategies to deploy the image:
+/// 1. If image is a local file or an HTTP file published in RawZstd format, Trident will use a
+///    HashingReader to write the bytes to the target block device.
 /// 2. If image is a local file or an HTTP file published in RawLzma format, Trident will run
 ///    systemd-sysupdate.rs to download the image, if needed, and write it to the block device. The
 ///    block device has to be a part of an A/B volume pair backed by partition block device. This is
@@ -48,25 +50,30 @@ mod systemd_sysupdate;
 ///    Trident will download the image from Azure container registry and pass it to
 ///    systemd-sysupdate.rs. ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
 ///
-/// This function is called by the provision() function in the image submodule and
-/// returns an error if the image cannot be downloaded or installed correctly.
+/// This function is called by the provision() function in the image submodule and returns an error
+/// if the image cannot be downloaded or deployed correctly.
 fn update_images(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
-    for image in &get_undeployed_images(host_status, host_config, false) {
-        // If image corresponds to ESP partition, no need to deploy image directly; instead, perform
-        // file-based update of ESP later
-        if is_esp(host_status, &image.target_id) {
-            continue;
-        }
+    // 1. During clean install, Trident will deploy images onto all non-ESP block devices here.
+    // This includes A/B volume pairs and other standalone block devices that are not ESP.
+    // 2. During A/B update, Trident will assume that all A/B volume pair and ESP images have been
+    // updated in the host configuration. Here, Trident will deploy images onto the A/B volume
+    // pairs.
+    let images_to_update = match host_status.servicing_type {
+        Some(ServicingType::CleanInstall) => host_config.storage.get_images(),
+        Some(ServicingType::AbUpdate) => get_ab_volume_pair_images(host_config),
+        _ => bail!(
+            "Servicing type cannot be '{:?}' as update_images() can only be called on CleanInstall or AbUpdate",
+            host_status.servicing_type
+        ),
+    };
 
+    for (device_id, image) in images_to_update {
         // Validate that block device exists
-        let block_device = modules::get_block_device(host_status, &image.target_id, false)
-            .context(format!(
-                "No block device with id '{}' found",
-                image.target_id
-            ))?;
+        let block_device = modules::get_block_device(host_status, &device_id, false)
+            .context(format!("No block device with id '{}' found", device_id))?;
 
         // Parse the URL to determine the download strategy
         let image_url =
@@ -105,7 +112,7 @@ fn update_images(
             ImageFormat::RawZst => {
                 info!(
                     "Deploying image from URL '{}' to block device '{}'",
-                    image.url, image.target_id
+                    image.url, device_id
                 );
 
                 // Initialize HashingReader instance on stream
@@ -115,12 +122,12 @@ fn update_images(
                 // Mark the block device as having unknown contents in case the write operation is interrupted.
                 storage::set_host_status_block_device_contents(
                     host_status,
-                    &image.target_id,
+                    &device_id,
                     BlockDeviceContents::Unknown,
                 )
                 .context(format!(
                     "Failed to set block device contents for '{}'",
-                    image.target_id
+                    device_id
                 ))?;
 
                 let (computed_sha256, bytes_copied) = image_streamer::stream_zstd(
@@ -132,7 +139,7 @@ fn update_images(
                 // Update HostStatus
                 storage::set_host_status_block_device_contents(
                     host_status,
-                    &image.target_id,
+                    &device_id,
                     BlockDeviceContents::Image {
                         sha256: computed_sha256.clone(),
                         length: bytes_copied,
@@ -163,16 +170,16 @@ fn update_images(
                 // boot loader can select the correct volume to load the kernel and initrd from, when the
                 // firmware reboots after the A/B update (and in generally, so that grub
                 // picks the right /boot volume to boot from).
-                if is_mount_point_for_boot(host_status, &image.target_id) {
+                if is_mount_point_for_boot(host_status, &device_id) {
                     info!(
                         "Identified block device with id '{}' as the mount point for /boot",
-                        image.target_id
+                        device_id
                     );
 
                     let new_fs_uuid = update_fs_uuid(&block_device.path)
                         .context(format!(
                             "Failed to assign a new randomized filesystem UUID to updated volume on block device '{}'",
-                            &image.target_id
+                            &device_id
                         ))?;
 
                     info!(
@@ -190,21 +197,21 @@ fn update_images(
                     .storage
                     .internal_mount_points
                     .iter()
-                    .find(|mp| mp.target_id == image.target_id);
+                    .find(|mp| mp.target_id == device_id);
                 if let Some(mount_point) = mount_point {
                     if mount_point.filesystem.is_ext()
                         && !mount_point.options.contains(&"ro".into())
                     {
                         // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
-                        info!("Checking filesystem on block device '{}'", &image.target_id);
+                        info!("Checking filesystem on block device '{}'", &device_id);
                         e2fsck::run(&block_device.path).context(format!(
                             "Failed to check filesystem on block device '{}'",
-                            &image.target_id
+                            &device_id
                         ))?;
-                        info!("Resizing filesystem on block device '{}'", &image.target_id);
+                        info!("Resizing filesystem on block device '{}'", &device_id);
                         resize_ext_fs(&block_device.path).context(format!(
                             "Failed to resize filesystem on block device '{}'",
-                            &image.target_id
+                            &device_id
                         ))?;
                     }
                 }
@@ -214,11 +221,12 @@ fn update_images(
                 if image_url.scheme() == "file" {
                     // Fetch directory and filename from image URL
                     let (directory, filename, computed_sha256) =
-                        systemd_sysupdate::get_local_image(&image_url, image)?;
+                        systemd_sysupdate::get_local_image(&image_url, &image)?;
                     // Run helper func systemd_sysupdate::deploy() to execute A/B update; since image is
                     // local, pass directory and file name as arg-s
                     systemd_sysupdate::deploy(
-                        image,
+                        &image,
+                        &device_id,
                         host_status,
                         Some(&directory),
                         Some(&filename),
@@ -240,21 +248,23 @@ fn update_images(
                     // Determine if target-id corresponds to an A/B volume pair; if helper
                     // func returns None, then set bool to false
                     let targets_ab_volume_pair = host_status
-                        .get_ab_update_volume_partition(&image.target_id)
+                        .get_ab_update_volume_partition(&device_id)
                         .is_some();
 
                     // If image is of format RawLzma but target-id does NOT
                     // correspond to an A/B volume pair, report an error
                     if !targets_ab_volume_pair {
                         bail!("Block device with id {} is not part of an A/B volume pair, so image in raw lzma format cannot be written to it.\nRaw lzma is not supported for block devices that do not correspond to A/B volume pairs",
-                                    &image.target_id)
+                                    &device_id)
                     }
                     // Run helper func systemd_sysupdate::deploy() to execute A/B update; directory and file
                     // name arg-s are None to communicate that update image is published via URL,
                     // not locally
-                    systemd_sysupdate::deploy(image, host_status, None, None, None).context(
-                        format!("Failed to deploy image {} via sysupdate", image.url),
-                    )?;
+                    systemd_sysupdate::deploy(&image, &device_id, host_status, None, None, None)
+                        .context(format!(
+                            "Failed to deploy image {} via sysupdate",
+                            image.url
+                        ))?;
                 } else {
                     bail!("Unsupported URL scheme")
                 };
@@ -320,52 +330,6 @@ pub(super) fn is_esp(host_status: &HostStatus, device_id: &BlockDeviceId) -> boo
         .map_or(false, |fs| {
             fs.fs_type == FileSystemType::Vfat && matches!(fs.source, FileSystemSource::EspImage(_))
         })
-}
-
-/// Returns a list of images that are undeployed.
-///
-/// An undeployed image is an Image in the HostConfiguration that meets
-/// one of three conditions:
-///
-/// 1. It is not in HostStatus.
-/// 2. Its target device does not contain an image.
-/// 3. Its target device contains a different image than the one specified
-///    in the HostConfiguration.
-///
-/// An image is different if either the url or sha256sum values are
-/// different. If the sha256sum is set to "ignored" in the
-/// HostConfiguration, then only the url must be different no matter the
-/// contents of the target device.
-///
-/// If the target device is an A/B volume pair, then the active boolean is
-/// used to determine whether that resolves to the active volume or the
-/// inactive one.
-pub(crate) fn get_undeployed_images(
-    host_status: &HostStatus,
-    host_config: &HostConfiguration,
-    active: bool,
-) -> Vec<InternalImage> {
-    host_config
-        .storage
-        .internal_images
-        .iter()
-        .filter(|image| {
-            if let Some(bdi) = modules::get_block_device(host_status, &image.target_id, active) {
-                if let BlockDeviceContents::Image { sha256, url, .. } = bdi.contents {
-                    if url == image.url
-                        && match image.sha256 {
-                            ImageSha256::Checksum(ref sha256sum) => *sha256sum == sha256,
-                            ImageSha256::Ignored => true,
-                        }
-                    {
-                        return false;
-                    }
-                }
-            }
-            true
-        })
-        .cloned()
-        .collect()
 }
 
 pub(super) fn refresh_host_status(
@@ -532,47 +496,114 @@ fn get_verity_data_volume_pair_paths(
     ))
 }
 
+/// Checks if the host needs an A/B update by comparing the images targeting ESP partitions and A/B
+/// volume pairs in the host configuration with those in the host status. Returns true if there is
+/// at least one image that needs to be updated; otherwise, returns false.
 pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfiguration) -> bool {
-    let undeployed_images = get_undeployed_images(host_status, host_config, true);
-    if !undeployed_images.is_empty() {
-        debug!("Found following images to update: {:?}", undeployed_images);
+    let mut ab_update_images = get_ab_volume_pair_images(host_config);
+    ab_update_images.extend(host_config.storage.get_esp_images());
+
+    if !get_updated_images(host_status, ab_update_images, true).is_empty() {
+        return true;
     }
-    !undeployed_images.is_empty()
+
+    false
 }
 
-/// Validates that every undeployed image targets either the ESP partition or an A/B volume pair.
-/// If not, returns an error to reject HostConfiguration.
+/// Compares a set of images targeting block devices in the host configuration, with the images
+/// deployed onto the block devices in the host status. Returns a list of tuples representing
+/// the block devices whose images have been updated, and the updated images themselves.
 ///
-/// This func is called only during A/B updates, to ensure that the HostConfiguration does not
-/// request Trident to overwrite images on the volumes that are shared between A and B, such as
-/// /var/lib/trident.
-pub(super) fn validate_undeployed_images(
+/// If active is true, the function will compare the images in the host configuration with the ones
+/// deployed onto the active A/B volumes; if active is false, it will check the ones deployed onto
+/// the update volumes.
+pub(crate) fn get_updated_images(
+    host_status: &HostStatus,
+    host_config_images: Vec<(BlockDeviceId, Image)>,
+    active: bool,
+) -> Vec<(BlockDeviceId, Image)> {
+    host_config_images
+        .iter()
+        .filter(|(device_id, image)| {
+            if let Some(bdi) = modules::get_block_device(host_status, device_id, active) {
+                if let BlockDeviceContents::Image { sha256, url, .. } = bdi.contents {
+                    if url == image.url
+                        && match &image.sha256 {
+                            ImageSha256::Checksum(ref sha256sum) => sha256sum == &sha256,
+                            ImageSha256::Ignored => true,
+                        }
+                    {
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .cloned()
+        .collect()
+}
+
+/// Validates that the host configuration requests deployment only of those images that can be
+/// deployed, for the specific servicing type.
+///
+/// Currently, this function is called only during A/B update, to ensure that the host
+/// configuration does not request Trident to re-deploy images on standalone volumes that are
+/// shared between A and B, such as /var/lib/trident.
+pub(super) fn validate_host_config(
     host_status: &HostStatus,
     host_config: &HostConfiguration,
+    planned_servicing_type: ServicingType,
 ) -> Result<(), Error> {
-    for image in get_undeployed_images(host_status, host_config, false) {
-        let is_valid_target = if let Some(ab_update) = &host_status.spec.storage.ab_update {
-            // If ab_update is not null, check if target_id corresponds to an A/B volume pair or
-            // ESP partition
-            ab_update
-                .volume_pairs
-                .iter()
-                .any(|p| p.id == image.target_id)
-                || is_esp(host_status, &image.target_id)
-        } else {
-            // If ab_update is null, only check if target_id corresponds to the ESP partition
-            is_esp(host_status, &image.target_id)
-        };
+    if planned_servicing_type == ServicingType::AbUpdate {
+        // Compose a list of ALL images in the host configuration
+        let mut images = host_config.storage.get_images();
+        images.extend(host_config.storage.get_esp_images());
+        // Filter only those images that have been updated, compared to the host status
+        let updated_images = get_updated_images(host_status, images, true);
 
-        if !is_valid_target {
-            bail!(
-                "Image '{}' cannot target block device '{}' as it is neither the ESP partition nor an A/B volume pair, so it cannot be overwritten during A/B update",
-                image.url, image.target_id
-            )
+        // Iterate over the updated images and ensure that they only target A/B volume pairs or ESP
+        // partitions. If an image targets a standalone block device, return an error.
+        for (device_id, _) in updated_images {
+            // Get lists of ESP images and A/B volume pair images
+            let esp_images = host_config.storage.get_esp_images();
+            let ab_volume_pair_images = get_ab_volume_pair_images(host_config);
+
+            // If the device ID is not found in the list of ESP images or A/B volume pair images, return
+            // an error
+            if !esp_images.iter().any(|(id, _)| id == &device_id)
+                && !ab_volume_pair_images.iter().any(|(id, _)| id == &device_id)
+            {
+                bail!(
+                    "Image update for standalone block device '{}' is not allowed during servicing type '{:?}'",
+                    device_id,
+                    planned_servicing_type,
+                );
+            }
         }
     }
 
     Ok(())
+}
+
+/// Returns a list of tuples (device ID, image) that represent images that need to be deployed onto
+/// A/B volume pairs, based on the host configuration.
+fn get_ab_volume_pair_images(host_config: &HostConfiguration) -> Vec<(BlockDeviceId, Image)> {
+    let ab_volume_pair_ids = if let Some(ab_update) = host_config.storage.ab_update.as_ref() {
+        ab_update
+            .volume_pairs
+            .iter()
+            .map(|pair| &pair.id)
+            .collect::<Vec<_>>()
+    } else {
+        vec![]
+    };
+
+    // Call get_images_from_filesystems() with a filter that includes only A/B volume pair IDs
+    host_config
+        .storage
+        .get_images_from_filesystems(Some(|device_id: &_| {
+            ab_volume_pair_ids.contains(&device_id)
+        }))
 }
 
 #[tracing::instrument(name = "image_provision", skip_all)]
@@ -608,304 +639,6 @@ mod tests {
     };
 
     use super::*;
-
-    #[test]
-    fn test_get_undeployed_images() {
-        let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::Staging,
-            spec: HostConfiguration {
-                storage: StorageConfig {
-                    internal_mount_points: vec![
-                        InternalMountPoint {
-                            path: PathBuf::from("/boot"),
-                            target_id: "boot".to_string(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                            target_id: "root".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                    ],
-                    internal_images: vec![
-                        InternalImage {
-                            url: "http://example.com/esp.img".to_string(),
-                            target_id: "boot".to_string(),
-                            format: ImageFormat::RawZst,
-                            sha256: ImageSha256::Checksum("foobar".to_string()),
-                        },
-                        InternalImage {
-                            url: "http://example.com/image1.img".to_string(),
-                            target_id: "root".to_string(),
-                            format: ImageFormat::RawZst,
-                            sha256: ImageSha256::Ignored,
-                        },
-                    ],
-                    disks: vec![Disk {
-                        id: "foo".to_string(),
-                        device: PathBuf::from("/dev/sda"),
-                        partitions: vec![
-                            Partition {
-                                id: "boot".to_string(),
-                                partition_type: PartitionType::Esp,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "root".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 100.into(),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: Storage {
-                block_devices: btreemap! {
-                    "foo".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda"),
-                        size: 10,
-                        contents: BlockDeviceContents::Initialized,
-                    },
-                    "boot".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda1"),
-                        size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/esp.img".to_string(),
-                            sha256: "foobar".to_string(),
-                            length: 100,
-                        },
-                    },
-                    "root".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda2"),
-                        size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/image1.img".to_string(),
-                            sha256: "foobar".to_string(),
-                            length: 100,
-                        },
-                    },
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        // should be zero, as images are matching and hash is ignored
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false).len(),
-            0
-        );
-
-        // should be zero, as images and hashes are matching
-        host_status.spec.storage.internal_images[0].sha256 =
-            ImageSha256::Checksum("foobar".to_string());
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false).len(),
-            0
-        );
-
-        // should be one, as image hash is different
-        host_status.spec.storage.internal_images[0].sha256 =
-            ImageSha256::Checksum("barfoo".to_string());
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![InternalImage {
-                url: "http://example.com/esp.img".to_string(),
-                target_id: "boot".to_string(),
-                format: ImageFormat::RawZst,
-                sha256: ImageSha256::Checksum("barfoo".to_string()),
-            }]
-        );
-
-        // should be one, as image url is different
-        host_status.spec.storage.internal_images[0].sha256 = ImageSha256::Ignored;
-        host_status.spec.storage.internal_images[0].url =
-            "http://example.com/image2.img".to_string();
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![InternalImage {
-                url: "http://example.com/image2.img".to_string(),
-                target_id: "boot".to_string(),
-                format: ImageFormat::RawZst,
-                sha256: ImageSha256::Ignored,
-            }]
-        );
-
-        // could be zero, as despite the url being different, the hash is the
-        // same; for now though we reimage to be safe, hence 1
-        host_status.spec.storage.internal_images[0].sha256 =
-            ImageSha256::Checksum("foobar".to_string());
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![InternalImage {
-                url: "http://example.com/image2.img".to_string(),
-                target_id: "boot".to_string(),
-                format: ImageFormat::RawZst,
-                sha256: ImageSha256::Checksum("foobar".to_string()),
-            }]
-        );
-
-        // should be 2, as the image is not initialized and the other is from
-        // the previous case
-        host_status
-            .storage
-            .block_devices
-            .get_mut("root")
-            .unwrap()
-            .contents = BlockDeviceContents::Unknown;
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![
-                InternalImage {
-                    url: "http://example.com/image2.img".to_string(),
-                    target_id: "boot".to_string(),
-                    format: ImageFormat::RawZst,
-                    sha256: ImageSha256::Checksum("foobar".to_string()),
-                },
-                InternalImage {
-                    url: "http://example.com/image1.img".to_string(),
-                    target_id: "root".to_string(),
-                    format: ImageFormat::RawZst,
-                    sha256: ImageSha256::Ignored,
-                }
-            ]
-        );
-
-        // root config is not matching root status
-        let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::Staging,
-            spec: HostConfiguration {
-                storage: StorageConfig {
-                    internal_mount_points: vec![
-                        InternalMountPoint {
-                            path: PathBuf::from("/boot"),
-                            target_id: "boot".to_string(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                            target_id: "root".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                    ],
-                    internal_images: vec![
-                        InternalImage {
-                            url: "http://example.com/esp.img".to_string(),
-                            target_id: "boot".to_string(),
-                            format: ImageFormat::RawZst,
-                            sha256: ImageSha256::Checksum("foobar".to_string()),
-                        },
-                        InternalImage {
-                            url: "http://example.com/image1.img".to_string(),
-                            target_id: "root".to_string(),
-                            format: ImageFormat::RawZst,
-                            sha256: ImageSha256::Ignored,
-                        },
-                    ],
-                    ab_update: Some(AbUpdate {
-                        volume_pairs: vec![AbVolumePair {
-                            id: "root".into(),
-                            volume_a_id: "root-a".to_string(),
-                            volume_b_id: "root-b".to_string(),
-                        }],
-                    }),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: Storage {
-                block_devices: btreemap! {
-                    "foo".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda"),
-                        size: 10,
-                        contents: BlockDeviceContents::Initialized,
-                    },
-                    "boot".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda1"),
-                        size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/esp.img".to_string(),
-                            sha256: "foobar".to_string(),
-                            length: 100,
-                        },
-                    },
-                    "root-b".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda2"),
-                        size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/image1.img".to_string(),
-                            sha256: "foobar".to_string(),
-                            length: 100,
-                        },
-                    },
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![InternalImage {
-                url: "http://example.com/image1.img".to_string(),
-                target_id: "root".to_string(),
-                format: ImageFormat::RawZst,
-                sha256: ImageSha256::Ignored,
-            }]
-        );
-
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, true),
-            // Vec::<&Image>::new()
-            vec![InternalImage {
-                url: "http://example.com/image1.img".to_string(),
-                target_id: "root".to_string(),
-                format: ImageFormat::RawZst,
-                sha256: ImageSha256::Ignored,
-            }]
-        );
-
-        // with a/b update, we should get ...
-
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
-        host_status.spec.storage.ab_update = Some(AbUpdate {
-            volume_pairs: vec![AbVolumePair {
-                id: "root".to_string(),
-                volume_a_id: "root-a".to_string(),
-                volume_b_id: "root-b".to_string(),
-            }],
-        });
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<InternalImage>::new()
-        );
-
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, true),
-            vec![InternalImage {
-                url: "http://example.com/image1.img".to_string(),
-                target_id: "root".to_string(),
-                format: ImageFormat::RawZst,
-                sha256: ImageSha256::Ignored,
-            }]
-        );
-    }
-
-    /// Validates that is_esp() correctly determines whether block device corresponds to
-    /// ESP partition.
-    #[test]
-    fn test_is_esp() {}
 
     /// Validates that is_mount_point_for_boot() correctly determines whether the block device is
     /// a mount point for /boot.
@@ -963,13 +696,13 @@ mod tests {
         );
     }
 
-    /// Validates that the logic in validate_undeployed_images() is correct.
+    /// Validates that the logic in validate_host_config() is correct.
     #[test]
-    fn test_validate_undeployed_images() {
-        // Initialize a HostStatus object
+    fn test_validate_host_config_image() {
+        // Initialize a host status
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::Staging,
+            servicing_type: None,
+            servicing_state: ServicingState::NotProvisioned,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -999,20 +732,6 @@ mod tests {
                         ],
                         ..Default::default()
                     }],
-                    internal_mount_points: vec![
-                        InternalMountPoint {
-                            path: PathBuf::from("/esp"),
-                            target_id: "esp".to_string(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                            target_id: "root".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                    ],
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1022,17 +741,26 @@ mod tests {
                     "os".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         size: 0,
-                        contents: BlockDeviceContents::Unknown,
+                        contents: BlockDeviceContents::Initialized,
                     },
                     "esp".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
                         size: 0,
-                        contents: BlockDeviceContents::Unknown,
+                        contents: BlockDeviceContents::Image{
+                            sha256: "esp_sha256_1".to_string(),
+                            length: 0,
+                            url: "http://example.com/esp_1.img".to_string(),
+
+                        },
                     },
                     "root-a".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
                         size: 0,
-                        contents: BlockDeviceContents::Unknown,
+                        contents: BlockDeviceContents::Image{
+                            sha256: "root_sha256_1".to_string(),
+                            length: 0,
+                            url: "http://example.com/root_1.img".to_string(),
+                        },
                     },
                     "root-b".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
@@ -1042,7 +770,11 @@ mod tests {
                     "trident".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp4"),
                         size: 0,
-                        contents: BlockDeviceContents::Unknown,
+                        contents: BlockDeviceContents::Image{
+                            sha256: "trident_sha256_1".to_string(),
+                            length: 0,
+                            url: "http://example.com/trident_1.img".to_string(),
+                        },
                     },
                 },
                 ..Default::default()
@@ -1050,219 +782,281 @@ mod tests {
             ..Default::default()
         };
 
-        // Filesystems
-        let esp_filesystem = FileSystem {
-            device_id: Some("esp".into()),
-            fs_type: FileSystemType::Vfat,
-            source: FileSystemSource::EspImage(Image {
-                url: "http://example.com/esp_1.img".to_string(),
-                sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
-                format: ImageFormat::RawZst,
-            }),
-            mount_point: Some(MountPoint {
-                path: PathBuf::from("/esp"),
-                options: MountOptions::empty(),
-            }),
-        };
-        let root_filesystem = FileSystem {
-            device_id: Some("root".into()),
-            fs_type: FileSystemType::Vfat,
-            source: FileSystemSource::Image(Image {
-                url: "http://example.com/root_1.img".to_string(),
-                sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
-                format: ImageFormat::RawZst,
-            }),
-            mount_point: Some(MountPoint {
-                path: PathBuf::from("/"),
-                options: MountOptions::empty(),
-            }),
-        };
-        let trident_filesystem = FileSystem {
-            device_id: Some("trident".into()),
-            fs_type: FileSystemType::Vfat,
-            source: FileSystemSource::Image(Image {
-                url: "http://example.com/trident_1.img".to_string(),
-                sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
-                format: ImageFormat::RawZst,
-            }),
-            mount_point: None,
-        };
-
-        // Test case 1: Running validate_undeployed_images() when update of ESP image only is
-        // requested should return ((Ok)), even if ab_update is null.
-        // Update images section of host_config
-        host_status.spec.storage.filesystems = vec![esp_filesystem.clone()];
-        host_status.spec.populate_internal();
-        assert!(
-            validate_undeployed_images(&host_status,&host_status.spec).is_ok(),
-            "Failed to determine that no images should be undeployed when update of ESP image is requested"
-        );
-
-        // Test case 2: Running validate_undeployed_images() when update of ESP and root images is
-        // requested should return an error since ab_update is null.
-        // Update images section of host_config
-        host_status.spec.storage.filesystems =
-            vec![esp_filesystem.clone(), root_filesystem.clone()];
-        host_status.spec.populate_internal();
-        // Compare the actual error kind with the expected one.
-        assert_eq!(
-            validate_undeployed_images(&host_status,&host_status.spec)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-                "Image 'http://example.com/root_1.img' cannot target block device 'root' as it is neither the ESP partition nor an A/B volume pair, so it cannot be overwritten during A/B update",
-            "Unexpected error kind"
-        );
-
-        // Test case 3: Running validate_undeployed_images() when all images are valid should
-        // return ((Ok))
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        host_status.spec.storage.ab_update = Some(AbUpdate {
-            volume_pairs: vec![AbVolumePair {
-                id: "root".to_string(),
-                volume_a_id: "root-a".to_string(),
-                volume_b_id: "root-b".to_string(),
-            }],
-        });
-
-        host_status.spec.storage.filesystems = vec![esp_filesystem.clone()];
-        host_status.spec.populate_internal();
-        assert!(
-            validate_undeployed_images(&host_status, &host_status.spec).is_ok(),
-            "Failed to determine that no images should be undeployed when all images are valid"
-        );
-
-        // Test case 4: Running validate_undeployed_images() when there is an image requested for
-        // block device 'trident' should return an error since it's neither the ESP partition nor
-        // an A/B volume pair
-        // Update images section of host_config
-        host_status.spec.storage.filesystems = vec![
-            esp_filesystem.clone(),
-            root_filesystem.clone(),
-            trident_filesystem.clone(),
-        ];
-        host_status.spec.populate_internal();
-        // Compare the actual error kind with the expected one.
-        assert_eq!(
-            validate_undeployed_images(&host_status,&host_status.spec)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "Image 'http://example.com/trident_1.img' cannot target block device 'trident' as it is neither the ESP partition nor an A/B volume pair, so it cannot be overwritten during A/B update",
-            "Unexpected error kind"
-        );
-
-        // Test case 5: Running validate_undeployed_images() when there is an image requested for
-        // root should return an error since root is a single volume and not an A/B volume pair in
-        // this scenario
-        let mut host_status_2 = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::Staging,
-            spec: HostConfiguration {
-                storage: StorageConfig {
-                    disks: vec![Disk {
-                        id: "os".to_string(),
-                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        partitions: vec![
-                            Partition {
-                                id: "esp".to_string(),
-                                partition_type: PartitionType::Esp,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "root".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "boot-a".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 100.into(),
-                            },
-                            Partition {
-                                id: "boot-b".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 100.into(),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
+        // Initialize a corresponding host configuration
+        let mut host_config = HostConfiguration {
+            storage: StorageConfig {
+                disks: vec![Disk {
+                    id: "os".to_owned(),
+                    device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                    partitions: vec![
+                        Partition {
+                            id: "esp".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "root-a".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "root-b".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "trident".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: 100.into(),
+                        },
+                    ],
                     ..Default::default()
-                },
+                }],
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("esp".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::EspImage(Image {
+                            url: "http://example.com/esp_2.img".to_string(),
+                            sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/esp"),
+                            options: MountOptions::empty(),
+                        }),
+                    },
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::Image(Image {
+                            url: "http://example.com/root_2.img".to_string(),
+                            sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/"),
+                            options: MountOptions::empty(),
+                        }),
+                    },
+                    FileSystem {
+                        device_id: Some("trident".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::Image(Image {
+                            url: "http://example.com/trident_1.img".to_string(),
+                            sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: None,
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![AbVolumePair {
+                        id: "root".to_string(),
+                        volume_a_id: "root-a".to_string(),
+                        volume_b_id: "root-b".to_string(),
+                    }],
+                }),
                 ..Default::default()
             },
+            ..Default::default()
+        };
+
+        // Test case 0. Running validate_host_config() when the planned servicing type is
+        // CleanInstall should always return ((Ok)) since there is no validation logic.
+        validate_host_config(&host_status, &host_config, ServicingType::CleanInstall).unwrap();
+
+        // Test case 1. Running validate_host_config() when only update of the ESP partition and
+        // A/B volume pair images is requested during A/B update should return ((Ok)).
+        // Update servicing state to Provisioned for consistency.
+        host_status.servicing_state = ServicingState::Provisioned;
+        validate_host_config(&host_status, &host_config, ServicingType::AbUpdate).unwrap();
+
+        // Test case 2. Running validate_host_config() when update of a standalone volume 'trident'
+        // is requested during A/B update should return an error.
+        // Update URL and sha256sum of 'trident' image in host configuration.
+        host_config.storage.filesystems[2].source = FileSystemSource::Image(Image {
+            url: "http://example.com/trident_2.img".to_string(),
+            sha256: ImageSha256::Checksum("trident_sha256_2".to_string()),
+            format: ImageFormat::RawZst,
+        });
+        validate_host_config(&host_status, &host_config, ServicingType::AbUpdate).unwrap_err();
+    }
+
+    /// Validates that the logic in needs_ab_update() is correct.
+    #[test]
+    fn test_needs_ab_update() {
+        // Initialize a host configuration
+        let mut host_config = HostConfiguration {
+            storage: StorageConfig {
+                disks: vec![Disk {
+                    id: "os".to_owned(),
+                    device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                    partitions: vec![
+                        Partition {
+                            id: "esp".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "root-a".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "root-b".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "trident".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: 100.into(),
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("esp".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::EspImage(Image {
+                            url: "http://example.com/esp_1.img".to_string(),
+                            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/esp"),
+                            options: MountOptions::empty(),
+                        }),
+                    },
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::Image(Image {
+                            url: "http://example.com/root_1.img".to_string(),
+                            sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/"),
+                            options: MountOptions::empty(),
+                        }),
+                    },
+                    FileSystem {
+                        device_id: Some("trident".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::Image(Image {
+                            url: "http://example.com/trident_1.img".to_string(),
+                            sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: None,
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![AbVolumePair {
+                        id: "root".to_string(),
+                        volume_a_id: "root-a".to_string(),
+                        volume_b_id: "root-b".to_string(),
+                    }],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Initialize a host status with spec matching the host configuration
+        let host_status = HostStatus {
+            servicing_type: None,
+            servicing_state: ServicingState::Provisioned,
+            spec: host_config.clone(),
             storage: Storage {
                 block_devices: btreemap! {
                     "os".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         size: 0,
-                        contents: BlockDeviceContents::Unknown,
+                        contents: BlockDeviceContents::Initialized,
                     },
                     "esp".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
                         size: 0,
-                        contents: BlockDeviceContents::Unknown,
+                        contents: BlockDeviceContents::Image{
+                            sha256: "esp_sha256_1".to_string(),
+                            length: 0,
+                            url: "http://example.com/esp_1.img".to_string(),
+                        },
                     },
-                    "root".into() => BlockDeviceInfo {
+                    "root-a".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
                         size: 0,
-                        contents: BlockDeviceContents::Unknown,
+                        contents: BlockDeviceContents::Image{
+                            sha256: "root_sha256_1".to_string(),
+                            length: 0,
+                            url: "http://example.com/root_1.img".to_string(),
+                        },
                     },
-                    "boot-a".into() => BlockDeviceInfo {
+                    "root-b".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
                         size: 0,
                         contents: BlockDeviceContents::Unknown,
                     },
-                    "boot-b".into() => BlockDeviceInfo {
+                    "trident".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp4"),
                         size: 0,
-                        contents: BlockDeviceContents::Unknown,
+                        contents: BlockDeviceContents::Image{
+                            sha256: "trident_sha256_1".to_string(),
+                            length: 0,
+                            url: "http://example.com/trident_1.img".to_string(),
+                        },
                     },
                 },
+                // Set active volume to A
+                ab_active_volume: Some(AbVolumeSelection::VolumeA),
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        host_status_2.spec.storage.ab_update = Some(AbUpdate {
-            volume_pairs: vec![AbVolumePair {
-                id: "boot".to_string(),
-                volume_a_id: "boot-a".to_string(),
-                volume_b_id: "boot-b".to_string(),
-            }],
+        // Test case 1. Running needs_ab_update() when images are the same in host status and host
+        // configuration should return false.
+        assert!(!needs_ab_update(&host_status, &host_config));
+
+        // Test case 2. Running needs_ab_update() when the URL of the ESP image in the host
+        // configuration is different from that in the host status should return true.
+        host_config.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
+            url: "http://example.com/esp_2.img".to_string(),
+            sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+            format: ImageFormat::RawZst,
         });
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        assert!(needs_ab_update(&host_status, &host_config));
 
-        let boot_filesystem = FileSystem {
-            device_id: Some("boot".into()),
-            fs_type: FileSystemType::Vfat,
-            source: FileSystemSource::Image(Image {
-                url: "http://example.com/boot_1.img".to_string(),
-                sha256: ImageSha256::Checksum("boot_sha256_1".to_string()),
-                format: ImageFormat::RawZst,
-            }),
-            mount_point: Some(MountPoint {
-                path: PathBuf::from("/boot"),
-                options: MountOptions::empty(),
-            }),
-        };
+        // Test case 3. Running needs_ab_update() when the sha256sum of the ESP image in the host
+        // configuration is different from that in the host status should return true.
+        host_config.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
+            url: "http://example.com/esp_1.img".to_string(),
+            sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+            format: ImageFormat::RawZst,
+        });
+        assert!(needs_ab_update(&host_status, &host_config));
 
-        // Update images section of host_config
-        host_status_2.spec.storage.filesystems = vec![
-            esp_filesystem.clone(),
-            root_filesystem.clone(),
-            boot_filesystem.clone(),
-        ];
-        host_status_2.spec.populate_internal();
-        // Compare the actual error kind with the expected one.
-        assert_eq!(
-            validate_undeployed_images(&host_status_2, &host_status_2.spec)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "Image 'http://example.com/root_1.img' cannot target block device 'root' as it is neither the ESP partition nor an A/B volume pair, so it cannot be overwritten during A/B update",
-            "Unexpected error kind"
-        );
+        // Test case 4. Running needs_ab_update() when the URL of the root image in the host
+        // configuration is different from that in the host status should return true.
+        host_config.storage.filesystems[1].source = FileSystemSource::Image(Image {
+            url: "http://example.com/root_2.img".to_string(),
+            sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+            format: ImageFormat::RawZst,
+        });
+        assert!(needs_ab_update(&host_status, &host_config));
+
+        // Test case 5. Running needs_ab_update() when the sha256sum of the root image in the host
+        // configuration is ignored should return true.
+        host_config.storage.filesystems[1].source = FileSystemSource::Image(Image {
+            url: "http://example.com/root_1.img".to_string(),
+            sha256: ImageSha256::Ignored,
+            format: ImageFormat::RawZst,
+        });
+        assert!(needs_ab_update(&host_status, &host_config));
     }
 }
 

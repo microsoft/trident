@@ -18,8 +18,9 @@ use osutils::{
     mount::{self, MountGuard},
 };
 use trident_api::{
-    config::{HostConfiguration, ImageFormat, ImageSha256, InternalImage, PartitionType},
+    config::{Image, ImageFormat, ImageSha256},
     status::{AbVolumeSelection, BlockDeviceContents, HostStatus},
+    BlockDeviceId,
 };
 
 use crate::modules::{
@@ -29,10 +30,7 @@ use crate::modules::{
     },
     storage::{
         self,
-        image::{
-            self,
-            stream_image::{self, GET_MAX_RETRIES, GET_TIMEOUT_SECS},
-        },
+        image::stream_image::{self, GET_MAX_RETRIES, GET_TIMEOUT_SECS},
     },
     BOOT_ENTRY_A, BOOT_ENTRY_B,
 };
@@ -46,14 +44,17 @@ use crate::modules::{
 /// The func takes the following arguments:
 /// 1. image_url: &Url, which is the URL of the image to be downloaded,
 /// 2. image: &Image, which is the Image object from HostConfig,
-/// 3. host_status: &mut HostStatus, which is the HostStatus object,
-/// 4. is_local: bool, which is a boolean indicating whether the image is a local file or not.
+/// 3. device_id: &BlockDeviceId, which is the ID of the ESP volume,
+/// 4. host_status: &mut HostStatus, which is the HostStatus object,
+/// 5. is_local: bool, which is a boolean indicating whether the image is a local file or not.
+/// 6. mount_point: &Path, which is the path to the mount point of the ESP volume.
 ///
 /// Local image and dir it's mounted to are temp, so they're automatically removed from the FS
 /// after function returns.
 fn copy_file_artifacts(
     image_url: &Url,
-    image: &InternalImage,
+    image: &Image,
+    device_id: &BlockDeviceId,
     host_status: &mut HostStatus,
     is_local: bool,
     mount_point: &Path,
@@ -157,15 +158,9 @@ fn copy_file_artifacts(
         debug!("grub-noprefix.efi is not used and the system is not on Azure Linux 2.0");
     }
 
-    // Update HostStatus.
-    // TODO: Setting BlockDeviceContents to Image contents, like for any volume, while updating the
-    // ESP volume is a temporary solution. In the next PR, Trident will set contents of the
-    // partition to ESPImage, a new value in the BlockDeviceContents object. Related ADO task:
-    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6625.
-
     storage::set_host_status_block_device_contents(
         host_status,
-        &image.target_id,
+        device_id,
         BlockDeviceContents::Image {
             sha256: computed_sha256.clone(),
             length: bytes_copied,
@@ -375,14 +370,16 @@ fn generate_efi_bin_base_dir_path(
     Ok(esp_dir_path)
 }
 
-/// Function that fetches the list of ESP images that need to be updated and performs file-based
-/// update of standalone ESP partition.
-pub(super) fn update_images(host_status: &mut HostStatus, mount_point: &Path) -> Result<(), Error> {
+/// Performs file-based update of ESP partitions.
+pub(super) fn update_esp_images(
+    host_status: &mut HostStatus,
+    mount_point: &Path,
+) -> Result<(), Error> {
     // Fetch the list of ESP images that need to be updated/deployed
-    for image in &get_undeployed_images(host_status, &host_status.spec, false) {
+    for (device_id, image) in &host_status.spec.storage.get_esp_images() {
         debug!(
             "Updating ESP filesystem on block device id '{}'",
-            &image.target_id
+            &device_id
         );
 
         // Parse the URL to determine the download strategy
@@ -394,32 +391,44 @@ pub(super) fn update_images(host_status: &mut HostStatus, mount_point: &Path) ->
         if image.format == ImageFormat::RawZst {
             info!(
                 "Performing file-based update of ESP partition with id '{}'",
-                &image.target_id
+                &device_id
             );
 
             info!(
-                "Deploying image {} onto ESP partition with id {}",
-                image.url, image.target_id
+                "Deploying image {} onto ESP partition with id '{}'",
+                image.url, device_id
             );
 
             if image_url.scheme() == "file" {
                 // 5th arg is true to communicate that image is a local file, i.e.,  is_local
                 // will be set to true
-                copy_file_artifacts(&image_url, image, host_status, true, mount_point).context(
-                    format!(
-                    "Failed to deploy image {} onto ESP partition with id {} via direct streaming",
-                    image.url, image.target_id
-                ),
-                )?;
+                copy_file_artifacts(
+                    &image_url,
+                    image,
+                    device_id,
+                    host_status,
+                    true,
+                    mount_point,
+                )
+                .context(format!(
+                    "Failed to deploy image {} onto ESP partition with id '{}' via direct streaming",
+                    image.url, device_id
+                ))?;
             } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
                 // 5th arg is false to communicate that image is a local file, i.e.,  is_local
                 // will be set to false
-                copy_file_artifacts(&image_url, image, host_status, false, mount_point).context(
-                    format!(
-                    "Failed to deploy image {} onto ESP partition with id {} via direct streaming",
-                    image.url, image.target_id
-                ),
-                )?;
+                copy_file_artifacts(
+                    &image_url,
+                    image,
+                    device_id,
+                    host_status,
+                    false,
+                    mount_point,
+                )
+                .context(format!(
+                    "Failed to deploy image {} onto ESP partition with id '{}' via direct streaming",
+                    image.url, device_id
+                ))?;
             } else if image_url.scheme() == "oci" {
                 bail!("Downloading images as OCI artifacts from Azure container registry is not implemented")
             } else {
@@ -428,43 +437,12 @@ pub(super) fn update_images(host_status: &mut HostStatus, mount_point: &Path) ->
         } else {
             bail!(
                 "Unsupported image format for ESP partition with id '{}': {:?}",
-                &image.target_id,
+                &device_id,
                 image.format
             );
         }
     }
     Ok(())
-}
-
-/// Returns a list of images that correspond to ESP partition that need to be updated/provisioned.
-///
-/// Uses get_undeployed_images() to fetch the list of images that need to be updated/deployed and
-/// then filters the vector to find images that corresponds to ESP partition.
-fn get_undeployed_images(
-    host_status: &HostStatus,
-    host_config: &HostConfiguration,
-    active: bool,
-) -> Vec<InternalImage> {
-    // Fetch the list of images that need to be updated/deployed
-    let undeployed_images = image::get_undeployed_images(host_status, host_config, active);
-
-    // Filter the vector to find images that corresponds to ESP partition
-    undeployed_images
-        .into_iter()
-        .filter(|image| {
-            // Check if image's target_id corresponds to a PartitionType::Esp
-            host_status
-                .spec
-                .storage
-                .disks
-                .iter()
-                .flat_map(|disk| &disk.partitions)
-                .any(|partition| {
-                    partition.id == image.target_id
-                        && partition.partition_type == PartitionType::Esp
-                })
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -476,8 +454,8 @@ mod tests {
     use maplit::btreemap;
 
     use trident_api::{
-        config::{self, AbUpdate, AbVolumePair, PartitionType},
-        constants::{GRUB2_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
+        config::{self, AbUpdate, AbVolumePair, HostConfiguration, PartitionType},
+        constants::{GRUB2_RELATIVE_PATH, UPDATE_ROOT_PATH},
         status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
 
@@ -608,138 +586,6 @@ mod tests {
                 .unwrap()
                 .ends_with(BOOT_ENTRY_A),
             "generate_esp_dir_path() should return /boot/efi/EFI/AZLA if volume B is currently active"
-        );
-    }
-
-    /// Validates that get_undeployed_esp() returns the correct list of images that need to be
-    /// updated/provisioned
-    #[test]
-    fn test_get_undeployed_esp() {
-        // Initialize a HostStatus object with ESP and root partitions
-        let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::Staging,
-            spec: HostConfiguration {
-                storage: config::Storage {
-                    disks: vec![config::Disk {
-                        id: "foo".to_string(),
-                        partitions: vec![
-                            config::Partition {
-                                id: "esp".to_string(),
-                                partition_type: PartitionType::Esp,
-                                size: 1000.into(),
-                            },
-                            config::Partition {
-                                id: "root".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 1000.into(),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    internal_mount_points: vec![
-                        config::InternalMountPoint {
-                            path: PathBuf::from("/boot"),
-                            target_id: "esp".to_string(),
-                            filesystem: config::FileSystemType::Vfat,
-                            options: vec![],
-                        },
-                        config::InternalMountPoint {
-                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                            target_id: "root".to_string(),
-                            filesystem: config::FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                    ],
-                    internal_images: vec![
-                        InternalImage {
-                            url: "http://example.com/esp_1.img".to_string(),
-                            target_id: "esp".to_string(),
-                            format: ImageFormat::RawZst,
-                            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
-                        },
-                        InternalImage {
-                            url: "http://example.com/root_1.img".to_string(),
-                            target_id: "root".to_string(),
-                            format: ImageFormat::RawZst,
-                            sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
-                        },
-                    ],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: Storage {
-                block_devices: btreemap! {
-                    "foo".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda"),
-                        size: 10,
-                        contents: BlockDeviceContents::Initialized,
-                    },
-                    "esp".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda1"),
-                        size: 3,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/esp_1.img".to_string(),
-                            sha256: "esp_sha256_1".to_string(),
-                            length: 100,
-                        },
-                    },
-                    "root".to_string() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda2"),
-                        size: 7,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/root_1.img".to_string(),
-                            sha256: "root_sha256_1".to_string(),
-                            length: 100,
-                        },
-                    },
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        // Test case 1: ESP partition does not need to be updated
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<InternalImage>::new(),
-            "Incorrectly identified ESP partition as needing an update"
-        );
-
-        // Test case 2: ESP partition needs to be updated
-        host_status.spec.storage.internal_images[0].sha256 =
-            ImageSha256::Checksum("esp_sha256_2".to_string());
-        host_status.spec.storage.internal_images[0].url =
-            "http://example.com/esp_2.img".to_string();
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            vec![InternalImage {
-                url: "http://example.com/esp_2.img".to_string(),
-                target_id: "esp".to_string(),
-                format: ImageFormat::RawZst,
-                sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
-            }],
-            "Incorrectly identified ESP partition as not needing an update"
-        );
-
-        // Test case 3: Change PartitionType of ESP partition to swap, so func
-        // get_undeployed_esp() should return an empty vector
-        host_status
-            .spec
-            .storage
-            .disks
-            .iter_mut()
-            .find(|d| d.id == "foo")
-            .unwrap()
-            .partitions
-            .get_mut(0)
-            .unwrap()
-            .partition_type = PartitionType::Swap;
-        assert_eq!(
-            get_undeployed_images(&host_status, &host_status.spec, false),
-            Vec::<InternalImage>::new(),
-            "Incorrectly identified ESP partition as needing an update"
         );
     }
 

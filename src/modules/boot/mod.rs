@@ -6,7 +6,7 @@ use trident_api::status::HostStatus;
 
 use crate::modules::Module;
 
-mod esp;
+pub(super) mod esp;
 pub(super) mod grub;
 
 #[derive(Default, Debug)]
@@ -19,7 +19,7 @@ impl Module for BootModule {
     fn provision(&mut self, host_status: &mut HostStatus, mount_point: &Path) -> Result<(), Error> {
         // Perform file-based update of ESP images, if needed, after filesystems have been mounted and
         // initialized
-        esp::update_images(host_status, mount_point)
+        esp::update_esp_images(host_status, mount_point)
             .context("Failed to perform file-based update of ESP images")?;
 
         Ok(())

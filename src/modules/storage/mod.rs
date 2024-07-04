@@ -118,18 +118,12 @@ impl Module for StorageModule {
             }
         }
 
-        if planned_servicing_type != ServicingType::CleanInstall {
-            // TODO: validate that block devices naming is consistent with the current state
-            // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
+        // TODO: validate that block devices naming is consistent with the current state
+        // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
-            // If Trident is performing an A/B update, validate that every undeployed image inside
-            // HostConfiguration targets either the ESP partition or an A/B volume pair. An invalid HC
-            // should be rejected since Trident cannot overwrite the image on a volume that is shared
-            // between A and B.
-            image::validate_undeployed_images(host_status, host_config).map_err(|e| {
-                HostConfigurationDynamicValidationError::ImagesIncorrect(format!("{:?}", e))
-            })?;
-        }
+        image::validate_host_config(host_status, host_config, planned_servicing_type).map_err(
+            |e| HostConfigurationDynamicValidationError::ImagesIncorrect(format!("{:?}", e)),
+        )?;
 
         encryption::validate_host_config(host_config).map_err(|e| {
             HostConfigurationDynamicValidationError::EncryptionIncorrect(format!("{:?}", e))

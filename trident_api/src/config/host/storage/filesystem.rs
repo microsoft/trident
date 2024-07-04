@@ -297,3 +297,21 @@ impl VerityFileSystem {
         )
     }
 }
+
+impl FileSystemSource {
+    /// Returns the image associated with the filesystem source, if any.
+    pub fn image(&self) -> Option<&Image> {
+        match self {
+            Self::Image(image) => Some(image),
+            _ => None,
+        }
+    }
+
+    /// Returns the ESP image associated with the filesystem source, if any.
+    pub fn esp_image(&self) -> Option<&Image> {
+        match self {
+            Self::EspImage(image) => Some(image),
+            _ => None,
+        }
+    }
+}
