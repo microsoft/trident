@@ -165,12 +165,16 @@ fn update_images(
                     }
                 }
 
-                // If target_id corresponds to a block device that serves as the mount point for /boot,
+                // If device_id corresponds to a block device that serves as the mount point for /boot,
                 // assign a new randomized FS UUID to that updated volume. This is necessary so that the grub
                 // boot loader can select the correct volume to load the kernel and initrd from, when the
                 // firmware reboots after the A/B update (and in generally, so that grub
                 // picks the right /boot volume to boot from).
-                if is_mount_point_for_boot(host_status, &device_id) {
+                if host_status
+                    .spec
+                    .storage
+                    .is_mount_point_for_path(&device_id, Path::new(BOOT_MOUNT_POINT_PATH))
+                {
                     info!(
                         "Identified block device with id '{}' as the mount point for /boot",
                         device_id
@@ -272,23 +276,6 @@ fn update_images(
         }
     }
     Ok(())
-}
-
-/// Validates whether the block device corresponding to target_id is the mount point for the
-/// /boot directory.
-fn is_mount_point_for_boot(host_status: &HostStatus, target_id: &BlockDeviceId) -> bool {
-    // Fetch block device id corresponding to /boot from mount points and compare
-    // boot_block_device_id with target_id
-    if let Some(boot_block_device_id) = host_status
-        .spec
-        .storage
-        .path_to_mount_point(Path::new(BOOT_MOUNT_POINT_PATH))
-        .map(|mp| &mp.target_id)
-    {
-        boot_block_device_id == target_id
-    } else {
-        false
-    }
 }
 
 /// Assigns a new randomized FS UUID to the updated volume. Accepts one arg: block_device_path,
@@ -632,69 +619,12 @@ mod tests {
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemType, Image, ImageSha256,
-            InternalMountPoint, MountOptions, MountPoint, Partition, PartitionType,
-            Storage as StorageConfig,
+            MountOptions, MountPoint, Partition, PartitionType, Storage as StorageConfig,
         },
         status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };
 
     use super::*;
-
-    /// Validates that is_mount_point_for_boot() correctly determines whether the block device is
-    /// a mount point for /boot.
-    #[test]
-    fn test_is_mount_point_for_boot() {
-        // Setup HostStatus with predefined mount points
-        let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::Staging,
-            spec: HostConfiguration {
-                storage: StorageConfig {
-                    disks: vec![Disk {
-                        id: "os".to_string(),
-                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        partitions: vec![],
-                        ..Default::default()
-                    }],
-                    internal_mount_points: vec![
-                        InternalMountPoint {
-                            path: PathBuf::from("/boot"),
-                            target_id: "boot".to_string(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                            target_id: "root".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                    ],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        // Test case 1: Check for mount point for /boot
-        assert!(
-            is_mount_point_for_boot(&host_status, &"boot".to_string()),
-            "Block device with target_id boot was not correctly identified as mount point for /boot"
-        );
-
-        // Test case 2: Check for non-mount point for /boot
-        assert!(
-            !is_mount_point_for_boot(&host_status, &"root".to_string()),
-            "Block device with target_id root was incorrectly identified as mount point for /boot"
-        );
-
-        // Test case 3: Check for non-existent mount point
-        assert!(
-            !is_mount_point_for_boot(&host_status, &"non-existent".to_string()),
-            "Non-existent target_id was incorrectly identified as mount point for /boot"
-        );
-    }
 
     /// Validates that the logic in validate_host_config() is correct.
     #[test]

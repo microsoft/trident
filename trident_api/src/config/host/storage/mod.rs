@@ -366,6 +366,18 @@ impl Storage {
             .max_by_key(|mp| mp.mount_point.path.as_os_str().len())
     }
 
+    /// Validates whether the block device with device_id is the mount point for the directory at
+    /// path.
+    pub fn is_mount_point_for_path(
+        &self,
+        device_id: &BlockDeviceId,
+        path: impl AsRef<Path>,
+    ) -> bool {
+        self.path_to_mount_point_info(path)
+            .and_then(|mpi| mpi.device_id)
+            == Some(device_id)
+    }
+
     /// Returns the mount point and relative path for a given path.
     ///
     /// The mount point is the closest parent directory of the path that is a
@@ -2315,6 +2327,123 @@ mod tests {
             .storage
             .path_to_mount_point_info(Path::new(ROOT_MOUNT_POINT_PATH).join("boot"))
             .is_none());
+    }
+
+    /// Validates that is_mount_point_for_path() correctly determines whether the block device is
+    /// a mount point for a specified path.
+    #[test]
+    fn test_is_mount_point_for_path() {
+        // Set up a host configuration with a few filesystems
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "os".to_owned(),
+                    device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                    partitions: vec![
+                        Partition {
+                            id: "esp".to_string(),
+                            partition_type: PartitionType::Esp,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "root-a".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "root-b".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 100.into(),
+                        },
+                        Partition {
+                            id: "trident".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: 100.into(),
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("esp".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::EspImage(Image {
+                            url: "http://example.com/esp_1.img".to_string(),
+                            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/esp"),
+                            options: MountOptions::empty(),
+                        }),
+                    },
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::Image(Image {
+                            url: "http://example.com/root_1.img".to_string(),
+                            sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/"),
+                            options: MountOptions::empty(),
+                        }),
+                    },
+                    FileSystem {
+                        device_id: Some("trident".into()),
+                        fs_type: FileSystemType::Vfat,
+                        source: FileSystemSource::Image(Image {
+                            url: "http://example.com/trident_1.img".to_string(),
+                            sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+                            format: ImageFormat::RawZst,
+                        }),
+                        mount_point: None,
+                    },
+                ],
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![AbVolumePair {
+                        id: "root".to_string(),
+                        volume_a_id: "root-a".to_string(),
+                        volume_b_id: "root-b".to_string(),
+                    }],
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Test case 1: Validate that 'root' is a mount point for /
+        assert!(
+            host_config
+                .storage
+                .is_mount_point_for_path(&"root".to_string(), Path::new("/")),
+            "Block device with device_id 'root' was not identified as mount point for /"
+        );
+
+        // Test case 2: Validate that 'root' is not a mount point for /esp
+        assert!(
+            !host_config
+                .storage
+                .is_mount_point_for_path(&"root".to_string(), Path::new("/esp")),
+            "Block device with device_id 'root' was incorrectly identified as mount point for /esp"
+        );
+
+        // Test case 3: Validate that 'esp' is a mount point for /esp
+        assert!(
+            host_config
+                .storage
+                .is_mount_point_for_path(&"esp".to_string(), Path::new("/esp")),
+            "Block device with device_id 'esp' was not identified as mount point for /esp"
+        );
+
+        // Test case 4: Validate that 'trident' is not a mount point for a non-existent path /trident
+        assert!(
+            !host_config
+                .storage
+                .is_mount_point_for_path(&"trident".to_string(), Path::new("/trident")),
+            "Block device with device_id 'trident' was incorrectly identified as mount point for /trident"
+        );
     }
 
     #[test]
