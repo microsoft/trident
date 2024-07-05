@@ -63,7 +63,7 @@ fn update_images(
     // pairs.
     let images_to_update = match host_status.servicing_type {
         Some(ServicingType::CleanInstall) => host_config.storage.get_images(),
-        Some(ServicingType::AbUpdate) => get_ab_volume_pair_images(host_config),
+        Some(ServicingType::AbUpdate) => host_config.storage.get_ab_volume_pair_images(),
         _ => bail!(
             "Servicing type cannot be '{:?}' as update_images() can only be called on CleanInstall or AbUpdate",
             host_status.servicing_type
@@ -487,7 +487,7 @@ fn get_verity_data_volume_pair_paths(
 /// volume pairs in the host configuration with those in the host status. Returns true if there is
 /// at least one image that needs to be updated; otherwise, returns false.
 pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfiguration) -> bool {
-    let mut ab_update_images = get_ab_volume_pair_images(host_config);
+    let mut ab_update_images = host_config.storage.get_ab_volume_pair_images();
     ab_update_images.extend(host_config.storage.get_esp_images());
 
     if !get_updated_images(host_status, ab_update_images, true).is_empty() {
@@ -553,7 +553,7 @@ pub(super) fn validate_host_config(
         for (device_id, _) in updated_images {
             // Get lists of ESP images and A/B volume pair images
             let esp_images = host_config.storage.get_esp_images();
-            let ab_volume_pair_images = get_ab_volume_pair_images(host_config);
+            let ab_volume_pair_images = host_config.storage.get_ab_volume_pair_images();
 
             // If the device ID is not found in the list of ESP images or A/B volume pair images, return
             // an error
@@ -570,27 +570,6 @@ pub(super) fn validate_host_config(
     }
 
     Ok(())
-}
-
-/// Returns a list of tuples (device ID, image) that represent images that need to be deployed onto
-/// A/B volume pairs, based on the host configuration.
-fn get_ab_volume_pair_images(host_config: &HostConfiguration) -> Vec<(BlockDeviceId, Image)> {
-    let ab_volume_pair_ids = if let Some(ab_update) = host_config.storage.ab_update.as_ref() {
-        ab_update
-            .volume_pairs
-            .iter()
-            .map(|pair| &pair.id)
-            .collect::<Vec<_>>()
-    } else {
-        vec![]
-    };
-
-    // Call get_images_from_filesystems() with a filter that includes only A/B volume pair IDs
-    host_config
-        .storage
-        .get_images_from_filesystems(Some(|device_id: &_| {
-            ab_volume_pair_ids.contains(&device_id)
-        }))
 }
 
 #[tracing::instrument(name = "image_provision", skip_all)]
@@ -813,9 +792,9 @@ mod tests {
         validate_host_config(&host_status, &host_config, ServicingType::AbUpdate).unwrap_err();
     }
 
-    /// Validates that the logic in needs_ab_update() is correct.
+    /// Validates that the logic in needs_ab_update() and get_updated_images() is correct.
     #[test]
-    fn test_needs_ab_update() {
+    fn test_needs_ab_update_and_get_updated_images() {
         // Initialize a host configuration
         let mut host_config = HostConfiguration {
             storage: StorageConfig {
@@ -951,15 +930,31 @@ mod tests {
         // Test case 1. Running needs_ab_update() when images are the same in host status and host
         // configuration should return false.
         assert!(!needs_ab_update(&host_status, &host_config));
+        // Running get_updated_images() should return an empty list.
+        assert!(
+            get_updated_images(&host_status, host_config.storage.get_images(), true).is_empty()
+        );
 
         // Test case 2. Running needs_ab_update() when the URL of the ESP image in the host
         // configuration is different from that in the host status should return true.
         host_config.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_2.img".to_string(),
-            sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
             format: ImageFormat::RawZst,
         });
         assert!(needs_ab_update(&host_status, &host_config));
+        // Running get_updated_images() should return the 'esp' image.
+        assert_eq!(
+            get_updated_images(&host_status, host_config.storage.get_esp_images(), true),
+            vec![(
+                "esp".to_string(),
+                Image {
+                    url: "http://example.com/esp_2.img".to_string(),
+                    sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                    format: ImageFormat::RawZst,
+                }
+            )]
+        );
 
         // Test case 3. Running needs_ab_update() when the sha256sum of the ESP image in the host
         // configuration is different from that in the host status should return true.
@@ -969,6 +964,22 @@ mod tests {
             format: ImageFormat::RawZst,
         });
         assert!(needs_ab_update(&host_status, &host_config));
+        // Running get_updated_images() for ESP only should return the 'esp' image.
+        assert_eq!(
+            get_updated_images(&host_status, host_config.storage.get_esp_images(), true),
+            vec![(
+                "esp".to_string(),
+                Image {
+                    url: "http://example.com/esp_1.img".to_string(),
+                    sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                    format: ImageFormat::RawZst,
+                }
+            )]
+        );
+        // But running get_updated_images() for all non-ESP images should return an empty list.
+        assert!(
+            get_updated_images(&host_status, host_config.storage.get_images(), true).is_empty()
+        );
 
         // Test case 4. Running needs_ab_update() when the URL of the root image in the host
         // configuration is different from that in the host status should return true.
@@ -978,15 +989,48 @@ mod tests {
             format: ImageFormat::RawZst,
         });
         assert!(needs_ab_update(&host_status, &host_config));
-
-        // Test case 5. Running needs_ab_update() when the sha256sum of the root image in the host
-        // configuration is ignored should return true.
-        host_config.storage.filesystems[1].source = FileSystemSource::Image(Image {
-            url: "http://example.com/root_1.img".to_string(),
-            sha256: ImageSha256::Ignored,
-            format: ImageFormat::RawZst,
-        });
-        assert!(needs_ab_update(&host_status, &host_config));
+        // Running get_updated_images() for all non-ESP images should return the 'root' image.
+        assert_eq!(
+            get_updated_images(&host_status, host_config.storage.get_images(), true),
+            vec![(
+                "root".to_string(),
+                Image {
+                    url: "http://example.com/root_2.img".to_string(),
+                    sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+                    format: ImageFormat::RawZst,
+                }
+            )]
+        );
+        // But running get_updated_images() for all images should return both the 'esp' and 'root'
+        // images.
+        let mut all_images = host_config.storage.get_images();
+        all_images.extend(host_config.storage.get_esp_images());
+        // Assert length of the returned list
+        assert_eq!(
+            get_updated_images(&host_status, all_images.clone(), true).len(),
+            2
+        );
+        // Assert it contains both the 'esp' and 'root' images
+        assert!(
+            get_updated_images(&host_status, all_images.clone(), true).contains(&(
+                "esp".to_string(),
+                Image {
+                    url: "http://example.com/esp_1.img".to_string(),
+                    sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                    format: ImageFormat::RawZst,
+                }
+            ))
+        );
+        assert!(
+            get_updated_images(&host_status, all_images, true).contains(&(
+                "root".to_string(),
+                Image {
+                    url: "http://example.com/root_2.img".to_string(),
+                    sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+                    format: ImageFormat::RawZst,
+                }
+            ))
+        );
     }
 }
 

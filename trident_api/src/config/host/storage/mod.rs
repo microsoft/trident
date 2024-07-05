@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, HashSet},
+    path::Path,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -435,6 +438,28 @@ impl Storage {
     /// excluding ESP partitions. This includes images on A/B volume pairs and standalone volumes.
     pub fn get_images(&self) -> Vec<(BlockDeviceId, Image)> {
         self.get_images_from_filesystems(None::<fn(&BlockDeviceId) -> bool>)
+    }
+
+    /// Returns a list of tuples (device ID, image) that represent images that need to be deployed onto
+    /// A/B volume pairs, based on the host configuration.
+    pub fn get_ab_volume_pair_images(&self) -> Vec<(BlockDeviceId, Image)> {
+        let ab_volume_pair_ids: HashSet<_> = self
+            .ab_update
+            .as_ref()
+            .map(|ab| ab.volume_pairs.iter())
+            .unwrap_or_default()
+            .map(|p| &p.id)
+            .collect();
+
+        // Return early if there are no A/B volume pairs
+        if ab_volume_pair_ids.is_empty() {
+            return vec![];
+        }
+
+        // Call get_images_from_filesystems() with a filter that includes only A/B volume pair IDs
+        self.get_images_from_filesystems(Some(|device_id: &_| {
+            ab_volume_pair_ids.contains(device_id)
+        }))
     }
 
     /// Returns a list of tuples (device ID, image) that represent the ESP images on the ESP
@@ -2540,5 +2565,169 @@ mod tests {
         test_fn(&host_config, "/boot/efi/", 2, "");
         test_fn(&host_config, "/boot/efi/foobar", 2, "foobar");
         test_fn(&host_config, "/boot/efi/foobar/", 2, "foobar");
+    }
+
+    /// Validates that get_esp_images() correctly returns a list of images associated with the ESP
+    /// filesystems.
+    #[test]
+    fn test_get_esp_images() {
+        // Initialize a basic Storage object.
+        let mut storage: Storage = get_storage();
+
+        // Test case #1: Validate that get_esp_images() correctly returns 'esp'.
+        let esp_images = storage.get_esp_images();
+        assert_eq!(esp_images.len(), 1);
+        // Create a tuple of 'esp' and the associated Image object.
+        let expected_image = Image {
+            url: "file:///esp.raw.zst".to_string(),
+            sha256: ImageSha256::Ignored,
+            format: ImageFormat::RawZst,
+        };
+        let expected_tuple = ("esp".to_string(), expected_image.clone());
+        // Add the tuple to a list.
+        let expected_list = vec![expected_tuple.clone()];
+        // Compare the list with esp_images.
+        assert_eq!(esp_images, expected_list);
+
+        // Test case #2: Add another ESP filesystem and confirm that get_esp_images() now returns
+        // both 'esp' and 'esp1'.
+        // Create a new ESP filesystem.
+        let esp1 = FileSystem {
+            device_id: Some("esp1".to_owned()),
+            fs_type: FileSystemType::Vfat,
+            source: FileSystemSource::EspImage(Image {
+                url: "file:///esp1.raw.zst".to_owned(),
+                sha256: ImageSha256::Ignored,
+                format: ImageFormat::RawZst,
+            }),
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/esp1"),
+                options: MountOptions::empty(),
+            }),
+        };
+        // Add the new ESP filesystem to the storage object.
+        storage.filesystems.push(esp1);
+        // Call get_esp_images() and confirm that it returns both 'esp' and 'esp1'.
+        let esp_images = storage.get_esp_images();
+        assert_eq!(esp_images.len(), 2);
+        // Create a tuple of 'esp1' and the associated Image object.
+        let expected_image1 = Image {
+            url: "file:///esp1.raw.zst".to_string(),
+            sha256: ImageSha256::Ignored,
+            format: ImageFormat::RawZst,
+        };
+        let expected_tuple1 = ("esp1".to_string(), expected_image1.clone());
+        // Add the tuple to a list.
+        let expected_list1 = vec![expected_tuple.clone(), expected_tuple1.clone()];
+        // Compare the list with esp_images.
+        assert_eq!(esp_images, expected_list1);
+
+        // Test case #3: Add a new ESP filesystem without an associated Image object and confirm
+        // that get_esp_images() still returns both 'esp' and 'esp1'.
+        // Create a new ESP filesystem without an associated Image object.
+        let esp2 = FileSystem {
+            device_id: Some("esp2".to_owned()),
+            fs_type: FileSystemType::Vfat,
+            source: FileSystemSource::Create,
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/esp2"),
+                options: MountOptions::empty(),
+            }),
+        };
+        // Add the new ESP filesystem to the storage object.
+        storage.filesystems.push(esp2);
+        // Call get_esp_images() and confirm that it still returns both 'esp' and 'esp1'.
+        let esp_images = storage.get_esp_images();
+        assert_eq!(esp_images.len(), 2);
+        assert_eq!(esp_images, expected_list1);
+
+        // Test case #4: Remove all ESP filesystems and confirm that get_esp_images() returns an empty list.
+        // Remove all ESP filesystems from the storage object.
+        storage.filesystems.retain(|fs| {
+            fs.device_id != Some("esp".to_owned()) && fs.device_id != Some("esp1".to_owned())
+        });
+        // Call get_esp_images() and confirm that it returns an empty list.
+        let esp_images = storage.get_esp_images();
+        assert_eq!(esp_images.len(), 0);
+    }
+
+    /// Validates that get_images_from_filesystems() correctly returns a list of images associated
+    /// with the filesystems, based on an optional filter.
+    #[test]
+    fn test_get_images_from_filesystems() {
+        // Initialize a basic Storage object.
+        let storage: Storage = get_storage();
+
+        // Test case #1: Validate that get_images_from_filesystems() correctly returns all images
+        // for non-ESP volumes when no filter is applied. This can be confirmed by calling
+        // get_images().
+        let all_images = storage.get_images_from_filesystems(None::<fn(&BlockDeviceId) -> bool>);
+        let expected_images = vec![
+            (
+                "boot".to_string(),
+                Image {
+                    url: "file:///boot.raw.zst".to_owned(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZst,
+                },
+            ),
+            (
+                "root".to_string(),
+                Image {
+                    url: "file:///root.raw.zst".to_owned(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZst,
+                },
+            ),
+        ];
+        assert_eq!(all_images.len(), 2);
+        assert_eq!(all_images, expected_images);
+
+        // Test case #2: Validate that get_images_from_filesystems() correctly returns when a
+        // filter is applied on device_id.
+        let root_images =
+            storage.get_images_from_filesystems(Some(|device_id: &_| device_id == "root"));
+        assert_eq!(root_images.len(), 1);
+        assert_eq!(
+            root_images,
+            vec![(
+                "root".to_string(),
+                Image {
+                    url: "file:///root.raw.zst".to_owned(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZst,
+                },
+            ),]
+        );
+
+        // Test case #3: Validate that get_images_from_filesystems() correctly returns an empty
+        // list when the filter does not match any filesystems.
+        let no_images =
+            storage.get_images_from_filesystems(Some(|device_id: &_| device_id == "non-existent"));
+        assert_eq!(no_images.len(), 0);
+
+        // Test case #4: Validate that get_images_from_filesystems() correctly returns image 'root'
+        // when the filter is applied to select only A/B volumes. This can be confirmed by calling
+        // get_ab_volume_pair_images().
+        let ab_volume_pair_images = storage.get_ab_volume_pair_images();
+        assert_eq!(root_images.len(), 1);
+        assert_eq!(
+            ab_volume_pair_images,
+            vec![(
+                "root".to_string(),
+                Image {
+                    url: "file:///root.raw.zst".to_owned(),
+                    sha256: ImageSha256::Ignored,
+                    format: ImageFormat::RawZst,
+                },
+            ),]
+        );
+
+        // Test case #5: Validates that when ab_update is None, get_ab_volume_pair_images() should
+        // return an empty list.
+        let mut storage_no_ab_update: Storage = get_storage();
+        storage_no_ab_update.ab_update = None;
+        let ab_volume_pair_images = storage_no_ab_update.get_ab_volume_pair_images();
+        assert_eq!(ab_volume_pair_images.len(), 0);
     }
 }
