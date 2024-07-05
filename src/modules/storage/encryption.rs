@@ -459,9 +459,8 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, EncryptedVolume, Encryption, FileSystemType, ImageFormat, ImageSha256,
-            InternalImage, InternalMountPoint, Partition, PartitionSize, PartitionType, Raid,
-            RaidLevel, SoftwareRaidArray, Storage,
+            Disk, EncryptedVolume, Encryption, FileSystemType, InternalMountPoint, Partition,
+            PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
         },
         constants,
     };
@@ -575,26 +574,6 @@ mod tests {
                     target_id: "srv".to_string(),
                     filesystem: FileSystemType::Ext4,
                     options: vec!["defaults".to_owned()],
-                },
-            ],
-            internal_images: vec![
-                InternalImage {
-                    url: "file:///trident_cdrom/data/esp.rawzst".into(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                    target_id: "esp".to_owned(),
-                },
-                InternalImage {
-                    url: "file:///trident_cdrom/data/root.rawzst".into(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                    target_id: "root".to_owned(),
-                },
-                InternalImage {
-                    url: "file:///trident_cdrom/data/srv.rawzst".into(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                    target_id: "srv".to_owned(),
                 },
             ],
             ab_update: None,

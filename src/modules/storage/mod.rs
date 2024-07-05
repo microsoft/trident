@@ -306,9 +306,8 @@ mod tests {
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk as DiskConfig, FileSystemType, HostConfiguration,
-            ImageFormat, ImageSha256, InternalImage, InternalMountPoint,
-            Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
-            SoftwareRaidArray, Storage as StorageConfig,
+            InternalMountPoint, Partition as PartitionConfig, PartitionSize, PartitionType, Raid,
+            RaidLevel, SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
         status::{BlockDeviceInfo, ServicingState, Storage},
@@ -390,12 +389,6 @@ mod tests {
                     options: vec![],
                     target_id: "part1".to_owned(),
                     path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                }],
-                internal_images: vec![InternalImage {
-                    target_id: "part1".to_owned(),
-                    url: "".to_owned(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
                 }],
                 ab_update: Some(trident_api::config::AbUpdate {
                     volume_pairs: vec![trident_api::config::AbVolumePair {

@@ -137,8 +137,8 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, FileSystemType, HostConfiguration, ImageFormat, ImageSha256, InternalImage,
-            Partition, PartitionSize, PartitionTableType, PartitionType, Storage,
+            Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionTableType,
+            PartitionType, Storage,
         },
         constants::{self, SWAP_MOUNT_POINT},
         status::{
@@ -326,26 +326,6 @@ mod tests {
 
         let host_config = HostConfiguration {
             storage: Storage {
-                internal_images: vec![
-                    InternalImage {
-                        url: "file:///path/to/efi-image".to_owned(),
-                        sha256: ImageSha256::Checksum(
-                            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-                                .to_owned(),
-                        ),
-                        format: ImageFormat::RawZst,
-                        target_id: "efi".into(),
-                    },
-                    InternalImage {
-                        url: "file:///path/to/root-image".to_owned(),
-                        sha256: ImageSha256::Checksum(
-                            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-                                .to_owned(),
-                        ),
-                        format: ImageFormat::RawZst,
-                        target_id: "root".to_owned(),
-                    },
-                ],
                 disks: vec![Disk {
                     id: "os".to_owned(),
                     device: PathBuf::from("/dev/disk/by-bus/foobar"),
