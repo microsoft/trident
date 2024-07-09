@@ -45,24 +45,25 @@ pub fn examine() -> Result<String, Error> {
         .context("Failed to run mdadm examine")
 }
 
-pub fn stop(raid_array_name: &Path) -> Result<(), Error> {
-    info!("Stopping RAID array: {}", raid_array_name.display());
+pub fn stop(raid_array_name: impl AsRef<Path>) -> Result<(), Error> {
+    info!(
+        "Stopping RAID array: {}",
+        raid_array_name.as_ref().display()
+    );
 
-    let mut mdadm_command = Command::new("mdadm");
-    mdadm_command.arg("--stop").arg(raid_array_name);
-
-    let res = mdadm_command
+    if let Err(e) = Command::new("mdadm")
+        .arg("--stop")
+        .arg(raid_array_name.as_ref())
         .run_and_check()
-        .context("Failed to run mdadm stop");
-
-    if let Err(e) = res {
+        .context("Failed to run mdadm stop device")
+    {
         // If stop returns an error, do best effort to log what is holding the
         // block device
-        let block_device = lsblk::run(raid_array_name);
+        let block_device = lsblk::run(raid_array_name.as_ref());
         if let Ok(block_device) = block_device {
             error!(
                 "Failed to stop {}: active children: {:?}, active mount points: {:?}",
-                raid_array_name.display(),
+                raid_array_name.as_ref().display(),
                 block_device.children,
                 block_device.mountpoints
             );
@@ -71,9 +72,96 @@ pub fn stop(raid_array_name: &Path) -> Result<(), Error> {
         // Propagate the original unmount error
         return Err(e.context(format!(
             "Failed to stop RAID array {}",
-            raid_array_name.display()
+            raid_array_name.as_ref().display()
         )));
     }
+
+    Ok(())
+}
+
+/// Marks a device as failed in a RAID array.
+///
+/// This function uses `mdadm --fail` to mark the specified device as failed in
+/// the given RAID array.
+///
+fn fail(device: impl AsRef<Path>) -> Result<(), Error> {
+    info!(
+        "Marking RAID device '{}' as failed",
+        device.as_ref().display()
+    );
+
+    Command::new("mdadm")
+        .arg("--fail")
+        .arg(device.as_ref())
+        .run_and_check()
+        .context("Failed to run mdadm fail device")
+}
+
+/// Removes a device from a RAID array.
+///
+/// This function uses `mdadm --remove` to remove the specified device from the
+/// given RAID array.
+///
+fn remove(device: impl AsRef<Path>) -> Result<(), Error> {
+    info!("Removing RAID device: {}", device.as_ref().display());
+
+    Command::new("mdadm")
+        .arg("--remove")
+        .arg(device.as_ref())
+        .run_and_check()
+        .context("Failed to run mdadm remove device")
+}
+
+/// Adds a device to a RAID array.
+///
+/// This function uses `mdadm --add` to add the specified device to the given RAID array.
+///
+fn add(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), Error> {
+    info!(
+        "Adding RAID device: {} to {}",
+        device.as_ref().display(),
+        raid_path.as_ref().display()
+    );
+
+    Command::new("mdadm")
+        .arg("--add")
+        .arg(raid_path.as_ref())
+        .arg(device.as_ref())
+        .run_and_check()
+        .context("Failed to run mdadm add device")
+}
+
+/// Replaces a device with a new device in the given RAID array.
+///
+/// This function combines `mdadm --fail`, `mdadm --remove`, and `mdadm --add`
+/// to replace a specified device in the given RAID array with a new device. It
+/// first marks the old device as failed, then removes it from the array, and
+/// finally adds the new device to the array.
+///
+pub fn replace(
+    raid_path: impl AsRef<Path>,
+    failed_device: impl AsRef<Path>,
+    new_device: impl AsRef<Path>,
+) -> Result<(), Error> {
+    info!(
+        "Replacing RAID device {} with {} in {}",
+        failed_device.as_ref().display(),
+        new_device.as_ref().display(),
+        raid_path.as_ref().display()
+    );
+
+    fail(failed_device.as_ref()).context(format!(
+        "Failed to mark device '{}' as failed during replacement",
+        failed_device.as_ref().display(),
+    ))?;
+    remove(failed_device.as_ref()).context(format!(
+        "Failed to remove device '{}' during replacement",
+        failed_device.as_ref().display(),
+    ))?;
+    add(raid_path, new_device.as_ref()).context(format!(
+        "Failed to add new device '{}' during replacement",
+        new_device.as_ref().display(),
+    ))?;
 
     Ok(())
 }
@@ -245,5 +333,36 @@ mod tests {
         let expected_details: Vec<MdadmDetail> = [].to_vec();
 
         assert_eq!(details, expected_details);
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+
+    use super::*;
+    use pytest_gen::functional_test;
+    use std::path::PathBuf;
+
+    const NON_EXISTENT_RAID_DEVICE: &str = "/dev/md/non-existent-path";
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_raid_detail_failure() {
+        assert_eq!(
+            self::detail(&PathBuf::from(NON_EXISTENT_RAID_DEVICE))
+                .unwrap_err()
+                .to_string(),
+            "Failed to run mdadm detail"
+        );
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_raid_stop_failure() {
+        assert_eq!(
+            self::stop(PathBuf::from(NON_EXISTENT_RAID_DEVICE))
+                .unwrap_err()
+                .to_string(),
+            format!("Failed to stop RAID array {}", NON_EXISTENT_RAID_DEVICE)
+        );
     }
 }

@@ -647,13 +647,124 @@ mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
 
-    use std::path::PathBuf;
-
+    use const_format::formatcp;
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
+    use std::path::PathBuf;
     use trident_api::config::{
         self, Disk, HostConfiguration, Partition, PartitionSize, PartitionType, RaidLevel,
         SoftwareRaidArray, Storage,
     };
+
+    const DEVICE_ONE: &str = formatcp!("{TEST_DISK_DEVICE_PATH}1");
+    const DEVICE_TWO: &str = formatcp!("{TEST_DISK_DEVICE_PATH}2");
+    const NON_EXISTENT_DEVICE: &str = "/dev/non-existent-path";
+    const RAID_PATH: &str = "/dev/md/some-raid";
+
+    fn stop_if_exists(raid_path: impl AsRef<Path>) {
+        if raid_path.as_ref().exists() {
+            mdadm::stop(raid_path.as_ref()).unwrap();
+        }
+    }
+
+    fn verify_raid_creation(raid_path: impl AsRef<Path>, devices: Vec<PathBuf>) {
+        let raid_devices = mdadm::detail(raid_path.as_ref()).unwrap();
+        // Check if the RAID array was created on the specified devices
+        assert_eq!(raid_devices.devices.len(), devices.len());
+        for (i, device) in devices.iter().enumerate() {
+            assert_eq!(&raid_devices.devices[i], device);
+        }
+    }
+
+    fn raid_cleanup_and_create_partitions() {
+        let mut host_status = HostStatus {
+            spec: HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "disk".to_string(),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        partitions: vec![
+                            Partition {
+                                id: "root-a".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                            Partition {
+                                id: "root-b".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: PartitionSize::from_str("1G").unwrap(),
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    raid: config::Raid {
+                        software: vec![SoftwareRaidArray {
+                            id: "raid_array".into(),
+                            name: "md0".into(),
+                            devices: vec!["root-a".to_string(), "root-b".to_string()],
+                            level: RaidLevel::Raid1,
+                        }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let spec = &host_status.spec.clone();
+        let err = storage::raid::stop_pre_existing_raid_arrays(spec);
+        assert!(err.is_ok());
+
+        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        assert!(err.is_ok());
+    }
+
+    #[functional_test]
+    fn test_raid_create_success() {
+        raid_cleanup_and_create_partitions();
+        let raid_path = PathBuf::from(RAID_PATH);
+        let devices = [PathBuf::from(DEVICE_ONE), PathBuf::from(DEVICE_TWO)].to_vec();
+
+        mdadm::create(&raid_path, &RaidLevel::Raid1, devices.clone()).unwrap();
+        verify_raid_creation(&raid_path, devices);
+
+        stop_if_exists(&raid_path);
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_raid_create_failure() {
+        raid_cleanup_and_create_partitions();
+        let raid_path = PathBuf::from(RAID_PATH);
+
+        let devices = [
+            PathBuf::from(DEVICE_ONE),
+            PathBuf::from(NON_EXISTENT_DEVICE),
+        ]
+        .to_vec();
+
+        assert_eq!(
+            mdadm::create(&raid_path, &RaidLevel::Raid1, devices,)
+                .unwrap_err()
+                .to_string(),
+            "Failed to run mdadm create"
+        );
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_raid_create_one_partition_failure() {
+        raid_cleanup_and_create_partitions();
+        let raid_path = PathBuf::from(RAID_PATH);
+
+        let devices = [PathBuf::from(DEVICE_ONE)].to_vec();
+
+        assert_eq!(
+            mdadm::create(&raid_path, &RaidLevel::Raid1, devices.clone())
+                .unwrap_err()
+                .to_string(),
+            "Failed to run mdadm create"
+        );
+    }
 
     #[functional_test]
     fn test_raid_creation_without_sync_timeout() {
