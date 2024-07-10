@@ -42,7 +42,7 @@ steps:
         --define="trident_version $full_version" \
         --define="rpm_ver $version" \
         --define="rpm_rel $prerelease"
-    displayName: Build RPM
+    displayName: Build RPMs
 
   - task: CopyFiles@2
     inputs:

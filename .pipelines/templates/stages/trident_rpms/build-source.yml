@@ -71,3 +71,25 @@ stages:
         steps:
           - template: ../common_tasks/download-emu.yml
           - template: release.yml
+
+      - job: BuildTrident3
+        displayName: Build Trident 3.0 RPMs
+        pool:
+          type: linux
+
+        variables:
+          - name: ob_artifactBaseName
+            value: ${{ parameters.tridentArtifactName }}3
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/out"
+          - name: emu_package_name
+            value: ""
+          - name: emu_package_version
+            value: ""
+          - template: common/setup-registries-vars-template.yaml@platform-pipelines
+            parameters:
+              buildType: auto
+
+        steps:
+          - template: ../common_tasks/download-emu.yml
+          - template: release3.yml

@@ -23,8 +23,6 @@ variables:
   # ROOT: $(Build.SourcesDirectory)
   # REPOROOT: $(Build.SourcesDirectory)
   # OUTPUTROOT: $(REPOROOT)\out
-  - name: LinuxContainerImage
-    value: "mcr.microsoft.com/onebranch/cbl-mariner/build:2.0" # Docker image which is used to build the project https://aka.ms/obpipelines/containers
   - name: DEBIAN_FRONTEND
     value: noninteractive
 

@@ -20,7 +20,7 @@ pub struct GrubConfig {
 
 // Match a full line, capture group 1 is the white space prefix ending with
 // `linux `, capture group 2 is the suffix including all the arguments.
-const LINUX_COMMAND_LINE_PATTERN: &str = r"(?m)^(\s*linux )(.+)$";
+const LINUX_COMMAND_LINE_PATTERN: &str = r"(?m)^(\s*linux\s)(.+)$";
 
 impl GrubConfig {
     /// Load grub.cfg from a disk.
@@ -258,19 +258,25 @@ impl GrubConfig {
     /// Update the search command in the GRUB config.
     pub fn update_search(&mut self, uuid: &Uuid) -> Result<(), Error> {
         let re = Regex::new(r"(?m)^(\s*)search -n -u [\w-]+ -s$").unwrap();
+        let re2 = Regex::new(r"(?m)^(\s*)search --no-floppy --fs-uuid --set=root [\w-]+$").unwrap();
 
-        if !re.is_match(&self.contents) {
+        if re.is_match(&self.contents) {
+            self.contents = re
+                .replace(&self.contents, &format!("${{1}}search -n -u {uuid} -s"))
+                .to_string();
+        } else if re2.is_match(&self.contents) {
+            self.contents = re2
+                .replace(
+                    &self.contents,
+                    &format!("${{1}}search --no-floppy --fs-uuid --set=root {uuid}"),
+                )
+                .to_string();
+        } else {
             bail!(
                 "Unable to find search command in '{}'",
                 &self.path.display()
             )
         }
-
-        let file_content = re
-            .replace(&self.contents, &format!("${{1}}search -n -u {} -s", uuid))
-            .to_string();
-
-        self.contents = file_content;
 
         Ok(())
     }

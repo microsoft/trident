@@ -1,0 +1,32 @@
+FROM azurelinuxpreview.azurecr.io/public/azurelinux/base/core:3.0
+
+RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed ca-certificates perl build-essential
+
+WORKDIR /work
+
+COPY trident.spec .
+COPY systemd ./systemd
+COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
+COPY trident-selinuxpolicies.cil /usr/src/azl/SOURCES/trident-selinuxpolicies.cil
+
+COPY build.rs .
+COPY Cargo.toml .
+COPY Cargo.lock .
+COPY src ./src
+COPY osutils ./osutils
+COPY trident_api ./trident_api
+COPY setsail ./setsail
+COPY pytest ./pytest
+COPY pytest_gen ./pytest_gen
+COPY docbuilder ./docbuilder
+
+ARG TRIDENT_VERSION=dev-build
+ARG RPM_VER=0.1.0
+ARG RPM_REL=1
+
+RUN \
+    rpmbuild -bb --build-in-place trident.spec \
+    --define="trident_version $TRIDENT_VERSION" \
+    --define="rpm_ver $RPM_VER" \
+    --define="rpm_rel $RPM_REL" && \
+    tar -czvf trident-rpms.tar.gz -C /usr/src/azl ./RPMS

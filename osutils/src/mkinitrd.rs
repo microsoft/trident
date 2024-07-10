@@ -1,15 +1,26 @@
-use std::process::Command;
+use std::{path::Path, process::Command};
 
 use trident_api::error::{ManagementError, ReportError, TridentError};
 
 use crate::exe::RunAndCheck;
 
-/// Execute mkinitrd wrapper script of dracut, to generate initrd with the
-/// default configuration
+/// Generate a new initrd image using either mkinitrd or dracut.
+///
+/// If mkinitrd is available, it will be used. Azl 3.0 doesn't have mkinitrd anymore, so dracut is
+/// used instead.
 pub fn execute() -> Result<(), TridentError> {
-    Command::new("mkinitrd")
-        .run_and_check()
-        .structured(ManagementError::RegenerateInitrd)
+    if Path::new("/usr/bin/mkinitrd").exists() {
+        Command::new("mkinitrd")
+            .run_and_check()
+            .structured(ManagementError::RegenerateInitrd)
+    } else {
+        Command::new("dracut")
+            .arg("--force")
+            .arg("--regenerate-all")
+            .arg("--zstd")
+            .run_and_check()
+            .structured(ManagementError::RegenerateInitrd)
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -29,13 +40,11 @@ mod functional_test {
 
         execute().unwrap();
 
-        // some should have been created
+        // Some initrd should have been created
         let initrd_path = glob::glob("/boot/initrd.img-*").unwrap().next();
         assert!(initrd_path.is_some());
 
-        // and the filename should match the original, if we can find t
-        // original; making it conditional in case it was missing in the first
-        // place, possibly due to failure in a test that makes changes to the initrd
+        // And the filename should match the original, if it previously existed
         if let Some(original) = original {
             let initrd_path = initrd_path.unwrap().unwrap();
             assert_eq!(original.as_ref().unwrap(), &initrd_path);

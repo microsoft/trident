@@ -58,7 +58,7 @@ impl EfiBootManagerOutput {
                     }
                 }
             } else if line.starts_with("Boot") {
-                let re = Regex::new(r"^Boot([0-9a-fA-F]{4})(\*?) (.+)$").unwrap();
+                let re = Regex::new(r"^Boot([0-9a-fA-F]{4})(\*?) ([^\t]+)\t?").unwrap();
                 let captures = re.captures(line.trim());
                 if let Some(captures) = captures {
                     let key = captures
@@ -399,6 +399,20 @@ mod tests {
             bootmgr_output.get_entries_with_label("TestBoot").unwrap(),
             expected_boot_entries
         );
+    }
+
+    #[test]
+    fn test_get_boot_entries_azl3() {
+        let sample_output = indoc! {r"
+            BootCurrent: 0001
+            Timeout: 0 seconds
+            BootOrder: 0001,0000,0002
+            Boot0000* UiApp FvVol(7cb8bdc9-f8eb-4f34-aaea-3ee4af6516a1)/FvFile(462caa21-7614-4503-836e-8ab6f4662331)
+            Boot0001* UEFI QEMU DVD-ROM QM00001     PciRoot(0x0)/Pci(0x1f,0x2)/Sata(0,65535,0){auto_created_boot_option}
+            Boot0002* EFI Internal Shell    FvVol(7cb8bdc9-f8eb-4f34-aaea-3ee4af6516a1)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
+            Boot0003* AZLA  HD(1,GPT,34f24d87-f5dd-4194-bdcb-72a41e1361b3,0x800,0x200000)/\EFI\AZLA\bootx64.efi
+        "};
+        EfiBootManagerOutput::parse_efibootmgr_output(sample_output).unwrap();
     }
 }
 

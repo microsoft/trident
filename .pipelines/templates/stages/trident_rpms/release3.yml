@@ -1,0 +1,41 @@
+steps:
+  - script: |
+      set -eux
+      TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit)
+      echo "##vso[task.setvariable variable=trident_version]$TRIDENT_VERSION"
+    displayName: "Setting trident version"
+
+  ### This task is redundant with the copy in release.yml
+  # - task: onebranch.pipeline.version@1
+  #   displayName: "Set build number"
+  #   inputs:
+  #     system: "Custom"
+  #     customVersion: $(trident_version)
+
+  - script: sudo tdnf install -y moby-buildx
+    displayName: Install native dependencies
+    retryCountOnTaskFailure: 3
+
+  - script: |
+      set -eux
+      full_version=$(trident_version)
+
+      # Separate into version and prerelease identifier
+      # for the RPM build.
+      version=$(echo $full_version | cut -d'-' -f1)
+      prerelease=$(echo $full_version | cut -d'-' -f2-)
+
+      docker build -f Dockerfile.full -t trident/trident-build:latest \
+        --build-arg TRIDENT_VERSION="$full_version" \
+        --build-arg RPM_VER="$version"\
+        --build-arg RPM_REL="$prerelease"\
+        .
+
+      id=$(docker create trident/trident-build:latest) && \
+        docker cp -q $id:/work/trident-rpms.tar.gz . && \
+        docker rm -v $id
+
+      mkdir -p $(ob_outputDirectory)/3.0-rpms
+      tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory)/3.0-rpms --strip-components=3
+
+    displayName: Build RPMs

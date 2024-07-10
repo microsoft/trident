@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{bail, Context, Error};
 use log::debug;
-use osutils::{blkid, grub::GrubConfig};
+use osutils::{blkid, exe::RunAndCheck, grub::GrubConfig, osrelease};
 use trident_api::{
     config::{FileSystemType, SelinuxMode},
     constants::{
@@ -92,16 +92,25 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     let selinux_mode = host_status.spec.os.selinux.mode;
 
     // Update GRUB config on the boot device (volume holding /boot)
-    update_grub_config_boot(
-        &boot_grub_config_path,
-        &boot_uuid,
-        &root_device_path,
-        selinux_mode,
-    )
-    .context(format!(
-        "Failed to update GRUB config at path '{}'",
-        boot_grub_config_path.display()
-    ))?;
+    if osrelease::is_azl2().unwrap_or(false) {
+        update_grub_config_boot(
+            &boot_grub_config_path,
+            &boot_uuid,
+            &root_device_path,
+            selinux_mode,
+        )
+        .context(format!(
+            "Failed to update GRUB config at path '{}'",
+            boot_grub_config_path.display()
+        ))?;
+    } else {
+        std::process::Command::new("bash")
+            .arg("-c")
+            .arg(format!("grub2-mkconfig > /{GRUB2_CONFIG_RELATIVE_PATH}"))
+            .run_and_check()
+            .context(format!("Failed to update GRUB config at path '/{GRUB2_CONFIG_RELATIVE_PATH}' with mkconfig"))?;
+    }
+
     let esp_efi_dir_path = Path::new(ESP_MOUNT_POINT_PATH).join(ESP_EFI_DIRECTORY);
     let mut bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_A);
     //Check if hoststatus has ab_update and update the grub config for the inactive volume
