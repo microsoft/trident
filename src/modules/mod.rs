@@ -826,6 +826,9 @@ pub fn reboot() -> Result<(), TridentError> {
     // Sync all writes to the filesystem.
     nix::unistd::sync();
 
+    // This trace event will be used with the trident_start event to track the
+    // total time taken for the reboot
+    tracing::info!(metric_name = "trident_system_reboot");
     info!("Rebooting system");
     Command::new("systemctl")
         .env("SYSTEMD_IGNORE_CHROOT", "true")

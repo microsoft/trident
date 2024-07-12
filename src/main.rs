@@ -113,6 +113,10 @@ fn run_trident(
         let mut trident = trident::Trident::new(args.config.clone(), logstream, tracestream)
             .unstructured("Failed to initialize trident")?;
 
+        // After initialization, create a trace event for the purpose of
+        // measuring Trident reboot times
+        tracing::info!(metric_name = "trident_start");
+
         match &args.command {
             Commands::Run(args) => {
                 let res = trident.run();
