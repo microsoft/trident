@@ -16,10 +16,7 @@ use osutils::{
     veritysetup,
 };
 use trident_api::{
-    config::{
-        AbUpdate, FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat,
-        ImageSha256,
-    },
+    config::{AbUpdate, HostConfiguration, Image, ImageFormat, ImageSha256},
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     error::TridentResultExt,
     status::{AbVolumeSelection, BlockDeviceContents, HostStatus, ServicingType},
@@ -302,23 +299,6 @@ fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
     ))
 }
 
-/// Checks if block device corresponding to device_id is ESP partition. This func assumes that disk
-/// always contains a stand-alone ESP partition that is not part of an A/B volume pair. This func
-/// takes two arg-s:
-/// 1. host_status, which is a reference to HostStatus object.
-/// 2. device_id, which is id of the block device.
-pub(super) fn is_esp(host_status: &HostStatus, device_id: &BlockDeviceId) -> bool {
-    host_status
-        .spec
-        .storage
-        .filesystems
-        .iter()
-        .find(|fs| fs.device_id.as_ref() == Some(device_id))
-        .map_or(false, |fs| {
-            fs.fs_type == FileSystemType::Vfat && matches!(fs.source, FileSystemSource::EspImage(_))
-        })
-}
-
 pub(super) fn refresh_host_status(
     host_status: &mut HostStatus,
     clean_install: bool,
@@ -597,8 +577,9 @@ mod tests {
 
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemType, Image, ImageSha256,
-            MountOptions, MountPoint, Partition, PartitionType, Storage as StorageConfig,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType, Image,
+            ImageSha256, MountOptions, MountPoint, Partition, PartitionType,
+            Storage as StorageConfig,
         },
         status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
     };

@@ -17,7 +17,7 @@ pub use host::{
             FileSystem, FileSystemSource, FileSystemType, MountOptions, MountPoint, MountPointInfo,
             VerityFileSystem,
         },
-        internal::{InternalImage, InternalMountPoint, InternalVerityDevice},
+        internal::{InternalMountPoint, InternalVerityDevice},
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
         Storage,

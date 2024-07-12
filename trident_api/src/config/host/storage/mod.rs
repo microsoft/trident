@@ -37,7 +37,7 @@ use self::{
     encryption::Encryption,
     filesystem::{FileSystem, MountPointInfo, VerityFileSystem},
     imaging::{AbUpdate, Image},
-    internal::{InternalImage, InternalMountPoint, InternalVerityDevice},
+    internal::{InternalMountPoint, InternalVerityDevice},
     partitions::Partition,
     raid::Raid,
 };
@@ -78,12 +78,6 @@ pub struct Storage {
     /// Used internally by Trident-Core.
     #[serde(skip)]
     pub internal_mount_points: Vec<InternalMountPoint>,
-
-    /// Old API for images.
-    ///
-    /// Used internally by Trident-Core.
-    #[serde(skip)]
-    pub internal_images: Vec<InternalImage>,
 
     /// Old API for verity devices.
     ///
@@ -440,16 +434,18 @@ impl Storage {
         self.get_images_from_filesystems(None::<fn(&BlockDeviceId) -> bool>)
     }
 
+    /// Returns a list of block device IDs that correspond to the A/B volume pairs.
+    pub fn get_ab_volume_pair_ids(&self) -> HashSet<BlockDeviceId> {
+        self.ab_update
+            .as_ref()
+            .map(|ab| ab.volume_pairs.iter().map(|p| p.id.clone()).collect())
+            .unwrap_or_default()
+    }
+
     /// Returns a list of tuples (device ID, image) that represent images that need to be deployed onto
     /// A/B volume pairs, based on the host configuration.
     pub fn get_ab_volume_pair_images(&self) -> Vec<(BlockDeviceId, Image)> {
-        let ab_volume_pair_ids: HashSet<_> = self
-            .ab_update
-            .as_ref()
-            .map(|ab| ab.volume_pairs.iter())
-            .unwrap_or_default()
-            .map(|p| &p.id)
-            .collect();
+        let ab_volume_pair_ids: HashSet<_> = self.get_ab_volume_pair_ids();
 
         // Return early if there are no A/B volume pairs
         if ab_volume_pair_ids.is_empty() {
@@ -464,7 +460,7 @@ impl Storage {
 
     /// Returns a list of tuples (device ID, image) that represent the ESP images on the ESP
     /// partitions.
-    pub fn get_esp_images(&self) -> Vec<(String, Image)> {
+    pub fn get_esp_images(&self) -> Vec<(BlockDeviceId, Image)> {
         self.filesystems
             .iter()
             .filter_map(|fs| fs.device_id.clone().zip(fs.source.esp_image().cloned()))
@@ -2708,7 +2704,7 @@ mod tests {
 
         // Test case #4: Validate that get_images_from_filesystems() correctly returns image 'root'
         // when the filter is applied to select only A/B volumes. This can be confirmed by calling
-        // get_ab_volume_pair_images().
+        // get_ab_volume_pair_images() and get_ab_volume_pair_ids().
         let ab_volume_pair_images = storage.get_ab_volume_pair_images();
         assert_eq!(root_images.len(), 1);
         assert_eq!(
@@ -2722,12 +2718,20 @@ mod tests {
                 },
             ),]
         );
+        let ab_volume_pair_ids = storage.get_ab_volume_pair_ids();
+        assert_eq!(ab_volume_pair_ids.len(), 1);
+        assert_eq!(
+            ab_volume_pair_ids,
+            HashSet::from_iter(vec!["root".to_string()])
+        );
 
-        // Test case #5: Validates that when ab_update is None, get_ab_volume_pair_images() should
-        // return an empty list.
+        // Test case #5: Validates that when ab_update is None, get_ab_volume_pair_images() and
+        // get_ab_volume_pair_ids() should return an empty list.
         let mut storage_no_ab_update: Storage = get_storage();
         storage_no_ab_update.ab_update = None;
         let ab_volume_pair_images = storage_no_ab_update.get_ab_volume_pair_images();
         assert_eq!(ab_volume_pair_images.len(), 0);
+        let ab_volume_pair_ids = storage_no_ab_update.get_ab_volume_pair_ids();
+        assert_eq!(ab_volume_pair_ids.len(), 0);
     }
 }

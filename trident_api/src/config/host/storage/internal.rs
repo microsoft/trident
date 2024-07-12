@@ -2,11 +2,7 @@ use std::path::PathBuf;
 
 use log::trace;
 
-use crate::{
-    config::{FileSystemSource, FileSystemType, ImageFormat, ImageSha256},
-    misc::IdGenerator,
-    BlockDeviceId,
-};
+use crate::{config::FileSystemType, misc::IdGenerator, BlockDeviceId};
 
 use super::Storage;
 
@@ -56,23 +52,6 @@ pub struct InternalMountPoint {
     pub target_id: BlockDeviceId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InternalImage {
-    /// The URL of the image.
-    ///
-    /// Supported schemes are: `file`, `http`, and `https`.
-    pub url: String,
-
-    /// The SHA256 checksum of the compressed image.
-    pub sha256: ImageSha256,
-
-    /// The format of the image.
-    pub format: ImageFormat,
-
-    /// The ID of the partition that will be used to store the image.
-    pub target_id: BlockDeviceId,
-}
-
 impl Storage {
     /// Populate internal storage configuration.
     ///
@@ -88,25 +67,12 @@ impl Storage {
     /// - `verity_filesystems`
     pub fn populate_internal(&mut self) {
         // Clear any previous internal configuration
-        self.internal_images.clear();
         self.internal_mount_points.clear();
         self.internal_verity.clear();
 
         // First, go over all filesystems
         self.filesystems.iter().for_each(|fs| {
             let device_id = fs.device_id.as_deref().unwrap_or_default();
-
-            match &fs.source {
-                FileSystemSource::Image(img) | FileSystemSource::EspImage(img) => {
-                    self.internal_images.push(InternalImage {
-                        url: img.url.clone(),
-                        sha256: img.sha256.clone(),
-                        format: img.format.clone(),
-                        target_id: device_id.to_string(),
-                    });
-                }
-                FileSystemSource::Create | FileSystemSource::Adopted => {}
-            }
 
             if let Some(mp) = fs.mount_point.as_ref() {
                 self.internal_mount_points.push(InternalMountPoint {
@@ -140,20 +106,6 @@ impl Storage {
                 hash_target_id: vfs.hash_device_id.clone(),
             });
 
-            self.internal_images.push(InternalImage {
-                url: vfs.data_image.url.clone(),
-                sha256: vfs.data_image.sha256.clone(),
-                format: vfs.data_image.format.clone(),
-                target_id: vfs.data_device_id.clone(),
-            });
-
-            self.internal_images.push(InternalImage {
-                url: vfs.hash_image.url.clone(),
-                sha256: vfs.hash_image.sha256.clone(),
-                format: vfs.hash_image.format.clone(),
-                target_id: vfs.hash_device_id.clone(),
-            });
-
             self.internal_mount_points.push(InternalMountPoint {
                 path: vfs.mount_point.path.clone(),
                 filesystem: vfs.fs_type,
@@ -162,7 +114,6 @@ impl Storage {
             });
         }
 
-        trace!("Internal image configuration:\n{:#?}", self.internal_images);
         trace!(
             "Internal mount point configuration:\n{:#?}",
             self.internal_mount_points
@@ -177,7 +128,10 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{FileSystem, Image, MountOptions, MountPoint, VerityFileSystem},
+        config::{
+            FileSystem, FileSystemSource, Image, ImageFormat, ImageSha256, MountOptions,
+            MountPoint, VerityFileSystem,
+        },
         constants::SWAP_MOUNT_POINT,
     };
 
@@ -203,16 +157,6 @@ mod tests {
         };
 
         storage.populate_internal();
-
-        assert_eq!(
-            storage.internal_images,
-            vec![InternalImage {
-                url: "file:///path/to/image".to_string(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-                target_id: "/dev/sda1".to_string(),
-            }]
-        );
 
         assert_eq!(
             storage.internal_mount_points,
@@ -243,8 +187,6 @@ mod tests {
         };
 
         storage.populate_internal();
-
-        assert!(storage.internal_images.is_empty());
 
         assert_eq!(
             storage.internal_mount_points,
@@ -277,16 +219,6 @@ mod tests {
 
         storage.populate_internal();
 
-        assert_eq!(
-            storage.internal_images,
-            vec![InternalImage {
-                url: "file:///path/to/image".to_string(),
-                sha256: ImageSha256::Ignored,
-                format: ImageFormat::RawZst,
-                target_id: "/dev/sda1".to_string(),
-            }]
-        );
-
         assert!(storage.internal_mount_points.is_empty());
 
         assert!(storage.verity_filesystems.is_empty());
@@ -305,8 +237,6 @@ mod tests {
         };
 
         storage.populate_internal();
-
-        assert!(storage.internal_images.is_empty());
 
         assert_eq!(
             storage.internal_mount_points,
@@ -337,8 +267,6 @@ mod tests {
         };
 
         storage.populate_internal();
-
-        assert!(storage.internal_images.is_empty());
 
         assert_eq!(
             storage.internal_mount_points,
@@ -371,8 +299,6 @@ mod tests {
         };
 
         storage.populate_internal();
-
-        assert!(storage.internal_images.is_empty());
 
         assert_eq!(
             storage.internal_mount_points,
@@ -418,24 +344,6 @@ mod tests {
         };
 
         storage.populate_internal();
-
-        assert_eq!(
-            storage.internal_images,
-            vec![
-                InternalImage {
-                    url: "file:///path/to/data/image".to_string(),
-                    sha256: ImageSha256::Checksum("aaaa".into()),
-                    format: ImageFormat::RawZst,
-                    target_id: "/dev/sda1".to_string(),
-                },
-                InternalImage {
-                    url: "file:///path/to/hash/image".to_string(),
-                    sha256: ImageSha256::Ignored,
-                    format: ImageFormat::RawZst,
-                    target_id: "/dev/sda2".to_string(),
-                },
-            ]
-        );
 
         assert_eq!(
             storage.internal_mount_points,
