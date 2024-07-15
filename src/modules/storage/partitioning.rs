@@ -7,7 +7,8 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace};
 
 use osutils::{
-    block_devices, lsblk,
+    block_devices::{get_resolved_disks, ResolvedDisk},
+    lsblk,
     partition_types::DiscoverablePartitionType,
     repart::{RepartEmptyMode, RepartPartition, RepartPartitionEntry, SystemdRepartInvoker},
     sfdisk::{SfDisk, SfPartition},
@@ -19,22 +20,6 @@ use trident_api::{
     BlockDeviceId,
 };
 
-struct ResolvedDisk<'a> {
-    /// Shortcut to the disk id.
-    id: &'a str,
-
-    /// Reference to the disk configuration.
-    spec: &'a Disk,
-
-    /// Path to the disk in /dev.
-    /// Will probably be used in the future.
-    #[allow(dead_code)]
-    dev_path: PathBuf,
-
-    /// Path to the disk in /dev/disk/by-path.
-    bus_path: PathBuf,
-}
-
 /// Given a host configuration, adopt and create partitions on the disks.
 #[tracing::instrument(skip_all)]
 pub fn create_partitions(
@@ -42,32 +27,7 @@ pub fn create_partitions(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     // Resolve the disk paths to ensure that all disks in the configuration exist.
-    let resolved_disks = host_config
-        .storage
-        .disks
-        .iter()
-        .map(|disk| {
-            // Find the real path of the disk in /dev.
-            let dev_path = disk.device.canonicalize().context(format!(
-                "Failed to lookup device '{}'",
-                disk.device.display()
-            ))?;
-
-            // Find the symlink path of the disk in /dev/disk/by-path.
-            let bus_path = block_devices::block_device_by_path(&dev_path).context(format!(
-                "Failed to find bus path of '{}'",
-                dev_path.display()
-            ))?;
-
-            Ok(ResolvedDisk {
-                id: &disk.id,
-                spec: disk,
-                dev_path,
-                bus_path,
-            })
-        })
-        .collect::<Result<Vec<_>, Error>>()
-        .context("Failed to resolve disk paths")?;
+    let resolved_disks = get_resolved_disks(host_config).context("Failed to resolve disk paths")?;
 
     // Do a non-destructive first pass of adoption to detect any issues before
     // we start making changes.
@@ -114,6 +74,23 @@ pub fn create_partitions(
                 contents: BlockDeviceContents::Unknown,
             },
         );
+
+        // Get disk UUID from osuuid
+        match disk_information.id.as_uuid() {
+            Some(disk_uuid) => {
+                // Update the host status with disk UUID to disk ID mapping
+                host_status
+                    .storage
+                    .disk_uuid_id_map
+                    .insert(disk_uuid, disk.id.into());
+            }
+            None => {
+                debug!(
+                    "Expected UUID but found Osuuid::Relaxed {} for disk ID {}",
+                    disk_information.id, disk.id,
+                );
+            }
+        }
 
         // Perform checks for all partitions.
         for repart_partition in repart_partitions.iter() {

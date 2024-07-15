@@ -3,6 +3,7 @@ use std::{
     path::Path,
 };
 
+use blkdev_graph::types::BlkDevNode;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
@@ -92,6 +93,23 @@ impl Storage {
             .iter()
             .flat_map(|d| d.partitions.iter())
             .find(|p| &p.id == id)
+    }
+
+    /// Verifies if the partition is a raw partition. A raw partition is one that
+    /// does not contain a filesystem or verity-filesystem, and is not part of any
+    /// RAID array or encryption volume.
+    pub fn is_raw_partition(
+        &self,
+        nodes: &BTreeMap<String, BlkDevNode>,
+        partition_id: &BlockDeviceId,
+    ) -> bool {
+        if let Some(node) = nodes.get(partition_id) {
+            if node.dependents.is_empty() && node.targets.is_empty() && node.filesystem.is_none() {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn build_graph(&self) -> Result<BlockDeviceGraph<'_>, BlockDeviceGraphBuildError> {

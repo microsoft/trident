@@ -35,3 +35,4 @@ storage:
       contents: initialized
   abActiveVolume: volume-a
   rootDevicePath: /dev/sda2
+  diskUuidIdMap: {placeholder: placeholder}

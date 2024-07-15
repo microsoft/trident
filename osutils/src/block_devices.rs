@@ -5,8 +5,56 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use trident_api::config::{Disk, HostConfiguration};
 
 use crate::lsblk;
+
+pub struct ResolvedDisk<'a> {
+    /// Shortcut to the disk id.
+    pub id: &'a str,
+
+    /// Reference to the disk configuration.
+    pub spec: &'a Disk,
+
+    /// Path to the disk in /dev.
+    /// Will probably be used in the future.
+    #[allow(dead_code)]
+    pub dev_path: PathBuf,
+
+    /// Path to the disk in /dev/disk/by-path.
+    pub bus_path: PathBuf,
+}
+
+/// Resolves the disk paths in the host configuration to their real paths in
+/// /dev.
+pub fn get_resolved_disks(host_config: &HostConfiguration) -> Result<Vec<ResolvedDisk>, Error> {
+    host_config
+        .storage
+        .disks
+        .iter()
+        .map(|disk| {
+            // Find the real path of the disk in /dev.
+            let dev_path = disk.device.canonicalize().context(format!(
+                "Failed to lookup device '{}'",
+                disk.device.display()
+            ))?;
+
+            // Find the symlink path of the disk in /dev/disk/by-path.
+            let bus_path = block_device_by_path(&dev_path).context(format!(
+                "Failed to find bus path of '{}'",
+                dev_path.display()
+            ))?;
+
+            Ok(ResolvedDisk {
+                id: &disk.id,
+                spec: disk,
+                dev_path,
+                bus_path,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()
+        .context("Failed to resolve disk paths")
+}
 
 /// Retrieves the symlink for a given block device in '/dev/disk/by-path'.
 pub fn block_device_by_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {

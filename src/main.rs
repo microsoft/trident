@@ -8,6 +8,7 @@ use trident::{BackgroundLog, Logstream, MultiLogger, TraceStream};
 
 use trident_api::error::TridentResultExt;
 
+mod rebuild;
 mod validation;
 
 #[derive(Parser, Debug)]
