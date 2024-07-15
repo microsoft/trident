@@ -62,15 +62,6 @@ mod kexec;
 mod mount_root;
 pub mod selinux;
 
-/// Bootentry name for A images
-const BOOT_ENTRY_A: &str = "AZLA";
-
-/// Bootentry name for B images
-const BOOT_ENTRY_B: &str = "AZLB";
-
-/// Boot efi executable
-const BOOT64_EFI: &str = "bootx64.efi";
-
 trait Module: Send {
     fn name(&self) -> &'static str;
 

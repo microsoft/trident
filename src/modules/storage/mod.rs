@@ -22,7 +22,7 @@ use tabfile::DEFAULT_FSTAB_PATH;
 mod encryption;
 mod filesystem;
 pub mod image;
-mod partitioning;
+pub mod partitioning;
 pub mod raid;
 pub mod tabfile;
 mod verity;

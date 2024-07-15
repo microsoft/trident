@@ -4,10 +4,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use trident_api::config::{Disk, HostConfiguration};
 
-use crate::lsblk;
+use crate::lsblk::{self, BlockDeviceType};
 
 pub struct ResolvedDisk<'a> {
     /// Shortcut to the disk id.
@@ -62,42 +62,57 @@ pub fn block_device_by_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
 }
 
 /// Returns the path of the first symlink in directory whose canonical path is target.
-pub fn find_symlink_for_target(target: &Path, directory: &Path) -> Result<PathBuf, Error> {
+pub fn find_symlink_for_target(
+    target: impl AsRef<Path>,
+    directory: impl AsRef<Path>,
+) -> Result<PathBuf, Error> {
     // Ensure that target path is canonicalized
-    let target_canonicalized = target.canonicalize().context(format!(
+    let target_canonicalized = target.as_ref().canonicalize().context(format!(
         "Failed to canonicalize target path '{}'",
-        target.display()
+        target.as_ref().display()
     ))?;
 
-    fs::read_dir(directory)?
+    fs::read_dir(directory.as_ref())?
         .flatten()
-        .filter_map(|f| {
-            if let Ok(target_path) = f.path().canonicalize() {
-                if target_path == target_canonicalized {
-                    return Some(f.path());
-                }
-            }
-            None
+        .filter(|f| {
+            f.file_type()
+                .ok()
+                .map(|t| t.is_symlink())
+                .unwrap_or_default()
+        })
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.canonicalize()
+                .map(|p| target_canonicalized == p)
+                .unwrap_or_default()
         })
         .min()
-        .context(format!("Failed to find symlink for '{}'", target.display()))
+        .context(format!(
+            "Failed to find symlink for '{}' in directory '{}'",
+            target.as_ref().display(),
+            directory.as_ref().display()
+        ))
 }
 
 /// Get the canonicalized path of a disk for a given partition.
-pub fn get_disk_for_partition(partition: &Path) -> Result<PathBuf, Error> {
-    let partition_block_device =
-        lsblk::run(partition).context("Failed to get partition metadata")?;
+pub fn get_disk_for_partition(partition: impl AsRef<Path>) -> Result<PathBuf, Error> {
+    let partition_block_device = lsblk::run(partition.as_ref()).with_context(|| {
+        format!(
+            "Failed to get partition metadata for '{}'",
+            partition.as_ref().display(),
+        )
+    })?;
 
-    let parent_kernel_name =
-        &partition_block_device
-            .parent_kernel_name
-            .as_ref()
-            .context(format!(
-                "Failed to get disk for partition: {:?}, pk_name not found",
-                partition
-            ))?;
+    ensure!(
+        partition_block_device.blkdev_type == BlockDeviceType::Partition,
+        "Device '{}' is not a partition",
+        partition.as_ref().display()
+    );
 
-    Ok(PathBuf::from(parent_kernel_name))
+    partition_block_device.parent_kernel_name.context(format!(
+        "Failed to get disk for partition: {:?}, pk_name not found",
+        partition.as_ref().display()
+    ))
 }
 
 /// Check if a device can be stopped. A device can be stopped if it only uses
@@ -158,15 +173,8 @@ mod test {
 
         Ok(())
     }
-}
 
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-    use pytest_gen::functional_test;
-
-    #[functional_test(feature = "helpers")]
+    #[test]
     fn test_find_symlink_for_target() {
         let temp_dir = tempfile::tempdir().unwrap();
         let target = temp_dir.path().canonicalize().unwrap();
@@ -186,7 +194,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "helpers", negative = true)]
+    #[test]
     fn test_find_symlink_for_target_fail_no_symlink() {
         // Return error if no symlink found
         let temp_dir = tempfile::tempdir().unwrap();
@@ -196,11 +204,15 @@ mod functional_test {
             find_symlink_for_target(&target, temp_dir2.path())
                 .unwrap_err()
                 .to_string(),
-            format!("Failed to find symlink for '{}'", target.display())
+            format!(
+                "Failed to find symlink for '{}' in directory '{}'",
+                target.display(),
+                temp_dir2.path().display()
+            )
         );
     }
 
-    #[functional_test(feature = "helpers", negative = true)]
+    #[test]
     fn test_find_symlink_for_target_fail_bad_target() {
         // Return error if target path is bad
         let target = Path::new("/bad-target-path");
@@ -212,6 +224,13 @@ mod functional_test {
             format!("Failed to canonicalize target path '{}'", target.display())
         );
     }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+    use pytest_gen::functional_test;
 
     #[functional_test]
     fn test_get_disk_for_partition() {
@@ -226,7 +245,7 @@ mod functional_test {
         let partition = Path::new("/dev/sdc1");
         assert_eq!(
             get_disk_for_partition(partition).unwrap_err().to_string(),
-            "Failed to get partition metadata"
+            "Failed to get partition metadata for '/dev/sdc1'",
         );
     }
 }

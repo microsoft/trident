@@ -1,6 +1,7 @@
-bootNext: '0003'
+bootNext: "0003"
 servicingType: null
 servicingState: provisioned
+installIndex: 0
 storage:
   blockDevices:
     os:

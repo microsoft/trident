@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info};
+use log::{debug, info, trace};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -19,7 +19,7 @@ use osutils::{
 };
 use trident_api::{
     config::{Image, ImageFormat, ImageSha256},
-    status::{AbVolumeSelection, BlockDeviceContents, HostStatus},
+    status::{BlockDeviceContents, HostStatus, ServicingType},
     BlockDeviceId,
 };
 
@@ -32,7 +32,6 @@ use crate::modules::{
         self,
         image::stream_image::{self, GET_MAX_RETRIES, GET_TIMEOUT_SECS},
     },
-    BOOT_ENTRY_A, BOOT_ENTRY_B,
 };
 
 /// Performs file-based update of stand-alone ESP volume by copying three boot files into the
@@ -342,32 +341,76 @@ fn get_arch_efi_str(arch: SystemArchitecture) -> Result<&'static str, Error> {
     })
 }
 
-/// Returns the path to the ESP directory where the boot files need to be copied to.
-fn generate_efi_bin_base_dir_path(
-    host_status: &HostStatus,
+/// Returns the path to the ESP directory where the boot files need to be copied
+/// to.
+///
+/// Path will be in the form of /boot/efi/EFI/<ID>, where <ID> is the install ID
+/// as determined by host_status.
+///
+/// The function will find the next available install ID for this install and
+/// update the install index in the host status.
+pub fn generate_efi_bin_base_dir_path(
+    host_status: &mut HostStatus,
     mount_point: &Path,
 ) -> Result<PathBuf, Error> {
     // Compose the path to the ESP directory
-
-    // Path to the EFI directory on the ESP volume mount point path, /boot/efi, where EFI executables
-    // will be placed on the updated volume, as part of file-based update of ESP:
-    // a. If volume A is currently active, copy boot files into /boot/efi/EFI/azlinuxB,
-    // b. If volume B is currently active OR no volume is currently active, i.e., Trident is doing
-    // CleanInstall, copy boot files into /boot/efi/EFI/azlinuxA.
     let esp_efi_path = mount_point
         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
         .join(ESP_EFI_DIRECTORY);
 
-    // Based on which volume is being updated, determine how to name the dir
-    let esp_dir_path = match host_status
-        .get_ab_update_volume()
-        .context("Failed to determine which A/B volume is currently inactive")?
-    {
-        AbVolumeSelection::VolumeA => Path::new(&esp_efi_path).join(BOOT_ENTRY_A),
-        AbVolumeSelection::VolumeB => Path::new(&esp_efi_path).join(BOOT_ENTRY_B),
-    };
+    // If we are doing a clean install, we need to find the next available install index.
+    if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+        // If this is a clean install, we need to find the next available install index.
+        debug!(
+            "Clean install: Looking for next available install index in '{}'",
+            esp_efi_path.display()
+        );
 
-    Ok(esp_dir_path)
+        let first_available_install_index = find_first_available_install_index(&esp_efi_path)
+            .context("Failed to find the first available install index")?;
+
+        debug!(
+            "Selected first available install index: '{}'",
+            first_available_install_index,
+        );
+
+        // Update the install index in the host status.
+        debug!(
+            "Updating install index to '{}'",
+            first_available_install_index
+        );
+        host_status.install_index = first_available_install_index;
+    } else {
+        debug!("Not a clean install: Using existing install index.");
+    }
+
+    // Return the path to the ESP directory with the ESP dir name
+    Ok(
+        esp_efi_path.join(host_status.get_update_esp_dir_name().context(
+            "Failed to get ESP directory name for the new OS. Host status is in an invalid state.",
+        )?),
+    )
+}
+
+/// Tries to find the next available AzL install index by looking at the
+/// ESP directory names present in the specified ESP EFI path.
+fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, Error> {
+    Ok(HostStatus::make_esp_dir_name_candidates()
+        // Take a limited number of candidates to avoid an infinite loop.
+        .take(1000)
+        // Go over all the candidates and find the first one that doesn't exist.
+        .find(|(idx, dir_names)| {
+            trace!("Checking if an install with index '{}' exists", idx);
+            // Returns true if all possible ESP directory names for this index
+            // do NOT exist.
+            dir_names.iter().all(|dir_names| {
+                let path = esp_efi_path.join(dir_names);
+                trace!("Checking if path '{}' exists", path.display());
+                !path.exists()
+            })
+        })
+        .context("Failed to find an available install index")?
+        .0)
 }
 
 /// Performs file-based update of ESP partitions.
@@ -451,12 +494,9 @@ mod tests {
 
     use std::io::Write;
 
-    use maplit::btreemap;
-
     use trident_api::{
-        config::{self, AbUpdate, AbVolumePair, HostConfiguration, PartitionType},
-        constants::{GRUB2_RELATIVE_PATH, UPDATE_ROOT_PATH},
-        status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
+        constants::GRUB2_RELATIVE_PATH,
+        status::{AbVolumeSelection, ServicingState, ServicingType, Storage},
     };
 
     /// Validates that generate_arch_str() returns the correct string based on target architecture
@@ -482,111 +522,271 @@ mod tests {
         );
     }
 
-    /// Validates logic for setting block device contents
+    /// Simple case for find_first_available_install_index
     #[test]
-    fn test_generate_esp_dir_path() {
+    fn test_find_first_available_install_index_simple() {
+        let test_dir = TempDir::new().unwrap();
+        let index = find_first_available_install_index(test_dir.path()).unwrap();
+        assert_eq!(index, 0, "First available index should be 0");
+    }
+
+    /// Test that find_first_available_install_index will skip unavailable
+    /// indices
+    #[test]
+    fn test_find_first_available_install_index_existing_all() {
+        let test_dir = TempDir::new().unwrap();
+
+        // Create all ESP directories for indices 0-9
+        HostStatus::make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                for dir_name in dir_names {
+                    fs::create_dir(test_dir.path().join(dir_name)).unwrap();
+                }
+            });
+
+        // The first available index should be 10
+        let index = find_first_available_install_index(test_dir.path()).unwrap();
+        assert_eq!(index, 10, "First available index should be 10");
+    }
+
+    /// Test that find_first_available_install_index will skip unavailable
+    /// indices, even when only the A volume IDs are present
+    #[test]
+    fn test_find_first_available_install_index_existing_a() {
+        let test_dir = TempDir::new().unwrap();
+
+        // Create Volume A ESP directories for indices 0-9
+        HostStatus::make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                fs::create_dir(test_dir.path().join(&dir_names[0])).unwrap();
+            });
+
+        // The first available index should be 10
+        let index = find_first_available_install_index(test_dir.path()).unwrap();
+        assert_eq!(index, 10, "First available index should be 10");
+    }
+
+    /// Test that find_first_available_install_index will skip unavailable
+    /// indices, even when only the B volume IDs are present
+    #[test]
+    fn test_find_first_available_install_index_existing_b() {
+        let test_dir = TempDir::new().unwrap();
+
+        // Create Volume B ESP directories for indices 0-9
+        HostStatus::make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                fs::create_dir(test_dir.path().join(&dir_names[1])).unwrap();
+            });
+
+        // The first available index should be 10
+        let index = find_first_available_install_index(test_dir.path()).unwrap();
+        assert_eq!(index, 10, "First available index should be 10");
+    }
+
+    /// Test that find_first_available_install_index will skip unavailable
+    /// indices, even when only ONE ID is present per install.
+    #[test]
+    fn test_find_first_available_install_index_existing_mixed_1() {
+        let test_dir = TempDir::new().unwrap();
+
+        // Iterator to cycle between 0 and 1
+        let mut volume_selector = (0..=1).cycle();
+
+        // Create alternating A/B Volume ESP directories for indices 0-9, starting with A
+        HostStatus::make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                fs::create_dir(
+                    test_dir
+                        .path()
+                        .join(&dir_names[volume_selector.next().unwrap()]),
+                )
+                .unwrap();
+            });
+
+        // The first available index should be 10
+        let index = find_first_available_install_index(test_dir.path()).unwrap();
+        assert_eq!(index, 10, "First available index should be 10");
+    }
+
+    /// Test that find_first_available_install_index will skip unavailable
+    /// indices, even when only ONE ID is present per install.
+    #[test]
+    fn test_find_first_available_install_index_existing_mixed_2() {
+        let test_dir = TempDir::new().unwrap();
+
+        // Iterator to cycle between 0 and 1
+        let mut volume_selector = (0..=1).cycle();
+
+        // Advance the volume selector to start with B
+        volume_selector.next();
+
+        // Create alternating A/B Volume ESP directories for indices 0-9, starting with B
+        HostStatus::make_esp_dir_name_candidates()
+            .take(10)
+            .for_each(|(_, dir_names)| {
+                fs::create_dir(
+                    test_dir
+                        .path()
+                        .join(&dir_names[volume_selector.next().unwrap()]),
+                )
+                .unwrap();
+            });
+
+        // The first available index should be 10
+        let index = find_first_available_install_index(test_dir.path()).unwrap();
+        assert_eq!(index, 10, "First available index should be 10");
+    }
+
+    #[test]
+    fn test_generate_efi_bin_base_dir_path_clean_install() {
+        // Clean install HostStatus
         let mut host_status = HostStatus {
             servicing_type: Some(ServicingType::CleanInstall),
             servicing_state: ServicingState::Staging,
-            spec: HostConfiguration {
-                storage: config::Storage {
-                    disks: vec![config::Disk {
-                        id: "os".to_owned(),
-                        partitions: vec![
-                            config::Partition {
-                                id: "efi".to_owned(),
-                                partition_type: PartitionType::Esp,
-                                size: 1000.into(),
-                            },
-                            config::Partition {
-                                id: "root".to_owned(),
-                                partition_type: PartitionType::Root,
-                                size: 1000.into(),
-                            },
-                            config::Partition {
-                                id: "rootb".to_owned(),
-                                partition_type: PartitionType::Root,
-                                size: 1000.into(),
-                            },
-                        ],
-                        ..Default::default()
-                    }],
-                    ab_update: Some(AbUpdate {
-                        volume_pairs: vec![AbVolumePair {
-                            id: "osab".to_string(),
-                            volume_a_id: "root".to_string(),
-                            volume_b_id: "rootb".to_string(),
-                        }],
-                    }),
-
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "rootb".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "data".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                },
-                ..Default::default()
-            },
             ..Default::default()
         };
 
-        // Test case 1: If no volume is currently active, generate_esp_dir_path() should return
-        // /boot/efi/EFI/azlinuxA
-        assert!(
-            generate_efi_bin_base_dir_path(&host_status, Path::new(UPDATE_ROOT_PATH))
-                .unwrap()
-                .ends_with(BOOT_ENTRY_A),
-            "generate_esp_dir_path() should return /boot/efi/EFI/AZLA if no volume is currently active"
-        );
+        let test_dir = TempDir::new().unwrap();
+        let test_esp_dir = test_dir
+            .path()
+            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(ESP_EFI_DIRECTORY);
 
-        // Test case 2: If volume A is currently active, generate_esp_dir_path() should return
-        // /boot/efi/EFI/azlinuxB
-        // Modify host_status to set active_volume to volume A
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        assert!(
-            generate_efi_bin_base_dir_path(&host_status, Path::new(UPDATE_ROOT_PATH))
-                .unwrap()
-                .ends_with(BOOT_ENTRY_B),
-            "generate_esp_dir_path() should return /boot/efi/EFI/AZLB if volume A is currently active"
-        );
+        // Check over several install ESP directory names. The idea is to ensure
+        // that the function can return the expected ESP directory name. Then,
+        // we create it, and then call the function again to make sure it will
+        // return the next one. Do that a few times.
+        for (idx, dir_names) in HostStatus::make_esp_dir_name_candidates().take(50) {
+            println!(
+                "Checking install index '{}' in folder {}",
+                idx,
+                test_dir.path().display()
+            );
+            let esp_dir_path =
+                generate_efi_bin_base_dir_path(&mut host_status, test_dir.path()).unwrap();
+            println!("Returned ESP directory path: {:?}", esp_dir_path);
+            assert!(
+                !esp_dir_path.exists(),
+                "ESP directory returned should not exist yet"
+            );
+            assert_eq!(
+                idx, host_status.install_index,
+                "Expected install index does not match the one in HostStatus",
+            );
+            assert_eq!(
+                esp_dir_path,
+                test_esp_dir.join(&dir_names[0]),
+                "ESP directory path does not match expected value"
+            );
 
-        // Test case 3: If volume B is currently active, generate_esp_dir_path() should return
-        // /boot/efi/EFI/azlinuxA
-        // Modify host_status to set active_volume to volume B
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        assert!(
-            generate_efi_bin_base_dir_path(&host_status, Path::new(UPDATE_ROOT_PATH))
-                .unwrap()
-                .ends_with(BOOT_ENTRY_A),
-            "generate_esp_dir_path() should return /boot/efi/EFI/AZLA if volume B is currently active"
-        );
+            // Create the directory so the next iteration finds it, jumps to
+            // the next index, and creates the next one when it gets here
+            // again.
+            fs::create_dir_all(&esp_dir_path).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_generate_efi_bin_base_dir_path_ab_update() {
+        fn test_generate_efi_bin_base_dir_path(host_status: &mut HostStatus) {
+            println!(
+                "Checking AB update to {}",
+                match host_status.storage.ab_active_volume {
+                    Some(AbVolumeSelection::VolumeA) => "A",
+                    Some(AbVolumeSelection::VolumeB) => "B",
+                    None => "unknown",
+                }
+            );
+
+            // Record the expected install index
+            let expected = host_status.install_index;
+            // Expected ESP dir name
+            let expected_dir_name = host_status
+                .get_update_esp_dir_name()
+                .expect("Failed to get ESP dir name");
+
+            // Set up temp dirs.
+            let test_dir = TempDir::new().unwrap();
+            let test_esp_dir = test_dir
+                .path()
+                .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                .join(ESP_EFI_DIRECTORY);
+
+            // On a clean state, generate the ESP directory path.
+            let esp_dir_path =
+                generate_efi_bin_base_dir_path(host_status, test_dir.path()).unwrap();
+            assert_eq!(
+                esp_dir_path,
+                test_esp_dir.join(&expected_dir_name),
+                "ESP directory path does not match expected value"
+            );
+            assert_eq!(
+                host_status.install_index, expected,
+                "Install index in HostStatus does not match expected value"
+            );
+
+            // Create all directories for the expected index + 50 to ensure they are ignored
+            // and we still get the same install index.
+            HostStatus::make_esp_dir_name_candidates()
+                .take(expected + 50)
+                .for_each(|(_, dir_names)| {
+                    fs::create_dir_all(test_esp_dir.join(&dir_names[0])).unwrap();
+                });
+
+            // Generate the ESP directory path again.
+            let esp_dir_path =
+                generate_efi_bin_base_dir_path(host_status, test_dir.path()).unwrap();
+            assert_eq!(
+                esp_dir_path,
+                test_esp_dir.join(&expected_dir_name),
+                "ESP directory path does not match expected value"
+            );
+            assert_eq!(
+                host_status.install_index, expected,
+                "Install index in HostStatus does not match expected value"
+            );
+        }
+
+        // Test AB update to B
+        println!("Checking AB update to B");
+        test_generate_efi_bin_base_dir_path(&mut HostStatus {
+            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_state: ServicingState::Staging,
+            storage: Storage {
+                ab_active_volume: Some(AbVolumeSelection::VolumeA),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        // Test AB update to A
+        println!("Checking AB update to A");
+        test_generate_efi_bin_base_dir_path(&mut HostStatus {
+            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_state: ServicingState::Staging,
+            storage: Storage {
+                ab_active_volume: Some(AbVolumeSelection::VolumeB),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        // Test AB update with no active volume
+        println!("Checking AB update with no active volume");
+        test_generate_efi_bin_base_dir_path(&mut HostStatus {
+            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_state: ServicingState::Staging,
+            storage: Storage {
+                // Set to None to trigger default behavior
+                ab_active_volume: None,
+                ..Default::default()
+            },
+            ..Default::default()
+        });
     }
 
     /// Creates mock boot files in temp_mount_dir

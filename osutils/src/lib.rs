@@ -33,6 +33,7 @@ pub mod tabfile;
 pub mod tune2fs;
 pub mod udevadm;
 pub mod veritysetup;
+pub mod virt;
 pub mod wipefs;
 
 #[cfg(any(test, feature = "test-utilities"))]

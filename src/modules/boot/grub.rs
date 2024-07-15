@@ -2,6 +2,8 @@ use std::path::Path;
 
 use anyhow::{bail, Context, Error};
 use log::debug;
+use uuid::Uuid;
+
 use osutils::{blkid, exe::RunAndCheck, grub::GrubConfig, osrelease};
 use trident_api::{
     config::{FileSystemType, SelinuxMode},
@@ -9,11 +11,10 @@ use trident_api::{
         BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
         GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH,
     },
-    status::{AbVolumeSelection, HostStatus},
+    status::HostStatus,
 };
-use uuid::Uuid;
 
-use crate::modules::{self, BOOT_ENTRY_A, BOOT_ENTRY_B};
+use crate::modules;
 
 /// Updates the boot filesystem UUID on the search command inside the GRUB
 /// config.
@@ -111,27 +112,20 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
             .context(format!("Failed to update GRUB config at path '/{GRUB2_CONFIG_RELATIVE_PATH}' with mkconfig"))?;
     }
 
-    let esp_efi_dir_path = Path::new(ESP_MOUNT_POINT_PATH).join(ESP_EFI_DIRECTORY);
-    let mut bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_A);
-    //Check if hoststatus has ab_update and update the grub config for the inactive volume
-    if host_status.spec.storage.ab_update.is_some() {
-        match host_status.get_ab_update_volume() {
-            Some(AbVolumeSelection::VolumeA) => {}
-            Some(AbVolumeSelection::VolumeB) => {
-                bootentry_dir_path = esp_efi_dir_path.join(BOOT_ENTRY_B);
-            }
+    // Update GRUB config on the ESP
+    let bootentry_config_path = Path::new(ESP_MOUNT_POINT_PATH)
+        .join(ESP_EFI_DIRECTORY)
+        .join(
+            host_status
+                .get_update_esp_dir_name()
+                .context("Failed to get update install ID")?,
+        )
+        .join(GRUB2_CONFIG_FILENAME);
 
-            None => bail!("Unsupported A/B volume selection to update grub config."),
-        }
-    }
-
-    let bootentry_dir_config_path = bootentry_dir_path.join(GRUB2_CONFIG_FILENAME);
-    update_grub_config_esp(&bootentry_dir_config_path, &boot_uuid).context(format!(
-        "Failed to update GRUB config at path {}",
-        bootentry_dir_config_path.display()
-    ))?;
-
-    Ok(())
+    update_grub_config_esp(&bootentry_config_path, &boot_uuid).context(format!(
+        "Failed to update GRUB config at path '{}'",
+        bootentry_config_path.display()
+    ))
 }
 
 #[cfg(test)]
@@ -442,6 +436,10 @@ pub(crate) mod functional_test {
         test_execute_and_resulting_layout(true, false);
 
         let mut host_status = HostStatus {
+            // These are required to get the update install ID
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::Staging,
+
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -555,6 +553,10 @@ pub(crate) mod functional_test {
     fn test_update_grub_root_standalone_partition() {
         test_execute_and_resulting_layout(false, false);
         let mut host_status = HostStatus {
+            // These are required to get the update install ID
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::Staging,
+
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -645,8 +647,10 @@ pub(crate) mod functional_test {
     fn test_update_grub_root_abvolume() {
         test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
+            // These are required to get the update install ID
             servicing_type: Some(ServicingType::CleanInstall),
             servicing_state: ServicingState::Staging,
+
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -734,6 +738,10 @@ pub(crate) mod functional_test {
     fn test_update_grub_root_uuid_empty() {
         test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
+            // These are required to get the update install ID
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::Staging,
+
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -798,6 +806,10 @@ pub(crate) mod functional_test {
     fn test_update_grub_root_path_empty() {
         test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
+            // These are required to get the update install ID
+            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_state: ServicingState::Staging,
+
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {

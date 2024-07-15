@@ -217,7 +217,7 @@ fn get_raid_disks_internal(mdadm_detail: &mdadm::MdadmDetail) -> Result<HashSet<
         .devices
         .into_iter()
         .map(|device| {
-            block_devices::get_disk_for_partition(&device).with_context(|| {
+            block_devices::get_disk_for_partition(device).with_context(|| {
                 format!(
                     "Failed to get disk for partition in an existing RAID: {:?}",
                     mdadm_detail.raid_path
