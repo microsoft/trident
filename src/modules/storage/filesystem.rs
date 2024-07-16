@@ -63,21 +63,27 @@ fn block_devices_needing_fs_creation(
         .filesystems
         .iter()
         .filter_map(|fs| {
-            // Check if the source is 'Create' OR if the source is 'EspImage' and the servicing
-            // type is CleanInstall: since we're not deploying an image directly onto the ESP
-            // partition but rather, copy-pasting the boot files, we want to format it here
-            if matches!(fs.source, FileSystemSource::Create)
-                || (fs.source.esp_image().is_some()
-                    && host_status.servicing_type == Some(ServicingType::CleanInstall))
-            {
-                if let Some(device_id) = &fs.device_id {
-                    if let Some(bd_info) = modules::get_block_device(host_status, device_id, false)
-                    {
-                        return Some((device_id.clone(), bd_info, fs.fs_type));
-                    }
-                }
+            // Filter to filesystems that need to be created
+            match (&fs.source, host_status.servicing_type, &fs.device_id) {
+                // If: the filesystem source is 'Create' AND device_id is present
+                (FileSystemSource::Create, _, Some(device_id))
+
+                // OR: the filesystem source is 'EspImage' AND servicing type
+                // is CleanInstall AND device_id is present AND the ESP
+                // partition is NOT an adopted partition
+                | (
+                    FileSystemSource::EspImage(_),
+                    Some(ServicingType::CleanInstall),
+                    Some(device_id),
+                ) if !host_status.spec.storage.is_adopted_partition(device_id) => {
+                    // Get the block device info for the device_id
+                    modules::get_block_device(host_status, device_id, false)
+                    .map(|bd_info| (device_id.clone(), bd_info, fs.fs_type))
+                },
+
+                // Otherwise, ignore the filesystem
+                _ => None,
             }
-            None
         })
         .filter_map(|(device_id, bd_info, fs_type)| {
             // If the block device is an A/B volume pair and we're doing an A/B update, resolve
@@ -138,9 +144,9 @@ mod test {
     use maplit::btreemap;
     use trident_api::{
         config::{
-            self, Disk, FileSystem, FileSystemSource, FileSystemType, HostConfiguration, Image,
-            ImageFormat, ImageSha256, MountOptions, MountPoint, Partition, PartitionType,
-            Storage as StorageConfig,
+            self, AdoptedPartition, Disk, FileSystem, FileSystemSource, FileSystemType,
+            HostConfiguration, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
+            Partition, PartitionType, Storage as StorageConfig,
         },
         status::{AbVolumeSelection, BlockDeviceInfo, ServicingState, Storage},
     };
@@ -431,6 +437,108 @@ mod test {
             PathBuf::from("/dev/disk/by-partlabel/osp3"),
             FileSystemType::Ext4
         )));
+    }
+
+    /// Test that block_devices_needing_fs_creation() does not return any block
+    /// devices that are adopted ESP partitions.
+    #[test]
+    fn test_block_devices_needing_fs_creation_adopted_esp() {
+        let host_status = HostStatus {
+            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_state: ServicingState::Staging,
+            spec: HostConfiguration {
+                storage: StorageConfig {
+                    disks: vec![Disk {
+                        id: "os".to_owned(),
+                        device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        partitions: vec![Partition {
+                            id: "root-b".to_owned(),
+                            size: 100.into(),
+                            partition_type: PartitionType::Root,
+                        }],
+                        adopted_partitions: vec![
+                            AdoptedPartition {
+                                id: "esp".to_owned(),
+                                match_label: Some("esp".to_owned()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "root-a".to_owned(),
+                                match_label: Some("root-a".to_owned()),
+                                match_uuid: None,
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    filesystems: vec![
+                        FileSystem {
+                            device_id: Some("esp".into()),
+                            fs_type: FileSystemType::Vfat,
+                            source: FileSystemSource::EspImage(Image {
+                                url: "http://example.com/esp_2.img".to_string(),
+                                sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                                format: ImageFormat::RawZst,
+                            }),
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from("/esp"),
+                                options: MountOptions::empty(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("root-b".into()),
+                            fs_type: FileSystemType::Ext4,
+                            source: FileSystemSource::Image(Image {
+                                url: "http://example.com/root_2.img".to_string(),
+                                sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+                                format: ImageFormat::RawZst,
+                            }),
+                            mount_point: Some(MountPoint {
+                                path: PathBuf::from("/"),
+                                options: MountOptions::empty(),
+                            }),
+                        },
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            storage: Storage {
+                block_devices: btreemap! {
+                    "os".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
+                        size: 34358672896,
+                        contents: BlockDeviceContents::Initialized,
+                    },
+                    "esp".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                        size: 100,
+                        contents: BlockDeviceContents::Initialized,
+                    },
+                    "root-a".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                        size: 100,
+                        contents: BlockDeviceContents::Initialized,
+                    },
+                    "root-b".to_owned() => BlockDeviceInfo {
+                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                        size: 100,
+                        contents: BlockDeviceContents::Image {
+                            url: "http://example.com/root_2.img".to_string(),
+                            sha256: "root_sha256_2".to_string(),
+                            length: 100,
+                        },
+                    },
+                },
+                ab_active_volume: Some(AbVolumeSelection::VolumeA),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            block_devices_needing_fs_creation(&host_status),
+            vec![],
+            "No filesystems should be created for adopted partitions"
+        );
     }
 }
 

@@ -524,6 +524,13 @@ impl Storage {
             .map(|mp| (mp.mount_point.path.as_path(), mp))
             .collect()
     }
+
+    /// Returns whether the given device ID is an adopted partition.
+    pub fn is_adopted_partition(&self, device_id: &BlockDeviceId) -> bool {
+        self.disks
+            .iter()
+            .any(|d| d.adopted_partitions.iter().any(|p| &p.id == device_id))
+    }
 }
 
 #[cfg(test)]
