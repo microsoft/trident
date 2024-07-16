@@ -180,7 +180,7 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
                 .filter_level(args.verbosity)
                 .build(),
         ))
-        .with_logger(logstream.make_logger());
+        .with_logger(logstream.make_logger_with_level(LevelFilter::Trace));
 
     // Only add the background logger if we're running the main command
     if matches!(args.command, Commands::Run(_)) {

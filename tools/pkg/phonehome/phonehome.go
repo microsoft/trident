@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
@@ -15,7 +16,54 @@ type OrchestratorMessage struct {
 	Host_Status string
 }
 
-func SetupPhoneHomeServer(done chan<- bool, remoteAddressFile string, ignoreFailure bool) {
+type PhoneHomeResult struct {
+	State   PhoneHomeResultState `json:"state"`
+	Message string               `json:"message"`
+}
+
+func (result *PhoneHomeResult) Log() {
+	if result.State == PhoneHomeResultFailure {
+		log.Errorf("Trident failed to deploy Runtime OS with error:\n%s", result.Message)
+	} else if result.State == PhoneHomeResultSuccess {
+		log.Info("Trident successfully deployed Runtime OS")
+	} else if result.State == PhoneHomeResultError {
+		log.Errorf("Logstream had an error:\n%s", result.Message)
+	}
+}
+
+func (result *PhoneHomeResult) ExitCode() int {
+	if result.State == PhoneHomeResultSuccess {
+		return 0
+	} else if result.State == PhoneHomeResultFailure {
+		// Two is the specific error code for trident failure
+		return 2
+	} else {
+		// One is the generic error code
+		return 1
+	}
+}
+
+func errorPhoneHomeResult(err error) PhoneHomeResult {
+	return PhoneHomeResult{
+		State:   PhoneHomeResultError,
+		Message: err.Error(),
+	}
+}
+
+type PhoneHomeResultState string
+
+const (
+	// Received a success state
+	PhoneHomeResultSuccess PhoneHomeResultState = "succeeded"
+
+	// Received a failure state
+	PhoneHomeResultFailure PhoneHomeResultState = "failed"
+
+	// Some error occurred
+	PhoneHomeResultError PhoneHomeResultState = "error"
+)
+
+func SetupPhoneHomeServer(result chan<- PhoneHomeResult, remoteAddressFile string) {
 	http.HandleFunc("/phonehome", func(w http.ResponseWriter, r *http.Request) {
 		// log.WithField("remote-address", r.RemoteAddr).Info("Phone Home")
 		w.WriteHeader(201)
@@ -24,8 +72,7 @@ func SetupPhoneHomeServer(done chan<- bool, remoteAddressFile string, ignoreFail
 		var message OrchestratorMessage
 		err := yaml.NewDecoder(r.Body).Decode(&message)
 		if err != nil {
-			log.WithError(err).Fatalf("failed to decode phone home message")
-			done <- true
+			result <- errorPhoneHomeResult(errors.Wrap(err, "failed to decode phone home message"))
 			return
 		}
 
@@ -35,28 +82,28 @@ func SetupPhoneHomeServer(done chan<- bool, remoteAddressFile string, ignoreFail
 				// write the remote address to the address file
 				err := os.WriteFile(remoteAddressFile, []byte(strings.Split(r.RemoteAddr, ":")[0]), 0644)
 				if err != nil {
-					log.WithError(err).Fatalf("Failed to write address file")
-					done <- true
+					result <- errorPhoneHomeResult(errors.Wrap(err, "failed to write remote address"))
 					return
 				}
 			}
 		}
 
 		if message.Host_Status != "" {
-			log.Infof("Host Status:\n%s", message.Host_Status)
+			log.Infof("Reported host Status:\n%s", message.Host_Status)
 		}
 
-		if message.State == "failed" {
-			if ignoreFailure {
-				log.Errorf("Trident failed to deploy Runtime OS with error:\n%s", message.Message)
-			} else {
-				log.Fatalf("Trident failed to deploy Runtime OS with error:\n%s", message.Message)
+		if message.State == string(PhoneHomeResultFailure) {
+			result <- PhoneHomeResult{
+				State:   PhoneHomeResultFailure,
+				Message: message.Message,
+			}
+		} else if message.State == string(PhoneHomeResultSuccess) {
+			result <- PhoneHomeResult{
+				State:   PhoneHomeResultSuccess,
+				Message: message.Message,
 			}
 		} else {
 			log.WithField("state", message.State).Info(message.Message)
-			if message.State == "succeeded" {
-				done <- true
-			}
 		}
 	})
 }

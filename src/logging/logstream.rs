@@ -42,8 +42,15 @@ impl Logstream {
     }
 
     /// Create a Boxed LogSender
+    ///
+    /// Sets the max level to Debug
     pub fn make_logger(&self) -> Box<LogSender> {
-        Box::new(LogSender::new(self.target.clone()))
+        Box::new(LogSender::new(self.target.clone(), log::LevelFilter::Debug))
+    }
+
+    /// Create a Boxed LogSender with a specific max level
+    pub fn make_logger_with_level(&self, max_level: log::LevelFilter) -> Box<LogSender> {
+        Box::new(LogSender::new(self.target.clone(), max_level))
     }
 }
 
@@ -59,10 +66,10 @@ pub struct LogSender {
 }
 
 impl LogSender {
-    fn new(server: Arc<RwLock<Option<String>>>) -> Self {
+    fn new(server: Arc<RwLock<Option<String>>>, max_level: log::LevelFilter) -> Self {
         Self {
             server,
-            max_level: log::LevelFilter::Debug,
+            max_level,
             client: reqwest::blocking::Client::new(),
         }
     }

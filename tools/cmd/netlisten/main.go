@@ -38,6 +38,8 @@ import (
 
 var listen_port uint16
 var serveFolder string
+var logTrace bool
+var forceColor bool
 
 // Filepath to store metrics from Trident
 var TRIDENT_METRICS_PATH = "trident-metrics.json"
@@ -49,6 +51,20 @@ var rootCmd = &cobra.Command{
 		if listen_port == 0 {
 			log.Fatal("A port must be specified")
 		}
+
+		// Set log level
+		if logTrace {
+			log.SetLevel(log.TraceLevel)
+			log.Traceln("Trace logging enabled!")
+		} else {
+			log.SetLevel(log.DebugLevel)
+		}
+
+		if forceColor {
+			log.SetFormatter(&log.TextFormatter{
+				ForceColors: true,
+			})
+		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		address := fmt.Sprintf("0.0.0.0:%d", listen_port)
@@ -58,11 +74,11 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Set up listening
-		done := make(chan bool)
+		result := make(chan phonehome.PhoneHomeResult)
 		server := &http.Server{}
 
 		// Set up listening for phonehome
-		phonehome.SetupPhoneHomeServer(done, "", false)
+		phonehome.SetupPhoneHomeServer(result, "")
 		// Set up listening for logstream
 		phonehome.SetupLogstream()
 		// Set up listening for tracestream
@@ -79,14 +95,22 @@ var rootCmd = &cobra.Command{
 		log.Info("Waiting for phone home...")
 
 		// Wait for done signal
-		<-done
+		var res = <-result
+
+		// Log the result
+		res.Log()
+
 		server.Shutdown(context.Background())
+
+		os.Exit(res.ExitCode())
 	},
 }
 
 func init() {
 	rootCmd.PersistentFlags().Uint16VarP(&listen_port, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
+	rootCmd.PersistentFlags().BoolVarP(&logTrace, "log-trace", "", false, "Enable trace level logs.")
+	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
 	rootCmd.MarkFlagRequired("port")
 	log.SetLevel(log.DebugLevel)
 }

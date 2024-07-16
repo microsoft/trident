@@ -11,10 +11,10 @@ parameters:
   - name: stageDependencies
     type: object
     default:
-    - BuildingTools
-    - TridentTestImg_trident_installer_testimage
-    - TridentTestImg_trident_testimage
-    - TridentTestImg_trident_verity_testimage
+      - BuildingTools
+      - TridentTestImg_trident_installer_testimage
+      - TridentTestImg_trident_testimage
+      - TridentTestImg_trident_verity_testimage
 
   - name: updateRuntimeOSTrident
     type: boolean
@@ -149,10 +149,10 @@ stages:
           - bash: |
               set -eux
 
-              # rerun is expected to fail
-              IGNORE_FAILURE_FLAG=""
+              # rerun is expected to fail ONCE
+              MAX_FAILURES_FLAG=""
               if [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]; then
-                IGNORE_FAILURE_FLAG="--ignore-failure"
+                MAX_FAILURES_FLAG="--max-failures 1"
               fi
 
               echo "Netlaunch output:" > ./deployment.log
@@ -161,68 +161,38 @@ stages:
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \
-                  --logstream $IGNORE_FAILURE_FLAG \
+                  --logstream $MAX_FAILURES_FLAG \
                   --trace-file trident-metrics.json \
-              2>&1 | tee -a ./deployment.log
-
-              mkdir -p $(ob_outputDirectory)
-              cp ./deployment.log $(ob_outputDirectory)/deployment-netlaunch.log
-
-              $(tridentSourceDirectory)/e2e_tests/helpers/check_netlaunch.py ./deployment.log || [ ${{ variables['tridentConfigurationName'] }} == 'rerun' ]
-
-              sudo virsh list
-              sudo virsh dumpxml virtdeploy-vm-0
-
+                  --log-trace --force-color
             timeoutInMinutes: 7
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Run netlaunch for testing"
 
           - bash: |
               set -eux
-              echo -e '\n\n\n' >> ./deployment.log
-              printf '%.0s-' {1..90} >> ./deployment.log
-              echo -e '\n\n\n' >> ./deployment.log
 
-              vm_name="$(jq .virtualmachines[0].name ./virt-deploy-metadata.json)"
-              log=$(eval echo /tmp/"$vm_name"-serial0.log)
+              VM_NAME=$(jq -r '.virtualmachines[0].name' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              VM_SERIAL_LOG="/tmp/$VM_NAME-serial0.log"
 
-              until [ -f "$log" ]
+              until [ -f "$VM_SERIAL_LOG" ]
               do
                   sleep 0.1
               done
 
-              echo "$log": | tee -a ./deployment.log
-              sudo tail -f -n +1 "$log" | tee -a ./deployment.log &
-              PID=$!
+              echo "Found VM serial log file: $VM_SERIAL_LOG"
+              echo "VM serial log:"
 
-              if [ "$(Agent.JobStatus)" != "Canceled" ]; then
-                while true
-                do
-                  if tail ./deployment.log | grep -v "localhost login:" | grep -P -m 1 "^[a-zA-Z0-9_-]+ login:"
-                  then
-                      kill $PID
-                      break
-                  else
-                      sleep 0.5
-                  fi
-                done
-                echo "Successful Runtime OS deployment"
-              fi
+              sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
+                  -d "$VM_SERIAL_LOG" \
+                  -o ./serial.log \
+                  -t 300
+
+              mkdir -p $(ob_outputDirectory)
+              sudo cp ./serial.log $(ob_outputDirectory)/serial.log
+
             timeoutInMinutes: 5
             condition: succeededOrFailed()
-            workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Check Runtime OS deployment"
-
-          - bash: |
-              set -eux
-              if [[ -f $(argusToolkitSourceDirectory)/deployment.log ]]; then
-                mkdir -p $(ob_outputDirectory)
-                sudo cp $(argusToolkitSourceDirectory)/deployment.log \
-                            $(ob_outputDirectory)/deployment.log
-              fi
-            workingDirectory: $(tridentSourceDirectory)
-            condition: succeededOrFailed()
-            displayName: "Publish deployment.log"
 
           - template: ../common_tasks/trident-metrics.yml
             parameters:

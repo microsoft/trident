@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatih/color"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -47,11 +48,13 @@ var netlaunchConfigFile string
 var tridentConfigFile string
 var iso string
 var logstream bool
-var listen_port int16
+var listenPort uint16
 var remoteAddressFile string
 var serveFolder string
-var ignoreFailure bool
+var maxFailures uint
 var traceFile string
+var logTrace bool
+var forceColor bool
 
 func patchFile(iso []byte, filename string, contents []byte) error {
 	// Search for magic string
@@ -93,8 +96,25 @@ var rootCmd = &cobra.Command{
 			log.Fatal("ISO file not specified")
 		}
 
-		if logstream && listen_port == 0 && len(tridentConfigFile) == 0 {
+		if logstream && listenPort == 0 && len(tridentConfigFile) == 0 {
 			log.Fatal("logstream requires a specified port or trident config file")
+		}
+
+		if forceColor {
+			log.SetFormatter(&log.TextFormatter{
+				ForceColors: true,
+			})
+
+			// Force color to be enabled
+			color.NoColor = false
+		}
+
+		// Set log level
+		if logTrace {
+			log.SetLevel(log.TraceLevel)
+			log.Traceln("Trace logging enabled!")
+		} else {
+			log.SetLevel(log.DebugLevel)
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
@@ -110,7 +130,7 @@ var rootCmd = &cobra.Command{
 			log.WithError(err).Fatal("could not unmarshal configuration")
 		}
 
-		address := fmt.Sprintf("%s:%d", config.Netlaunch.PublicIp, listen_port)
+		address := fmt.Sprintf("%s:%d", config.Netlaunch.PublicIp, listenPort)
 		listen, err := net.Listen("tcp4", address)
 		if err != nil {
 			log.WithError(err).Fatalf("failed to open port listening on %s", address)
@@ -123,9 +143,10 @@ var rootCmd = &cobra.Command{
 
 		// Do we expect trident to reach back? If so we need to listen to it.
 		// If we have a specified port, we assume that the intent is that trident will reach back.
-		enable_phonehome_listening := listen_port != 0
+		enable_phonehome_listening := listenPort != 0
 
-		done := make(chan bool)
+		terminate := make(chan bool)
+		result := make(chan phonehome.PhoneHomeResult)
 		server := &http.Server{}
 
 		// If we have a trident config file, we need to patch it into the ISO.
@@ -171,14 +192,14 @@ var rootCmd = &cobra.Command{
 			// Otherwise, serve the iso as-is
 			http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 				http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
-				done <- true
+				terminate <- true
 			})
 		}
 
 		// If we're expecting trident to reach back, we need to listen for it.
 		if enable_phonehome_listening {
 			// Set up listening for phonehome
-			phonehome.SetupPhoneHomeServer(done, remoteAddressFile, ignoreFailure)
+			phonehome.SetupPhoneHomeServer(result, remoteAddressFile)
 
 			// Set up listening for logstream
 			phonehome.SetupLogstream()
@@ -233,24 +254,70 @@ var rootCmd = &cobra.Command{
 			log.Info("Waiting for phone home...")
 		}
 
-		// Wait for done signal
-		<-done
-		server.Shutdown(context.Background())
+		// Wait for something to happen
+		var exitCode = listen_loop(terminate, result)
+
+		err = server.Shutdown(context.Background())
+		if err != nil {
+			log.WithError(err).Errorln("failed to shutdown server")
+		}
+
+		os.Exit(exitCode)
 	},
+}
+
+// listen_loop listens for phonehome results and logs them.
+// If a result file is specified, it writes the result to that file.
+// If the result indicates that we should terminate, it returns.
+// If the terminate channel receives something, it returns.
+func listen_loop(terminate <-chan bool, result <-chan phonehome.PhoneHomeResult) int {
+	failureCount := uint(0)
+
+	// Loop forever!
+	for {
+		// Wait for something to happen
+		select {
+
+		case <-terminate:
+			// If we're told to terminate, then we're done.
+			return 0
+
+		case result := <-result:
+			// If we get a result log it.
+			result.Log()
+
+			// Check the state of the result.
+			switch result.State {
+			case phonehome.PhoneHomeResultFailure:
+				// If we failed, increment the failure count.
+				failureCount++
+			default:
+				// For everything else, return the exit code.
+				return result.ExitCode()
+			}
+
+			// Check if we've exceeded the maximum number of failures.
+			if failureCount > maxFailures {
+				log.Errorf("Maximum number of failures (%d) exceeded. Terminating.", maxFailures)
+				return result.ExitCode()
+			}
+		}
+	}
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&netlaunchConfigFile, "config", "c", "netlaunch.yaml", "Netlaunch config file")
 	rootCmd.PersistentFlags().StringVarP(&tridentConfigFile, "trident", "t", "", "Trident local config file")
 	rootCmd.PersistentFlags().BoolVarP(&logstream, "logstream", "l", false, "Enable log streaming. (Requires --trident || --port)")
-	rootCmd.PersistentFlags().Int16VarP(&listen_port, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
+	rootCmd.PersistentFlags().Uint16VarP(&listenPort, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
 	rootCmd.PersistentFlags().StringVarP(&remoteAddressFile, "remoteaddress", "r", "", "File for writing remote address of the Trident instance.")
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
-	rootCmd.PersistentFlags().BoolVarP(&ignoreFailure, "ignore-failure", "", false, "Keep running even if Trident sends back a failure message")
+	rootCmd.PersistentFlags().UintVarP(&maxFailures, "max-failures", "e", 0, "Maximum number of failures allowed before terminating. Default 0: no failures are tolerated.")
 	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "", "File for writing metrics collected from Trident.")
+	rootCmd.PersistentFlags().BoolVarP(&logTrace, "log-trace", "", false, "Enable trace level logs.")
+	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing.")
 	rootCmd.MarkFlagRequired("iso-template")
-	log.SetLevel(log.DebugLevel)
 }
 
 func main() {
