@@ -169,7 +169,7 @@ stages:
             displayName: "Run netlaunch for testing"
 
           - bash: |
-              set -eux
+              set -ux
 
               VM_NAME=$(jq -r '.virtualmachines[0].name' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               VM_SERIAL_LOG="/tmp/$VM_NAME-serial0.log"
@@ -185,10 +185,14 @@ stages:
               sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
                   -d "$VM_SERIAL_LOG" \
                   -o ./serial.log \
-                  -t 300
+                  -t 250
+
+              WAIT_FOR_LOGIN_EXITCODE=$?
 
               mkdir -p $(ob_outputDirectory)
               sudo cp ./serial.log $(ob_outputDirectory)/serial.log
+
+              exit $WAIT_FOR_LOGIN_EXITCODE
 
             timeoutInMinutes: 5
             condition: succeededOrFailed()
@@ -221,6 +225,7 @@ stages:
           - bash: |
               set -eux
               sudo virsh shutdown virtdeploy-vm-0
+              mkdir -p $(ob_outputDirectory)
               sudo cp /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-0-volume.qcow2 $(ob_outputDirectory)/
               sudo zstd -T0 $(ob_outputDirectory)/virtdeploy-vm-0-0-volume.qcow2
             workingDirectory: $(tridentSourceDirectory)
