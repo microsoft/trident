@@ -143,14 +143,18 @@ pub fn create_partitions(
 fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
     // Validation has already verified that any disk with adopted partitions will have
     // a GPT partition table, so we can safely assume that here.
+    info!("Running partitioning safety check...");
 
     for disk in disks {
+        debug!("Running partitioning safety check for disk '{}'", disk.id);
+
         let blkdev_info =
             lsblk::run(&disk.bus_path).context("Failed to retrieve partition table information")?;
 
         // Figure out if anything in the disk is mounted.
         if blkdev_info.get_all_mountpoints_recursive().is_empty() {
             // Nothing is mounted, we can safely proceed.
+            debug!("Disk '{}' has no mount points, proceeding...", disk.id);
             continue;
         }
 
@@ -190,10 +194,16 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
                     .context(format!("Failed to adopt partition '{}'", adopted_part.id))
             })?;
 
-        // Ensure that none of the unmatched partitions are mounted.
+        // Ensure that none of the unmatched partitions or their children are mounted.
         adopter
             .get_unmatched_partitions()
             .try_for_each(|part| {
+                debug!(
+                    "Checking unmatched partition '{}' on disk '{}'",
+                    part.node.display(),
+                    disk.id
+                );
+
                 let part_info = osutils::lsblk::run(&part.node).with_context(|| {
                     format!(
                         "Failed to retrieve information for partition '{}' on disk '{}'.",
@@ -202,18 +212,22 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
                     )
                 })?;
 
-                // Check if the partition is mounted.
-                part_info.mountpoint.map_or(Ok(()), |mnt_pt| {
-                    bail!(
-                        "Partition '{}' on disk '{}' was not adopted, but it is currently mounted at '{}'.",
-                        part.node.display(),
-                        disk.id,
-                        mnt_pt.display(),
-                    )
-                })
+                // Check if the partition or its children are mounted.
+                let mnt_points = part_info.get_all_mountpoints_recursive();
+                ensure!(
+                    mnt_points.is_empty(),
+                    "Partition '{}' on disk '{}' was not adopted, but it and its children have mount points: {}",
+                    part.node.display(),
+                    disk.id,
+                    mnt_points.iter().map(|mnt| mnt.to_string_lossy()).collect::<Vec<_>>().join(", "),
+                );
+
+                Ok(())
             })
             .context("Currently mounted partitions would be deleted by re-partitioning.")?;
     }
+
+    info!("Partitioning safety check passed!");
     Ok(())
 }
 
