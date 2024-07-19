@@ -540,7 +540,7 @@ via the following commands:
 
 ```bash
 # Generate command.json from input/hc.yaml
-jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: ["stage", "finalize"] }' > command.json
+jq -n --rawfile hc input/hc.yaml '{ hostConfiguration: $hc, allowedOperations: "[stage, finalize]" }' > command.json
 
 # Issue gRPC request and pretty print the output as it is streamed back
 evans --host <target-ip-adddress> --proto path/to/trident/proto/trident.proto cli call --file command.json UpdateHost | jq -r .status
