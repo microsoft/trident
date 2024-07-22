@@ -304,94 +304,94 @@ First, the OS image payload needs to be made available for Trident to operate
 on as a local file. For example, the OS image can be bundled with the installer
 OS and referenced from the initial host configuration as follows:
 
-  ```yaml
-      hostConfiguration:
-        storage:
-          disks:
-            - id: os
-              device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-              partitionTableType: gpt
-              partitions:
-                - id: esp
-                  type: esp
-                  size: 1G
-                - id: root-a
-                  type: root
-                  size: 8G
-                - id: root-b
-                  type: root
-                  size: 8G
-                - id: swap
-                  type: swap
-                  size: 2G
-                - id: home
-                  type: home
-                  size: 1G
-                - id: trident
-                  type: linux-generic
-                  size: 1G
-            - id: disk2
-              device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-              partitionTableType: gpt
-              partitions: []
-        abUpdate:
-          volumePairs:
-            - id: root
-              volumeAId: root-a
-              volumeBId: root-b
-        filesystems:
-          - deviceId: swap
+```yaml
+hostConfiguration:
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+        partitionTableType: gpt
+        partitions:
+          - id: esp
+            type: esp
+            size: 1G
+          - id: root-a
+            type: root
+            size: 8G
+          - id: root-b
+            type: root
+            size: 8G
+          - id: swap
             type: swap
-          - deviceId: trident
-            type: ext4
-            mountPoint:
-              path: /var/lib/trident
-              options: defaults
-          - deviceId: home
-            type: ext4
-            mountPoint:
-              path: /home
-              options: defaults
-          - deviceId: esp
-            type: vfat
-            source:
-              type: image
-              url: file:///trident_cdrom/data/esp.rawzst
-              sha256: ignored
-              format: raw-zst
-            mountPoint:
-              path: /boot/efi
-              options: umask=0077
-          - deviceId: root
-            type: ext4
-            source:
-              type: image
-              url: file:///trident_cdrom/data/root.rawzst
-              sha256: ignored
-              format: raw-zst
-            mountPoint:
-              path: /
-              options: defaults
-        scripts:
-          postConfigure:
-            - name: testing-privilege
-              runOn:
-                - clean-install
-                - ab-update
-              content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
-        os:
-          network:
-            version: 2
-            ethernets:
-              vmeths:
-                match:
-                  name: enp*
-                dhcp4: true
-        users:
-          - name: testing-user
-            sshPublicKeys: []
-            sshMode: key-only
-  ```
+            size: 2G
+          - id: home
+            type: home
+            size: 1G
+          - id: trident
+            type: linux-generic
+            size: 1G
+      - id: disk2
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+        partitionTableType: gpt
+        partitions: []
+    abUpdate:
+      volumePairs:
+        - id: root
+          volumeAId: root-a
+          volumeBId: root-b
+    filesystems:
+      - deviceId: swap
+        type: swap
+      - deviceId: trident
+        type: ext4
+        mountPoint:
+          path: /var/lib/trident
+          options: defaults
+      - deviceId: home
+        type: ext4
+        mountPoint:
+          path: /home
+          options: defaults
+      - deviceId: esp
+        type: vfat
+        source:
+          type: esp-image
+          url: file:///trident_cdrom/data/esp.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /boot/efi
+          options: umask=0077
+      - deviceId: root
+        type: ext4
+        source:
+          type: image
+          url: file:///trident_cdrom/data/root.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /
+          options: defaults
+  scripts:
+    postConfigure:
+      - name: testing-privilege
+        runOn:
+          - clean-install
+          - ab-update
+        content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+  os:
+    network:
+      version: 2
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+    users:
+      - name: testing-user
+        sshPublicKeys: []
+        sshMode: key-only
+```
 
 In the sample host configuration above, we're requesting Trident to create
 **two copies of the root** partition, i.e., a volume pair with id `root` that
