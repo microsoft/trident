@@ -44,7 +44,7 @@ mod functional_test {
 
             // Confirm initialize size
             let block_device = lsblk::run(block_device_path).unwrap();
-            assert_eq!(block_device.fssize, Some(before_blocks.into()));
+            assert_eq!(block_device.fssize.unwrap().0.to_string(), before_blocks);
         }
 
         // Run resize2fs to resize the filesystem
@@ -61,7 +61,7 @@ mod functional_test {
 
             // Validate resize
             let block_device = lsblk::run(block_device_path).unwrap();
-            assert_eq!(block_device.fssize, Some(after_blocks.into()));
+            assert_eq!(block_device.fssize.unwrap().0.to_string(), after_blocks);
         }
     }
 

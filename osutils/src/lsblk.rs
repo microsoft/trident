@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use serde::{Deserialize, Serialize};
+use trident_api::primitives::bytes::ByteCount;
 
 use crate::{exe::RunAndCheck, osuuid::OsUuid};
 
@@ -25,7 +26,7 @@ pub struct BlockDevice {
     pub fstype: Option<String>,
 
     /// Filesystem size
-    pub fssize: Option<String>,
+    pub fssize: Option<ByteCount>,
 
     /// Partition UUID
     #[serde(rename = "partuuid")]
@@ -575,7 +576,7 @@ mod tests {
                 BlockDevice {
                     name: "/dev/sda1".into(),
                     fstype: Some("vfat".into()),
-                    fssize: Some("52293632".into()),
+                    fssize: Some(ByteCount(52293632)),
                     part_uuid: Some("24d90361-7b1f-47db-b5bb-7d3893ac6ab0".into()),
                     size: 52428800,
                     parent_kernel_name: Some("/dev/sda".into()),
@@ -589,7 +590,7 @@ mod tests {
                 BlockDevice {
                     name: "/dev/sda2".into(),
                     fstype: Some("ext4".into()),
-                    fssize: Some("5264343040".into()),
+                    fssize: Some(ByteCount(5264343040)),
                     part_uuid: Some("13fe614e-f738-4025-bc7f-8c71a3b8242a".into()),
                     size: 5368709120,
                     parent_kernel_name: Some("/dev/sda".into()),
@@ -631,7 +632,7 @@ mod tests {
                 BlockDevice {
                     name: "/dev/sda5".into(),
                     fstype: Some("ext4".into()),
-                    fssize: Some("92500992".into()),
+                    fssize: Some(ByteCount(92500992)),
                     part_uuid: Some("60c8f863-0857-47c4-b427-ba44654c93fe".into()),
                     size: 104857600,
                     parent_kernel_name: Some("/dev/sda".into()),
@@ -782,6 +783,91 @@ mod tests {
             block_device.part_uuid,
             Some(OsUuid::Relaxed("3a9c2054-02".into()))
         );
+    }
+
+    #[test]
+    fn test_azl3_lsblk_output() {
+        let output = r#"{
+            "blockdevices": [
+               {
+                  "alignment": 0,
+                  "id-link": null,
+                  "id": null,
+                  "disc-aln": 0,
+                  "dax": false,
+                  "disc-gran": 512,
+                  "disk-seq": 27,
+                  "disc-max": 2147450880,
+                  "disc-zero": false,
+                  "fsavail": 1069228032,
+                  "fsroots": [
+                      "/"
+                  ],
+                  "fssize": 1071624192,
+                  "fstype": "vfat",
+                  "fsused": 2396160,
+                  "fsuse%": "0%",
+                  "fsver": null,
+                  "group": "disk",
+                  "hctl": null,
+                  "hotplug": false,
+                  "kname": "/dev/sda1",
+                  "label": null,
+                  "log-sec": 512,
+                  "maj:min": "8:1",
+                  "min-io": 512,
+                  "mode": "brw-rw----",
+                  "model": null,
+                  "mq": "  1",
+                  "name": "/dev/sda1",
+                  "opt-io": 0,
+                  "owner": "root",
+                  "partflags": null,
+                  "partlabel": "esp",
+                  "partn": 1,
+                  "parttype": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+                  "parttypename": null,
+                  "partuuid": "87df7565-0e88-4c95-91dd-ac5a3259afb5",
+                  "path": "/dev/sda1",
+                  "phy-sec": 512,
+                  "pkname": "/dev/sda",
+                  "pttype": null,
+                  "ptuuid": null,
+                  "ra": 128,
+                  "rand": true,
+                  "rev": null,
+                  "rm": false,
+                  "ro": false,
+                  "rota": true,
+                  "rq-size": 64,
+                  "sched": "bfq",
+                  "serial": null,
+                  "size": 1073741824,
+                  "start": 2048,
+                  "state": null,
+                  "subsystems": "block:scsi:pci",
+                  "mountpoint": "/mnt/newroot/boot/efi",
+                  "mountpoints": [
+                      "/mnt/newroot/boot/efi"
+                  ],
+                  "tran": null,
+                  "type": "part",
+                  "uuid": "FCE7-4962",
+                  "vendor": null,
+                  "wsame": 0,
+                  "wwn": null,
+                  "zoned": "none",
+                  "zone-sz": 0,
+                  "zone-wgran": 0,
+                  "zone-app": 0,
+                  "zone-nr": 0,
+                  "zone-omax": 0,
+                  "zone-amax": 0
+               }
+            ]
+         }"#;
+
+        parse_lsblk_output(output).unwrap();
     }
 }
 
