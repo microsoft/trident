@@ -23,7 +23,7 @@ use trident_api::{
         TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_PATH,
         TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
-    status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
+    status::{BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
 
@@ -157,7 +157,6 @@ fn setup_root_verity_device(
         root_verity_device.id.clone(),
         BlockDeviceInfo {
             path: Path::new(DEV_MAPPER_PATH).join(updated_device_name),
-            contents: BlockDeviceContents::Initialized,
             size: 0, // TODO: https://dev.azure.com/mariner-org/ECF/_workitems/edit/7319/
         },
     ))
@@ -474,7 +473,7 @@ mod test {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use trident_api::{
         config::{Disk, FileSystemType, Partition, PartitionSize, PartitionType, Storage},
-        status::{self, BlockDeviceContents},
+        status,
     };
 
     fn get_original_grub_content() -> &'static str {
@@ -619,26 +618,10 @@ mod test {
             },
             storage: status::Storage {
                 block_devices: btreemap! {
-                    "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 0 },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 0 },
+                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 0 },
+                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 0 },
                 },
                 ..Default::default()
             },
@@ -761,16 +744,8 @@ mod test {
             },
             storage: status::Storage {
                 block_devices: btreemap! {
-                    "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda1"), size: 0 },
+                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda2"), size: 0 },
                 },
                 ..Default::default()
             },
@@ -848,7 +823,7 @@ mod functional_test {
     };
     use trident_api::{
         config::{Disk, FileSystemType, InternalVerityDevice, Partition, PartitionType, Storage},
-        status::{self, BlockDeviceContents},
+        status,
     };
 
     #[functional_test]
@@ -988,26 +963,10 @@ mod functional_test {
             },
             storage: status::Storage {
                 block_devices: btreemap! {
-                    "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        size: 300,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root-verity".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
+                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
+                    "root-verity".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
                 },
                 ..Default::default()
             },
@@ -1148,31 +1107,11 @@ mod functional_test {
             },
             storage: status::Storage {
                 block_devices: btreemap! {
-                    "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        size: 300,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
+                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
+                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
+                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 100 },
                 },
                 ..Default::default()
             },
@@ -1194,8 +1133,7 @@ mod functional_test {
                 vd,
                 BlockDeviceInfo {
                     path: PathBuf::from(DEV_MAPPER_PATH).join("root_new"),
-                    size: 0,
-                    contents: BlockDeviceContents::Initialized,
+                    size: 0
                 }
             );
         }
@@ -1309,31 +1247,11 @@ mod functional_test {
             },
             storage: status::Storage {
                 block_devices: btreemap! {
-                    "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        size: 300,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
+                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
+                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
+                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 100 },
                 },
                 ..Default::default()
             },
@@ -1357,8 +1275,7 @@ mod functional_test {
                 verity_device,
                 &BlockDeviceInfo {
                     path: PathBuf::from(DEV_MAPPER_PATH).join("root_new"),
-                    size: 0,
-                    contents: BlockDeviceContents::Initialized,
+                    size: 0
                 }
             );
         }
@@ -1493,31 +1410,11 @@ mod functional_test {
             },
             storage: status::Storage {
                 block_devices: btreemap! {
-                    "sdb".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        size: 300,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
+                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
+                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
+                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 100 },
                 },
                 ..Default::default()
             },
@@ -1651,31 +1548,11 @@ mod functional_test {
             },
             storage: status::Storage {
                 block_devices: btreemap! {
-                    "foo".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        size: 300,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "boot".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root-hash".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "overlay".to_owned() => status::BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                        size: 100,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "foo".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
+                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
+                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
+                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 100 },
                 },
                 ..Default::default()
             },

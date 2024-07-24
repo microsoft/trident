@@ -1,7 +1,3 @@
-use std::path::PathBuf;
-
-use status::{BlockDeviceContents, BlockDeviceInfo};
-
 pub mod config;
 pub mod constants;
 pub mod error;
@@ -11,16 +7,6 @@ pub mod status;
 
 /// Identifier for a block device. Needs to be unique across all types of devices.
 pub type BlockDeviceId = String;
-
-impl BlockDeviceInfo {
-    pub fn new(path: PathBuf, size: u64, contents: BlockDeviceContents) -> Self {
-        Self {
-            path,
-            size,
-            contents,
-        }
-    }
-}
 
 /// Returns true if the given value is equal to its default value.
 /// Useful for #[serde(skip_serializing_if = "default")]

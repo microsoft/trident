@@ -206,7 +206,7 @@ mod functional_test {
     use trident_api::{
         config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
         error::ErrorKind,
-        status::{BlockDeviceContents, BlockDeviceInfo, Storage},
+        status::{BlockDeviceInfo, Storage},
     };
 
     #[functional_test(feature = "helpers")]
@@ -248,16 +248,8 @@ mod functional_test {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sr"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "sr0".into() => BlockDeviceInfo {
-                        path: PathBuf::from(CDROM_DEVICE_PATH),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    }
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sr"), size: 0 },
+                    "sr0".into() => BlockDeviceInfo { path: PathBuf::from(CDROM_DEVICE_PATH), size: 0 }
                 },
                 ..Default::default()
             },
@@ -322,21 +314,9 @@ mod functional_test {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "esp".into() => BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    }
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 0 },
+                    "esp".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 0 },
+                    "root".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 0 }
                 },
                 ..Default::default()
             },
@@ -463,16 +443,8 @@ mod functional_test {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sr"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "sr0".into() => BlockDeviceInfo {
-                        path: PathBuf::from(CDROM_DEVICE_PATH),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    }
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sr"), size: 0 },
+                    "sr0".into() => BlockDeviceInfo { path: PathBuf::from(CDROM_DEVICE_PATH), size: 0 }
                 },
                 ..Default::default()
             },
@@ -563,16 +535,8 @@ mod functional_test {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sr"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "sr0".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sr0"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    }
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sr"), size: 0 },
+                    "sr0".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sr0"), size: 0 }
                 },
                 ..Default::default()
             },

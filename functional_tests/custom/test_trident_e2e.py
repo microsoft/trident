@@ -50,13 +50,6 @@ def test_trident_get(vm):
     placeholder = "placeholder"
     for id, block_device in host_status["storage"]["blockDevices"].items():
         block_device["path"] = placeholder
-        if (
-            isinstance(block_device["contents"], dict)
-            and "sha256" in block_device["contents"]
-        ):
-            block_device["contents"]["sha256"] = placeholder
-            block_device["contents"]["length"] = placeholder
-            block_device["contents"]["url"] = placeholder
     host_status["storage"]["diskUuidIdMap"] = {placeholder: placeholder}
     with open(
         TRIDENT_REPO_DIR_PATH / "functional_tests/host-status-template.yaml", "r"

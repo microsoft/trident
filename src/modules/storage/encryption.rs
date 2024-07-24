@@ -16,7 +16,7 @@ use tempfile::NamedTempFile;
 use trident_api::{
     config::{HostConfiguration, Partition, PartitionType},
     constants::DEV_MAPPER_PATH,
-    status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
+    status::{BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
 
@@ -139,8 +139,6 @@ pub fn provision(
                 partition.partition_type.to_sdrepart_part_type()
             );
 
-            // Set the content status of the device to unknown since we are about to encrypt the
-            // block device and this may fail.
             let device = host_status
                 .storage
                 .block_devices
@@ -149,8 +147,6 @@ pub fn provision(
                     "Failed to find device '{}' for encrypted volume '{}'",
                     ev.device_id, ev.id
                 ))?;
-
-            device.contents = BlockDeviceContents::Unknown;
 
             encrypt_and_open_device(&device.path, &ev.device_name, &key_file_path).context(
                 format!(
@@ -161,10 +157,6 @@ pub fn provision(
                     ev.id
                 ),
             )?;
-
-            // Set the content status of the device to initialized since the block device now
-            // contains a valid LUKS volume.
-            device.contents = BlockDeviceContents::Initialized;
 
             let header_offset_in_bytes: u64 =
                 get_luks_header_offset(&device.path).context(format!(
@@ -180,7 +172,6 @@ pub fn provision(
                 BlockDeviceInfo {
                     path: Path::new(DEV_MAPPER_PATH).join(&ev.device_name),
                     size,
-                    contents: BlockDeviceContents::Unknown,
                 },
             );
         }

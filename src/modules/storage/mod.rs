@@ -11,7 +11,7 @@ use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
-    status::{AbVolumeSelection, BlockDeviceContents, HostStatus, ServicingType},
+    status::{HostStatus, ServicingType},
     BlockDeviceId,
 };
 
@@ -258,41 +258,6 @@ fn get_hostconfig_disk_paths(host_config: &HostConfiguration) -> Result<Vec<Path
         .collect()
 }
 
-pub(super) fn set_host_status_block_device_contents(
-    host_status: &mut HostStatus,
-    block_device_id: &BlockDeviceId,
-    contents: BlockDeviceContents,
-) -> Result<(), Error> {
-    debug!("Setting block device '{block_device_id}' contents to '{contents:?}'");
-    if let Some(disk) = host_status.storage.block_devices.get_mut(block_device_id) {
-        disk.contents = contents;
-        return Ok(());
-    }
-
-    if let Some(ab_update) = &host_status.spec.storage.ab_update {
-        if let Some(ab_volume_pair) = ab_update
-            .volume_pairs
-            .iter()
-            .find(|p| &p.id == block_device_id)
-        {
-            let target_id = match host_status.get_ab_update_volume() {
-                Some(AbVolumeSelection::VolumeA) => Some(&ab_volume_pair.volume_a_id),
-                Some(AbVolumeSelection::VolumeB) => Some(&ab_volume_pair.volume_b_id),
-                None => None,
-            };
-            if let Some(target_id) = target_id {
-                return set_host_status_block_device_contents(
-                    host_status,
-                    &target_id.clone(),
-                    contents,
-                );
-            }
-        }
-    }
-
-    anyhow::bail!("No block device with id '{}' found", block_device_id);
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -305,9 +270,9 @@ mod tests {
     use tempfile::NamedTempFile;
     use trident_api::{
         config::{
-            self, AbUpdate, AbVolumePair, Disk as DiskConfig, FileSystemType, HostConfiguration,
-            InternalMountPoint, Partition as PartitionConfig, PartitionSize, PartitionType, Raid,
-            RaidLevel, SoftwareRaidArray, Storage as StorageConfig,
+            self, Disk as DiskConfig, FileSystemType, HostConfiguration, InternalMountPoint,
+            Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
+            SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
         status::{BlockDeviceInfo, ServicingState, Storage},
@@ -488,174 +453,6 @@ mod tests {
         );
     }
 
-    /// Validates logic for setting block device contents
-    #[test]
-    fn test_set_host_status_block_device_contents() {
-        let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
-            servicing_state: ServicingState::Staging,
-            spec: HostConfiguration {
-                storage: config::Storage {
-                    ab_update: Some(AbUpdate {
-                        volume_pairs: vec![AbVolumePair {
-                            id: "osab".to_string(),
-                            volume_a_id: "root".to_string(),
-                            volume_b_id: "rootb".to_string(),
-                        }],
-                    }),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 900,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "rootb".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 9000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "data".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                },
-                ab_active_volume: None,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("os")
-                .unwrap()
-                .contents,
-            BlockDeviceContents::Unknown
-        );
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("root")
-                .unwrap()
-                .contents,
-            BlockDeviceContents::Unknown
-        );
-
-        // test for disks
-        let contents = BlockDeviceContents::Zeroed;
-        set_host_status_block_device_contents(&mut host_status, &"os".to_owned(), contents.clone())
-            .unwrap();
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("os")
-                .unwrap()
-                .contents,
-            contents.clone()
-        );
-
-        // test for partitions
-        set_host_status_block_device_contents(
-            &mut host_status,
-            &"efi".to_owned(),
-            contents.clone(),
-        )
-        .unwrap();
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("efi")
-                .unwrap()
-                .contents,
-            contents.clone()
-        );
-
-        // test for ab volumes
-        set_host_status_block_device_contents(
-            &mut host_status,
-            &"osab".to_owned(),
-            contents.clone(),
-        )
-        .unwrap();
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("root")
-                .unwrap()
-                .contents,
-            contents.clone()
-        );
-
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
-
-        set_host_status_block_device_contents(
-            &mut host_status,
-            &"osab".to_owned(),
-            contents.clone(),
-        )
-        .unwrap();
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("root")
-                .unwrap()
-                .contents,
-            contents.clone()
-        );
-
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-
-        set_host_status_block_device_contents(
-            &mut host_status,
-            &"osab".to_owned(),
-            contents.clone(),
-        )
-        .unwrap();
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("root")
-                .unwrap()
-                .contents,
-            contents.clone()
-        );
-
-        // test failure when missing id is provided
-        assert_eq!(
-            set_host_status_block_device_contents(
-                &mut host_status,
-                &"foorbar".to_owned(),
-                contents.clone()
-            )
-            .unwrap_err()
-            .to_string(),
-            "No block device with id 'foorbar' found"
-        );
-    }
-
     #[test]
     fn test_generate_fstab() {
         let expected_contents = "/part1 / ext4 defaults 0 1\n";
@@ -680,11 +477,7 @@ mod tests {
                 spec: get_host_config(&temp_tabfile),
                 storage: Storage {
                     block_devices: btreemap! {
-                        "part1".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/part1"),
-                            size: 1,
-                            contents: BlockDeviceContents::Unknown,
-                        },
+                        "part1".into() => BlockDeviceInfo { path: PathBuf::from("/part1"), size: 1 },
                     },
                     ..Default::default()
                 },
@@ -716,11 +509,7 @@ mod tests {
                 spec: hc,
                 storage: Storage {
                     block_devices: btreemap! {
-                        "part1".into() => BlockDeviceInfo {
-                            path: PathBuf::from("/part1"),
-                            size: 1,
-                            contents: BlockDeviceContents::Unknown,
-                        },
+                        "part1".into() => BlockDeviceInfo { path: PathBuf::from("/part1"), size: 1 },
                     },
                     ..Default::default()
                 },

@@ -142,8 +142,7 @@ mod tests {
         },
         constants::{self, SWAP_MOUNT_POINT},
         status::{
-            BlockDeviceContents, BlockDeviceInfo, HostStatus, ServicingState, ServicingType,
-            Storage as StorageStatus,
+            BlockDeviceInfo, HostStatus, ServicingState, ServicingType, Storage as StorageStatus,
         },
     };
 
@@ -187,35 +186,11 @@ mod tests {
             },
             storage: StorageStatus {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Image {
-                            sha256: "2cb228bc3bbbc2174585327b255a7196075559ecd0c49bf710dfd5432af8f9ec".to_owned(),
-                            length: 738484224,
-                            url: "file:///root.raw.zst".to_owned(),
-                        },
-                    },
-                    "home".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "swap".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/swap"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
+                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
+                    "home".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
+                    "swap".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/swap"), size: 0 },
                 },
                 ..Default::default()
             },
@@ -391,35 +366,11 @@ mod tests {
             spec: host_config.clone(),
             storage: StorageStatus {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Image {
-                            sha256: "2cb228bc3bbbc2174585327b255a7196075559ecd0c49bf710dfd5432af8f9ec".to_owned(),
-                            length: 738484224,
-                            url: "file:///root.raw.zst".to_owned(),
-                        },
-                    },
-                    "home".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "swap".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/swap"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
+                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
+                    "home".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
+                    "swap".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/swap"), size: 0 },
                 },
                 ..Default::default()
             },

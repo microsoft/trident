@@ -19,8 +19,7 @@ use osutils::{
 };
 use trident_api::{
     config::{Image, ImageFormat, ImageSha256},
-    status::{BlockDeviceContents, HostStatus, ServicingType},
-    BlockDeviceId,
+    status::{HostStatus, ServicingType},
 };
 
 use crate::modules::{
@@ -28,10 +27,7 @@ use crate::modules::{
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
-    storage::{
-        self,
-        image::stream_image::{self, GET_MAX_RETRIES, GET_TIMEOUT_SECS},
-    },
+    storage::image::stream_image::{self, GET_MAX_RETRIES, GET_TIMEOUT_SECS},
 };
 
 /// Performs file-based update of stand-alone ESP volume by copying three boot files into the
@@ -53,7 +49,6 @@ use crate::modules::{
 fn copy_file_artifacts(
     image_url: &Url,
     image: &Image,
-    device_id: &BlockDeviceId,
     host_status: &mut HostStatus,
     is_local: bool,
     mount_point: &Path,
@@ -81,9 +76,26 @@ fn copy_file_artifacts(
 
     // Stream image to the temporary file. destination_size is None since we're writing to a new
     // file and not block device
-    let (computed_sha256, bytes_copied) =
-        image_streamer::stream_zstd(reader, &temp_image_path, None)
-            .context(format!("Failed to stream ESP image from {}", image_url))?;
+    let computed_sha256 = image_streamer::stream_zstd(reader, &temp_image_path, None)
+        .context(format!("Failed to stream ESP image from {}", image_url))?;
+
+    // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
+    // SHA256 matches SHA256 in HostConfig
+    match image.sha256 {
+        ImageSha256::Ignored => {
+            info!("Ignoring SHA256 for image from '{}'", image_url);
+        }
+        ImageSha256::Checksum(ref expected_sha256) => {
+            if computed_sha256 != *expected_sha256 {
+                bail!(
+                    "SHA256 mismatch for disk image {}: expected {}, got {}",
+                    image_url,
+                    expected_sha256,
+                    computed_sha256
+                );
+            }
+        }
+    }
 
     // Create a temporary directory to mount ESP image
     let temp_dir = TempDir::new().context("Failed to create a temporary mount directory")?;
@@ -155,34 +167,6 @@ fn copy_file_artifacts(
     // Otherwise, log message and continue
     } else {
         debug!("grub-noprefix.efi is not used and the system is not on Azure Linux 2.0");
-    }
-
-    storage::set_host_status_block_device_contents(
-        host_status,
-        device_id,
-        BlockDeviceContents::Image {
-            sha256: computed_sha256.clone(),
-            length: bytes_copied,
-            url: image_url.to_string(),
-        },
-    )?;
-
-    // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
-    // SHA256 matches SHA256 in HostConfig
-    match image.sha256 {
-        ImageSha256::Ignored => {
-            info!("Ignoring SHA256 for image from '{}'", image_url);
-        }
-        ImageSha256::Checksum(ref expected_sha256) => {
-            if computed_sha256 != *expected_sha256 {
-                bail!(
-                    "SHA256 mismatch for disk image {}: expected {}, got {}",
-                    image_url,
-                    expected_sha256,
-                    computed_sha256
-                );
-            }
-        }
     }
 
     Ok(())
@@ -448,7 +432,6 @@ pub(super) fn update_esp_images(
                 copy_file_artifacts(
                     &image_url,
                     image,
-                    device_id,
                     host_status,
                     true,
                     mount_point,
@@ -463,7 +446,6 @@ pub(super) fn update_esp_images(
                 copy_file_artifacts(
                     &image_url,
                     image,
-                    device_id,
                     host_status,
                     false,
                     mount_point,

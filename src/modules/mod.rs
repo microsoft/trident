@@ -883,7 +883,7 @@ mod test {
 
     use trident_api::{
         config::{self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionType},
-        status::{BlockDeviceContents, Storage},
+        status::Storage,
     };
 
     use super::*;
@@ -930,21 +930,9 @@ mod test {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "foo".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda"),
-                        size: 10,
-                        contents: BlockDeviceContents::Initialized,
-                    },
-                    "boot".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda1"),
-                        size: 2,
-                        contents: BlockDeviceContents::Initialized,
-                    },
-                    "root".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda2"),
-                        size: 6,
-                        contents: BlockDeviceContents::Initialized,
-                    },
+                    "foo".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda"), size: 10 },
+                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda1"), size: 2 },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda2"), size: 6 },
                 },
                 ..Default::default()
             },
@@ -1008,31 +996,11 @@ mod test {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 900,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "rootb".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 9000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "data".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "efi".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
+                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 900 },
+                    "rootb".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 9000 },
+                    "data".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
                 },
                 ..Default::default()
             },
@@ -1045,24 +1013,21 @@ mod test {
             get_block_device(&host_status, &"os".to_owned(), false).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                size: 0,
-                contents: BlockDeviceContents::Unknown,
+                size: 0
             }
         );
         assert_eq!(
             get_block_device(&host_status, &"efi".to_owned(), false).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                size: 0,
-                contents: BlockDeviceContents::Unknown,
+                size: 0
             }
         );
         assert_eq!(
             get_block_device(&host_status, &"root".to_owned(), false).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                size: 900,
-                contents: BlockDeviceContents::Unknown,
+                size: 900
             }
         );
         assert_eq!(
@@ -1073,8 +1038,7 @@ mod test {
             get_block_device(&host_status, &"data".to_owned(), false).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                size: 1000,
-                contents: BlockDeviceContents::Unknown,
+                size: 1000
             }
         );
 
@@ -1094,8 +1058,7 @@ mod test {
             get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                size: 900,
-                contents: BlockDeviceContents::Unknown,
+                size: 900
             }
         );
         assert_eq!(
@@ -1120,8 +1083,7 @@ mod test {
             get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                size: 900,
-                contents: BlockDeviceContents::Unknown,
+                size: 900
             }
         );
         assert_eq!(
@@ -1133,8 +1095,7 @@ mod test {
             get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                size: 9000,
-                contents: BlockDeviceContents::Unknown,
+                size: 9000
             }
         );
         assert_eq!(
@@ -1149,8 +1110,7 @@ mod test {
             get_block_device(&host_status, &"osab".to_owned(), true).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                size: 9000,
-                contents: BlockDeviceContents::Unknown,
+                size: 9000
             }
         );
         assert_eq!(
@@ -1162,8 +1122,7 @@ mod test {
             super::get_block_device(&host_status, &"osab".to_owned(), false).unwrap(),
             BlockDeviceInfo {
                 path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                size: 900,
-                contents: BlockDeviceContents::Unknown,
+                size: 900
             }
         );
         assert_eq!(

@@ -13,7 +13,7 @@ pub fn stream_zstd(
     mut reader: HashingReader<Box<dyn Read>>,
     destination_path: &Path,
     destination_size: Option<u64>,
-) -> Result<(String, u64), Error> {
+) -> Result<String, Error> {
     // Instantiate decoder for ZSTD stream
     let mut decoder = zstd::stream::read::Decoder::new(&mut reader)?;
 
@@ -55,7 +55,6 @@ pub fn stream_zstd(
         bail!("Image is larger than destination ({} bytes already copied, however additional bytes remaining)", bytes_copied);
     }
 
-    let computed_sha256 = &reader.hash();
-
-    Ok((computed_sha256.to_string(), bytes_copied)) // Return both values as a tuple
+    let computed_sha256 = reader.hash();
+    Ok(computed_sha256)
 }

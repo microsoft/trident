@@ -31,11 +31,11 @@ use osutils::{
 };
 use trident_api::{
     config::{Image, ImageSha256, PartitionType},
-    status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, HostStatus},
+    status::{AbVolumeSelection, BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
 
-use crate::{modules::storage, Path};
+use crate::Path;
 
 /// This struct describes an A/B update of a SINGLE image via systemd-sysupdate.
 pub(super) struct ImageDeployment {
@@ -790,7 +790,6 @@ pub(super) fn deploy(
     host_status: &mut HostStatus,
     directory: Option<&Path>,
     filename: Option<&str>,
-    sha256: Option<&str>,
 ) -> Result<(), Error> {
     debug!("Calling Systemd-Sysupdate sub-module to execute A/B update");
     // Create ImageDeployment instance
@@ -810,19 +809,6 @@ pub(super) fn deploy(
     ))?;
     // If A/B update succeeded, update HostStatus
     if image_length > 0 && img_deploy_instance.status == Status::Succeeded {
-        // If sysupdate succeeds, update contents of HostStatus
-        storage::set_host_status_block_device_contents(
-            host_status,
-            device_id,
-            BlockDeviceContents::Image {
-                // When available, use computed hash, otherwise do a best effort and use hash from HostConfig
-                sha256: sha256
-                    .map(|s| s.to_string())
-                    .unwrap_or(image.sha256.to_string()),
-                length: image_length,
-                url: image.url.clone(),
-            },
-        )?;
         info!(
             "Systemd-Sysupdate sub-module successfully updated partition with id '{}' to version '{}'",
             &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
@@ -999,31 +985,11 @@ mod tests {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "rootb".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "data".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
+                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
+                    "rootb".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
+                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
                 },
                 ..Default::default()
             },
@@ -1080,26 +1046,10 @@ mod tests {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "data".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
+                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
+                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
                 },
 
                 ..Default::default()
@@ -1158,31 +1108,11 @@ mod tests {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "rootb".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "data".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
+                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
+                    "rootb".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
+                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
                 },
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),
                 ..Default::default()
@@ -1228,16 +1158,8 @@ mod tests {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "data".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
                 },
                 ..Default::default()
             },
@@ -1289,31 +1211,11 @@ mod tests {
             },
             storage: Storage {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "efi".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "rootb".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "data".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 1000,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
+                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
+                    "rootb".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
+                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
                 },
                 ..Default::default()
             },

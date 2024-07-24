@@ -16,7 +16,7 @@ use osutils::{
 };
 use trident_api::{
     config::{AdoptedPartition, Disk, HostConfiguration, PartitionSize, PartitionType, Storage},
-    status::{BlockDeviceContents, BlockDeviceInfo, HostStatus},
+    status::{BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
 
@@ -61,17 +61,11 @@ pub fn create_partitions(
             disk.id
         ))?;
 
-        // TODO: Track uuid from `disk_information.id`. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7321/
-        trace!(
-            "Updated host status with disk '{}' (contents: 'Unknown')",
-            disk.id
-        );
         host_status.storage.block_devices.insert(
             disk.id.into(),
             BlockDeviceInfo {
                 path: disk.bus_path.clone(),
                 size: disk_information.capacity,
-                contents: BlockDeviceContents::Unknown,
             },
         );
 
@@ -113,25 +107,9 @@ pub fn create_partitions(
                 BlockDeviceInfo {
                     path: repart_partition.path_by_uuid(),
                     size: repart_partition.size,
-                    contents: if repart_partition.is_new() {
-                        BlockDeviceContents::Unknown
-                    } else {
-                        BlockDeviceContents::Initialized
-                    },
                 },
             );
         }
-
-        trace!(
-            "Updated host status metadata for disk '{}' (contents: 'Initialized')",
-            disk.id
-        );
-        host_status
-            .storage
-            .block_devices
-            .get_mut(disk.id)
-            .context(format!("Failed to find disk '{}' in host status", disk.id))?
-            .contents = BlockDeviceContents::Initialized;
     }
     Ok(())
 }
@@ -827,15 +805,6 @@ mod functional_test {
         create_partitions(&mut host_status, &host_config).unwrap();
 
         assert_eq!(host_status.storage.block_devices.len(), 4);
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("disk")
-                .unwrap()
-                .contents,
-            BlockDeviceContents::Initialized
-        );
 
         let check_part = |name: &str, size: Option<u64>| {
             let part = host_status
@@ -843,12 +812,6 @@ mod functional_test {
                 .block_devices
                 .get(name)
                 .unwrap_or_else(|| panic!("Failed to find block device '{}' in status", name));
-            assert_eq!(
-                part.contents,
-                BlockDeviceContents::Unknown,
-                "Contents mismatch for '{}'",
-                name
-            );
             if let Some(size) = size {
                 assert_eq!(part.size, size, "Size mismatch for '{}'", name);
             }

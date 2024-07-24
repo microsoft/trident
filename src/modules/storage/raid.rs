@@ -13,13 +13,11 @@ use std::{
 use strum_macros::{Display, EnumString};
 use trident_api::{
     config::{HostConfiguration, PartitionType, RaidLevel, SoftwareRaidArray},
-    status::{self, BlockDeviceContents, HostStatus},
+    status::{self, HostStatus},
     BlockDeviceId,
 };
 
 use osutils::{block_devices, exe::OutputChecker, lsblk, mdadm, udevadm};
-
-use crate::modules::storage;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
 #[serde(rename_all = "kebab-case")]
@@ -172,27 +170,8 @@ pub(super) fn add_to_host_status(host_status: &mut HostStatus, raid_details: Rai
         status::BlockDeviceInfo {
             path: raid_details.path.clone(),
             size: raid_details.size,
-            contents: status::BlockDeviceContents::Unknown,
         },
     );
-}
-
-// Update a RaidArray by ID
-pub(super) fn update_raid_in_host_status(
-    host_status: &mut HostStatus,
-    id: &str,
-    contents: status::BlockDeviceContents,
-) -> Result<(), Error> {
-    let raid_array = host_status
-        .storage
-        .block_devices
-        .get_mut(id)
-        .context(format!("Failed to update the RAID array: {id}"))?;
-
-    // TODO: Also track status
-    raid_array.contents = contents;
-
-    Ok(())
 }
 
 pub(super) fn get_raid_disks(raid_array: &Path) -> Result<HashSet<PathBuf>, Error> {
@@ -342,18 +321,6 @@ pub(super) fn create_sw_raid(
         }
 
         udevadm::trigger().context("Udev failed while scanning for new devices")?;
-
-        for software_raid_config in &host_config.storage.raid.software {
-            update_raid_in_host_status(
-                host_status,
-                &software_raid_config.id,
-                status::BlockDeviceContents::Unknown,
-            )
-            .context(format!(
-                "Failed to update host status for RAID: '{}'",
-                software_raid_config.name
-            ))?;
-        }
     }
 
     Ok(())
@@ -382,18 +349,6 @@ pub fn create_sw_raid_array(
         .context("Failed to read RAID details after creation")?;
 
     add_to_host_status(host_status, raid_details.clone());
-
-    for block_device_id in &config.devices {
-        storage::set_host_status_block_device_contents(
-            host_status,
-            block_device_id,
-            BlockDeviceContents::Initialized,
-        )
-        .context(format!(
-            "Failed to set block device contents for block device '{}'",
-            block_device_id,
-        ))?
-    }
 
     Ok(())
 }
@@ -482,10 +437,7 @@ mod tests {
 
     use trident_api::{
         config::{Disk, Partition, PartitionSize, PartitionType, Storage},
-        status::{
-            BlockDeviceContents, BlockDeviceInfo, ServicingState, ServicingType,
-            Storage as StorageStatus,
-        },
+        status::{BlockDeviceInfo, ServicingState, ServicingType, Storage as StorageStatus},
     };
 
     use super::*;
@@ -525,26 +477,10 @@ mod tests {
             },
             storage: StorageStatus {
                 block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "boot".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda1"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "root".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda2"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
-                    "home".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/sda3"),
-                        size: 0,
-                        contents: BlockDeviceContents::Unknown,
-                    },
+                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
+                    "boot".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sda1"), size: 0 },
+                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sda2"), size: 0 },
+                    "home".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sda3"), size: 0 },
                 },
                 ..Default::default()
             },
@@ -594,35 +530,6 @@ mod tests {
     }
 
     #[test]
-    fn test_update_raid_status() {
-        let host_status = &mut HostStatus::default();
-
-        host_status.storage.block_devices.insert(
-            "some_raid".to_string(),
-            BlockDeviceInfo {
-                path: PathBuf::from("/dev/md/some_raid"),
-                size: 12345,
-                contents: BlockDeviceContents::Unknown,
-            },
-        );
-
-        let _ = update_raid_in_host_status(
-            host_status,
-            "some_raid",
-            status::BlockDeviceContents::Initialized,
-        );
-        assert_eq!(
-            host_status
-                .storage
-                .block_devices
-                .get("some_raid")
-                .unwrap()
-                .contents,
-            status::BlockDeviceContents::Initialized
-        );
-    }
-
-    #[test]
     fn test_get_raid_device_name() {
         let raid_device = Path::new("/dev/md/my-raid");
 
@@ -643,6 +550,8 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+
+    use crate::modules::storage;
 
     use super::*;
     use pytest_gen::functional_test;

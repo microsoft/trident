@@ -7,33 +7,21 @@ storage:
     os:
       path: placeholder
       size: 17178803712
-      contents: initialized
     esp:
       path: placeholder
       size: 52428800
-      contents: !image
-        sha256: placeholder
-        length: placeholder
-        url: placeholder
     root-a:
       path: placeholder
       size: 5368709120
-      contents: !image
-        sha256: placeholder
-        length: placeholder
-        url: placeholder
     root-b:
       path: placeholder
       size: 2147483648
-      contents: unknown
     swap:
       path: placeholder
       size: 2147483648
-      contents: initialized
     trident:
       path: placeholder
       size: 104857600
-      contents: initialized
   abActiveVolume: volume-a
   rootDevicePath: /dev/sda2
   diskUuidIdMap: {placeholder: placeholder}

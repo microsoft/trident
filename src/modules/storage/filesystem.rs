@@ -6,11 +6,11 @@ use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
 use rayon::prelude::*;
 use trident_api::{
     config::{FileSystemSource, FileSystemType},
-    status::{BlockDeviceContents, HostStatus, ServicingType},
+    status::{HostStatus, ServicingType},
     BlockDeviceId,
 };
 
-use crate::modules::{self, storage};
+use crate::modules;
 
 /// Creates clean filesystems on top of block devices that are not to be initialized with images,
 /// i.e. have the file system source 'Create'. The function also re-formats any inactive/update A/B
@@ -29,22 +29,9 @@ pub(super) fn create_filesystems(host_status: &mut HostStatus) -> Result<(), Err
                 "Failed to create filesystem '{}' on block device '{}'",
                 filesystem, block_device_id
             ))?;
-            Ok(block_device_id)
+            Ok(())
         })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .try_for_each(|block_device_id| match block_device_id {
-            Err(e) => Err(e),
-            Ok(block_device_id) => storage::set_host_status_block_device_contents(
-                host_status,
-                block_device_id,
-                BlockDeviceContents::Initialized,
-            )
-            .context(format!(
-                "Failed to set block device contents for block device '{}'",
-                block_device_id,
-            )),
-        })
+        .collect()
 }
 
 /// Returns a list of tuples (block_device_id, device_path, filesystem) for block devices that need
@@ -242,31 +229,22 @@ mod test {
                     "os".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         size: 34358672896,
-                        contents: BlockDeviceContents::Initialized,
                     },
                     "esp".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
                         size: 100,
-                        contents: BlockDeviceContents::Unknown,
                     },
                     "root-a".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
                         size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/root_1.img".to_string(),
-                            sha256: "root_sha256_1".to_string(),
-                            length: 100,
-                        },
                     },
                     "root-b".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
                         size: 100,
-                        contents: BlockDeviceContents::Unknown,
                     },
                     "trident".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp4"),
                         size: 100,
-                        contents: BlockDeviceContents::Unknown,
                     },
                 },
                 ..Default::default()
@@ -376,39 +354,22 @@ mod test {
                     "os".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         size: 34358672896,
-                        contents: BlockDeviceContents::Initialized,
                     },
                     "esp".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
                         size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/esp_1.img".to_string(),
-                            sha256: "esp_sha256_1".to_string(),
-                            length: 100,
-                        },
                     },
                     "root-a".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
                         size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/root_1.img".to_string(),
-                            sha256: "root_sha256_1".to_string(),
-                            length: 100,
-                        },
                     },
                     "root-b".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
                         size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/root_2.img".to_string(),
-                            sha256: "root_sha256_2".to_string(),
-                            length: 100,
-                        },
                     },
                     "trident".into() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp4"),
                         size: 100,
-                        contents: BlockDeviceContents::Initialized,
                     },
                 },
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),
@@ -507,26 +468,18 @@ mod test {
                     "os".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-bus/foobar"),
                         size: 34358672896,
-                        contents: BlockDeviceContents::Initialized,
                     },
                     "esp".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
                         size: 100,
-                        contents: BlockDeviceContents::Initialized,
                     },
                     "root-a".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
                         size: 100,
-                        contents: BlockDeviceContents::Initialized,
                     },
                     "root-b".to_owned() => BlockDeviceInfo {
                         path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
                         size: 100,
-                        contents: BlockDeviceContents::Image {
-                            url: "http://example.com/root_2.img".to_string(),
-                            sha256: "root_sha256_2".to_string(),
-                            length: 100,
-                        },
                     },
                 },
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),

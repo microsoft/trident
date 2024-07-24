@@ -713,7 +713,7 @@ mod functional_test {
             AbUpdate, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition,
             PartitionType, Storage,
         },
-        status::{AbVolumeSelection, BlockDeviceContents, BlockDeviceInfo, Storage as HostStorage},
+        status::{AbVolumeSelection, BlockDeviceInfo, Storage as HostStorage},
     };
 
     /// Validates that validate_reboot() correctly detects rollback when root is a partition.
@@ -788,26 +788,10 @@ mod functional_test {
 
         // Test case #2: After CleanInstall, Trident correctly booted into root-a.
         host_status.storage.block_devices = btreemap! {
-            "os".to_owned() => BlockDeviceInfo {
-                path: PathBuf::from("/dev/sda"),
-                size: 0,
-                contents: BlockDeviceContents::Unknown,
-            },
-            "efi".to_owned() => BlockDeviceInfo {
-                path: PathBuf::from("/dev/sda1"),
-                size: 0,
-                contents: BlockDeviceContents::Unknown,
-            },
-            "root-a".to_owned() => BlockDeviceInfo {
-                path: PathBuf::from("/dev/sda2"),
-                size: 900,
-                contents: BlockDeviceContents::Unknown,
-            },
-            "root-b".to_owned() => BlockDeviceInfo {
-                path: PathBuf::from("/dev/sda3"),
-                size: 9000,
-                contents: BlockDeviceContents::Unknown,
-            },
+            "os".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda"), size: 0 },
+            "efi".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda1"), size: 0 },
+            "root-a".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda2"), size: 900 },
+            "root-b".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda3"), size: 9000 },
         };
         let result2 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
         assert!(result2.is_ok());
