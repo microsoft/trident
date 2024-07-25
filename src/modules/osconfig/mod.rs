@@ -5,9 +5,8 @@ use log::{debug, error, info, warn};
 
 use osutils::path;
 use trident_api::{
-    config::{
-        HostConfiguration, HostConfigurationDynamicValidationError, ManagementOs, Os, SshMode,
-    },
+    config::{HostConfiguration, ManagementOs, Os, SshMode},
+    error::{ExecutionEnvironmentMisconfigurationError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -38,15 +37,16 @@ impl Module for OsConfigModule {
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
         _planned_servicing_type: ServicingType,
-    ) -> Result<(), HostConfigurationDynamicValidationError> {
+    ) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
         if requires_os_modifier_os(&host_config.os) && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
         {
-            return Err(
-                HostConfigurationDynamicValidationError::MissingOsModifierBinary(
-                    OS_MODIFIER_BINARY_PATH.to_string(),
-                ),
-            );
+            return Err(TridentError::new(
+                ExecutionEnvironmentMisconfigurationError::MissingOsModifierBinary {
+                    binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
+                    config: self.name().to_string(),
+                },
+            ));
         }
 
         Ok(())
@@ -98,7 +98,7 @@ impl Module for MosConfigModule {
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
         planned_servicing_type: ServicingType,
-    ) -> Result<(), HostConfigurationDynamicValidationError> {
+    ) -> Result<(), TridentError> {
         if planned_servicing_type != ServicingType::CleanInstall {
             debug!(
                 "Skipping stage 'Validate' for module '{}' during servicing type: {:?}",
@@ -112,11 +112,12 @@ impl Module for MosConfigModule {
         if requires_os_modifier_mos(&host_config.management_os)
             && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
         {
-            return Err(
-                HostConfigurationDynamicValidationError::MissingOsModifierBinary(
-                    OS_MODIFIER_BINARY_PATH.to_string(),
-                ),
-            );
+            return Err(TridentError::new(
+                ExecutionEnvironmentMisconfigurationError::MissingOsModifierBinary {
+                    binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
+                    config: self.name().to_string(),
+                },
+            ));
         }
 
         Ok(())

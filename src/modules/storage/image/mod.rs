@@ -17,9 +17,12 @@ use osutils::{
     veritysetup,
 };
 use trident_api::{
-    config::{AbUpdate, HostConfiguration, Image, ImageFormat, ImageSha256},
+    config::{
+        AbUpdate, HostConfiguration, HostConfigurationDynamicValidationError, Image, ImageFormat,
+        ImageSha256,
+    },
     constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
-    error::TridentResultExt,
+    error::{InvalidInputError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, HostStatus, ServicingType},
     BlockDeviceId,
 };
@@ -488,7 +491,7 @@ pub(super) fn validate_host_config(
     host_status: &HostStatus,
     host_config: &HostConfiguration,
     planned_servicing_type: ServicingType,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     if planned_servicing_type == ServicingType::AbUpdate {
         // Get lists of all old and new images in the host configuration
         let old_images = host_status
@@ -520,11 +523,11 @@ pub(super) fn validate_host_config(
             if !esp_images.iter().any(|(id, _)| id == &device_id)
                 && !ab_volume_pair_images.iter().any(|(id, _)| id == &device_id)
             {
-                bail!(
-                    "Image update for standalone block device '{}' is not allowed during servicing type '{:?}'",
-                    device_id,
-                    planned_servicing_type,
-                );
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::AbUpdateNotAllowedForStandaloneBlockDevice(
+                            device_id.clone(),
+                        ),
+                )));
             }
         }
     }

@@ -98,9 +98,6 @@ pub enum HostConfigurationDynamicValidationError {
     #[error("Datastore path cannot be changed. Current: '{current}'. New: '{new}'")]
     ChangedDatastorePath { current: String, new: String },
 
-    #[error("File for script '{name}' not found on host at '{path}'")]
-    ScriptNotFound { name: String, path: String },
-
     #[error("The disk '{name}' refers to device '{device}' which is not under '/dev'")]
     BadBlockDevicePath { name: String, device: String },
 
@@ -113,25 +110,38 @@ pub enum HostConfigurationDynamicValidationError {
         device: String,
     },
 
-    #[error("Encryption configuration is incorrect:\n{0}")]
-    EncryptionIncorrect(String),
+    #[error(
+        "Image update must not be requested for standalone block device with id '{0}' during A/B update"
+    )]
+    AbUpdateNotAllowedForStandaloneBlockDevice(String),
 
-    #[error("Failed to parse host configuration")]
-    ImagesIncorrect(String),
+    #[error("Path '{disk_path}' of disk with id '{disk_id}' cannot be found in the system")]
+    InvalidDiskPath { disk_path: String, disk_id: String },
 
-    #[error("Failed to find OS Modifier binary at '{0}'")]
-    MissingOsModifierBinary(String),
+    #[error("Failed to get block device information for disk with id '{0}' that requires partition adoption")]
+    DiskForPartitionAdoptionInfoFailed(String),
+
+    #[error("File for script '{name}' not found on host at '{path}'")]
+    ScriptNotFound { name: String, path: String },
+
+    #[error("Encryption recovery key file '{0}' not found")]
+    EncryptionKeyNotFound(String),
+
+    #[error("Failed to get metadata for encryption recovery key file '{0}'")]
+    EncryptionKeyMetadataFailed(String),
+
+    #[error("Encryption recovery key file '{0}' must not be empty")]
+    EncryptionKeyEmpty(String),
+
+    #[error("Encryption recovery key file '{0}' must be a regular file")]
+    EncryptionKeyNotRegularFile(String),
+
+    #[error("Recovery key file '{key_file}' must not be readable or writable by group or others but has permissions 0o{permissions:03o}")]
+    EncryptionKeyInvalidPermissions { key_file: String, permissions: u32 },
 
     #[error("Partitions are being adopted on disk '{0}', but it is not using GPT partitioning")]
     AdoptionOnNonGptPartitionedDisk(String),
 
     #[error("Uncategorized error: {0}")]
     Other(String),
-}
-
-/// Temporary helper to convert existing code to the new error types.
-impl From<anyhow::Error> for HostConfigurationDynamicValidationError {
-    fn from(value: anyhow::Error) -> Self {
-        Self::Other(format!("{:#}", value))
-    }
 }

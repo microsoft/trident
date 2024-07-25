@@ -14,8 +14,11 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use trident_api::{
-    config::{HostConfiguration, Partition, PartitionType},
+    config::{
+        HostConfiguration, HostConfigurationDynamicValidationError, Partition, PartitionType,
+    },
     constants::DEV_MAPPER_PATH,
+    error::{InvalidInputError, ReportError, TridentError},
     status::{BlockDeviceInfo, HostStatus},
     BlockDeviceId,
 };
@@ -25,34 +28,40 @@ const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
-pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error> {
+pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<(), TridentError> {
     if let Some(encryption) = &host_config.storage.encryption {
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
             let key_file: PathBuf = recovery_key_url.path().into();
 
             if !key_file.exists() {
-                bail!(
-                    "Recovery key file '{}' does not exist",
-                    key_file.to_string_lossy()
-                );
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::EncryptionKeyNotFound(
+                        key_file.to_string_lossy().to_string(),
+                    ),
+                )));
             }
-            let key_file_metadata = std::fs::metadata(&key_file).context(format!(
-                "Failed to get metadata for recovery key file '{}'",
-                key_file.display()
-            ))?;
+
+            let key_file_metadata =
+                std::fs::metadata(&key_file).structured(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::EncryptionKeyMetadataFailed(
+                        key_file.to_string_lossy().to_string(),
+                    ),
+                ))?;
 
             if key_file_metadata.len() == 0 {
-                bail!(
-                    "Recovery key file '{}' is empty",
-                    key_file.to_string_lossy()
-                );
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::EncryptionKeyEmpty(
+                        key_file.to_string_lossy().to_string(),
+                    ),
+                )));
             }
 
             if !key_file_metadata.is_file() {
-                bail!(
-                    "Recovery key '{}' is not a file",
-                    key_file.to_string_lossy()
-                );
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::EncryptionKeyNotRegularFile(
+                        key_file.to_string_lossy().to_string(),
+                    ),
+                )));
             }
 
             let key_file_perms_mode: u32 = key_file_metadata.permissions().mode();
@@ -69,11 +78,12 @@ pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error
             // that these isolated permissions are indeed set to 0,
             // ensuring exclusive access for the owner.
             if (key_file_perms_mode & 0o77) != 0 {
-                bail!(
-                    "Recovery key file '{}' must not be readable or writable by group or others but has permissions 0o{:03o}",
-                    key_file.to_string_lossy(),
-                    key_file_perms_mode & 0o777
-                );
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::EncryptionKeyInvalidPermissions {
+                        key_file: key_file.to_string_lossy().to_string(),
+                        permissions: key_file_perms_mode & 0o777,
+                    },
+                )));
             }
         }
     }
@@ -83,7 +93,7 @@ pub fn validate_host_config(host_config: &HostConfiguration) -> Result<(), Error
 
 /// This function provisions all configured encrypted volumes.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
-pub fn provision(
+pub(super) fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
@@ -273,7 +283,7 @@ fn encrypt_and_open_device(
 /// fails. It can also error when writing to the specified file path
 /// fails, which could be due to permission issues, non-existent
 /// directories in the path, or other filesystem-related errors.
-pub fn generate_recovery_key_file(path: &Path) -> Result<(), Error> {
+pub(super) fn generate_recovery_key_file(path: &Path) -> Result<(), Error> {
     let mut random_file: File = File::open("/dev/random").context("Failed to open /dev/random")?;
     let mut random_buffer: [u8; TMP_RECOVERY_KEY_SIZE] = [0u8; TMP_RECOVERY_KEY_SIZE];
     random_file
@@ -454,6 +464,7 @@ mod tests {
             PartitionSize, PartitionType, Raid, RaidLevel, SoftwareRaidArray, Storage,
         },
         constants,
+        error::ErrorKind,
     };
     use url::Url;
 
@@ -616,11 +627,12 @@ mod tests {
         std::fs::remove_file(recovery_key_file.path()).unwrap();
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().to_string(),
-            format!(
-                "Recovery key file '{}' does not exist",
-                recovery_key_file.path().display()
-            )
+            validate_host_config(&host_config).unwrap_err().kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::EncryptionKeyNotFound(
+                    recovery_key_file.path().to_string_lossy().to_string()
+                )
+            })
         );
     }
 
@@ -636,11 +648,12 @@ mod tests {
         encryption.recovery_key_url = Some(Url::from_directory_path(recovery_key_dir).unwrap());
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().to_string(),
-            format!(
-                "Recovery key '{}/' is not a file",
-                recovery_key_dir.display()
-            )
+            validate_host_config(&host_config).unwrap_err().kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::EncryptionKeyNotRegularFile(
+                    format!("{}/", recovery_key_dir.to_string_lossy())
+                )
+            })
         );
     }
 
@@ -694,12 +707,13 @@ mod tests {
                     std::fs::set_permissions(recovery_key_file.path(), perms).unwrap();
 
                     assert_eq!(
-                        validate_host_config(&host_config).unwrap_err().to_string(),
-                        format!(
-                            "Recovery key file '{}' must not be readable or writable by group or others but has permissions 0o{:03o}",
-                            recovery_key_file.path().display(),
-                            mode
-                        )
+                        validate_host_config(&host_config).unwrap_err().kind(),
+                        &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                            inner: HostConfigurationDynamicValidationError::EncryptionKeyInvalidPermissions {
+                                key_file: recovery_key_file.path().to_string_lossy().to_string(),
+                                permissions: mode & 0o777,
+                            }
+                        })
                     );
                 }
             }
@@ -715,11 +729,12 @@ mod tests {
         std::fs::write(recovery_key_file.path(), "").unwrap();
 
         assert_eq!(
-            validate_host_config(&host_config).unwrap_err().to_string(),
-            format!(
-                "Recovery key file '{}' is empty",
-                recovery_key_file.path().display()
-            )
+            validate_host_config(&host_config).unwrap_err().kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::EncryptionKeyEmpty(
+                    recovery_key_file.path().to_string_lossy().to_string()
+                )
+            })
         );
     }
 

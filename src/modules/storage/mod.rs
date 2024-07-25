@@ -10,7 +10,7 @@ use osutils::{lsblk, mountpoint};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{ManagementError, ReportError, TridentError},
+    error::{InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt},
     status::{HostStatus, ServicingType},
     BlockDeviceId,
 };
@@ -26,6 +26,9 @@ pub mod partitioning;
 pub mod raid;
 pub mod tabfile;
 mod verity;
+
+const IMAGE_SUB_MODULE_NAME: &str = "image";
+const ENCRYPTION_SUB_MODULE_NAME: &str = "encryption";
 
 #[derive(Default, Debug)]
 pub(super) struct StorageModule;
@@ -72,7 +75,7 @@ impl Module for StorageModule {
         host_status: &HostStatus,
         host_config: &HostConfiguration,
         planned_servicing_type: ServicingType,
-    ) -> Result<(), HostConfigurationDynamicValidationError> {
+    ) -> Result<(), TridentError> {
         // Ensure any two disks point to different devices. This requires canonicalizing the device
         // paths, which can only be done on the target system.
         let mut device_paths = HashMap::<PathBuf, BlockDeviceId>::new();
@@ -80,40 +83,50 @@ impl Module for StorageModule {
             let device_path = disk
                 .device
                 .canonicalize()
-                .context(format!("Failed to canonicalize path of disk {}", disk.id))?;
+                .structured(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::InvalidDiskPath {
+                        disk_path: format!("{:?}", disk.device),
+                        disk_id: disk.id.clone(),
+                    },
+                ))?;
 
             if !device_path.starts_with("/dev") {
-                return Err(
+                return Err(TridentError::new(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::BadBlockDevicePath {
                         name: disk.id.clone(),
                         device: device_path.display().to_string(),
                     },
-                );
+                )));
             }
 
             if let Some(existing_disk_id) =
                 device_paths.insert(device_path.clone(), disk.id.clone())
             {
-                return Err(
+                return Err(TridentError::new(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::DiskDefinitionsReferToSameDevice {
                         disk1: existing_disk_id,
                         disk2: disk.id.clone(),
                         device: device_path.display().to_string(),
                     },
-                );
+                )));
             }
 
             // If we are adopting partitions on a disk, ensure that the disk is GPT partitioned.
             if !disk.adopted_partitions.is_empty() {
-                let disk_data = lsblk::run(device_path.as_path())
-                    .context("Failed to get block device information")?;
+                let disk_data =
+                    lsblk::run(device_path.as_path()).structured(InvalidInputError::from(
+                        HostConfigurationDynamicValidationError::DiskForPartitionAdoptionInfoFailed(
+                            disk.id.clone(),
+                        ),
+                    ))?;
+
                 match disk_data.partition_table_type {
-                    Some(lsblk::PartitionTableType::Gpt) => {} // OK!
-                    _ => return Err(
+                    Some(lsblk::PartitionTableType::Gpt) => {}
+                    _ => return Err(TridentError::new(InvalidInputError::from(
                         HostConfigurationDynamicValidationError::AdoptionOnNonGptPartitionedDisk(
                             disk.id.clone(),
                         ),
-                    ),
+                    ))),
                 }
             }
         }
@@ -121,13 +134,13 @@ impl Module for StorageModule {
         // TODO: validate that block devices naming is consistent with the current state
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
-        image::validate_host_config(host_status, host_config, planned_servicing_type).map_err(
-            |e| HostConfigurationDynamicValidationError::ImagesIncorrect(format!("{:?}", e)),
+        image::validate_host_config(host_status, host_config, planned_servicing_type).message(
+            format!("Stage 'Validate' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"),
         )?;
 
-        encryption::validate_host_config(host_config).map_err(|e| {
-            HostConfigurationDynamicValidationError::EncryptionIncorrect(format!("{:?}", e))
-        })?;
+        encryption::validate_host_config(host_config).message(format!(
+            "Stage 'Validate' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
+        ))?;
 
         Ok(())
     }
@@ -275,6 +288,7 @@ mod tests {
             SoftwareRaidArray, Storage as StorageConfig,
         },
         constants::ROOT_MOUNT_POINT_PATH,
+        error::ErrorKind,
         status::{BlockDeviceInfo, ServicingState, Storage},
     };
 
@@ -403,11 +417,14 @@ mod tests {
         assert_eq!(
             StorageModule
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
-                .unwrap_err(),
-            HostConfigurationDynamicValidationError::BadBlockDevicePath {
-                name: "disk1".to_owned(),
-                device: "/tmp".to_owned()
-            }
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::BadBlockDevicePath {
+                    name: "disk1".into(),
+                    device: "/tmp".into(),
+                }
+            })
         );
     }
 
@@ -423,12 +440,15 @@ mod tests {
         assert_eq!(
             StorageModule
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
-                .unwrap_err(),
-            HostConfigurationDynamicValidationError::DiskDefinitionsReferToSameDevice {
-                disk1: "disk1".to_owned(),
-                disk2: "disk2".to_owned(),
-                device: "/dev".to_owned()
-            }
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::DiskDefinitionsReferToSameDevice {
+                    disk1: "disk1".into(),
+                    disk2: "disk2".into(),
+                    device: "/dev".into(),
+                }
+            })
         );
     }
 
@@ -445,11 +465,13 @@ mod tests {
         assert_eq!(
             StorageModule
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
-                .unwrap_err(),
-            HostConfigurationDynamicValidationError::EncryptionIncorrect(format!(
-                "Recovery key file '{}' does not exist",
-                recovery_key_file.path().display()
-            ))
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::EncryptionKeyNotFound(
+                    recovery_key_file.path().display().to_string()
+                )
+            })
         );
     }
 

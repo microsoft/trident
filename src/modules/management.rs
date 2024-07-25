@@ -10,6 +10,7 @@ use log::{debug, info};
 use osutils::path;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError, LocalConfigFile},
+    error::{InvalidInputError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -27,7 +28,7 @@ impl Module for ManagementModule {
         host_status: &HostStatus,
         host_config: &HostConfiguration,
         planned_servicing_type: ServicingType,
-    ) -> Result<(), HostConfigurationDynamicValidationError> {
+    ) -> Result<(), TridentError> {
         if host_config.trident.disable {
             return Ok(());
         }
@@ -37,12 +38,12 @@ impl Module for ManagementModule {
             let current_path = &host_status.spec.trident.datastore_path;
             let new_path = &host_config.trident.datastore_path;
             if current_path != new_path {
-                return Err(
+                return Err(TridentError::new(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::ChangedDatastorePath {
                         current: current_path.display().to_string(),
                         new: new_path.display().to_string(),
                     },
-                );
+                )));
             }
         }
 
@@ -104,6 +105,8 @@ pub(super) fn create_trident_config(
 mod tests {
     use super::*;
 
+    use trident_api::error::ErrorKind;
+
     #[test]
     fn test_validate_host_config() {
         let mgmt_mod = ManagementModule;
@@ -129,16 +132,19 @@ mod tests {
             .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
             .unwrap();
 
-        // Different Paths
+        // Different paths
         host_config.trident.datastore_path = Path::new("/bar").to_path_buf();
         assert_eq!(
             mgmt_mod
                 .validate_host_config(&host_status, &host_config, ServicingType::AbUpdate)
-                .unwrap_err(),
-            HostConfigurationDynamicValidationError::ChangedDatastorePath {
-                current: "/foo".to_string(),
-                new: "/bar".to_string()
-            }
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::ChangedDatastorePath {
+                    current: "/foo".to_string(),
+                    new: "/bar".to_string(),
+                }
+            })
         );
 
         // When disabled, should pass

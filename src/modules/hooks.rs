@@ -13,6 +13,7 @@ use osutils::{files, scripts::ScriptRunner};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError, Script},
     constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
+    error::{InvalidInputError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -42,7 +43,7 @@ impl Module for HooksModule {
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
         planned_servicing_type: ServicingType,
-    ) -> Result<(), HostConfigurationDynamicValidationError> {
+    ) -> Result<(), TridentError> {
         // Ensure that all scripts that should be run and have a path actually exist
         host_config
             .scripts
@@ -52,12 +53,14 @@ impl Module for HooksModule {
             .filter(|script| script.should_run(planned_servicing_type))
             .filter_map(|script| {
                 script.path.as_ref().and_then(|path| {
-                    (path.exists() && path.is_file()).not().then_some(Err(
-                        HostConfigurationDynamicValidationError::ScriptNotFound {
-                            name: script.name.clone(),
-                            path: path.display().to_string(),
-                        },
-                    ))
+                    (path.exists() && path.is_file())
+                        .not()
+                        .then_some(Err(TridentError::new(InvalidInputError::from(
+                            HostConfigurationDynamicValidationError::ScriptNotFound {
+                                name: script.name.clone(),
+                                path: path.display().to_string(),
+                            },
+                        ))))
                 })
             })
             .collect::<Result<_, _>>()?;

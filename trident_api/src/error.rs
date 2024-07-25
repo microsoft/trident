@@ -41,6 +41,9 @@ pub enum ExecutionEnvironmentMisconfigurationError {
         "Selected operation cannot be performed due to missing permissions, root privileges required"
     )]
     MissingRequiredPermissions,
+
+    #[error("Failed to find OS Modifier binary at '{binary_path}' required by '{config}'")]
+    MissingOsModifierBinary { binary_path: String, config: String },
 }
 
 /// User provided input was invalid.
@@ -56,8 +59,14 @@ pub enum InvalidInputError {
     #[error("Failed to translate kickstart")]
     KickstartTranslation,
     #[error("Host configuration failed static validation: {inner}")]
-    InvalidHostConfiguration {
+    InvalidHostConfigurationStatic {
+        #[from]
         inner: HostConfigurationStaticValidationError,
+    },
+    #[error("Host configuration failed dynamic validation: {inner}")]
+    InvalidHostConfigurationDynamic {
+        #[from]
+        inner: HostConfigurationDynamicValidationError,
     },
     #[error("Host configuration is incompatible with current install")]
     IncompatibleHostConfiguration,
@@ -103,11 +112,6 @@ pub enum DatastoreError {
 pub enum ModuleError {
     #[error("{name} module failed to refresh host status")]
     RefreshHostStatus { name: &'static str },
-    #[error("{name} failed to perform dynamic validation on host configuration: {inner}")]
-    ValidateHostConfiguration {
-        name: &'static str,
-        inner: HostConfigurationDynamicValidationError,
-    },
     #[error("{name} module failed to prepare")]
     Prepare { name: &'static str },
     #[error("{name} module failed to provision")]

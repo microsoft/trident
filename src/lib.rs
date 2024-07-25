@@ -154,9 +154,9 @@ impl Trident {
     ) -> Result<Option<Box<HostConfiguration>>, TridentError> {
         config
             .get_host_configuration_source()
-            .structured(InvalidInputError::InvalidHostConfiguration {
-                inner: HostConfigurationStaticValidationError::FailedToParse,
-            })?
+            .structured(InvalidInputError::from(
+                HostConfigurationStaticValidationError::FailedToParse,
+            ))?
             .as_ref()
             .map(Self::load_host_config)
             .transpose()
@@ -212,11 +212,13 @@ impl Trident {
         if let Some(
             HostConfigurationSource::KickstartFile(_)
             | HostConfigurationSource::KickstartEmbedded(_),
-        ) = self.config.get_host_configuration_source().structured(
-            InvalidInputError::InvalidHostConfiguration {
-                inner: HostConfigurationStaticValidationError::FailedToParse,
-            },
-        )? {
+        ) = self
+            .config
+            .get_host_configuration_source()
+            .structured(InvalidInputError::from(
+                HostConfigurationStaticValidationError::FailedToParse,
+            ))?
+        {
             warn!("Cannot set up network early when using kickstart");
             return Ok(());
         }
@@ -433,7 +435,7 @@ impl Trident {
         }
 
         cmd.host_config.validate().map_err(|e| {
-            TridentError::new(InvalidInputError::InvalidHostConfiguration { inner: e })
+            TridentError::new(InvalidInputError::InvalidHostConfigurationStatic { inner: e })
         })?;
 
         // Populate internal fields in host configuration.
