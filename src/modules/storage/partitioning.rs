@@ -7,7 +7,7 @@ use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace};
 
 use osutils::{
-    block_devices::{self, ResolvedDisk},
+    block_devices::{get_resolved_disks, ResolvedDisk},
     lsblk,
     partition_types::DiscoverablePartitionType,
     repart::{RepartEmptyMode, RepartPartition, RepartPartitionEntry, SystemdRepartInvoker},
@@ -27,8 +27,7 @@ pub fn create_partitions(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     // Resolve the disk paths to ensure that all disks in the configuration exist.
-    let resolved_disks =
-        block_devices::get_resolved_disks(host_config).context("Failed to resolve disk paths")?;
+    let resolved_disks = get_resolved_disks(host_config).context("Failed to resolve disk paths")?;
 
     // Do a non-destructive first pass of adoption to detect any issues before
     // we start making changes.
@@ -53,13 +52,6 @@ pub fn create_partitions(
         // Invoke repart to create the partitions.
         let repart_partitions = repart.execute().context(format!(
             "Failed to create partitions for disk '{}'",
-            disk.id
-        ))?;
-
-        // Force kernel to re-read the partition table.
-        debug!("Re-reading partition table for disk '{}'", disk.id);
-        block_devices::kernel_reread_partition_table(&disk.bus_path).context(format!(
-            "Failed to re-read partition table for disk '{}'",
             disk.id
         ))?;
 
