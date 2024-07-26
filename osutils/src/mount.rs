@@ -42,10 +42,10 @@ pub fn mount(
     Ok(())
 }
 
-/// Create a bind mount that exposes mount_dir as an alias of path.
-pub fn bind_mount(path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result<(), Error> {
+/// Create a recursive bind mount that exposes mount_dir as an alias of path, including all sub-mounts.
+pub fn rbind_mount(path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result<(), Error> {
     Command::new("mount")
-        .arg("--bind")
+        .arg("--rbind")
         .arg(path.as_ref())
         .arg(mount_dir.as_ref())
         .run_and_check()
@@ -372,28 +372,52 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
-    fn test_bind_mount() {
-        let temp_mount_dir = TempDir::new().unwrap();
-        let temp_mount_dir_2 = TempDir::new().unwrap();
-        bind_mount(temp_mount_dir.path(), temp_mount_dir_2.path()).unwrap();
+    fn test_rbind_mount() {
+        let temp_source_dir = TempDir::new().unwrap();
+        let temp_intermediate_dir = TempDir::new().unwrap();
+        let temp_work_dir = TempDir::new().unwrap();
 
-        fs::write(temp_mount_dir_2.path().join("test_file"), "test").unwrap();
+        fs::write(temp_source_dir.path().join("test_file1"), "test1").unwrap();
+
+        rbind_mount(temp_source_dir.path(), temp_intermediate_dir.path()).unwrap();
+        rbind_mount(temp_intermediate_dir.path(), temp_work_dir.path()).unwrap();
+
+        // Check that files in source are available from work directory
         assert_eq!(
-            fs::read_to_string(temp_mount_dir.path().join("test_file")).unwrap(),
-            "test"
+            fs::read_to_string(temp_work_dir.path().join("test_file1")).unwrap(),
+            "test1"
         );
 
-        fs::write(temp_mount_dir.path().join("test_file2"), "test2").unwrap();
-        umount(temp_mount_dir_2.path(), false).unwrap();
-        assert!(!temp_mount_dir_2.path().join("test_file").exists());
-        assert!(!temp_mount_dir_2.path().join("test_file2").exists());
+        // Check that changes in work directory are reflected in mounted directories
+        fs::write(temp_work_dir.path().join("test_file2"), "test2").unwrap();
         assert_eq!(
-            fs::read_to_string(temp_mount_dir.path().join("test_file")).unwrap(),
-            "test"
-        );
-        assert_eq!(
-            fs::read_to_string(temp_mount_dir.path().join("test_file2")).unwrap(),
+            fs::read_to_string(temp_intermediate_dir.path().join("test_file2")).unwrap(),
             "test2"
+        );
+        assert_eq!(
+            fs::read_to_string(temp_source_dir.path().join("test_file2")).unwrap(),
+            "test2"
+        );
+
+        // Check that files are no longer present after unmounting
+        fs::write(temp_source_dir.path().join("test_file3"), "test3").unwrap();
+        umount(temp_work_dir.path(), false).unwrap();
+        assert!(!temp_work_dir.path().join("test_file1").exists());
+        assert!(!temp_work_dir.path().join("test_file2").exists());
+        assert!(!temp_work_dir.path().join("test_file3").exists());
+
+        // Check that files are still available in source directory
+        assert_eq!(
+            fs::read_to_string(temp_source_dir.path().join("test_file1")).unwrap(),
+            "test1"
+        );
+        assert_eq!(
+            fs::read_to_string(temp_source_dir.path().join("test_file2")).unwrap(),
+            "test2"
+        );
+        assert_eq!(
+            fs::read_to_string(temp_source_dir.path().join("test_file3")).unwrap(),
+            "test3"
         );
     }
 }

@@ -75,6 +75,13 @@ impl DataStore {
         }
 
         let db_path = join_relative(new_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
+        if !db_path.exists() {
+            log::error!("New Datastore path is invalid {}", db_path.display());
+            return Err(TridentError::new(ManagementError::Datastore {
+                inner: DatastoreError::DatastoreLoad(db_path),
+            }));
+        }
+
         info!("Switching datastore to path {}", db_path.display());
         self.db = Some(
             sqlite::open(&db_path).structured(ManagementError::Datastore {

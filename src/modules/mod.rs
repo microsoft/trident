@@ -300,6 +300,7 @@ fn stage_clean_install(
             state.with_host_status(|host_status| {
                 host_status.servicing_state = ServicingState::Staged
             })?;
+            info!("Host status updated");
             #[cfg(feature = "grpc-dangerous")]
             send_host_status_state(sender, state)?;
 
@@ -762,7 +763,7 @@ pub(super) fn initialize_new_root(
     let full_exec_root_path = join_relative(&new_root_path, exec_root_path);
     std::fs::create_dir_all(&full_exec_root_path)
         .structured(ManagementError::CreateExecrootDirectory)?;
-    mount::bind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
+    mount::rbind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
         .structured(ManagementError::MountExecroot)?;
     // Insert full_exec_root_path at the end of the mounts vector
     mounts.push(full_exec_root_path);
