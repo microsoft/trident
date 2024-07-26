@@ -10,18 +10,16 @@ use anyhow::{bail, Context, Error};
 use log::{debug, info};
 use reqwest::Url;
 use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
-use uuid::Uuid;
 
 use osutils::{
-    container, e2fsck, hashing_reader::HashingReader, image_streamer, resize2fs, tune2fs,
-    veritysetup,
+    container, e2fsck, hashing_reader::HashingReader, image_streamer, resize2fs, veritysetup,
 };
 use trident_api::{
     config::{
         AbUpdate, HostConfiguration, HostConfigurationDynamicValidationError, Image, ImageFormat,
         ImageSha256,
     },
-    constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+    constants::ROOT_MOUNT_POINT_PATH,
     error::{InvalidInputError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, HostStatus, ServicingType},
     BlockDeviceId,
@@ -141,34 +139,6 @@ fn update_images(
                     }
                 }
 
-                // If device_id corresponds to a block device that serves as the mount point for /boot,
-                // assign a new randomized FS UUID to that updated volume. This is necessary so that the grub
-                // boot loader can select the correct volume to load the kernel and initrd from, when the
-                // firmware reboots after the A/B update (and in generally, so that grub
-                // picks the right /boot volume to boot from).
-                if host_status
-                    .spec
-                    .storage
-                    .is_mount_point_for_path(&device_id, Path::new(BOOT_MOUNT_POINT_PATH))
-                {
-                    info!(
-                        "Identified block device with id '{}' as the mount point for /boot",
-                        device_id
-                    );
-
-                    let new_fs_uuid = update_fs_uuid(&block_device.path)
-                        .context(format!(
-                            "Failed to assign a new randomized filesystem UUID to updated volume on block device '{}'",
-                            &device_id
-                        ))?;
-
-                    info!(
-                        "Assigned a new randomized filesystem UUID '{}' to updated volume at path '{}'",
-                        new_fs_uuid,
-                        block_device.path.display()
-                    );
-                }
-
                 // If the image has ext* filesystem and is not to be mounted read-only,
                 // resize the filesystem. For now, we determine the filesystem by looking at
                 // the corresponding mountpoint.
@@ -251,21 +221,6 @@ fn update_images(
         }
     }
     Ok(())
-}
-
-/// Assigns a new randomized FS UUID to the updated volume. Accepts one arg: block_device_path,
-/// which is the block device path of the updated volume. Returns the new FS UUID.
-fn update_fs_uuid(block_device_path: &Path) -> Result<Uuid, Error> {
-    // Generate a random UUID for the updated volume
-    let fs_uuid = Uuid::new_v4();
-    // Run tune2fs to assign a new randomized FS UUID to the updated volume
-    tune2fs::run(&fs_uuid, block_device_path).context(format!(
-        "Failed to assign a new randomized filesystem UUID '{}' to updated volume at path '{}'",
-        fs_uuid,
-        block_device_path.display()
-    ))?;
-
-    Ok(fs_uuid)
 }
 
 /// Resize ext2/ext3/ext4 filesystem on the given block device to the maximum
@@ -937,14 +892,9 @@ mod functional_test {
 
     use maplit::btreemap;
 
-    use osutils::{
-        blkid,
-        filesystems::MkfsFileSystemType,
-        mkfs,
-        testutils::{
-            repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
-            verity::{self, VerityGuard},
-        },
+    use osutils::testutils::{
+        repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
+        verity::{self, VerityGuard},
     };
     use trident_api::{
         config::{
@@ -952,23 +902,6 @@ mod functional_test {
         },
         status::{BlockDeviceInfo, Storage},
     };
-
-    /// Validates that run() correctly assigns a new UUID to the filesystem.
-    #[functional_test(feature = "helpers")]
-    fn test_update_fs_uuid() {
-        let block_device_path = Path::new(TEST_DISK_DEVICE_PATH);
-        // Create a new ext4 filesystem on /dev/sdb
-        mkfs::run(block_device_path, MkfsFileSystemType::Ext4).unwrap();
-
-        let new_uuid = update_fs_uuid(block_device_path).unwrap();
-
-        // Validate that the UUID was assigned correctly by running blkid command to fetch block
-        // devices
-        let fs_uuid = blkid::get_filesystem_uuid(block_device_path).unwrap();
-
-        // Assert that the UUIDs match
-        assert_eq!(fs_uuid, new_uuid);
-    }
 
     #[functional_test]
     fn test_update_root_device_path() {

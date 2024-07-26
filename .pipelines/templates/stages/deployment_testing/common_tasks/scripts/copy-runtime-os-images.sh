@@ -24,10 +24,24 @@ if [ "$VERITY_REQUIRED" = "true" ]; then
     cp "$ARTIFACTS_DIR/verity_root.rawzst" "$LOCAL_TEMP_DIR/verity_root_v$VERSION.rawzst"
     cp "$ARTIFACTS_DIR/verity_roothash.rawzst" "$LOCAL_TEMP_DIR/verity_roothash_v$VERSION.rawzst"
     cp "$ARTIFACTS_DIR/verity_var.rawzst" "$LOCAL_TEMP_DIR/verity_var_v$VERSION.rawzst"
+
+    echo "Randomizing boot partition's filesystem UUID"
+    RAW_FILE="$LOCAL_TEMP_DIR/verity_boot.raw"
+    zstd --rm -d "$LOCAL_TEMP_DIR/verity_boot_v$VERSION.rawzst" -o "$RAW_FILE"
+    e2fsck -f -p "$RAW_FILE"
+    tune2fs -U random "$RAW_FILE"
+    zstd --rm -T0 "$RAW_FILE" -o "$LOCAL_TEMP_DIR/verity_boot_v$VERSION.rawzst"
 else
     echo "Copying runtime OS images to the local temp directory"
     cp "$ARTIFACTS_DIR/esp.rawzst" "$LOCAL_TEMP_DIR/esp_v$VERSION.rawzst"
     cp "$ARTIFACTS_DIR/root.rawzst" "$LOCAL_TEMP_DIR/root_v$VERSION.rawzst"
+
+    echo "Randomizing root partition's filesystem UUID"
+    RAW_FILE="$LOCAL_TEMP_DIR/root.raw"
+    zstd --rm -d "$LOCAL_TEMP_DIR/root_v$VERSION.rawzst" -o "$RAW_FILE"
+    e2fsck -f -p "$RAW_FILE"
+    tune2fs -U random "$RAW_FILE"
+    zstd --rm -T0 "$RAW_FILE" -o "$LOCAL_TEMP_DIR/root_v$VERSION.rawzst"
 fi
 
 # When copying non-verity images, create destination directory on the host
