@@ -290,6 +290,10 @@ run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netla
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch -i $(NETLAUNCH_ISO) -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image -m trident-metrics.json
 
+.PHONY: watch-virtdeploy
+watch-virtdeploy:
+	@while true; do virsh console virtdeploy-vm-0; sleep 1; done
+
 .PHONY: run-netlaunch-container
 run-netlaunch-container: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.bin
 	@bin/netlaunch -i bin/trident-containerhost-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
@@ -414,8 +418,8 @@ copy-runtime-partition-images: ../test-images/build/trident-testimage/*.raw.zst 
 	done
 	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
 
-BASE_IMAGE_NAME ?= baremetal_vhdx
-BASE_IMAGE_VERSION ?= 2.0.20240425
+BASE_IMAGE_NAME ?= baremetal_vhdx-2.0-stable
+BASE_IMAGE_VERSION ?= *
 artifacts/baremetal.vhdx:
 	@mkdir -p artifacts
 	@tempdir=$$(mktemp -d); \
@@ -423,7 +427,7 @@ artifacts/baremetal.vhdx:
 			--organization "https://dev.azure.com/mariner-org/" \
 			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
 			--scope project \
-			--feed "MarinerCoreArtifacts" \
+			--feed "AzureLinuxArtifacts" \
 			--name '$(BASE_IMAGE_NAME)' \
 			--version '$(BASE_IMAGE_VERSION)' \
 			--path $$tempdir) && \
@@ -431,15 +435,15 @@ artifacts/baremetal.vhdx:
 		rm -rf $$tempdir && \
 		echo $$result | jq > artifacts/baremetal.vhdx.metadata.json
 
-MIC_PACKAGE_NAME ?= imagecustomizer_preview
-MIC_PACKAGE_VERSION ?= 0.2.0-preview.550844
+MIC_PACKAGE_NAME ?= imagecustomizer
+MIC_PACKAGE_VERSION ?= 0.4.0
 artifacts/imagecustomizer:
 	@mkdir -p artifacts
 	@az artifacts universal download \
 	    --organization "https://dev.azure.com/mariner-org/" \
 	    --project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
 	    --scope project \
-	    --feed "MarinerCoreArtifacts" \
+	    --feed "AzureLinuxArtifacts" \
 	    --name '$(MIC_PACKAGE_NAME)' \
 	    --version '$(MIC_PACKAGE_VERSION)' \
 	    --path artifacts/
