@@ -35,7 +35,7 @@ steps:
         docker cp -q $id:/work/trident-rpms.tar.gz . && \
         docker rm -v $id
 
-      mkdir -p $(ob_outputDirectory)/3.0-rpms
-      tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory)/3.0-rpms --strip-components=3
+      mkdir -p $(ob_outputDirectory)
+      tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3
 
     displayName: Build RPMs
