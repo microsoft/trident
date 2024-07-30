@@ -2,12 +2,16 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use anyhow::{bail, ensure, Context, Error};
 use trident_api::config::{Disk, HostConfiguration};
 
-use crate::lsblk::{self, BlockDeviceType};
+use crate::{
+    exe::RunAndCheck,
+    lsblk::{self, BlockDeviceType},
+};
 
 pub struct ResolvedDisk<'a> {
     /// Shortcut to the disk id.
@@ -140,6 +144,23 @@ pub fn can_stop_pre_existing_device(
             used_disks, hc_disks
         );
     }
+}
+
+/// Force kernel to re-read the partition table of a disk.
+///
+/// This function has no built in safety checking. The path must be:
+///
+/// - A valid block device.
+/// - If a disk, it must contain a partition table.
+pub fn kernel_reread_partition_table(disk: impl AsRef<Path>) -> Result<(), Error> {
+    Command::new("blockdev")
+        .arg("--rereadpt")
+        .arg(disk.as_ref())
+        .run_and_check()
+        .context(format!(
+            "Failed to re-read partition table for disk '{}'",
+            disk.as_ref().display()
+        ))
 }
 
 #[cfg(test)]
