@@ -158,7 +158,7 @@ pub enum BlockDeviceGraphBuildError {
 
     #[error(
         "Filesystem [{fs_desc}] references block device '{target_id}' \
-            that is already associated with a filesystem [{fs_desc}]"
+            that is already associated with a filesystem [{other_fs_desc}]"
     )]
     FilesystemReferenceInUse {
         fs_desc: String,

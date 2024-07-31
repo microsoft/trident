@@ -22,7 +22,7 @@ pub(super) fn create_filesystems(host_status: &mut HostStatus) -> Result<(), Err
         .par_iter()
         .map(|(block_device_id, device_path, filesystem)| {
             info!(
-                "Creating '{}' filesystem on block device '{:?}'",
+                "Creating '{}' filesystem on block device '{}'",
                 filesystem, block_device_id
             );
             create_filesystem_on_block_device(device_path, *filesystem).context(format!(
