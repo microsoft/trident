@@ -13,7 +13,7 @@ use osutils::{files, scripts::ScriptRunner};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError, Script},
     constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
-    error::{InvalidInputError, TridentError},
+    error::{InvalidInputError, ReportError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -68,7 +68,7 @@ impl Module for HooksModule {
         Ok(())
     }
 
-    fn prepare(&mut self, host_status: &HostStatus) -> Result<(), Error> {
+    fn prepare(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
         for script in host_status
             .spec
             .scripts
@@ -80,7 +80,12 @@ impl Module for HooksModule {
                 if let Some(servicing_type) = host_status.servicing_type {
                     if script.should_run(servicing_type) {
                         self.stage_file(path.to_owned())
-                            .context(format!("Failed to load script '{}'", script.name,))?;
+                            .structured(InvalidInputError::from(
+                                HostConfigurationDynamicValidationError::ScriptLoadFailed {
+                                    name: script.name.clone(),
+                                    path: path.display().to_string(),
+                                },
+                            ))?;
                     }
                 }
             }
@@ -88,10 +93,13 @@ impl Module for HooksModule {
 
         for file in &host_status.spec.os.additional_files {
             if let Some(ref path) = file.path {
-                self.stage_file(path.to_owned()).context(format!(
-                    "Failed to load additional file to be placed at '{}'",
-                    file.destination.display(),
-                ))?;
+                self.stage_file(path.to_owned())
+                    .structured(InvalidInputError::from(
+                        HostConfigurationDynamicValidationError::AdditionalFileLoadFailed {
+                            name: file.destination.display().to_string(),
+                            path: path.display().to_string(),
+                        },
+                    ))?;
             }
         }
 
@@ -294,7 +302,10 @@ mod tests {
     use trident_api::config::{Scripts, ServicingTypeSelection};
     use trident_api::constants;
     use trident_api::constants::ROOT_MOUNT_POINT_PATH;
-    use trident_api::status::{ServicingState, ServicingType, Storage};
+    use trident_api::{
+        error::ErrorKind,
+        status::{ServicingState, ServicingType, Storage},
+    };
 
     #[test]
     fn test_stage_file() {
@@ -433,9 +444,15 @@ mod tests {
         };
 
         let mut module = HooksModule::default();
-        let err = module.prepare(&host_status);
-        assert!(err.is_err());
-
+        assert_eq!(
+            module.prepare(&host_status).unwrap_err().kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
+                inner: HostConfigurationDynamicValidationError::ScriptLoadFailed {
+                    name: "test-script".into(),
+                    path: "nonexistent-file".into()
+                }
+            })
+        );
         // Cleanup
         temp_dir.close().unwrap();
     }

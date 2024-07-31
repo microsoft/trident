@@ -101,7 +101,7 @@ trait Module: Send {
     }
 
     /// Perform non-destructive preparations for an update.
-    fn prepare(&mut self, _host_status: &HostStatus) -> Result<(), Error> {
+    fn prepare(&mut self, _host_status: &HostStatus) -> Result<(), TridentError> {
         Ok(())
     }
 
@@ -666,7 +666,7 @@ fn validate_host_config(
         module
             .validate_host_config(state.host_status(), host_config, planned_servicing_type)
             .message(format!(
-                "Stage 'Validate' failed for module '{}'",
+                "Step 'Validate' failed for module '{}'",
                 module.name()
             ))?;
     }
@@ -679,11 +679,10 @@ fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(),
     for module in modules {
         debug!("Starting step 'Prepare' for module '{}'", module.name());
         state.try_with_host_status(|s| {
-            module
-                .prepare(s)
-                .structured(ManagementError::from(ModuleError::Prepare {
-                    name: module.name(),
-                }))
+            module.prepare(s).message(format!(
+                "Step 'Prepare' failed for module '{}'",
+                module.name()
+            ))
         })?;
     }
     debug!("Finished step 'Prepare'");

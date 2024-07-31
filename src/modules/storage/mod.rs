@@ -135,11 +135,11 @@ impl Module for StorageModule {
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
         image::validate_host_config(host_status, host_config, planned_servicing_type).message(
-            format!("Stage 'Validate' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"),
+            format!("Step 'Validate' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"),
         )?;
 
         encryption::validate_host_config(host_config).message(format!(
-            "Stage 'Validate' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
+            "Step 'Validate' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
         ))?;
 
         Ok(())

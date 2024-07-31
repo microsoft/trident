@@ -124,6 +124,12 @@ pub enum HostConfigurationDynamicValidationError {
     #[error("File for script '{name}' not found on host at '{path}'")]
     ScriptNotFound { name: String, path: String },
 
+    #[error("Failed to load script '{name}' at '{path}'")]
+    ScriptLoadFailed { name: String, path: String },
+
+    #[error("Failed to load additional file '{name}' to be placed at '{path}'")]
+    AdditionalFileLoadFailed { name: String, path: String },
+
     #[error("Encryption recovery key file '{0}' not found")]
     EncryptionKeyNotFound(String),
 

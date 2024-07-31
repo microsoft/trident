@@ -6,7 +6,9 @@ use log::{debug, error, info, warn};
 use osutils::path;
 use trident_api::{
     config::{HostConfiguration, ManagementOs, Os, SshMode},
-    error::{ExecutionEnvironmentMisconfigurationError, TridentError},
+    error::{
+        ExecutionEnvironmentMisconfigurationError, ManagementError, ReportError, TridentError,
+    },
     status::{HostStatus, ServicingType},
 };
 
@@ -123,7 +125,7 @@ impl Module for MosConfigModule {
         Ok(())
     }
 
-    fn prepare(&mut self, host_status: &HostStatus) -> Result<(), Error> {
+    fn prepare(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
         if host_status.servicing_type != Some(ServicingType::CleanInstall) {
             debug!(
                 "Skipping step 'Prepare' for module '{}' during servicing type '{:?}'",
@@ -140,7 +142,7 @@ impl Module for MosConfigModule {
         if !host_status.spec.management_os.users.is_empty() {
             info!("Setting up users for management OS");
             users::set_up_users(&host_status.spec.management_os.users, os_modifier_path)
-                .context("Failed to set up users")?;
+                .structured(ManagementError::SetUpUsers)?;
 
             // If the config enables SSH for any MOS user, then we changed the
             // SSHD config, meaning we need to restart SSHD.

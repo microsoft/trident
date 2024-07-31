@@ -112,8 +112,6 @@ pub enum DatastoreError {
 pub enum ModuleError {
     #[error("{name} module failed to refresh host status")]
     RefreshHostStatus { name: &'static str },
-    #[error("{name} module failed to prepare")]
-    Prepare { name: &'static str },
     #[error("{name} module failed to provision")]
     Provision { name: &'static str },
     #[error("{name} module failed to configure")]
@@ -209,6 +207,8 @@ pub enum ManagementError {
     RootMountPointDevPath,
     #[error("Failed to get SELINUXTYPE")]
     SelinuxTypeNotFound,
+    #[error("Failed to set up users for management OS")]
+    SetUpUsers,
     #[error("Failed to run setfiles command")]
     RunSetFiles,
 }
