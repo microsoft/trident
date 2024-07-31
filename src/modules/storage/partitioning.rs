@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 
 use osutils::{
     block_devices::{self, ResolvedDisk},
@@ -58,10 +58,16 @@ pub fn create_partitions(
 
         // Force kernel to re-read the partition table.
         debug!("Re-reading partition table for disk '{}'", disk.id);
-        block_devices::kernel_reread_partition_table(&disk.bus_path).context(format!(
-            "Failed to re-read partition table for disk '{}'",
-            disk.id
-        ))?;
+        if let Err(e) = block_devices::kernel_reread_partition_table(&disk.bus_path) {
+            tracing::error!(
+                metric_name = "partition_reread_failure",
+                value = disk.spec.adopted_partitions.len()
+            );
+            error!(
+                "Failed to re-read partition table for disk '{}': {:?}",
+                disk.id, e
+            );
+        }
 
         // Get the updated disk information.
         let disk_information = SfDisk::get_info(&disk.bus_path).context(format!(
