@@ -56,6 +56,18 @@ pub fn rbind_mount(path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Resul
         ))
 }
 
+/// Recursively remounts a given directory as private.
+pub fn remount_rprivate(mount_dir: impl AsRef<Path>) -> Result<(), Error> {
+    Command::new("mount")
+        .arg("--make-rprivate")
+        .arg(mount_dir.as_ref())
+        .run_and_check()
+        .context(format!(
+            "Failed to remount {} as private",
+            mount_dir.as_ref().display(),
+        ))
+}
+
 /// Unmounts given directory mount_dir.
 pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error> {
     let mut cmd = Command::new("umount");

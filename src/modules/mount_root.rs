@@ -6,10 +6,10 @@ use std::{
 use anyhow::{Context, Error};
 use log::{error, info};
 
-use osutils::{filesystems::MountFileSystemType, lsof, mount};
+use osutils::{filesystems::MountFileSystemType, lsof, mount, path::join_relative};
 use trident_api::{
     config::InternalMountPoint,
-    constants::ROOT_MOUNT_POINT_PATH,
+    constants::{EXEC_ROOT_PATH, ROOT_MOUNT_POINT_PATH},
     error::{ManagementError, ReportError, TridentError},
     status::HostStatus,
 };
@@ -23,6 +23,12 @@ pub(super) fn unmount_new_root(
     let mut mounts = mounts;
     mounts.reverse();
     let res = mounts.iter().try_for_each(|mount| {
+        if *mount == join_relative(root_mount_path, EXEC_ROOT_PATH) {
+            info!("Remounting '{}' as private", mount.display());
+            mount::remount_rprivate(mount)
+                .structured(ManagementError::UnmountNewroot { dir: mount.clone() })?;
+        }
+
         info!("Unmounting '{}'", mount.display());
         mount::umount(mount, true)
             .structured(ManagementError::UnmountNewroot { dir: mount.clone() })
