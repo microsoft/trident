@@ -61,7 +61,7 @@ impl Module for OsConfigModule {
             && host_status.servicing_type != Some(ServicingType::AbUpdate)
         {
             debug!(
-                "Skipping stage 'Configure' for module '{}' during servicing type: {:?}",
+                "Skipping step 'Configure' for module '{}' during servicing type '{:?}'",
                 self.name(),
                 host_status.servicing_type
             );
@@ -101,7 +101,7 @@ impl Module for MosConfigModule {
     ) -> Result<(), TridentError> {
         if planned_servicing_type != ServicingType::CleanInstall {
             debug!(
-                "Skipping stage 'Validate' for module '{}' during servicing type: {:?}",
+                "Skipping step 'Validate' for module '{}' during servicing type '{:?}'",
                 self.name(),
                 planned_servicing_type
             );
@@ -126,7 +126,7 @@ impl Module for MosConfigModule {
     fn prepare(&mut self, host_status: &HostStatus) -> Result<(), Error> {
         if host_status.servicing_type != Some(ServicingType::CleanInstall) {
             debug!(
-                "Skipping stage 'Prepare' for module '{}' during servicing type: {:?}",
+                "Skipping step 'Prepare' for module '{}' during servicing type '{:?}'",
                 self.name(),
                 host_status.servicing_type
             );

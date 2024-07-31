@@ -638,9 +638,9 @@ fn refresh_host_status(
     state: &mut DataStore,
     clean_install: bool,
 ) -> Result<(), TridentError> {
-    info!("Starting stage 'Refresh'");
+    info!("Starting step 'Refresh'");
     for module in modules {
-        debug!("Starting stage 'Refresh' for module '{}'", module.name());
+        debug!("Starting step 'Refresh' for module '{}'", module.name());
         state.try_with_host_status(|s| {
             module
                 .refresh_host_status(s, clean_install)
@@ -649,7 +649,7 @@ fn refresh_host_status(
                 }))
         })?;
     }
-    debug!("Finished stage 'Refresh'");
+    debug!("Finished step 'Refresh'");
     Ok(())
 }
 
@@ -660,9 +660,9 @@ fn validate_host_config(
     host_config: &HostConfiguration,
     planned_servicing_type: ServicingType,
 ) -> Result<(), TridentError> {
-    info!("Starting stage 'Validate'");
+    info!("Starting step 'Validate'");
     for module in modules {
-        debug!("Starting stage 'Validate' for module '{}'", module.name());
+        debug!("Starting step 'Validate' for module '{}'", module.name());
         module
             .validate_host_config(state.host_status(), host_config, planned_servicing_type)
             .message(format!(
@@ -670,14 +670,14 @@ fn validate_host_config(
                 module.name()
             ))?;
     }
-    debug!("Finished stage 'Validate'");
+    debug!("Finished step 'Validate'");
     Ok(())
 }
 
 fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(), TridentError> {
-    info!("Starting stage 'Prepare'");
+    info!("Starting step 'Prepare'");
     for module in modules {
-        debug!("Starting stage 'Prepare' for module '{}'", module.name());
+        debug!("Starting step 'Prepare' for module '{}'", module.name());
         state.try_with_host_status(|s| {
             module
                 .prepare(s)
@@ -686,7 +686,7 @@ fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(),
                 }))
         })?;
     }
-    debug!("Finished stage 'Prepare'");
+    debug!("Finished step 'Prepare'");
     Ok(())
 }
 
@@ -700,9 +700,9 @@ fn provision(
     // a writable overlay for it.
     let use_overlay = !state.host_status().spec.storage.internal_verity.is_empty();
 
-    info!("Starting stage 'Provision'");
+    info!("Starting step 'Provision'");
     for module in modules {
-        debug!("Starting stage 'Provision' for module '{}'", module.name());
+        debug!("Starting step 'Provision' for module '{}'", module.name());
         let _etc_overlay_mount = if use_overlay {
             Some(etc_overlay::create(
                 Path::new(new_root_path),
@@ -719,7 +719,7 @@ fn provision(
                 }))
         })?;
     }
-    debug!("Finished stage 'Provision'");
+    debug!("Finished step 'Provision'");
     Ok(())
 }
 
@@ -785,9 +785,9 @@ fn configure(
     exec_root: &Path,
     use_overlay: bool,
 ) -> Result<(), TridentError> {
-    info!("Starting stage 'Configure'");
+    info!("Starting step 'Configure'");
     for module in modules {
-        debug!("Starting stage 'Configure' for module '{}'", module.name());
+        debug!("Starting step 'Configure' for module '{}'", module.name());
         // unmount on drop
         let _etc_overlay_mount = if use_overlay {
             Some(etc_overlay::create(
@@ -805,7 +805,7 @@ fn configure(
                 }))
         })?;
     }
-    debug!("Finished stage 'Configure'");
+    debug!("Finished step 'Configure'");
 
     Ok(())
 }

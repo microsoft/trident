@@ -49,7 +49,7 @@ def run_ssh_command(connection, command):
 def trident_run(connection, keys_file_path, ip_address, user_name, trident_config):
     """
     Runs "trident run" to trigger A/B update on the host and ensure that the
-    host reached the reboot stage successfully
+    host completed staging or staging and finalizing of A/B update successfully.
     """
     # Initialize a watcher to return output live
     watcher = OutputWatcher()
