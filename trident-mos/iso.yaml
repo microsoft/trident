@@ -7,6 +7,7 @@ os:
 
     install:
       - curl
+      - device-mapper
       - dnf
       - dosfstools
       - efibootmgr
@@ -16,9 +17,11 @@ os:
       - mdadm
       - netplan
       - openssh-server
+      - squashfs-tools
+      - tar
       - tpm2-tools
-      - vim
       - veritysetup
+      - vim
 
   additionalFiles:
     files/getty@.service:
