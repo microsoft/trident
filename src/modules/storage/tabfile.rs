@@ -43,12 +43,9 @@ fn entry_from_mountpoint(hs: &HostStatus, mp: &InternalMountPoint) -> Result<Tab
         // Now, for all the types that *do* require a block device:
         fs_type => {
             // Try to look up the block device
-            let device = modules::get_block_device(hs, &mp.target_id, false)
-                .context(format!(
-                    "Failed to find block device with id {}",
-                    mp.target_id
-                ))?
-                .path;
+            let device = modules::get_block_device_path(hs, &mp.target_id, false).context(
+                format!("Failed to find block device with id {}", mp.target_id),
+            )?;
 
             // Create the entry according to the file system type
             match fs_type {
@@ -141,9 +138,7 @@ mod tests {
             PartitionType, Storage,
         },
         constants::{self, SWAP_MOUNT_POINT},
-        status::{
-            BlockDeviceInfo, HostStatus, ServicingState, ServicingType, Storage as StorageStatus,
-        },
+        status::{HostStatus, ServicingState, ServicingType, Storage as StorageStatus},
     };
 
     fn get_host_status() -> HostStatus {
@@ -185,12 +180,12 @@ mod tests {
                 ..Default::default()
             },
             storage: StorageStatus {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
-                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
-                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
-                    "home".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
-                    "swap".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/swap"), size: 0 },
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "home".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                    "swap".into() => PathBuf::from("/dev/disk/by-partlabel/swap"),
                 },
                 ..Default::default()
             },
@@ -365,12 +360,12 @@ mod tests {
             servicing_state: ServicingState::Staging,
             spec: host_config.clone(),
             storage: StorageStatus {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
-                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
-                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
-                    "home".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
-                    "swap".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/swap"), size: 0 },
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "home".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                    "swap".into() => PathBuf::from("/dev/disk/by-partlabel/swap"),
                 },
                 ..Default::default()
             },

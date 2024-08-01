@@ -13,7 +13,7 @@ use std::{
 use strum_macros::{Display, EnumString};
 use trident_api::{
     config::{HostConfiguration, PartitionType, RaidLevel, SoftwareRaidArray},
-    status::{self, HostStatus},
+    status::HostStatus,
     BlockDeviceId,
 };
 
@@ -127,9 +127,9 @@ fn get_device_paths(
         .map(|device_id| {
             host_status
                 .storage
-                .block_devices
+                .block_device_paths
                 .get(device_id)
-                .map(|block_device| block_device.path.clone())
+                .cloned()
                 .context(format!("Failed to find block device with id '{device_id}'"))
         })
         .collect()
@@ -165,13 +165,10 @@ pub(super) fn add_to_host_status(host_status: &mut HostStatus, raid_details: Rai
     // };
 
     // TODO: Track more details in HS
-    host_status.storage.block_devices.insert(
-        raid_details.id.clone(),
-        status::BlockDeviceInfo {
-            path: raid_details.path.clone(),
-            size: raid_details.size,
-        },
-    );
+    host_status
+        .storage
+        .block_device_paths
+        .insert(raid_details.id.clone(), raid_details.path.clone());
 }
 
 pub(super) fn get_raid_disks(raid_array: &Path) -> Result<HashSet<PathBuf>, Error> {
@@ -437,7 +434,7 @@ mod tests {
 
     use trident_api::{
         config::{Disk, Partition, PartitionSize, PartitionType, Storage},
-        status::{BlockDeviceInfo, ServicingState, ServicingType, Storage as StorageStatus},
+        status::{ServicingState, ServicingType, Storage as StorageStatus},
     };
 
     use super::*;
@@ -476,11 +473,11 @@ mod tests {
                 ..Default::default()
             },
             storage: StorageStatus {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
-                    "boot".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sda1"), size: 0 },
-                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sda2"), size: 0 },
-                    "home".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sda3"), size: 0 },
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "boot".into() => PathBuf::from("/dev/sda1"),
+                    "root".into() => PathBuf::from("/dev/sda2"),
+                    "home".into() => PathBuf::from("/dev/sda3"),
                 },
                 ..Default::default()
             },
@@ -525,7 +522,7 @@ mod tests {
 
         assert!(host_status
             .storage
-            .block_devices
+            .block_device_paths
             .contains_key(&raid_details.id));
     }
 

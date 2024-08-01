@@ -138,7 +138,7 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
         # the `Storage::populate_internal()` method. Verity FSs get an ascending
         # number as the unique block device identifier.
         expected_device_name = f"verity-{i}"
-        assert expected_device_name in host_status["storage"]["blockDevices"]
+        assert expected_device_name in host_status["storage"]["blockDevicePaths"]
 
     # Assert verity data device and hash device. Refer to logic from base test
     # to extract the ID of the mount point with path "/".

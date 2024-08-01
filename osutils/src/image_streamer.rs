@@ -12,7 +12,6 @@ use crate::hashing_reader::HashingReader;
 pub fn stream_zstd(
     mut reader: HashingReader<Box<dyn Read>>,
     destination_path: &Path,
-    destination_size: Option<u64>,
 ) -> Result<String, Error> {
     // Instantiate decoder for ZSTD stream
     let mut decoder = zstd::stream::read::Decoder::new(&mut reader)?;
@@ -28,14 +27,8 @@ pub fn stream_zstd(
 
     let t = std::time::Instant::now();
 
-    // Decompress the image and write it to the block device. If destination is a block device and
-    // destination_size is provided, ensure that no more than destination_size bytes are written
-    let bytes_copied = match destination_size {
-        Some(size) => {
-            io::copy(&mut (&mut decoder).take(size), &mut file).context("Failed to copy image")?
-        }
-        None => io::copy(&mut decoder, &mut file).context("Failed to copy image")?,
-    };
+    // Decompress the image and write it to the block device
+    let bytes_copied = io::copy(&mut decoder, &mut file).context("Failed to copy image")?;
 
     info!(
         "Copied {} bytes to {} in {:.2} seconds",

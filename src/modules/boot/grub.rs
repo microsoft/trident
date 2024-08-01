@@ -83,11 +83,11 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     }
 
     let boot_block_device_id = &boot_mount_point.target_id;
-    let boot_block_device_info =
-        modules::get_block_device(host_status, boot_block_device_id, false)
+    let boot_block_device_path =
+        modules::get_block_device_path(host_status, boot_block_device_id, false)
             .context("Failed to find boot block device")?;
 
-    let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_info.path)?;
+    let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_path)?;
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
     //Get selinux mode from host status
     let selinux_mode = host_status.spec.os.selinux.mode;
@@ -265,7 +265,7 @@ pub(crate) mod functional_test {
             self, AbUpdate, AbVolumePair, Disk, HostConfiguration, InternalMountPoint, Partition,
             PartitionType, RaidLevel, SoftwareRaidArray,
         },
-        status::{BlockDeviceInfo, ServicingState, ServicingType, Storage},
+        status::{ServicingState, ServicingType, Storage},
     };
 
     pub fn test_execute_and_resulting_layout(is_single_disk_raid: bool, unequal_partitions: bool) {
@@ -469,11 +469,11 @@ pub(crate) mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                        "foo".into() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 10 },
-                        "boot1".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 2 },
-                        "root1".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 8 },
-                        "root2".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 8 },
+                block_device_paths: btreemap! {
+                        "foo".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        "boot1".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                        "root1".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                        "root2".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                 },
                 ..Default::default()
             },
@@ -515,13 +515,10 @@ pub(crate) mod functional_test {
                 options: vec![],
             });
 
-        host_status.storage.block_devices.insert(
-            raid_array.id.clone(),
-            BlockDeviceInfo {
-                path: root_device_path.to_owned(),
-                size: 16,
-            },
-        );
+        host_status
+            .storage
+            .block_device_paths
+            .insert(raid_array.id.clone(), root_device_path.to_owned());
 
         mkfs::run(root_device_path, MkfsFileSystemType::Ext4).unwrap();
 
@@ -575,10 +572,10 @@ pub(crate) mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                        "foo".into() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 10 },
-                        "boot".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 2 },
-                        "root".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 8 },
+                block_device_paths: btreemap! {
+                        "foo".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                        "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 },
                 ..Default::default()
             },
@@ -669,11 +666,11 @@ pub(crate) mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap![
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 10 },
-                    "efi".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 1 },
-                    "root-a".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 9 },
-                    "root-b".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 9 },
+                block_device_paths: btreemap![
+                    "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    "efi".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                    "root-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                    "root-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                 ],
                 ..Default::default()
             },
@@ -724,10 +721,10 @@ pub(crate) mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                        "foo".into() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 10 },
-                        "boot".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 2 },
-                        "root".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 8 },
+                block_device_paths: btreemap! {
+                        "foo".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                        "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 },
                 ..Default::default()
             },
@@ -780,10 +777,10 @@ pub(crate) mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                        "foo".into() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 10 },
-                        "boot".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 2 },
-                        "root".into() => BlockDeviceInfo { path: PathBuf::from(""), size: 8 },
+                block_device_paths: btreemap! {
+                        "foo".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                        "root".into() => PathBuf::from(""),
                 },
                 ..Default::default()
             },

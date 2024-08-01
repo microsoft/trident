@@ -74,9 +74,8 @@ fn copy_file_artifacts(
 
     debug!("Extracting ESP image to {}", temp_image_path.display());
 
-    // Stream image to the temporary file. destination_size is None since we're writing to a new
-    // file and not block device
-    let computed_sha256 = image_streamer::stream_zstd(reader, &temp_image_path, None)
+    // Stream image to the temporary file.
+    let computed_sha256 = image_streamer::stream_zstd(reader, &temp_image_path)
         .context(format!("Failed to stream ESP image from {}", image_url))?;
 
     // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed

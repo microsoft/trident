@@ -31,7 +31,7 @@ use osutils::{
 };
 use trident_api::{
     config::{Image, ImageSha256, PartitionType},
-    status::{AbVolumeSelection, BlockDeviceInfo, HostStatus},
+    status::{AbVolumeSelection, HostStatus},
     BlockDeviceId,
 };
 
@@ -467,9 +467,9 @@ fn get_partition_path(
     block_device_id: &BlockDeviceId,
 ) -> Result<String, Error> {
     // Fetch BlockDeviceInfo of partition based on its id
-    let part_block_device_info = host_status
+    let part_block_device_path = host_status
         .storage
-        .block_devices
+        .block_device_paths
         .get(block_device_id)
         .context(format!("No partition with id '{block_device_id}' found"))?;
 
@@ -483,9 +483,9 @@ fn get_partition_path(
         ))?;
 
     // Fetch partition path and convert to string
-    let partition_path = part_block_device_info.path.to_str().context(format!(
+    let partition_path = part_block_device_path.to_str().context(format!(
         "Failed to convert partition path '{}' to string",
-        part_block_device_info.path.display()
+        part_block_device_path.display()
     ))?;
 
     Ok(partition_path.to_string())
@@ -502,22 +502,22 @@ fn get_parent_disk_path(
         "Failed to fetch parent disk for partition with id {block_device_id}"
     ))?;
 
-    Ok(parent_disk.path)
+    Ok(parent_disk)
 }
 
-/// Returns BlockDeviceInfo of parent disk of partition, based on its id.
-fn get_parent_disk(
-    host_status: &HostStatus,
-    partition_id: &BlockDeviceId,
-) -> Option<BlockDeviceInfo> {
+/// Returns the path of the parent disk of partition, based on its id.
+fn get_parent_disk(host_status: &HostStatus, partition_id: &BlockDeviceId) -> Option<PathBuf> {
     // Iterate over all the disks in host_status
     for disk in host_status.spec.storage.disks.iter() {
         // Iterate over the partitions of the disk
         for partition in &disk.partitions {
             // Check if the partition id matches the given BlockDeviceId
             if &partition.id == partition_id {
-                // Return Disk object if match found
-                return host_status.storage.block_devices.get(&disk.id).cloned();
+                return host_status
+                    .storage
+                    .block_device_paths
+                    .get(&disk.id)
+                    .cloned();
             }
         }
     }
@@ -984,12 +984,12 @@ mod tests {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
-                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
-                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
-                    "rootb".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
-                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 },
                 ..Default::default()
             },
@@ -1045,11 +1045,11 @@ mod tests {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
-                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
-                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
-                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 },
 
                 ..Default::default()
@@ -1107,12 +1107,12 @@ mod tests {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
-                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
-                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
-                    "rootb".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
-                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 },
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),
                 ..Default::default()
@@ -1157,9 +1157,9 @@ mod tests {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
-                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 },
                 ..Default::default()
             },
@@ -1210,12 +1210,12 @@ mod tests {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 0 },
-                    "efi".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp1"), size: 0 },
-                    "root".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp2"), size: 0 },
-                    "rootb".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-partlabel/osp3"), size: 0 },
-                    "data".into() => BlockDeviceInfo { path: PathBuf::from("/dev/disk/by-bus/foobar"), size: 1000 },
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 },
                 ..Default::default()
             },
@@ -1225,7 +1225,7 @@ mod tests {
         // Case 1: Partition ID is valid
         assert_eq!(
             &get_parent_disk(&host_status, &"root".to_string()).unwrap(),
-            host_status.storage.block_devices.get("os").unwrap()
+            host_status.storage.block_device_paths.get("os").unwrap()
         );
         // Case 2: Partition ID is invalid
         assert_eq!(get_parent_disk(&host_status, &"invalid".to_string()), None);

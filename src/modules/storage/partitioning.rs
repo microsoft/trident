@@ -16,7 +16,7 @@ use osutils::{
 };
 use trident_api::{
     config::{AdoptedPartition, Disk, HostConfiguration, PartitionSize, PartitionType, Storage},
-    status::{BlockDeviceInfo, HostStatus},
+    status::HostStatus,
     BlockDeviceId,
 };
 
@@ -75,13 +75,10 @@ pub fn create_partitions(
             disk.id
         ))?;
 
-        host_status.storage.block_devices.insert(
-            disk.id.into(),
-            BlockDeviceInfo {
-                path: disk.bus_path.clone(),
-                size: disk_information.capacity,
-            },
-        );
+        host_status
+            .storage
+            .block_device_paths
+            .insert(disk.id.into(), disk.bus_path.clone());
 
         // Get disk UUID from osuuid
         match disk_information.id.as_uuid() {
@@ -89,7 +86,7 @@ pub fn create_partitions(
                 // Update the host status with disk UUID to disk ID mapping
                 host_status
                     .storage
-                    .disk_uuid_id_map
+                    .disks_by_uuid
                     .insert(disk_uuid, disk.id.into());
             }
             None => {
@@ -116,13 +113,10 @@ pub fn create_partitions(
                 repart_partition.id,
                 repart_partition
             );
-            host_status.storage.block_devices.insert(
-                repart_partition.id.clone(),
-                BlockDeviceInfo {
-                    path: repart_partition.path_by_uuid(),
-                    size: repart_partition.size,
-                },
-            );
+            host_status
+                .storage
+                .block_device_paths
+                .insert(repart_partition.id.clone(), repart_partition.path_by_uuid());
         }
     }
     Ok(())
@@ -818,22 +812,19 @@ mod functional_test {
 
         create_partitions(&mut host_status, &host_config).unwrap();
 
-        assert_eq!(host_status.storage.block_devices.len(), 4);
+        assert_eq!(host_status.storage.block_device_paths.len(), 4);
 
-        let check_part = |name: &str, size: Option<u64>| {
-            let part = host_status
+        let check_part = |name: &str| {
+            host_status
                 .storage
-                .block_devices
+                .block_device_paths
                 .get(name)
                 .unwrap_or_else(|| panic!("Failed to find block device '{}' in status", name));
-            if let Some(size) = size {
-                assert_eq!(part.size, size, "Size mismatch for '{}'", name);
-            }
         };
 
-        check_part("part1", Some(1048576));
-        check_part("part2", Some(2 * 1048576));
-        check_part("part3", None);
+        check_part("part1");
+        check_part("part2");
+        check_part("part3");
 
         osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
     }
@@ -909,17 +900,17 @@ mod functional_test {
 
         create_partitions(&mut host_status, &host_config).unwrap();
 
-        assert_eq!(host_status.storage.block_devices.len(), 3);
+        assert_eq!(host_status.storage.block_device_paths.len(), 3);
         assert!(
-            host_status.storage.block_devices.contains_key("part1"),
+            host_status.storage.block_device_paths.contains_key("part1"),
             "part1 not found"
         );
         assert!(
-            !host_status.storage.block_devices.contains_key("part2"),
+            !host_status.storage.block_device_paths.contains_key("part2"),
             "part2 found"
         );
         assert!(
-            host_status.storage.block_devices.contains_key("part3"),
+            host_status.storage.block_device_paths.contains_key("part3"),
             "part3 not found"
         );
 

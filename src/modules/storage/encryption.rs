@@ -7,7 +7,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{bail, Context, Error};
 use log::{debug, info};
 use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
@@ -19,11 +19,10 @@ use trident_api::{
     },
     constants::DEV_MAPPER_PATH,
     error::{InvalidInputError, ReportError, TridentError},
-    status::{BlockDeviceInfo, HostStatus},
+    status::HostStatus,
     BlockDeviceId,
 };
 
-const LUKS_HEADER_SEGMENT_KEY: &str = "0";
 const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
@@ -149,40 +148,29 @@ pub(super) fn provision(
                 partition.partition_type.to_sdrepart_part_type()
             );
 
-            let device = host_status
+            let device_path = host_status
                 .storage
-                .block_devices
+                .block_device_paths
                 .get_mut(&ev.device_id)
                 .context(format!(
                     "Failed to find device '{}' for encrypted volume '{}'",
                     ev.device_id, ev.id
                 ))?;
 
-            encrypt_and_open_device(&device.path, &ev.device_name, &key_file_path).context(
+            encrypt_and_open_device(device_path, &ev.device_name, &key_file_path).context(
                 format!(
                     "Failed to encrypt and open device '{}' ({}) as {} for volume '{}'",
-                    device.path.display(),
+                    device_path.display(),
                     ev.device_id,
                     ev.device_name,
                     ev.id
                 ),
             )?;
 
-            let header_offset_in_bytes: u64 =
-                get_luks_header_offset(&device.path).context(format!(
-                    "Failed to get LUKS header offset for device '{}'",
-                    device.path.display()
-                ))?;
-
-            // Add a representation of the created volume in the host status. The content status is
-            // unknown since it is new and there isn't even an empty filesystem on it yet.
-            let size = device.size - header_offset_in_bytes;
-            host_status.storage.block_devices.insert(
+            // Record the path of the created volume in the Host Status.
+            host_status.storage.block_device_paths.insert(
                 ev.id.clone(),
-                BlockDeviceInfo {
-                    path: Path::new(DEV_MAPPER_PATH).join(&ev.device_name),
-                    size,
-                },
+                Path::new(DEV_MAPPER_PATH).join(&ev.device_name),
             );
         }
     }
@@ -318,43 +306,6 @@ struct LuksDumpSegment {
     sector_size: u64,
 }
 
-/// This function runs `cryptsetup luksDump --dump-json-metadata
-/// <device_path>` and parses the output and to return the offset of the
-/// LUKS2 volume header in bytes.
-fn get_luks_header_offset(device_path: &Path) -> Result<u64, Error> {
-    let luks_dump_output: String = Command::new("cryptsetup")
-        .arg("luksDump")
-        .arg("--dump-json-metadata")
-        .arg(device_path.as_os_str())
-        .output_and_check()?;
-
-    let luks_dump_output: &[u8] = luks_dump_output.as_bytes();
-
-    parse_luks_dump_for_header_offset(luks_dump_output)
-}
-
-/// This function parses the JSON output of `cryptsetup luksDump
-/// --dump-json-metadata <device_path>` and returns the offset of the
-/// LUKS2 volume header in bytes.
-fn parse_luks_dump_for_header_offset(luks_dump_output: &[u8]) -> Result<u64, Error> {
-    let luks_dump: LuksDump = serde_json::from_slice::<LuksDump>(luks_dump_output)
-        .context("Failed to parse string as a LUKS dump JSON object")?;
-
-    let offset = luks_dump
-        .segments
-        .get(LUKS_HEADER_SEGMENT_KEY)
-        .context(anyhow!(
-            "Failed to find segment '{}' in LUKS dump JSON object",
-            LUKS_HEADER_SEGMENT_KEY
-        ))?
-        .offset
-        .as_str();
-
-    offset
-        .parse::<u64>()
-        .context(anyhow!("Failed to parse offset '{}' as u64", offset))
-}
-
 #[tracing::instrument(name = "encryption_configure", skip_all)]
 pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
     let path: PathBuf = PathBuf::from(CRYPTTAB_PATH);
@@ -370,11 +321,11 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
             ev.device_id,
             ev.id
         ))?;
-        let device_path = &host_status.storage.block_devices.get(&ev.device_id).context(format!(
-            "Failed to find block device information for underlying device '{}' of encrypted volume '{}'",
+        let device_path = &host_status.storage.block_device_paths.get(&ev.device_id).context(format!(
+            "Failed to find block device path for underlying device with id '{}' of encrypted volume with id '{}'",
             ev.device_id,
             ev.id
-        ))?.path;
+        ))?;
 
         // An encrypted swap device is special-cased in the crypttab due
         // to the unique nature and requirements of swap spaces in a Linux
@@ -735,239 +686,6 @@ mod tests {
                     recovery_key_file.path().to_string_lossy().to_string()
                 )
             })
-        );
-    }
-
-    #[test]
-    fn test_parse_luks_dump_for_header_offset_str_16mib_pass() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "segments": {
-                "0": {
-                    "type": "crypt",
-                    "offset": "16777216",
-                    "size": "dynamic",
-                    "iv_tweak": "0",
-                    "encryption": "aes-xts-plain64",
-                    "sector_size": 512
-                }
-            },
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        let offset: u64 = parse_luks_dump_for_header_offset(luks_dump_output).unwrap();
-        assert_eq!(offset, 16777216);
-    }
-
-    #[test]
-    fn test_parse_luks_dump_for_header_offset_str_zero_pass() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "segments": {
-                "0": {
-                    "type": "crypt",
-                    "offset": "0",
-                    "size": "dynamic",
-                    "iv_tweak": "0",
-                    "encryption": "aes-xts-plain64",
-                    "sector_size": 512
-                }
-            },
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        let offset: u64 = parse_luks_dump_for_header_offset(luks_dump_output).unwrap();
-        assert_eq!(offset, 0);
-    }
-
-    #[test]
-    fn test_parse_luks_dump_for_header_offset_str_negative_fail() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "segments": {
-                "0": {
-                    "type": "crypt",
-                    "offset": "-1",
-                    "size": "dynamic",
-                    "iv_tweak": "0",
-                    "encryption": "aes-xts-plain64",
-                    "sector_size": 512
-                }
-            },
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        assert_eq!(
-            parse_luks_dump_for_header_offset(luks_dump_output)
-                .unwrap_err()
-                .to_string(),
-            "Failed to parse offset '-1' as u64"
-        );
-    }
-
-    #[test]
-    fn test_parse_luks_dump_for_header_offset_str_non_numeric_fail() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "segments": {
-                "0": {
-                    "type": "crypt",
-                    "offset": "foo",
-                    "size": "dynamic",
-                    "iv_tweak": "0",
-                    "encryption": "aes-xts-plain64",
-                    "sector_size": 512
-                }
-            },
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        assert_eq!(
-            parse_luks_dump_for_header_offset(luks_dump_output)
-                .unwrap_err()
-                .to_string(),
-            "Failed to parse offset 'foo' as u64"
-        );
-    }
-
-    #[test]
-    fn test_parse_luks_dump_for_header_offset_uint_fail() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "segments": {
-                "0": {
-                    "type": "crypt",
-                    "offset": 16777216,
-                    "size": "dynamic",
-                    "iv_tweak": "0",
-                    "encryption": "aes-xts-plain64",
-                    "sector_size": 512
-                }
-            },
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        assert_eq!(
-            parse_luks_dump_for_header_offset(luks_dump_output)
-                .unwrap_err()
-                .to_string(),
-            "Failed to parse string as a LUKS dump JSON object"
-        );
-    }
-
-    #[test]
-    fn test_parse_luks_dump_for_header_offset_missing_fail() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "segments": {
-                "0": {
-                    "type": "crypt",
-                    "size": "dynamic",
-                    "iv_tweak": "0",
-                    "encryption": "aes-xts-plain64",
-                    "sector_size": 512
-                }
-            },
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        assert_eq!(
-            parse_luks_dump_for_header_offset(luks_dump_output)
-                .unwrap_err()
-                .to_string(),
-            "Failed to parse string as a LUKS dump JSON object"
-        );
-    }
-
-    #[test]
-    fn test_luks_dump_parse_header_segment_missing_fail() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "segments": {
-                "1": {
-                    "type": "crypt",
-                    "offset": "16777216",
-                    "size": "dynamic",
-                    "iv_tweak": "0",
-                    "encryption": "aes-xts-plain64",
-                    "sector_size": 512
-                }
-            },
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        assert_eq!(
-            parse_luks_dump_for_header_offset(luks_dump_output)
-                .unwrap_err()
-                .to_string(),
-            "Failed to find segment '0' in LUKS dump JSON object"
-        );
-    }
-
-    #[test]
-    fn test_luks_dump_parse_header_no_segments_fail() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "segments": {},
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        assert_eq!(
-            parse_luks_dump_for_header_offset(luks_dump_output)
-                .unwrap_err()
-                .to_string(),
-            "Failed to find segment '0' in LUKS dump JSON object"
-        );
-    }
-
-    #[test]
-    fn test_luks_dump_parse_header_segments_missing_fail() {
-        let luks_dump_output: &[u8] = r#"
-        {
-            "keyslots": {},
-            "tokens": {},
-            "digests": {},
-            "config": {}
-        }
-        "#
-        .as_bytes();
-        assert_eq!(
-            parse_luks_dump_for_header_offset(luks_dump_output)
-                .unwrap_err()
-                .to_string(),
-            "Failed to parse string as a LUKS dump JSON object"
         );
     }
 }

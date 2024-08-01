@@ -3,24 +3,12 @@ servicingType: null
 servicingState: provisioned
 installIndex: 0
 storage:
-  blockDevices:
-    os:
-      path: placeholder
-      size: 17178803712
-    esp:
-      path: placeholder
-      size: 52428800
-    root-a:
-      path: placeholder
-      size: 5368709120
-    root-b:
-      path: placeholder
-      size: 2147483648
-    swap:
-      path: placeholder
-      size: 2147483648
-    trident:
-      path: placeholder
-      size: 104857600
+  blockDevicePaths:
+    os: placeholder
+    esp: placeholder
+    root-a: placeholder
+    root-b: placeholder
+    swap: placeholder
+    trident: placeholder
   abActiveVolume: volume-a
-  diskUuidIdMap: {placeholder: placeholder}
+  disksByUuid: {placeholder: placeholder}

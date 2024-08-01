@@ -20,7 +20,7 @@ use trident_api::error::{
 use trident_api::status::{HostStatus, ServicingState, ServicingType};
 
 use crate::datastore::DataStore;
-use crate::modules::{bootentries, get_block_device, storage::tabfile};
+use crate::modules::{bootentries, get_block_device_path, storage::tabfile};
 
 mod datastore;
 mod logging;
@@ -612,15 +612,9 @@ fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(
     // Fetch expected_root_dev_path. active=false b/c need to fetch info for volume that we expect
     // to be active at this point, after firmware has already rebooted, and it used to be the
     // update volume before the reboot.
-    let expected_root_path = match get_block_device(host_status, root_target_id, false) {
-        Some(block_device_info) => block_device_info.path,
-        None => {
-            bail!(
-                "Failed to get block device info for root '{}'",
-                root_target_id
-            );
-        }
-    };
+    let expected_root_path = get_block_device_path(host_status, root_target_id, false).context(
+        format!("Failed to get block device path for root '{root_target_id}'"),
+    )?;
     debug!(
         "Non-canonicalized root device path: {}",
         expected_root_path.display()
@@ -715,7 +709,7 @@ mod functional_test {
             AbUpdate, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition,
             PartitionType, Storage,
         },
-        status::{AbVolumeSelection, BlockDeviceInfo, Storage as HostStorage},
+        status::{AbVolumeSelection, Storage as HostStorage},
     };
 
     /// Validates that validate_reboot() correctly detects rollback when root is a partition.
@@ -758,7 +752,7 @@ mod functional_test {
                 ..Default::default()
             },
             storage: HostStorage {
-                block_devices: [].into(),
+                block_device_paths: [].into(),
                 ..Default::default()
             },
             servicing_state: ServicingState::Finalized,
@@ -785,15 +779,15 @@ mod functional_test {
         let error_message1 = result1.unwrap_err().root_cause().to_string();
         assert_eq!(
             error_message1,
-            "Failed to get block device info for root 'root'"
+            "Failed to get block device path for root 'root'"
         );
 
         // Test case #2: After CleanInstall, Trident correctly booted into root-a.
-        host_status.storage.block_devices = btreemap! {
-            "os".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda"), size: 0 },
-            "efi".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda1"), size: 0 },
-            "root-a".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda2"), size: 900 },
-            "root-b".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda3"), size: 9000 },
+        host_status.storage.block_device_paths = btreemap! {
+            "os".to_owned() => PathBuf::from("/dev/sda"),
+            "efi".to_owned() => PathBuf::from("/dev/sda1"),
+            "root-a".to_owned() => PathBuf::from("/dev/sda2"),
+            "root-b".to_owned() => PathBuf::from("/dev/sda3"),
         };
         let result2 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
         assert!(result2.is_ok());

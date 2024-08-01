@@ -134,9 +134,8 @@ fn get_esp_partition_disk(host_status: &HostStatus) -> Result<PathBuf, Error> {
     // Find the device path of the ESP partition
     let device_path = host_status
         .storage
-        .block_devices
+        .block_device_paths
         .get(esp_device_id)
-        .map(|block_device| block_device.path.clone())
         .with_context(|| {
             format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'")
         })?;

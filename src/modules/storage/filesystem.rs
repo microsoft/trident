@@ -64,7 +64,7 @@ fn block_devices_needing_fs_creation(
                     Some(device_id),
                 ) if !host_status.spec.storage.is_adopted_partition(device_id) => {
                     // Get the block device info for the device_id
-                    modules::get_block_device(host_status, device_id, false)
+                    modules::get_block_device_path(host_status, device_id, false)
                     .map(|bd_info| (device_id.clone(), bd_info, fs.fs_type))
                 },
 
@@ -72,7 +72,7 @@ fn block_devices_needing_fs_creation(
                 _ => None,
             }
         })
-        .filter_map(|(device_id, bd_info, fs_type)| {
+        .filter_map(|(device_id, bd_path, fs_type)| {
             // If the block device is an A/B volume pair and we're doing an A/B update, resolve
             // device_id to the device_id of the actual update volume
             if ab_volume_pair_ids.contains(&device_id)
@@ -83,7 +83,7 @@ fn block_devices_needing_fs_creation(
                     device_id
                 );
                 modules::get_ab_volume_block_device_id(host_status, &device_id, false)
-                    .map(|ab_volume_bdi| (ab_volume_bdi, bd_info.path, fs_type))
+                    .map(|ab_volume_bdi| (ab_volume_bdi, bd_path, fs_type))
             // If the block device is NOT an A/B volume pair, only add it to block_devices if
             // a filesystem has not been previously created, i.e. we're doing a clean install
             } else if host_status.servicing_type == Some(ServicingType::CleanInstall) {
@@ -91,7 +91,7 @@ fn block_devices_needing_fs_creation(
                     "Servicing type is clean install and a standalone volume detected: {:?}",
                     device_id
                 );
-                Some((device_id, bd_info.path, fs_type))
+                Some((device_id, bd_path, fs_type))
             } else {
                 debug!(
                     "Volume is neither standalone nor A/B volume pair: {:?}",
@@ -135,7 +135,7 @@ mod test {
             HostConfiguration, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
             Partition, PartitionType, Storage as StorageConfig,
         },
-        status::{AbVolumeSelection, BlockDeviceInfo, ServicingState, Storage},
+        status::{AbVolumeSelection, ServicingState, Storage},
     };
 
     use super::*;
@@ -225,27 +225,12 @@ mod test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 34358672896,
-                    },
-                    "esp".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 100,
-                    },
-                    "root-a".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 100,
-                    },
-                    "root-b".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 100,
-                    },
-                    "trident".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp4"),
-                        size: 100,
-                    },
+                block_device_paths: btreemap! {
+                    "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                    "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
                 },
                 ..Default::default()
             },
@@ -350,27 +335,12 @@ mod test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 34358672896,
-                    },
-                    "esp".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 100,
-                    },
-                    "root-a".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 100,
-                    },
-                    "root-b".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 100,
-                    },
-                    "trident".into() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp4"),
-                        size: 100,
-                    },
+                block_device_paths: btreemap! {
+                    "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                    "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
                 },
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),
                 ..Default::default()
@@ -464,23 +434,11 @@ mod test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-bus/foobar"),
-                        size: 34358672896,
-                    },
-                    "esp".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                        size: 100,
-                    },
-                    "root-a".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                        size: 100,
-                    },
-                    "root-b".to_owned() => BlockDeviceInfo {
-                        path: PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                        size: 100,
-                    },
+                block_device_paths: btreemap! {
+                    "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                    "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                    "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                    "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
                 },
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),
                 ..Default::default()

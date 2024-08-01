@@ -87,12 +87,10 @@ pub(super) fn mount_new_root(
                 mp.target_id
             ))?;
 
-            let device_path = modules::get_block_device(host_status, &mp.target_id, false)
-                .context(format!(
-                    "Failed to find block device path for id '{}'",
-                    mp.target_id
-                ))?
-                .path;
+            let device_path =
+                modules::get_block_device_path(host_status, &mp.target_id, false).context(
+                    format!("Failed to find block device path for id '{}'", mp.target_id),
+                )?;
 
             mount::mount(
                 &device_path,
@@ -204,15 +202,13 @@ mod functional_test {
         hashing_reader::HashingReader,
         image_streamer, mountpoint,
         repart::{RepartEmptyMode, SystemdRepartInvoker},
-        testutils::repart::{
-            self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, PART1_SIZE, TEST_DISK_DEVICE_PATH,
-        },
+        testutils::repart::{self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, TEST_DISK_DEVICE_PATH},
         udevadm,
     };
     use trident_api::{
         config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
         error::ErrorKind,
-        status::{BlockDeviceInfo, Storage},
+        status::Storage,
     };
 
     #[functional_test(feature = "helpers")]
@@ -253,9 +249,9 @@ mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sr"), size: 0 },
-                    "sr0".into() => BlockDeviceInfo { path: PathBuf::from(CDROM_DEVICE_PATH), size: 0 }
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/sr"),
+                    "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
                 },
                 ..Default::default()
             },
@@ -319,10 +315,10 @@ mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 0 },
-                    "esp".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 0 },
-                    "root".into() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 0 }
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    "esp".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                    "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
                 },
                 ..Default::default()
             },
@@ -346,7 +342,6 @@ mod functional_test {
         image_streamer::stream_zstd(
             HashingReader::new(stream),
             Path::new(format!("{TEST_DISK_DEVICE_PATH}1").as_str()),
-            Some(PART1_SIZE),
         )
         .unwrap();
         let stream: Box<dyn Read> = Box::new(
@@ -357,7 +352,6 @@ mod functional_test {
         image_streamer::stream_zstd(
             HashingReader::new(stream),
             Path::new(format!("{TEST_DISK_DEVICE_PATH}2").as_str()),
-            None,
         )
         .unwrap();
 
@@ -448,9 +442,9 @@ mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sr"), size: 0 },
-                    "sr0".into() => BlockDeviceInfo { path: PathBuf::from(CDROM_DEVICE_PATH), size: 0 }
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/sr"),
+                    "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
                 },
                 ..Default::default()
             },
@@ -540,9 +534,9 @@ mod functional_test {
                 ..Default::default()
             },
             storage: Storage {
-                block_devices: btreemap! {
-                    "os".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sr"), size: 0 },
-                    "sr0".into() => BlockDeviceInfo { path: PathBuf::from("/dev/sr0"), size: 0 }
+                block_device_paths: btreemap! {
+                    "os".into() => PathBuf::from("/dev/sr"),
+                    "sr0".into() => PathBuf::from("/dev/sr0")
                 },
                 ..Default::default()
             },

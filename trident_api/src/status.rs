@@ -99,8 +99,9 @@ pub enum ServicingState {
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Storage {
+    /// The path associated with each block device in the Host Configuration.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub block_devices: BTreeMap<BlockDeviceId, BlockDeviceInfo>,
+    pub block_device_paths: BTreeMap<BlockDeviceId, PathBuf>,
 
     /// A/B update status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -108,7 +109,7 @@ pub struct Storage {
 
     /// Stores the Disks UUID to ID mapping of the host.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub disk_uuid_id_map: HashMap<Uuid, BlockDeviceId>,
+    pub disks_by_uuid: HashMap<Uuid, BlockDeviceId>,
 }
 
 /// A/B volume selection. Determines which set of volumes are currently
@@ -118,16 +119,6 @@ pub struct Storage {
 pub enum AbVolumeSelection {
     VolumeA,
     VolumeB,
-}
-
-/// Block device information. Carries information about the block device path
-/// and size, used for storage. Abstracts the difference between specific block
-/// device types.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BlockDeviceInfo {
-    pub path: PathBuf,
-    pub size: u64,
 }
 
 impl HostStatus {

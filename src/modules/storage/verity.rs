@@ -23,7 +23,7 @@ use trident_api::{
         TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_PATH,
         TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
-    status::{BlockDeviceInfo, HostStatus},
+    status::HostStatus,
     BlockDeviceId,
 };
 
@@ -103,12 +103,12 @@ pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
 
 pub(super) fn configure_device_names(host_status: &mut HostStatus) -> Result<(), Error> {
     for vd in &host_status.spec.storage.internal_verity {
-        host_status
+        *host_status
             .storage
-            .block_devices
+            .block_device_paths
             .get_mut(&vd.id)
-            .context(format!("Failed to find verity device '{}'", vd.id))?
-            .path = Path::new(DEV_MAPPER_PATH).join(&vd.device_name);
+            .context(format!("Failed to find verity device '{}'", vd.id))? =
+            Path::new(DEV_MAPPER_PATH).join(&vd.device_name);
     }
 
     Ok(())
@@ -118,7 +118,7 @@ pub(super) fn configure_device_names(host_status: &mut HostStatus) -> Result<(),
 fn setup_root_verity_device(
     host_status: &HostStatus,
     root_verity_device: &config::InternalVerityDevice,
-) -> Result<(BlockDeviceId, BlockDeviceInfo), Error> {
+) -> Result<(BlockDeviceId, PathBuf), Error> {
     // Extract the root hash from GRUB config
     let root_hash = get_root_verity_root_hash(host_status)?;
 
@@ -155,10 +155,7 @@ fn setup_root_verity_device(
     }
     Ok((
         root_verity_device.id.clone(),
-        BlockDeviceInfo {
-            path: Path::new(DEV_MAPPER_PATH).join(updated_device_name),
-            size: 0, // TODO: https://dev.azure.com/mariner-org/ECF/_workitems/edit/7319/
-        },
+        Path::new(DEV_MAPPER_PATH).join(updated_device_name),
     ))
 }
 
@@ -175,9 +172,11 @@ fn get_root_verity_root_hash(host_status: &HostStatus) -> Result<String, Error> 
 
     // Get the boot device path
     let boot_device_id = &boot_mount_point.target_id;
-    let boot_device_path = modules::get_block_device(host_status, boot_device_id, false)
-        .context(format!("Failed to find boot device {}", boot_device_id))?
-        .path;
+    let boot_device_path = modules::get_block_device_path(host_status, boot_device_id, false)
+        .context(format!(
+            "Failed to find path of boot device with id '{}'",
+            boot_device_id
+        ))?;
 
     // Mount the boot device temporarily to fetch the GRUB config
     let boot_mount_dir = TempDir::new().context("Failed to create temporary directory")?;
@@ -220,7 +219,7 @@ pub(super) fn setup_verity_devices(host_status: &mut HostStatus) -> Result<(), E
     // Update the host status
     host_status
         .storage
-        .block_devices
+        .block_device_paths
         .insert(id, verity_device_status);
 
     Ok(())
@@ -235,20 +234,20 @@ fn get_verity_related_device_paths(
     verity_device: &config::InternalVerityDevice,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), Error> {
     let verity_data_path =
-        modules::get_block_device(host_status, &verity_device.data_target_id, false)
-            .context(format!(
-                "Failed to find verity data target id {}",
+        modules::get_block_device_path(host_status, &verity_device.data_target_id, false).context(
+            format!(
+                "Failed to find path of verity data device with id '{}'",
                 verity_device.data_target_id
-            ))?
-            .path;
+            ),
+        )?;
 
     let verity_hash_path =
-        modules::get_block_device(host_status, &verity_device.hash_target_id, false)
-            .context(format!(
-                "Failed to find verity hash target id {}",
+        modules::get_block_device_path(host_status, &verity_device.hash_target_id, false).context(
+            format!(
+                "Failed to find verity hash device with ID '{}'",
                 verity_device.hash_target_id
-            ))?
-            .path;
+            ),
+        )?;
 
     let overlay_target_id = &host_status
         .spec
@@ -260,12 +259,11 @@ fn get_verity_related_device_paths(
             "Cannot find overlay device mount point '{TRIDENT_OVERLAY_PATH}'"
         ))?
         .target_id;
-    let overlay_device_path = modules::get_block_device(host_status, overlay_target_id, false)
+    let overlay_device_path = modules::get_block_device_path(host_status, overlay_target_id, false)
         .context(format!(
             "Failed to find overlay device {}",
             overlay_target_id
-        ))?
-        .path;
+        ))?;
 
     Ok((verity_data_path, verity_hash_path, overlay_device_path))
 }
@@ -617,11 +615,11 @@ mod test {
                 ..Default::default()
             },
             storage: status::Storage {
-                block_devices: btreemap! {
-                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 0 },
-                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 0 },
-                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 0 },
-                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 0 },
+                block_device_paths: btreemap! {
+                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                 },
                 ..Default::default()
             },
@@ -671,7 +669,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Failed to find verity data target id non-existing"
+            "Failed to find path of verity data device with id 'non-existing'"
         );
 
         // test no verity hash target id
@@ -690,7 +688,7 @@ mod test {
             )
             .unwrap_err()
             .to_string(),
-            "Failed to find verity hash target id non-existing"
+            "Failed to find verity hash device with ID 'non-existing'"
         );
 
         // test no overlay device
@@ -706,7 +704,7 @@ mod test {
             .retain(|p| p.id != "overlay");
         host_status_no_overlay
             .storage
-            .block_devices
+            .block_device_paths
             .remove("overlay");
         assert_eq!(
             get_verity_related_device_paths(
@@ -743,9 +741,9 @@ mod test {
                 ..Default::default()
             },
             storage: status::Storage {
-                block_devices: btreemap! {
-                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda1"), size: 0 },
-                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from("/dev/sda2"), size: 0 },
+                block_device_paths: btreemap! {
+                    "root".to_owned() => PathBuf::from("/dev/sda1"),
+                    "boot".to_owned() => PathBuf::from("/dev/sda2"),
                 },
                 ..Default::default()
             },
@@ -962,11 +960,11 @@ mod functional_test {
                 ..Default::default()
             },
             storage: status::Storage {
-                block_devices: btreemap! {
-                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
-                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
-                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
-                    "root-verity".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
+                block_device_paths: btreemap! {
+                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                    "root-verity".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
                 },
                 ..Default::default()
             },
@@ -1004,13 +1002,13 @@ mod functional_test {
             .retain(|p| p.id != "boot");
         host_status_no_boot_part
             .storage
-            .block_devices
+            .block_device_paths
             .remove("boot");
         assert_eq!(
             get_root_verity_root_hash(&host_status_no_boot_part)
                 .unwrap_err()
                 .to_string(),
-            "Failed to find boot device boot"
+            "Failed to find path of boot device with id 'boot'"
         );
 
         // test failure when linux command line does not carry roothash argument
@@ -1106,12 +1104,12 @@ mod functional_test {
                 ..Default::default()
             },
             storage: status::Storage {
-                block_devices: btreemap! {
-                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
-                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
-                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
-                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
-                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 100 },
+                block_device_paths: btreemap! {
+                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                 },
                 ..Default::default()
             },
@@ -1129,13 +1127,7 @@ mod functional_test {
             };
             assert_eq!(bdi, "root-verity");
             assert!(verity_device_path.exists());
-            assert_eq!(
-                vd,
-                BlockDeviceInfo {
-                    path: PathBuf::from(DEV_MAPPER_PATH).join("root_new"),
-                    size: 0
-                }
-            );
+            assert_eq!(vd, PathBuf::from(DEV_MAPPER_PATH).join("root_new"));
         }
 
         // test failure when root hash is not matching
@@ -1179,7 +1171,7 @@ mod functional_test {
         let mut host_status = HostStatus::default();
         setup_verity_devices(&mut host_status).unwrap();
 
-        assert!(host_status.storage.block_devices.is_empty());
+        assert!(host_status.storage.block_device_paths.is_empty());
 
         // test root verity device
         let _expected_root_hash = verity::setup_verity_volumes();
@@ -1246,12 +1238,12 @@ mod functional_test {
                 ..Default::default()
             },
             storage: status::Storage {
-                block_devices: btreemap! {
-                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
-                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
-                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
-                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
-                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 100 },
+                block_device_paths: btreemap! {
+                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                 },
                 ..Default::default()
             },
@@ -1265,18 +1257,15 @@ mod functional_test {
                 device_name: "root_new",
             };
             assert!(verity_device_path.exists());
-            assert_eq!(host_status.storage.block_devices.len(), 6);
+            assert_eq!(host_status.storage.block_device_paths.len(), 6);
             let verity_device = host_status
                 .storage
-                .block_devices
+                .block_device_paths
                 .get("root-verity")
                 .unwrap();
             assert_eq!(
                 verity_device,
-                &BlockDeviceInfo {
-                    path: PathBuf::from(DEV_MAPPER_PATH).join("root_new"),
-                    size: 0
-                }
+                &PathBuf::from(DEV_MAPPER_PATH).join("root_new")
             );
         }
 
@@ -1314,10 +1303,10 @@ mod functional_test {
             "Failed to activate verity device 'root', status: 'corrupted'"
         );
         assert!(!verity_device_path.exists());
-        assert_eq!(host_status.storage.block_devices.len(), 5);
+        assert_eq!(host_status.storage.block_device_paths.len(), 5);
         assert_eq!(
-            host_status.storage.block_devices,
-            host_status_golden.storage.block_devices
+            host_status.storage.block_device_paths,
+            host_status_golden.storage.block_device_paths
         );
     }
 
@@ -1409,12 +1398,12 @@ mod functional_test {
                 ..Default::default()
             },
             storage: status::Storage {
-                block_devices: btreemap! {
-                    "sdb".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
-                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
-                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
-                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
-                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 100 },
+                block_device_paths: btreemap! {
+                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                 },
                 ..Default::default()
             },
@@ -1547,12 +1536,12 @@ mod functional_test {
                 ..Default::default()
             },
             storage: status::Storage {
-                block_devices: btreemap! {
-                    "foo".to_owned() => BlockDeviceInfo { path: PathBuf::from(TEST_DISK_DEVICE_PATH), size: 300 },
-                    "boot".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")), size: 100 },
-                    "root-hash".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 100 },
-                    "root".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 100 },
-                    "overlay".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")), size: 100 },
+                block_device_paths: btreemap! {
+                    "foo".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
                 },
                 ..Default::default()
             },

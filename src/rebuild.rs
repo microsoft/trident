@@ -60,7 +60,7 @@ fn validate_rebuild(
     validate_host_config_delta(host_config, host_status)
         .context("Failed to validate host config delta")?;
 
-    let old_disk_uuid_id_map = &host_status.storage.disk_uuid_id_map;
+    let old_disk_uuid_id_map = &host_status.storage.disks_by_uuid;
 
     // Resolve the disk paths to ensure that all disks in the host configuration
     // exist.
@@ -386,7 +386,7 @@ mod functional_test {
         let mut new_disk_uuid_id_map: HashMap<Uuid, BlockDeviceId> = HashMap::new();
 
         new_disk_uuid_id_map.insert(disk1_uuid, "disk1".to_string());
-        host_status.storage.disk_uuid_id_map = new_disk_uuid_id_map.clone();
+        host_status.storage.disks_by_uuid = new_disk_uuid_id_map.clone();
 
         let result = validate_rebuild(&host_config, &mut host_status);
 
@@ -431,7 +431,7 @@ mod functional_test {
         // uuid, disk id so that there are no disks to rebuild.
         let mut new_disk_uuid_id_map = HashMap::new();
         new_disk_uuid_id_map.insert(disk1_uuid, "disk1".to_string());
-        host_status.storage.disk_uuid_id_map = new_disk_uuid_id_map.clone();
+        host_status.storage.disks_by_uuid = new_disk_uuid_id_map.clone();
 
         let result = validate_rebuild(&host_config, &mut host_status);
 

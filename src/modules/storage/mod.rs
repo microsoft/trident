@@ -43,15 +43,15 @@ impl Module for StorageModule {
         clean_install: bool,
     ) -> Result<(), Error> {
         // Remove block devices that no longer exist.
-        let original_block_devices = host_status.storage.block_devices.clone();
+        let original_block_devices = host_status.storage.block_device_paths.clone();
         host_status
             .storage
-            .block_devices
-            .retain(|_id, block_device| block_device.path.exists());
+            .block_device_paths
+            .retain(|_id, block_device| block_device.exists());
 
         let removed_block_devices = original_block_devices
             .keys()
-            .filter(|id| !host_status.storage.block_devices.contains_key(*id))
+            .filter(|id| !host_status.storage.block_device_paths.contains_key(*id))
             .collect::<Vec<_>>();
         if !removed_block_devices.is_empty() {
             info!(
@@ -289,7 +289,7 @@ mod tests {
         },
         constants::ROOT_MOUNT_POINT_PATH,
         error::ErrorKind,
-        status::{BlockDeviceInfo, ServicingState, Storage},
+        status::{ServicingState, Storage},
     };
 
     use super::*;
@@ -498,8 +498,8 @@ mod tests {
             &HostStatus {
                 spec: get_host_config(&temp_tabfile),
                 storage: Storage {
-                    block_devices: btreemap! {
-                        "part1".into() => BlockDeviceInfo { path: PathBuf::from("/part1"), size: 1 },
+                    block_device_paths: btreemap! {
+                        "part1".into() => PathBuf::from("/part1"),
                     },
                     ..Default::default()
                 },
@@ -530,8 +530,8 @@ mod tests {
             &HostStatus {
                 spec: hc,
                 storage: Storage {
-                    block_devices: btreemap! {
-                        "part1".into() => BlockDeviceInfo { path: PathBuf::from("/part1"), size: 1 },
+                    block_device_paths: btreemap! {
+                        "part1".into() => PathBuf::from("/part1"),
                     },
                     ..Default::default()
                 },
