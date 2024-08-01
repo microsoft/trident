@@ -304,7 +304,7 @@ mod tests {
     use trident_api::constants::ROOT_MOUNT_POINT_PATH;
     use trident_api::{
         error::ErrorKind,
-        status::{ServicingState, ServicingType, Storage},
+        status::{ServicingState, ServicingType},
     };
 
     #[test]
@@ -392,10 +392,6 @@ mod tests {
             },
             servicing_type: Some(ServicingType::CleanInstall),
             servicing_state: ServicingState::Staging,
-            storage: Storage {
-                root_device_path: Some("/dev/sda".into()),
-                ..Default::default()
-            },
             ..Default::default()
         };
 
@@ -436,10 +432,6 @@ mod tests {
             },
             servicing_type: Some(ServicingType::CleanInstall),
             servicing_state: ServicingState::Staging,
-            storage: Storage {
-                root_device_path: Some("/dev/sda".into()),
-                ..Default::default()
-            },
             ..Default::default()
         };
 

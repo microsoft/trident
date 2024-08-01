@@ -236,12 +236,11 @@ pub(super) fn refresh_host_status(
     host_status: &mut HostStatus,
     clean_install: bool,
 ) -> Result<(), Error> {
-    update_root_device_path(host_status)?;
-
     // if A/B update is enabled
     if host_status.spec.storage.ab_update.is_some() && !clean_install {
         debug!("A/B update is enabled");
-        update_active_volume(host_status)?;
+        let root_device_path = get_root_device_path().context("No root device path found")?;
+        update_active_volume(host_status, root_device_path)?;
     } else {
         host_status.storage.ab_active_volume = None;
     }
@@ -249,7 +248,7 @@ pub(super) fn refresh_host_status(
     Ok(())
 }
 
-fn update_root_device_path(host_status: &mut HostStatus) -> Result<(), Error> {
+fn get_root_device_path() -> Result<PathBuf, Error> {
     let root_mount_path = if container::is_running_in_container()
         .unstructured("Failed to determine wheter running in a container")?
     {
@@ -257,18 +256,16 @@ fn update_root_device_path(host_status: &mut HostStatus) -> Result<(), Error> {
     } else {
         Path::new(ROOT_MOUNT_POINT_PATH).to_path_buf()
     };
-    host_status.storage.root_device_path = Some(
-        tabfile::get_device_path(Path::new("/proc/mounts"), &root_mount_path)
-            .context("Failed to find root mount point")?,
-    );
-    debug!(
-        "Using root device path: {:?}",
-        host_status.storage.root_device_path
-    );
-    Ok(())
+    let path = tabfile::get_device_path(Path::new("/proc/mounts"), &root_mount_path)
+        .context("Failed to find root mount point")?;
+    debug!("Using root device path: {}", path.display());
+    Ok(path)
 }
 
-fn update_active_volume(host_status: &mut HostStatus) -> Result<(), Error> {
+fn update_active_volume(
+    host_status: &mut HostStatus,
+    root_device_path: PathBuf,
+) -> Result<(), Error> {
     let ab_update = &host_status
         .spec
         .storage
@@ -290,7 +287,7 @@ fn update_active_volume(host_status: &mut HostStatus) -> Result<(), Error> {
             get_verity_data_volume_pair_paths(host_status, ab_update, root_device_id)
                 .context("Failed to find root verity data volume pair")?
         } else {
-            get_plain_volume_pair_paths(host_status, ab_update, root_device_id)
+            get_plain_volume_pair_paths(host_status, ab_update, root_device_id, root_device_path)
                 .context("Failed to find root volume pair")?
         };
 
@@ -328,6 +325,7 @@ fn get_plain_volume_pair_paths(
     host_status: &HostStatus,
     ab_update: &AbUpdate,
     root_device_id: &BlockDeviceId,
+    root_device_path: PathBuf,
 ) -> Result<((PathBuf, PathBuf), PathBuf), Error> {
     let root_device_pair = ab_update
         .volume_pairs
@@ -348,13 +346,6 @@ fn get_plain_volume_pair_paths(
         .get(&root_device_pair.volume_b_id)
         .context("Failed to get block device for volume B")?
         .path;
-
-    let root_device_path = host_status
-        .storage
-        .root_device_path
-        .clone()
-        .context("No root device path found")?;
-    debug!("Root device path: {:?}", root_device_path);
 
     Ok((
         (volume_a_path.clone(), volume_b_path.clone()),
@@ -904,15 +895,10 @@ mod functional_test {
     };
 
     #[functional_test]
-    fn test_update_root_device_path() {
-        let mut host_status = HostStatus {
-            ..Default::default()
-        };
-
-        update_root_device_path(&mut host_status).unwrap();
+    fn test_get_root_device_path() {
         assert_eq!(
-            host_status.storage.root_device_path,
-            Some(PathBuf::from("/dev/sda2"))
+            get_root_device_path().unwrap().to_str().unwrap(),
+            "/dev/sda2"
         );
     }
 
@@ -943,7 +929,8 @@ mod functional_test {
             get_plain_volume_pair_paths(
                 &host_status,
                 host_status.spec.storage.ab_update.as_ref().unwrap(),
-                &"root".to_string()
+                &"root".to_string(),
+                PathBuf::from("/dev/sda")
             )
             .unwrap_err()
             .root_cause()
@@ -974,7 +961,8 @@ mod functional_test {
             get_plain_volume_pair_paths(
                 &host_status,
                 host_status.spec.storage.ab_update.as_ref().unwrap(),
-                &"root".to_string()
+                &"root".to_string(),
+                PathBuf::from("/dev/sda")
             )
             .unwrap_err()
             .root_cause()
@@ -1007,21 +995,8 @@ mod functional_test {
             get_plain_volume_pair_paths(
                 &host_status,
                 host_status.spec.storage.ab_update.as_ref().unwrap(),
-                &"root".to_string()
-            )
-            .unwrap_err()
-            .root_cause()
-            .to_string(),
-            "No root device path found"
-        );
-
-        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda"));
-
-        assert_eq!(
-            get_plain_volume_pair_paths(
-                &host_status,
-                host_status.spec.storage.ab_update.as_ref().unwrap(),
-                &"root".to_string()
+                &"root".to_string(),
+                PathBuf::from("/dev/sda")
             )
             .unwrap(),
             (
@@ -1030,13 +1005,12 @@ mod functional_test {
             )
         );
 
-        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda1"));
-
         assert_eq!(
             get_plain_volume_pair_paths(
                 &host_status,
                 host_status.spec.storage.ab_update.as_ref().unwrap(),
-                &"root".to_string()
+                &"root".to_string(),
+                PathBuf::from("/dev/sda1")
             )
             .unwrap(),
             (
@@ -1045,13 +1019,12 @@ mod functional_test {
             )
         );
 
-        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda2"));
-
         assert_eq!(
             get_plain_volume_pair_paths(
                 &host_status,
                 host_status.spec.storage.ab_update.as_ref().unwrap(),
-                &"root".to_string()
+                &"root".to_string(),
+                PathBuf::from("/dev/sda2")
             )
             .unwrap(),
             (
@@ -1272,7 +1245,7 @@ mod functional_test {
             ..Default::default()
         };
         assert_eq!(
-            update_active_volume(&mut host_status)
+            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1290,7 +1263,7 @@ mod functional_test {
         });
 
         assert_eq!(
-            update_active_volume(&mut host_status)
+            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1306,7 +1279,7 @@ mod functional_test {
         }];
 
         assert_eq!(
-            update_active_volume(&mut host_status)
+            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1323,7 +1296,7 @@ mod functional_test {
         });
 
         assert_eq!(
-            update_active_volume(&mut host_status)
+            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1336,14 +1309,13 @@ mod functional_test {
         };
 
         assert_eq!(
-            update_active_volume(&mut host_status)
+            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to get block device for volume B"
         );
 
-        // Missing root device path
         host_status.storage.block_devices.insert(
             "root-b".to_owned(),
             BlockDeviceInfo {
@@ -1352,23 +1324,15 @@ mod functional_test {
             },
         );
 
-        assert_eq!(
-            update_active_volume(&mut host_status)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "No root device path found"
-        );
-
         // Volume A path cannot be resolved
-        host_status.storage.root_device_path =
-            Some(PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")));
-
         assert_eq!(
-            update_active_volume(&mut host_status)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
+            update_active_volume(
+                &mut host_status,
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3"))
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
             "No such file or directory (os error 2)"
         );
 
@@ -1381,32 +1345,43 @@ mod functional_test {
             .path = PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
 
         assert_eq!(
-            update_active_volume(&mut host_status)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
+            update_active_volume(
+                &mut host_status,
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3"))
+            )
+            .unwrap_err()
+            .root_cause()
+            .to_string(),
             "No matching root volume found"
         );
 
         // None when clean install
         host_status.servicing_type = Some(ServicingType::CleanInstall);
 
-        update_active_volume(&mut host_status).unwrap();
+        update_active_volume(
+            &mut host_status,
+            PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
+        )
+        .unwrap();
         assert_eq!(host_status.storage.ab_active_volume, None);
 
         // Volume A is the root device path
-        host_status.storage.root_device_path =
-            Some(PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")));
-        update_active_volume(&mut host_status).unwrap();
+        update_active_volume(
+            &mut host_status,
+            PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
+        )
+        .unwrap();
         assert_eq!(
             host_status.storage.ab_active_volume,
             Some(AbVolumeSelection::VolumeA)
         );
 
         // Volume B is the root device path
-        host_status.storage.root_device_path =
-            Some(PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")));
-        update_active_volume(&mut host_status).unwrap();
+        update_active_volume(
+            &mut host_status,
+            PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+        )
+        .unwrap();
         assert_eq!(
             host_status.storage.ab_active_volume,
             Some(AbVolumeSelection::VolumeB)
@@ -1434,19 +1409,22 @@ mod functional_test {
             "root-a".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")), size: 0 },
             "root-b".to_owned() => BlockDeviceInfo { path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")), size: 0 },
         };
-        host_status.storage.root_device_path =
-            Some(PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")));
 
-        update_active_volume(&mut host_status).unwrap();
+        update_active_volume(
+            &mut host_status,
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+        )
+        .unwrap();
         assert_eq!(
             host_status.storage.ab_active_volume,
             Some(AbVolumeSelection::VolumeA)
         );
 
-        host_status.storage.root_device_path =
-            Some(PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")));
-
-        update_active_volume(&mut host_status).unwrap();
+        update_active_volume(
+            &mut host_status,
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+        )
+        .unwrap();
         assert_eq!(
             host_status.storage.ab_active_volume,
             Some(AbVolumeSelection::VolumeB)
@@ -1480,7 +1458,11 @@ mod functional_test {
             ],
         });
 
-        update_active_volume(&mut host_status).unwrap();
+        update_active_volume(
+            &mut host_status,
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+        )
+        .unwrap();
         assert_eq!(
             host_status.storage.ab_active_volume,
             Some(AbVolumeSelection::VolumeA)

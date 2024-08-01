@@ -23,5 +23,4 @@ storage:
       path: placeholder
       size: 104857600
   abActiveVolume: volume-a
-  rootDevicePath: /dev/sda2
   diskUuidIdMap: {placeholder: placeholder}

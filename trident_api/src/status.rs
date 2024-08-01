@@ -106,10 +106,6 @@ pub struct Storage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ab_active_volume: Option<AbVolumeSelection>,
 
-    /// Path to the root block device.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub root_device_path: Option<PathBuf>,
-
     /// Stores the Disks UUID to ID mapping of the host.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub disk_uuid_id_map: HashMap<Uuid, BlockDeviceId>,

@@ -131,7 +131,6 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
     #   path: /dev/mapper/root
     #   size: 0
     #   contents: initialized
-    # rootDevicePath: /dev/mapper/root
 
     # Assert if verity info from host config has been involved in host status.
     for i, verity_name in enumerate(expected_verity_config):
@@ -140,7 +139,6 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
         # number as the unique block device identifier.
         expected_device_name = f"verity-{i}"
         assert expected_device_name in host_status["storage"]["blockDevices"]
-        assert "/dev/mapper/root" == host_status["storage"]["rootDevicePath"]
 
     # Assert verity data device and hash device. Refer to logic from base test
     # to extract the ID of the mount point with path "/".

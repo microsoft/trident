@@ -809,8 +809,7 @@ mod functional_test {
         // Test case #4: After A/B update from A to B, Trident correctly booted into root-b.
         host_status.servicing_type = Some(ServicingType::AbUpdate);
         host_status.servicing_state = ServicingState::Finalized;
-        // Update root_device_path to /dev/sda2 and active volume to VolumeA
-        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda2"));
+        // Update active volume to VolumeA
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         let result4 = validate_reboot(&host_status, PathBuf::from("/dev/sda3"));
         assert!(result4.is_ok());
@@ -824,8 +823,7 @@ mod functional_test {
         );
 
         // Test case #6: After A/B update from B to A, Trident correctly booted into root-a.
-        // Update root_device_path to /dev/sda3 and active volume to VolumeB
-        host_status.storage.root_device_path = Some(PathBuf::from("/dev/sda3"));
+        // Update active volume to VolumeB
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         let result6 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
         assert!(result6.is_ok());

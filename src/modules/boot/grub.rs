@@ -504,9 +504,6 @@ pub(crate) mod functional_test {
         raid_array: &SoftwareRaidArray,
         root_device_path: &Path,
     ) -> Result<(), Error> {
-        // Make this as Root device
-        host_status.storage.root_device_path = Some(root_device_path.to_owned());
-
         host_status
             .spec
             .storage

@@ -191,8 +191,6 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
 
     # Fetch path of block device mounted at /
     root_device_path_canonicalized = get_root_device_path_from_mount(connection)
-    # Verify rootDevicePath in host's status
-    assert host_status["storage"]["rootDevicePath"] == root_device_path_canonicalized
 
     # Perform checks for A/B update only
     if "abUpdate" in host_status["spec"]["storage"] and abActiveVolume is not None:
