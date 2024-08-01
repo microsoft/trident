@@ -538,7 +538,15 @@ pub(super) fn finalize_update(
     send_host_status_state(sender, state)?;
 
     info!("Finalizing update");
-    finalize_deployment(state, Path::new(ESP_MOUNT_POINT_PATH))?;
+    let esp_path = if container::is_running_in_container()
+        .message("Failed to check if Trident is running in a container.")?
+    {
+        let host_root = container::get_host_root_path().message("Failed to get host root path.")?;
+        join_relative(host_root, ESP_MOUNT_POINT_PATH)
+    } else {
+        PathBuf::from(ESP_MOUNT_POINT_PATH)
+    };
+    finalize_deployment(state, &esp_path)?;
 
     perform_reboot()?;
 
