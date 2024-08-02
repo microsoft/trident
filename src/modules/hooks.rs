@@ -13,7 +13,7 @@ use osutils::{files, scripts::ScriptRunner};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError, Script},
     constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
-    error::{InvalidInputError, ReportError, TridentError},
+    error::{InvalidInputError, ManagementError, ReportError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -107,7 +107,11 @@ impl Module for HooksModule {
     }
 
     #[tracing::instrument(name = "hooks_provision", skip_all)]
-    fn provision(&mut self, host_status: &mut HostStatus, mount_path: &Path) -> Result<(), Error> {
+    fn provision(
+        &mut self,
+        host_status: &mut HostStatus,
+        mount_path: &Path,
+    ) -> Result<(), TridentError> {
         info!("Running post-provision scripts");
         host_status
             .spec
@@ -121,6 +125,9 @@ impl Module for HooksModule {
                     mount_path,
                     Path::new(ROOT_MOUNT_POINT_PATH),
                 )
+                .structured(ManagementError::RunPostProvisionScript {
+                    script_name: script.name.clone(),
+                })
             })?;
 
         Ok(())
@@ -210,7 +217,7 @@ impl HooksModule {
         let servicing_type = servicing_type.context("Servicing type not set")?;
         if !script.should_run(servicing_type) {
             debug!(
-                "Skipping script {} for servicing type {:?}",
+                "Skipping script '{}' for servicing type '{:?}'",
                 script.name, servicing_type
             );
             return Ok(());
@@ -223,7 +230,7 @@ impl HooksModule {
             .unwrap_or(PathBuf::from(DEFAULT_SCRIPT_INTERPRETER));
 
         debug!(
-            "Running script {} with interpreter {}",
+            "Running script '{}' with interpreter '{}'",
             script.name,
             interpreter.display()
         );
@@ -234,10 +241,10 @@ impl HooksModule {
             &self
                 .staged_files
                 .get(path)
-                .context(format!("Failed to find staged file {}", path.display()))?
+                .context(format!("Failed to find staged file '{}'", path.display()))?
                 .contents
         } else {
-            bail!("Script {} has no content or path", script.name);
+            bail!("Script '{}' has no content or path", script.name);
         };
 
         let mut script_runner = ScriptRunner::new_interpreter(interpreter, content);
@@ -248,11 +255,14 @@ impl HooksModule {
             target_root,
             exec_root,
         )
-        .context("Failed to set environment variables for script")?;
+        .context(format!(
+            "Failed to set environment variables for script '{}'",
+            script.name
+        ))?;
         script_runner
             .with_logfile(script.log_file_path.as_ref())
             .run_check()
-            .with_context(|| format!("Script {} failed", script.name))
+            .with_context(|| format!("Script '{}' failed", script.name))
     }
 }
 

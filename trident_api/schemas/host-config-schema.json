@@ -205,7 +205,7 @@
       ],
       "properties": {
         "deviceId": {
-          "description": "The id of the disk partition or software raid array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but `root` and `efi`.\n\nIf it refers to a software raid array, the first disk partition of the software raid array must be of a supported type.",
+          "description": "The id of the disk partition or software RAID array to encrypt.\n\nThis parameter is required. It must be unique among the list of encrypted volumes.\n\nIf it refers to a disk partition, it must be of a supported type. Supported types are all but `root` and `efi`.\n\nIf it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.",
           "type": "string",
           "format": "Block Device ID"
         },
@@ -214,7 +214,7 @@
           "type": "string"
         },
         "id": {
-          "description": "The id of the LUKS-encrypted volumes to create.\n\nThis parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software raid arrays, and a/b upgrade volume pairs.",
+          "description": "The id of the LUKS-encrypted volumes to create.\n\nThis parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.",
           "type": "string",
           "format": "Block Device ID"
         }
@@ -222,7 +222,7 @@
       "additionalProperties": false
     },
     "Encryption": {
-      "description": "Configure encrypted volumes of underlying disk partitions or software raid arrays.",
+      "description": "Configure encrypted volumes of underlying disk partitions or software RAID arrays.",
       "type": "object",
       "required": [
         "volumes"

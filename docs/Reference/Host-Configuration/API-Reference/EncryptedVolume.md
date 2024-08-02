@@ -12,13 +12,13 @@ A LUKS2-encrypted volume configuration.
 
 ### `deviceId` **<span style="color:orange;">(required)</span>**
 
-The id of the disk partition or software raid array to encrypt.
+The id of the disk partition or software RAID array to encrypt.
 
 This parameter is required. It must be unique among the list of encrypted volumes.
 
 If it refers to a disk partition, it must be of a supported type. Supported types are all but `root` and `efi`.
 
-If it refers to a software raid array, the first disk partition of the software raid array must be of a supported type.
+If it refers to a software RAID array, the first disk partition of the software RAID array must be of a supported type.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |
@@ -39,7 +39,7 @@ This parameter is required. It must be a valid file name and unique among the li
 
 The id of the LUKS-encrypted volumes to create.
 
-This parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software raid arrays, and a/b upgrade volume pairs.
+This parameter is required. It must be non-empty and unique among the ids of all block devices in the host configuration. This includes the ids of all disk partitions, encrypted volumes, software RAID arrays, and A/B volume pairs.
 
 | Characteristic | Value             |
 | -------------- | ----------------- |

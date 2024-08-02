@@ -396,15 +396,15 @@ fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, Erro
         .0)
 }
 
-/// Performs file-based update of ESP partitions.
-pub(super) fn update_esp_images(
+/// Performs file-based deployment of ESP images.
+pub(super) fn deploy_esp_images(
     host_status: &mut HostStatus,
     mount_point: &Path,
 ) -> Result<(), Error> {
-    // Fetch the list of ESP images that need to be updated/deployed
+    // Fetch the list of ESP images that need to be deployed onto ESP partitions
     for (device_id, image) in &host_status.spec.storage.get_esp_images() {
         debug!(
-            "Updating ESP filesystem on block device id '{}'",
+            "Deploying ESP image onto ESP partition with ID '{}'",
             &device_id
         );
 
@@ -412,16 +412,16 @@ pub(super) fn update_esp_images(
         let image_url = Url::parse(image.url.as_str())
             .context(format!("Failed to parse image URL '{}'", image.url))?;
 
-        // Only need to perform file-based update of ESP if image is in format RawZstd b/c RawLzma
-        // requires a block-based update of ESP
+        // Only need to perform file-based deployment of ESP if image is in format RawZstd b/c
+        // RawLzma requires a normal (block-based) deployment of ESP
         if image.format == ImageFormat::RawZst {
             info!(
-                "Performing file-based update of ESP partition with id '{}'",
+                "Performing file-based deployment of ESP image onto ESP partition with ID '{}'",
                 &device_id
             );
 
             info!(
-                "Deploying image {} onto ESP partition with id '{}'",
+                "Deploying ESP image at URL '{}' onto ESP partition with ID '{}'",
                 image.url, device_id
             );
 
@@ -436,12 +436,12 @@ pub(super) fn update_esp_images(
                     mount_point,
                 )
                 .context(format!(
-                    "Failed to deploy image {} onto ESP partition with id '{}' via direct streaming",
+                    "Failed to deploy image at URL '{}' onto ESP partition with id '{}' via direct streaming",
                     image.url, device_id
                 ))?;
             } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
-                // 5th arg is false to communicate that image is a local file, i.e.,  is_local
-                // will be set to false
+                // 5th arg is false to communicate that image is a local file, i.e., is_local will
+                // be set to false
                 copy_file_artifacts(
                     &image_url,
                     image,
@@ -450,7 +450,7 @@ pub(super) fn update_esp_images(
                     mount_point,
                 )
                 .context(format!(
-                    "Failed to deploy image {} onto ESP partition with id '{}' via direct streaming",
+                    "Failed to deploy image at URL '{}' onto ESP partition with id '{}' via direct streaming",
                     image.url, device_id
                 ))?;
             } else if image_url.scheme() == "oci" {

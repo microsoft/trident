@@ -2,7 +2,7 @@
 
 # Encryption
 
-Configure encrypted volumes of underlying disk partitions or software raid arrays.
+Configure encrypted volumes of underlying disk partitions or software RAID arrays.
 
 | Characteristic | Value    |
 | -------------- | -------- |

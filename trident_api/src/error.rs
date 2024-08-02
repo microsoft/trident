@@ -185,10 +185,24 @@ pub enum ManagementError {
     CreateRaid,
     #[error("Failed to setup verity devices")]
     CreateVerity,
-    #[error("Failed to create encrypted volumes")]
-    CreateEncryptedVolumes,
+    #[error{"Failed to create machine ID for verity"}]
+    CreateMachineId,
+    #[error("Failed to find underlying block device with id '{device_id}' for encrypted volume '{encrypted_volume}'")]
+    FindEncryptedVolumeBlockDevice {
+        device_id: String,
+        encrypted_volume: String,
+    },
+    #[error("Failed to encrypt and open block device '{device_path}' with id '{device_id}' as '{encrypted_volume_device_name}' for encrypted volume '{encrypted_volume}'")]
+    EncryptBlockDevice {
+        device_path: String,
+        device_id: String,
+        encrypted_volume_device_name: String,
+        encrypted_volume: String,
+    },
     #[error("Failed to deploy images")]
     DeployImages,
+    #[error("Failed to perform file-based deployment of ESP images")]
+    DeployESPImages,
     #[error("Failed to create filesystems")]
     CreateFilesystems,
     #[error("Reboot timed out")]
@@ -199,6 +213,16 @@ pub enum ManagementError {
     PathIsNotUnicode { path: PathBuf },
     #[error("Failed to create directory '{dir}'")]
     CreateDirectory { dir: PathBuf },
+    #[error("Failed to create temporary recovery key file")]
+    CreateRecoveryKeyFile,
+    #[error("Failed to generate recovery key file '{key_file}'")]
+    GenerateRecoveryKeyFile { key_file: PathBuf },
+    #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
+    SetRecoveryKeyFilePermissions { key_file: PathBuf },
+    #[error("Encryption requires access to a TPM 2.0 device but one is not accessible")]
+    Tpm2DeviceAccessible,
+    #[error("Failed to clear TPM 2.0 device")]
+    ClearTpm2Device,
     #[error("Firmware performed a rollback. Clean install of runtime OS failed")]
     RollbackCleanInstall,
     #[error("Firmware performed a rollback. A/B update failed")]
@@ -211,6 +235,8 @@ pub enum ManagementError {
     SetUpUsers,
     #[error("Failed to run setfiles command")]
     RunSetFiles,
+    #[error("Failed to run post-provision script '{script_name}'")]
+    RunPostProvisionScript { script_name: String },
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]

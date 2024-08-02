@@ -20,7 +20,7 @@ use trident_api::{
         ImageSha256,
     },
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{InvalidInputError, TridentError, TridentResultExt},
+    error::{InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, HostStatus, ServicingType},
     BlockDeviceId,
 };
@@ -31,7 +31,7 @@ pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
 mod systemd_sysupdate;
 
-/// Updates images on block devices that are not ESP partitions, as ESP image deployments are
+/// Deploys images onto block devices that are not ESP partitions, as ESP image deployments are
 /// handled separately by the boot module.
 ///
 /// Depending on the image format, Trident will use different strategies to deploy the image:
@@ -48,7 +48,7 @@ mod systemd_sysupdate;
 ///
 /// This function is called by the provision() function in the image submodule and returns an error
 /// if the image cannot be downloaded or deployed correctly.
-fn update_images(
+fn deploy_images(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
@@ -57,16 +57,16 @@ fn update_images(
     // 2. During A/B update, Trident will assume that all A/B volume pair and ESP images have been
     // updated in the host configuration. Here, Trident will deploy images onto the A/B volume
     // pairs.
-    let images_to_update = match host_status.servicing_type {
+    let images_to_deploy = match host_status.servicing_type {
         Some(ServicingType::CleanInstall) => host_config.storage.get_images(),
         Some(ServicingType::AbUpdate) => host_config.storage.get_ab_volume_pair_images(),
         _ => bail!(
-            "Servicing type cannot be '{:?}' as update_images() can only be called on CleanInstall or AbUpdate",
+            "Servicing type cannot be '{:?}' as images must deployed during clean install or A/B update",
             host_status.servicing_type
         ),
     };
 
-    for (device_id, image) in images_to_update {
+    for (device_id, image) in images_to_deploy {
         // Validate that block device exists
         let block_device_path = modules::get_block_device_path(host_status, &device_id, false)
             .context(format!("No block device with id '{}' found", device_id))?;
@@ -484,7 +484,7 @@ pub(super) fn validate_host_config(
 pub(super) fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     // Only call refresh_ab_volumes() and set active_volume to None if
     // the servicing type is CleanInstall
     if host_status.servicing_type == Some(ServicingType::CleanInstall) {
@@ -492,7 +492,7 @@ pub(super) fn provision(
         host_status.storage.ab_active_volume = None;
     }
 
-    update_images(host_status, host_config).context("Failed to update filesystem images")?;
+    deploy_images(host_status, host_config).structured(ManagementError::DeployImages)?;
 
     Ok(())
 }

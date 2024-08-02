@@ -15,10 +15,11 @@ use tempfile::NamedTempFile;
 
 use trident_api::{
     config::{
-        HostConfiguration, HostConfigurationDynamicValidationError, Partition, PartitionType,
+        HostConfiguration, HostConfigurationDynamicValidationError,
+        HostConfigurationStaticValidationError, Partition, PartitionType,
     },
     constants::DEV_MAPPER_PATH,
-    error::{InvalidInputError, ReportError, TridentError},
+    error::{InvalidInputError, ManagementError, ReportError, TridentError},
     status::HostStatus,
     BlockDeviceId,
 };
@@ -95,7 +96,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 pub(super) fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     if let Some(encryption) = &host_config.storage.encryption {
         let key_file_tmp: NamedTempFile;
         let key_file_path: PathBuf;
@@ -105,12 +106,19 @@ pub(super) fn provision(
             // Create a temporary file to store the recovery key file. The
             // key file will be deleted once the NamedTempFile is out of
             // scope and dropped.
-            key_file_tmp = NamedTempFile::new().context("Failed to create recovery key file")?;
+            key_file_tmp =
+                NamedTempFile::new().structured(ManagementError::CreateRecoveryKeyFile)?;
             key_file_path = key_file_tmp.path().to_owned();
-            fs::set_permissions(&key_file_path, Permissions::from_mode(0o600))
-                .context("Failed to set permissions on temporary recovery key file")?;
-            generate_recovery_key_file(&key_file_path)
-                .context("Failed to generate recovery key file")?;
+            fs::set_permissions(&key_file_path, Permissions::from_mode(0o600)).structured(
+                ManagementError::SetRecoveryKeyFilePermissions {
+                    key_file: key_file_path.to_string_lossy().to_string().into(),
+                },
+            )?;
+            generate_recovery_key_file(&key_file_path).structured(
+                ManagementError::GenerateRecoveryKeyFile {
+                    key_file: key_file_path.to_string_lossy().to_string().into(),
+                },
+            )?;
         };
 
         debug!(
@@ -121,7 +129,7 @@ pub(super) fn provision(
         // Check that the TPM 2.0 device is accessible.
         Command::new("tpm2_pcrread")
             .run_and_check()
-            .context("Encryption requires access to a TPM 2.0 device but one is not accessible")?;
+            .structured(ManagementError::Tpm2DeviceAccessible)?;
 
         // Clear the TPM 2.0 device to ensure that it is in a known state.
         // By clearing the lockout value, this prevents the TPM 2.0 device
@@ -129,17 +137,19 @@ pub(super) fn provision(
         // successive provisioning attempts.
         Command::new("tpm2_clear")
             .run_and_check()
-            .context("Failed to clear TPM 2.0 device")?;
+            .structured(ManagementError::ClearTpm2Device)?;
 
         for ev in encryption.volumes.iter() {
             // Get the block device indicated by device_id if it is a partition, or the first
             // partition of device_id if it is a RAID array. Or return an error if device_id is
             // neither a partition nor a RAID array.
-            let partition = get_first_backing_partition(host_status, &ev.device_id).context(format!(
-                "Underlying device of encrypted volume '{}' is not a partition or software RAID array",
-                ev.id
-            ))?;
-
+            let partition = get_first_backing_partition(host_status, &ev.device_id).structured(
+                InvalidInputError::from(
+                    HostConfigurationStaticValidationError::EncryptedVolumePartitionOrRaid {
+                        encrypted_volume: ev.id.clone(),
+                    },
+                ),
+            )?;
             // TODO: Print the kind of block device that device_id points to. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7323/
             info!(
                 "Encrypting underlying device '{}' of encrypted volume '{}' of type '{}'",
@@ -152,19 +162,18 @@ pub(super) fn provision(
                 .storage
                 .block_device_paths
                 .get_mut(&ev.device_id)
-                .context(format!(
-                    "Failed to find device '{}' for encrypted volume '{}'",
-                    ev.device_id, ev.id
-                ))?;
+                .structured(ManagementError::FindEncryptedVolumeBlockDevice {
+                    device_id: ev.device_id.clone(),
+                    encrypted_volume: ev.id.clone(),
+                })?;
 
-            encrypt_and_open_device(device_path, &ev.device_name, &key_file_path).context(
-                format!(
-                    "Failed to encrypt and open device '{}' ({}) as {} for volume '{}'",
-                    device_path.display(),
-                    ev.device_id,
-                    ev.device_name,
-                    ev.id
-                ),
+            encrypt_and_open_device(device_path, &ev.device_name, &key_file_path).structured(
+                ManagementError::EncryptBlockDevice {
+                    device_path: device_path.to_string_lossy().to_string(),
+                    device_id: ev.device_id.clone(),
+                    encrypted_volume_device_name: ev.device_name.clone(),
+                    encrypted_volume: ev.id.clone(),
+                },
             )?;
 
             // Record the path of the created volume in the Host Status.

@@ -114,7 +114,7 @@ trait Module: Send {
         &mut self,
         _host_status: &mut HostStatus,
         _mount_path: &Path,
-    ) -> Result<(), Error> {
+    ) -> Result<(), TridentError> {
         Ok(())
     }
 
@@ -723,9 +723,10 @@ fn provision(
         state.try_with_host_status(|host_status| {
             module
                 .provision(host_status, new_root_path)
-                .structured(ManagementError::from(ModuleError::Provision {
-                    name: module.name(),
-                }))
+                .message(format!(
+                    "Step 'Provision' failed for module '{}'",
+                    module.name()
+                ))
         })?;
     }
     debug!("Finished step 'Provision'");

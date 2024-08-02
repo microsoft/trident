@@ -29,6 +29,9 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Encryption recovery key URL '{url}' has an invalid scheme '{scheme}'")]
     InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },
 
+    #[error("Underlying device of encrypted volume '{encrypted_volume}' must be a partition or a software RAID array")]
+    EncryptedVolumePartitionOrRaid { encrypted_volume: String },
+
     #[error(transparent)]
     InvalidBlockDeviceGraph(
         #[from] super::storage::blkdev_graph::error::BlockDeviceGraphBuildError,
@@ -144,6 +147,9 @@ pub enum HostConfigurationDynamicValidationError {
 
     #[error("Recovery key file '{key_file}' must not be readable or writable by group or others but has permissions 0o{permissions:03o}")]
     EncryptionKeyInvalidPermissions { key_file: String, permissions: u32 },
+
+    #[error("Images and host configuration have incompatible dm-verity configuration")]
+    DmVerityMisconfiguration,
 
     #[error("Partitions are being adopted on disk '{0}', but it is not using GPT partitioning")]
     AdoptionOnNonGptPartitionedDisk(String),

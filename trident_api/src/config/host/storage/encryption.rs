@@ -9,8 +9,7 @@ use crate::{config::HostConfigurationStaticValidationError, BlockDeviceId};
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::block_device_id_schema;
 
-/// Configure encrypted volumes of underlying disk partitions or software
-/// raid arrays.
+/// Configure encrypted volumes of underlying disk partitions or software RAID arrays.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
@@ -97,7 +96,7 @@ pub struct EncryptedVolume {
     /// This parameter is required. It must be non-empty and unique among
     /// the ids of all block devices in the host configuration. This
     /// includes the ids of all disk partitions, encrypted volumes,
-    /// software raid arrays, and a/b upgrade volume pairs.
+    /// software RAID arrays, and A/B volume pairs.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
@@ -108,7 +107,7 @@ pub struct EncryptedVolume {
     /// unique among the list of encrypted volumes.
     pub device_name: String,
 
-    /// The id of the disk partition or software raid array to encrypt.
+    /// The id of the disk partition or software RAID array to encrypt.
     ///
     /// This parameter is required. It must be unique among the list of
     /// encrypted volumes.
@@ -116,8 +115,8 @@ pub struct EncryptedVolume {
     /// If it refers to a disk partition, it must be of a supported type.
     /// Supported types are all but `root` and `efi`.
     ///
-    /// If it refers to a software raid array, the first disk partition of
-    /// the software raid array must be of a supported type.
+    /// If it refers to a software RAID array, the first disk partition of
+    /// the software RAID array must be of a supported type.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub device_id: BlockDeviceId,
 }

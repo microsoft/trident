@@ -157,10 +157,18 @@ impl Module for StorageModule {
         Ok(None)
     }
 
-    fn provision(&mut self, host_status: &mut HostStatus, mount_point: &Path) -> Result<(), Error> {
-        if verity::validate_compatibility(&host_status.spec, mount_point)? {
+    fn provision(
+        &mut self,
+        host_status: &mut HostStatus,
+        mount_point: &Path,
+    ) -> Result<(), TridentError> {
+        if verity::validate_compatibility(&host_status.spec, mount_point).structured(
+            InvalidInputError::from(
+                HostConfigurationDynamicValidationError::DmVerityMisconfiguration,
+            ),
+        )? {
             debug!("Verity devices are compatible with the current system");
-            verity::create_machine_id(mount_point)?;
+            verity::create_machine_id(mount_point).structured(ManagementError::CreateMachineId)?;
         }
 
         Ok(())
@@ -243,11 +251,14 @@ pub(super) fn initialize_block_devices(
         partitioning::create_partitions(host_status, host_config)
             .structured(ManagementError::CreatePartitions)?;
         raid::create_sw_raid(host_status, host_config).structured(ManagementError::CreateRaid)?;
-        encryption::provision(host_status, host_config)
-            .structured(ManagementError::CreateEncryptedVolumes)?;
+        encryption::provision(host_status, host_config).message(format!(
+            "Step 'Provision' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
+        ))?;
     }
 
-    image::provision(host_status, host_config).structured(ManagementError::DeployImages)?;
+    image::provision(host_status, host_config).message(format!(
+        "Step 'Provision' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"
+    ))?;
     filesystem::create_filesystems(host_status).structured(ManagementError::CreateFilesystems)?;
 
     // Assumes that images are already in place (data and hash), so that it can

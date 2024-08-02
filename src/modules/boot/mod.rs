@@ -2,7 +2,10 @@ use std::path::Path;
 
 use anyhow::{Context, Error};
 
-use trident_api::status::HostStatus;
+use trident_api::{
+    error::{ManagementError, ReportError, TridentError},
+    status::HostStatus,
+};
 
 use crate::modules::Module;
 
@@ -16,11 +19,15 @@ impl Module for BootModule {
         "boot"
     }
 
-    fn provision(&mut self, host_status: &mut HostStatus, mount_point: &Path) -> Result<(), Error> {
-        // Perform file-based update of ESP images, if needed, after filesystems have been mounted and
-        // initialized
-        esp::update_esp_images(host_status, mount_point)
-            .context("Failed to perform file-based update of ESP images")?;
+    fn provision(
+        &mut self,
+        host_status: &mut HostStatus,
+        mount_point: &Path,
+    ) -> Result<(), TridentError> {
+        // Perform file-based deployment of ESP images, if needed, after filesystems have been
+        // mounted and initialized
+        esp::deploy_esp_images(host_status, mount_point)
+            .structured(ManagementError::DeployESPImages)?;
 
         Ok(())
     }
