@@ -10,7 +10,10 @@ use osutils::{
     block_devices::{self, ResolvedDisk},
     lsblk,
     partition_types::DiscoverablePartitionType,
-    repart::{RepartEmptyMode, RepartPartition, RepartPartitionEntry, SystemdRepartInvoker},
+    repart::{
+        RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
+        SystemdRepartInvoker,
+    },
     sfdisk::{SfDisk, SfPartition},
     udevadm,
 };
@@ -56,17 +59,43 @@ pub fn create_partitions(
             disk.id
         ))?;
 
-        // Force kernel to re-read the partition table.
-        debug!("Re-reading partition table for disk '{}'", disk.id);
-        if let Err(e) = block_devices::kernel_reread_partition_table(&disk.bus_path) {
-            tracing::error!(
-                metric_name = "partition_reread_failure",
-                value = disk.spec.adopted_partitions.len()
+        // Check how many partitions were adopted by repart.
+        let adopted_partition_count = repart_partitions
+            .iter()
+            .filter(|rp| rp.activity != RepartActivity::Create)
+            .count();
+
+        ensure!(
+            adopted_partition_count == disk.spec.adopted_partitions.len(),
+            "Expected {} partitions to be adopted, but {} were adopted",
+            disk.spec.adopted_partitions.len(),
+            adopted_partition_count
+        );
+
+        // Fix for #7911. When we adopted partitions, force kernel to re-read
+        // the partition table. Bug #7911 is limited to adoption only, it never
+        // reproduces on full repartitioning, so we only attempt it when we have
+        // adopted partitions. `partx --update` requires the disk to have a
+        // partition table and for it to have at least one partition. By
+        // limiting this to adopted partitions > 0, we ensure that these
+        // conditions are met.
+        if adopted_partition_count > 0 {
+            debug!(
+                "Partitions were adopted, re-reading partition table for disk '{}'",
+                disk.id
             );
-            error!(
-                "Failed to re-read partition table for disk '{}': {:?}",
-                disk.id, e
-            );
+            // If we fail to re-read the partition table, we log an error but
+            // continue with the rest of the operation.
+            let success = block_devices::partx_update(&disk.bus_path)
+                .map_err(|e| {
+                    error!(
+                        "Failed to re-read partition table for disk '{}': {:?}",
+                        disk.id, e
+                    );
+                })
+                .is_ok();
+
+            tracing::info!(metric_name = "partx_update_executed", value = success);
         }
 
         // Get the updated disk information.

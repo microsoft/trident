@@ -146,21 +146,23 @@ pub fn can_stop_pre_existing_device(
     }
 }
 
-/// Force kernel to re-read the partition table of a disk.
+/// Force kernel to re-read the partition table of a disk with partx.
 ///
 /// This function has no built in safety checking. The path must be:
 ///
 /// - A valid block device.
-/// - If a disk, it must contain a partition table.
-pub fn kernel_reread_partition_table(disk: impl AsRef<Path>) -> Result<(), Error> {
-    Command::new("blockdev")
-        .arg("--rereadpt")
+/// - If a disk, it must contain a partition table with at least one partition.
+pub fn partx_update(disk: impl AsRef<Path>) -> Result<(), Error> {
+    Command::new("partx")
+        .arg("--update")
         .arg(disk.as_ref())
         .run_and_check()
-        .context(format!(
-            "Failed to re-read partition table for disk '{}'",
-            disk.as_ref().display()
-        ))
+        .with_context(|| {
+            format!(
+                "Failed to re-read partition table for disk '{}'",
+                disk.as_ref().display()
+            )
+        })
 }
 
 #[cfg(test)]
