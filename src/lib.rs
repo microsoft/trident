@@ -525,13 +525,12 @@ impl Trident {
                     debug!("There is a clean install staged on the host");
                     if cmd.allowed_operations.has_finalize() {
                         // Remount new root and custom mounts if we're finalizing a clean install
-                        let (new_root_path, _, _) =
-                            modules::initialize_new_root(datastore, &cmd.host_config)
-                                .message("Failed to remount new root")?;
+                        let root_mount = modules::initialize_new_root(datastore, &cmd.host_config)
+                            .message("Failed to remount new root")?;
 
                         modules::finalize_clean_install(
                             datastore,
-                            &new_root_path,
+                            root_mount.path(),
                             None,
                             #[cfg(feature = "grpc-dangerous")]
                             &mut cmd.sender,

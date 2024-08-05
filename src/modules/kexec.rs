@@ -1,22 +1,18 @@
-use std::{
-    ffi::CString,
-    fs::File,
-    os::fd::AsRawFd,
-    path::{Path, PathBuf},
-};
+use std::{ffi::CString, fs::File, os::fd::AsRawFd};
 
 use anyhow::{Context, Error};
 use log::info;
 use nix::NixPath;
 use trident_api::error::TridentResultExt;
 
-use crate::modules::mount_root;
+use crate::modules::mount_root::NewrootMount;
 
 #[allow(unused)]
-pub fn kexec(mounts: Vec<PathBuf>, mount_path: &Path, args: &str) -> Result<(), Error> {
-    let root = mount_path
-        .to_str()
-        .context(format!("Non-utf8 mount point: {}", mount_path.display()))?;
+pub fn kexec(mut root_mount: NewrootMount, args: &str) -> Result<(), Error> {
+    let root = root_mount.path().to_str().context(format!(
+        "Non-utf8 mount point: {}",
+        root_mount.path().display()
+    ))?;
 
     info!("Searching for kernel and initrd");
     let kernel_path = glob::glob(&format!("{root}/boot/vmlinuz-*"))?
@@ -59,7 +55,9 @@ pub fn kexec(mounts: Vec<PathBuf>, mount_path: &Path, args: &str) -> Result<(), 
     drop(initrd);
     nix::unistd::sync();
 
-    mount_root::unmount_new_root(mounts, mount_path).unstructured("Failed to unmount new root")?;
+    root_mount
+        .unmount_all()
+        .unstructured("Failed to unmount new root")?;
 
     // Kexec into image.
     info!("Rebooting system");

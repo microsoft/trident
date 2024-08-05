@@ -42,10 +42,16 @@ pub fn mount(
     Ok(())
 }
 
-/// Create a recursive bind mount that exposes mount_dir as an alias of path, including all sub-mounts.
-pub fn rbind_mount(path: impl AsRef<Path>, mount_dir: impl AsRef<Path>) -> Result<(), Error> {
+/// Create a recursive bind mount for mount_dir as an alias of path, including
+/// all sub-mounts. The mount is private, confining mount/unmount events to this
+/// point.
+pub fn private_rbind_mount(
+    path: impl AsRef<Path>,
+    mount_dir: impl AsRef<Path>,
+) -> Result<(), Error> {
     Command::new("mount")
         .arg("--rbind")
+        .arg("--make-rprivate")
         .arg(path.as_ref())
         .arg(mount_dir.as_ref())
         .run_and_check()
@@ -384,15 +390,15 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
-    fn test_rbind_mount() {
+    fn test_private_rbind_mount() {
         let temp_source_dir = TempDir::new().unwrap();
         let temp_intermediate_dir = TempDir::new().unwrap();
         let temp_work_dir = TempDir::new().unwrap();
 
         fs::write(temp_source_dir.path().join("test_file1"), "test1").unwrap();
 
-        rbind_mount(temp_source_dir.path(), temp_intermediate_dir.path()).unwrap();
-        rbind_mount(temp_intermediate_dir.path(), temp_work_dir.path()).unwrap();
+        private_rbind_mount(temp_source_dir.path(), temp_intermediate_dir.path()).unwrap();
+        private_rbind_mount(temp_intermediate_dir.path(), temp_work_dir.path()).unwrap();
 
         // Check that files in source are available from work directory
         assert_eq!(

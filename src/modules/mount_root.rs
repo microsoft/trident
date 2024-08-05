@@ -4,48 +4,17 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use log::{error, info};
+use log::{debug, error, info};
 
-use osutils::{filesystems::MountFileSystemType, lsof, mount, path::join_relative};
+use osutils::{filesystems::MountFileSystemType, mount, path::join_relative};
 use trident_api::{
     config::InternalMountPoint,
-    constants::{EXEC_ROOT_PATH, ROOT_MOUNT_POINT_PATH},
+    constants::ROOT_MOUNT_POINT_PATH,
     error::{ManagementError, ReportError, TridentError},
     status::HostStatus,
 };
 
 use crate::modules::{self};
-
-pub(super) fn unmount_new_root(
-    mounts: Vec<PathBuf>,
-    root_mount_path: &Path,
-) -> Result<(), TridentError> {
-    let mut mounts = mounts;
-    mounts.reverse();
-    let res = mounts.iter().try_for_each(|mount| {
-        if *mount == join_relative(root_mount_path, EXEC_ROOT_PATH) {
-            info!("Remounting '{}' as private", mount.display());
-            mount::remount_rprivate(mount)
-                .structured(ManagementError::UnmountNewroot { dir: mount.clone() })?;
-        }
-
-        info!("Unmounting '{}'", mount.display());
-        mount::umount(mount, true)
-            .structured(ManagementError::UnmountNewroot { dir: mount.clone() })
-    });
-
-    if res.is_err() {
-        let opened_process_files = lsof::run(root_mount_path);
-        // best effort, ignore failures here (such as missing external dependency)
-        if let Ok(opened_process_files) = opened_process_files {
-            if !opened_process_files.is_empty() {
-                error!("Open files: {:?}", opened_process_files);
-            }
-        }
-    }
-
-    res
-}
 
 /// Returns an ordered map of mount points to their corresponding InternalMountPoint objects.
 fn mount_points_map(host_status: &HostStatus) -> BTreeMap<&Path, &InternalMountPoint> {
@@ -63,12 +32,14 @@ fn mount_points_map(host_status: &HostStatus) -> BTreeMap<&Path, &InternalMountP
 pub(super) fn mount_new_root(
     host_status: &HostStatus,
     root_mount_path: &Path,
-) -> Result<Vec<PathBuf>, TridentError> {
+) -> Result<NewrootMount, TridentError> {
     info!("Mounting new root filesystems");
+
+    let mut root_mount = NewrootMount::new(root_mount_path.to_owned());
 
     mount_points_map(host_status)
         .iter()
-        .map(|(path, mp)| {
+        .try_for_each(|(path, mp)| {
             let target_path =
                 root_mount_path.join(path.strip_prefix(ROOT_MOUNT_POINT_PATH).context(format!(
                     "Failed to strip prefix '{}' from '{}'",
@@ -108,10 +79,100 @@ pub(super) fn mount_new_root(
                 target_path.display()
             ))?;
 
-            Ok(target_path)
+            root_mount.add_mount(target_path.clone());
+
+            Ok::<(), Error>(())
         })
-        .collect::<Result<Vec<PathBuf>, Error>>()
-        .structured(ManagementError::MountNewroot)
+        .structured(ManagementError::MountNewroot)?;
+
+    Ok(root_mount)
+}
+
+/// NewrootMount represents all the necessary mounting points for the new root
+/// and is responsible for unmounting them in the correct order.
+/// NewrootMount provides information for:
+/// - The new root device path.
+/// - The execroot path.
+/// NewrootMount can:
+/// - Update/add custom mount paths for the new root each time one is created.
+/// - Unmount all registered new root mounts.
+/// - Handle trident crashes with the `Drop` method to unmount the new root.
+#[derive(Debug)]
+pub struct NewrootMount {
+    /// Root mount path
+    root_mount_path: PathBuf,
+
+    /// Relative path to execroot
+    execroot_mount_path: Option<PathBuf>,
+
+    /// Mount points for normal block devices and tmpfs filesystems
+    mounts: Vec<PathBuf>,
+}
+
+impl NewrootMount {
+    pub fn new(root_mount_path: PathBuf) -> Self {
+        Self {
+            root_mount_path,
+            execroot_mount_path: None,
+            mounts: Vec::new(),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.root_mount_path
+    }
+
+    pub fn add_mount(&mut self, mount: PathBuf) {
+        self.mounts.push(mount);
+    }
+
+    pub fn set_execroot_mount(&mut self, mount: PathBuf) {
+        self.execroot_mount_path = Some(mount);
+    }
+
+    pub fn execroot_path(&self) -> Result<&PathBuf, Error> {
+        self.execroot_mount_path
+            .as_ref()
+            .ok_or(Error::msg("Execroot hasn't been set"))
+    }
+
+    fn unmount_mount(mount: &PathBuf) -> Result<(), TridentError> {
+        debug!("Unmounting '{}'", mount.display());
+        mount::umount(mount, true)
+            .structured(ManagementError::UnmountNewroot { dir: mount.clone() })?;
+        Ok(())
+    }
+
+    pub fn unmount_all(&mut self) -> Result<(), TridentError> {
+        // Remount execroot as private to prevent propagation before unmounting
+        if let Some(ref execroot_path) = self.execroot_mount_path {
+            let execroot_mount = join_relative(self.path(), execroot_path);
+            debug!("Remounting '{}' as private", execroot_mount.display());
+            mount::remount_rprivate(&execroot_mount).structured(
+                ManagementError::UnmountNewroot {
+                    dir: execroot_mount.clone(),
+                },
+            )?;
+            Self::unmount_mount(&execroot_mount)?;
+        }
+
+        while let Some(ref mount) = self.mounts.pop() {
+            Self::unmount_mount(mount)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for NewrootMount {
+    fn drop(&mut self) {
+        if let Err(e) = self.unmount_all() {
+            error!(
+                "Failed to unmount new root while handling another error: {:?}",
+                e
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -258,7 +319,7 @@ mod functional_test {
             ..Default::default()
         };
 
-        let mounts = mount_new_root(&host_status, mount_point).unwrap();
+        let mut root_mount = mount_new_root(&host_status, mount_point).unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
         // otherwise, use the device path itself
@@ -356,16 +417,16 @@ mod functional_test {
         .unwrap();
 
         // Test recursive mounting
-        let mounts2 = mount_new_root(&host_status, root_mount_dir.path()).unwrap();
+        let mut root_mount2 = mount_new_root(&host_status, root_mount_dir.path()).unwrap();
         assert!(root_mount_dir
             .path()
             .join("boot/efi/EFI/BOOT/bootx64.efi")
             .exists());
-        unmount_new_root(mounts2, root_mount_dir.path()).unwrap();
+        root_mount2.unmount_all().unwrap();
         assert!(!root_mount_dir.path().join("boot").exists());
 
         // Test unmount_dir function
-        unmount_new_root(mounts, mount_point).unwrap();
+        root_mount.unmount_all().unwrap();
 
         // Validate that the device has been successfully unmounted
         assert!(
@@ -476,13 +537,13 @@ mod functional_test {
     fn test_umount_failure() {
         // Create a valid temporary directory
         let temp_mount_dir = TempDir::new().unwrap();
+        let temp_mount_path = temp_mount_dir.path().to_owned();
 
         // Test case 1: Attempt to unmount an existing directory that isn't mounted and assert that
         // it fails
-        let umount_result_1 = unmount_new_root(
-            vec![temp_mount_dir.path().to_owned()],
-            temp_mount_dir.path(),
-        );
+        let mut root_mount = NewrootMount::new(temp_mount_path.clone());
+        root_mount.add_mount(temp_mount_path.clone());
+        let umount_result_1 = root_mount.unmount_all();
 
         assert_eq!(
             umount_result_1.unwrap_err().kind(),
@@ -492,10 +553,9 @@ mod functional_test {
         );
 
         // Test case 2: Attempt to unmount a directory that does not exist
-        let umount_result_2 = unmount_new_root(
-            vec![PathBuf::from("/path/to/non/existent/directory")],
-            temp_mount_dir.path(),
-        );
+        let mut root_mount2 = NewrootMount::new(temp_mount_path.clone());
+        root_mount2.add_mount(PathBuf::from("/path/to/non/existent/directory"));
+        let umount_result_2 = root_mount2.unmount_all();
 
         assert_eq!(
             umount_result_2.unwrap_err().kind(),

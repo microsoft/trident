@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Error};
 use log::{debug, info, trace, warn};
 
-use osutils::{lsblk, mountpoint};
+use osutils::lsblk;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::ROOT_MOUNT_POINT_PATH,
@@ -221,21 +221,7 @@ fn generate_fstab(host_status: &HostStatus, path: &Path) -> Result<(), Error> {
 pub(super) fn initialize_block_devices(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
-    mount_point: &Path,
 ) -> Result<(), TridentError> {
-    if mount_point.exists()
-        && mountpoint::check_is_mountpoint(mount_point)
-            .structured(ManagementError::MountPointCheck)?
-    {
-        debug!("Unmounting volumes from earlier runs of Trident");
-        if let Err(e) = osutils::mount::umount(mount_point, true) {
-            warn!(
-                "Attempt to unmount '{}' returned error: {e}",
-                mount_point.display(),
-            );
-        }
-    }
-
     trace!(
         "Mount points: {:?}",
         host_config.storage.internal_mount_points

@@ -62,6 +62,8 @@ mod kexec;
 mod mount_root;
 pub mod selinux;
 
+use mount_root::NewrootMount;
+
 trait Module: Send {
     fn name(&self) -> &'static str;
 
@@ -155,6 +157,16 @@ pub(super) fn clean_install(
     tracing::info!(metric_name = "clean_install_start", value = true);
     let clean_install_start_time = Instant::now();
 
+    if Path::new(UPDATE_ROOT_PATH).exists()
+        && osutils::mountpoint::check_is_mountpoint(UPDATE_ROOT_PATH)
+            .structured(ManagementError::MountPointCheck)?
+    {
+        debug!("Unmounting volumes from earlier runs of Trident");
+        if let Err(e) = osutils::mount::umount(UPDATE_ROOT_PATH, true) {
+            warn!("Attempt to unmount '{UPDATE_ROOT_PATH}' returned error: {e}",);
+        }
+    }
+
     // This is a safety check so that nobody accidentally formats their dev
     // machine.
     info!("Performing safety check for clean install.");
@@ -170,13 +182,15 @@ pub(super) fn clean_install(
     send_host_status_state(&mut sender, state)?;
 
     // Stage clean install
-    let (new_root_path, mounts) = stage_clean_install(
+    let mut root_mount = stage_clean_install(
         &mut modules,
         state,
         host_config,
         #[cfg(feature = "grpc-dangerous")]
         &mut sender,
     )?;
+
+    let new_root_path = root_mount.path();
 
     // Switch datastore back to the old path
     state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH))?;
@@ -186,11 +200,11 @@ pub(super) fn clean_install(
         state.close();
 
         info!("Unmounting '{}'", new_root_path.display());
-        mount_root::unmount_new_root(mounts, &new_root_path)?;
+        root_mount.unmount_all()?;
     } else {
         finalize_clean_install(
             state,
-            &new_root_path,
+            new_root_path,
             Some(clean_install_start_time),
             #[cfg(feature = "grpc-dangerous")]
             &mut sender,
@@ -252,10 +266,7 @@ fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), Tri
 /// - host_config: A reference to the HostConfiguration.
 /// - sender: Optional mutable reference to the gRPC sender.
 ///
-/// On success, returns a tuple with 3 elements:
-/// - The current root device path.
-/// - The new root device path.
-/// - A vector of paths to custom mounts for the new root.
+/// On success, returns a NewrootMount.
 #[tracing::instrument(skip_all)]
 fn stage_clean_install(
     modules: &mut MutexGuard<Vec<Box<dyn Module>>>,
@@ -264,7 +275,7 @@ fn stage_clean_install(
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
-) -> Result<(PathBuf, Vec<PathBuf>), TridentError> {
+) -> Result<NewrootMount, TridentError> {
     debug!("Setting host's servicing type to CleanInstall");
     debug!("Updating host's servicing state to Staging");
     state.with_host_status(|host_status| {
@@ -278,22 +289,26 @@ fn stage_clean_install(
     prepare(modules, state)?;
 
     info!("Preparing storage to mount new root");
-    let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
+    let root_mount = initialize_new_root(state, host_config)?;
+    let new_root_path = root_mount.path();
+    let exec_root_path = root_mount
+        .execroot_path()
+        .structured(ManagementError::MountExecroot)?;
 
-    provision(modules, state, &new_root_path)?;
+    provision(modules, state, new_root_path)?;
 
     info!("Entering '{}' chroot", new_root_path.display());
-    chroot::enter_update_chroot(&new_root_path)
+    chroot::enter_update_chroot(new_root_path)
         .message("Failed to enter chroot")?
         .execute_and_exit(|| {
             info!("Entered chroot");
-            state.switch_datastore_to_path(&exec_root_path)?;
+            state.switch_datastore_to_path(exec_root_path)?;
 
             // If verity is present, it means that we are currently doing root
             // verity. For now, we can assume that /etc is readonly, so we setup
             // a writable overlay for it.
             let use_overlay = !host_config.storage.internal_verity.is_empty();
-            configure(modules, state, &exec_root_path, use_overlay)?;
+            configure(modules, state, exec_root_path, use_overlay)?;
 
             // At this point, clean install has been staged, so update servicing state
             debug!("Updating host's servicing state to Staged");
@@ -311,7 +326,7 @@ fn stage_clean_install(
     info!("Staging of clean install succeeded");
 
     // Return the new root device path and the list of mounts
-    Ok((new_root_path, mounts))
+    Ok(root_mount)
 }
 
 /// Finalizes a clean install. Takes in 4 arguments:
@@ -397,7 +412,7 @@ pub(super) fn update(
     validate_host_config(&modules, state, host_config, servicing_type)?;
 
     // Stage update
-    let (new_root_path, mounts) = stage_update(
+    let root_mount = stage_update(
         &mut modules,
         state,
         host_config,
@@ -410,8 +425,8 @@ pub(super) fn update(
         ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of update not requested, skipping reboot");
-                if let Some(mounts) = mounts {
-                    mount_root::unmount_new_root(mounts, &new_root_path)?;
+                if let Some(mut root_mount) = root_mount {
+                    root_mount.unmount_all()?;
                 }
                 return Ok(());
             }
@@ -449,9 +464,7 @@ pub(super) fn update(
 /// - servicing_type: Servicing type of the update that Trident will now stage, based on host config.
 /// - sender: Optional mutable reference to the gRPC sender.
 ///
-/// On success, returns a tuple with 2 elements:
-/// - New root device path.
-/// - Vector of paths to custom mounts for the new root. This is not null only for A/B updates.
+/// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
 fn stage_update(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
@@ -460,7 +473,7 @@ fn stage_update(
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
-) -> Result<(PathBuf, Option<Vec<PathBuf>>), TridentError> {
+) -> Result<Option<NewrootMount>, TridentError> {
     match servicing_type {
         ServicingType::HotPatch => info!("Performing hot patch update"),
         ServicingType::NormalUpdate => info!("Performing normal update"),
@@ -486,11 +499,16 @@ fn stage_update(
 
     prepare(modules, state)?;
 
-    let (new_root_path, mounts) = if let ServicingType::AbUpdate = servicing_type {
+    let root_mount = if let ServicingType::AbUpdate = servicing_type {
         info!("Preparing storage to mount new root");
-        let (new_root_path, exec_root_path, mounts) = initialize_new_root(state, host_config)?;
 
-        provision(modules, state, &new_root_path)?;
+        let root_mount = initialize_new_root(state, host_config)?;
+        let new_root_path = root_mount.path();
+        let exec_root_path = root_mount
+            .execroot_path()
+            .structured(ManagementError::MountExecroot)?;
+
+        provision(modules, state, new_root_path)?;
 
         // If verity is present, it means that we are currently doing root
         // verity. For now, we can assume that /etc is readonly, so we setup
@@ -498,16 +516,16 @@ fn stage_update(
         let use_overlay = !host_config.storage.internal_verity.is_empty();
 
         info!("Entering '{}' chroot", new_root_path.display());
-        chroot::enter_update_chroot(&new_root_path)
+        chroot::enter_update_chroot(new_root_path)
             .message("Failed to enter chroot")?
-            .execute_and_exit(|| configure(modules, state, &exec_root_path, use_overlay))
+            .execute_and_exit(|| configure(modules, state, exec_root_path, use_overlay))
             .message("Failed to execute in chroot")?;
 
-        (new_root_path, Some(mounts))
+        Some(root_mount)
     } else {
         info!("Running configure");
         configure(modules, state, Path::new(ROOT_MOUNT_POINT_PATH), false)?;
-        (PathBuf::from(ROOT_MOUNT_POINT_PATH), None)
+        None
     };
 
     // At this point, deployment has been staged, so update servicing state
@@ -518,7 +536,7 @@ fn stage_update(
 
     info!("Staging of update '{:?}' succeeded", servicing_type);
 
-    Ok((new_root_path, mounts))
+    Ok(root_mount)
 }
 
 /// Finalizes an update. Takes in 2 arguments:
@@ -746,47 +764,42 @@ pub(super) fn get_new_root_path() -> PathBuf {
 pub(super) fn initialize_new_root(
     state: &mut DataStore,
     host_config: &HostConfiguration,
-) -> Result<(PathBuf, PathBuf, Vec<PathBuf>), TridentError> {
+) -> Result<NewrootMount, TridentError> {
     let new_root_path = get_new_root_path();
 
     // Only initialize block devices if currently staging a deployment
     if state.host_status().servicing_state == ServicingState::Staging {
         state.try_with_host_status(|host_status| {
-            storage::initialize_block_devices(host_status, host_config, &new_root_path)
+            storage::initialize_block_devices(host_status, host_config)
         })?;
     }
 
     // Mount new root while staging a new deployment OR while finalizing a previous deployment
-    let mut mounts = state.try_with_host_status(|host_status| {
-        mount_root::mount_new_root(host_status, &new_root_path)
-    })?;
+    let mut root_mount = mount_root::mount_new_root(state.host_status(), &new_root_path)?;
 
     let tmp_mount = Mount::builder()
         .fstype("tmpfs")
         .flags(MountFlags::empty())
         .mount("tmpfs", new_root_path.join("tmp"))
         .structured(ManagementError::ChrootMountSpecial { dir: "/tmp" })?;
-    // Insert tmp_mount at the end of the mounts vector
-    mounts.push(tmp_mount.target_path().to_owned());
+    root_mount.add_mount(tmp_mount.target_path().to_owned());
 
     let exec_root_path = Path::new(EXEC_ROOT_PATH);
     let full_exec_root_path = join_relative(&new_root_path, exec_root_path);
     std::fs::create_dir_all(&full_exec_root_path)
         .structured(ManagementError::CreateExecrootDirectory)?;
-    mount::rbind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
+    mount::private_rbind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
         .structured(ManagementError::MountExecroot)?;
-    // Insert full_exec_root_path at the end of the mounts vector
-    mounts.push(full_exec_root_path);
+    root_mount.set_execroot_mount(exec_root_path.to_owned());
 
     let run_mount = Mount::builder()
         .fstype("tmpfs")
         .flags(MountFlags::empty())
         .mount("tmpfs", new_root_path.join("run"))
         .structured(ManagementError::ChrootMountSpecial { dir: "/run" })?;
-    // Insert run_mount at the end of the mounts vector
-    mounts.push(run_mount.target_path().to_owned());
+    root_mount.add_mount(run_mount.target_path().to_owned());
 
-    Ok((new_root_path.to_owned(), exec_root_path.to_owned(), mounts))
+    Ok(root_mount)
 }
 
 fn configure(
