@@ -122,7 +122,11 @@ trait Module: Send {
 
     /// Configure the system as specified by the host configuration, and update the host status
     /// accordingly.
-    fn configure(&mut self, _host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
+    fn configure(
+        &mut self,
+        _host_status: &mut HostStatus,
+        _exec_root: &Path,
+    ) -> Result<(), TridentError> {
         Ok(())
     }
 }
@@ -821,11 +825,10 @@ fn configure(
             None
         };
         state.try_with_host_status(|s| {
-            module
-                .configure(s, exec_root)
-                .structured(ManagementError::from(ModuleError::Configure {
-                    name: module.name(),
-                }))
+            module.configure(s, exec_root).message(format!(
+                "Step 'Configure' failed for module '{}'",
+                module.name()
+            ))
         })?;
     }
     debug!("Finished step 'Configure'");

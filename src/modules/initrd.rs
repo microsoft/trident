@@ -1,9 +1,8 @@
+use log::info;
 use std::path::Path;
 
-use anyhow::Error;
-use log::info;
 use osutils::mkinitrd;
-use trident_api::{error::TridentResultExt, status::HostStatus};
+use trident_api::{error::TridentError, status::HostStatus};
 
 use super::Module;
 
@@ -19,7 +18,11 @@ impl Module for InitrdModule {
     }
 
     #[tracing::instrument(skip_all)]
-    fn configure(&mut self, _host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
+    fn configure(
+        &mut self,
+        _host_status: &mut HostStatus,
+        _exec_root: &Path,
+    ) -> Result<(), TridentError> {
         // We could autodetect configurations on the fly, but for more predictable
         // behavior and speedier subsequent boots, we will regenerate the host-specific initrd
         // here.
@@ -28,6 +31,6 @@ impl Module for InitrdModule {
         // password into initrd and to update the hardcoded UUID of the ESP.
 
         info!("Regenerating initrd");
-        mkinitrd::execute().unstructured("Failed to regenerate initrd")
+        mkinitrd::execute()
     }
 }

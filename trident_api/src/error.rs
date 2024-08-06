@@ -112,10 +112,6 @@ pub enum DatastoreError {
 pub enum ModuleError {
     #[error("{name} module failed to refresh host status")]
     RefreshHostStatus { name: &'static str },
-    #[error("{name} module failed to provision")]
-    Provision { name: &'static str },
-    #[error("{name} module failed to configure")]
-    Configure { name: &'static str },
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
@@ -123,6 +119,12 @@ pub enum ModuleError {
 pub enum ManagementError {
     #[error("Failed to start network")]
     StartNetwork,
+    #[error("Failed to render runtime network netplan YAML")]
+    RenderNetworkNetplanYaml,
+    #[error("Failed to write netplan config")]
+    WriteNetplanConfig,
+    #[error("Failed to apply netplan config")]
+    ApplyNetplanConfig,
     #[error("Failed to open firewall")]
     OpenFirewall,
     #[error("Failed to mount special directory '{dir}' for chroot")]
@@ -159,8 +161,12 @@ pub enum ManagementError {
     Reboot,
     #[error("Failed to regenerate initrd")]
     RegenerateInitrd,
-    #[error("Failed to copy os modifier binary to host")]
-    OSModifierCopy,
+    #[error("Failed to copy Trident binary to runtime OS")]
+    CopyTridentBinary,
+    #[error("Failed to create Trident config directory")]
+    CreateTridentConfigDirectory,
+    #[error("Failed to create Trident config file")]
+    CreateTridentConfig,
     #[error(transparent)]
     Module {
         #[from]
@@ -175,16 +181,24 @@ pub enum ManagementError {
     ListAndParseBootEntries,
     #[error("Failed to list and parse boot manager entries")]
     ModifyBootOrder,
+    #[error("Failed to update GRUB configs")]
+    UpdateGrubConfigs,
+    #[error("Failed to update GRUB configs after verity creation")]
+    UpdateGrubConfigsAfterVerityCreation,
     #[error("Failed to clean up pre-existing RAID arrays")]
     CleanupRaid,
-    #[error("Failed to clean up pre-existing Verity devices")]
+    #[error("Failed to clean up pre-existing verity devices")]
     CleanupVerity,
     #[error("Failed to create disk partitions")]
     CreatePartitions,
     #[error("Failed to create software RAID")]
     CreateRaid,
+    #[error("Failed to create mdadm.conf file after RAID creation")]
+    CreateMdadmConf,
     #[error("Failed to setup verity devices")]
     CreateVerity,
+    #[error("Failed to configure device names for verity devices")]
+    ConfigureVerityDeviceNames,
     #[error{"Failed to create machine ID for verity"}]
     CreateMachineId,
     #[error("Failed to find underlying block device with id '{device_id}' for encrypted volume '{encrypted_volume}'")]
@@ -199,12 +213,18 @@ pub enum ManagementError {
         encrypted_volume_device_name: String,
         encrypted_volume: String,
     },
+    #[error("Failed to create crypttab at path '{crypttab_path}'")]
+    CreateCrypttab { crypttab_path: String },
+    #[error("Failed to remove crypttab at path '{crypttab_path}'")]
+    RemoveCrypttab { crypttab_path: String },
     #[error("Failed to deploy images")]
     DeployImages,
     #[error("Failed to perform file-based deployment of ESP images")]
     DeployESPImages,
     #[error("Failed to create filesystems")]
     CreateFilesystems,
+    #[error("Failed to generate fstab at path '{fstab_path}'")]
+    GenerateFstab { fstab_path: String },
     #[error("Reboot timed out")]
     RebootTimeout,
     #[error("Failed to check mount point")]
@@ -233,10 +253,18 @@ pub enum ManagementError {
     SelinuxTypeNotFound,
     #[error("Failed to set up users for management OS")]
     SetUpUsers,
+    #[error("Failed to set up hostname for management OS")]
+    SetUpHostname,
     #[error("Failed to run setfiles command")]
     RunSetFiles,
     #[error("Failed to run post-provision script '{script_name}'")]
     RunPostProvisionScript { script_name: String },
+    #[error("Failed to run post-configure script '{script_name}'")]
+    RunPostConfigureScript { script_name: String },
+    #[error("Failed to write an additional file '{file_name}'")]
+    WriteAdditionalFile { file_name: String },
+    #[error("Failed to find staged file at path '{staged_file}'")]
+    FindStagedFile { staged_file: String },
 }
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
@@ -510,16 +538,6 @@ mod tests {
             }
             _ => panic!("value isn't mapping"),
         }
-
-        let e = TridentError(Box::new(TridentErrorInner {
-            kind: ErrorKind::Management(ManagementError::Module {
-                inner: ModuleError::Configure { name: "storage" },
-            }),
-            location: Location::caller(),
-            source: None,
-            context: Vec::new(),
-        }));
-        serde_yaml::to_string(&e).unwrap();
     }
 
     #[test]

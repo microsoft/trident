@@ -1,7 +1,5 @@
 use std::path::Path;
 
-use anyhow::{Context, Error};
-
 use trident_api::{
     error::{ManagementError, ReportError, TridentError},
     status::HostStatus,
@@ -32,8 +30,12 @@ impl Module for BootModule {
         Ok(())
     }
 
-    fn configure(&mut self, host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
-        grub::update_configs(host_status).context("Failed to update GRUB configs")?;
+    fn configure(
+        &mut self,
+        host_status: &mut HostStatus,
+        _exec_root: &Path,
+    ) -> Result<(), TridentError> {
+        grub::update_configs(host_status).structured(ManagementError::UpdateGrubConfigs)?;
 
         Ok(())
     }

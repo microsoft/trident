@@ -11,7 +11,10 @@ use log::{debug, info};
 
 use osutils::{files, scripts::ScriptRunner};
 use trident_api::{
-    config::{HostConfiguration, HostConfigurationDynamicValidationError, Script},
+    config::{
+        HostConfiguration, HostConfigurationDynamicValidationError,
+        HostConfigurationStaticValidationError, Script,
+    },
     constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
     error::{InvalidInputError, ManagementError, ReportError, TridentError},
     status::{HostStatus, ServicingType},
@@ -58,7 +61,7 @@ impl Module for HooksModule {
                         .then_some(Err(TridentError::new(InvalidInputError::from(
                             HostConfigurationDynamicValidationError::ScriptNotFound {
                                 name: script.name.clone(),
-                                path: path.display().to_string(),
+                                path: path.to_string_lossy().to_string(),
                             },
                         ))))
                 })
@@ -83,7 +86,7 @@ impl Module for HooksModule {
                             .structured(InvalidInputError::from(
                                 HostConfigurationDynamicValidationError::ScriptLoadFailed {
                                     name: script.name.clone(),
-                                    path: path.display().to_string(),
+                                    path: path.to_string_lossy().to_string(),
                                 },
                             ))?;
                     }
@@ -97,7 +100,7 @@ impl Module for HooksModule {
                     .structured(InvalidInputError::from(
                         HostConfigurationDynamicValidationError::AdditionalFileLoadFailed {
                             name: file.destination.display().to_string(),
-                            path: path.display().to_string(),
+                            path: path.to_string_lossy().to_string(),
                         },
                     ))?;
             }
@@ -134,22 +137,29 @@ impl Module for HooksModule {
     }
 
     #[tracing::instrument(name = "hooks_configure", skip_all)]
-    fn configure(&mut self, host_status: &mut HostStatus, exec_root: &Path) -> Result<(), Error> {
+    fn configure(
+        &mut self,
+        host_status: &mut HostStatus,
+        exec_root: &Path,
+    ) -> Result<(), TridentError> {
         info!("Adding additional files");
         for file in &host_status.spec.os.additional_files {
             let (content, original_mode) = if let Some(ref content) = file.content {
                 (content.as_bytes().to_vec(), None)
             } else if let Some(ref path) = file.path {
-                let staged_file = self
-                    .staged_files
-                    .get(path)
-                    .context(format!("Failed to find staged file '{}'", path.display()))?;
+                let staged_file =
+                    self.staged_files
+                        .get(path)
+                        .structured(ManagementError::FindStagedFile {
+                            staged_file: file.destination.to_string_lossy().to_string(),
+                        })?;
                 (staged_file.contents.clone(), Some(staged_file.mode))
             } else {
-                bail!(
-                    "Additional file '{}' has no content or path",
-                    file.destination.display()
-                );
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationStaticValidationError::AdditionalFileHasNoContentOrPath(
+                        file.destination.to_string_lossy().to_string(),
+                    ),
+                )))?;
             };
 
             let override_mode = file
@@ -157,17 +167,23 @@ impl Module for HooksModule {
                 .as_ref()
                 .map(|p| u32::from_str_radix(p, 8))
                 .transpose()
-                .context("Failed to parse permissions")?;
+                .structured(InvalidInputError::from(
+                    HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
+                        file.destination.to_string_lossy().to_string(),
+                        file.permissions.clone().unwrap_or_default(),
+                    ),
+                ))?;
 
             // If file permissions are specified in the host configuration, they override everything
             // else. Otherwise use the original file permissions or fall back to default permissions
             // of 0664.
             let mode = override_mode.or(original_mode).unwrap_or(0o664);
 
-            files::write_file(&file.destination, mode, &content).context(format!(
-                "Failed to write additional file '{}'",
-                file.destination.display()
-            ))?;
+            files::write_file(&file.destination, mode, &content).structured(
+                ManagementError::WriteAdditionalFile {
+                    file_name: file.destination.to_string_lossy().to_string(),
+                },
+            )?;
         }
 
         info!("Running post-configure scripts");
@@ -183,6 +199,9 @@ impl Module for HooksModule {
                     Path::new(ROOT_MOUNT_POINT_PATH),
                     exec_root,
                 )
+                .structured(ManagementError::RunPostConfigureScript {
+                    script_name: script.name.clone(),
+                })
             })?;
 
         Ok(())

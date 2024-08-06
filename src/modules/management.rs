@@ -10,7 +10,7 @@ use log::{debug, info};
 use osutils::path;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError, LocalConfigFile},
-    error::{InvalidInputError, TridentError},
+    error::{InvalidInputError, ManagementError, ReportError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -50,7 +50,11 @@ impl Module for ManagementModule {
         Ok(())
     }
 
-    fn configure(&mut self, host_status: &mut HostStatus, exec_root: &Path) -> Result<(), Error> {
+    fn configure(
+        &mut self,
+        host_status: &mut HostStatus,
+        exec_root: &Path,
+    ) -> Result<(), TridentError> {
         if host_status.spec.trident.disable {
             return Ok(());
         }
@@ -61,17 +65,18 @@ impl Module for ManagementModule {
                 path::join_relative(exec_root, TRIDENT_BINARY_PATH),
                 TRIDENT_BINARY_PATH,
             )
-            .context("Failed to copy Trident binary to runtime OS")?;
+            .structured(ManagementError::CopyTridentBinary)?;
         }
 
         fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
-            .context("Failed to create trident config directory")?;
+            .structured(ManagementError::CreateTridentConfigDirectory)?;
 
         create_trident_config(
             &host_status.spec.trident.datastore_path,
             &host_status.spec,
             Path::new(TRIDENT_LOCAL_CONFIG_PATH),
-        )?;
+        )
+        .structured(ManagementError::CreateTridentConfig)?;
         debug!("Trident config created");
 
         Ok(())

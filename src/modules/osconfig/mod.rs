@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Error};
+use anyhow::Context;
 use log::{debug, error, info, warn};
 
 use osutils::path;
@@ -54,7 +54,11 @@ impl Module for OsConfigModule {
         Ok(())
     }
 
-    fn configure(&mut self, host_status: &mut HostStatus, exec_root: &Path) -> Result<(), Error> {
+    fn configure(
+        &mut self,
+        host_status: &mut HostStatus,
+        exec_root: &Path,
+    ) -> Result<(), TridentError> {
         // TODO: When we switch to MIC, figure out a strategy for handling
         // other kinds of updates. Limit operation to:
         // 1. ServicingType::CleanInstall,
@@ -76,12 +80,12 @@ impl Module for OsConfigModule {
 
         if !host_status.spec.os.users.is_empty() {
             users::set_up_users(&host_status.spec.os.users, &os_modifier_path)
-                .context("Failed to set up users")?;
+                .structured(ManagementError::SetUpUsers)?;
         }
 
         if let Some(ref hostname) = host_status.spec.os.hostname {
             hostname::set_up_hostname(hostname, &os_modifier_path)
-                .context("Failed to set up hostname")?;
+                .structured(ManagementError::SetUpHostname)?;
         }
 
         Ok(())

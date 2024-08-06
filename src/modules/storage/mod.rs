@@ -174,32 +174,39 @@ impl Module for StorageModule {
         Ok(())
     }
 
-    fn configure(&mut self, host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
+    fn configure(
+        &mut self,
+        host_status: &mut HostStatus,
+        _exec_root: &Path,
+    ) -> Result<(), TridentError> {
         verity::configure_device_names(host_status)
-            .context("Failed to finalize device names for Verity devices")?;
+            .structured(ManagementError::ConfigureVerityDeviceNames)?;
 
-        generate_fstab(host_status, Path::new(tabfile::DEFAULT_FSTAB_PATH))?;
+        generate_fstab(host_status, Path::new(tabfile::DEFAULT_FSTAB_PATH)).structured(
+            ManagementError::GenerateFstab {
+                fstab_path: tabfile::DEFAULT_FSTAB_PATH.to_string(),
+            },
+        )?;
 
-        // TODO: update /etc/repart.d directly for the matching disk, derive
-        // from where is the root located
+        // TODO: Update /etc/repart.d directly for the matching disk, derive it from where the root
+        // is located
 
-        encryption::configure(host_status)
-            .context("Encryption submodule failed during configure")?;
+        encryption::configure(host_status).message(format!(
+            "Step 'Configure' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
+        ))?;
 
-        // persist on reboots
-        raid::create_raid_config(host_status)
-            .context("Failed to create mdadm.conf file after RAID creation")?;
+        // Persist on reboots
+        raid::create_raid_config(host_status).structured(ManagementError::CreateMdadmConf)?;
 
-        // update paths for root verity devices in a grub config
+        // Update paths for root verity devices in GRUB configs
         verity::update_root_verity_in_grub_config(host_status, Path::new(ROOT_MOUNT_POINT_PATH))
-            .context("Failed to update GRUB config file after Verity creation")?;
+            .structured(ManagementError::UpdateGrubConfigsAfterVerityCreation)?;
 
         Ok(())
     }
 }
 
-/// Create a tabfile that captures all the desired
-/// mountpoints as per Host Configuration
+/// Create a tabfile that captures all the desired as per the spec in host status.
 fn generate_fstab(host_status: &HostStatus, path: &Path) -> Result<(), Error> {
     let mut mount_points = host_status.spec.storage.internal_mount_points.clone();
     if !host_status.spec.storage.internal_verity.is_empty() {

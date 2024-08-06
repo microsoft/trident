@@ -316,7 +316,7 @@ struct LuksDumpSegment {
 }
 
 #[tracing::instrument(name = "encryption_configure", skip_all)]
-pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
+pub fn configure(host_status: &mut HostStatus) -> Result<(), TridentError> {
     let path: PathBuf = PathBuf::from(CRYPTTAB_PATH);
     let mut contents: String = String::new();
 
@@ -325,16 +325,20 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
     };
 
     for ev in encryption.volumes.iter() {
-        let backing_partition = get_first_backing_partition(host_status, &ev.device_id).context(format!(
-            "Underlying device '{}' of encrypted volume '{}' is not a partition or software RAID array",
-            ev.device_id,
-            ev.id
-        ))?;
-        let device_path = &host_status.storage.block_device_paths.get(&ev.device_id).context(format!(
-            "Failed to find block device path for underlying device with id '{}' of encrypted volume with id '{}'",
-            ev.device_id,
-            ev.id
-        ))?;
+        let backing_partition = get_first_backing_partition(host_status, &ev.device_id)
+            .structured(InvalidInputError::from(
+                HostConfigurationStaticValidationError::EncryptedVolumePartitionOrRaid {
+                    encrypted_volume: ev.id.clone(),
+                },
+            ))?;
+        let device_path = &host_status
+            .storage
+            .block_device_paths
+            .get(&ev.device_id)
+            .structured(ManagementError::FindEncryptedVolumeBlockDevice {
+                device_id: ev.device_id.clone(),
+                encrypted_volume: ev.id.clone(),
+            })?;
 
         // An encrypted swap device is special-cased in the crypttab due
         // to the unique nature and requirements of swap spaces in a Linux
@@ -369,12 +373,17 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), Error> {
     if contents.is_empty() {
         if path.exists() {
             info!("Removing crypttab because there are no encrypted volumes");
-            std::fs::remove_file(&path).context("Failed to remove crypttab")?;
+            std::fs::remove_file(&path).structured(ManagementError::RemoveCrypttab {
+                crypttab_path: path.to_string_lossy().to_string(),
+            })?;
         }
     } else {
         debug!("crypttab file contents:\n{contents}");
-        osutils::files::write_file(path, 0o644, contents.as_bytes())
-            .context("Failed to create crypttab")?;
+        osutils::files::write_file(path.clone(), 0o644, contents.as_bytes()).structured(
+            ManagementError::CreateCrypttab {
+                crypttab_path: path.to_string_lossy().to_string(),
+            },
+        )?;
     }
 
     Ok(())

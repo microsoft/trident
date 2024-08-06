@@ -1,9 +1,10 @@
+use log::info;
 use std::path::Path;
 
-use anyhow::{Context, Error};
-use log::info;
-
-use trident_api::status::HostStatus;
+use trident_api::{
+    error::{ManagementError, ReportError, TridentError},
+    status::HostStatus,
+};
 
 use crate::modules::Module;
 
@@ -17,13 +18,17 @@ impl Module for NetworkModule {
         "network"
     }
 
-    fn configure(&mut self, host_status: &mut HostStatus, _exec_root: &Path) -> Result<(), Error> {
+    fn configure(
+        &mut self,
+        host_status: &mut HostStatus,
+        _exec_root: &Path,
+    ) -> Result<(), TridentError> {
         match host_status.spec.os.network.as_ref() {
             Some(config) => {
                 let config = netplan::render_netplan_yaml(config)
-                    .context("failed to render runtime network netplan yaml")?;
-                netplan::write(&config).context("failed to write netplan config")?;
-                netplan::apply().context("failed to apply netplan config")?;
+                    .structured(ManagementError::RenderNetworkNetplanYaml)?;
+                netplan::write(&config).structured(ManagementError::WriteNetplanConfig)?;
+                netplan::apply().structured(ManagementError::ApplyNetplanConfig)?;
             }
             None => {
                 info!("Network config not provided");
