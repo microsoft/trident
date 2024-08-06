@@ -41,7 +41,7 @@ impl Module for StorageModule {
         &mut self,
         host_status: &mut HostStatus,
         clean_install: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<(), TridentError> {
         // Remove block devices that no longer exist.
         let original_block_devices = host_status.storage.block_device_paths.clone();
         host_status
@@ -64,8 +64,9 @@ impl Module for StorageModule {
             );
         }
 
-        image::refresh_host_status(host_status, clean_install)
-            .context("Image submodule failed during refresh_host_status")?;
+        image::refresh_host_status(host_status, clean_install).message(format!(
+            "Step 'Refresh host status' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"
+        ))?;
 
         Ok(())
     }

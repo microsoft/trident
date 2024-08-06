@@ -20,7 +20,10 @@ use trident_api::{
         ImageSha256,
     },
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt},
+    error::{
+        InternalError, InvalidInputError, ManagementError, ReportError, TridentError,
+        TridentResultExt,
+    },
     status::{AbVolumeSelection, HostStatus, ServicingType},
     BlockDeviceId,
 };
@@ -231,12 +234,14 @@ fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
 pub(super) fn refresh_host_status(
     host_status: &mut HostStatus,
     clean_install: bool,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     // if A/B update is enabled
     if host_status.spec.storage.ab_update.is_some() && !clean_install {
         debug!("A/B update is enabled");
-        let root_device_path = get_root_device_path().context("No root device path found")?;
-        update_active_volume(host_status, root_device_path)?;
+        let root_device_path =
+            get_root_device_path().structured(InternalError::GetRootBlockDevicePath)?;
+        update_active_volume(host_status, root_device_path)
+            .structured(ManagementError::UpdateAbActiveVolume)?;
     } else {
         host_status.storage.ab_active_volume = None;
     }
@@ -485,8 +490,6 @@ pub(super) fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
-    // Only call refresh_ab_volumes() and set active_volume to None if
-    // the servicing type is CleanInstall
     if host_status.servicing_type == Some(ServicingType::CleanInstall) {
         debug!("Initializing A/B volumes");
         host_status.storage.ab_active_volume = None;

@@ -248,7 +248,7 @@ For more details on the Host Configuration format:
     allowedOperations: []
     ```
 
-  When no operations are allowed, trident will refresh the Host Status, but no
+  When no operations are allowed, Trident will refresh the Host Status, but no
   operations will be performed on the host.
 - **phonehome**: optional URL to reach out to when networking is up, so Trident
   can report its status. This is useful for debugging and monitoring purposes,

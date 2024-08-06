@@ -10,7 +10,6 @@ use std::{
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use anyhow::Error;
 use log::{debug, error, info, warn};
 use sys_mount::{Mount, MountFlags};
 
@@ -22,8 +21,8 @@ use trident_api::{
         UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{
-        InitializationError, InvalidInputError, ManagementError, ModuleError, ReportError,
-        TridentError, TridentResultExt,
+        InitializationError, InvalidInputError, ManagementError, ReportError, TridentError,
+        TridentResultExt,
     },
     status::{AbVolumeSelection, HostStatus, ServicingState, ServicingType},
     BlockDeviceId,
@@ -79,7 +78,7 @@ trait Module: Send {
         &mut self,
         _host_status: &mut HostStatus,
         _clean_install: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<(), TridentError> {
         Ok(())
     }
 
@@ -670,18 +669,19 @@ fn refresh_host_status(
     state: &mut DataStore,
     clean_install: bool,
 ) -> Result<(), TridentError> {
-    info!("Starting step 'Refresh'");
+    info!("Starting step 'Refresh host status'");
     for module in modules {
         debug!("Starting step 'Refresh' for module '{}'", module.name());
         state.try_with_host_status(|s| {
             module
                 .refresh_host_status(s, clean_install)
-                .structured(ManagementError::from(ModuleError::RefreshHostStatus {
-                    name: module.name(),
-                }))
+                .message(format!(
+                    "Step 'Refresh host status' failed for module '{}'",
+                    module.name()
+                ))
         })?;
     }
-    debug!("Finished step 'Refresh'");
+    debug!("Finished step 'Refresh host status'");
     Ok(())
 }
 

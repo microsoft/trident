@@ -109,13 +109,6 @@ pub enum DatastoreError {
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum ModuleError {
-    #[error("{name} module failed to refresh host status")]
-    RefreshHostStatus { name: &'static str },
-}
-
-#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
 pub enum ManagementError {
     #[error("Failed to start network")]
     StartNetwork,
@@ -168,11 +161,6 @@ pub enum ManagementError {
     #[error("Failed to create Trident config file")]
     CreateTridentConfig,
     #[error(transparent)]
-    Module {
-        #[from]
-        inner: ModuleError,
-    },
-    #[error(transparent)]
     Datastore {
         #[from]
         inner: DatastoreError,
@@ -181,6 +169,8 @@ pub enum ManagementError {
     ListAndParseBootEntries,
     #[error("Failed to list and parse boot manager entries")]
     ModifyBootOrder,
+    #[error("Failed to update A/B active volume in host status")]
+    UpdateAbActiveVolume,
     #[error("Failed to update GRUB configs")]
     UpdateGrubConfigs,
     #[error("Failed to update GRUB configs after verity creation")]
@@ -275,8 +265,8 @@ pub enum InternalError {
     #[error("An uncategorized error occurred: {0}")]
     Todo(&'static str),
 
-    #[error("Failed to get root block device")]
-    GetRootBlockDevice,
+    #[error("Failed to get root block device path")]
+    GetRootBlockDevicePath,
     #[error("Failed to serialize host status")]
     SerializeHostStatus,
     #[error("Failed to serialize error")]
