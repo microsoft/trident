@@ -7,9 +7,9 @@ use std::{
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sysinfo::System;
 use tracing::{
     field::{Field, Visit},
@@ -169,16 +169,36 @@ where
         if let Some(target) = self.get_server() {
             let mut visitor = TraceEntryVisitor::default();
             event.record(&mut visitor);
+
+            let metric_name = match visitor.fields.get("metric_name").and_then(|v| v.as_str()) {
+                Some(name) => name.to_string(),
+                None => {
+                    warn!("Event does not have a metric_name field, skipping!");
+                    return;
+                }
+            };
+
+            // Apart from the metric name, check if we have a single or multiple values
+            let filtered_fields: BTreeMap<String, Value> = visitor
+                .fields
+                .into_iter()
+                .filter(|(key, _)| key != "metric_name")
+                .collect();
+            let value = if filtered_fields.len() > 1 {
+                Value::Object(Map::from_iter(filtered_fields))
+            } else {
+                filtered_fields
+                    .into_iter()
+                    .find(|(k, _)| k == "value")
+                    .map(|(_, v)| v)
+                    .unwrap_or_default()
+            };
+
             let entry = TraceEntry {
                 timestamp: Utc::now(),
                 asset_id: ASSET_ID.to_string(),
-                metric_name: visitor
-                    .fields
-                    .get("metric_name")
-                    .map_or("unknown_metric".to_string(), |v| {
-                        v.as_str().unwrap_or_default().to_string()
-                    }),
-                value: visitor.fields.get("value").cloned().unwrap_or_default(),
+                metric_name,
+                value: json!(value),
                 os_release: OS_RELEASE.to_string(),
                 additional_fields: ADDITIONAL_FIELDS.clone(),
                 platform_info: PLATFORM_INFO.clone(),
@@ -198,8 +218,23 @@ where
         }
     }
 
-    /// When a span is created (either manually or using the tracing macros), this function is called
-    /// to handle creating the span with the start time.
+    /// When a new span is created, we want to record any fields that are
+    /// attached to it using the visitor pattern.
+    fn on_new_span(
+        &self,
+        attrs: &span::Attributes<'_>,
+        id: &span::Id,
+        ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        if let Some(span) = ctx.span(id) {
+            let mut visitor = TraceEntryVisitor::default();
+            attrs.record(&mut visitor);
+            span.extensions_mut().insert(visitor);
+        }
+    }
+
+    /// When a span is entered (either manually or using the tracing macros),
+    /// this function is called to handle creating the span with the start time.
     fn on_enter(&self, id: &span::Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
         let Some(span) = ctx.span(id) else {
             trace!("Failed to get span with id: {:?}", id);
@@ -209,8 +244,9 @@ where
         trace!("Entered span: {:?}", span.name());
     }
 
-    /// When a span is exited, this function is called to handle the span and set the elapsed time.
-    /// It will then formulate a metric request and send the span to the server.
+    /// When a span is exited, this function is called to handle the span and
+    /// set the elapsed time. It will then formulate a metric request and send
+    /// the span to the server.
     fn on_exit(&self, id: &span::Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
         let Some(span) = ctx.span(id) else {
             trace!("Failed to get span with id: {:?}", id);
@@ -226,12 +262,21 @@ where
             span.name(),
             execution_time
         );
+
+        let Some(mut visitor) = span.extensions_mut().remove::<TraceEntryVisitor>() else {
+            trace!("Failed to get fields for span: {:?}", span.name());
+            return;
+        };
+        visitor
+            .fields
+            .insert("execution_time".to_string(), json!(execution_time));
+
         if let Some(target) = self.get_server() {
             let entry = TraceEntry {
                 timestamp: Utc::now(),
                 asset_id: ASSET_ID.to_string(),
                 metric_name: span.name().to_string(),
-                value: json!(execution_time),
+                value: json!(visitor.fields),
                 os_release: OS_RELEASE.to_string(),
                 additional_fields: ADDITIONAL_FIELDS.clone(),
                 platform_info: PLATFORM_INFO.clone(),
