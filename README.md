@@ -203,7 +203,6 @@ For more details on the Host Configuration format:
 - And also as a JSON Schema here:
 [host-config-schema.json](trident_api/schemas/host-config-schema.json)
 
-
 ### User Options
 
 - **allowedOperations**: a list of flags representing allowed operations.
@@ -277,7 +276,6 @@ For more details on the Host Configuration format:
   running from the provisioning OS. Trident interprets this field to mean that
   it is running from an already provisioned system and thus should perform
   updates rather than a clean install.
-
 
 ## A/B Update
 
@@ -422,7 +420,7 @@ host config by restarting Trident with the following command:
     sudo journalctl -u trident.service -f
     ```
 
-or:
+  or:
 
     ```bash
     sudo trident run -v trace
@@ -447,7 +445,9 @@ image info and set: `allowedOperations: [stage, finalize]`.
 
 ## dm-verity Support
 
-Please review [API Documentation](#documentation) for low level details.
+Please review [API
+Documentation](docs/Reference/Host-Configuration/Host-Configuration.md) for low
+level details.
 
 Specifically, you need to include `verity` under `storage` in
 `HostConfiguration`. Currently, only `root` verity is supported (`deviceName`

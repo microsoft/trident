@@ -14,7 +14,8 @@ after release.
   but be sure to have `[unreleased]` in the title for now.
 
   Use the following template:
-    ```
+
+    ```text
     This release includes many features additions and improvements including...
     (Needed so that email preview text doesn't start with "Breaking Changes")
 
@@ -35,6 +36,7 @@ after release.
 
     Subscribe to [Mariner BareMetal Announcements](https://idwebelements.microsoft.com/GroupManagement.aspx?Group=MarinerBMPBroadcast&Operation=join) to hear about future releases. And if you have any issues, please [contact us on Teams](https://teams.microsoft.com/v2/?tenantId=72f988bf-86f1-41af-91ab-2d7cd011db47).
     ```
+  
     ADO makes it slightly difficult to get permalinks to files. To do so, you
     first need to navigate to the commit you want a permalink for. Then click
     "Browse files" in the top right and navigate to the specific file you want
@@ -46,9 +48,12 @@ after release.
 
 ## On
 
-- Run the release pipeline with the version being published.
-  https://dev.azure.com/mariner-org/ECF/_build?definitionId=3370 (Will download
-  RPMs from the prerelease feed and uploaded them to the release feed)
+- Run [the release
+  pipeline](https://dev.azure.com/mariner-org/ECF/_build?definitionId=3370) with
+  the version from the prerelease feed that will be published. (The pipeline
+  will download RPMs from [the prerelease
+  feed](https://dev.azure.com/mariner-org/ECF/_artifacts/feed/Trident/UPack/rpms-prerelease/versions/)
+  and upload them to the release feed.)
 - Create a new branch based on the specific commit being released and call it
  `releases/<name_of_release>`.
 - In the Trident wiki publishing page, select the releases/X branch created in
