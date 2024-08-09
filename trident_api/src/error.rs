@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Write};
-use std::path::PathBuf;
 use std::{borrow::Cow, panic::Location};
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -9,193 +8,192 @@ use crate::config::{
     HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
 };
 
-/// Trident failed to initialize.
-#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum InitializationError {
-    #[error("Failed to load local configuration")]
-    LoadLocalConfig,
-    #[error("Failed to parse local configuration")]
-    ParseLocalConfig,
-    #[error("Failed connecting to logstream")]
-    StartLogstream,
-    #[error("Failed connecting to tracestream")]
-    StartTraceStream,
-    #[error("Failed to get host root path")]
-    GetHostRootPath,
-    #[error("Failed to read /proc/cmdline")]
-    ReadCmdline,
-    #[error("Trident directed to perform clean install but safety check failed")]
-    SafetyCheck,
-    #[error("Container configuration check failed")]
-    ContainerMisconfigured,
-}
-
-/// Trident failed to run because the execution environment was misconfigured.
-/// This is a user attributable error as it relates to the environment in which
-/// Trident is running, which is user defined.
+/// Identifies errors that occur when the execution environment is misconfigured. This error type
+/// can be attributed to the user, as it relates to the environment in which Trident is run.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ExecutionEnvironmentMisconfigurationError {
-    #[error(
-        "Selected operation cannot be performed due to missing permissions, root privileges required"
-    )]
-    MissingRequiredPermissions,
+    #[error("Failed to run due to missing root privileges")]
+    CheckRootPrivileges,
 
     #[error("Failed to find OS Modifier binary at '{binary_path}' required by '{config}'")]
-    MissingOsModifierBinary { binary_path: String, config: String },
+    FindOSModifierBinary { binary_path: String, config: String },
 }
 
-/// User provided input was invalid.
+/// Identifies errors that occur when Trident fails to initialize.
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum InitializationError {
+    #[error("Failed to connect to logstream")]
+    ConnectToLogstream,
+
+    #[error("Failed to connect to tracestream")]
+    ConnectToTracestream,
+
+    #[error("Container configuration check failed")]
+    ContainerConfigurationCheck,
+
+    #[error("Failed to get host root path")]
+    GetHostRootPath,
+
+    #[error("Failed to load local Trident config")]
+    LoadLocalConfig,
+
+    #[error("Failed to parse the local config")]
+    ParseLocalConfig,
+
+    #[error("Failed to read '/proc/cmdline'")]
+    ReadCmdline,
+
+    #[error("Safety check failed on clean install")]
+    CleanInstallSafetyCheck,
+}
+
+/// Identifies errors that occur due to an internal bug or failure in Trident.
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum InternalError {
+    #[error("Failed to enqueue 'HostUpdate' command to the main Trident thread")]
+    EnqueueHostUpdateCommand,
+
+    #[error("Failed to get datastore path from local Trident config")]
+    GetDatastorePathFromLocalTridentConfig,
+
+    #[error("Failed to get root block device")]
+    GetRootBlockDevicePath,
+
+    #[error("Internal error: {0}")]
+    Internal(&'static str),
+
+    #[error("Failed to execute container-only logic as host is not running in a container")]
+    RunInContainer,
+
+    #[error("Failed to send host status")]
+    SendHostStatus,
+
+    #[error("Failed to serialize error")]
+    SerializeError,
+
+    #[error("Failed to serialize host status")]
+    SerializeHostStatus,
+
+    #[error("Failed to start tokio runtime")]
+    StartTokioRuntime,
+}
+
+/// Identifies errors that occur when the user provides an invalid input.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InvalidInputError {
-    #[error("Failed to load host configuration file from '{path}'")]
-    LoadHostConfiguration { path: String },
-    #[error("Failed to parse host configuration")]
-    ParseHostConfiguration,
-    #[error("Failed to load kickstart file from '{path}'")]
-    LoadKickstart { path: String },
-    #[error("Failed to translate kickstart")]
-    KickstartTranslation,
+    #[error("Failed to initialize clean install as host is already provisioned")]
+    CleanInstallOnProvisionedHost,
+
+    #[error("Failed to get a unique host configuration source from local Trident config")]
+    GetHostConfigurationSource,
+
     #[error("Host configuration failed static validation: {inner}")]
     InvalidHostConfigurationStatic {
         #[from]
         inner: HostConfigurationStaticValidationError,
     },
+
     #[error("Host configuration failed dynamic validation: {inner}")]
     InvalidHostConfigurationDynamic {
         #[from]
         inner: HostConfigurationDynamicValidationError,
     },
-    #[error("Host configuration is incompatible with current install")]
-    IncompatibleHostConfiguration,
-    #[error("Failed to initialize CleanInstall as host is provisioned")]
-    CleanInstallRequestedForProvisionedHost,
+
+    #[error("Failed to load host configuration file from '{path}'")]
+    LoadHostConfigurationFile { path: String },
+
+    #[error("Failed to load kickstart file from '{path}'")]
+    LoadKickstart { path: String },
+
+    #[error("Failed to parse host configuration file from '{path}'")]
+    ParseHostConfigurationFile { path: String },
+
+    #[error("Failed to translate kickstart")]
+    TranslateKickstart,
 }
 
+/// Identifies errors that occur during servicing and require further user investigation, to
+/// determine whether the error occurred due to an internal failure in Trident, a failure in
+/// one of its dependencies, or a system misconfiguration.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum UnsupportedConfigurationError {}
-
-#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum DatastoreError {
-    #[error("Failed to create datastore directory")]
-    CreateDatastoreDirectory,
-    #[error("Failed to open new datastore")]
-    OpenDatastore,
-    #[error("Failed to initialize datastore")]
-    DatastoreInit,
-    #[error("Failed to load datastore from path '{0}'")]
-    DatastoreLoad(PathBuf),
-    #[error("Failed re-open temporary datastore")]
-    DatastoreReopen,
-    #[error("Failed to persist datastore")]
-    PersistDatastore,
-    #[error("Failed to serialize host status")]
-    SerializeHostStatus,
-    #[error("Failed to deserialize host status")]
-    DeserializeHostStatus,
-    #[error("Failed to write to datastore")]
-    DatastoreWrite,
-    #[error("Attempted to write to closed datastore")]
-    DatastoreClosed,
-    #[error("Failed to create datastore ref file")]
-    CreateDatastoreRefFile,
-    #[error("Failed to record datastore location")]
-    RecordDatastoreLocation,
-}
-
-#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum ManagementError {
-    #[error("Failed to start network")]
-    StartNetwork,
-    #[error("Failed to render runtime network netplan YAML")]
-    RenderNetworkNetplanYaml,
-    #[error("Failed to write netplan config")]
-    WriteNetplanConfig,
-    #[error("Failed to apply netplan config")]
+pub enum ServicingError {
+    #[error("Failed to apply Netplan config")]
     ApplyNetplanConfig,
-    #[error("Failed to open firewall")]
-    OpenFirewall,
+
     #[error("Failed to mount special directory '{dir}' for chroot")]
-    ChrootMountSpecial { dir: &'static str },
-    #[error("Failed to enter chroot")]
-    ChrootEnter,
-    #[error("Failed to exit chroot")]
-    ChrootExit,
-    #[error("Failed to unmount special directory")]
-    ChrootUnmountSpecial,
-    #[error("Failed to mount overlay '{target}'")]
-    MountOverlay { target: PathBuf },
-    #[error("Failed to unmount overlay")]
-    UnmountOverlay,
-    #[error("Failed to update host")]
-    UpdateHost,
-    #[error("Failed to provision host")]
-    ProvisionHost,
-    #[error("Failed to set boot next")]
-    SetBootNext,
-    #[error("Failed to mount newroot")]
-    MountNewroot,
-    #[error("Failed to unmount newroot, unable to unmount '{dir}'")]
-    UnmountNewroot { dir: PathBuf },
-    #[error("Failed to create execroot directory")]
-    CreateExecrootDirectory,
-    #[error("Failed to mount execroot")]
-    MountExecroot,
-    #[error("Failed to assemble kernel cmdline")]
-    SetKernelCmdline,
-    #[error("Failed to perform kexec")]
-    Kexec,
-    #[error("Failed to reboot")]
-    Reboot,
-    #[error("Failed to regenerate initrd")]
-    RegenerateInitrd,
+    ChrootMountSpecialDir { dir: String },
+
+    #[error("Failed to unmount special directory for chroot")]
+    ChrootUnmountSpecialDir,
+
+    #[error("Failed to clean up pre-existing RAID arrays")]
+    CleanupRaid,
+
+    #[error("Failed to clean up pre-existing verity devices")]
+    CleanupVerity,
+
+    #[error("Failed to clear TPM 2.0 device")]
+    ClearTpm2Device,
+
+    #[error("Failed to configure device names for verity devices")]
+    ConfigureVerityDeviceNames,
+
     #[error("Failed to copy Trident binary to runtime OS")]
     CopyTridentBinary,
-    #[error("Failed to create Trident config directory")]
-    CreateTridentConfigDirectory,
+
+    #[error("Failed to create crypttab at path '{crypttab_path}'")]
+    CreateCrypttab { crypttab_path: String },
+
+    #[error("Failed to create directory '{dir}'")]
+    CreateDirectory { dir: String },
+
+    #[error("Failed to create execroot directory")]
+    CreateExecrootDirectory,
+
+    #[error("Failed to create filesystems")]
+    CreateFilesystems,
+
+    #[error("Failed to create machine ID for verity")]
+    CreateMachineId,
+
+    #[error("Failed to create mdadm.conf file after RAID creation")]
+    CreateMdadmConf,
+
+    #[error("Failed to create disk partitions")]
+    CreatePartitions,
+
+    #[error("Failed to create software RAID")]
+    CreateRaid,
+
+    #[error("Failed to create temporary recovery key file")]
+    CreateRecoveryKeyFile,
+
     #[error("Failed to create Trident config file")]
     CreateTridentConfig,
+
+    #[error("Failed to create Trident config directory")]
+    CreateTridentConfigDirectory,
+
+    #[error("Failed to create verity devices")]
+    CreateVerity,
+
     #[error(transparent)]
     Datastore {
         #[from]
         inner: DatastoreError,
     },
-    #[error("Failed to list boot entries")]
-    ListAndParseBootEntries,
-    #[error("Failed to list and parse boot manager entries")]
-    ModifyBootOrder,
-    #[error("Failed to update A/B active volume in host status")]
-    UpdateAbActiveVolume,
-    #[error("Failed to update GRUB configs")]
-    UpdateGrubConfigs,
-    #[error("Failed to update GRUB configs after verity creation")]
-    UpdateGrubConfigsAfterVerityCreation,
-    #[error("Failed to clean up pre-existing RAID arrays")]
-    CleanupRaid,
-    #[error("Failed to clean up pre-existing verity devices")]
-    CleanupVerity,
-    #[error("Failed to create disk partitions")]
-    CreatePartitions,
-    #[error("Failed to create software RAID")]
-    CreateRaid,
-    #[error("Failed to create mdadm.conf file after RAID creation")]
-    CreateMdadmConf,
-    #[error("Failed to setup verity devices")]
-    CreateVerity,
-    #[error("Failed to configure device names for verity devices")]
-    ConfigureVerityDeviceNames,
-    #[error{"Failed to create machine ID for verity"}]
-    CreateMachineId,
-    #[error("Failed to find underlying block device with id '{device_id}' for encrypted volume '{encrypted_volume}'")]
-    FindEncryptedVolumeBlockDevice {
-        device_id: String,
-        encrypted_volume: String,
-    },
+
+    #[error("Failed to perform file-based deployment of ESP images")]
+    DeployESPImages,
+
+    #[error("Failed to deploy images")]
+    DeployImages,
+
     #[error("Failed to encrypt and open block device '{device_path}' with id '{device_id}' as '{encrypted_volume_device_name}' for encrypted volume '{encrypted_volume}'")]
     EncryptBlockDevice {
         device_path: String,
@@ -203,110 +201,197 @@ pub enum ManagementError {
         encrypted_volume_device_name: String,
         encrypted_volume: String,
     },
-    #[error("Failed to create crypttab at path '{crypttab_path}'")]
-    CreateCrypttab { crypttab_path: String },
-    #[error("Failed to remove crypttab at path '{crypttab_path}'")]
-    RemoveCrypttab { crypttab_path: String },
-    #[error("Failed to deploy images")]
-    DeployImages,
-    #[error("Failed to perform file-based deployment of ESP images")]
-    DeployESPImages,
-    #[error("Failed to create filesystems")]
-    CreateFilesystems,
-    #[error("Failed to generate fstab at path '{fstab_path}'")]
-    GenerateFstab { fstab_path: String },
-    #[error("Reboot timed out")]
-    RebootTimeout,
-    #[error("Failed to check mount point")]
-    MountPointCheck,
-    #[error("Failed to parse non-Unicode path '{path}'")]
-    PathIsNotUnicode { path: PathBuf },
-    #[error("Failed to create directory '{dir}'")]
-    CreateDirectory { dir: PathBuf },
-    #[error("Failed to create temporary recovery key file")]
-    CreateRecoveryKeyFile,
-    #[error("Failed to generate recovery key file '{key_file}'")]
-    GenerateRecoveryKeyFile { key_file: PathBuf },
-    #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
-    SetRecoveryKeyFilePermissions { key_file: PathBuf },
-    #[error("Encryption requires access to a TPM 2.0 device but one is not accessible")]
-    Tpm2DeviceAccessible,
-    #[error("Failed to clear TPM 2.0 device")]
-    ClearTpm2Device,
-    #[error("Firmware performed a rollback. Clean install of runtime OS failed")]
-    RollbackCleanInstall,
-    #[error("Firmware performed a rollback. A/B update failed")]
-    RollbackAbUpdate,
-    #[error("Failed to fetch device path for root from /proc/mounts")]
-    RootMountPointDevPath,
-    #[error("Failed to get SELINUXTYPE")]
-    SelinuxTypeNotFound,
-    #[error("Failed to set up users for management OS")]
-    SetUpUsers,
-    #[error("Failed to set up hostname for management OS")]
-    SetUpHostname,
-    #[error("Failed to run setfiles command")]
-    RunSetFiles,
-    #[error("Failed to run post-provision script '{script_name}'")]
-    RunPostProvisionScript { script_name: String },
-    #[error("Failed to run post-configure script '{script_name}'")]
-    RunPostConfigureScript { script_name: String },
-    #[error("Failed to write an additional file '{file_name}'")]
-    WriteAdditionalFile { file_name: String },
+
+    #[error("Failed to enter chroot")]
+    EnterChroot,
+
+    #[error("Failed to exit chroot")]
+    ExitChroot,
+
+    #[error("Failed to find underlying block device with id '{device_id}' for encrypted volume '{encrypted_volume}'")]
+    FindEncryptedVolumeBlockDevice {
+        device_id: String,
+        encrypted_volume: String,
+    },
+
     #[error("Failed to find staged file at path '{staged_file}'")]
     FindStagedFile { staged_file: String },
+
+    #[error("Failed to generate fstab at path '{fstab_path}'")]
+    GenerateFstab { fstab_path: String },
+
+    #[error("Failed to generate recovery key file '{key_file}'")]
+    GenerateRecoveryKeyFile { key_file: String },
+
+    #[error("Failed to get SELINUXTYPE")]
+    GetSelinuxType,
+
+    #[error("Failed to perform kexec")]
+    Kexec,
+
+    #[error("Failed to list boot entries via efibootmgr or parse them")]
+    ListAndParseBootEntries,
+
+    #[error("Failed to modify boot order via efibootmgr")]
+    ModifyBootOrder,
+
+    #[error("Failed to mount execroot")]
+    MountExecroot,
+
+    #[error("Failed to mount newroot")]
+    MountNewroot,
+
+    #[error("Failed to mount overlay '{target}'")]
+    MountOverlay { target: String },
+
+    #[error("Failed to check if '{path}' is a mount point")]
+    CheckIfMountPoint { path: String },
+
+    #[error("Failed to open firewall")]
+    OpenFirewall,
+
+    #[error("Failed to parse non-Unicode path '{path}'")]
+    PathIsNotUnicode { path: String },
+
+    #[error("Failed to reboot")]
+    Reboot,
+
+    #[error("Reboot timed out")]
+    RebootTimeout,
+
+    #[error("Failed to regenerate initrd")]
+    RegenerateInitrd,
+
+    #[error("Failed to remove crypttab at path '{crypttab_path}'")]
+    RemoveCrypttab { crypttab_path: String },
+
+    #[error("Failed to render runtime network Netplan YAML")]
+    RenderNetworkNetplanYaml,
+
+    #[error("Firmware performed a rollback. A/B update failed")]
+    RollbackAbUpdate,
+
+    #[error("Firmware performed a rollback. Clean install of runtime OS failed")]
+    RollbackCleanInstall,
+
+    #[error("Failed to fetch device path for root from /proc/mounts")]
+    RootMountPointDevPath,
+
+    #[error("Failed to run post-configure script '{script_name}'")]
+    RunPostConfigureScript { script_name: String },
+
+    #[error("Failed to run post-provision script '{script_name}'")]
+    RunPostProvisionScript { script_name: String },
+
+    #[error("Failed to run setfiles command")]
+    RunSetFiles,
+
+    #[error("Failed to set the 'BootNext' UEFI variable")]
+    SetBootNext,
+
+    #[error("Failed to set the kernel cmdline")]
+    SetKernelCmdline,
+
+    #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
+    SetRecoveryKeyFilePermissions { key_file: String },
+
+    #[error("Failed to set up hostname for management OS")]
+    SetUpHostname,
+
+    #[error("Failed to set up users for management OS")]
+    SetUpUsers,
+
+    #[error("Failed to start network")]
+    StartNetwork,
+
+    #[error("Encryption requires access to a TPM 2.0 device but one is not accessible")]
+    Tpm2DeviceAccessible,
+
+    #[error("Failed to unmount newroot, unable to unmount '{dir}'")]
+    UnmountNewroot { dir: String },
+
+    #[error("Failed to update A/B active volume in host status")]
+    UpdateAbActiveVolume,
+
+    #[error("Failed to update GRUB configs")]
+    UpdateGrubConfigs,
+
+    #[error("Failed to update GRUB configs after verity creation")]
+    UpdateGrubConfigsAfterVerityCreation,
+
+    #[error("Failed to write an additional file '{file_name}'")]
+    WriteAdditionalFile { file_name: String },
+
+    #[error("Failed to write Netplan config")]
+    WriteNetplanConfig,
 }
 
+/// Identifies errors that occur when interacting with a misconfigured datastore.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum InternalError {
-    #[error("Internal error: {0}")]
-    Internal(&'static str),
-    #[error("An uncategorized error occurred: {0}")]
-    Todo(&'static str),
+pub enum DatastoreError {
+    #[error("Failed to create datastore directory")]
+    CreateDatastoreDirectory,
 
-    #[error("Failed to get root block device path")]
-    GetRootBlockDevicePath,
-    #[error("Failed to serialize host status")]
-    SerializeHostStatus,
-    #[error("Failed to serialize error")]
-    SerializeError,
-    #[error("Failed to send host status")]
-    SendHostStatus,
-    #[error("No datastore path provided in the local Trident config")]
-    GetDatastorePathFromLocalTridentConfig,
+    #[error("Failed to initialize datastore")]
+    InitializeDatastore,
+
+    #[error("Failed to load datastore from path '{path}'")]
+    LoadDatastore { path: String },
+
+    #[error("Failed to open new datastore")]
+    OpenDatastore,
+
+    #[error("Failed to switch datastore path to '{new_path}' as datastore is persistent")]
+    SwitchPathOnPersistentDatastore { new_path: String },
+
+    #[error("Failed to write to datastore")]
+    WriteToDatastore,
+
+    #[error("Failed to write to datastore as it is closed")]
+    WriteToClosedDatastore,
 }
 
+/// Identifies errors that occur when clean install or update fail due to the current configuration
+/// of the host.
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum UnsupportedConfigurationError {}
+
+/// Describes different categories of structured errors that can occur in Trident.
+///
 /// Each variant of `ErrorKind` corresponds to a different category of error. The categories are
-/// intended to be user-meaningful and to be used for routing issues to the proper team.
+/// intended to be meaningful to the user and assist in routing issues to the appropriate team.
+///
 #[derive(Debug, Eq, thiserror::Error, IntoStaticStr, PartialEq)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ErrorKind {
-    /// Trident failed to initialize.
-    #[error(transparent)]
-    Initialization(#[from] InitializationError),
-
-    /// Trident failed to run because the execution environment was misconfigured.
+    /// Identifies errors that occur when the execution environment is misconfigured.
     #[error(transparent)]
     ExecutionEnvironmentMisconfiguration(#[from] ExecutionEnvironmentMisconfigurationError),
 
-    /// Trident failed because it was provided invalid user input.
+    /// Identifies errors that occur when Trident fails to initialize.
+    #[error(transparent)]
+    Initialization(#[from] InitializationError),
+
+    /// Identifies errors that occur due to an internal bug or failure in Trident.
+    #[error(transparent)]
+    Internal(#[from] InternalError),
+
+    /// Identifies errors that occur when the user provides invalid input.
     #[error(transparent)]
     InvalidInput(#[from] InvalidInputError),
 
-    /// Trident was unable to provision or update due to the current configuration of the system.
+    /// Identifies errors that occur during servicing and require further user investigation, to
+    /// determine whether the error occurred due to an internal failure in Trident, a failure in
+    /// one of its dependencies, or a system misconfiguration.
+    #[error(transparent)]
+    Servicing(#[from] ServicingError),
+
+    /// Identifies errors that occur when clean install or update fail due to the current
+    /// configuration of the host.
     #[error(transparent)]
     UnsupportedConfiguration(#[from] UnsupportedConfigurationError),
-
-    /// Some step during servicing failed. User investigation is required to determine whether this
-    /// is an issue with Trident or one of its dependencies, or whether the system is misconfigured.
-    #[error(transparent)]
-    Management(#[from] ManagementError),
-
-    /// An uncategorized error occurred or a bug was encountered. This indicates a problem with
-    /// Trident.
-    #[error(transparent)]
-    Internal(#[from] InternalError),
 }
 
 #[derive(Debug)]
@@ -423,14 +508,14 @@ impl Serialize for TridentError {
         let mut state = serializer.serialize_struct("trident-error", 5)?;
         state.serialize_field("message", &self.0.kind.to_string())?;
         match self.0.kind {
-            ErrorKind::Initialization(ref e) => state.serialize_field("error", e)?,
             ErrorKind::ExecutionEnvironmentMisconfiguration(ref e) => {
                 state.serialize_field("error", e)?
             }
-            ErrorKind::InvalidInput(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::UnsupportedConfiguration(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::Management(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::Initialization(ref e) => state.serialize_field("error", e)?,
             ErrorKind::Internal(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::InvalidInput(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::Servicing(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::UnsupportedConfiguration(ref e) => state.serialize_field("error", e)?,
         }
         state.serialize_field("category", <&str>::from(&self.0.kind))?;
         state.serialize_field(
@@ -519,7 +604,7 @@ mod tests {
                 assert!(matches!(m["cause"], Value::String(_)));
                 assert_eq!(
                     m["message"],
-                    Value::String("Failed to load local configuration".into())
+                    Value::String("Failed to load local Trident config".into())
                 );
                 match m["location"] {
                     Value::String(ref s) => assert!(s.contains("error.rs:")),

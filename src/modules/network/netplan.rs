@@ -23,7 +23,7 @@ pub fn apply() -> Result<(), Error> {
         .output()
         .context("Failed to start netplan")?
         .check()
-        .context("Executing `netplan apply` failed")
+        .context("Executing 'netplan apply' failed")
 }
 
 pub fn render_netplan_yaml(value: &NetworkConfig) -> Result<String, Error> {

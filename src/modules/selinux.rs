@@ -10,7 +10,7 @@ use osutils::exe::RunAndCheck;
 use trident_api::{
     config::FileSystemType,
     constants::SELINUX_CONFIG,
-    error::{ManagementError, ReportError, TridentError},
+    error::{ReportError, ServicingError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -60,8 +60,8 @@ impl Module for SelinuxModule {
                 .filter_map(|filesystem| filesystem.mount_point.as_ref())
                 .collect();
 
-            let selinux_type = get_selinux_type(SELINUX_CONFIG)
-                .structured(ManagementError::SelinuxTypeNotFound)?;
+            let selinux_type =
+                get_selinux_type(SELINUX_CONFIG).structured(ServicingError::GetSelinuxType)?;
 
             Command::new("setfiles")
                 .arg("-m")
@@ -77,7 +77,7 @@ impl Module for SelinuxModule {
                         .map(|mount_point| mount_point.path.as_os_str()),
                 )
                 .run_and_check()
-                .structured(ManagementError::RunSetFiles)?;
+                .structured(ServicingError::RunSetFiles)?;
         }
 
         Ok(())

@@ -10,7 +10,7 @@ use osutils::{filesystems::MountFileSystemType, mount, path::join_relative};
 use trident_api::{
     config::InternalMountPoint,
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{ManagementError, ReportError, TridentError},
+    error::{ReportError, ServicingError, TridentError},
     status::HostStatus,
 };
 
@@ -83,7 +83,7 @@ pub(super) fn mount_new_root(
 
             Ok::<(), Error>(())
         })
-        .structured(ManagementError::MountNewroot)?;
+        .structured(ServicingError::MountNewroot)?;
 
     Ok(root_mount)
 }
@@ -138,8 +138,9 @@ impl NewrootMount {
 
     fn unmount_mount(mount: &PathBuf) -> Result<(), TridentError> {
         debug!("Unmounting '{}'", mount.display());
-        mount::umount(mount, true)
-            .structured(ManagementError::UnmountNewroot { dir: mount.clone() })?;
+        mount::umount(mount, true).structured(ServicingError::UnmountNewroot {
+            dir: mount.to_string_lossy().into(),
+        })?;
         Ok(())
     }
 
@@ -149,8 +150,8 @@ impl NewrootMount {
             let execroot_mount = join_relative(self.path(), execroot_path);
             debug!("Remounting '{}' as private", execroot_mount.display());
             mount::remount_rprivate(&execroot_mount).structured(
-                ManagementError::UnmountNewroot {
-                    dir: execroot_mount.clone(),
+                ServicingError::UnmountNewroot {
+                    dir: execroot_mount.to_string_lossy().into(),
                 },
             )?;
             Self::unmount_mount(&execroot_mount)?;
@@ -516,7 +517,7 @@ mod functional_test {
             mount_new_root(&host_status, temp_mount_dir.path())
                 .unwrap_err()
                 .kind(),
-            &ErrorKind::Management(ManagementError::MountNewroot)
+            &ErrorKind::Servicing(ServicingError::MountNewroot)
         );
 
         // bad root path
@@ -529,7 +530,7 @@ mod functional_test {
             mount_new_root(&host_status, temp_file.path())
                 .unwrap_err()
                 .kind(),
-            &ErrorKind::Management(ManagementError::MountNewroot)
+            &ErrorKind::Servicing(ServicingError::MountNewroot)
         );
     }
 
@@ -547,8 +548,8 @@ mod functional_test {
 
         assert_eq!(
             umount_result_1.unwrap_err().kind(),
-            &ErrorKind::Management(ManagementError::UnmountNewroot {
-                dir: temp_mount_dir.path().to_owned()
+            &ErrorKind::Servicing(ServicingError::UnmountNewroot {
+                dir: temp_mount_path.to_string_lossy().into(),
             })
         );
 
@@ -559,8 +560,8 @@ mod functional_test {
 
         assert_eq!(
             umount_result_2.unwrap_err().kind(),
-            &ErrorKind::Management(ManagementError::UnmountNewroot {
-                dir: PathBuf::from("/path/to/non/existent/directory")
+            &ErrorKind::Servicing(ServicingError::UnmountNewroot {
+                dir: "/path/to/non/existent/directory".to_string(),
             })
         );
     }
@@ -614,7 +615,7 @@ mod functional_test {
 
         assert_eq!(
             mount_result.kind(),
-            &ErrorKind::Management(ManagementError::MountNewroot)
+            &ErrorKind::Servicing(ServicingError::MountNewroot)
         );
     }
 }

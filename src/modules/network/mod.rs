@@ -2,7 +2,7 @@ use log::info;
 use std::path::Path;
 
 use trident_api::{
-    error::{ManagementError, ReportError, TridentError},
+    error::{ReportError, ServicingError, TridentError},
     status::HostStatus,
 };
 
@@ -26,9 +26,9 @@ impl Module for NetworkModule {
         match host_status.spec.os.network.as_ref() {
             Some(config) => {
                 let config = netplan::render_netplan_yaml(config)
-                    .structured(ManagementError::RenderNetworkNetplanYaml)?;
-                netplan::write(&config).structured(ManagementError::WriteNetplanConfig)?;
-                netplan::apply().structured(ManagementError::ApplyNetplanConfig)?;
+                    .structured(ServicingError::RenderNetworkNetplanYaml)?;
+                netplan::write(&config).structured(ServicingError::WriteNetplanConfig)?;
+                netplan::apply().structured(ServicingError::ApplyNetplanConfig)?;
             }
             None => {
                 info!("Network config not provided");

@@ -10,7 +10,7 @@ use log::{debug, info};
 use osutils::path;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError, LocalConfigFile},
-    error::{InvalidInputError, ManagementError, ReportError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -39,7 +39,7 @@ impl Module for ManagementModule {
             let new_path = &host_config.trident.datastore_path;
             if current_path != new_path {
                 return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::ChangedDatastorePath {
+                    HostConfigurationDynamicValidationError::DatastorePathChanged {
                         current: current_path.display().to_string(),
                         new: new_path.display().to_string(),
                     },
@@ -65,18 +65,18 @@ impl Module for ManagementModule {
                 path::join_relative(exec_root, TRIDENT_BINARY_PATH),
                 TRIDENT_BINARY_PATH,
             )
-            .structured(ManagementError::CopyTridentBinary)?;
+            .structured(ServicingError::CopyTridentBinary)?;
         }
 
         fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
-            .structured(ManagementError::CreateTridentConfigDirectory)?;
+            .structured(ServicingError::CreateTridentConfigDirectory)?;
 
         create_trident_config(
             &host_status.spec.trident.datastore_path,
             &host_status.spec,
             Path::new(TRIDENT_LOCAL_CONFIG_PATH),
         )
-        .structured(ManagementError::CreateTridentConfig)?;
+        .structured(ServicingError::CreateTridentConfig)?;
         debug!("Trident config created");
 
         Ok(())
@@ -145,7 +145,7 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
-                inner: HostConfigurationDynamicValidationError::ChangedDatastorePath {
+                inner: HostConfigurationDynamicValidationError::DatastorePathChanged {
                     current: "/foo".to_string(),
                     new: "/bar".to_string(),
                 }

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use trident_api::{
-    error::{ManagementError, ReportError, TridentError},
+    error::{ReportError, ServicingError, TridentError},
     status::HostStatus,
 };
 
@@ -25,7 +25,7 @@ impl Module for BootModule {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized
         esp::deploy_esp_images(host_status, mount_point)
-            .structured(ManagementError::DeployESPImages)?;
+            .structured(ServicingError::DeployESPImages)?;
 
         Ok(())
     }
@@ -35,7 +35,7 @@ impl Module for BootModule {
         host_status: &mut HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
-        grub::update_configs(host_status).structured(ManagementError::UpdateGrubConfigs)?;
+        grub::update_configs(host_status).structured(ServicingError::UpdateGrubConfigs)?;
 
         Ok(())
     }

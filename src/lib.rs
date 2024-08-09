@@ -9,13 +9,12 @@ use tokio::sync::mpsc::{self};
 use osutils::{container, path};
 use setsail::KsTranslator;
 use trident_api::config::{
-    HostConfiguration, HostConfigurationSource, HostConfigurationStaticValidationError,
-    LocalConfigFile, Operations,
+    HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
 };
 use trident_api::constants::ROOT_MOUNT_POINT_PATH;
 use trident_api::error::{
     ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
-    InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt,
+    InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
 };
 use trident_api::status::{HostStatus, ServicingState, ServicingType};
 
@@ -127,7 +126,7 @@ impl Trident {
         if let Some(url) = config.logstream.as_ref() {
             logstream
                 .set_server(url.to_string())
-                .structured(InitializationError::StartLogstream)?;
+                .structured(InitializationError::ConnectToLogstream)?;
         }
 
         // Set up tracestream if configured, using phonehome url for now
@@ -135,7 +134,7 @@ impl Trident {
             let trace_url = url.clone().replace("phonehome", "tracestream");
             tracestream
                 .set_server(trace_url)
-                .structured(InitializationError::StartTraceStream)?;
+                .structured(InitializationError::ConnectToTracestream)?;
         }
 
         debug!(
@@ -154,9 +153,7 @@ impl Trident {
     ) -> Result<Option<Box<HostConfiguration>>, TridentError> {
         config
             .get_host_configuration_source()
-            .structured(InvalidInputError::from(
-                HostConfigurationStaticValidationError::FailedToParse,
-            ))?
+            .structured(InvalidInputError::GetHostConfigurationSource)?
             .as_ref()
             .map(Self::load_host_config)
             .transpose()
@@ -167,21 +164,23 @@ impl Trident {
     ) -> Result<Box<HostConfiguration>, TridentError> {
         let host_config = match source {
             HostConfigurationSource::File(path) => {
-                info!("Loading host config from '{}'", path.display());
+                info!("Loading host config from file at path '{}'", path.display());
 
                 serde_yaml::from_str(&fs::read_to_string(path).structured(
-                    InvalidInputError::LoadHostConfiguration {
+                    InvalidInputError::LoadHostConfigurationFile {
                         path: path.display().to_string(),
                     },
                 )?)
-                .structured(InvalidInputError::ParseHostConfiguration)?
+                .structured(InvalidInputError::ParseHostConfigurationFile {
+                    path: path.display().to_string(),
+                })?
             }
             HostConfigurationSource::Embedded(contents) => contents.clone(),
             HostConfigurationSource::KickstartEmbedded(contents) => Box::new(
                 KsTranslator::new()
                     .run_pre_scripts(true)
                     .translate(setsail::load_kickstart_string(contents))
-                    .structured(InvalidInputError::KickstartTranslation)?,
+                    .structured(InvalidInputError::TranslateKickstart)?,
             ),
             HostConfigurationSource::KickstartFile(ref file) => Box::new(
                 KsTranslator::new()
@@ -191,7 +190,7 @@ impl Trident {
                             path: file.display().to_string(),
                         },
                     )?)
-                    .structured(InvalidInputError::KickstartTranslation)?,
+                    .structured(InvalidInputError::TranslateKickstart)?,
             ),
         };
 
@@ -215,9 +214,7 @@ impl Trident {
         ) = self
             .config
             .get_host_configuration_source()
-            .structured(InvalidInputError::from(
-                HostConfigurationStaticValidationError::FailedToParse,
-            ))?
+            .structured(InvalidInputError::GetHostConfigurationSource)?
         {
             warn!("Cannot set up network early when using kickstart");
             return Ok(());
@@ -231,7 +228,7 @@ impl Trident {
             host_config.as_deref(),
             self.config.wait_for_provisioning_network,
         )
-        .structured(ManagementError::StartNetwork)?;
+        .structured(ServicingError::StartNetwork)?;
 
         Ok(())
     }
@@ -247,7 +244,7 @@ impl Trident {
 
         if !Uid::effective().is_root() {
             return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::MissingRequiredPermissions,
+                ExecutionEnvironmentMisconfigurationError::CheckRootPrivileges,
             ));
         }
 
@@ -267,9 +264,7 @@ impl Trident {
                     #[cfg(feature = "grpc-dangerous")]
                     sender: None,
                 })
-                .structured(InternalError::Internal(
-                    "Failed to enqueue provision command",
-                ))?;
+                .structured(InternalError::EnqueueHostUpdateCommand)?;
         }
 
         if !cfg!(feature = "grpc-dangerous") || self.config.grpc.is_none() {
@@ -341,7 +336,7 @@ impl Trident {
                 Ok(path) => path,
                 Err(e) => {
                     error!("Failed to get device path of root mount point: {e}");
-                    return Err(TridentError::new(ManagementError::RootMountPointDevPath));
+                    return Err(TridentError::new(ServicingError::RootMountPointDevPath));
                 }
             };
             info!("Validating whether firmware correctly booted into the updated runtime OS image");
@@ -355,12 +350,12 @@ impl Trident {
                         datastore.with_host_status(|host_status| {
                             host_status.servicing_state = ServicingState::CleanInstallFailed;
                         })?;
-                        return Err(TridentError::new(ManagementError::RollbackCleanInstall));
+                        return Err(TridentError::new(ServicingError::RollbackCleanInstall));
                     } else {
                         datastore.with_host_status(|host_status| {
                             host_status.servicing_state = ServicingState::AbUpdateFailed;
                         })?;
-                        return Err(TridentError::new(ManagementError::RollbackAbUpdate));
+                        return Err(TridentError::new(ServicingError::RollbackAbUpdate));
                     }
                 }
             }
@@ -470,7 +465,7 @@ impl Trident {
                 // before, ask the user to update HC and re-run
                 if datastore.host_status().servicing_state == ServicingState::AbUpdateFailed {
                     error!("Rollback occurred when Trident attempted A/B update with current host config. Update host config and re-run");
-                    return Err(TridentError::new(ManagementError::RollbackAbUpdate));
+                    return Err(TridentError::new(ServicingError::RollbackAbUpdate));
                 }
 
                 // If an update has been previously staged, only need to finalize the update
@@ -517,7 +512,7 @@ impl Trident {
                 // If host config has not been updated but a rollback occurred before, return
                 if datastore.host_status().servicing_state == ServicingState::CleanInstallFailed {
                     error!("Rollback occurred when Trident attempted clean install with current host config. Update host config and re-run");
-                    return Err(TridentError::new(ManagementError::RollbackCleanInstall));
+                    return Err(TridentError::new(ServicingError::RollbackCleanInstall));
                 }
 
                 // If HS.spec matches the new HS, only need to finalize the clean install

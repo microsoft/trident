@@ -21,7 +21,7 @@ use trident_api::{
         UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{
-        InitializationError, InvalidInputError, ManagementError, ReportError, TridentError,
+        InitializationError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
     },
     status::{AbVolumeSelection, HostStatus, ServicingState, ServicingType},
@@ -161,8 +161,11 @@ pub(super) fn clean_install(
     let clean_install_start_time = Instant::now();
 
     if Path::new(UPDATE_ROOT_PATH).exists()
-        && osutils::mountpoint::check_is_mountpoint(UPDATE_ROOT_PATH)
-            .structured(ManagementError::MountPointCheck)?
+        && osutils::mountpoint::check_is_mountpoint(UPDATE_ROOT_PATH).structured(
+            ServicingError::CheckIfMountPoint {
+                path: UPDATE_ROOT_PATH.to_string(),
+            },
+        )?
     {
         debug!("Unmounting volumes from earlier runs of Trident");
         if let Err(e) = osutils::mount::umount(UPDATE_ROOT_PATH, true) {
@@ -260,7 +263,9 @@ fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), Tri
     }
 
     error!("Safety override file is not present, aborting clean install.");
-    Err(TridentError::new(InitializationError::SafetyCheck))
+    Err(TridentError::new(
+        InitializationError::CleanInstallSafetyCheck,
+    ))
 }
 
 /// Stages a clean install. Takes in 4 arguments:
@@ -296,7 +301,7 @@ fn stage_clean_install(
     let new_root_path = root_mount.path();
     let exec_root_path = root_mount
         .execroot_path()
-        .structured(ManagementError::MountExecroot)?;
+        .structured(ServicingError::MountExecroot)?;
 
     provision(modules, state, new_root_path)?;
 
@@ -454,8 +459,8 @@ pub(super) fn update(
             info!("Update complete");
             Ok(())
         }
-        ServicingType::CleanInstall => Err(TridentError::internal(
-            "Impossible servicing type for update",
+        ServicingType::CleanInstall => Err(TridentError::new(
+            InvalidInputError::CleanInstallOnProvisionedHost,
         )),
     }
 }
@@ -484,7 +489,7 @@ fn stage_update(
         ServicingType::AbUpdate => info!("Performing A/B update"),
         ServicingType::CleanInstall => {
             return Err(TridentError::new(
-                InvalidInputError::CleanInstallRequestedForProvisionedHost,
+                InvalidInputError::CleanInstallOnProvisionedHost,
             ));
         }
     }
@@ -509,7 +514,7 @@ fn stage_update(
         let new_root_path = root_mount.path();
         let exec_root_path = root_mount
             .execroot_path()
-            .structured(ManagementError::MountExecroot)?;
+            .structured(ServicingError::MountExecroot)?;
 
         provision(modules, state, new_root_path)?;
 
@@ -785,22 +790,26 @@ pub(super) fn initialize_new_root(
         .fstype("tmpfs")
         .flags(MountFlags::empty())
         .mount("tmpfs", new_root_path.join("tmp"))
-        .structured(ManagementError::ChrootMountSpecial { dir: "/tmp" })?;
+        .structured(ServicingError::ChrootMountSpecialDir {
+            dir: "/tmp".to_string(),
+        })?;
     root_mount.add_mount(tmp_mount.target_path().to_owned());
 
     let exec_root_path = Path::new(EXEC_ROOT_PATH);
     let full_exec_root_path = join_relative(&new_root_path, exec_root_path);
     std::fs::create_dir_all(&full_exec_root_path)
-        .structured(ManagementError::CreateExecrootDirectory)?;
+        .structured(ServicingError::CreateExecrootDirectory)?;
     mount::private_rbind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
-        .structured(ManagementError::MountExecroot)?;
+        .structured(ServicingError::MountExecroot)?;
     root_mount.set_execroot_mount(exec_root_path.to_owned());
 
     let run_mount = Mount::builder()
         .fstype("tmpfs")
         .flags(MountFlags::empty())
         .mount("tmpfs", new_root_path.join("run"))
-        .structured(ManagementError::ChrootMountSpecial { dir: "/run" })?;
+        .structured(ServicingError::ChrootMountSpecialDir {
+            dir: "/run".to_string(),
+        })?;
     root_mount.add_mount(run_mount.target_path().to_owned());
 
     Ok(root_mount)
@@ -848,12 +857,12 @@ pub fn reboot() -> Result<(), TridentError> {
         .env("SYSTEMD_IGNORE_CHROOT", "true")
         .arg("reboot")
         .run_and_check()
-        .structured(ManagementError::Reboot)?;
+        .structured(ServicingError::Reboot)?;
 
     thread::sleep(Duration::from_secs(600));
 
     error!("Waited for reboot for 10 minutes, but nothing happened, aborting");
-    Err(TridentError::new(ManagementError::RebootTimeout))
+    Err(TridentError::new(ServicingError::RebootTimeout))
 }
 
 /// Triggers a reboot. Currently, this defaults to firmware reboot.
@@ -861,7 +870,7 @@ fn perform_reboot() -> Result<(), TridentError> {
     // TODO(6721): Re-enable kexec
     // let root_block_device_path = root_block_device_path
     //     .to_str()
-    //     .structured(ManagementError::SetKernelCmdline)
+    //     .structured(ServicingError::SetKernelCmdline)
     //     .message(format!(
     //         "Failed to convert root device path {:?} to string",
     //         root_block_device_path
@@ -872,7 +881,7 @@ fn perform_reboot() -> Result<(), TridentError> {
     //     new_root_path,
     //     &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
     // )
-    // .structured(ManagementError::Kexec)
+    // .structured(ServicingError::Kexec)
 
     info!("Performing reboot");
     reboot()

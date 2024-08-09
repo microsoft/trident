@@ -38,7 +38,11 @@ pub(super) mod schema_helpers {
 fn validate_netplan_id(id: &str) -> Result<(), HostConfigurationStaticValidationError> {
     // Interface names must conform to the netplan ID regex.
     if !NETPLAN_ID_REGEX.is_match(id) {
-        return Err(HostConfigurationStaticValidationError::InvalidInterfaceName(id.to_string()));
+        return Err(
+            HostConfigurationStaticValidationError::InvalidInterfaceName {
+                name: id.to_string(),
+            },
+        );
     }
 
     // On top of that, they may not contain globbing characters: *?[]
@@ -46,7 +50,9 @@ fn validate_netplan_id(id: &str) -> Result<(), HostConfigurationStaticValidation
     for invalid_char in "*?[]".chars() {
         if id.contains(invalid_char) {
             return Err(
-                HostConfigurationStaticValidationError::InvalidInterfaceName(id.to_string()),
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: id.to_string(),
+                },
             );
         }
     }
@@ -58,15 +64,19 @@ pub(super) fn validate_netplan(
     config: &NetworkConfig,
 ) -> Result<(), HostConfigurationStaticValidationError> {
     if config.version != NETPLAN_CONFIG_VERSION {
-        return Err(HostConfigurationStaticValidationError::InvalidNetplanVersion(config.version));
+        return Err(
+            HostConfigurationStaticValidationError::InvalidNetplanVersion {
+                version: config.version,
+            },
+        );
     }
 
     if let Some(renderer) = &config.renderer {
         if renderer == &Renderer::NetworkManager {
             return Err(
-                HostConfigurationStaticValidationError::UnsupportedNetplanRenderer(
-                    "NetworkManager".to_string(),
-                ),
+                HostConfigurationStaticValidationError::UnsupportedNetplanRenderer {
+                    renderer: "NetworkManager".to_string(),
+                },
             );
         }
     }
@@ -106,13 +116,13 @@ mod tests {
         };
         assert_eq!(
             validate_netplan(&config),
-            Err(HostConfigurationStaticValidationError::InvalidNetplanVersion(1))
+            Err(HostConfigurationStaticValidationError::InvalidNetplanVersion { version: 1 })
         );
 
         config.version = 3;
         assert_eq!(
             validate_netplan(&config),
-            Err(HostConfigurationStaticValidationError::InvalidNetplanVersion(3))
+            Err(HostConfigurationStaticValidationError::InvalidNetplanVersion { version: 3 })
         );
 
         config.version = NETPLAN_CONFIG_VERSION;
@@ -129,9 +139,9 @@ mod tests {
         assert_eq!(
             validate_netplan(&config),
             Err(
-                HostConfigurationStaticValidationError::UnsupportedNetplanRenderer(
-                    "NetworkManager".to_string()
-                )
+                HostConfigurationStaticValidationError::UnsupportedNetplanRenderer {
+                    renderer: "NetworkManager".to_string()
+                }
             )
         );
 
@@ -153,27 +163,47 @@ mod tests {
 
         assert_eq!(
             validate_netplan_id("eth0*"),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth0*".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth0*".to_string()
+                }
+            )
         );
 
         assert_eq!(
             validate_netplan_id("eth0?"),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth0?".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth0?".to_string()
+                }
+            )
         );
 
         assert_eq!(
             validate_netplan_id("eth0["),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth0[".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth0[".to_string()
+                }
+            )
         );
 
         assert_eq!(
             validate_netplan_id("eth0]"),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth0]".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth0]".to_string()
+                }
+            )
         );
 
         assert_eq!(
             validate_netplan_id("eth 0"),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth 0".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth 0".to_string()
+                }
+            )
         );
     }
 
@@ -201,7 +231,11 @@ mod tests {
         });
         assert_eq!(
             validate_netplan(&config),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth0*".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth0*".to_string()
+                }
+            )
         );
 
         config.ethernets = Some(maplit::hashmap! {
@@ -209,7 +243,11 @@ mod tests {
         });
         assert_eq!(
             validate_netplan(&config),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth0?".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth0?".to_string()
+                }
+            )
         );
 
         config.ethernets = Some(maplit::hashmap! {
@@ -217,7 +255,11 @@ mod tests {
         });
         assert_eq!(
             validate_netplan(&config),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth0[".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth0[".to_string()
+                }
+            )
         );
 
         config.ethernets = Some(maplit::hashmap! {
@@ -225,7 +267,11 @@ mod tests {
         });
         assert_eq!(
             validate_netplan(&config),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth0]".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth0]".to_string()
+                }
+            )
         );
 
         config.ethernets = Some(maplit::hashmap! {
@@ -233,7 +279,11 @@ mod tests {
         });
         assert_eq!(
             validate_netplan(&config),
-            Err(HostConfigurationStaticValidationError::InvalidInterfaceName("eth 0".to_string()))
+            Err(
+                HostConfigurationStaticValidationError::InvalidInterfaceName {
+                    name: "eth 0".to_string()
+                }
+            )
         );
     }
 }

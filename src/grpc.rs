@@ -13,7 +13,7 @@ use tonic::{Request, Response, Status};
 use osutils::exe::RunAndCheck;
 use trident_api::config::{GrpcConfiguration, Operations};
 use trident_api::error::{InternalError, ReportError};
-use trident_api::error::{ManagementError, TridentError};
+use trident_api::error::{ServicingError, TridentError};
 
 use crate::{HostUpdateCommand, OrchestratorConnection};
 
@@ -24,7 +24,7 @@ pub use protobufs::*;
 
 /// Implementation of the gRPC service.
 ///
-/// This struct contains a tokio Sender which it uses to enqueue commands to the main trident
+/// This struct contains a tokio Sender which it uses to enqueue commands to the main Trident
 /// thread. It also implements the gRPC service trait, which allows it to be used as a gRPC server.
 pub struct HostManagementImpl(Sender<HostUpdateCommand>);
 
@@ -51,7 +51,7 @@ impl host_management_server::HostManagement for HostManagementImpl {
                 sender: Some(tx),
             })
             .await
-            .context("Failed to enqueue provision command")
+            .context("Failed to enqueue 'HostUpdate' command to the main Trident thread")
             .map_err(|e| Status::from_error(e.into()))?;
 
         Ok(Response::new(UnboundedReceiverStream::new(rx)))
@@ -66,15 +66,14 @@ pub(crate) fn start(
 ) -> Result<Runtime, TridentError> {
     // TODO: make firewall this configurable
     info!("Opening firewall");
-    let _ = open_firewall_for_grpc().structured(ManagementError::OpenFirewall);
+    let _ = open_firewall_for_grpc().structured(ServicingError::OpenFirewall);
 
     let addr = "0.0.0.0".parse().unwrap();
     let port = grpc.listen_port.unwrap_or(50051);
 
     info!("Preparing to listen for gRPC requests");
 
-    let rt = tokio::runtime::Runtime::new()
-        .structured(InternalError::Internal("Failed to start tokio runtime"))?;
+    let rt = tokio::runtime::Runtime::new().structured(InternalError::StartTokioRuntime)?;
     rt.spawn(async move {
         Server::builder()
             .add_service(host_management_server::HostManagementServer::new(

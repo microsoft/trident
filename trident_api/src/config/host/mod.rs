@@ -72,9 +72,7 @@ impl HostConfiguration {
                     && v.mount_point.options.contains("ro")
             })
         {
-            return Err(
-                HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFsError,
-            );
+            return Err(HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs);
         }
 
         self.validate_datastore_location()?;
@@ -96,7 +94,7 @@ impl HostConfiguration {
             .path_to_mount_point_info(datastore_path)
             .and_then(|mp| mp.device_id)
             .ok_or(
-                HostConfigurationStaticValidationError::DatastorePathNotInAnyKnownVolume {
+                HostConfigurationStaticValidationError::DatastorePathNotInKnownVolume {
                     datastore_path: datastore_path.to_string_lossy().to_string(),
                 },
             )?;
@@ -112,7 +110,7 @@ impl HostConfiguration {
             .any(|p| &p.id == *datastore_block_device_id)
         {
             return Err(
-                HostConfigurationStaticValidationError::DatastorePathInABVolume {
+                HostConfigurationStaticValidationError::DatastorePathInABUpdateVolume {
                     datastore_path: datastore_path.to_string_lossy().to_string(),
                     volume_id: datastore_block_device_id.to_string(),
                 },
@@ -321,7 +319,7 @@ mod tests {
 
         assert_eq!(
             err,
-            HostConfigurationStaticValidationError::DatastorePathInABVolume {
+            HostConfigurationStaticValidationError::DatastorePathInABUpdateVolume {
                 datastore_path: TRIDENT_DATASTORE_PATH_DEFAULT.into(),
                 volume_id: "root".into(),
             }

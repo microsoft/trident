@@ -278,8 +278,7 @@ impl Storage {
             },
         )?;
 
-        // If some ab_update is present, the overlay must be also on an ab
-        // volume.
+        // If some ab_update is present, the overlay must be also on an A/B volume.
         if let Some(ab_update) = &self.ab_update {
             if !ab_update
                 .volume_pairs
@@ -302,12 +301,12 @@ impl Storage {
         {
             return Err(
                 HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
+                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
                     mount_point_path: overlay_support_mount_point
                         .mount_point
                         .path
                         .to_string_lossy()
                         .to_string(),
-                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
                 },
             );
         }
@@ -319,19 +318,19 @@ impl Storage {
             .any(|v| v.data_device_id.as_str() == overlay_block_device_id)
         {
             return Err(
-                HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
+                HostConfigurationStaticValidationError::OverlayOnVerityProtectedVolume {
+                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
                     mount_point_path: overlay_support_mount_point
                         .mount_point
                         .path
                         .to_string_lossy()
                         .to_string(),
-                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
                 },
             );
         }
 
-        // Ensure the root verity fs name is set to `root`, as that is what
-        // the dracut verity module expects.
+        // Ensure the root verity fs name is set to 'root', as that is what the dracut verity
+        // module expects.
         if vfs.name != "root" {
             return Err(
                 HostConfigurationStaticValidationError::RootVerityDeviceNameInvalid {
@@ -343,7 +342,7 @@ impl Storage {
         // Ensure the root verity device is mounted read-only at /.
         if !vfs.mount_point.options.contains("ro") {
             return Err(
-                HostConfigurationStaticValidationError::VerityDeviceReadWrite {
+                HostConfigurationStaticValidationError::VerityDeviceMountedReadWrite {
                     device_name: vfs.name.clone(),
                     mount_point_path: vfs.mount_point.path.to_string_lossy().to_string(),
                 },
@@ -724,8 +723,8 @@ mod tests {
     fn get_verity_storage() -> Storage {
         let mut storage = get_storage();
 
-        // Delete the root fs, remove the a/b update volume using `root-a` and
-        // replace it with a verity fs
+        // Delete the root fs, remove the A/B update (inactive) volume and replace it with a verity
+        // filesystem.
         storage
             .filesystems
             .retain(|fs| fs.device_id != Some("root".into()));
@@ -1197,7 +1196,7 @@ mod tests {
                 BlockDeviceGraphBuildError::BasicCheckFailed {
                     node_id: "disk1".into(),
                     kind: BlkDevKind::Disk,
-                    body: "Path 'disk1' is not absolute path".into()
+                    body: "Path 'disk1' must be absolute".into()
                 }
             )
         );
@@ -2176,7 +2175,7 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::VerityDeviceReadWrite {
+            HostConfigurationStaticValidationError::VerityDeviceMountedReadWrite {
                 mount_point_path: "/".into(),
                 device_name: "root".into(),
             }
@@ -2248,8 +2247,8 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
+                overlay_path: "/var/lib/trident-overlay".into(),
                 mount_point_path: "/var/lib/trident-overlay".into(),
-                overlay_path: "/var/lib/trident-overlay".into()
             }
         );
     }

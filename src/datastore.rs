@@ -2,7 +2,7 @@ use log::info;
 use osutils::path::join_relative;
 use std::{fs, path::Path};
 use trident_api::{
-    error::{DatastoreError, InternalError, ManagementError, ReportError, TridentError},
+    error::{DatastoreError, InternalError, ReportError, ServicingError, TridentError},
     status::HostStatus,
 };
 
@@ -35,24 +35,26 @@ impl DataStore {
 
     pub(crate) fn open(path: &Path) -> Result<Self, TridentError> {
         info!("Loading datastore from {}", path.display());
-        let db = sqlite::open(path).structured(ManagementError::Datastore {
-            inner: DatastoreError::DatastoreLoad(path.to_owned()),
+        let db = sqlite::open(path).structured(ServicingError::Datastore {
+            inner: DatastoreError::LoadDatastore {
+                path: path.to_string_lossy().into(),
+            },
         })?;
         let mut host_status: HostStatus = db
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC LIMIT 1")
-            .structured(ManagementError::Datastore {
-                inner: DatastoreError::DatastoreInit,
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::InitializeDatastore,
             })?
             .into_iter()
             .next()
             .transpose()
-            .structured(ManagementError::Datastore {
-                inner: DatastoreError::DatastoreInit,
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::InitializeDatastore,
             })?
             .map(|row| serde_yaml::from_str(row.read::<&str, _>(0)))
             .transpose()
-            .structured(ManagementError::Datastore {
-                inner: DatastoreError::DeserializeHostStatus,
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::InitializeDatastore,
             })?
             .unwrap_or_default();
 
@@ -69,23 +71,28 @@ impl DataStore {
     /// new_path.
     pub(crate) fn switch_datastore_to_path(&mut self, new_path: &Path) -> Result<(), TridentError> {
         if !self.temporary {
-            return Err(TridentError::new(InternalError::Internal(
-                "Attempted to switch to path {new_path} on a persistent datastore",
-            )));
+            return Err(TridentError::new(ServicingError::Datastore {
+                inner: DatastoreError::SwitchPathOnPersistentDatastore {
+                    new_path: new_path.to_string_lossy().into(),
+                },
+            }));
         }
-
         let db_path = join_relative(new_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
         if !db_path.exists() {
             log::error!("New Datastore path is invalid {}", db_path.display());
-            return Err(TridentError::new(ManagementError::Datastore {
-                inner: DatastoreError::DatastoreLoad(db_path),
+            return Err(TridentError::new(ServicingError::Datastore {
+                inner: DatastoreError::LoadDatastore {
+                    path: db_path.to_string_lossy().into(),
+                },
             }));
         }
 
         info!("Switching datastore to path {}", db_path.display());
         self.db = Some(
-            sqlite::open(&db_path).structured(ManagementError::Datastore {
-                inner: DatastoreError::DatastoreLoad(db_path),
+            sqlite::open(&db_path).structured(ServicingError::Datastore {
+                inner: DatastoreError::LoadDatastore {
+                    path: db_path.to_string_lossy().into(),
+                },
             })?,
         );
 
@@ -97,12 +104,12 @@ impl DataStore {
     }
 
     fn make_datastore(path: &Path) -> Result<sqlite::Connection, TridentError> {
-        fs::create_dir_all(path.parent().unwrap()).structured(ManagementError::from(
+        fs::create_dir_all(path.parent().unwrap()).structured(ServicingError::from(
             DatastoreError::CreateDatastoreDirectory,
         ))?;
 
         let db =
-            sqlite::open(path).structured(ManagementError::from(DatastoreError::OpenDatastore))?;
+            sqlite::open(path).structured(ServicingError::from(DatastoreError::OpenDatastore))?;
         db.execute(
             "CREATE TABLE IF NOT EXISTS hoststatus (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,7 +117,7 @@ impl DataStore {
                 contents TEXT NOT NULL
             )",
         )
-        .structured(ManagementError::from(DatastoreError::DatastoreInit))?;
+        .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
         Ok(db)
     }
 
@@ -132,17 +139,17 @@ impl DataStore {
     ) -> Result<(), TridentError> {
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
-            .structured(ManagementError::from(DatastoreError::DatastoreWrite))?;
+            .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
         statement
             .bind((
                 1,
                 &*serde_yaml::to_string(host_status)
-                    .structured(ManagementError::from(DatastoreError::SerializeHostStatus))?,
+                    .structured(InternalError::SerializeHostStatus)?,
             ))
-            .structured(ManagementError::from(DatastoreError::DatastoreWrite))?;
+            .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
         statement
             .next()
-            .structured(ManagementError::from(DatastoreError::DatastoreWrite))?;
+            .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
 
         Ok(())
     }
@@ -177,7 +184,7 @@ impl DataStore {
         let ret2 = Self::write_host_status(
             self.db
                 .as_ref()
-                .structured(ManagementError::from(DatastoreError::DatastoreClosed))?,
+                .structured(ServicingError::from(DatastoreError::WriteToClosedDatastore))?,
             &self.host_status,
         );
         if ret.is_ok() {
@@ -226,7 +233,6 @@ mod functional_test {
     use super::*;
     use pytest_gen::functional_test;
     use tempfile::TempDir;
-    use trident_api::error::InternalError;
     use trident_api::status::{ServicingState, ServicingType};
 
     #[functional_test]
@@ -292,16 +298,10 @@ mod functional_test {
             .with_host_status(|s| s.servicing_state = ServicingState::Provisioned)
             .unwrap_err();
 
-        let mut datastore = DataStore::open(&datastore_path).unwrap();
+        let datastore = DataStore::open(&datastore_path).unwrap();
         assert_eq!(
             datastore.host_status().servicing_state,
             ServicingState::Staging
         );
-
-        datastore
-            .try_with_host_status(|_s| -> Result<(), TridentError> {
-                Err(TridentError::new(InternalError::Internal("error")))
-            })
-            .unwrap_err();
     }
 }

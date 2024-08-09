@@ -6,9 +6,7 @@ use log::{debug, error, info, warn};
 use osutils::path;
 use trident_api::{
     config::{HostConfiguration, ManagementOs, Os, SshMode},
-    error::{
-        ExecutionEnvironmentMisconfigurationError, ManagementError, ReportError, TridentError,
-    },
+    error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
     status::{HostStatus, ServicingType},
 };
 
@@ -44,7 +42,7 @@ impl Module for OsConfigModule {
         if requires_os_modifier_os(&host_config.os) && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
         {
             return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::MissingOsModifierBinary {
+                ExecutionEnvironmentMisconfigurationError::FindOSModifierBinary {
                     binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
                     config: self.name().to_string(),
                 },
@@ -80,12 +78,12 @@ impl Module for OsConfigModule {
 
         if !host_status.spec.os.users.is_empty() {
             users::set_up_users(&host_status.spec.os.users, &os_modifier_path)
-                .structured(ManagementError::SetUpUsers)?;
+                .structured(ServicingError::SetUpUsers)?;
         }
 
         if let Some(ref hostname) = host_status.spec.os.hostname {
             hostname::set_up_hostname(hostname, &os_modifier_path)
-                .structured(ManagementError::SetUpHostname)?;
+                .structured(ServicingError::SetUpHostname)?;
         }
 
         Ok(())
@@ -119,7 +117,7 @@ impl Module for MosConfigModule {
             && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
         {
             return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::MissingOsModifierBinary {
+                ExecutionEnvironmentMisconfigurationError::FindOSModifierBinary {
                     binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
                     config: self.name().to_string(),
                 },
@@ -146,7 +144,7 @@ impl Module for MosConfigModule {
         if !host_status.spec.management_os.users.is_empty() {
             info!("Setting up users for management OS");
             users::set_up_users(&host_status.spec.management_os.users, os_modifier_path)
-                .structured(ManagementError::SetUpUsers)?;
+                .structured(ServicingError::SetUpUsers)?;
 
             // If the config enables SSH for any MOS user, then we changed the
             // SSHD config, meaning we need to restart SSHD.

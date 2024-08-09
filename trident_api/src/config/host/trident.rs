@@ -89,12 +89,12 @@ impl Trident {
         {
             return Err(
                 HostConfigurationStaticValidationError::DatastorePathInvalidExtension {
-                    expected: DATASTORE_FILE_EXTENSION.into(),
-                    got: self
+                    received: self
                         .datastore_path
                         .extension()
                         .map(|e| e.to_string_lossy().into_owned())
                         .unwrap_or_else(|| "<none>".into()),
+                    expected: DATASTORE_FILE_EXTENSION.into(),
                 },
             );
         }
@@ -119,8 +119,8 @@ mod tests {
         assert_eq!(
             trident.validate().unwrap_err(),
             HostConfigurationStaticValidationError::DatastorePathInvalidExtension {
+                received: "<none>".into(),
                 expected: DATASTORE_FILE_EXTENSION.into(),
-                got: "<none>".into(),
             }
         );
 
@@ -128,8 +128,8 @@ mod tests {
         assert_eq!(
             trident.validate().unwrap_err(),
             HostConfigurationStaticValidationError::DatastorePathInvalidExtension {
+                received: "docx".into(),
                 expected: DATASTORE_FILE_EXTENSION.into(),
-                got: "docx".into(),
             }
         );
     }

@@ -21,7 +21,7 @@ use trident_api::{
     },
     constants::ROOT_MOUNT_POINT_PATH,
     error::{
-        InternalError, InvalidInputError, ManagementError, ReportError, TridentError,
+        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
     },
     status::{AbVolumeSelection, HostStatus, ServicingType},
@@ -241,7 +241,7 @@ pub(super) fn refresh_host_status(
         let root_device_path =
             get_root_device_path().structured(InternalError::GetRootBlockDevicePath)?;
         update_active_volume(host_status, root_device_path)
-            .structured(ManagementError::UpdateAbActiveVolume)?;
+            .structured(ServicingError::UpdateAbActiveVolume)?;
     } else {
         host_status.storage.ab_active_volume = None;
     }
@@ -474,9 +474,9 @@ pub(super) fn validate_host_config(
                 && !ab_volume_pair_images.iter().any(|(id, _)| id == &device_id)
             {
                 return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::AbUpdateNotAllowedForStandaloneBlockDevice(
-                            device_id.clone(),
-                        ),
+                    HostConfigurationDynamicValidationError::ImageUpdateOnStandaloneBlockDevice {
+                        device_id: device_id.clone(),
+                    },
                 )));
             }
         }
@@ -495,7 +495,7 @@ pub(super) fn provision(
         host_status.storage.ab_active_volume = None;
     }
 
-    deploy_images(host_status, host_config).structured(ManagementError::DeployImages)?;
+    deploy_images(host_status, host_config).structured(ServicingError::DeployImages)?;
 
     Ok(())
 }

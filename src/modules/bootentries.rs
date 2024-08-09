@@ -5,7 +5,7 @@ use log::{debug, info};
 use osutils::efibootmgr::EfiBootManagerOutput;
 use osutils::{block_devices, efibootmgr};
 use trident_api::constants;
-use trident_api::error::{ManagementError, ReportError, TridentError, TridentResultExt};
+use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
 use trident_api::status::HostStatus;
 
 use crate::datastore::DataStore;
@@ -13,21 +13,21 @@ use crate::datastore::DataStore;
 /// Boot efi executable
 const BOOT64_EFI: &str = "bootx64.efi";
 
-/// Calls the set_boot_next to set the boot next variable and  then updates the host status.
+/// Calls the set_boot_next to set the `BootNext` variable and then updates the host status.
 ///
-/// This function first sets the boot next variable by calling set_boot_next.
-/// Then it retrieves the output of `efibootmgr` to get information about boot manager entries.
-/// After that, it updates the host status with the retrieved boot next variable.
+/// This function first sets the `BootNext` variable by calling set_boot_next. Then, it retrieves
+/// the output of `efibootmgr` to get information about the boot manager entries. Finally, it\
+/// updates the host status with the retrieved `BootNext` variable.
 ///
 pub fn call_set_boot_next_and_update_hs(
     host_status: &mut HostStatus,
     esp_path: &Path,
 ) -> Result<(), TridentError> {
-    set_boot_next(host_status, esp_path).structured(ManagementError::SetBootNext)?;
+    set_boot_next(host_status, esp_path).structured(ServicingError::SetBootNext)?;
 
     // Get the output of efibootmgr
     let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
-        .structured(ManagementError::ListAndParseBootEntries)?;
+        .structured(ServicingError::ListAndParseBootEntries)?;
 
     // Update host status with BootNext variable
     host_status.boot_next = if !bootmgr_output.boot_next.is_empty() {
@@ -186,14 +186,14 @@ pub fn set_boot_order(datastore_path: &Path) -> Result<(), TridentError> {
     let host_status = datastore.host_status();
 
     let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
-        .structured(ManagementError::ListAndParseBootEntries)?;
+        .structured(ServicingError::ListAndParseBootEntries)?;
 
     let (new_boot_order, clear_boot_next) = update_efi_boot_order(host_status, &bootmgr_output);
 
     if let Some(new_boot_order) = new_boot_order {
         debug!("Modifying boot order to: {}", new_boot_order);
         efibootmgr::modify_boot_order(&new_boot_order)
-            .structured(ManagementError::ModifyBootOrder)?;
+            .structured(ServicingError::ModifyBootOrder)?;
     } else {
         info!("Boot order not modified");
     }

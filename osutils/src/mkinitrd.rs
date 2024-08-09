@@ -1,6 +1,6 @@
 use std::{path::Path, process::Command};
 
-use trident_api::error::{ManagementError, ReportError, TridentError};
+use trident_api::error::{ReportError, ServicingError, TridentError};
 
 use crate::exe::RunAndCheck;
 
@@ -12,14 +12,14 @@ pub fn execute() -> Result<(), TridentError> {
     if Path::new("/usr/bin/mkinitrd").exists() {
         Command::new("mkinitrd")
             .run_and_check()
-            .structured(ManagementError::RegenerateInitrd)
+            .structured(ServicingError::RegenerateInitrd)
     } else {
         Command::new("dracut")
             .arg("--force")
             .arg("--regenerate-all")
             .arg("--zstd")
             .run_and_check()
-            .structured(ManagementError::RegenerateInitrd)
+            .structured(ServicingError::RegenerateInitrd)
     }
 }
 

@@ -19,7 +19,7 @@ use trident_api::{
         HostConfigurationStaticValidationError, Partition, PartitionType,
     },
     constants::DEV_MAPPER_PATH,
-    error::{InvalidInputError, ManagementError, ReportError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::HostStatus,
     BlockDeviceId,
 };
@@ -35,32 +35,32 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 
             if !key_file.exists() {
                 return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::EncryptionKeyNotFound(
-                        key_file.to_string_lossy().to_string(),
-                    ),
+                    HostConfigurationDynamicValidationError::InvalidEncryptionKeyFilePath {
+                        path: key_file.to_string_lossy().to_string(),
+                    },
                 )));
             }
 
             let key_file_metadata =
                 std::fs::metadata(&key_file).structured(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::EncryptionKeyMetadataFailed(
-                        key_file.to_string_lossy().to_string(),
-                    ),
+                    HostConfigurationDynamicValidationError::GetEncryptionKeyMetadata {
+                        key_file: key_file.to_string_lossy().to_string(),
+                    },
                 ))?;
 
             if key_file_metadata.len() == 0 {
                 return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::EncryptionKeyEmpty(
-                        key_file.to_string_lossy().to_string(),
-                    ),
+                    HostConfigurationDynamicValidationError::EncryptionKeyEmpty {
+                        key_file: key_file.to_string_lossy().to_string(),
+                    },
                 )));
             }
 
             if !key_file_metadata.is_file() {
                 return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::EncryptionKeyNotRegularFile(
-                        key_file.to_string_lossy().to_string(),
-                    ),
+                    HostConfigurationDynamicValidationError::EncryptionKeyNotRegularFile {
+                        key_file: key_file.to_string_lossy().to_string(),
+                    },
                 )));
             }
 
@@ -107,16 +107,16 @@ pub(super) fn provision(
             // key file will be deleted once the NamedTempFile is out of
             // scope and dropped.
             key_file_tmp =
-                NamedTempFile::new().structured(ManagementError::CreateRecoveryKeyFile)?;
+                NamedTempFile::new().structured(ServicingError::CreateRecoveryKeyFile)?;
             key_file_path = key_file_tmp.path().to_owned();
             fs::set_permissions(&key_file_path, Permissions::from_mode(0o600)).structured(
-                ManagementError::SetRecoveryKeyFilePermissions {
-                    key_file: key_file_path.to_string_lossy().to_string().into(),
+                ServicingError::SetRecoveryKeyFilePermissions {
+                    key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
             generate_recovery_key_file(&key_file_path).structured(
-                ManagementError::GenerateRecoveryKeyFile {
-                    key_file: key_file_path.to_string_lossy().to_string().into(),
+                ServicingError::GenerateRecoveryKeyFile {
+                    key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
         };
@@ -129,7 +129,7 @@ pub(super) fn provision(
         // Check that the TPM 2.0 device is accessible.
         Command::new("tpm2_pcrread")
             .run_and_check()
-            .structured(ManagementError::Tpm2DeviceAccessible)?;
+            .structured(ServicingError::Tpm2DeviceAccessible)?;
 
         // Clear the TPM 2.0 device to ensure that it is in a known state.
         // By clearing the lockout value, this prevents the TPM 2.0 device
@@ -137,7 +137,7 @@ pub(super) fn provision(
         // successive provisioning attempts.
         Command::new("tpm2_clear")
             .run_and_check()
-            .structured(ManagementError::ClearTpm2Device)?;
+            .structured(ServicingError::ClearTpm2Device)?;
 
         for ev in encryption.volumes.iter() {
             // Get the block device indicated by device_id if it is a partition, or the first
@@ -145,7 +145,7 @@ pub(super) fn provision(
             // neither a partition nor a RAID array.
             let partition = get_first_backing_partition(host_status, &ev.device_id).structured(
                 InvalidInputError::from(
-                    HostConfigurationStaticValidationError::EncryptedVolumePartitionOrRaid {
+                    HostConfigurationStaticValidationError::EncryptedVolumeNotPartitionOrRaid {
                         encrypted_volume: ev.id.clone(),
                     },
                 ),
@@ -162,13 +162,13 @@ pub(super) fn provision(
                 .storage
                 .block_device_paths
                 .get_mut(&ev.device_id)
-                .structured(ManagementError::FindEncryptedVolumeBlockDevice {
+                .structured(ServicingError::FindEncryptedVolumeBlockDevice {
                     device_id: ev.device_id.clone(),
                     encrypted_volume: ev.id.clone(),
                 })?;
 
             encrypt_and_open_device(device_path, &ev.device_name, &key_file_path).structured(
-                ManagementError::EncryptBlockDevice {
+                ServicingError::EncryptBlockDevice {
                     device_path: device_path.to_string_lossy().to_string(),
                     device_id: ev.device_id.clone(),
                     encrypted_volume_device_name: ev.device_name.clone(),
@@ -327,7 +327,7 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), TridentError> {
     for ev in encryption.volumes.iter() {
         let backing_partition = get_first_backing_partition(host_status, &ev.device_id)
             .structured(InvalidInputError::from(
-                HostConfigurationStaticValidationError::EncryptedVolumePartitionOrRaid {
+                HostConfigurationStaticValidationError::EncryptedVolumeNotPartitionOrRaid {
                     encrypted_volume: ev.id.clone(),
                 },
             ))?;
@@ -335,7 +335,7 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), TridentError> {
             .storage
             .block_device_paths
             .get(&ev.device_id)
-            .structured(ManagementError::FindEncryptedVolumeBlockDevice {
+            .structured(ServicingError::FindEncryptedVolumeBlockDevice {
                 device_id: ev.device_id.clone(),
                 encrypted_volume: ev.id.clone(),
             })?;
@@ -373,14 +373,14 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), TridentError> {
     if contents.is_empty() {
         if path.exists() {
             info!("Removing crypttab because there are no encrypted volumes");
-            std::fs::remove_file(&path).structured(ManagementError::RemoveCrypttab {
+            std::fs::remove_file(&path).structured(ServicingError::RemoveCrypttab {
                 crypttab_path: path.to_string_lossy().to_string(),
             })?;
         }
     } else {
         debug!("crypttab file contents:\n{contents}");
         osutils::files::write_file(path.clone(), 0o644, contents.as_bytes()).structured(
-            ManagementError::CreateCrypttab {
+            ServicingError::CreateCrypttab {
                 crypttab_path: path.to_string_lossy().to_string(),
             },
         )?;
@@ -598,9 +598,9 @@ mod tests {
         assert_eq!(
             validate_host_config(&host_config).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
-                inner: HostConfigurationDynamicValidationError::EncryptionKeyNotFound(
-                    recovery_key_file.path().to_string_lossy().to_string()
-                )
+                inner: HostConfigurationDynamicValidationError::InvalidEncryptionKeyFilePath {
+                    path: recovery_key_file.path().to_string_lossy().to_string()
+                }
             })
         );
     }
@@ -619,9 +619,9 @@ mod tests {
         assert_eq!(
             validate_host_config(&host_config).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
-                inner: HostConfigurationDynamicValidationError::EncryptionKeyNotRegularFile(
-                    format!("{}/", recovery_key_dir.to_string_lossy())
-                )
+                inner: HostConfigurationDynamicValidationError::EncryptionKeyNotRegularFile {
+                    key_file: format!("{}/", recovery_key_dir.to_string_lossy())
+                }
             })
         );
     }
@@ -700,9 +700,9 @@ mod tests {
         assert_eq!(
             validate_host_config(&host_config).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
-                inner: HostConfigurationDynamicValidationError::EncryptionKeyEmpty(
-                    recovery_key_file.path().to_string_lossy().to_string()
-                )
+                inner: HostConfigurationDynamicValidationError::EncryptionKeyEmpty {
+                    key_file: recovery_key_file.path().to_string_lossy().to_string()
+                }
             })
         );
     }

@@ -8,7 +8,7 @@ use trident_api::{
         TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_RELATIVE_PATH,
         TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
-    error::{ManagementError, ReportError, TridentError},
+    error::{ReportError, ServicingError, TridentError},
 };
 
 /// Sets up the overlay for the /etc directory, using
@@ -25,14 +25,14 @@ pub(super) fn create(
     let overlay_upper_path = mount_path
         .join(TRIDENT_OVERLAY_RELATIVE_PATH)
         .join(TRIDENT_OVERLAY_UPPER_RELATIVE_PATH);
-    files::create_dirs(&overlay_upper_path).structured(ManagementError::CreateDirectory {
-        dir: overlay_upper_path.clone(),
+    files::create_dirs(&overlay_upper_path).structured(ServicingError::CreateDirectory {
+        dir: overlay_upper_path.to_string_lossy().into(),
     })?;
     let overlay_work_path = mount_path
         .join(TRIDENT_OVERLAY_RELATIVE_PATH)
         .join(TRIDENT_OVERLAY_WORK_RELATIVE_PATH);
-    files::create_dirs(&overlay_work_path).structured(ManagementError::CreateDirectory {
-        dir: overlay_work_path.clone(),
+    files::create_dirs(&overlay_work_path).structured(ServicingError::CreateDirectory {
+        dir: overlay_work_path.to_string_lossy().into(),
     })?;
     let target_path = mount_path.join(TRIDENT_OVERLAY_LOWER_RELATIVE_PATH);
     let etc_overlay_mount = Mount::builder()
@@ -47,25 +47,25 @@ pub(super) fn create(
                 "lowerdir={},upperdir={},workdir={}",
                 &target_path
                     .to_str()
-                    .structured(ManagementError::PathIsNotUnicode {
-                        path: target_path.clone()
+                    .structured(ServicingError::PathIsNotUnicode {
+                        path: target_path.to_string_lossy().into(),
                     })?,
                 &overlay_upper_path
                     .to_str()
-                    .structured(ManagementError::PathIsNotUnicode {
-                        path: overlay_upper_path.clone()
+                    .structured(ServicingError::PathIsNotUnicode {
+                        path: overlay_upper_path.to_string_lossy().into(),
                     })?,
                 &overlay_work_path
                     .to_str()
-                    .structured(ManagementError::PathIsNotUnicode {
-                        path: overlay_work_path.clone()
+                    .structured(ServicingError::PathIsNotUnicode {
+                        path: overlay_work_path.to_string_lossy().into(),
                     })?,
             )
             .as_str(),
         )
         .mount_autodrop("overlay", &target_path, UnmountFlags::empty())
-        .structured(ManagementError::MountOverlay {
-            target: target_path,
+        .structured(ServicingError::MountOverlay {
+            target: target_path.to_string_lossy().into(),
         })?;
     Ok(etc_overlay_mount)
 }

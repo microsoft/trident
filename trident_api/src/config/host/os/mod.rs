@@ -106,9 +106,9 @@ impl Os {
         let mut usernames = HashSet::new();
         for user in &self.users {
             if !usernames.insert(&user.name) {
-                return Err(HostConfigurationStaticValidationError::DuplicateUsernames(
-                    user.name.clone(),
-                ));
+                return Err(HostConfigurationStaticValidationError::DuplicateUsernames {
+                    username: user.name.clone(),
+                });
             }
         }
 
@@ -169,9 +169,9 @@ mod tests {
 
         assert_eq!(
             config.validate(),
-            Err(HostConfigurationStaticValidationError::DuplicateUsernames(
-                "test".to_string()
-            ))
+            Err(HostConfigurationStaticValidationError::DuplicateUsernames {
+                username: "test".to_string()
+            })
         );
     }
 }

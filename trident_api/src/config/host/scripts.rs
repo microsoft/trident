@@ -149,12 +149,14 @@ impl Script {
     pub(crate) fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         match (&self.content, &self.path) {
             (Some(_), Some(_)) => Err(
-                HostConfigurationStaticValidationError::ScriptHasBothContentAndPath(
-                    self.name.clone(),
-                ),
+                HostConfigurationStaticValidationError::ScriptBothContentAndPath {
+                    script_name: self.name.clone(),
+                },
             ),
             (None, None) => Err(
-                HostConfigurationStaticValidationError::ScriptHasNoContentOrPath(self.name.clone()),
+                HostConfigurationStaticValidationError::ScriptNoContentOrPath {
+                    script_name: self.name.clone(),
+                },
             ),
             (None, Some(path)) => {
                 if !path.is_absolute() {
@@ -229,7 +231,9 @@ mod tests {
         };
         assert_eq!(
             script.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::ScriptHasNoContentOrPath(script.name)
+            HostConfigurationStaticValidationError::ScriptNoContentOrPath {
+                script_name: script.name
+            }
         );
     }
 
@@ -246,7 +250,9 @@ mod tests {
         };
         assert_eq!(
             script.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::ScriptHasBothContentAndPath(script.name)
+            HostConfigurationStaticValidationError::ScriptBothContentAndPath {
+                script_name: script.name
+            }
         );
     }
 

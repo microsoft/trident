@@ -2,110 +2,124 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Identifies errors detected during static validation of the host configuration, i.e. errors that
+/// can be detected without applying the configuration to the host.
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum HostConfigurationStaticValidationError {
-    #[error("Failed to parse host configuration")]
-    FailedToParse,
+    #[error("Additional file '{additional_file}' has both content and path, but only one must be specified")]
+    AdditionalFileBothContentAndPath { additional_file: String },
 
-    #[error("Duplicate user name: {0}")]
-    DuplicateUsernames(String),
+    #[error("Additional file '{additional_file}' has invalid permissions '{permissions}'")]
+    AdditionalFileInvalidPermissions {
+        additional_file: String,
+        permissions: String,
+    },
 
-    #[error("Script '{0}' has no content or path")]
-    ScriptHasNoContentOrPath(String),
+    #[error(
+        "Additional file '{additional_file}' has no content or path, but one must be specified"
+    )]
+    AdditionalFileNoContentOrPath { additional_file: String },
 
-    #[error("Script '{0}' has both content and path")]
-    ScriptHasBothContentAndPath(String),
+    #[error("Datastore path '{datastore_path}' cannot be in A/B update volume '{volume_id}'")]
+    DatastorePathInABUpdateVolume {
+        datastore_path: String,
+        volume_id: String,
+    },
 
-    #[error("Added file '{0}' has no content or path")]
-    AdditionalFileHasNoContentOrPath(String),
+    #[error("Datastore file has extension '{received}', but must have '{expected}'")]
+    DatastorePathInvalidExtension { received: String, expected: String },
 
-    #[error("Added file '{0}' has both content and path")]
-    AdditionalFileHasBothContentAndPath(String),
+    #[error("Datastore path '{datastore_path}' must be in a known volume")]
+    DatastorePathNotInKnownVolume { datastore_path: String },
 
-    #[error("Could not parse permissions '{0}' for added file '{1}'")]
-    AdditionalFileInvalidPermissions(String, String),
-
-    #[error("Encryption recovery key URL '{url}' has an invalid scheme '{scheme}'")]
-    InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },
+    #[error("Host configuration contains duplicate usernames '{username}', but usernames must be unique")]
+    DuplicateUsernames { username: String },
 
     #[error("Underlying device of encrypted volume '{encrypted_volume}' must be a partition or a software RAID array")]
-    EncryptedVolumePartitionOrRaid { encrypted_volume: String },
+    EncryptedVolumeNotPartitionOrRaid { encrypted_volume: String },
+
+    #[error("Failed to find expected mount point '{mount_point_path}'")]
+    ExpectedMountPointNotFound { mount_point_path: String },
 
     #[error(transparent)]
     InvalidBlockDeviceGraph(
         #[from] super::storage::blkdev_graph::error::BlockDeviceGraphBuildError,
     ),
 
-    #[error("Expected mount point '{mount_point_path}' not found")]
-    ExpectedMountPointNotFound { mount_point_path: String },
+    #[error("Encryption recovery key URL '{url}' has invalid scheme '{scheme}'")]
+    InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },
 
-    #[error("Mount point '{mount_point_path}' not backed by an image")]
-    MountPointNotBackedByImage { mount_point_path: String },
+    #[error("Interface name '{name}' is invalid")]
+    InvalidInterfaceName { name: String },
 
-    #[error("The interface name '{0}' is invalid")]
-    InvalidInterfaceName(String),
+    #[error("Netplan version '{version}' is invalid, must always be '2'")]
+    InvalidNetplanVersion { version: u8 },
 
-    #[error("Invalid Netplan version. It should always be '2', but got '{0}'")]
-    InvalidNetplanVersion(u8),
-
-    #[error("Unsupported Netplan renderer: '{0}'")]
-    UnsupportedNetplanRenderer(String),
-
-    #[error("Only root verity device is supported, but additional verity devices were requested")]
-    UnsupportedVerityDevices,
-
-    #[error("Mount point '{mount_point_path}' not backed by A/B update volume pair")]
+    #[error("Mount point '{mount_point_path}' must be backed by A/B update volume pair")]
     MountPointNotBackedByAbUpdateVolumePair { mount_point_path: String },
 
-    #[error("Root verity device name is invalid: '{device_name}', expected 'root'")]
-    RootVerityDeviceNameInvalid { device_name: String },
+    #[error("Mount point '{mount_point_path}' must be backed by a block device")]
+    MountPointNotBackedByBlockDevice { mount_point_path: String },
 
-    #[error("Overlay '{overlay_path}' is on a read-only volume '{mount_point_path}'")]
+    #[error("Mount point '{mount_point_path}' must be backed by an image")]
+    MountPointNotBackedByImage { mount_point_path: String },
+
+    #[error(
+        "Overlay '{overlay_path}' cannot be on volume '{mount_point_path}' as it is read-only"
+    )]
     OverlayOnReadOnlyVolume {
-        mount_point_path: String,
         overlay_path: String,
+        mount_point_path: String,
     },
 
-    #[error("Verity device '{device_name}' not mounted read-only at '{mount_point_path}'")]
-    VerityDeviceReadWrite {
+    #[error("Overlay '{overlay_path}' cannot be on volume '{mount_point_path}' as it is verity-protected")]
+    OverlayOnVerityProtectedVolume {
+        overlay_path: String,
+        mount_point_path: String,
+    },
+
+    #[error("Path '{path}' must be absolute")]
+    PathNotAbsolute { path: String },
+
+    #[error("Root verity device name '{device_name}' is invalid, must be 'root'")]
+    RootVerityDeviceNameInvalid { device_name: String },
+
+    #[error("Script '{script_name}' has both content and path, but only one must be specified")]
+    ScriptBothContentAndPath { script_name: String },
+
+    #[error("Script '{script_name}' has no content or path, but one must be specified")]
+    ScriptNoContentOrPath { script_name: String },
+
+    #[error("Cannot request self-upgrade of Trident when a read-only verity filesystem is mounted at '/'")]
+    SelfUpgradeOnReadOnlyRootVerityFs,
+
+    #[error("Netplan renderer '{renderer}' is not supported")]
+    UnsupportedNetplanRenderer { renderer: String },
+
+    #[error("Only root verity device is supported, but other verity devices were requested")]
+    UnsupportedVerityDevices,
+
+    #[error("Verity device '{device_name}' is mounted read-write at '{mount_point_path}', but must be mounted read-only")]
+    VerityDeviceMountedReadWrite {
         device_name: String,
         mount_point_path: String,
     },
-
-    #[error("Mount point '{mount_point_path}' is not backed by a block device")]
-    MountPointNotBackedByBlockDevice { mount_point_path: String },
-
-    #[error("Cannot self-upgrade Trident when a read-only verity filesystem is mounted at '/'")]
-    SelfUpgradeOnReadOnlyRootVerityFsError,
-
-    #[error("Datastore file extension should be '{expected}', but got '{got}'")]
-    DatastorePathInvalidExtension { expected: String, got: String },
-
-    #[error("Datastore path '{datastore_path}' is not in any known volume")]
-    DatastorePathNotInAnyKnownVolume { datastore_path: String },
-
-    #[error("Datastore path '{datastore_path}' is in an A/B update volume: '{volume_id}'")]
-    DatastorePathInABVolume {
-        datastore_path: String,
-        volume_id: String,
-    },
-
-    #[error("Path '{path}' is not absolute path")]
-    PathNotAbsolute { path: String },
 }
 
+/// Identifies errors detected during dynamic validation of the host configuration, i.e. errors
+/// that can only be detected by applying the configuration to the host.
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum HostConfigurationDynamicValidationError {
-    #[error("Datastore path cannot be changed. Current: '{current}'. New: '{new}'")]
-    ChangedDatastorePath { current: String, new: String },
+    #[error("Cannot adopt partitions on disk '{disk_id}', as it does not use GPT partitioning")]
+    AdoptPartitionsOnNonGptPartitionedDisk { disk_id: String },
 
-    #[error("The disk '{name}' refers to device '{device}' which is not under '/dev'")]
-    BadBlockDevicePath { name: String, device: String },
+    #[error("Datastore path was changed from '{current}' to '{new}', but can only be changed during clean install")]
+    DatastorePathChanged { current: String, new: String },
 
     #[error(
-        "Multiple disk definitions refer to the same device '{device}': '{disk1}' and '{disk2}'"
+        "Disk definitions '{disk1}' and '{disk2}' refer to the same device '{device}', but must be unique"
     )]
     DiskDefinitionsReferToSameDevice {
         disk1: String,
@@ -113,47 +127,42 @@ pub enum HostConfigurationDynamicValidationError {
         device: String,
     },
 
-    #[error(
-        "Image update must not be requested for standalone block device with id '{0}' during A/B update"
-    )]
-    AbUpdateNotAllowedForStandaloneBlockDevice(String),
+    #[error("Images and host configuration have incompatible dm-verity configuration")]
+    DmVerityMisconfiguration,
 
-    #[error("Path '{disk_path}' of disk with id '{disk_id}' cannot be found in the system")]
-    InvalidDiskPath { disk_path: String, disk_id: String },
-
-    #[error("Failed to get block device information for disk with id '{0}' that requires partition adoption")]
-    DiskForPartitionAdoptionInfoFailed(String),
-
-    #[error("File for script '{name}' not found on host at '{path}'")]
-    ScriptNotFound { name: String, path: String },
-
-    #[error("Failed to load script '{name}' at '{path}'")]
-    ScriptLoadFailed { name: String, path: String },
-
-    #[error("Failed to load additional file '{name}' to be placed at '{path}'")]
-    AdditionalFileLoadFailed { name: String, path: String },
-
-    #[error("Encryption recovery key file '{0}' not found")]
-    EncryptionKeyNotFound(String),
-
-    #[error("Failed to get metadata for encryption recovery key file '{0}'")]
-    EncryptionKeyMetadataFailed(String),
-
-    #[error("Encryption recovery key file '{0}' must not be empty")]
-    EncryptionKeyEmpty(String),
-
-    #[error("Encryption recovery key file '{0}' must be a regular file")]
-    EncryptionKeyNotRegularFile(String),
+    #[error("Encryption recovery key file '{key_file}' must not be empty")]
+    EncryptionKeyEmpty { key_file: String },
 
     #[error("Recovery key file '{key_file}' must not be readable or writable by group or others but has permissions 0o{permissions:03o}")]
     EncryptionKeyInvalidPermissions { key_file: String, permissions: u32 },
 
-    #[error("Images and host configuration have incompatible dm-verity configuration")]
-    DmVerityMisconfiguration,
+    #[error("Encryption recovery key file '{key_file}' must be a regular file")]
+    EncryptionKeyNotRegularFile { key_file: String },
 
-    #[error("Partitions are being adopted on disk '{0}', but it is not using GPT partitioning")]
-    AdoptionOnNonGptPartitionedDisk(String),
+    #[error("Failed to get block device information for disk '{disk_id}' that requires partition adoption")]
+    GetBlockDeviceInfoForDisk { disk_id: String },
 
-    #[error("Uncategorized error: {0}")]
-    Other(String),
+    #[error("Failed to get metadata for encryption recovery key file '{key_file}'")]
+    GetEncryptionKeyMetadata { key_file: String },
+
+    #[error("Cannot update image on standalone block device '{device_id}' during A/B update")]
+    ImageUpdateOnStandaloneBlockDevice { device_id: String },
+
+    #[error("Encryption recovery key file has invalid path '{path}'")]
+    InvalidEncryptionKeyFilePath { path: String },
+
+    #[error("Disk '{name}' refers to device '{device}', but its device must be under '/dev'")]
+    InvalidDiskBlockDevicePath { name: String, device: String },
+
+    #[error("Disk '{disk_id}' has invalid path '{disk_path}'")]
+    InvalidDiskPath { disk_id: String, disk_path: String },
+
+    #[error("Script '{name}' has invalid path '{path}'")]
+    InvalidScriptPath { name: String, path: String },
+
+    #[error("Failed to load additional file '{name}' to be placed at '{path}'")]
+    LoadAdditionalFile { name: String, path: String },
+
+    #[error("Failed to load script '{name}' at '{path}'")]
+    LoadScript { name: String, path: String },
 }

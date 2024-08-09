@@ -27,7 +27,7 @@ pub fn is_running_in_container() -> Result<bool, TridentError> {
         return Err(anyhow!(
             "Running from docker container, but {DOCKER_ENVIRONMENT} environment variable is not set"
         ))
-        .structured(InitializationError::ContainerMisconfigured);
+        .structured(InitializationError::ContainerConfigurationCheck);
     }
 
     Ok(false)
@@ -39,9 +39,7 @@ pub fn is_running_in_container() -> Result<bool, TridentError> {
 /// is returned.
 fn get_host_root_path_impl(host_root_path: &Path) -> Result<PathBuf, TridentError> {
     if !is_running_in_container()? {
-        return Err(TridentError::new(InternalError::Internal(
-            "Not running in a container",
-        )));
+        return Err(TridentError::new(InternalError::RunInContainer));
     }
 
     // We expect the host filesystem to be available under host_root_path
@@ -50,7 +48,7 @@ fn get_host_root_path_impl(host_root_path: &Path) -> Result<PathBuf, TridentErro
             "Running from docker container, but {} is not mounted",
             host_root_path.display()
         ))
-        .structured(InitializationError::ContainerMisconfigured);
+        .structured(InitializationError::ContainerConfigurationCheck);
     }
     Ok(PathBuf::from(host_root_path))
 }

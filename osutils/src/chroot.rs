@@ -9,7 +9,7 @@ use std::{
 
 use log::info;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
-use trident_api::error::{ManagementError, ReportError, TridentError, TridentResultExt};
+use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
 
 // TODO: Implement drop for Chroot that panics if the chroot has not been
 // exited. Tracked by: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6265
@@ -33,17 +33,23 @@ impl Chroot {
                     .fstype("devtmpfs")
                     .flags(MountFlags::empty())
                     .mount("devtmpfs", path.join("dev"))
-                    .structured(ManagementError::ChrootMountSpecial { dir: "/dev" })?,
+                    .structured(ServicingError::ChrootMountSpecialDir {
+                        dir: "/dev".to_string(),
+                    })?,
                 Mount::builder()
                     .fstype("proc")
                     .flags(MountFlags::empty())
                     .mount("proc", path.join("proc"))
-                    .structured(ManagementError::ChrootMountSpecial { dir: "/proc" })?,
+                    .structured(ServicingError::ChrootMountSpecialDir {
+                        dir: "/proc".to_string(),
+                    })?,
                 Mount::builder()
                     .fstype("sysfs")
                     .flags(MountFlags::empty())
                     .mount("sysfs", path.join("sys"))
-                    .structured(ManagementError::ChrootMountSpecial { dir: "/sys" })?,
+                    .structured(ServicingError::ChrootMountSpecialDir {
+                        dir: "/sys".to_string(),
+                    })?,
             ]
         } else {
             Vec::new()
@@ -52,10 +58,10 @@ impl Chroot {
         // Enter the chroot.
         info!("Entering chroot");
         let rootfd = fs::File::open("/")
-            .structured(ManagementError::ChrootEnter)?
+            .structured(ServicingError::EnterChroot)?
             .into_raw_fd();
-        unix::fs::chroot(path).structured(ManagementError::ChrootEnter)?;
-        std::env::set_current_dir("/").structured(ManagementError::ChrootEnter)?;
+        unix::fs::chroot(path).structured(ServicingError::EnterChroot)?;
+        std::env::set_current_dir("/").structured(ServicingError::EnterChroot)?;
 
         Ok(Self { rootfd, mounts })
     }
@@ -81,15 +87,15 @@ impl Chroot {
     /// Exit the chroot environment and unmount special directories.
     fn exit(self) -> Result<(), TridentError> {
         // Exit the chroot.
-        nix::unistd::fchdir(self.rootfd).structured(ManagementError::ChrootExit)?;
-        unix::fs::chroot(".").structured(ManagementError::ChrootExit)?;
+        nix::unistd::fchdir(self.rootfd).structured(ServicingError::ExitChroot)?;
+        unix::fs::chroot(".").structured(ServicingError::ExitChroot)?;
         info!("Exited chroot");
 
         info!("Unmounting special directories");
         for mount in self.mounts {
             mount
                 .unmount(UnmountFlags::empty())
-                .structured(ManagementError::ChrootUnmountSpecial)?;
+                .structured(ServicingError::ChrootUnmountSpecialDir)?;
         }
         Ok(())
     }
@@ -240,7 +246,9 @@ mod functional_test {
         let result_dev = Chroot::enter(&chroot_path, true);
         assert_eq!(
             result_dev.unwrap_err().kind(),
-            &ErrorKind::Management(ManagementError::ChrootMountSpecial { dir: "/dev" })
+            &ErrorKind::Servicing(ServicingError::ChrootMountSpecialDir {
+                dir: "/dev".to_string()
+            })
         );
 
         // Un-mount /dev
@@ -257,7 +265,9 @@ mod functional_test {
         let result_sys = Chroot::enter(&chroot_path, true);
         assert_eq!(
             result_sys.unwrap_err().kind(),
-            &ErrorKind::Management(ManagementError::ChrootMountSpecial { dir: "/sys" })
+            &ErrorKind::Servicing(ServicingError::ChrootMountSpecialDir {
+                dir: "/sys".to_string()
+            })
         );
 
         // Un-mount /sys
@@ -272,7 +282,7 @@ mod functional_test {
         let result = Chroot::enter(Path::new("/nonexistent-dir"), false);
         assert_eq!(
             result.unwrap_err().kind(),
-            &ErrorKind::Management(ManagementError::ChrootEnter)
+            &ErrorKind::Servicing(ServicingError::EnterChroot)
         );
     }
 }

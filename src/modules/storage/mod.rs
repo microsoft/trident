@@ -10,7 +10,7 @@ use osutils::lsblk;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{InvalidInputError, ManagementError, ReportError, TridentError, TridentResultExt},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{HostStatus, ServicingType},
     BlockDeviceId,
 };
@@ -86,14 +86,14 @@ impl Module for StorageModule {
                 .canonicalize()
                 .structured(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::InvalidDiskPath {
-                        disk_path: format!("{:?}", disk.device),
                         disk_id: disk.id.clone(),
+                        disk_path: disk.device.to_string_lossy().to_string(),
                     },
                 ))?;
 
             if !device_path.starts_with("/dev") {
                 return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::BadBlockDevicePath {
+                    HostConfigurationDynamicValidationError::InvalidDiskBlockDevicePath {
                         name: disk.id.clone(),
                         device: device_path.display().to_string(),
                     },
@@ -116,17 +116,17 @@ impl Module for StorageModule {
             if !disk.adopted_partitions.is_empty() {
                 let disk_data =
                     lsblk::run(device_path.as_path()).structured(InvalidInputError::from(
-                        HostConfigurationDynamicValidationError::DiskForPartitionAdoptionInfoFailed(
-                            disk.id.clone(),
-                        ),
+                        HostConfigurationDynamicValidationError::GetBlockDeviceInfoForDisk {
+                            disk_id: disk.id.clone(),
+                        },
                     ))?;
 
                 match disk_data.partition_table_type {
                     Some(lsblk::PartitionTableType::Gpt) => {}
                     _ => return Err(TridentError::new(InvalidInputError::from(
-                        HostConfigurationDynamicValidationError::AdoptionOnNonGptPartitionedDisk(
-                            disk.id.clone(),
-                        ),
+                        HostConfigurationDynamicValidationError::AdoptPartitionsOnNonGptPartitionedDisk {
+                            disk_id: disk.id.clone(),
+                        },
                     ))),
                 }
             }
@@ -169,7 +169,7 @@ impl Module for StorageModule {
             ),
         )? {
             debug!("Verity devices are compatible with the current system");
-            verity::create_machine_id(mount_point).structured(ManagementError::CreateMachineId)?;
+            verity::create_machine_id(mount_point).structured(ServicingError::CreateMachineId)?;
         }
 
         Ok(())
@@ -181,10 +181,10 @@ impl Module for StorageModule {
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
         verity::configure_device_names(host_status)
-            .structured(ManagementError::ConfigureVerityDeviceNames)?;
+            .structured(ServicingError::ConfigureVerityDeviceNames)?;
 
         generate_fstab(host_status, Path::new(tabfile::DEFAULT_FSTAB_PATH)).structured(
-            ManagementError::GenerateFstab {
+            ServicingError::GenerateFstab {
                 fstab_path: tabfile::DEFAULT_FSTAB_PATH.to_string(),
             },
         )?;
@@ -197,11 +197,11 @@ impl Module for StorageModule {
         ))?;
 
         // Persist on reboots
-        raid::create_raid_config(host_status).structured(ManagementError::CreateMdadmConf)?;
+        raid::create_raid_config(host_status).structured(ServicingError::CreateMdadmConf)?;
 
         // Update paths for root verity devices in GRUB configs
         verity::update_root_verity_in_grub_config(host_status, Path::new(ROOT_MOUNT_POINT_PATH))
-            .structured(ManagementError::UpdateGrubConfigsAfterVerityCreation)?;
+            .structured(ServicingError::UpdateGrubConfigsAfterVerityCreation)?;
 
         Ok(())
     }
@@ -239,12 +239,11 @@ pub(super) fn initialize_block_devices(
         debug!("Initializing block devices");
         // Stop verity before RAID, as verity can sit on top of RAID
         verity::stop_pre_existing_verity_devices(host_config)
-            .structured(ManagementError::CleanupVerity)?;
-        raid::stop_pre_existing_raid_arrays(host_config)
-            .structured(ManagementError::CleanupRaid)?;
+            .structured(ServicingError::CleanupVerity)?;
+        raid::stop_pre_existing_raid_arrays(host_config).structured(ServicingError::CleanupRaid)?;
         partitioning::create_partitions(host_status, host_config)
-            .structured(ManagementError::CreatePartitions)?;
-        raid::create_sw_raid(host_status, host_config).structured(ManagementError::CreateRaid)?;
+            .structured(ServicingError::CreatePartitions)?;
+        raid::create_sw_raid(host_status, host_config).structured(ServicingError::CreateRaid)?;
         encryption::provision(host_status, host_config).message(format!(
             "Step 'Provision' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
         ))?;
@@ -253,11 +252,11 @@ pub(super) fn initialize_block_devices(
     image::provision(host_status, host_config).message(format!(
         "Step 'Provision' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"
     ))?;
-    filesystem::create_filesystems(host_status).structured(ManagementError::CreateFilesystems)?;
+    filesystem::create_filesystems(host_status).structured(ServicingError::CreateFilesystems)?;
 
     // Assumes that images are already in place (data and hash), so that it can
     // assemble the verity devices.
-    verity::setup_verity_devices(host_status).structured(ManagementError::CreateVerity)?;
+    verity::setup_verity_devices(host_status).structured(ServicingError::CreateVerity)?;
 
     Ok(())
 }
@@ -425,7 +424,7 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
-                inner: HostConfigurationDynamicValidationError::BadBlockDevicePath {
+                inner: HostConfigurationDynamicValidationError::InvalidDiskBlockDevicePath {
                     name: "disk1".into(),
                     device: "/tmp".into(),
                 }
@@ -473,9 +472,9 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
-                inner: HostConfigurationDynamicValidationError::EncryptionKeyNotFound(
-                    recovery_key_file.path().display().to_string()
-                )
+                inner: HostConfigurationDynamicValidationError::InvalidEncryptionKeyFilePath {
+                    path: recovery_key_file.path().to_string_lossy().to_string(),
+                }
             })
         );
     }

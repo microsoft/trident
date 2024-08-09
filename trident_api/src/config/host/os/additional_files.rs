@@ -40,20 +40,20 @@ impl AdditionalFile {
             // was an octal value would fail.
             if !permissions.starts_with('0') {
                 return Err(
-                    HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
-                        permissions.to_string(),
-                        self.destination.display().to_string(),
-                    ),
+                    HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions {
+                        additional_file: self.destination.display().to_string(),
+                        permissions: permissions.to_string(),
+                    },
                 );
             }
             match u32::from_str_radix(permissions, 8) {
                 Ok(v) if v <= 0o777 => (),
                 _ => {
                     return Err(
-                        HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
-                            permissions.to_string(),
-                            self.destination.display().to_string(),
-                        ),
+                        HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions {
+                            additional_file: self.destination.display().to_string(),
+                            permissions: permissions.to_string(),
+                        },
                     )
                 }
             }
@@ -61,14 +61,14 @@ impl AdditionalFile {
 
         match (&self.content, &self.path) {
             (Some(_), Some(_)) => Err(
-                HostConfigurationStaticValidationError::AdditionalFileHasBothContentAndPath(
-                    self.destination.display().to_string(),
-                ),
+                HostConfigurationStaticValidationError::AdditionalFileBothContentAndPath {
+                    additional_file: self.destination.display().to_string(),
+                },
             ),
             (None, None) => Err(
-                HostConfigurationStaticValidationError::AdditionalFileHasNoContentOrPath(
-                    self.destination.display().to_string(),
-                ),
+                HostConfigurationStaticValidationError::AdditionalFileNoContentOrPath {
+                    additional_file: self.destination.display().to_string(),
+                },
             ),
             _ => Ok(()),
         }
@@ -112,28 +112,28 @@ mod tests {
         };
         assert_eq!(
             file.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
-                "invalid".to_string(),
-                "/test".to_string()
-            )
+            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions {
+                additional_file: "/test".to_string(),
+                permissions: "invalid".to_string(),
+            }
         );
 
         file.permissions = Some("0999".to_string());
         assert_eq!(
             file.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
-                "0999".to_string(),
-                "/test".to_string()
-            )
+            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions {
+                additional_file: "/test".to_string(),
+                permissions: "0999".to_string(),
+            }
         );
 
         file.permissions = Some("1555".to_string());
         assert_eq!(
             file.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions(
-                "1555".to_string(),
-                "/test".to_string()
-            )
+            HostConfigurationStaticValidationError::AdditionalFileInvalidPermissions {
+                additional_file: "/test".to_string(),
+                permissions: "1555".to_string(),
+            }
         );
     }
 
@@ -147,9 +147,9 @@ mod tests {
         };
         assert_eq!(
             file.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::AdditionalFileHasBothContentAndPath(
-                "/test".to_string()
-            )
+            HostConfigurationStaticValidationError::AdditionalFileBothContentAndPath {
+                additional_file: "/test".to_string()
+            }
         );
     }
 
@@ -163,9 +163,9 @@ mod tests {
         };
         assert_eq!(
             file.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::AdditionalFileHasNoContentOrPath(
-                "/test".to_string()
-            )
+            HostConfigurationStaticValidationError::AdditionalFileNoContentOrPath {
+                additional_file: "/test".to_string()
+            }
         );
     }
 }
