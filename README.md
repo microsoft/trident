@@ -548,7 +548,7 @@ evans --host <target-ip-adddress> --proto path/to/trident/proto/trident.proto cl
 
 ## Development
 
-- [Prerequisites](dev-docs/prerequisites.md)
+- [Quickstart Guide](dev-docs/quickstart.md)
 - [Building and Validating](dev-docs/building-validating.md)
 - [Code Coverage](dev-docs/code-coverage.md)
 - [Updating Docs](dev-docs/updating-docs.md)
