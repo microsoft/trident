@@ -86,6 +86,7 @@ mod functional_test {
     use std::fs::File;
 
     use pytest_gen::functional_test;
+    use trident_api::error::ErrorKind;
 
     use super::*;
 
@@ -124,12 +125,8 @@ mod functional_test {
     fn test_get_host_root_path_fails_outside_container() {
         env::remove_var(DOCKER_ENVIRONMENT);
         assert_eq!(
-            get_host_root_path()
-                .unwrap_err()
-                .unstructured("")
-                .root_cause()
-                .to_string(),
-            "Internal error: Not running in a container"
+            get_host_root_path().unwrap_err().kind(),
+            &ErrorKind::Internal(InternalError::RunInContainer)
         );
     }
 

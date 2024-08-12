@@ -26,10 +26,7 @@ def test_trident_run(vm):
     result = trident.run(False)
     assert_that(result.exit_code).is_equal_to(2)
     assert_that(
-        result.stderr.index(
-            "Selected operation cannot be performed due to missing permissions, root privileges required"
-        )
-        != -1
+        result.stderr.index("Failed to run due to missing root privileges") != -1
     )
 
     pass
