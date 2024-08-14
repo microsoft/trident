@@ -1,0 +1,100 @@
+[[_TOC_]]
+
+# A/B Update
+
+A [servicing type](#servicing-type) where two copies of the OS are kept on the
+device in [A/B Volume Pairs](#ab-volume-pair), and only one is active at a
+time. When an update is performed, the inactive copy is updated, and then the
+device is rebooted into the updated copy.
+
+# A/B Volume Pair
+
+A pair of [block devices](#block-device) that are used for an [A/B
+update](#ab-update). One volume is the 'A' volume, and the other is the 'B'
+volume. At any point in time, only one volume is active, and the other is
+inactive.
+
+An [A/B Update](#ab-update) is performed by updating the inactive volume, and
+then rebooting the device into the updated volume. When this happens, the active
+volume swaps from 'A' to 'B', or from 'B' to 'A'.
+
+A system can have multiple A/B volume pairs, each pair representing a different
+mount point on the device. All pairs in an [install](#install) are updated in
+lockstep, meaning all pairs will have their A volume be the active one, or all
+pairs will have their B volume be the active one.
+
+# Block Device
+
+Kernel abstraction generally used for non-volatile storage devices, such as hard
+drives, SSDs, and USB drives.
+
+> A file that refers to a device. A block special file is normally distinguished
+> from a character special file by providing access to the device in a manner such
+> that the hardware characteristics of the device are not visible.
+>
+> ([Block Special
+> File](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_79))
+
+# Clean Install
+
+A [servicing type](#servicing-type) where a new [install](#install) is
+performed.
+
+A clean install does not update or modify an existing OS. It creates an entirely
+new install on the device.
+
+A clean install is what you do when you install an OS for the first time, or
+when you are replacing an existing OS with a new one.
+
+# Dualboot
+
+See [Multiboot](#multiboot).
+
+# Execroot
+
+Execution root. The root file system of the environment where Trident was run.
+Generally the Management OS, the OS that is being updated, or a container
+running on top of one of the former environments.
+
+The term is also used inside the context of [newroot](#newroot), where it
+represents a bind mount point to the execroot inside of newroot.
+
+Newroot is used for a chroot, however, access to the current OS is sometimes
+still desired for accessing data, copying files, or other tasks. To achieve
+this, Trident will bind mount the current OS's file systems inside of newroot to
+provide a mechanism to escape the chroot jail for reading files in the execution
+root.
+
+# Install
+
+A full deployment of an Azure Linux made with Trident.
+
+The install encompasses the entire OS, including the bootloader, the kernel, the
+initramfs, the root filesystem, all [A/B Volume Pairs](#ab-volume-pair),
+associated partitions, and any other partitions that are part of the install.
+
+_Note: This definition does not consider other OSes or distros._
+
+# Multiboot
+
+The capability of having multiple [installs](#install) on the same device, even
+on the same disk.
+
+# Newroot
+
+Root file system of the OS that is being deployed.
+
+When Trident is deploying a new OS, it will mount the new OS's file systems and
+prepare them for a chroot. This mount of the new OS is called `newroot`.
+
+# Servicing
+
+The general process of performing an action on an [install](#install).
+There are several [types of servicing](#servicing-type).
+
+# Servicing Type
+
+The specific kind of [Servicing](#servicing) that is being performed on an
+install, such as [clean install](#clean-install), or an [A/B
+update](#ab-update).
+
