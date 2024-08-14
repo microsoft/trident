@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error, info, warn};
+use modules::storage::rebuild;
 use nix::unistd::Uid;
 use tokio::sync::mpsc::{self};
 
@@ -299,6 +300,40 @@ impl Trident {
                     .unwrap_or("Failed to serialize host status".into()),
             ))
         }
+        Ok(())
+    }
+
+    /// Rebuilds RAID devices on replaced disks on the host
+    pub fn rebuild_raid(&mut self) -> Result<(), TridentError> {
+        info!("Rebuilding RAID devices");
+        if !Uid::effective().is_root() {
+            return Err(TridentError::new(
+                ExecutionEnvironmentMisconfigurationError::CheckRootPrivileges,
+            ));
+        }
+        // If we have a host config source load it or else fail
+        let binding = Self::get_host_configuration(&self.config)?;
+        // Unbox host configuration
+        let host_config = binding
+            .as_deref()
+            .structured(InitializationError::LoadLocalConfig)?;
+
+        let mut datastore = match self.config.datastore {
+            Some(ref datastore_path) => DataStore::open(datastore_path)?,
+            None => {
+                return Err(TridentError::new(
+                    InternalError::GetDatastorePathFromLocalTridentConfig,
+                ))
+            }
+        };
+
+        datastore
+            .with_host_status(|host_status| {
+                // Validate the loaded host config and rebuild RAID devices
+                rebuild::validate_and_rebuild_raid(host_config, host_status)
+            })?
+            .structured(ServicingError::ValidateAndRebuildRaid)?;
+
         Ok(())
     }
 

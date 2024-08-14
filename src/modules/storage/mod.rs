@@ -24,6 +24,7 @@ mod filesystem;
 pub mod image;
 pub mod partitioning;
 pub mod raid;
+pub mod rebuild;
 pub mod tabfile;
 mod verity;
 

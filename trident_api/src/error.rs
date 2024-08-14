@@ -304,6 +304,9 @@ pub enum ServicingError {
     #[error("Failed to start network")]
     StartNetwork,
 
+    #[error("Failed to validate and rebuild RAID")]
+    ValidateAndRebuildRaid,
+
     #[error("Encryption requires access to a TPM 2.0 device but one is not accessible")]
     Tpm2DeviceAccessible,
 

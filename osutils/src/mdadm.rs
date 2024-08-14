@@ -79,91 +79,23 @@ pub fn stop(raid_array_name: impl AsRef<Path>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Marks a device as failed in a RAID array.
-///
-/// This function uses `mdadm --fail` to mark the specified device as failed in
-/// the given RAID array.
-///
-fn fail(device: impl AsRef<Path>) -> Result<(), Error> {
-    info!(
-        "Marking RAID device '{}' as failed",
-        device.as_ref().display()
-    );
-
-    Command::new("mdadm")
-        .arg("--fail")
-        .arg(device.as_ref())
-        .run_and_check()
-        .context("Failed to run mdadm fail device")
-}
-
-/// Removes a device from a RAID array.
-///
-/// This function uses `mdadm --remove` to remove the specified device from the
-/// given RAID array.
-///
-fn remove(device: impl AsRef<Path>) -> Result<(), Error> {
-    info!("Removing RAID device: {}", device.as_ref().display());
-
-    Command::new("mdadm")
-        .arg("--remove")
-        .arg(device.as_ref())
-        .run_and_check()
-        .context("Failed to run mdadm remove device")
-}
-
 /// Adds a device to a RAID array.
 ///
 /// This function uses `mdadm --add` to add the specified device to the given RAID array.
 ///
-fn add(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), Error> {
+pub fn add(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), Error> {
     info!(
-        "Adding RAID device: {} to {}",
+        "Adding RAID device '{}' to '{}'",
         device.as_ref().display(),
         raid_path.as_ref().display()
     );
 
     Command::new("mdadm")
-        .arg("--add")
         .arg(raid_path.as_ref())
+        .arg("--add")
         .arg(device.as_ref())
         .run_and_check()
         .context("Failed to run mdadm add device")
-}
-
-/// Replaces a device with a new device in the given RAID array.
-///
-/// This function combines `mdadm --fail`, `mdadm --remove`, and `mdadm --add`
-/// to replace a specified device in the given RAID array with a new device. It
-/// first marks the old device as failed, then removes it from the array, and
-/// finally adds the new device to the array.
-///
-pub fn replace(
-    raid_path: impl AsRef<Path>,
-    failed_device: impl AsRef<Path>,
-    new_device: impl AsRef<Path>,
-) -> Result<(), Error> {
-    info!(
-        "Replacing RAID device {} with {} in {}",
-        failed_device.as_ref().display(),
-        new_device.as_ref().display(),
-        raid_path.as_ref().display()
-    );
-
-    fail(failed_device.as_ref()).context(format!(
-        "Failed to mark device '{}' as failed during replacement",
-        failed_device.as_ref().display(),
-    ))?;
-    remove(failed_device.as_ref()).context(format!(
-        "Failed to remove device '{}' during replacement",
-        failed_device.as_ref().display(),
-    ))?;
-    add(raid_path, new_device.as_ref()).context(format!(
-        "Failed to add new device '{}' during replacement",
-        new_device.as_ref().display(),
-    ))?;
-
-    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Default)]

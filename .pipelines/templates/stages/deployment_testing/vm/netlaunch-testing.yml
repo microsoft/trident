@@ -222,6 +222,12 @@ stages:
               userName: testing-user
               artifactsDirectory: artifacts/test-image
 
+          - template: ../common_tasks/trident-rebuild.yml
+            parameters:
+              hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
+              userName: testing-user 
+   
           - bash: |
               set -eux
               sudo virsh shutdown virtdeploy-vm-0

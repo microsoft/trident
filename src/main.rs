@@ -8,7 +8,6 @@ use trident::{BackgroundLog, Logstream, MultiLogger, TraceStream};
 
 use trident_api::error::TridentResultExt;
 
-mod rebuild;
 mod validation;
 
 #[derive(Parser, Debug)]
@@ -41,6 +40,10 @@ struct GetArgs {
 enum Commands {
     /// Apply the HostConfiguration
     Run(GetArgs),
+
+    /// Rebuild software RAID arrays managed by Trident
+    #[clap(name = "rebuild-raid")]
+    RebuildRaid(GetArgs),
 
     /// Configure OS networking based on Trident Configuration
     #[clap(name = "start-network")]
@@ -158,6 +161,20 @@ fn run_trident(
 
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => unreachable!(),
+
+            Commands::RebuildRaid(args) => {
+                let res = trident.rebuild_raid();
+                // return HostStatus if requested
+                if args.status.is_some() {
+                    if let Err(e) = trident
+                        .retrieve_host_status(&args.status)
+                        .context("Failed to retrieve Host Status")
+                    {
+                        error!("{e}");
+                    }
+                }
+                res.unstructured("Failed to execute Trident rebuild-raid command")?;
+            }
         }
 
         Ok(())
@@ -182,8 +199,8 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
         ))
         .with_logger(logstream.make_logger_with_level(LevelFilter::Trace));
 
-    // Only add the background logger if we're running the main command
-    if matches!(args.command, Commands::Run(_)) {
+    if matches!(args.command, Commands::Run(_)) || matches!(args.command, Commands::RebuildRaid(_))
+    {
         multilogger
             .add_logger(BackgroundLog::new(trident::TRIDENT_BACKGROUND_LOG_PATH).into_logger());
     }

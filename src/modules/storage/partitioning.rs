@@ -38,115 +38,125 @@ pub fn create_partitions(
     partitioning_safety_check(&resolved_disks).context("Partitioning safety check failed")?;
 
     for disk in &resolved_disks {
-        let mut repart = SystemdRepartInvoker::new(&disk.bus_path, RepartEmptyMode::Force);
+        create_partitions_on_disk(host_status, host_config, disk)
+            .with_context(|| format!("Failed to create partitions for disk '{}'", disk.id))?;
+    }
+    Ok(())
+}
 
-        // If the disk has adopted partitions we need to match them and delete the rest.
-        adopt_partitions(disk, &mut repart)
-            .with_context(|| format!("Failed to adopt partitions for disk '{}'", disk.id))?;
+pub fn create_partitions_on_disk(
+    host_status: &mut HostStatus,
+    host_config: &HostConfiguration,
+    disk: &ResolvedDisk,
+) -> Result<(), Error> {
+    let mut repart = SystemdRepartInvoker::new(&disk.bus_path, RepartEmptyMode::Force);
 
-        // Populate repart with entries for partitions that are to be created.
-        add_repart_entries(
-            disk.spec,
-            &generate_sysupdate_partlabels(&host_config.storage),
-            &mut repart,
-        );
+    // If the disk has adopted partitions we need to match them and delete the rest.
+    adopt_partitions(disk, &mut repart)
+        .with_context(|| format!("Failed to adopt partitions for disk '{}'", disk.id))?;
 
-        info!("Creating partitions for disk '{}'", disk.id);
+    // Populate repart with entries for partitions that are to be created.
+    add_repart_entries(
+        disk.spec,
+        &generate_sysupdate_partlabels(&host_config.storage),
+        &mut repart,
+    );
 
-        // Invoke repart to create the partitions.
-        let repart_partitions = repart.execute().context(format!(
-            "Failed to create partitions for disk '{}'",
+    info!("Creating partitions for disk '{}'", disk.id);
+
+    // Invoke repart to create the partitions.
+    let repart_partitions = repart.execute().context(format!(
+        "Failed to create partitions for disk '{}'",
+        disk.id
+    ))?;
+
+    // Check how many partitions were adopted by repart.
+    let adopted_partition_count = repart_partitions
+        .iter()
+        .filter(|rp| rp.activity != RepartActivity::Create)
+        .count();
+
+    ensure!(
+        adopted_partition_count == disk.spec.adopted_partitions.len(),
+        "Expected {} partitions to be adopted, but {} were adopted",
+        disk.spec.adopted_partitions.len(),
+        adopted_partition_count
+    );
+
+    // Fix for #7911. When we adopt partitions, force kernel to re-read
+    // the partition table. Bug #7911 is limited to adoption only, it never
+    // reproduces on full repartitioning, so we only attempt it when we have
+    // adopted partitions. `partx --update` requires the disk to have a
+    // partition table and for it to have at least one partition. By
+    // limiting this to adopted partitions > 0, we ensure that these
+    // conditions are met.
+    if adopted_partition_count > 0 {
+        debug!(
+            "Partitions were adopted, re-reading partition table for disk '{}'",
             disk.id
-        ))?;
-
-        // Check how many partitions were adopted by repart.
-        let adopted_partition_count = repart_partitions
-            .iter()
-            .filter(|rp| rp.activity != RepartActivity::Create)
-            .count();
-
-        ensure!(
-            adopted_partition_count == disk.spec.adopted_partitions.len(),
-            "Expected {} partitions to be adopted, but {} were adopted",
-            disk.spec.adopted_partitions.len(),
-            adopted_partition_count
         );
+        // If we fail to re-read the partition table, we log an error but
+        // continue with the rest of the operation.
+        let success = block_devices::partx_update(&disk.bus_path)
+            .map_err(|e| {
+                error!(
+                    "Failed to re-read partition table for disk '{}': {:?}",
+                    disk.id, e
+                );
+            })
+            .is_ok();
 
-        // Fix for #7911. When we adopted partitions, force kernel to re-read
-        // the partition table. Bug #7911 is limited to adoption only, it never
-        // reproduces on full repartitioning, so we only attempt it when we have
-        // adopted partitions. `partx --update` requires the disk to have a
-        // partition table and for it to have at least one partition. By
-        // limiting this to adopted partitions > 0, we ensure that these
-        // conditions are met.
-        if adopted_partition_count > 0 {
-            debug!(
-                "Partitions were adopted, re-reading partition table for disk '{}'",
-                disk.id
-            );
-            // If we fail to re-read the partition table, we log an error but
-            // continue with the rest of the operation.
-            let success = block_devices::partx_update(&disk.bus_path)
-                .map_err(|e| {
-                    error!(
-                        "Failed to re-read partition table for disk '{}': {:?}",
-                        disk.id, e
-                    );
-                })
-                .is_ok();
+        tracing::info!(metric_name = "partx_update_executed", value = success);
+    }
 
-            tracing::info!(metric_name = "partx_update_executed", value = success);
+    // Get the updated disk information.
+    let disk_information = SfDisk::get_info(&disk.bus_path).context(format!(
+        "Failed to retrieve information for disk '{}'",
+        disk.id
+    ))?;
+
+    host_status
+        .storage
+        .block_device_paths
+        .insert(disk.id.into(), disk.bus_path.clone());
+
+    // Get disk UUID from osuuid
+    match disk_information.id.as_uuid() {
+        Some(disk_uuid) => {
+            // Update the host status with disk UUID to disk ID mapping
+            host_status
+                .storage
+                .disks_by_uuid
+                .insert(disk_uuid, disk.id.into());
         }
+        None => {
+            debug!(
+                "Expected UUID but found Osuuid::Relaxed {} for disk ID {}",
+                disk_information.id, disk.id,
+            );
+        }
+    }
 
-        // Get the updated disk information.
-        let disk_information = SfDisk::get_info(&disk.bus_path).context(format!(
-            "Failed to retrieve information for disk '{}'",
-            disk.id
-        ))?;
+    // Perform checks for all partitions.
+    for repart_partition in repart_partitions.iter() {
+        // Check that the expected partition symlinks exist.
+        wait_for_part_symlink(repart_partition).with_context(|| {
+            format!(
+                "Could not find symlinks for partition '{}'",
+                repart_partition.id
+            )
+        })?;
 
+        // Update host status with the partition metadata.
+        trace!(
+            "Updating host status with partition '{}':\n{:#?}",
+            repart_partition.id,
+            repart_partition
+        );
         host_status
             .storage
             .block_device_paths
-            .insert(disk.id.into(), disk.bus_path.clone());
-
-        // Get disk UUID from osuuid
-        match disk_information.id.as_uuid() {
-            Some(disk_uuid) => {
-                // Update the host status with disk UUID to disk ID mapping
-                host_status
-                    .storage
-                    .disks_by_uuid
-                    .insert(disk_uuid, disk.id.into());
-            }
-            None => {
-                debug!(
-                    "Expected UUID but found Osuuid::Relaxed {} for disk ID {}",
-                    disk_information.id, disk.id,
-                );
-            }
-        }
-
-        // Perform checks for all partitions.
-        for repart_partition in repart_partitions.iter() {
-            // Check that the expected partition symlinks exist.
-            wait_for_part_symlink(repart_partition).with_context(|| {
-                format!(
-                    "Could not find symlinks for partition '{}'",
-                    repart_partition.id
-                )
-            })?;
-
-            // Update host status with the partition metadata.
-            trace!(
-                "Updating host status with partition '{}':\n{:#?}",
-                repart_partition.id,
-                repart_partition
-            );
-            host_status
-                .storage
-                .block_device_paths
-                .insert(repart_partition.id.clone(), repart_partition.path_by_uuid());
-        }
+            .insert(repart_partition.id.clone(), repart_partition.path_by_uuid());
     }
     Ok(())
 }
