@@ -71,6 +71,12 @@ enum Commands {
     #[cfg(feature = "pytest-generator")]
     /// Generate Pytest wrappers for functional tests
     Pytest,
+
+    /// Initialize Trident in offline mode
+    OfflineInitialize {
+        /// Path to a Host Status file
+        hs_path: PathBuf,
+    },
 }
 
 fn run_trident(
@@ -103,6 +109,9 @@ fn run_trident(
             pytest::generate_functional_test_manifest();
             return Ok(());
         }
+
+        Commands::OfflineInitialize { hs_path } => return trident::offline_initialize(hs_path),
+
         _ => (),
     }
 
@@ -157,7 +166,9 @@ fn run_trident(
                 .retrieve_host_status(&args.status)
                 .context("Failed to retrieve Host Status")?,
 
-            Commands::ParseKickstart { .. } | Commands::Validate { .. } => unreachable!(),
+            Commands::ParseKickstart { .. }
+            | Commands::Validate { .. }
+            | Commands::OfflineInitialize { .. } => unreachable!(),
 
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => unreachable!(),

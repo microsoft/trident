@@ -63,7 +63,8 @@ fn copy_file_artifacts(
             image_url,
             GET_MAX_RETRIES,
             Duration::from_secs(GET_TIMEOUT_SECS),
-        )?
+        )
+        .context("Failed to fetch image for ESP volume")?
     };
 
     // Initialize HashingReader instance on stream

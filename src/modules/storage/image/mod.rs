@@ -80,7 +80,8 @@ fn deploy_images(
 
         let stream: Box<dyn Read> = match image_url.scheme() {
             "file" => Box::new(
-                File::open(image_url.path()).context(format!("Failed to open {}", image_url))?,
+                File::open(image_url.path())
+                    .with_context(|| format!("Failed to open '{}'", image_url))?,
             ),
             "http" | "https" => {
                 // For remote files, perform a blocking GET request
@@ -88,7 +89,11 @@ fn deploy_images(
                     &image_url,
                     GET_MAX_RETRIES,
                     Duration::from_secs(GET_TIMEOUT_SECS),
-                )?
+                )
+                .context(format!(
+                    "Failed to fetch image for device id '{}'",
+                    device_id
+                ))?
             }
             "oci" => {
                 // TODO: Need to implement downloading images as OCI artifacts from Azure container
