@@ -993,12 +993,12 @@ mod tests {
                 },
                 ..Default::default()
             },
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             ..Default::default()
         };
 
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.servicing_type = ServicingType::AbUpdate;
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
         // Scenario 1: Target ID matches with an entry and active volume is VolumeA
@@ -1054,7 +1054,7 @@ mod tests {
 
                 ..Default::default()
             },
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             ..Default::default()
         };
@@ -1136,7 +1136,7 @@ mod tests {
 
         // Scenario 3: No partitions available
         let host_status2 = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -1173,7 +1173,7 @@ mod tests {
     #[test]
     fn test_get_parent_disk() {
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: config::Storage {

@@ -22,7 +22,7 @@ pub struct HostStatus {
     pub spec: HostConfiguration,
 
     /// Type of servicing that Trident is executing on the host.
-    pub servicing_type: Option<ServicingType>,
+    pub servicing_type: ServicingType,
 
     /// Current state of the servicing that Trident is executing on the host.
     pub servicing_state: ServicingState,
@@ -52,7 +52,7 @@ pub struct HostStatus {
 
 /// ServicingType is the type of servicing that the Trident agent is executing on the host. Through
 /// ServicingType, Trident communicates what servicing operations are in progress.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ServicingType {
     /// Update that can be applied without pausing the workload.
@@ -65,12 +65,15 @@ pub enum ServicingType {
     AbUpdate = 3,
     /// Clean install of the runtime OS image when the host is booted from the provisioning OS.
     CleanInstall = 4,
+    /// No servicing is currently in progress.
+    #[default]
+    NoActiveServicing = 5,
 }
 
 /// ServicingState describes the progress of the servicing that the Trident agent is executing on
 /// the host. The host will transition through a different sequence of servicing states, depending
 /// on the servicing type.
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
@@ -122,73 +125,52 @@ pub enum AbVolumeSelection {
 }
 
 impl HostStatus {
-    /// Returns the update volume selection for all A/B volume pairs. The update
-    /// volume is the one that is meant to be updated, based on the ongoing
-    /// servicing type and state.
+    /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
+    /// that is meant to be updated, based on the servicing in progress, if any.
     pub fn get_ab_update_volume(&self) -> Option<AbVolumeSelection> {
-        match &self.servicing_state {
-            // If host is in NotProvisioned, CleanInstallFailed, Provisioned, or AbUpdateFailed,
-            // update volume is None, since Trident is not executing any servicing
-            ServicingState::NotProvisioned
-            | ServicingState::CleanInstallFailed
-            | ServicingState::Provisioned
-            | ServicingState::AbUpdateFailed => None,
-            // If host is in any different servicing state, determine based on servicing type
-            ServicingState::Staging
-            | ServicingState::Staged
-            | ServicingState::Finalizing
-            | ServicingState::Finalized => {
-                match self.servicing_type {
-                    Some(ServicingType::HotPatch)
-                    | Some(ServicingType::NormalUpdate)
-                    | Some(ServicingType::UpdateAndReboot) => self.storage.ab_active_volume,
-                    // If host executing A/B update, update volume is the opposite of active volume
-                    // as specified in the storage status
-                    Some(ServicingType::AbUpdate) => {
-                        if self.storage.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
-                            Some(AbVolumeSelection::VolumeB)
-                        } else {
-                            Some(AbVolumeSelection::VolumeA)
-                        }
-                    }
-                    // If host is executing a clean install, update volume is always A
-                    Some(ServicingType::CleanInstall) => Some(AbVolumeSelection::VolumeA),
-                    // In host status, servicing type will never be None if servicing state is one
-                    // of the above.
-                    None => None,
+        match self.servicing_type {
+            // If there is no servicing in progress, update volume is None.
+            ServicingType::NoActiveServicing => None,
+            // If host is executing a "normal" update, active and update volumes are the same.
+            ServicingType::HotPatch
+            | ServicingType::NormalUpdate
+            | ServicingType::UpdateAndReboot => self.storage.ab_active_volume,
+            // If host is executing an A/B update, update volume is the opposite of active volume.
+            ServicingType::AbUpdate => {
+                if self.storage.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
+                    Some(AbVolumeSelection::VolumeB)
+                } else {
+                    Some(AbVolumeSelection::VolumeA)
                 }
             }
+            // If host is executing a clean install, update volume is always A.
+            ServicingType::CleanInstall => Some(AbVolumeSelection::VolumeA),
         }
     }
 
-    /// Returns the active volume selection for all A/B volume pairs. The active
-    /// volume is the one that the host is currently running from.
+    /// Returns the active volume selection for all A/B volume pairs. The active volume is the one
+    /// that the host is currently running from.
     pub fn get_ab_active_volume(&self) -> Option<AbVolumeSelection> {
-        match self.servicing_state {
-            // If host is in NotProvisioned or CleanInstallFailed, there is no active volume, as
-            // we're still booted from the provisioning OS
-            ServicingState::NotProvisioned | ServicingState::CleanInstallFailed => None,
-            // If host is in Provisioned OR AbUpdateFailed, active volume is the current one
-            ServicingState::Provisioned | ServicingState::AbUpdateFailed => {
-                self.storage.ab_active_volume
-            }
-            ServicingState::Staging
-            | ServicingState::Staged
-            | ServicingState::Finalizing
-            | ServicingState::Finalized => {
-                match self.servicing_type {
-                    // If host is executing a deployment of any type, active volume is in host status.
-                    Some(ServicingType::HotPatch)
-                    | Some(ServicingType::NormalUpdate)
-                    | Some(ServicingType::UpdateAndReboot)
-                    | Some(ServicingType::AbUpdate) => self.storage.ab_active_volume,
-                    // If host is executing a clean install, there is no active volume yet.
-                    Some(ServicingType::CleanInstall) => None,
-                    // In host status, servicing type will never be None if servicing state is one
-                    // of the above.
-                    None => None,
+        match self.servicing_type {
+            // If host is executing an update of any type, active volume is in host status.
+            ServicingType::HotPatch
+            | ServicingType::NormalUpdate
+            | ServicingType::UpdateAndReboot
+            | ServicingType::AbUpdate => self.storage.ab_active_volume,
+            // If host is executing a clean install, there is no active volume yet.
+            ServicingType::CleanInstall => None,
+            ServicingType::NoActiveServicing => match self.servicing_state {
+                // If host is in NotProvisioned or CleanInstallFailed, there is no active volume, as
+                // we're still booted from the provisioning OS
+                ServicingState::NotProvisioned | ServicingState::CleanInstallFailed => None,
+                // If host is in Provisioned OR AbUpdateFailed, active volume is the current one.
+                ServicingState::Provisioned | ServicingState::AbUpdateFailed => {
+                    self.storage.ab_active_volume
                 }
-            }
+                // This should never happen, as we should not be in Staging, Staged, Finalizing, or
+                // Finalized states if there is no servicing in progress.
+                _ => None,
+            },
         }
     }
 
@@ -339,7 +321,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            servicing_type: None,
+            servicing_type: ServicingType::NoActiveServicing,
             servicing_state: ServicingState::NotProvisioned,
             ..Default::default()
         };
@@ -364,7 +346,7 @@ mod tests {
         assert_eq!(host_status.get_ab_update_volume(), None);
 
         // 5. If host is doing CleanInstall, update volume is always A
-        host_status.servicing_type = Some(ServicingType::CleanInstall);
+        host_status.servicing_type = ServicingType::CleanInstall;
         host_status.servicing_state = ServicingState::Staging;
         assert_eq!(
             host_status.get_ab_update_volume(),
@@ -393,45 +375,45 @@ mod tests {
         // the currently active volume
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         host_status.servicing_state = ServicingState::Staging;
-        host_status.servicing_type = Some(ServicingType::HotPatch);
+        host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_update_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
+        host_status.servicing_type = ServicingType::NormalUpdate;
         assert_eq!(
             host_status.get_ab_update_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::UpdateAndReboot);
+        host_status.servicing_type = ServicingType::UpdateAndReboot;
         assert_eq!(
             host_status.get_ab_update_volume(),
             host_status.storage.ab_active_volume
         );
 
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        host_status.servicing_type = Some(ServicingType::HotPatch);
+        host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_update_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
+        host_status.servicing_type = ServicingType::NormalUpdate;
         assert_eq!(
             host_status.get_ab_update_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::UpdateAndReboot);
+        host_status.servicing_type = ServicingType::UpdateAndReboot;
         assert_eq!(
             host_status.get_ab_update_volume(),
             host_status.storage.ab_active_volume
         );
 
         // 7. If host is doing A/B update, update volume is the opposite of the active volume
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.servicing_type = ServicingType::AbUpdate;
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
             host_status.get_ab_update_volume(),
@@ -472,7 +454,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            servicing_type: None,
+            servicing_type: ServicingType::NoActiveServicing,
             servicing_state: ServicingState::NotProvisioned,
             ..Default::default()
         };
@@ -502,7 +484,7 @@ mod tests {
         );
 
         // 5. If host is doing CleanInstall, active volume is always None
-        host_status.servicing_type = Some(ServicingType::CleanInstall);
+        host_status.servicing_type = ServicingType::CleanInstall;
         host_status.servicing_state = ServicingState::Staging;
         assert_eq!(host_status.get_ab_active_volume(), None);
 
@@ -512,25 +494,25 @@ mod tests {
         // 6. If host is doing HotPatch, NormalUpdate, UpdateAndReboot, or AbUpdate, the active
         // volume is in host status
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        host_status.servicing_type = Some(ServicingType::HotPatch);
+        host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_active_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
+        host_status.servicing_type = ServicingType::NormalUpdate;
         assert_eq!(
             host_status.get_ab_active_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::UpdateAndReboot);
+        host_status.servicing_type = ServicingType::UpdateAndReboot;
         assert_eq!(
             host_status.get_ab_active_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
             host_status.get_ab_active_volume(),
             host_status.storage.ab_active_volume
@@ -538,25 +520,25 @@ mod tests {
 
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         host_status.servicing_state = ServicingState::Finalizing;
-        host_status.servicing_type = Some(ServicingType::HotPatch);
+        host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_active_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
+        host_status.servicing_type = ServicingType::NormalUpdate;
         assert_eq!(
             host_status.get_ab_active_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::UpdateAndReboot);
+        host_status.servicing_type = ServicingType::UpdateAndReboot;
         assert_eq!(
             host_status.get_ab_active_volume(),
             host_status.storage.ab_active_volume
         );
 
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
             host_status.get_ab_active_volume(),
             host_status.storage.ab_active_volume
@@ -631,7 +613,7 @@ mod tests {
     fn test_set_get_install() {
         // Test for clean install
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             ..Default::default()
         };
@@ -658,7 +640,7 @@ mod tests {
 
         // Test for update to A
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
             storage: Storage {
                 ab_active_volume: Some(AbVolumeSelection::VolumeB),
@@ -689,7 +671,7 @@ mod tests {
 
         // Test for update to B
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
             storage: Storage {
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),

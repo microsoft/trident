@@ -29,13 +29,14 @@ based on the host status and the updated host configuration. In host status,
 `servicingType` describes the type of servicing that Trident is currently
 executing, to achieve the desired state. This object has the following values:
 
-   - `CleanInstall`: Clean install of the runtime OS image when the host is
-   booted from the provisioning OS.
    - `HotPatch`: Update that can be applied without pausing the workload.
    - `NormalUpdate`: Update that requires pausing the workload.
    - `UpdateAndReboot`: Update that requires rebooting the host.
    - `AbUpdate`:  Update that requires switching to a different root partition
    and rebooting.
+   - `CleanInstall`: Clean install of the runtime OS image when the host is
+   booted from the provisioning OS.
+   - `NoActiveServicing`: No servicing is currently in progress.
    - `Incompatible`: Update that cannot be applied given the current state of the
    system. This status will never be reflected in the host status: Trident will
    inform the user that the servicing type requested is incompatible, and will set

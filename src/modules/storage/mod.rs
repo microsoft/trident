@@ -152,11 +152,12 @@ impl Module for StorageModule {
         host_status: &HostStatus,
         host_config: &HostConfiguration,
     ) -> Result<Option<ServicingType>, TridentError> {
+        // If needs_ab_update() returns true, A/B update is required.
         if image::needs_ab_update(host_status, host_config) {
             return Ok(Some(ServicingType::AbUpdate));
         }
 
-        Ok(None)
+        Ok(Some(ServicingType::NoActiveServicing))
     }
 
     fn provision(
@@ -236,7 +237,7 @@ pub(super) fn initialize_block_devices(
         host_config.storage.internal_mount_points
     );
 
-    if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+    if host_status.servicing_type == ServicingType::CleanInstall {
         debug!("Initializing block devices");
         // Stop verity before RAID, as verity can sit on top of RAID
         verity::stop_pre_existing_verity_devices(host_config)
@@ -302,6 +303,7 @@ mod tests {
     fn get_host_status() -> HostStatus {
         HostStatus {
             servicing_state: ServicingState::NotProvisioned,
+            servicing_type: ServicingType::NoActiveServicing,
             ..Default::default()
         }
     }

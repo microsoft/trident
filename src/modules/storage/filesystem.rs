@@ -60,7 +60,7 @@ fn block_devices_needing_fs_creation(
                 // partition is NOT an adopted partition
                 | (
                     FileSystemSource::EspImage(_),
-                    Some(ServicingType::CleanInstall),
+                    ServicingType::CleanInstall,
                     Some(device_id),
                 ) if !host_status.spec.storage.is_adopted_partition(device_id) => {
                     // Get the block device info for the device_id
@@ -76,7 +76,7 @@ fn block_devices_needing_fs_creation(
             // If the block device is an A/B volume pair and we're doing an A/B update, resolve
             // device_id to the device_id of the actual update volume
             if ab_volume_pair_ids.contains(&device_id)
-                && host_status.servicing_type == Some(ServicingType::AbUpdate)
+                && host_status.servicing_type == ServicingType::AbUpdate
             {
                 debug!(
                     "Servicing type is A/B update and A/B volume pair detected: {:?}",
@@ -86,7 +86,7 @@ fn block_devices_needing_fs_creation(
                     .map(|ab_volume_bdi| (ab_volume_bdi, bd_path, fs_type))
             // If the block device is NOT an A/B volume pair, only add it to block_devices if
             // a filesystem has not been previously created, i.e. we're doing a clean install
-            } else if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+            } else if host_status.servicing_type == ServicingType::CleanInstall {
                 debug!(
                     "Servicing type is clean install and a standalone volume detected: {:?}",
                     device_id
@@ -145,7 +145,7 @@ mod test {
     #[test]
     fn test_block_devices_needing_fs_creation() {
         let host_status_clean_install = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {
@@ -255,7 +255,7 @@ mod test {
         // Test case 2: On A/B update, no need to initialize any FSs since all block devices either
         // have already had FSs created OR are being updated with an image.
         let mut host_status_ab_update = HostStatus {
-            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {
@@ -375,7 +375,7 @@ mod test {
     #[test]
     fn test_block_devices_needing_fs_creation_adopted_esp() {
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: StorageConfig {

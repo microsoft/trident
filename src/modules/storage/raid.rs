@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn test_get_device_paths() {
         let host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             spec: HostConfiguration {
                 storage: Storage {

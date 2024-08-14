@@ -167,7 +167,7 @@ fn validate_rebuild_raid(
     validate_host_config_delta(host_config, host_status)
         .context("Failed to validate host configuration delta for rebuild-raid operation")?;
 
-    if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+    if host_status.servicing_type == ServicingType::CleanInstall {
         bail!(
             "rebuild-raid command is not allowed when servicing type is {:?}",
             host_status.servicing_type

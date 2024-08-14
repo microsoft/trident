@@ -245,7 +245,10 @@ mod functional_test {
         // Open and initialize a temporary datastore.
         {
             let mut datastore = DataStore::open_temporary().unwrap();
-            assert_eq!(datastore.host_status().servicing_type, None);
+            assert_eq!(
+                datastore.host_status().servicing_type,
+                ServicingType::NoActiveServicing
+            );
             assert_eq!(
                 datastore.host_status().servicing_state,
                 ServicingState::NotProvisioned
@@ -253,7 +256,7 @@ mod functional_test {
 
             // Update servicing type and state for clean install
             datastore
-                .with_host_status(|s| s.servicing_type = Some(ServicingType::CleanInstall))
+                .with_host_status(|s| s.servicing_type = ServicingType::CleanInstall)
                 .unwrap();
             datastore
                 .with_host_status(|s| s.servicing_state = ServicingState::Staging)
@@ -261,7 +264,7 @@ mod functional_test {
 
             assert_eq!(
                 datastore.host_status().servicing_type,
-                Some(ServicingType::CleanInstall)
+                ServicingType::CleanInstall
             );
             assert_eq!(
                 datastore.host_status().servicing_state,
@@ -275,7 +278,7 @@ mod functional_test {
             let mut datastore = DataStore::open_temporary().unwrap();
             assert_eq!(
                 datastore.host_status().servicing_type,
-                Some(ServicingType::CleanInstall)
+                ServicingType::CleanInstall
             );
             assert_eq!(
                 datastore.host_status().servicing_state,

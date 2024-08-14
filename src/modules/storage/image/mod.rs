@@ -61,8 +61,8 @@ fn deploy_images(
     // updated in the host configuration. Here, Trident will deploy images onto the A/B volume
     // pairs.
     let images_to_deploy = match host_status.servicing_type {
-        Some(ServicingType::CleanInstall) => host_config.storage.get_images(),
-        Some(ServicingType::AbUpdate) => host_config.storage.get_ab_volume_pair_images(),
+        ServicingType::CleanInstall => host_config.storage.get_images(),
+        ServicingType::AbUpdate => host_config.storage.get_ab_volume_pair_images(),
         _ => bail!(
             "Servicing type cannot be '{:?}' as images must deployed during clean install or A/B update",
             host_status.servicing_type
@@ -312,13 +312,11 @@ fn update_active_volume(
         debug!("Unrecognized active volume");
         // To prevent data loss, abort if we cannot find the
         // matching root volume outside of clean install
-        if host_status.servicing_type != Some(ServicingType::CleanInstall) {
+        if host_status.servicing_type != ServicingType::CleanInstall {
             bail!("No matching root volume found");
         }
         None
     };
-
-    debug!("Active volume: {:?}", host_status.storage.ab_active_volume);
 
     Ok(())
 }
@@ -490,7 +488,7 @@ pub(super) fn provision(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
-    if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+    if host_status.servicing_type == ServicingType::CleanInstall {
         debug!("Initializing A/B volumes");
         host_status.storage.ab_active_volume = None;
     }
@@ -522,7 +520,7 @@ mod tests {
     fn test_validate_host_config_image() {
         // Initialize a host status
         let mut host_status = HostStatus {
-            servicing_type: None,
+            servicing_type: ServicingType::NoActiveServicing,
             servicing_state: ServicingState::NotProvisioned,
             spec: HostConfiguration {
                 storage: StorageConfig {
@@ -734,7 +732,7 @@ mod tests {
 
         // Initialize a host status with spec matching the host configuration
         let host_status = HostStatus {
-            servicing_type: None,
+            servicing_type: ServicingType::NoActiveServicing,
             servicing_state: ServicingState::Provisioned,
             spec: host_config.clone(),
             storage: Storage {
@@ -1342,7 +1340,7 @@ mod functional_test {
         );
 
         // None when clean install
-        host_status.servicing_type = Some(ServicingType::CleanInstall);
+        host_status.servicing_type = ServicingType::CleanInstall;
 
         update_active_volume(
             &mut host_status,

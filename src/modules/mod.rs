@@ -287,7 +287,7 @@ fn stage_clean_install(
     debug!("Setting host's servicing type to CleanInstall");
     debug!("Updating host's servicing state to Staging");
     state.with_host_status(|host_status| {
-        host_status.servicing_type = Some(ServicingType::CleanInstall);
+        host_status.servicing_type = ServicingType::CleanInstall;
         host_status.servicing_state = ServicingState::Staging;
         host_status.spec = host_config.clone();
     })?;
@@ -406,12 +406,12 @@ pub(super) fn update(
         .collect::<Result<Vec<_>, TridentError>>()?
         .into_iter()
         .flatten()
-        .max();
-    let Some(servicing_type) = servicing_type else {
+        .max()
+        .unwrap_or(ServicingType::NoActiveServicing); // Never None b/c select_servicing_type() returns a value
+    if servicing_type == ServicingType::NoActiveServicing {
         info!("No updates required");
         return Ok(());
-    };
-
+    }
     info!(
         "Selected servicing type for the required update: {:?}",
         servicing_type
@@ -450,7 +450,7 @@ pub(super) fn update(
         }
         ServicingType::NormalUpdate | ServicingType::HotPatch => {
             state.with_host_status(|host_status| {
-                host_status.servicing_type = None;
+                host_status.servicing_type = ServicingType::NoActiveServicing;
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;
             #[cfg(feature = "grpc-dangerous")]
@@ -462,6 +462,7 @@ pub(super) fn update(
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
         )),
+        ServicingType::NoActiveServicing => unreachable!(),
     }
 }
 
@@ -492,13 +493,14 @@ fn stage_update(
                 InvalidInputError::CleanInstallOnProvisionedHost,
             ));
         }
+        ServicingType::NoActiveServicing => unreachable!(),
     }
 
     // Update host status and copy new host config to the spec field
     debug!("Setting host's servicing type to {:?}", servicing_type);
     debug!("Updating host's servicing state to Staging");
     state.with_host_status(|host_status| {
-        host_status.servicing_type = Some(servicing_type);
+        host_status.servicing_type = servicing_type;
         host_status.servicing_state = ServicingState::Staging;
         host_status.spec = host_config.clone();
     })?;
@@ -1037,7 +1039,7 @@ mod test {
                 ..Default::default()
             },
             servicing_state: ServicingState::Provisioned,
-            servicing_type: None,
+            servicing_type: ServicingType::NoActiveServicing,
             ..Default::default()
         };
 
@@ -1092,8 +1094,8 @@ mod test {
             None
         );
 
-        // Now, set servicing type to AbUpdate; servicing state to Staging Deployment.
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        // Now, set servicing type to AbUpdate; servicing state to Staging.
+        host_status.servicing_type = ServicingType::AbUpdate;
         host_status.servicing_state = ServicingState::Staging;
         // When active=true, should return VolumeA; when active=false, return VolumeB.
         assert_eq!(

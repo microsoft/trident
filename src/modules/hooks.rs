@@ -80,16 +80,14 @@ impl Module for HooksModule {
             .chain(&host_status.spec.scripts.post_provision)
         {
             if let Some(ref path) = script.path {
-                if let Some(servicing_type) = host_status.servicing_type {
-                    if script.should_run(servicing_type) {
-                        self.stage_file(path.to_owned())
-                            .structured(InvalidInputError::from(
-                                HostConfigurationDynamicValidationError::LoadScript {
-                                    name: script.name.clone(),
-                                    path: path.to_string_lossy().to_string(),
-                                },
-                            ))?;
-                    }
+                if script.should_run(host_status.servicing_type) {
+                    self.stage_file(path.to_owned())
+                        .structured(InvalidInputError::from(
+                            HostConfigurationDynamicValidationError::LoadScript {
+                                name: script.name.clone(),
+                                path: path.to_string_lossy().to_string(),
+                            },
+                        ))?;
                 }
             }
         }
@@ -228,12 +226,10 @@ impl HooksModule {
     fn run_script(
         &self,
         script: &Script,
-        servicing_type: Option<ServicingType>,
+        servicing_type: ServicingType,
         target_root: &Path,
         exec_root: &Path,
     ) -> Result<(), Error> {
-        // Check if the script should be run for the current servicing type
-        let servicing_type = servicing_type.context("Servicing type not set")?;
         if !script.should_run(servicing_type) {
             debug!(
                 "Skipping script '{}' for servicing type '{:?}'",
@@ -316,6 +312,7 @@ fn match_servicing_type_env_var(servicing_type: &ServicingType) -> OsString {
         ServicingType::UpdateAndReboot => "update_and_reboot",
         ServicingType::AbUpdate => "ab_update",
         ServicingType::CleanInstall => "clean_install",
+        ServicingType::NoActiveServicing => "none",
     }
     .into()
 }
@@ -378,7 +375,7 @@ mod tests {
         HooksModule::default()
             .run_script(
                 &script,
-                Some(ServicingType::CleanInstall),
+                ServicingType::CleanInstall,
                 Path::new("/mnt/newroot"),
                 Path::new("/"),
             )
@@ -419,7 +416,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             ..Default::default()
         };
@@ -459,7 +456,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             ..Default::default()
         };
@@ -490,7 +487,7 @@ mod tests {
         assert!(HooksModule::default()
             .run_script(
                 &script,
-                Some(ServicingType::CleanInstall),
+                ServicingType::CleanInstall,
                 Path::new("/mnt/newroot"),
                 Path::new("/")
             )
@@ -509,7 +506,7 @@ mod tests {
         assert!(HooksModule::default()
             .run_script(
                 &script,
-                Some(ServicingType::CleanInstall),
+                ServicingType::CleanInstall,
                 Path::new("/mnt/newroot"),
                 Path::new("/")
             )
@@ -535,7 +532,7 @@ mod tests {
         HooksModule::default()
             .run_script(
                 &script,
-                Some(ServicingType::CleanInstall),
+                ServicingType::CleanInstall,
                 Path::new("/mnt/newroot"),
                 Path::new("/"),
             )
@@ -584,7 +581,7 @@ mod tests {
         HooksModule::default()
             .run_script(
                 &script,
-                Some(ServicingType::CleanInstall),
+                ServicingType::CleanInstall,
                 target_root.path(),
                 exec_root.path(),
             )

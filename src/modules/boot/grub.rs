@@ -437,7 +437,7 @@ pub(crate) mod functional_test {
 
         let mut host_status = HostStatus {
             // These are required to get the update install ID
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
 
             spec: HostConfiguration {
@@ -531,7 +531,7 @@ pub(crate) mod functional_test {
         test_execute_and_resulting_layout(false, false);
         let mut host_status = HostStatus {
             // These are required to get the update install ID
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
 
             spec: HostConfiguration {
@@ -613,7 +613,7 @@ pub(crate) mod functional_test {
         test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
             // These are required to get the update install ID
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
 
             spec: HostConfiguration {
@@ -688,7 +688,7 @@ pub(crate) mod functional_test {
         test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
             // These are required to get the update install ID
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
 
             spec: HostConfiguration {
@@ -744,7 +744,7 @@ pub(crate) mod functional_test {
         test_execute_and_resulting_layout(false, false);
         let host_status = HostStatus {
             // These are required to get the update install ID
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
 
             spec: HostConfiguration {

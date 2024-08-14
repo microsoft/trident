@@ -280,7 +280,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             ..Default::default()
         };
@@ -299,7 +299,7 @@ mod tests {
 
         // Test that servicing types HotPatch, NormalUpdate, UpdateAndReboot will always use the
         // active volume for updates
-        host_status.servicing_type = Some(ServicingType::NormalUpdate);
+        host_status.servicing_type = ServicingType::NormalUpdate;
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_label_and_path(&host_status).unwrap(),
@@ -312,8 +312,8 @@ mod tests {
             )
         );
 
-        // Test that servicing type None will return None
-        host_status.servicing_type = None;
+        // Test that servicing type NoActiveServicing will return None
+        host_status.servicing_type = ServicingType::NoActiveServicing;
         let error_message = get_label_and_path(&host_status).unwrap_err().to_string();
         assert_eq!(error_message, "Failed to get install id");
     }

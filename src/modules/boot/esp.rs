@@ -342,7 +342,7 @@ pub fn generate_efi_bin_base_dir_path(
         .join(ESP_EFI_DIRECTORY);
 
     // If we are doing a clean install, we need to find the next available install index.
-    if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+    if host_status.servicing_type == ServicingType::CleanInstall {
         // If this is a clean install, we need to find the next available install index.
         debug!(
             "Clean install: Looking for next available install index in '{}'",
@@ -626,7 +626,7 @@ mod tests {
     fn test_generate_efi_bin_base_dir_path_clean_install() {
         // Clean install HostStatus
         let mut host_status = HostStatus {
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             ..Default::default()
         };
@@ -735,7 +735,7 @@ mod tests {
         // Test AB update to B
         println!("Checking AB update to B");
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
-            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
             storage: Storage {
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),
@@ -747,7 +747,7 @@ mod tests {
         // Test AB update to A
         println!("Checking AB update to A");
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
-            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
             storage: Storage {
                 ab_active_volume: Some(AbVolumeSelection::VolumeB),
@@ -759,7 +759,7 @@ mod tests {
         // Test AB update with no active volume
         println!("Checking AB update with no active volume");
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
-            servicing_type: Some(ServicingType::AbUpdate),
+            servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
             storage: Storage {
                 // Set to None to trigger default behavior

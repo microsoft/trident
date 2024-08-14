@@ -61,8 +61,8 @@ impl Module for OsConfigModule {
         // other kinds of updates. Limit operation to:
         // 1. ServicingType::CleanInstall,
         // 2. ServicingType::AbUpdate, to be able to do E2E A/B update testing.
-        if host_status.servicing_type != Some(ServicingType::CleanInstall)
-            && host_status.servicing_type != Some(ServicingType::AbUpdate)
+        if host_status.servicing_type != ServicingType::CleanInstall
+            && host_status.servicing_type != ServicingType::AbUpdate
         {
             debug!(
                 "Skipping step 'Configure' for module '{}' during servicing type '{:?}'",
@@ -128,7 +128,7 @@ impl Module for MosConfigModule {
     }
 
     fn prepare(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
-        if host_status.servicing_type != Some(ServicingType::CleanInstall) {
+        if host_status.servicing_type != ServicingType::CleanInstall {
             debug!(
                 "Skipping step 'Prepare' for module '{}' during servicing type '{:?}'",
                 self.name(),

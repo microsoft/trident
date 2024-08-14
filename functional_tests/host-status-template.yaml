@@ -1,5 +1,5 @@
 bootNext: "0003"
-servicingType: null
+servicingType: no-active-servicing
 servicingState: provisioned
 installIndex: 0
 storage:

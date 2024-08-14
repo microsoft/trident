@@ -381,13 +381,15 @@ impl Trident {
                 }
                 Err(e) => {
                     error!("Firmware performed a rollback into an incorrect OS image: {e}");
-                    if datastore.host_status().servicing_type == Some(ServicingType::CleanInstall) {
+                    if datastore.host_status().servicing_type == ServicingType::CleanInstall {
                         datastore.with_host_status(|host_status| {
+                            host_status.servicing_type = ServicingType::NoActiveServicing;
                             host_status.servicing_state = ServicingState::CleanInstallFailed;
                         })?;
                         return Err(TridentError::new(ServicingError::RollbackCleanInstall));
                     } else {
                         datastore.with_host_status(|host_status| {
+                            host_status.servicing_type = ServicingType::NoActiveServicing;
                             host_status.servicing_state = ServicingState::AbUpdateFailed;
                         })?;
                         return Err(TridentError::new(ServicingError::RollbackAbUpdate));
@@ -408,7 +410,7 @@ impl Trident {
             info!("Setting boot order");
             bootentries::set_boot_order(datastore_path)?;
 
-            if datastore.host_status().servicing_type == Some(ServicingType::CleanInstall) {
+            if datastore.host_status().servicing_type == ServicingType::CleanInstall {
                 info!(
                     "Clean install of runtime OS succeeded. Setting servicing state to Provisioned"
                 );
@@ -418,7 +420,7 @@ impl Trident {
             }
             datastore.with_host_status(|host_status| {
                 host_status.servicing_state = ServicingState::Provisioned;
-                host_status.servicing_type = None;
+                host_status.servicing_type = ServicingType::NoActiveServicing;
             })?;
         }
 
@@ -669,8 +671,8 @@ fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(
             expected_root_path, expected_root_path_canonicalized
         );
         debug!("Current root device path: {:?}", root_dev_path);
-        // If root_device_path is None, Trident tried to perform reboot as part of CleanInstall
-        if host_status.servicing_type == Some(ServicingType::CleanInstall) {
+
+        if host_status.servicing_type == ServicingType::CleanInstall {
             bail!("Reboot validation failed: Firmware rolled back into provisioning OS");
         } else {
             bail!(
@@ -785,7 +787,7 @@ mod functional_test {
                 ..Default::default()
             },
             servicing_state: ServicingState::Finalized,
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_type: ServicingType::CleanInstall,
             ..Default::default()
         };
 
@@ -830,7 +832,7 @@ mod functional_test {
         );
 
         // Test case #4: After A/B update from A to B, Trident correctly booted into root-b.
-        host_status.servicing_type = Some(ServicingType::AbUpdate);
+        host_status.servicing_type = ServicingType::AbUpdate;
         host_status.servicing_state = ServicingState::Finalized;
         // Update active volume to VolumeA
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);

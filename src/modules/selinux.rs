@@ -46,9 +46,7 @@ impl Module for SelinuxModule {
         host_status: &mut HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
-        if let Some(ServicingType::CleanInstall) | Some(ServicingType::AbUpdate) =
-            host_status.servicing_type
-        {
+        if let ServicingType::CleanInstall | ServicingType::AbUpdate = host_status.servicing_type {
             // Get the mount points for the filesystems that are not of type vfat as setfiles does
             // not support vfat
             let mount_paths: Vec<&trident_api::config::MountPoint> = host_status

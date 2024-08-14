@@ -170,7 +170,7 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
     host_status = yaml.load(host_status_output, Loader=HostStatusSafeLoader)
 
     # Check that servicingType, servicingState are as expected
-    assert host_status["servicingType"] == None
+    assert host_status["servicingType"] == "no-active-servicing"
     assert host_status["servicingState"] == "provisioned"
 
     # Check partitions size and type
