@@ -42,6 +42,12 @@ pub enum InitializationError {
     #[error("Failed to parse the local config")]
     ParseLocalConfig,
 
+    #[error("Failed to load local Trident Host Status")]
+    LoadHostStatus,
+
+    #[error("Failed to parse the Host Status")]
+    ParseHostStatus,
+
     #[error("Failed to read '/proc/cmdline'")]
     ReadCmdline,
 

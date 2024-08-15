@@ -25,6 +25,7 @@ use crate::modules::{bootentries, get_block_device_path, storage::tabfile};
 mod datastore;
 mod logging;
 mod modules;
+pub mod offline_init;
 mod orchestrate;
 
 #[cfg(feature = "grpc-dangerous")]
@@ -681,32 +682,6 @@ fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(
             );
         }
     }
-
-    Ok(())
-}
-
-/// Given a path to a Host Status file, initializes the datastore with the Host Status.
-/// This command can be executed offline in a chroot environment as part of MIC image customization.
-pub fn offline_initialize(hs_path: &PathBuf) -> Result<(), Error> {
-    let host_status: HostStatus = {
-        info!("Reading Host Status from {:?}", hs_path);
-        let host_status_yaml = fs::read_to_string(hs_path)
-            .with_context(|| format!("Failed to read Host Status from {:?}", hs_path))?;
-        serde_yaml::from_str(&host_status_yaml).context("Failed to parse Host Status from YAML")?
-    };
-
-    let datastore_path = host_status.spec.trident.datastore_path.clone();
-
-    let mut datastore =
-        DataStore::open_temporary().unstructured("Failed to open temporary datastore")?;
-    datastore
-        .with_host_status(|hs| *hs = host_status)
-        .unstructured("Failed to set new HostStatus")?;
-
-    datastore.persist(&datastore_path).unstructured(format!(
-        "Failed to persist Host Status to datastore at {:?}",
-        datastore_path
-    ))?;
 
     Ok(())
 }

@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
 use log::{error, info, LevelFilter};
 
-use trident::{BackgroundLog, Logstream, MultiLogger, TraceStream};
+use trident::{offline_init, BackgroundLog, Logstream, MultiLogger, TraceStream};
 
 use trident_api::error::TridentResultExt;
 
@@ -110,7 +110,10 @@ fn run_trident(
             return Ok(());
         }
 
-        Commands::OfflineInitialize { hs_path } => return trident::offline_initialize(hs_path),
+        Commands::OfflineInitialize { hs_path } => {
+            return offline_init::execute(hs_path)
+                .unstructured("Failed to offline initialize Trident datastore")
+        }
 
         _ => (),
     }

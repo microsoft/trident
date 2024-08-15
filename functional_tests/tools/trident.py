@@ -21,10 +21,10 @@ class TridentTool:
 
         return self.node.execute(cmd)
 
-    def get(
-        self,
-    ) -> str:
+    def get(self, config=None) -> str:
         cmd = f"trident get --verbosity DEBUG"
+        if config:
+            cmd = f"{cmd} --config {config}"
 
         result = self.node.execute(cmd)
         assert_that(result.exit_code).is_equal_to(0)
@@ -34,6 +34,15 @@ class TridentTool:
         self,
     ) -> None:
         cmd = f"sudo trident start-network --verbosity DEBUG"
+
+        result = self.node.execute(cmd)
+        assert_that(result.exit_code).is_equal_to(0)
+
+    def offline_initialize(
+        self,
+        host_status_path: str,
+    ) -> None:
+        cmd = f"sudo trident offline-initialize {host_status_path} --verbosity DEBUG"
 
         result = self.node.execute(cmd)
         assert_that(result.exit_code).is_equal_to(0)
