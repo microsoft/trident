@@ -3,8 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::anyhow;
-use trident_api::error::{InitializationError, InternalError, ReportError, TridentError};
+use trident_api::error::{
+    ContainerConfigurationError, InitializationError, InternalError, TridentError,
+};
 
 /// Path to the root of the host filesystem. Expected to be mounted there when
 /// running in a container.
@@ -24,10 +25,13 @@ pub fn is_running_in_container() -> Result<bool, TridentError> {
     }
 
     if Path::new("/.dockerenv").exists() {
-        return Err(anyhow!(
-            "Running from docker container, but {DOCKER_ENVIRONMENT} environment variable is not set"
-        ))
-        .structured(InitializationError::ContainerConfigurationCheck);
+        return Err(TridentError::new(
+            InitializationError::ContainerConfiguration {
+                inner: ContainerConfigurationError::DockerEnvironmentVarCheck {
+                    docker_env_var: DOCKER_ENVIRONMENT.to_string(),
+                },
+            },
+        ));
     }
 
     Ok(false)
@@ -44,11 +48,13 @@ fn get_host_root_path_impl(host_root_path: &Path) -> Result<PathBuf, TridentErro
 
     // We expect the host filesystem to be available under host_root_path
     if !host_root_path.exists() {
-        return Err(anyhow!(
-            "Running from docker container, but {} is not mounted",
-            host_root_path.display()
-        ))
-        .structured(InitializationError::ContainerConfigurationCheck);
+        return Err(TridentError::new(
+            InitializationError::ContainerConfiguration {
+                inner: ContainerConfigurationError::HostRootMountCheck {
+                    host_root_path: host_root_path.to_string_lossy().to_string(),
+                },
+            },
+        ));
     }
     Ok(PathBuf::from(host_root_path))
 }
@@ -65,18 +71,63 @@ pub fn get_host_root_path() -> Result<PathBuf, TridentError> {
 mod test {
     use super::*;
 
+    use trident_api::error::{ContainerConfigurationError, ErrorKind};
+
     #[test]
-    fn test_container() {
-        // get_host_root_path_impl tests
+    fn test_get_host_root_path() {
+        // Do cleanup
+        env::remove_var(DOCKER_ENVIRONMENT);
+
+        // Test case #1: Running in a container
         env::set_var(DOCKER_ENVIRONMENT, "true");
         assert_eq!(
             super::get_host_root_path_impl(Path::new(".")).unwrap(),
             Path::new(".")
         );
-        super::get_host_root_path_impl(Path::new("/does-not-exist")).unwrap_err();
 
+        // Test case #2: Running in a container but host root path does not exist
+        assert_eq!(
+            super::get_host_root_path_impl(Path::new("/does-not-exist"))
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::Initialization(InitializationError::ContainerConfiguration {
+                inner: ContainerConfigurationError::HostRootMountCheck {
+                    host_root_path: "/does-not-exist".to_string()
+                }
+            })
+        );
+
+        // Test case #3: Not running in a container
         env::remove_var(DOCKER_ENVIRONMENT);
-        super::get_host_root_path_impl(Path::new(".")).unwrap_err();
+        assert_eq!(
+            get_host_root_path().unwrap_err().kind(),
+            &ErrorKind::Internal(InternalError::RunInContainer)
+        );
+        assert_eq!(
+            super::get_host_root_path_impl(Path::new("."))
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::Internal(InternalError::RunInContainer)
+        );
+
+        // Test case #4: Running in a container but HOST_ROOT_PATH does not exist
+        env::set_var(DOCKER_ENVIRONMENT, "true");
+        let test_dir = Path::new(HOST_ROOT_PATH);
+        if test_dir.exists() {
+            assert_eq!(super::get_host_root_path_impl(test_dir).unwrap(), test_dir);
+            std::fs::remove_dir(test_dir).unwrap();
+        }
+        assert_eq!(
+            get_host_root_path().unwrap_err().kind(),
+            &ErrorKind::Initialization(InitializationError::ContainerConfiguration {
+                inner: ContainerConfigurationError::HostRootMountCheck {
+                    host_root_path: HOST_ROOT_PATH.to_string()
+                }
+            })
+        );
+
+        // Do cleanup
+        env::remove_var(DOCKER_ENVIRONMENT);
     }
 }
 
@@ -86,7 +137,7 @@ mod functional_test {
     use std::fs::File;
 
     use pytest_gen::functional_test;
-    use trident_api::error::ErrorKind;
+    use trident_api::error::{ContainerConfigurationError, ErrorKind};
 
     use super::*;
 
@@ -112,40 +163,12 @@ mod functional_test {
 
         assert!(result.unwrap());
         assert_eq!(
-            result2
-                .unwrap_err()
-                .unstructured("")
-                .root_cause()
-                .to_string(),
-            "Running from docker container, but DOCKER_ENVIRONMENT environment variable is not set"
-        );
-    }
-
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_get_host_root_path_fails_outside_container() {
-        env::remove_var(DOCKER_ENVIRONMENT);
-        assert_eq!(
-            get_host_root_path().unwrap_err().kind(),
-            &ErrorKind::Internal(InternalError::RunInContainer)
-        );
-    }
-
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_get_host_root_path_fails_in_simulated_container_without_host_mount() {
-        env::set_var(DOCKER_ENVIRONMENT, "true");
-
-        let test_dir = Path::new(HOST_ROOT_PATH);
-        if test_dir.exists() {
-            std::fs::remove_dir(test_dir).unwrap();
-        }
-
-        assert_eq!(
-            get_host_root_path()
-                .unwrap_err()
-                .unstructured("")
-                .root_cause()
-                .to_string(),
-            "Running from docker container, but /host is not mounted"
+            result2.unwrap_err().kind(),
+            &ErrorKind::Initialization(InitializationError::ContainerConfiguration {
+                inner: ContainerConfigurationError::DockerEnvironmentVarCheck {
+                    docker_env_var: DOCKER_ENVIRONMENT.to_string()
+                }
+            })
         );
     }
 

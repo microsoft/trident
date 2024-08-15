@@ -24,35 +24,50 @@ pub enum ExecutionEnvironmentMisconfigurationError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InitializationError {
+    #[error("Safety check failed on clean install")]
+    CleanInstallSafetyCheck,
+
     #[error("Failed to connect to logstream")]
     ConnectToLogstream,
 
     #[error("Failed to connect to tracestream")]
     ConnectToTracestream,
 
-    #[error("Container configuration check failed")]
-    ContainerConfigurationCheck,
+    #[error(transparent)]
+    ContainerConfiguration {
+        #[from]
+        inner: ContainerConfigurationError,
+    },
 
     #[error("Failed to get host root path")]
     GetHostRootPath,
 
-    #[error("Failed to load local Trident config")]
-    LoadLocalConfig,
-
-    #[error("Failed to parse the local config")]
-    ParseLocalConfig,
-
     #[error("Failed to load local Trident Host Status")]
     LoadHostStatus,
+
+    #[error("Failed to load local Trident config")]
+    LoadLocalConfig,
 
     #[error("Failed to parse the Host Status")]
     ParseHostStatus,
 
+    #[error("Failed to parse the local config")]
+    ParseLocalConfig,
+
     #[error("Failed to read '/proc/cmdline'")]
     ReadCmdline,
+}
 
-    #[error("Safety check failed on clean install")]
-    CleanInstallSafetyCheck,
+/// Identifies errors that occur when the host is running from a docker container, but the system
+/// is not configured correctly.
+#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ContainerConfigurationError {
+    #[error("Running from docker container, but {docker_env_var} environment variable is not set")]
+    DockerEnvironmentVarCheck { docker_env_var: String },
+
+    #[error("Running from docker container, but {host_root_path} is not mounted")]
+    HostRootMountCheck { host_root_path: String },
 }
 
 /// Identifies errors that occur due to an internal bug or failure in Trident.
@@ -130,6 +145,9 @@ pub enum InvalidInputError {
 pub enum ServicingError {
     #[error("Failed to apply Netplan config")]
     ApplyNetplanConfig,
+
+    #[error("Failed to check if '{path}' is a mount point")]
+    CheckIfMountPoint { path: String },
 
     #[error("Failed to mount special directory '{dir}' for chroot")]
     ChrootMountSpecialDir { dir: String },
@@ -250,9 +268,6 @@ pub enum ServicingError {
     #[error("Failed to mount overlay '{target}'")]
     MountOverlay { target: String },
 
-    #[error("Failed to check if '{path}' is a mount point")]
-    CheckIfMountPoint { path: String },
-
     #[error("Failed to open firewall")]
     OpenFirewall,
 
@@ -354,11 +369,11 @@ pub enum DatastoreError {
     #[error("Failed to switch datastore path to '{new_path}' as datastore is persistent")]
     SwitchPathOnPersistentDatastore { new_path: String },
 
-    #[error("Failed to write to datastore")]
-    WriteToDatastore,
-
     #[error("Failed to write to datastore as it is closed")]
     WriteToClosedDatastore,
+
+    #[error("Failed to write to datastore")]
+    WriteToDatastore,
 }
 
 /// Identifies errors that occur when clean install or update fail due to the current configuration
