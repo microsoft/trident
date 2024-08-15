@@ -4,10 +4,13 @@ os:
   packages:
     install:
       - curl
+      - device-mapper
       - dnf
       - moby-engine
       - moby-cli
       - openssh-server
+      - squashfs-tools
+      - tar
       - vim
 
   additionalFiles:

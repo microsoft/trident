@@ -20,7 +20,7 @@ stages:
     variables:
       ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
       ob_artifactBaseName: ${{ parameters.outputArtifactName }}
-      micBuildType: "preview"
+      micBuildType: "release"
       micVersion: "*.*.*"
       baseimgBuildType: "release"
       baseimgVersion: "*.*.*"
