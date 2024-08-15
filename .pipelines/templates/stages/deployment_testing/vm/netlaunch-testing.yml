@@ -30,7 +30,7 @@ stages:
         timeoutInMinutes: 45
         pool:
           type: linux
-          name: Trident_Ubuntu
+          name: trident-ubuntu-1es-pool-eastus2
           hostArchitecture: amd64
 
         variables:
@@ -111,7 +111,7 @@ stages:
         timeoutInMinutes: 25
         pool:
           type: linux
-          name: Trident_Ubuntu
+          name: trident-ubuntu-1es-pool-eastus2
           hostArchitecture: amd64
 
         strategy:

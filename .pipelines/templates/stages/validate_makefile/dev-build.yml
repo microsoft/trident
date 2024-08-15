@@ -8,7 +8,7 @@ stages:
         timeoutInMinutes: 30
         pool:
           type: linux
-          name: Trident_Ubuntu
+          name: trident-ubuntu-1es-pool-eastus2
           hostArchitecture: amd64
 
         variables:
