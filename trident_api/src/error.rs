@@ -265,6 +265,9 @@ pub enum ServicingError {
     #[error("Failed to mount newroot")]
     MountNewroot,
 
+    #[error("Failed to mount special directory '{dir}' in newroot")]
+    MountNewrootSpecialDir { dir: String },
+
     #[error("Failed to mount overlay '{target}'")]
     MountOverlay { target: String },
 

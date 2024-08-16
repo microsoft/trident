@@ -1,15 +1,27 @@
 FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 
-RUN \
-    tdnf -y install \
-    netplan mdadm tpm2-tools veritysetup cryptsetup && \
-    tdnf clean all
+RUN tdnf -y install \
+    # Explicitly required by Trident specfile
+    e2fsprogs \
+    util-linux \
+    dosfstools \
+    efibootmgr \
+    lsof \
+    # Explicitly suggested by Trident specfile
+    netplan \
+    mdadm \
+    tpm2-tools \
+    cryptsetup \
+    veritysetup
 
 RUN \
     --mount=type=bind,source=./artifacts/systemd,target=/systemd \
+    tdnf install -y \
+    /systemd/*.rpm
+
+RUN \
     --mount=type=bind,source=./bin/RPMS,target=/trident \
     tdnf install -y \
-    /systemd/*.rpm \
     /trident/x86_64/trident-0*.rpm && \
     tdnf clean all
 

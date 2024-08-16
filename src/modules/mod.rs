@@ -11,15 +11,11 @@ use std::{
 use tokio::sync::mpsc;
 
 use log::{debug, error, info, warn};
-use sys_mount::{Mount, MountFlags};
 
-use osutils::{chroot, container, exe::RunAndCheck, mount, path::join_relative};
+use osutils::{chroot, container, exe::RunAndCheck, path::join_relative};
 use trident_api::{
     config::HostConfiguration,
-    constants::{
-        self, ESP_MOUNT_POINT_PATH, EXEC_ROOT_PATH, ROOT_MOUNT_POINT_PATH,
-        UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
-    },
+    constants::{self, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
     error::{
         InitializationError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -58,10 +54,10 @@ pub mod storage;
 pub mod bootentries;
 mod etc_overlay;
 mod kexec;
-mod mount_root;
+mod newroot;
 pub mod selinux;
 
-use mount_root::NewrootMount;
+use newroot::NewrootMount;
 
 trait Module: Send {
     fn name(&self) -> &'static str;
@@ -297,26 +293,27 @@ fn stage_clean_install(
     prepare(modules, state)?;
 
     info!("Preparing storage to mount new root");
-    let root_mount = initialize_new_root(state, host_config)?;
-    let new_root_path = root_mount.path();
-    let exec_root_path = root_mount
-        .execroot_path()
-        .structured(ServicingError::MountExecroot)?;
+    let newroot_mount = initialize_new_root(state, host_config)?;
 
-    provision(modules, state, new_root_path)?;
+    provision(modules, state, newroot_mount.path())?;
 
-    info!("Entering '{}' chroot", new_root_path.display());
-    chroot::enter_update_chroot(new_root_path)
+    info!("Entering '{}' chroot", newroot_mount.path().display());
+    chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
         .execute_and_exit(|| {
             info!("Entered chroot");
-            state.switch_datastore_to_path(exec_root_path)?;
+            state.switch_datastore_to_path(newroot_mount.execroot_relative_path())?;
 
             // If verity is present, it means that we are currently doing root
             // verity. For now, we can assume that /etc is readonly, so we setup
             // a writable overlay for it.
             let use_overlay = !host_config.storage.internal_verity.is_empty();
-            configure(modules, state, exec_root_path, use_overlay)?;
+            configure(
+                modules,
+                state,
+                newroot_mount.execroot_relative_path(),
+                use_overlay,
+            )?;
 
             // At this point, clean install has been staged, so update servicing state
             debug!("Updating host's servicing state to Staged");
@@ -333,8 +330,8 @@ fn stage_clean_install(
 
     info!("Staging of clean install succeeded");
 
-    // Return the new root device path and the list of mounts
-    Ok(root_mount)
+    // Return the newroot mount object
+    Ok(newroot_mount)
 }
 
 /// Finalizes a clean install. Takes in 4 arguments:
@@ -509,29 +506,32 @@ fn stage_update(
 
     prepare(modules, state)?;
 
-    let root_mount = if let ServicingType::AbUpdate = servicing_type {
+    let newroot_mount = if let ServicingType::AbUpdate = servicing_type {
         info!("Preparing storage to mount new root");
 
-        let root_mount = initialize_new_root(state, host_config)?;
-        let new_root_path = root_mount.path();
-        let exec_root_path = root_mount
-            .execroot_path()
-            .structured(ServicingError::MountExecroot)?;
+        let newroot_mount = initialize_new_root(state, host_config)?;
 
-        provision(modules, state, new_root_path)?;
+        provision(modules, state, newroot_mount.path())?;
 
         // If verity is present, it means that we are currently doing root
         // verity. For now, we can assume that /etc is readonly, so we setup
         // a writable overlay for it.
         let use_overlay = !host_config.storage.internal_verity.is_empty();
 
-        info!("Entering '{}' chroot", new_root_path.display());
-        chroot::enter_update_chroot(new_root_path)
+        info!("Entering '{}' chroot", newroot_mount.path().display());
+        chroot::enter_update_chroot(newroot_mount.path())
             .message("Failed to enter chroot")?
-            .execute_and_exit(|| configure(modules, state, exec_root_path, use_overlay))
+            .execute_and_exit(|| {
+                configure(
+                    modules,
+                    state,
+                    newroot_mount.execroot_relative_path(),
+                    use_overlay,
+                )
+            })
             .message("Failed to execute in chroot")?;
 
-        Some(root_mount)
+        Some(newroot_mount)
     } else {
         info!("Running configure");
         configure(modules, state, Path::new(ROOT_MOUNT_POINT_PATH), false)?;
@@ -546,7 +546,7 @@ fn stage_update(
 
     info!("Staging of update '{:?}' succeeded", servicing_type);
 
-    Ok(root_mount)
+    Ok(newroot_mount)
 }
 
 /// Finalizes an update. Takes in 2 arguments:
@@ -762,22 +762,11 @@ fn provision(
     Ok(())
 }
 
-/// Returns the path to the new root.
-pub(super) fn get_new_root_path() -> PathBuf {
-    let mut new_root_path = Path::new(UPDATE_ROOT_PATH);
-    if mount::ensure_mount_directory(new_root_path).is_err() {
-        new_root_path = Path::new(UPDATE_ROOT_FALLBACK_PATH);
-    }
-    new_root_path.to_owned()
-}
-
 #[tracing::instrument(skip_all)]
 pub(super) fn initialize_new_root(
     state: &mut DataStore,
     host_config: &HostConfiguration,
 ) -> Result<NewrootMount, TridentError> {
-    let new_root_path = get_new_root_path();
-
     // Only initialize block devices if currently staging a deployment
     if state.host_status().servicing_state == ServicingState::Staging {
         state.try_with_host_status(|host_status| {
@@ -785,36 +774,8 @@ pub(super) fn initialize_new_root(
         })?;
     }
 
-    // Mount new root while staging a new deployment OR while finalizing a previous deployment
-    let mut root_mount = mount_root::mount_new_root(state.host_status(), &new_root_path)?;
-
-    let tmp_mount = Mount::builder()
-        .fstype("tmpfs")
-        .flags(MountFlags::empty())
-        .mount("tmpfs", new_root_path.join("tmp"))
-        .structured(ServicingError::ChrootMountSpecialDir {
-            dir: "/tmp".to_string(),
-        })?;
-    root_mount.add_mount(tmp_mount.target_path().to_owned());
-
-    let exec_root_path = Path::new(EXEC_ROOT_PATH);
-    let full_exec_root_path = join_relative(&new_root_path, exec_root_path);
-    std::fs::create_dir_all(&full_exec_root_path)
-        .structured(ServicingError::CreateExecrootDirectory)?;
-    mount::private_rbind_mount(ROOT_MOUNT_POINT_PATH, &full_exec_root_path)
-        .structured(ServicingError::MountExecroot)?;
-    root_mount.set_execroot_mount(exec_root_path.to_owned());
-
-    let run_mount = Mount::builder()
-        .fstype("tmpfs")
-        .flags(MountFlags::empty())
-        .mount("tmpfs", new_root_path.join("run"))
-        .structured(ServicingError::ChrootMountSpecialDir {
-            dir: "/run".to_string(),
-        })?;
-    root_mount.add_mount(run_mount.target_path().to_owned());
-
-    Ok(root_mount)
+    // Mount newroot
+    NewrootMount::create_and_mount(state.host_status()).message("Failed to create new root mount")
 }
 
 fn configure(

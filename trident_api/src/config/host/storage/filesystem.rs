@@ -152,6 +152,12 @@ impl MountOptions {
     }
 }
 
+impl Default for MountOptions {
+    fn default() -> Self {
+        MountOptions::defaults()
+    }
+}
+
 /// File system types.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]

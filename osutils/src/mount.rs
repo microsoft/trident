@@ -42,38 +42,6 @@ pub fn mount(
     Ok(())
 }
 
-/// Create a recursive bind mount for mount_dir as an alias of path, including
-/// all sub-mounts. The mount is private, confining mount/unmount events to this
-/// point.
-pub fn private_rbind_mount(
-    path: impl AsRef<Path>,
-    mount_dir: impl AsRef<Path>,
-) -> Result<(), Error> {
-    Command::new("mount")
-        .arg("--rbind")
-        .arg("--make-rprivate")
-        .arg(path.as_ref())
-        .arg(mount_dir.as_ref())
-        .run_and_check()
-        .context(format!(
-            "Failed to mount {} as a bind mount for {}",
-            path.as_ref().display(),
-            mount_dir.as_ref().display(),
-        ))
-}
-
-/// Recursively remounts a given directory as private.
-pub fn remount_rprivate(mount_dir: impl AsRef<Path>) -> Result<(), Error> {
-    Command::new("mount")
-        .arg("--make-rprivate")
-        .arg(mount_dir.as_ref())
-        .run_and_check()
-        .context(format!(
-            "Failed to remount {} as private",
-            mount_dir.as_ref().display(),
-        ))
-}
-
 /// Unmounts given directory mount_dir.
 pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error> {
     let mut cmd = Command::new("umount");
@@ -386,56 +354,6 @@ mod functional_test {
             umount_result_2.unwrap_err().root_cause().to_string(),
             "Process output:\nstderr:\numount: /path/to/non/existent/directory: no mount point specified.\n\n",
             "Unmounting a non-existent directory should fail"
-        );
-    }
-
-    #[functional_test(feature = "helpers")]
-    fn test_private_rbind_mount() {
-        let temp_source_dir = TempDir::new().unwrap();
-        let temp_intermediate_dir = TempDir::new().unwrap();
-        let temp_work_dir = TempDir::new().unwrap();
-
-        fs::write(temp_source_dir.path().join("test_file1"), "test1").unwrap();
-
-        private_rbind_mount(temp_source_dir.path(), temp_intermediate_dir.path()).unwrap();
-        private_rbind_mount(temp_intermediate_dir.path(), temp_work_dir.path()).unwrap();
-
-        // Check that files in source are available from work directory
-        assert_eq!(
-            fs::read_to_string(temp_work_dir.path().join("test_file1")).unwrap(),
-            "test1"
-        );
-
-        // Check that changes in work directory are reflected in mounted directories
-        fs::write(temp_work_dir.path().join("test_file2"), "test2").unwrap();
-        assert_eq!(
-            fs::read_to_string(temp_intermediate_dir.path().join("test_file2")).unwrap(),
-            "test2"
-        );
-        assert_eq!(
-            fs::read_to_string(temp_source_dir.path().join("test_file2")).unwrap(),
-            "test2"
-        );
-
-        // Check that files are no longer present after unmounting
-        fs::write(temp_source_dir.path().join("test_file3"), "test3").unwrap();
-        umount(temp_work_dir.path(), false).unwrap();
-        assert!(!temp_work_dir.path().join("test_file1").exists());
-        assert!(!temp_work_dir.path().join("test_file2").exists());
-        assert!(!temp_work_dir.path().join("test_file3").exists());
-
-        // Check that files are still available in source directory
-        assert_eq!(
-            fs::read_to_string(temp_source_dir.path().join("test_file1")).unwrap(),
-            "test1"
-        );
-        assert_eq!(
-            fs::read_to_string(temp_source_dir.path().join("test_file2")).unwrap(),
-            "test2"
-        );
-        assert_eq!(
-            fs::read_to_string(temp_source_dir.path().join("test_file3")).unwrap(),
-            "test3"
         );
     }
 }

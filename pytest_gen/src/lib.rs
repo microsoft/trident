@@ -189,7 +189,7 @@ fn validate_metadata(metadata: &TestCaseMetadataInt) {
         panic!("Missing function attribute or function name contains path separator");
     }
     match metadata.feature.as_str() {
-        "raid" | "encryption" | "verity" | "abupdate" | "core" | "helpers" | "" => {}
+        "raid" | "encryption" | "verity" | "abupdate" | "core" | "helpers" | "engine" | "" => {}
         _ => panic!("Unknown feature: {}", metadata.feature),
     }
     if !metadata.function.starts_with("test_") {
