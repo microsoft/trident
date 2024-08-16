@@ -92,6 +92,20 @@ bin/trident-rpms.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osm
 	@rm -rf bin/RPMS/x86_64
 	@tar xf bin/trident-rpms.tar.gz -C bin/
 
+bin/trident-rpms-azl3.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident
+	@docker build -t trident/trident-build:latest \
+		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)"\
+		--build-arg RPM_REL="dev.$(GIT_COMMIT)"\
+		-f Dockerfile.azl3 \
+		.
+	@mkdir -p bin/
+	@id=$$(docker create trident/trident-build:latest) && \
+	    docker cp -q $$id:/work/trident-rpms-azl3.tar.gz bin/ || \
+	    docker rm -v $$id
+	@rm -rf bin/RPMS/x86_64
+	@tar xf bin/trident-rpms-azl3.tar.gz -C bin/
+
 SYSTEMD_RPM_TAR_URL ?= https://hermesimages.blob.core.windows.net/hermes-test/systemd-254-3.tar.gz
 
 artifacts/systemd/systemd-254-3.cm2.x86_64.rpm:
