@@ -425,6 +425,10 @@ fn wait_for_raid_sync(host_status: &mut HostStatus, sync_timeout: u64) -> Result
         );
         sleep(sleep_duration);
     }
+    info!(
+        "All RAID arrays have finished syncing! Total wait time: {:?} seconds",
+        start_time.elapsed().as_secs()
+    );
     Ok(())
 }
 
