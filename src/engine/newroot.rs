@@ -18,7 +18,7 @@ use trident_api::{
     status::HostStatus,
 };
 
-use crate::modules;
+use crate::engine;
 
 /// List of special directories that should not be bind mounted anywhere in the
 /// execroot.
@@ -170,7 +170,7 @@ impl NewrootMount {
                 ))?;
 
                 let device_path =
-                    modules::get_block_device_path(host_status, &mp.target_id, false).context(
+                    engine::get_block_device_path(host_status, &mp.target_id, false).context(
                         format!("Failed to find block device path for id '{}'", mp.target_id),
                     )?;
 

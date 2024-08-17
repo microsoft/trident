@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Error};
+use engine::storage::rebuild;
 use log::{debug, error, info, warn};
-use modules::storage::rebuild;
 use nix::unistd::Uid;
 use tokio::sync::mpsc::{self};
 
@@ -20,22 +20,22 @@ use trident_api::error::{
 use trident_api::status::{HostStatus, ServicingState, ServicingType};
 
 use crate::datastore::DataStore;
-use crate::modules::{bootentries, get_block_device_path, storage::tabfile};
+use crate::engine::{bootentries, get_block_device_path, storage::tabfile};
 
 mod datastore;
+mod engine;
 mod logging;
-mod modules;
 pub mod offline_init;
 mod orchestrate;
 
 #[cfg(feature = "grpc-dangerous")]
 mod grpc;
 
+pub use engine::network::provisioning::start as start_provisioning_network;
 pub use logging::{
     background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
     tracestream::TraceStream,
 };
-pub use modules::network::provisioning::start as start_provisioning_network;
 pub use orchestrate::OrchestratorConnection;
 
 /// Trident version as provided by environment variables at build time
@@ -491,7 +491,7 @@ impl Trident {
                 debug!("Host config has been updated");
                 // If allowed operations include 'stage', start update
                 if cmd.allowed_operations.has_stage() {
-                    modules::update(cmd, datastore).message("Failed to run update()")
+                    engine::update(cmd, datastore).message("Failed to run update()")
                 } else {
                     warn!("Host config has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run");
                     Ok(())
@@ -510,7 +510,7 @@ impl Trident {
                 if datastore.host_status().servicing_state == ServicingState::Staged {
                     debug!("There is an update staged on the host");
                     if cmd.allowed_operations.has_finalize() {
-                        modules::finalize_update(
+                        engine::finalize_update(
                             datastore,
                             #[cfg(feature = "grpc-dangerous")]
                             &mut cmd.sender,
@@ -526,7 +526,7 @@ impl Trident {
                     //
                     // State cannot be NotProvisioned or Finalized here; Staged and AbUpdateFailed
                     // were addressed above
-                    modules::update(cmd, datastore).message("Failed to run update()")
+                    engine::update(cmd, datastore).message("Failed to run update()")
                 }
             }
         } else {
@@ -539,7 +539,7 @@ impl Trident {
                 debug!("Host config has been updated");
 
                 if cmd.allowed_operations.has_stage() {
-                    modules::clean_install(cmd, datastore).message("Failed to run clean_install()")
+                    engine::clean_install(cmd, datastore).message("Failed to run clean_install()")
                 } else {
                     warn!("Host config has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run");
                     Ok(())
@@ -558,10 +558,10 @@ impl Trident {
                     debug!("There is a clean install staged on the host");
                     if cmd.allowed_operations.has_finalize() {
                         // Remount new root and custom mounts if we're finalizing a clean install
-                        let root_mount = modules::initialize_new_root(datastore, &cmd.host_config)
+                        let root_mount = engine::initialize_new_root(datastore, &cmd.host_config)
                             .message("Failed to remount new root")?;
 
-                        modules::finalize_clean_install(
+                        engine::finalize_clean_install(
                             datastore,
                             root_mount.path(),
                             None,
@@ -578,7 +578,7 @@ impl Trident {
                     //
                     // State cannot be NotProvisioned, Provisioned, AbUpdateFailed, or
                     // Finalized here; Staged and CleanInstallFailed were addressed above.
-                    modules::clean_install(cmd, datastore).message("Failed to run clean_install()")
+                    engine::clean_install(cmd, datastore).message("Failed to run clean_install()")
                 }
             }
         }

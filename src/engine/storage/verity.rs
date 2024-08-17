@@ -27,7 +27,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::modules;
+use crate::engine;
 
 use super::raid;
 
@@ -172,7 +172,7 @@ fn get_root_verity_root_hash(host_status: &HostStatus) -> Result<String, Error> 
 
     // Get the boot device path
     let boot_device_id = &boot_mount_point.target_id;
-    let boot_device_path = modules::get_block_device_path(host_status, boot_device_id, false)
+    let boot_device_path = engine::get_block_device_path(host_status, boot_device_id, false)
         .context(format!(
             "Failed to find path of boot device with id '{}'",
             boot_device_id
@@ -234,7 +234,7 @@ fn get_verity_related_device_paths(
     verity_device: &config::InternalVerityDevice,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), Error> {
     let verity_data_path =
-        modules::get_block_device_path(host_status, &verity_device.data_target_id, false).context(
+        engine::get_block_device_path(host_status, &verity_device.data_target_id, false).context(
             format!(
                 "Failed to find path of verity data device with id '{}'",
                 verity_device.data_target_id
@@ -242,7 +242,7 @@ fn get_verity_related_device_paths(
         )?;
 
     let verity_hash_path =
-        modules::get_block_device_path(host_status, &verity_device.hash_target_id, false).context(
+        engine::get_block_device_path(host_status, &verity_device.hash_target_id, false).context(
             format!(
                 "Failed to find verity hash device with ID '{}'",
                 verity_device.hash_target_id
@@ -259,7 +259,7 @@ fn get_verity_related_device_paths(
             "Cannot find overlay device mount point '{TRIDENT_OVERLAY_PATH}'"
         ))?
         .target_id;
-    let overlay_device_path = modules::get_block_device_path(host_status, overlay_target_id, false)
+    let overlay_device_path = engine::get_block_device_path(host_status, overlay_target_id, false)
         .context(format!(
             "Failed to find overlay device {}",
             overlay_target_id

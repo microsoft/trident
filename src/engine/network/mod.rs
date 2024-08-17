@@ -6,7 +6,7 @@ use trident_api::{
     status::HostStatus,
 };
 
-use crate::modules::Module;
+use crate::engine::Module;
 
 mod netplan;
 pub mod provisioning;

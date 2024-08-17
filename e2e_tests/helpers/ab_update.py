@@ -48,7 +48,7 @@ def trident_run(connection, keys_file_path, ip_address, user_name, trident_confi
         output = out_stream.getvalue() + err_stream.getvalue()
         # Handle the case where the command times out
         output_lines = output.strip().split("\n")
-        if "[INFO  trident::modules] Rebooting system" in output_lines:
+        if "[INFO  trident::engine] Rebooting system" in output_lines:
             print("Timeout occurred. Host rebooted successfully.")
             return
         else:
@@ -67,7 +67,7 @@ def trident_run(connection, keys_file_path, ip_address, user_name, trident_confi
     # Check the exit code: if 0, staging of A/B update succeeded.
     if (
         result.return_code == 0
-        and "[INFO  trident::modules] Staging of update 'AbUpdate' succeeded"
+        and "[INFO  trident::engine] Staging of update 'AbUpdate' succeeded"
         in output_lines
     ):
         print(
@@ -76,13 +76,13 @@ def trident_run(connection, keys_file_path, ip_address, user_name, trident_confi
     # If exit code is -1, host rebooted.
     elif (
         result.return_code == -1
-        and "[INFO  trident::modules] Rebooting system" in output_lines
+        and "[INFO  trident::engine] Rebooting system" in output_lines
     ):
         print("Received expected output with exit code -1. Host rebooted successfully.")
     # If exit code is non 0 but host was running the rerun script, keep reconnecting.
     elif (
         result.return_code != 0
-        and "[DEBUG trident::modules::hooks] Running script fail-on-the-first-run-to-force-rerun with interpreter /usr/bin/python3"
+        and "[DEBUG trident::engine::hooks] Running script fail-on-the-first-run-to-force-rerun with interpreter /usr/bin/python3"
         in output_lines
     ):
         print("Detected an intentional Trident run failure. Attempting to reconnect...")

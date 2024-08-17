@@ -5,7 +5,7 @@ use trident_api::{
     status::HostStatus,
 };
 
-use crate::modules::Module;
+use crate::engine::Module;
 
 pub(super) mod esp;
 pub(super) mod grub;

@@ -10,7 +10,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::modules;
+use crate::engine;
 
 /// Creates clean filesystems on top of block devices that are not to be initialized with images,
 /// i.e. have the file system source 'Create'. The function also re-formats any inactive/update A/B
@@ -64,7 +64,7 @@ fn block_devices_needing_fs_creation(
                     Some(device_id),
                 ) if !host_status.spec.storage.is_adopted_partition(device_id) => {
                     // Get the block device info for the device_id
-                    modules::get_block_device_path(host_status, device_id, false)
+                    engine::get_block_device_path(host_status, device_id, false)
                     .map(|bd_info| (device_id.clone(), bd_info, fs.fs_type))
                 },
 
@@ -82,7 +82,7 @@ fn block_devices_needing_fs_creation(
                     "Servicing type is A/B update and A/B volume pair detected: {:?}",
                     device_id
                 );
-                modules::get_ab_volume_block_device_id(host_status, &device_id, false)
+                engine::get_ab_volume_block_device_id(host_status, &device_id, false)
                     .map(|ab_volume_bdi| (ab_volume_bdi, bd_path, fs_type))
             // If the block device is NOT an A/B volume pair, only add it to block_devices if
             // a filesystem has not been previously created, i.e. we're doing a clean install

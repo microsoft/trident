@@ -437,7 +437,7 @@ mod tests {
     };
     use url::Url;
 
-    use crate::modules::storage::tests::get_recovery_key_file;
+    use crate::engine::storage::tests::get_recovery_key_file;
 
     use super::*;
 

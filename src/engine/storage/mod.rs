@@ -15,7 +15,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::modules::Module;
+use crate::engine::Module;
 
 use tabfile::DEFAULT_FSTAB_PATH;
 

@@ -16,8 +16,8 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::modules;
-use crate::modules::storage::partitioning;
+use crate::engine;
+use crate::engine::storage::partitioning;
 
 /// Rebuilds the RAID array i.e adds the new disks partitions for the
 /// given RAID array.
@@ -95,11 +95,10 @@ fn rebuild_raid_array(
     );
 
     // Get the RAID path
-    let raid_path =
-        modules::get_block_device_path(host_status, raid_id, false).context(format!(
-            "Failed to find block device path for RAID array'{}'",
-            raid_id
-        ))?;
+    let raid_path = engine::get_block_device_path(host_status, raid_id, false).context(format!(
+        "Failed to find block device path for RAID array'{}'",
+        raid_id
+    ))?;
 
     // Add the new disk partitions in the RAID array
     for partition_path in rebuild_partition_paths {

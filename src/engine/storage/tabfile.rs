@@ -17,7 +17,7 @@ use trident_api::{
     status::HostStatus,
 };
 
-use crate::modules;
+use crate::engine;
 
 pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
@@ -43,7 +43,7 @@ fn entry_from_mountpoint(hs: &HostStatus, mp: &InternalMountPoint) -> Result<Tab
         // Now, for all the types that *do* require a block device:
         fs_type => {
             // Try to look up the block device
-            let device = modules::get_block_device_path(hs, &mp.target_id, false).context(
+            let device = engine::get_block_device_path(hs, &mp.target_id, false).context(
                 format!("Failed to find block device with id {}", mp.target_id),
             )?;
 

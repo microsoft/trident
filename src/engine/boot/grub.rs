@@ -14,7 +14,7 @@ use trident_api::{
     status::HostStatus,
 };
 
-use crate::modules;
+use crate::engine;
 
 /// Updates the boot filesystem UUID on the search command inside the GRUB
 /// config.
@@ -59,7 +59,7 @@ fn update_grub_config_boot(
 
 pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     // Get the root block device path
-    let root_device_path = modules::get_root_block_device_path(host_status)
+    let root_device_path = engine::get_root_block_device_path(host_status)
         .context("Cannot find the root block device path")?;
     if root_device_path.as_os_str().is_empty() {
         bail!("Root device path is none");
@@ -84,7 +84,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
 
     let boot_block_device_id = &boot_mount_point.target_id;
     let boot_block_device_path =
-        modules::get_block_device_path(host_status, boot_block_device_id, false)
+        engine::get_block_device_path(host_status, boot_block_device_id, false)
             .context("Failed to find boot block device")?;
 
     let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_path)?;
@@ -248,8 +248,8 @@ pub(crate) mod functional_test {
     use std::path::PathBuf;
 
     use const_format::formatcp;
+    use engine::storage::raid::create_sw_raid_array;
     use maplit::btreemap;
-    use modules::storage::raid::create_sw_raid_array;
     use osutils::{
         filesystems::MkfsFileSystemType,
         lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType},
@@ -495,7 +495,7 @@ pub(crate) mod functional_test {
             root_device_path.as_path(),
         );
         // Unmount and stop the raid array
-        modules::storage::raid::unmount_and_stop(&root_device_path).unwrap();
+        engine::storage::raid::unmount_and_stop(&root_device_path).unwrap();
         result.unwrap();
     }
 

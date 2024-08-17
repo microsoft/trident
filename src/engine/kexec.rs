@@ -5,7 +5,7 @@ use log::info;
 use nix::NixPath;
 use trident_api::error::TridentResultExt;
 
-use crate::modules::newroot::NewrootMount;
+use crate::engine::newroot::NewrootMount;
 
 #[allow(unused)]
 pub fn kexec(mut root_mount: NewrootMount, args: &str) -> Result<(), Error> {

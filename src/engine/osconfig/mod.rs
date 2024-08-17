@@ -10,7 +10,7 @@ use trident_api::{
     status::{HostStatus, ServicingType},
 };
 
-use crate::{modules::Module, OS_MODIFIER_BINARY_PATH};
+use crate::{engine::Module, OS_MODIFIER_BINARY_PATH};
 
 mod hostname;
 mod users;

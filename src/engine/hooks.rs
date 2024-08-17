@@ -20,7 +20,7 @@ use trident_api::{
     status::{HostStatus, ServicingType},
 };
 
-use crate::modules::Module;
+use crate::engine::Module;
 
 #[derive(Debug)]
 struct StagedFile {

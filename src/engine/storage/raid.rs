@@ -552,7 +552,7 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
 
-    use crate::modules::storage;
+    use crate::engine::storage;
 
     use super::*;
     use pytest_gen::functional_test;

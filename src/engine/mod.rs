@@ -28,7 +28,7 @@ use trident_api::{
 use crate::grpc::{self, protobufs::HostStatusState};
 use crate::{
     datastore::DataStore,
-    modules::{
+    engine::{
         boot::BootModule,
         hooks::HooksModule,
         initrd::InitrdModule,

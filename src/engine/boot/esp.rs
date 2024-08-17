@@ -22,7 +22,7 @@ use trident_api::{
     status::{HostStatus, ServicingType},
 };
 
-use crate::modules::{
+use crate::engine::{
     constants::{
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,

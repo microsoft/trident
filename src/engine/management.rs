@@ -14,7 +14,7 @@ use trident_api::{
     status::{HostStatus, ServicingType},
 };
 
-use crate::{modules::Module, TRIDENT_BINARY_PATH, TRIDENT_LOCAL_CONFIG_PATH};
+use crate::{engine::Module, TRIDENT_BINARY_PATH, TRIDENT_LOCAL_CONFIG_PATH};
 
 #[derive(Default, Debug)]
 pub struct ManagementModule;

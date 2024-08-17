@@ -439,7 +439,7 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use crate::{
-        modules::storage::partitioning::create_partitions, TRIDENT_TEMPORARY_DATASTORE_PATH,
+        engine::storage::partitioning::create_partitions, TRIDENT_TEMPORARY_DATASTORE_PATH,
     };
 
     use super::*;
