@@ -221,9 +221,9 @@ For more details on the Host Configuration format:
     set the host's servicing state to Finalized and reboot. After the host
     comes back up, Trident will confirm that firmware correctly booted from the
     updated runtime OS image and change the host's state to Provisioned.
-    Otherwise, if a rollback into the provisioning OS or the old runtime image
-    has occurred, Trident will notify the user and set the host's state to
-    CleanInstallFailed or AbUpdateFailed.
+    Otherwise, if the host failed to boot from the expected device and instead,
+    booted from another device, Trident will issue an error to the user and set
+    the host's servicing state to CleanInstallFailed or AbUpdateFailed.
 
   You can pass one, multiple, or no flags as a YAML list, for example:
 

@@ -39,9 +39,6 @@ pub enum InitializationError {
         inner: ContainerConfigurationError,
     },
 
-    #[error("Failed to get host root path")]
-    GetHostRootPath,
-
     #[error("Failed to load local Trident Host Status")]
     LoadHostStatus,
 
@@ -133,6 +130,14 @@ pub enum InvalidInputError {
     #[error("Failed to parse host configuration file from '{path}'")]
     ParseHostConfigurationFile { path: String },
 
+    #[error(
+        "Failed to run as the previous A/B update attempt with the same host configuration failed"
+    )]
+    RerunAbUpdateWithFailedHostConfiguration,
+
+    #[error("Failed to run as the previous clean install attempt with the same host configuration failed")]
+    RerunCleanInstallWithFailedHostConfiguration,
+
     #[error("Failed to translate kickstart")]
     TranslateKickstart,
 }
@@ -143,8 +148,17 @@ pub enum InvalidInputError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServicingError {
+    #[error("A/B update failed as host booted from '{root_device_path}' instead of the expected device '{expected_device_path}")]
+    AbUpdateRebootCheck {
+        root_device_path: String,
+        expected_device_path: String,
+    },
+
     #[error("Failed to apply Netplan config")]
     ApplyNetplanConfig,
+
+    #[error("Failed to canonicalize path '{path}'")]
+    CanonicalizePath { path: String },
 
     #[error("Failed to check if '{path}' is a mount point")]
     CheckIfMountPoint { path: String },
@@ -154,6 +168,12 @@ pub enum ServicingError {
 
     #[error("Failed to unmount special directory for chroot")]
     ChrootUnmountSpecialDir,
+
+    #[error("Clean install failed as host booted from '{root_device_path}' instead of the expected device '{expected_device_path}")]
+    CleanInstallRebootCheck {
+        root_device_path: String,
+        expected_device_path: String,
+    },
 
     #[error("Failed to clean up pre-existing RAID arrays")]
     CleanupRaid,
@@ -247,6 +267,12 @@ pub enum ServicingError {
     #[error("Failed to generate recovery key file '{key_file}'")]
     GenerateRecoveryKeyFile { key_file: String },
 
+    #[error("Failed to get block device path for device '{device_id}'")]
+    GetBlockDevicePath { device_id: String },
+
+    #[error("Failed to get mount point info for root with path '{root_path}'")]
+    GetRootMountPointInfo { root_path: String },
+
     #[error("Failed to get SELINUXTYPE")]
     GetSelinuxType,
 
@@ -292,14 +318,8 @@ pub enum ServicingError {
     #[error("Failed to render runtime network Netplan YAML")]
     RenderNetworkNetplanYaml,
 
-    #[error("Firmware performed a rollback. A/B update failed")]
-    RollbackAbUpdate,
-
-    #[error("Firmware performed a rollback. Clean install of runtime OS failed")]
-    RollbackCleanInstall,
-
-    #[error("Failed to fetch device path for root from /proc/mounts")]
-    RootMountPointDevPath,
+    #[error("Failed to fetch device path for root from '{mountinfo_file}'")]
+    RootMountPointDevPath { mountinfo_file: String },
 
     #[error("Failed to run post-configure script '{script_name}'")]
     RunPostConfigureScript { script_name: String },

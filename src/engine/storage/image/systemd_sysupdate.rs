@@ -3,7 +3,7 @@
 //! 1. Trident delegates download of the image and update of partition to systemd-sysupdate.
 //!    Currently, only partitions of type root and can be updated; boot can be written to. More
 //!    info in README.md.
-//! 2. Rollback and other advanced features are not yet implemented.
+//! 2. Other advanced features are not yet implemented.
 
 // TODO: In a future iteration, systemd-sysupdate.rs needs to be refactored, to
 // implement parallel downloads/updates of images with systemd-sysupdate.

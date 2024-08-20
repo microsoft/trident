@@ -44,6 +44,10 @@ pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     None => env!("CARGO_PKG_VERSION"),
 };
 
+/// Path to the mountinfo file in the host's proc directory that contains information about the
+/// host's mount points.
+const PROC_MOUNTINFO_PATH: &str = "/proc/self/mountinfo";
+
 /// Default Trident configuration file path.
 pub const TRIDENT_LOCAL_CONFIG_PATH: &str = "/etc/trident/config.yaml";
 
@@ -364,37 +368,51 @@ impl Trident {
         // If host's servicing state is Finalized, need to verify if firmware correctly booted from
         // the updated runtime OS image.
         if datastore.host_status().servicing_state == ServicingState::Finalized {
+            // If Trident is running inside a container, need to get the mount info file in the
+            // host's root filesystem bind-mounted at a path inside the container.
+            let proc_mountinfo_path = if container::is_running_in_container()
+                .message("Running in container check failed")?
+            {
+                let host_root =
+                    container::get_host_root_path().message("Failed to get host's root path")?;
+                path::join_relative(&host_root, PROC_MOUNTINFO_PATH)
+            } else {
+                Path::new(PROC_MOUNTINFO_PATH).to_path_buf()
+            };
             // Get device path of root mount point
             let root_dev_path = match tabfile::get_device_path(
-                Path::new("/proc/mounts"),
+                &proc_mountinfo_path,
                 Path::new(ROOT_MOUNT_POINT_PATH),
             ) {
                 Ok(path) => path,
                 Err(e) => {
                     error!("Failed to get device path of root mount point: {e}");
-                    return Err(TridentError::new(ServicingError::RootMountPointDevPath));
+                    return Err(TridentError::new(ServicingError::RootMountPointDevPath {
+                        mountinfo_file: proc_mountinfo_path.to_string_lossy().to_string(),
+                    }));
                 }
             };
-            info!("Validating whether firmware correctly booted into the updated runtime OS image");
-            match validate_reboot(datastore.host_status(), root_dev_path) {
+
+            info!("Validating whether host correctly booted into the updated runtime OS image");
+            match validate_reboot(datastore.host_status(), root_dev_path)
+                .message("Host failed to boot from the expected root device")
+            {
                 Ok(_) => {
-                    info!("Firmware correctly booted into the updated runtime OS image");
+                    info!("Host correctly booted into the updated runtime OS image");
                 }
                 Err(e) => {
-                    error!("Firmware performed a rollback into an incorrect OS image: {e}");
                     if datastore.host_status().servicing_type == ServicingType::CleanInstall {
                         datastore.with_host_status(|host_status| {
                             host_status.servicing_type = ServicingType::NoActiveServicing;
                             host_status.servicing_state = ServicingState::CleanInstallFailed;
                         })?;
-                        return Err(TridentError::new(ServicingError::RollbackCleanInstall));
                     } else {
                         datastore.with_host_status(|host_status| {
                             host_status.servicing_type = ServicingType::NoActiveServicing;
                             host_status.servicing_state = ServicingState::AbUpdateFailed;
                         })?;
-                        return Err(TridentError::new(ServicingError::RollbackAbUpdate));
                     }
+                    return Err(e);
                 }
             }
 
@@ -499,11 +517,13 @@ impl Trident {
             } else {
                 debug!("Host config has not been updated");
 
-                // If host config has not been updated and a rollback occurred with this HC
-                // before, ask the user to update HC and re-run
+                // If host config has not been updated and the previous A/B update failed, ask the
+                // user to update HC and re-run
                 if datastore.host_status().servicing_state == ServicingState::AbUpdateFailed {
-                    error!("Rollback occurred when Trident attempted A/B update with current host config. Update host config and re-run");
-                    return Err(TridentError::new(ServicingError::RollbackAbUpdate));
+                    error!("Previous A/B update failed with current host config. Update host config and re-run");
+                    return Err(TridentError::new(
+                        InvalidInputError::RerunAbUpdateWithFailedHostConfiguration,
+                    ));
                 }
 
                 // If an update has been previously staged, only need to finalize the update
@@ -547,10 +567,13 @@ impl Trident {
             } else {
                 debug!("Host config has not been updated");
 
-                // If host config has not been updated but a rollback occurred before, return
+                // If host config has not been updated and the previous clean install attempt
+                // failed, ask the user to update HC and re-run
                 if datastore.host_status().servicing_state == ServicingState::CleanInstallFailed {
-                    error!("Rollback occurred when Trident attempted clean install with current host config. Update host config and re-run");
-                    return Err(TridentError::new(ServicingError::RollbackCleanInstall));
+                    error!("Previous clean install attempt failed with current host config. Update host config and re-run");
+                    return Err(TridentError::new(
+                        InvalidInputError::RerunCleanInstallWithFailedHostConfiguration,
+                    ));
                 }
 
                 // If HS.spec matches the new HS, only need to finalize the clean install
@@ -618,68 +641,65 @@ impl Trident {
     }
 }
 
-/// Validates that the host correctly booted from the updated image after finalizing CleanInstall
-/// or A/B update. Otherwise, if a rollback occurred, returns an error.
+/// Validates whether the host booted from the expected runtime OS image, after rebooting to
+/// finalize a clean install or an A/B update. If the host booted from an unexpected device, it
+/// returns an error.
 #[tracing::instrument(skip_all)]
-fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(), Error> {
-    // Fetch mount point for root from host status and fetch target_id of root device
-    let root_target_id = match host_status
+fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(), TridentError> {
+    // Fetch mount point for root from host status and fetch id of root device
+    let root_device_id = match host_status
         .spec
         .storage
         .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
     {
         Some(mp) => &mp.target_id,
         None => {
-            bail!(
-                "Failed to get mount point for root '{}'. Disk intended for reboot no longer exists",
-                ROOT_MOUNT_POINT_PATH
-            );
+            return Err(TridentError::new(ServicingError::GetRootMountPointInfo {
+                root_path: ROOT_MOUNT_POINT_PATH.to_string(),
+            }));
         }
     };
-    debug!(
-        "Firmware booted from block device with target_id {:?}",
-        root_target_id
-    );
 
     // Fetch expected_root_dev_path. active=false b/c need to fetch info for volume that we expect
     // to be active at this point, after firmware has already rebooted, and it used to be the
     // update volume before the reboot.
-    let expected_root_path = get_block_device_path(host_status, root_target_id, false).context(
-        format!("Failed to get block device path for root '{root_target_id}'"),
+    let expected_root_path = get_block_device_path(host_status, root_device_id, false).structured(
+        ServicingError::GetBlockDevicePath {
+            device_id: root_device_id.to_string(),
+        },
     )?;
-    debug!(
-        "Non-canonicalized root device path: {}",
-        expected_root_path.display()
-    );
-    let expected_root_path_canonicalized = match expected_root_path.canonicalize() {
-        Ok(path) => path,
-        Err(e) => {
-            bail!(
-                "Failed to get canonical path for expected root '{}': {e}",
-                expected_root_path.display()
-            );
-        }
-    };
+    let expected_root_path_canonicalized =
+        expected_root_path
+            .canonicalize()
+            .structured(ServicingError::CanonicalizePath {
+                path: expected_root_path.display().to_string(),
+            })?;
 
-    // If current root device path is NOT the same as the expected root device path, firmware did
-    // not boot into the updated runtime OS image, but instead, performed a rollback into prov OS
-    // or old runtime OS.
+    // If current root device path is NOT the same as the expected root device path, firmware
+    // failed to boot from the expected device, so need to issue an error.
     // NOTE: For verity, path like /dev/mapper/root, which is what we use in host status, gets
     // resolved to /dev/dm-0. So, compare if matches either.
     if root_dev_path != expected_root_path && root_dev_path != expected_root_path_canonicalized {
-        debug!(
-            "Expected root device path: {:?}. In canonicalized format: {:?}",
-            expected_root_path, expected_root_path_canonicalized
+        info!(
+            "Expected host to boot from device with path '{}', canonicalized to '{}'",
+            expected_root_path.display(),
+            expected_root_path_canonicalized.display()
         );
-        debug!("Current root device path: {:?}", root_dev_path);
+        info!(
+            "Host booted from root device with path '{}'",
+            root_dev_path.display()
+        );
 
         if host_status.servicing_type == ServicingType::CleanInstall {
-            bail!("Reboot validation failed: Firmware rolled back into provisioning OS");
+            return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
+                root_device_path: root_dev_path.to_string_lossy().to_string(),
+                expected_device_path: expected_root_path.to_string_lossy().to_string(),
+            }));
         } else {
-            bail!(
-                "Reboot validation failed: Firmware rolled back into '{}'",
-                root_dev_path.display()
-            );
+            return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
+                root_device_path: root_dev_path.to_string_lossy().to_string(),
+                expected_device_path: expected_root_path.to_string_lossy().to_string(),
+            }));
         }
     }
 
@@ -741,10 +761,12 @@ mod functional_test {
             AbUpdate, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition,
             PartitionType, Storage,
         },
+        error::{ErrorKind, ServicingError},
         status::{AbVolumeSelection, Storage as HostStorage},
     };
 
-    /// Validates that validate_reboot() correctly detects rollback when root is a partition.
+    /// Validates that validate_reboot() correctly validates that the host booted from the expected
+    /// runtime OS image, after a clean install or an A/B update.
     #[functional_test]
     fn test_validate_reboot() {
         let mut host_status = HostStatus {
@@ -793,11 +815,13 @@ mod functional_test {
         };
 
         // Test case #0: If no mount points defined, should return an error.
-        let result0 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
-        let error_message0 = result0.unwrap_err().root_cause().to_string();
         assert_eq!(
-            error_message0,
-            "Failed to get mount point for root '/'. Disk intended for reboot no longer exists"
+            validate_reboot(&host_status, PathBuf::from("/dev/sda2"))
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::Servicing(ServicingError::GetRootMountPointInfo {
+                root_path: ROOT_MOUNT_POINT_PATH.to_string()
+            })
         );
 
         // Test case #1: If no root target id in block devices, should return an error.
@@ -807,11 +831,13 @@ mod functional_test {
             filesystem: FileSystemType::Ext4,
             options: vec![],
         }];
-        let result1 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
-        let error_message1 = result1.unwrap_err().root_cause().to_string();
         assert_eq!(
-            error_message1,
-            "Failed to get block device path for root 'root'"
+            validate_reboot(&host_status, PathBuf::from("/dev/sda2"))
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::Servicing(ServicingError::GetBlockDevicePath {
+                device_id: "root".to_string()
+            })
         );
 
         // Test case #2: After CleanInstall, Trident correctly booted into root-a.
@@ -821,45 +847,49 @@ mod functional_test {
             "root-a".to_owned() => PathBuf::from("/dev/sda2"),
             "root-b".to_owned() => PathBuf::from("/dev/sda3"),
         };
-        let result2 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
-        assert!(result2.is_ok());
+        validate_reboot(&host_status, PathBuf::from("/dev/sda2")).unwrap();
 
-        // Test case #3: After CleanInstall, Trident performed a rollback into prov OS.
-        let result3 = validate_reboot(&host_status, PathBuf::from("/provOS/path"));
-        let error_message3 = result3.unwrap_err().root_cause().to_string();
+        // Test case #3: Clean install failed.
         assert_eq!(
-            error_message3,
-            "Reboot validation failed: Firmware rolled back into provisioning OS"
+            validate_reboot(&host_status, PathBuf::from("/provOS/path"))
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::Servicing(ServicingError::CleanInstallRebootCheck {
+                root_device_path: "/provOS/path".to_string(),
+                expected_device_path: "/dev/sda2".to_string()
+            })
         );
 
         // Test case #4: After A/B update from A to B, Trident correctly booted into root-b.
+        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         host_status.servicing_type = ServicingType::AbUpdate;
         host_status.servicing_state = ServicingState::Finalized;
-        // Update active volume to VolumeA
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        let result4 = validate_reboot(&host_status, PathBuf::from("/dev/sda3"));
-        assert!(result4.is_ok());
+        validate_reboot(&host_status, PathBuf::from("/dev/sda3")).unwrap();
 
         // Test case #5: After A/B update from A to B, Trident performed a rollback into root-a.
-        let result5 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
-        let error_message5 = result5.unwrap_err().root_cause().to_string();
         assert_eq!(
-            error_message5,
-            "Reboot validation failed: Firmware rolled back into '/dev/sda2'"
+            validate_reboot(&host_status, PathBuf::from("/dev/sda2"))
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::Servicing(ServicingError::AbUpdateRebootCheck {
+                root_device_path: "/dev/sda2".to_string(),
+                expected_device_path: "/dev/sda3".to_string()
+            })
         );
 
         // Test case #6: After A/B update from B to A, Trident correctly booted into root-a.
-        // Update active volume to VolumeB
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        let result6 = validate_reboot(&host_status, PathBuf::from("/dev/sda2"));
-        assert!(result6.is_ok());
+        validate_reboot(&host_status, PathBuf::from("/dev/sda2")).unwrap();
 
         // Test case #7: After A/B update from B to A, Trident performed a rollback into root-b.
-        let result7 = validate_reboot(&host_status, PathBuf::from("/dev/sda3"));
-        let error_message7 = result7.unwrap_err().root_cause().to_string();
         assert_eq!(
-            error_message7,
-            "Reboot validation failed: Firmware rolled back into '/dev/sda3'"
+            validate_reboot(&host_status, PathBuf::from("/dev/sda3"))
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::Servicing(ServicingError::AbUpdateRebootCheck {
+                root_device_path: "/dev/sda3".to_string(),
+                expected_device_path: "/dev/sda2".to_string()
+            })
         );
     }
 }

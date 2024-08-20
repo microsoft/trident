@@ -7,5 +7,5 @@ C --> |Received a new valid HC & 'stage' in 'allowedOperations'|B
 E --> |Finalizing failed|B
 E --> |Finalizing succeeded|F[Finalized]
 F --> |Reboot into runtime OS image succeeded|G[Provisioned]
-F --> |Rollback into provisioning OS occurred|D[CleanInstallFailed]
+F --> |Failed to reboot into the updated runtime OS image|D[CleanInstallFailed]
 D --> |Received a new valid HC & 'stage' in 'allowedOperations'|B

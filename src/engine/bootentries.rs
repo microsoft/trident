@@ -647,7 +647,7 @@ mod functional_test {
     /// This tests the update fail case i.e the target was not able to boot into the updated partition which was set as boot_next.
     /// Boot order should not be updated.
     #[functional_test(feature = "helpers")]
-    fn test_set_boot_order_when_rollback() {
+    fn test_set_boot_order_when_ab_update_failed() {
         delete_boot_next();
         set_some_boot_entries();
 
