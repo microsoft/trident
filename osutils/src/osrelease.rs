@@ -1,4 +1,12 @@
+use std::path::Path;
+
 use anyhow::{Context, Error};
+use const_format::formatcp;
+
+use crate::path;
+
+/// Absolute path to the /etc/os-release file.
+pub const OS_RELEASE_PATH: &str = "/etc/os-release";
 
 /// Returns whether the host is running Azure Linux 2.
 pub fn is_azl2() -> Result<bool, Error> {
@@ -24,7 +32,17 @@ impl OsRelease {
     /// Reads the contents of /etc/os-release and parses it into an OsRelease struct.
     pub fn read() -> Result<Self, Error> {
         Ok(Self::parse(
-            &std::fs::read_to_string("/etc/os-release").context("Failed to read os-release")?,
+            &std::fs::read_to_string(OS_RELEASE_PATH)
+                .context(formatcp!("Failed to read '{OS_RELEASE_PATH}'"))?,
+        ))
+    }
+
+    /// Reads the contents of /\<root\>/etc/os-release and parses it into an OsRelease struct.
+    pub fn read_root(root: impl AsRef<Path>) -> Result<Self, Error> {
+        let osrelease_path = path::join_relative(root, OS_RELEASE_PATH);
+        Ok(Self::parse(
+            &std::fs::read_to_string(&osrelease_path)
+                .with_context(|| format!("Failed to read '{}'", osrelease_path.display()))?,
         ))
     }
 

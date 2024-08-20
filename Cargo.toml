@@ -64,7 +64,10 @@ osutils = { path = "osutils", features = ["test-utilities"] }
 
 
 [features]
-dangerous-options = ["trident_api/dangerous-options", "setsail/dangerous-options"]
+dangerous-options = [
+    "trident_api/dangerous-options",
+    "setsail/dangerous-options",
+]
 sysupdate = ["trident_api/sysupdate"]
 functional-test = ["pytest", "osutils/functional-test"]
 pytest-generator = ["pytest", "osutils/pytest-generator"]

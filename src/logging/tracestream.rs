@@ -8,6 +8,7 @@ use std::{
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use log::{debug, info, trace, warn};
+use osutils::osrelease::{OsRelease, OS_RELEASE_PATH};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sysinfo::System;
@@ -317,22 +318,22 @@ fn populate_additional_fields() -> BTreeMap<String, Value> {
 
 /// Grab the os-release file and extract the VERSION field
 fn get_os_release() -> String {
-    match fs::read_to_string("/etc/os-release") {
-        Ok(os_release) => {
-            let version_line = os_release.lines().find(|line| line.starts_with("VERSION="));
-            version_line
-                .and_then(|line| line.split_once('='))
-                .map(|(_, version)| version.replace('\"', "").to_string())
-                .unwrap_or_else(|| {
-                    debug!("Failed to find VERSION in os-release");
-                    "unknown".into()
-                })
+    match OsRelease::read().map(|os_rel| os_rel.version) {
+        Ok(Some(version)) => return version,
+        Ok(None) => {
+            warn!(
+                "Failed to find 'VERSION' in '{OS_RELEASE_PATH}' file, using 'unknown' as os_release"
+            );
         }
-        Err(_) => {
-            debug!("Failed to read os-release");
-            "unknown".into()
+        Err(e) => {
+            warn!(
+                "Failed to read '{OS_RELEASE_PATH}' file, using 'unknown' as os_release: {}",
+                e
+            );
         }
     }
+
+    "unknown".into()
 }
 
 /// Populate platform info with the number of CPUs and the total memory
