@@ -66,7 +66,7 @@ impl Module for HooksModule {
                         ))))
                 })
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<(), _>>()?;
 
         Ok(())
     }
