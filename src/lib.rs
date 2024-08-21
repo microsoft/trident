@@ -379,6 +379,7 @@ impl Trident {
             } else {
                 Path::new(PROC_MOUNTINFO_PATH).to_path_buf()
             };
+
             // Get device path of root mount point
             let root_dev_path = match tabfile::get_device_path(
                 &proc_mountinfo_path,
@@ -393,27 +394,34 @@ impl Trident {
                 }
             };
 
+            // Get expected device path of root mount point
+            let expected_root_dev_path = get_expected_root_device_path(datastore.host_status())?;
+
             info!("Validating whether host correctly booted into the updated runtime OS image");
-            match validate_reboot(datastore.host_status(), root_dev_path)
-                .message("Host failed to boot from the expected root device")
+            if validate_reboot(root_dev_path.clone(), expected_root_dev_path.clone())
+                .message("Host failed to boot from the expected root device")?
             {
-                Ok(_) => {
-                    info!("Host correctly booted into the updated runtime OS image");
-                }
-                Err(e) => {
-                    if datastore.host_status().servicing_type == ServicingType::CleanInstall {
-                        datastore.with_host_status(|host_status| {
-                            host_status.servicing_type = ServicingType::NoActiveServicing;
-                            host_status.servicing_state = ServicingState::CleanInstallFailed;
-                        })?;
-                    } else {
-                        datastore.with_host_status(|host_status| {
-                            host_status.servicing_type = ServicingType::NoActiveServicing;
-                            host_status.servicing_state = ServicingState::AbUpdateFailed;
-                        })?;
-                    }
-                    return Err(e);
-                }
+                info!("Host correctly booted into the updated runtime OS image");
+            } else if datastore.host_status().servicing_type == ServicingType::CleanInstall {
+                datastore.with_host_status(|host_status| {
+                    host_status.servicing_type = ServicingType::NoActiveServicing;
+                    host_status.servicing_state = ServicingState::CleanInstallFailed;
+                })?;
+
+                return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
+                    root_device_path: root_dev_path.to_string_lossy().to_string(),
+                    expected_device_path: expected_root_dev_path.to_string_lossy().to_string(),
+                }));
+            } else {
+                datastore.with_host_status(|host_status| {
+                    host_status.servicing_type = ServicingType::NoActiveServicing;
+                    host_status.servicing_state = ServicingState::AbUpdateFailed;
+                })?;
+
+                return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
+                    root_device_path: root_dev_path.to_string_lossy().to_string(),
+                    expected_device_path: expected_root_dev_path.to_string_lossy().to_string(),
+                }));
             }
 
             // Update boot order
@@ -641,12 +649,10 @@ impl Trident {
     }
 }
 
-/// Validates whether the host booted from the expected runtime OS image, after rebooting to
-/// finalize a clean install or an A/B update. If the host booted from an unexpected device, it
-/// returns an error.
-#[tracing::instrument(skip_all)]
-fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(), TridentError> {
-    // Fetch mount point for root from host status and fetch id of root device
+/// Returns the path of the root device that the host was expected to boot from, to finalize a
+/// clean install or an A/B update.
+fn get_expected_root_device_path(host_status: &HostStatus) -> Result<PathBuf, TridentError> {
+    // Fetch mount point for root from host status and fetch ID of root device
     let root_device_id = match host_status
         .spec
         .storage
@@ -660,57 +666,72 @@ fn validate_reboot(host_status: &HostStatus, root_dev_path: PathBuf) -> Result<(
         }
     };
 
-    // Fetch expected_root_dev_path. active=false b/c need to fetch info for volume that we expect
-    // to be active at this point, after firmware has already rebooted, and it used to be the
-    // update volume before the reboot.
+    // Fetch the expected root device path from host status, based on device ID of root. Set
+    // active=false b/c need to fetch info for volume that we expect to be active at this point,
+    // after host has already rebooted, and it used to be the update volume before the reboot.
     let expected_root_path = get_block_device_path(host_status, root_device_id, false).structured(
         ServicingError::GetBlockDevicePath {
             device_id: root_device_id.to_string(),
         },
     )?;
+
+    Ok(expected_root_path)
+}
+
+/// Validates whether the host rebooted from the expected runtime OS image by comparing the root
+/// device path with the expected root device path. Returns true if the host booted from the
+/// expected root device path, false otherwise, or an error if the expected root device path cannot
+/// be canonicalized, making a comparison impossible.
+///
+/// This function is called after the host rebooted to finalize a clean install or an A/B update.
+///
+#[tracing::instrument(skip_all)]
+fn validate_reboot(
+    root_dev_path: PathBuf,
+    expected_root_dev_path: PathBuf,
+) -> Result<bool, TridentError> {
     let expected_root_path_canonicalized =
-        expected_root_path
+        expected_root_dev_path
             .canonicalize()
             .structured(ServicingError::CanonicalizePath {
-                path: expected_root_path.display().to_string(),
+                path: expected_root_dev_path.display().to_string(),
             })?;
 
-    // If current root device path is NOT the same as the expected root device path, firmware
-    // failed to boot from the expected device, so need to issue an error.
+    info!(
+        "Expected host to boot from device with path '{}', canonicalized to '{}'",
+        expected_root_dev_path.display(),
+        expected_root_path_canonicalized.display()
+    );
+
+    // If current root device path is NOT the same as the expected root device path, return false.
     // NOTE: For verity, path like /dev/mapper/root, which is what we use in host status, gets
     // resolved to /dev/dm-0. So, compare if matches either.
-    if root_dev_path != expected_root_path && root_dev_path != expected_root_path_canonicalized {
+    if root_dev_path != expected_root_dev_path && root_dev_path != expected_root_path_canonicalized
+    {
         info!(
-            "Expected host to boot from device with path '{}', canonicalized to '{}'",
-            expected_root_path.display(),
-            expected_root_path_canonicalized.display()
-        );
-        info!(
-            "Host booted from root device with path '{}'",
+            "But host booted from an unexpected root device with path '{}'",
             root_dev_path.display()
         );
 
-        if host_status.servicing_type == ServicingType::CleanInstall {
-            return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
-                root_device_path: root_dev_path.to_string_lossy().to_string(),
-                expected_device_path: expected_root_path.to_string_lossy().to_string(),
-            }));
-        } else {
-            return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
-                root_device_path: root_dev_path.to_string_lossy().to_string(),
-                expected_device_path: expected_root_path.to_string_lossy().to_string(),
-            }));
-        }
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
-    use trident_api::config::{FileSystemType, InternalMountPoint, Storage};
+    use trident_api::{
+        config::{
+            AbUpdate, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition,
+            PartitionType, Storage,
+        },
+        error::ErrorKind,
+        status::{AbVolumeSelection, Storage as HostStorage},
+    };
 
     use super::*;
+    use maplit::btreemap;
     use std::path::PathBuf;
 
     #[test]
@@ -747,28 +768,9 @@ mod tests {
             .unwrap();
         assert_eq!(*host_config, host_config_original);
     }
-}
 
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-    use pytest_gen::functional_test;
-
-    use maplit::btreemap;
-    use trident_api::{
-        config::{
-            AbUpdate, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition,
-            PartitionType, Storage,
-        },
-        error::{ErrorKind, ServicingError},
-        status::{AbVolumeSelection, Storage as HostStorage},
-    };
-
-    /// Validates that validate_reboot() correctly validates that the host booted from the expected
-    /// runtime OS image, after a clean install or an A/B update.
-    #[functional_test]
-    fn test_validate_reboot() {
+    #[test]
+    fn test_get_expected_root_device_path() {
         let mut host_status = HostStatus {
             spec: HostConfiguration {
                 storage: Storage {
@@ -816,7 +818,7 @@ mod functional_test {
 
         // Test case #0: If no mount points defined, should return an error.
         assert_eq!(
-            validate_reboot(&host_status, PathBuf::from("/dev/sda2"))
+            get_expected_root_device_path(&host_status)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::Servicing(ServicingError::GetRootMountPointInfo {
@@ -824,7 +826,7 @@ mod functional_test {
             })
         );
 
-        // Test case #1: If no root target id in block devices, should return an error.
+        // Test case #1: If no root ID in block devices, should return an error.
         host_status.spec.storage.internal_mount_points = vec![InternalMountPoint {
             path: PathBuf::from("/"),
             target_id: "root".to_string(),
@@ -832,7 +834,7 @@ mod functional_test {
             options: vec![],
         }];
         assert_eq!(
-            validate_reboot(&host_status, PathBuf::from("/dev/sda2"))
+            get_expected_root_device_path(&host_status)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::Servicing(ServicingError::GetBlockDevicePath {
@@ -840,56 +842,46 @@ mod functional_test {
             })
         );
 
-        // Test case #2: After CleanInstall, Trident correctly booted into root-a.
+        // Test case #3: When block devices are defined, should return the expected root device
+        // path of 'root-a'.
         host_status.storage.block_device_paths = btreemap! {
             "os".to_owned() => PathBuf::from("/dev/sda"),
             "efi".to_owned() => PathBuf::from("/dev/sda1"),
             "root-a".to_owned() => PathBuf::from("/dev/sda2"),
             "root-b".to_owned() => PathBuf::from("/dev/sda3"),
         };
-        validate_reboot(&host_status, PathBuf::from("/dev/sda2")).unwrap();
-
-        // Test case #3: Clean install failed.
         assert_eq!(
-            validate_reboot(&host_status, PathBuf::from("/provOS/path"))
-                .unwrap_err()
-                .kind(),
-            &ErrorKind::Servicing(ServicingError::CleanInstallRebootCheck {
-                root_device_path: "/provOS/path".to_string(),
-                expected_device_path: "/dev/sda2".to_string()
-            })
+            get_expected_root_device_path(&host_status).unwrap(),
+            PathBuf::from("/dev/sda2")
         );
 
-        // Test case #4: After A/B update from A to B, Trident correctly booted into root-b.
+        // Test case #4: After rebooting after an A/B update, should return the expected root
+        // device path of 'root-b'.
         host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         host_status.servicing_type = ServicingType::AbUpdate;
         host_status.servicing_state = ServicingState::Finalized;
-        validate_reboot(&host_status, PathBuf::from("/dev/sda3")).unwrap();
-
-        // Test case #5: After A/B update from A to B, Trident performed a rollback into root-a.
         assert_eq!(
-            validate_reboot(&host_status, PathBuf::from("/dev/sda2"))
-                .unwrap_err()
-                .kind(),
-            &ErrorKind::Servicing(ServicingError::AbUpdateRebootCheck {
-                root_device_path: "/dev/sda2".to_string(),
-                expected_device_path: "/dev/sda3".to_string()
-            })
+            get_expected_root_device_path(&host_status).unwrap(),
+            PathBuf::from("/dev/sda3")
         );
+    }
+}
 
-        // Test case #6: After A/B update from B to A, Trident correctly booted into root-a.
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        validate_reboot(&host_status, PathBuf::from("/dev/sda2")).unwrap();
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+    use pytest_gen::functional_test;
 
-        // Test case #7: After A/B update from B to A, Trident performed a rollback into root-b.
-        assert_eq!(
-            validate_reboot(&host_status, PathBuf::from("/dev/sda3"))
-                .unwrap_err()
-                .kind(),
-            &ErrorKind::Servicing(ServicingError::AbUpdateRebootCheck {
-                root_device_path: "/dev/sda3".to_string(),
-                expected_device_path: "/dev/sda2".to_string()
-            })
-        );
+    /// Validates that validate_reboot() correctly detects rollback when root is a partition.
+    #[functional_test]
+    fn test_validate_reboot() {
+        // Test case #0: If current root device path is the same as the expected root device path,
+        // should return true.
+        assert!(validate_reboot(PathBuf::from("/dev/sda2"), PathBuf::from("/dev/sda2")).unwrap());
+
+        // Test case #1: If current root device path is NOT the same as the expected root device
+        // path, should return false.
+        assert!(!validate_reboot(PathBuf::from("/dev/sda2"), PathBuf::from("/dev/sda3")).unwrap());
     }
 }
