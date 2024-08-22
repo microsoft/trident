@@ -162,7 +162,7 @@ stages:
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \
                   --logstream $MAX_FAILURES_FLAG \
-                  --trace-file trident-metrics.json \
+                  --trace-file trident-metrics.jsonl \
                   --log-trace --force-color
             timeoutInMinutes: 7
             workingDirectory: $(tridentSourceDirectory)
@@ -204,7 +204,7 @@ stages:
               tridentConfigPath: $(tridentConfigPath)
               deploymentEnvironment: virtualMachine
               tridentConfigurationName: $(tridentConfigurationName)
-              metricsFile: $(tridentSourceDirectory)/trident-metrics.json
+              metricsFile: $(tridentSourceDirectory)/trident-metrics.jsonl
               runOnFailure: true
               ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: main

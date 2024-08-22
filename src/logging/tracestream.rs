@@ -8,7 +8,10 @@ use std::{
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use log::{debug, info, trace, warn};
-use osutils::osrelease::{OsRelease, OS_RELEASE_PATH};
+use osutils::{
+    osrelease::{OsRelease, OS_RELEASE_PATH},
+    uname,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sysinfo::System;
@@ -24,10 +27,8 @@ use crate::TRIDENT_VERSION;
 /// The product uuid is used to identify the hardware that Trident is running on.
 const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
 lazy_static::lazy_static! {
-    static ref ASSET_ID: String = read_product_uuid(PRODUCT_UUID_FILE.to_string());
     static ref ADDITIONAL_FIELDS: BTreeMap<String, Value> = populate_additional_fields();
     static ref PLATFORM_INFO: BTreeMap<String, Value> = populate_platform_info();
-    static ref OS_RELEASE: String = get_os_release();
 }
 
 #[derive(Default)]
@@ -66,10 +67,8 @@ impl Visit for TraceEntryVisitor {
 #[derive(Debug, Serialize, Deserialize)]
 struct TraceEntry {
     pub timestamp: DateTime<Utc>,
-    pub asset_id: String,
     pub metric_name: String,
     pub value: Value,
-    pub os_release: String,
     pub additional_fields: BTreeMap<String, Value>,
     pub platform_info: BTreeMap<String, Value>,
 }
@@ -197,10 +196,8 @@ where
 
             let entry = TraceEntry {
                 timestamp: Utc::now(),
-                asset_id: ASSET_ID.to_string(),
                 metric_name,
                 value: json!(value),
-                os_release: OS_RELEASE.to_string(),
                 additional_fields: ADDITIONAL_FIELDS.clone(),
                 platform_info: PLATFORM_INFO.clone(),
             };
@@ -275,10 +272,8 @@ where
         if let Some(target) = self.get_server() {
             let entry = TraceEntry {
                 timestamp: Utc::now(),
-                asset_id: ASSET_ID.to_string(),
                 metric_name: span.name().to_string(),
                 value: json!(visitor.fields),
-                os_release: OS_RELEASE.to_string(),
                 additional_fields: ADDITIONAL_FIELDS.clone(),
                 platform_info: PLATFORM_INFO.clone(),
             };
@@ -332,23 +327,35 @@ fn get_os_release() -> String {
             );
         }
     }
-
     "unknown".into()
 }
 
-/// Populate platform info with the number of CPUs and the total memory
+/// Populate the platform info with machine information
 fn populate_platform_info() -> BTreeMap<String, Value> {
     let mut platform_info = BTreeMap::new();
     let mut sys = System::new();
     sys.refresh_all();
-    platform_info.insert("cpu".to_string(), json!(sys.cpus().len()));
     platform_info.insert(
-        "memory".to_string(),
+        "asset_id".to_string(),
+        json!(read_product_uuid(PRODUCT_UUID_FILE.into())),
+    );
+    platform_info.insert("os_release".to_string(), json!(get_os_release()));
+    platform_info.insert("total_cpu".to_string(), json!(sys.cpus().len()));
+    platform_info.insert(
+        "total_memory_gib".to_string(),
         json!(format!(
             "{:.3}",
             sys.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0)
         )),
     );
+    let kernel_release = uname::kernel_release().unwrap_or_else(|e| {
+        warn!(
+            "Failed to get kernel release, using 'unknown' as value: {}",
+            e
+        );
+        "unknown".to_string()
+    });
+    platform_info.insert("kernel_version".to_string(), json!(kernel_release.trim()));
     platform_info
 }
 

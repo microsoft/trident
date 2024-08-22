@@ -11,11 +11,9 @@ import (
 
 type TraceEntry struct {
 	Timestamp        string                 `json:"timestamp"`
-	AssetId          string                 `json:"asset_id"`
 	MetricName       string                 `json:"metric_name"`
 	Value            interface{}            `json:"value"`
 	AdditionalFields map[string]interface{} `json:"additional_fields"`
-	OsRelease        string                 `json:"os_release"`
 	PlatformInfo     map[string]interface{} `json:"platform_info"`
 }
 

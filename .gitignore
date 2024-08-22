@@ -352,4 +352,4 @@ remote-addr
 *.profraw
 
 # Metrics Output
-trident-metrics.json
+trident-metrics.jsonl

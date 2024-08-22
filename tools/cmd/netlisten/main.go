@@ -42,7 +42,7 @@ var logTrace bool
 var forceColor bool
 
 // Filepath to store metrics from Trident
-var TRIDENT_METRICS_PATH = "trident-metrics.json"
+var TRIDENT_METRICS_PATH = "trident-metrics.jsonl"
 
 var rootCmd = &cobra.Command{
 	Use:   "netlisten",

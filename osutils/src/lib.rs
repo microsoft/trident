@@ -33,6 +33,7 @@ pub mod systemd;
 pub mod tabfile;
 pub mod tune2fs;
 pub mod udevadm;
+pub mod uname;
 pub mod veritysetup;
 pub mod virt;
 pub mod wipefs;
