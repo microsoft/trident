@@ -22,13 +22,10 @@ libc = "0.2.154"
 log = "0.4.21"
 maplit = "1.0.2"
 netplan-types = "0.5.0"
-nix = { version = "0.28.0", default-features = false, features = [
-    "fs",
-    "user",
-] }
+nix = { version = "0.29.0", default-features = false, features = ["fs", "user"] }
 rayon = "1.10"
 regex = "1.10.4"
-reqwest = { version = "0.12.4", features = ["blocking"] }
+reqwest = { version = "0.12.4", default-features = false, features = ["blocking", "default-tls", "charset"] } # "http2" is enabled by default but causes a (false positive) CG alert
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.34"
@@ -36,12 +33,13 @@ sqlite = "0.36.0"
 strum = "0.26.2"
 strum_macros = "0.26.2"
 sys-mount = "3.0.1"
+sysinfo = "0.30.13"
 tempfile = "3.10.1"
 tokio = { version = "1.37.0", features = ["rt-multi-thread"] }
 tokio-stream = "0.1.15"
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["json"] }
 tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.18", features = ["json"] }
 url = { version = "2.5.0", features = ["serde"] }
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
 
@@ -51,12 +49,11 @@ setsail = { path = "setsail" }
 trident_api = { path = "trident_api" }
 
 pytest = { path = "pytest", optional = true }
-prost = { version = "0.12.4", optional = true }
-tonic = { version = "0.11.0", optional = true }
-sysinfo = "0.30.11"
+prost = { version = "0.13.1", optional = true }
+tonic = { version = "0.12.1", optional = true }
 
 [build-dependencies]
-tonic-build = "0.11.0"
+tonic-build = "0.12.1"
 osutils = { path = "osutils" }
 
 [dev-dependencies]
