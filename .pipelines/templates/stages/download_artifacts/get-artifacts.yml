@@ -36,6 +36,28 @@ stages:
               artifactName: "trident-installer-testimage"
               targetPath: $(ob_outputDirectory)
 
+      - job: Trident
+        displayName: Download trident binaries
+        timeoutInMinutes: 10
+        pool:
+          type: linux
+      
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_artifactBaseName: "trident-binaries"
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download trident rpms anc container"
+            inputs:
+              buildType: specific
+              project: ECF
+              definition: ${{ parameters.definition }}
+              buildVersionToDownload: "latestFromBranch"
+              branchName: "refs/heads/${{ parameters.branch }}"
+              artifactName: "trident-binaries"
+              targetPath: $(ob_outputDirectory)
+
       - job: TridentTestimage
         displayName: "Download trident-testimage"
         timeoutInMinutes: 10

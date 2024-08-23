@@ -35,6 +35,11 @@ parameters:
     default: false
     displayName: Run E2E testing on Bare Metal
 
+  - name: runFunctionalTests
+    type: boolean
+    default: false
+    displayName: Run functional tests
+
 trigger: none
 
 variables:
@@ -99,3 +104,4 @@ extends:
           branch: ${{ parameters.branch }}
           runDeploymentVM: ${{ parameters.runDeploymentVM }}
           runDeploymentBM: ${{ parameters.runDeploymentBM }}
+          runFunctionalTests: ${{ parameters.runFunctionalTests }}

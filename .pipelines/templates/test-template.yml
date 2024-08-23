@@ -19,6 +19,11 @@ parameters:
     default: false
     displayName: Run E2E testing on Bare Metal
 
+  - name: runFunctionalTests
+    type: boolean
+    default: false
+    displayName: Run functional tests
+
 stages:
   - template: stages/download_artifacts/get-artifacts.yml
     parameters:
@@ -36,3 +41,9 @@ stages:
       parameters:
         buildPurpose: validation
         stageDependencies: DownloadTestingElements
+
+  - ${{ if parameters.runFunctionalTests }}:
+    - template: stages/deployment_testing/functional_testing/functional-testing.yml
+      parameters:
+        stageDependencies: DownloadTestingElements
+        buildPurpose: validation

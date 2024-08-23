@@ -40,6 +40,16 @@ stages:
 
   - template: stages/building_tools/building-tools.yml
 
+  - ${{ if eq(parameters.blockPublishing, false) }}:
+      - template: stages/deployment_testing/functional_testing/functional-testing.yml
+      - template: stages/publishing/publish.yml
+        parameters:
+          stageType: ${{ parameters.stageType }}
+  - ${{ else }}:
+      - template: stages/deployment_testing/functional_testing/functional-testing.yml
+        parameters:
+          buildPurpose: "validation"
+
   - ${{ if eq(parameters.stageType, 'pre') }}:
       - template: stages/deployment_testing/vm/netlaunch-testing.yml
         parameters:
@@ -53,8 +63,3 @@ stages:
       - template: stages/deployment_testing/vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
-
-  - ${{ if eq(parameters.blockPublishing, false) }}:
-      - template: stages/publishing/publish.yml
-        parameters:
-          stageType: ${{ parameters.stageType }}
