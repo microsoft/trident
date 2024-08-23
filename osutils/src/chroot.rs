@@ -24,36 +24,32 @@ pub struct Chroot {
 }
 impl Chroot {
     /// Mount special directories ('/dev', '/proc', and '/sys') and enter chroot.
-    fn enter(path: &Path, mount_special_dirs: bool) -> Result<Self, TridentError> {
+    fn enter(path: &Path) -> Result<Self, TridentError> {
         // Mount special dirs.
-        let mounts = if mount_special_dirs {
-            info!("Mounting special directories");
-            vec![
-                Mount::builder()
-                    .fstype("devtmpfs")
-                    .flags(MountFlags::empty())
-                    .mount("devtmpfs", path.join("dev"))
-                    .structured(ServicingError::ChrootMountSpecialDir {
-                        dir: "/dev".to_string(),
-                    })?,
-                Mount::builder()
-                    .fstype("proc")
-                    .flags(MountFlags::empty())
-                    .mount("proc", path.join("proc"))
-                    .structured(ServicingError::ChrootMountSpecialDir {
-                        dir: "/proc".to_string(),
-                    })?,
-                Mount::builder()
-                    .fstype("sysfs")
-                    .flags(MountFlags::empty())
-                    .mount("sysfs", path.join("sys"))
-                    .structured(ServicingError::ChrootMountSpecialDir {
-                        dir: "/sys".to_string(),
-                    })?,
-            ]
-        } else {
-            Vec::new()
-        };
+        info!("Mounting special directories");
+        let mounts = vec![
+            Mount::builder()
+                .fstype("devtmpfs")
+                .flags(MountFlags::empty())
+                .mount("devtmpfs", path.join("dev"))
+                .structured(ServicingError::ChrootMountSpecialDir {
+                    dir: "/dev".to_string(),
+                })?,
+            Mount::builder()
+                .fstype("proc")
+                .flags(MountFlags::empty())
+                .mount("proc", path.join("proc"))
+                .structured(ServicingError::ChrootMountSpecialDir {
+                    dir: "/proc".to_string(),
+                })?,
+            Mount::builder()
+                .fstype("sysfs")
+                .flags(MountFlags::empty())
+                .mount("sysfs", path.join("sys"))
+                .structured(ServicingError::ChrootMountSpecialDir {
+                    dir: "/sys".to_string(),
+                })?,
+        ];
 
         // Enter the chroot.
         info!("Entering chroot");
@@ -102,11 +98,7 @@ impl Chroot {
 }
 
 pub fn enter_update_chroot(root_mount_path: &Path) -> Result<Chroot, TridentError> {
-    Chroot::enter(root_mount_path, true).message("Failed to enter updated OS chroot")
-}
-
-pub fn enter_host_chroot(root_mount_path: &Path) -> Result<Chroot, TridentError> {
-    Chroot::enter(root_mount_path, false).message("Failed to enter host chroot")
+    Chroot::enter(root_mount_path).message("Failed to enter updated OS chroot")
 }
 
 #[cfg(feature = "functional-test")]
@@ -134,7 +126,7 @@ mod functional_test {
         assert!(Path::new("/dummy").exists());
 
         // Enter the chroot
-        let chroot = Chroot::enter(&chroot_path, true).unwrap();
+        let chroot = Chroot::enter(&chroot_path).unwrap();
 
         // Verify we are inside the chroot
         assert!(!chroot_path.join("dev").exists());
@@ -196,34 +188,6 @@ mod functional_test {
         assert!(Path::new("/dummy").exists());
     }
 
-    #[functional_test(feature = "helpers")]
-    fn test_enter_host_chroot() {
-        // Create a temporary directory to act as the chroot environment
-        let temp_dir = tempdir().unwrap();
-        let chroot_path = temp_dir.path().to_path_buf();
-
-        // Create a dummy file at /
-        File::create(Path::new("/").join("dummy-root")).unwrap();
-        assert!(Path::new("/dummy-root").exists());
-        // Create a dummy file in chroot_path
-        File::create(chroot_path.join("dummy-chroot")).unwrap();
-        assert!(chroot_path.join("dummy-chroot").exists());
-
-        // Enter the chroot
-        let chroot = enter_host_chroot(&chroot_path).unwrap();
-
-        // Verify we cannot access dummy-root from inside chroot, but can access dummy-chroot
-        assert!(!Path::new("/dummy-root").exists());
-        assert!(Path::new("/dummy-chroot").exists());
-
-        // Exit the chroot
-        chroot.exit().unwrap();
-
-        // Verify that files exist at the original path
-        assert!(chroot_path.join("dummy-chroot").exists());
-        assert!(Path::new("/dummy-root").exists());
-    }
-
     #[functional_test(feature = "helpers", negative = true)]
     fn test_enter_chroot_fail_to_mount_special_dir() {
         // Create a temporary directory to act as the chroot environment
@@ -243,7 +207,7 @@ mod functional_test {
             .unwrap();
 
         // Attempt to enter the chroot
-        let result_dev = Chroot::enter(&chroot_path, true);
+        let result_dev = Chroot::enter(&chroot_path);
         assert_eq!(
             result_dev.unwrap_err().kind(),
             &ErrorKind::Servicing(ServicingError::ChrootMountSpecialDir {
@@ -262,7 +226,7 @@ mod functional_test {
             .unwrap();
 
         // Attempt to enter the chroot
-        let result_sys = Chroot::enter(&chroot_path, true);
+        let result_sys = Chroot::enter(&chroot_path);
         assert_eq!(
             result_sys.unwrap_err().kind(),
             &ErrorKind::Servicing(ServicingError::ChrootMountSpecialDir {
@@ -279,7 +243,7 @@ mod functional_test {
     #[functional_test(feature = "helpers", negative = true)]
     fn test_enter_chroot_fail_nonexistent_dir() {
         // Attempt to enter the chroot
-        let result = Chroot::enter(Path::new("/nonexistent-dir"), false);
+        let result = Chroot::enter(Path::new("/nonexistent-dir"));
         assert_eq!(
             result.unwrap_err().kind(),
             &ErrorKind::Servicing(ServicingError::EnterChroot)
