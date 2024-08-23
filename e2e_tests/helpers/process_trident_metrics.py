@@ -37,6 +37,18 @@ def process_metrics(metrics_file, fields_status):
             metric["platform_info"]["pipeline_build_id"] = os.environ.get(
                 "BUILD_BUILDID", "Unknown"
             )
+            metric["platform_info"]["pipeline_agent_sku"] = os.environ.get(
+                "PIPELINE_AGENT_SKU", "Unknown"
+            )
+            metric["platform_info"]["environment"] = os.environ.get(
+                "TEST_ENVIRONMENT", "Unknown"
+            )
+            metric["platform_info"]["location"] = os.environ.get(
+                "TEST_LOCATION", "Unknown"
+            )
+            metric["platform_info"]["server_name"] = os.environ.get(
+                "TEST_SERVER_NAME", "Unknown"
+            )
             metric["platform_info"]["branch"] = os.environ.get(
                 "SOURCE_BRANCH_NAME", "Unknown"
             )

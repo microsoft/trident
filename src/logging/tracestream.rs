@@ -343,11 +343,9 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
     platform_info.insert("total_cpu".to_string(), json!(sys.cpus().len()));
     platform_info.insert(
         "total_memory_gib".to_string(),
-        json!(format!(
-            "{:.3}",
-            sys.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0)
-        )),
+        json!((sys.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0)).round() as u64),
     );
+
     let kernel_release = uname::kernel_release().unwrap_or_else(|e| {
         warn!(
             "Failed to get kernel release, using 'unknown' as value: {}",
