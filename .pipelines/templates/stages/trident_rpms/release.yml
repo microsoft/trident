@@ -61,7 +61,8 @@ steps:
 
       mkdir -p bin
       cp -r /usr/src/mariner/RPMS bin/
-      DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
+      DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:$(trident_version) .
+      docker save trident/trident:$(trident_version) | gzip > $(ob_outputDirectory)/trident-container-$(trident_version).tar.gz
 
     displayName: Build Docker image
     retryCountOnTaskFailure: 3
