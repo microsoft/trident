@@ -15,10 +15,10 @@ pub(super) fn valid_targets_table() -> RuleDefinition {
 
     for referrer_kind in get_referrers() {
         let mut row = vec![referrer_kind.to_string()];
-        let valid_kinds = referrer_kind.valid_target_kinds();
+        let compatible_kinds = referrer_kind.compatible_kinds();
         for dev_kind in dev_kinds.iter() {
-            let is_valid = valid_kinds.contains(dev_kind.as_flag());
-            row.push(if is_valid { "Yes" } else { "No" }.to_owned());
+            let is_compatible = compatible_kinds.contains(dev_kind.as_flag());
+            row.push(if is_compatible { "Yes" } else { "No" }.to_owned());
         }
         table.add_row(row);
     }

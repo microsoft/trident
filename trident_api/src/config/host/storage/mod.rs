@@ -1098,7 +1098,7 @@ mod tests {
 
         let storage_golden = storage.clone();
 
-        // fail on duplicate id
+        // Fail on duplicate id.
         storage = storage_golden.clone();
         storage.disks.get_mut(0).unwrap().partitions = vec![Partition {
             id: "part1".to_owned(),
@@ -1112,7 +1112,7 @@ mod tests {
             ),
         );
 
-        // fail on duplicate id
+        // Fail on duplicate id.
         storage = storage_golden.clone();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
         assert_eq!(
@@ -1122,7 +1122,7 @@ mod tests {
             ),
         );
 
-        // fail on missing reference (disk4 does not exist)
+        // Fail on missing reference (disk4 does not exist).
         storage = storage_golden.clone();
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "disk4".to_owned();
         assert_eq!(
@@ -1136,7 +1136,7 @@ mod tests {
             ),
         );
 
-        // fail on missing reference (disk4 does not exist)
+        // Fail on missing reference (disk4 does not exist).
         storage = storage_golden.clone();
         storage.filesystems[0].device_id = Some("disk4".into());
         assert_eq!(
@@ -1149,22 +1149,22 @@ mod tests {
             ),
         );
 
-        // fail on bad block device type
+        // Fail on bad block device type.
         storage = storage_golden.clone();
         storage.filesystems[0].device_id = Some("disk1".into());
         assert_eq!(
             storage.validate(true).unwrap_err(),
             HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::FilesystemInvalidReference {
+                BlockDeviceGraphBuildError::FilesystemIncompatibleReference {
                     fs_desc: storage.filesystems[0].description(),
                     target_id: "disk1".into(),
                     target_kind: BlkDevKind::Disk,
-                    valid_references: BlkDevReferrerKind::FileSystemEsp.valid_target_kinds()
+                    compatible_kinds: BlkDevReferrerKind::FileSystemEsp.compatible_kinds()
                 }
             ),
         );
 
-        // fail if devices are not all the same size for a RAID
+        // Fail if devices are not all the same size for a RAID.
         storage = storage_golden.clone();
         storage.disks[1].partitions[3].size = PartitionSize::from_str("2G").unwrap();
         assert_eq!(
@@ -1336,7 +1336,7 @@ mod tests {
                     kind: BlkDevKind::RaidArray,
                     target_id: "srv".into(),
                     target_kind: BlkDevKind::EncryptedVolume,
-                    valid_references: BlkDevReferrerKind::RaidArray.valid_target_kinds()
+                    valid_references: BlkDevReferrerKind::RaidArray.compatible_kinds()
                 }
             ),
         );
@@ -1501,16 +1501,16 @@ mod tests {
         storage.validate(true).unwrap();
     }
 
-    /// Encrypted volume target ID must not be an esp partition
+    /// Encrypted volume device ID must not be an ESP partition
     #[test]
     fn test_validate_encryption_target_id_esp_fail() {
         let mut storage: Storage = get_storage();
-        // Remoce the filesystem associated with esp
+        // Remove the filesystem associated with ESP
         storage
             .filesystems
             .retain(|fs| fs.device_id != Some("esp".into()));
 
-        // Update the target ID of the encrypted volume to esp
+        // Update the device ID of the encrypted volume
         storage.encryption.as_mut().unwrap().volumes[0].device_id = "esp".to_owned();
 
         assert_eq!(
@@ -1777,7 +1777,7 @@ mod tests {
                     kind: BlkDevKind::EncryptedVolume,
                     target_id: "disk1".into(),
                     target_kind: BlkDevKind::Disk,
-                    valid_references: BlkDevReferrerKind::EncryptedVolume.valid_target_kinds()
+                    valid_references: BlkDevReferrerKind::EncryptedVolume.compatible_kinds()
                 }
             )
         );
@@ -1819,7 +1819,7 @@ mod tests {
                     kind: BlkDevKind::EncryptedVolume,
                     target_id: "root".into(),
                     target_kind: BlkDevKind::ABVolume,
-                    valid_references: BlkDevReferrerKind::EncryptedVolume.valid_target_kinds()
+                    valid_references: BlkDevReferrerKind::EncryptedVolume.compatible_kinds()
                 }
             ),
         );
@@ -2131,11 +2131,11 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::FilesystemInvalidReference {
+                BlockDeviceGraphBuildError::FilesystemIncompatibleReference {
                     fs_desc: storage.filesystems[0].description(),
                     target_id: "esp".into(),
                     target_kind: BlkDevKind::Partition,
-                    valid_references: BlkDevReferrerKind::FileSystemSysupdate.valid_target_kinds()
+                    compatible_kinds: BlkDevReferrerKind::FileSystemSysupdate.compatible_kinds()
                 },
             )
         );

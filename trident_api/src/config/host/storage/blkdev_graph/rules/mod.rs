@@ -73,8 +73,8 @@ impl<'a> HostConfigBlockDevice<'a> {
 
 /// This impl block contains validation rules for block device referrers
 impl BlkDevReferrerKind {
-    /// Returns the valid target kinds for the referrer kind.
-    pub fn valid_target_kinds(&self) -> BlkDevKindFlag {
+    /// Returns a list of kinds compatible with the referrer kind.
+    pub fn compatible_kinds(&self) -> BlkDevKindFlag {
         match self {
             Self::None => BlkDevKindFlag::empty(),
             Self::RaidArray => BlkDevKindFlag::Partition,

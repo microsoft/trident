@@ -477,11 +477,12 @@ mod verity {
 
         assert_eq!(
             builder.build().unwrap_err(),
-            BlockDeviceGraphBuildError::FilesystemInvalidPartitionType {
+            BlockDeviceGraphBuildError::FilesystemIncompatiblePartitionType {
                 referrer: BlkDevReferrerKind::VerityFileSystemData,
                 fs_desc: vfs.description(),
                 partition_type: PartitionType::LinuxGeneric,
-                valid_types: BlkDevReferrerKind::VerityFileSystemData.allowed_partition_types()
+                compatible_types: BlkDevReferrerKind::VerityFileSystemData
+                    .allowed_partition_types()
             }
         );
     }

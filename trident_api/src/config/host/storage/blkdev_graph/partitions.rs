@@ -103,7 +103,7 @@ impl Display for AllowedPartitionTypes {
                     "{}",
                     types
                         .iter()
-                        .map(|t| t.to_string())
+                        .map(|t| format!("'{t}'"))
                         .collect::<Vec<String>>()
                         .join(" or ")
                 )
@@ -114,7 +114,7 @@ impl Display for AllowedPartitionTypes {
                     "any type except {}",
                     types
                         .iter()
-                        .map(|t| t.to_string())
+                        .map(|t| format!("'{t}'"))
                         .collect::<Vec<String>>()
                         .join(" or ")
                 )

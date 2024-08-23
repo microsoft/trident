@@ -219,17 +219,17 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                     }
                 })?;
 
-                // Get the valid references for the current node.
-                let valid_references = node.kind().as_blkdev_referrer().valid_target_kinds();
+                // Get the list of kinds compatible with the current node.
+                let compatible_kinds = node.kind().as_blkdev_referrer().compatible_kinds();
 
-                // Check that the target is of a valid kind.
-                if !valid_references.contains(target_node.kind().as_flag()) {
+                // Check that the target is of a compatible kind.
+                if !compatible_kinds.contains(target_node.kind().as_flag()) {
                     return Err(BlockDeviceGraphBuildError::InvalidReferenceKind {
                         kind: node.kind(),
                         node_id: node.id,
                         target_id: target.clone(),
                         target_kind: target_node.kind(),
-                        valid_references,
+                        valid_references: compatible_kinds,
                     });
                 }
 
@@ -293,15 +293,15 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 ));
             }
 
-            // Check that the filesystem source is valid
+            // Check that the filesystem source is compatible with the filesystem type.
             {
-                let valid_sources = fs.fs_type.valid_sources();
+                let compatible_sources = fs.fs_type.valid_sources();
                 let fs_src_kind = FileSystemSourceKind::from(&fs.source);
-                if !valid_sources.contains(fs_src_kind) {
-                    return Err(BlockDeviceGraphBuildError::FilesystemInvalidSource {
+                if !compatible_sources.contains(fs_src_kind) {
+                    return Err(BlockDeviceGraphBuildError::FilesystemIncompatibleSource {
                         fs_desc: fs.description(),
                         fs_source: fs_src_kind,
-                        fs_acceptable_sources: valid_sources,
+                        fs_compatible_sources: compatible_sources,
                     });
                 }
             }
@@ -323,17 +323,20 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                     }
                 })?;
 
-                // Depending on the details of the filesystem, we can have different referrer kinds.
-                let valid_references = BlkDevReferrerKind::from(*fs).valid_target_kinds();
+                // Depending on the details of the filesystem, we can have different compatible
+                // referrer kinds.
+                let compatible_kinds = BlkDevReferrerKind::from(*fs).compatible_kinds();
 
-                // Check that the node is of a valid kind.
-                if !valid_references.contains(node.kind().as_flag()) {
-                    return Err(BlockDeviceGraphBuildError::FilesystemInvalidReference {
-                        fs_desc: fs.description(),  // The filesystem's description.
-                        target_id: node.id.clone(), // The node being referenced.
-                        target_kind: node.kind(),   // The node's kind.
-                        valid_references,           // The valid kinds of nodes for an image.
-                    });
+                // Check that the node is of a compatible kind.
+                if !compatible_kinds.contains(node.kind().as_flag()) {
+                    return Err(
+                        BlockDeviceGraphBuildError::FilesystemIncompatibleReference {
+                            fs_desc: fs.description(),  // The filesystem's description.
+                            target_id: node.id.clone(), // The node being referenced.
+                            target_kind: node.kind(),   // The node's kind.
+                            compatible_kinds, // A list of kinds compatible with the given filesystem.
+                        },
+                    );
                 }
 
                 update_node_filesystem(node, NodeFileSystem::Regular(fs))?;
@@ -390,19 +393,19 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 }
             })?;
 
-            // Depending on the details of the filesystem, we can have different referrer kinds.
-            let data_valid_references =
-                BlkDevReferrerKind::VerityFileSystemData.valid_target_kinds();
+            // Depending on the details of the filesystem, we can have different compatible referrer kinds.
+            let data_compatible_kinds: super::types::BlkDevKindFlag =
+                BlkDevReferrerKind::VerityFileSystemData.compatible_kinds();
 
-            // Check that the node is of a valid kind.
-            if !data_valid_references.contains(data_node.kind().as_flag()) {
+            // Check that the node is of a compatible kind.
+            if !data_compatible_kinds.contains(data_node.kind().as_flag()) {
                 return Err(
-                    BlockDeviceGraphBuildError::VerityFilesystemInvalidReferenceData {
+                    BlockDeviceGraphBuildError::VerityFilesystemIncompatibleReferenceData {
                         name: vfs.name.clone(),
                         fs_type: vfs.fs_type,
                         target_id: data_node.id.clone(),
                         target_kind: data_node.kind(),
-                        valid_references: data_valid_references,
+                        compatible_kinds: data_compatible_kinds,
                     },
                 );
             }
@@ -419,18 +422,17 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                 }
             })?;
 
-            let hash_valid_references =
-                BlkDevReferrerKind::VerityFileSystemData.valid_target_kinds();
+            let hash_compatible_kinds = BlkDevReferrerKind::VerityFileSystemData.compatible_kinds();
 
-            // Check that the node is of a valid kind.
-            if !hash_valid_references.contains(hash_node.kind().as_flag()) {
+            // Check that the node is of a compatible kind.
+            if !hash_compatible_kinds.contains(hash_node.kind().as_flag()) {
                 return Err(
-                    BlockDeviceGraphBuildError::VerityFilesystemInvalidReferenceHash {
+                    BlockDeviceGraphBuildError::VerityFilesystemIncompatibleReferenceHash {
                         name: vfs.name.clone(),
                         fs_type: vfs.fs_type,
                         target_id: hash_node.id.clone(),
                         target_kind: hash_node.kind(),
-                        valid_references: hash_valid_references,
+                        compatible_kinds: hash_compatible_kinds,
                     },
                 );
             }
@@ -812,22 +814,26 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                     }
                 }
 
-                // Assuming we got a homogeneous partition type, check that it is valid for the filesystem
-                let valid_part_types = BlkDevReferrerKind::from(node_fs).allowed_partition_types();
-                if !valid_part_types.contains(*partition_type) {
-                    return Err(BlockDeviceGraphBuildError::FilesystemInvalidPartitionType {
-                        referrer: BlkDevReferrerKind::from(node_fs),
-                        fs_desc: node_fs.description(),
-                        partition_type: *partition_type,
-                        valid_types: valid_part_types.clone(),
-                    });
+                // Assuming we got a homogeneous partition type, check that it is compatible with
+                // the given filesystem.
+                let compatible_part_types =
+                    BlkDevReferrerKind::from(node_fs).allowed_partition_types();
+                if !compatible_part_types.contains(*partition_type) {
+                    return Err(
+                        BlockDeviceGraphBuildError::FilesystemIncompatiblePartitionType {
+                            referrer: BlkDevReferrerKind::from(node_fs),
+                            fs_desc: node_fs.description(),
+                            partition_type: *partition_type,
+                            compatible_types: compatible_part_types.clone(),
+                        },
+                    );
                 }
 
-                // Finally, if the node has a verity filesystem, check that the partition types match:
+                // Finally, if the node has a verity filesystem, check that the partition types match
                 if let NodeFileSystem::VerityData(vfs) = node_fs {
                     // Get the expected hash partition type for the type of this data partition
                     let expected_hash_part_type = partition_type.to_verity().ok_or_else(|| {
-                        BlockDeviceGraphBuildError::VerityFilesystemInvalidaDataPartitionType {
+                        BlockDeviceGraphBuildError::VerityFilesystemInvalidDataPartitionType {
                             name: vfs.name.clone(),
                             fs_type: vfs.fs_type,
                             partition_type: *partition_type,
