@@ -25,6 +25,10 @@ pub struct Chroot {
 impl Chroot {
     /// Mount special directories ('/dev', '/proc', and '/sys') and enter chroot.
     fn enter(path: &Path) -> Result<Self, TridentError> {
+        if !path.exists() {
+            return Err(TridentError::new(ServicingError::EnterChroot));
+        }
+
         // Mount special dirs.
         info!("Mounting special directories");
         let mounts = vec![
