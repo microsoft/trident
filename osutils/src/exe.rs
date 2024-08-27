@@ -201,10 +201,11 @@ impl Sealed for Command {}
 
 impl RunAndCheck for Command {
     fn run_and_check(&mut self) -> Result<(), Error> {
+        let rendered_command = self.render_command();
+        trace!("Executing '{rendered_command}'");
         let result = self.output();
         trace!(
-            "Executed '{}': {}. Report:\n{}",
-            self.render_command(),
+            "Executed '{rendered_command}': {}. Report:\n{}",
             result.explain_exit(),
             result.output_report(),
         );
@@ -214,10 +215,11 @@ impl RunAndCheck for Command {
     }
 
     fn output_and_check(&mut self) -> Result<String, Error> {
+        let rendered_command = self.render_command();
+        trace!("Executing '{rendered_command}'");
         let result = self.output();
         trace!(
-            "Executed '{}': {}. Report:\n{}",
-            self.render_command(),
+            "Executed '{rendered_command}': {}. Report:\n{}",
             result.explain_exit(),
             result.output_report(),
         );
@@ -227,11 +229,12 @@ impl RunAndCheck for Command {
     }
 
     fn raw_output_and_check(&mut self) -> Result<Output, Error> {
+        let rendered_command = self.render_command();
+        trace!("Executing '{rendered_command}'");
         // Run the process and store the result.
         let result = self.output();
         trace!(
-            "Executed '{}': {}. Report:\n{}",
-            self.render_command(),
+            "Executed '{rendered_command}': {}. Report:\n{}",
             result.explain_exit(),
             result.output_report(),
         );
