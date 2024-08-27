@@ -19,7 +19,7 @@ use trident_api::{
         AbUpdate, HostConfiguration, HostConfigurationDynamicValidationError, Image, ImageFormat,
         ImageSha256,
     },
-    constants::ROOT_MOUNT_POINT_PATH,
+    constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -154,7 +154,7 @@ fn deploy_images(
                     .find(|mp| mp.target_id == device_id);
                 if let Some(mount_point) = mount_point {
                     if mount_point.filesystem.is_ext()
-                        && !mount_point.options.contains(&"ro".into())
+                        && !mount_point.options.contains(&MOUNT_OPTION_READ_ONLY.into())
                     {
                         // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
                         info!("Checking filesystem on block device '{}'", &device_id);

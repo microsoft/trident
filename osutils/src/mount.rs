@@ -167,6 +167,7 @@ mod functional_test {
     use tempfile::TempDir;
 
     use pytest_gen::functional_test;
+    use trident_api::constants::MOUNT_OPTION_READ_ONLY;
 
     #[functional_test(feature = "helpers")]
     fn test_mount_and_umount() {
@@ -243,7 +244,7 @@ mod functional_test {
             "tmpfs",
             tmp_mount,
             MountFileSystemType::Tmpfs,
-            &["size=1M".into(), "ro".into()],
+            &["size=1M".into(), MOUNT_OPTION_READ_ONLY.into()],
         )
         .unwrap();
 

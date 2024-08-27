@@ -435,6 +435,7 @@ mod functional_test {
     use super::*;
     use const_format::formatcp;
     use pytest_gen::functional_test;
+    use trident_api::constants::MOUNT_OPTION_READ_ONLY;
 
     use std::fs;
 
@@ -571,7 +572,7 @@ mod functional_test {
                     Path::new(DEV_MAPPER_PATH).join("verity-test"),
                     verity_mount_dir.path(),
                     MountFileSystemType::Ext4,
-                    &["ro".into()],
+                    &[MOUNT_OPTION_READ_ONLY.into()],
                 )
                 .unwrap();
                 // Create a mount guard that will automatically unmount when it goes out of scope
@@ -634,7 +635,7 @@ mod functional_test {
                     Path::new(DEV_MAPPER_PATH).join("verity-test"),
                     verity_mount_dir.path(),
                     MountFileSystemType::Ext4,
-                    &["ro".into()],
+                    &[MOUNT_OPTION_READ_ONLY.into()],
                 )
                 .unwrap_err().root_cause().to_string(), format!("Process output:\nstderr:\nmount: {}: can't read superblock on /dev/mapper/verity-test.\n\n", verity_mount_dir.path().display()));
             }

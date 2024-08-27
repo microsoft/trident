@@ -1,5 +1,6 @@
 //! Validation errors for the host configuration.
 
+use crate::constants::VAR_TMP_PATH;
 use serde::{Deserialize, Serialize};
 
 /// Identifies errors detected during static validation of the host configuration, i.e. errors that
@@ -64,6 +65,9 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error("Mount point '{mount_point_path}' must be backed by an image")]
     MountPointNotBackedByImage { mount_point_path: String },
+
+    #[error("Directory '{VAR_TMP_PATH}' must be on a read-write volume, but is on a read-only volume mounted at '{mount_point_path}'")]
+    VarTmpOnReadOnlyVolume { mount_point_path: String },
 
     #[error(
         "Overlay '{overlay_path}' cannot be on volume '{mount_point_path}' as it is read-only"

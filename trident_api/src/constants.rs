@@ -121,6 +121,9 @@ pub const DEV_MAPPER_PATH: &str = "/dev/mapper";
 /// Selinux config file path
 pub const SELINUX_CONFIG: &str = "/etc/selinux/config";
 
+/// /var/tmp path
+pub const VAR_TMP_PATH: &str = "/var/tmp";
+
 // Azure Linux Specific Constants
 
 /// Azure Linux Install ID Prefix
@@ -131,3 +134,6 @@ pub const AB_VOLUME_A_NAME: &str = "A";
 
 /// A/B Volume B Name
 pub const AB_VOLUME_B_NAME: &str = "B";
+
+/// Read-only mount option.
+pub const MOUNT_OPTION_READ_ONLY: &str = "ro";

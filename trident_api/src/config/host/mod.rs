@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{constants::ROOT_MOUNT_POINT_PATH, is_default};
+use crate::{
+    constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    is_default,
+};
 
 pub(crate) mod error;
 pub(crate) mod os;
@@ -69,7 +72,7 @@ impl HostConfiguration {
         if self.trident.self_upgrade
             && self.storage.verity_filesystems.iter().any(|v| {
                 v.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH)
-                    && v.mount_point.options.contains("ro")
+                    && v.mount_point.options.contains(MOUNT_OPTION_READ_ONLY)
             })
         {
             return Err(HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs);

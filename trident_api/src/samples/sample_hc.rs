@@ -17,7 +17,7 @@ use crate::{
         RaidLevel, Script, Scripts, ServicingTypeSelection, SoftwareRaidArray, SshMode, Storage,
         User, VerityFileSystem,
     },
-    constants,
+    constants::{self, MOUNT_OPTION_READ_ONLY},
 };
 
 pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfiguration), Error> {
@@ -572,7 +572,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     fs_type: FileSystemType::Ext4,
                     mount_point: MountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                        options: MountOptions::new("ro"),
+                        options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
                     },
                 }],
                 ..Default::default()
@@ -1080,7 +1080,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     fs_type: FileSystemType::Ext4,
                     mount_point: MountPoint {
                         path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                        options: MountOptions::new("ro"),
+                        options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
                     },
                 }],
                 ..Default::default()

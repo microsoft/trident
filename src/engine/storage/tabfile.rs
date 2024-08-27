@@ -137,7 +137,7 @@ mod tests {
             Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionTableType,
             PartitionType, Storage,
         },
-        constants::{self, SWAP_MOUNT_POINT},
+        constants::{self, MOUNT_OPTION_READ_ONLY, SWAP_MOUNT_POINT},
         status::{HostStatus, ServicingState, ServicingType, Storage as StorageStatus},
     };
 
@@ -270,7 +270,7 @@ mod tests {
                         "lowerdir=/etc".into(),
                         "upperdir=/var/lib/trident-overlay/etc/upper".into(),
                         "workdir=/var/lib/trident-overlay/etc/work".into(),
-                        "ro".into()
+                        MOUNT_OPTION_READ_ONLY.into()
                     ],
                     target_id: "".to_owned(),
                 },
@@ -280,7 +280,7 @@ mod tests {
                 "lowerdir=/etc".into(),
                 "upperdir=/var/lib/trident-overlay/etc/upper".into(),
                 "workdir=/var/lib/trident-overlay/etc/work".into(),
-                "ro".into()
+                MOUNT_OPTION_READ_ONLY.into()
             ])
         );
     }

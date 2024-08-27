@@ -237,6 +237,7 @@ mod functional_test {
     use std::os::unix::fs::symlink;
 
     use pytest_gen::functional_test;
+    use trident_api::constants::MOUNT_OPTION_READ_ONLY;
 
     use super::*;
 
@@ -292,7 +293,9 @@ mod functional_test {
     fn test_systemd_overlay_mount_temporary_readonly_unmount() {
         let dir = tempfile::tempdir().unwrap();
         // fail to write file for read-only overlay
-        let overlay = SystemDFilesystemOverlay::mount_temporary(dir.path(), &["ro"]).unwrap();
+        let overlay =
+            SystemDFilesystemOverlay::mount_temporary(dir.path(), &[MOUNT_OPTION_READ_ONLY])
+                .unwrap();
         // create a file on top of the overlay
         let test_file = dir.path().join("test");
         assert_eq!(

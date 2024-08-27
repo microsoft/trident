@@ -11,7 +11,8 @@ use schemars::JsonSchema;
 
 use crate::{
     constants::{
-        BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_PATH,
+        BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
+        TRIDENT_OVERLAY_PATH, VAR_TMP_PATH,
     },
     is_default, BlockDeviceId,
 };
@@ -178,10 +179,12 @@ impl Storage {
         // Build the graph
         let graph = self.build_graph()?;
 
-        // If storage configuration is requested, then ESP volume must be
-        // present, to update Grub configuration
+        // If storage configuration is requested, then
         if *self != Storage::default() {
+            // ESP volume must be present, to update Grub configuration
             Self::validate_volume_presence(&graph, ESP_MOUNT_POINT_PATH)?;
+            // /var/tmp must not be on a read-only volume
+            self.validate_writable_mount_points()?;
         }
 
         // Ensure the root mount point is present when:
@@ -223,6 +226,34 @@ impl Storage {
                 },
             ),
         }
+    }
+
+    /// Checks that mountpoints that are expected to be writable are mounted as
+    /// writable. Currently only check /var/tmp.
+    fn validate_writable_mount_points(&self) -> Result<(), HostConfigurationStaticValidationError> {
+        // Ensure that /var/tmp is not on a read-only volume
+        let var_tmp_mount_point = self.path_to_mount_point_info(VAR_TMP_PATH).ok_or(
+            HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
+                mount_point_path: VAR_TMP_PATH.into(),
+            },
+        )?;
+        if var_tmp_mount_point
+            .mount_point
+            .options
+            .contains(MOUNT_OPTION_READ_ONLY)
+        {
+            return Err(
+                HostConfigurationStaticValidationError::VarTmpOnReadOnlyVolume {
+                    mount_point_path: var_tmp_mount_point
+                        .mount_point
+                        .path
+                        .to_string_lossy()
+                        .to_string(),
+                },
+            );
+        }
+
+        Ok(())
     }
 
     /// Validates the verity configuration. Assumes the verity list of devices
@@ -297,7 +328,7 @@ impl Storage {
         if overlay_support_mount_point
             .mount_point
             .options
-            .contains("ro")
+            .contains(MOUNT_OPTION_READ_ONLY)
         {
             return Err(
                 HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
@@ -340,7 +371,7 @@ impl Storage {
         }
 
         // Ensure the root verity device is mounted read-only at /.
-        if !vfs.mount_point.options.contains("ro") {
+        if !vfs.mount_point.options.contains(MOUNT_OPTION_READ_ONLY) {
             return Err(
                 HostConfigurationStaticValidationError::VerityDeviceMountedReadWrite {
                     device_name: vfs.name.clone(),
@@ -620,6 +651,11 @@ mod tests {
                             partition_type: PartitionType::LinuxGeneric,
                             size: PartitionSize::from_str("1G").unwrap(),
                         },
+                        Partition {
+                            id: "var".to_owned(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        },
                     ],
                     ..Default::default()
                 },
@@ -708,6 +744,15 @@ mod tests {
                         options: MountOptions::empty(),
                     }),
                 },
+                FileSystem {
+                    device_id: Some("var".into()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Create,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/var"),
+                        options: MountOptions::empty(),
+                    }),
+                },
             ],
             ab_update: Some(AbUpdate {
                 volume_pairs: vec![AbVolumePair {
@@ -746,7 +791,7 @@ mod tests {
             fs_type: FileSystemType::Ext4,
             mount_point: MountPoint {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
-                options: MountOptions::new("ro"),
+                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             },
         }];
 
@@ -2242,13 +2287,46 @@ mod tests {
             .mount_point
             .as_mut()
             .unwrap()
-            .options = MountOptions::new("ro");
+            .options = MountOptions::new(MOUNT_OPTION_READ_ONLY);
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
             HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
                 overlay_path: "/var/lib/trident-overlay".into(),
                 mount_point_path: "/var/lib/trident-overlay".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_validate_writable_mount_points_pass() {
+        let storage: Storage = get_verity_storage();
+        storage.validate(true).unwrap();
+
+        let mut storage: Storage = get_storage();
+        storage.validate(true).unwrap();
+
+        // Remove the var filesystem, should be ok, as / is rw
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("var".into()));
+
+        storage.validate(true).unwrap();
+    }
+
+    #[test]
+    fn test_validate_writable_mount_points_fails() {
+        let mut storage: Storage = get_verity_storage();
+
+        // Remove the var filesystem, which is rw
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("var".into()));
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::VarTmpOnReadOnlyVolume {
+                mount_point_path: "/".into(),
             }
         );
     }

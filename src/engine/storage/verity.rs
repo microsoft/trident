@@ -26,8 +26,8 @@ use trident_api::{
     config::{self, HostConfiguration, InternalMountPoint},
     constants::{
         BOOT_MOUNT_POINT_PATH, BOOT_RELATIVE_MOUNT_POINT_PATH, DEV_MAPPER_PATH,
-        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, GRUB2_DIRECTORY, ROOT_MOUNT_POINT_PATH,
-        TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_PATH,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, GRUB2_DIRECTORY, MOUNT_OPTION_READ_ONLY,
+        ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_PATH,
         TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
     status::HostStatus,
@@ -90,7 +90,7 @@ pub(super) fn create_etc_overlay_mount_point() -> InternalMountPoint {
             format!("lowerdir=/{TRIDENT_OVERLAY_LOWER_RELATIVE_PATH}"),
             format!("upperdir={TRIDENT_OVERLAY_PATH}/{TRIDENT_OVERLAY_UPPER_RELATIVE_PATH}"),
             format!("workdir={TRIDENT_OVERLAY_PATH}/{TRIDENT_OVERLAY_WORK_RELATIVE_PATH}"),
-            "ro".to_owned(),
+            MOUNT_OPTION_READ_ONLY.to_owned(),
         ],
         target_id: "".to_owned(),
         path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join(TRIDENT_OVERLAY_LOWER_RELATIVE_PATH),
@@ -593,7 +593,7 @@ mod test {
                     "lowerdir=/etc".into(),
                     "upperdir=/var/lib/trident-overlay/etc/upper".into(),
                     "workdir=/var/lib/trident-overlay/etc/work".into(),
-                    "ro".into()
+                    MOUNT_OPTION_READ_ONLY.into()
                 ],
                 target_id: "".into()
             }
@@ -1758,7 +1758,7 @@ mod functional_test {
                 &verity_root_path,
                 mount_dir.path(),
                 MountFileSystemType::Ext4,
-                &["defaults".into(), "ro".into()],
+                &["defaults".into(), MOUNT_OPTION_READ_ONLY.into()],
             )
             .unwrap();
             // Create a mount guard that will automatically unmount when it goes

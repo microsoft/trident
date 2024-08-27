@@ -2,6 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Error};
 use const_format::formatcp;
+use log::trace;
 
 use crate::path;
 
@@ -58,6 +59,7 @@ impl OsRelease {
                         } else if v.starts_with("3.") {
                             AzureLinuxRelease::AzL3
                         } else {
+                            trace!("Unknown Azure Linux release: {v}");
                             AzureLinuxRelease::Other
                         }
                     })

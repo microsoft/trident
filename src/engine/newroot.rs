@@ -510,6 +510,7 @@ mod functional_test {
     };
     use trident_api::{
         config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
+        constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
         status::Storage,
     };
@@ -545,7 +546,7 @@ mod functional_test {
                         path: PathBuf::from("/"),
                         target_id: "sr0".to_string(),
                         filesystem: FileSystemType::Iso9660,
-                        options: vec!["ro".into()],
+                        options: vec![MOUNT_OPTION_READ_ONLY.into()],
                     }],
                     ..Default::default()
                 },
@@ -843,7 +844,7 @@ mod functional_test {
                         path: PathBuf::from("/"),
                         target_id: "sr0".to_string(),
                         filesystem: FileSystemType::Iso9660,
-                        options: vec!["ro".into()],
+                        options: vec![MOUNT_OPTION_READ_ONLY.into()],
                     }],
                     ..Default::default()
                 },
