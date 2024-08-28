@@ -83,7 +83,7 @@ fn set_boot_next(host_status: &HostStatus, esp_path: &Path) -> Result<(), Error>
 
     // Get the disk path of the ESP partition
     let disk_path = get_esp_partition_disk(host_status).context("Failed to fetch esp disk path")?;
-    debug!("Disk path of first esp partition {:?}", disk_path);
+    debug!("Disk path of first ESP partition {:?}", disk_path);
 
     // Create a boot entry for the new OS.
     efibootmgr::create_boot_entry(&entry_label_new, disk_path, bootloader_path_new, esp_path)

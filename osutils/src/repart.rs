@@ -252,11 +252,15 @@ impl SystemdRepartInvoker {
             .generate_config(repart_root.path())
             .context("Failed to generate systemd-repart config")?;
 
+        // Generate a random UUID to use for the 'seed' argument. This way, 'systemd-repart' will
+        // hash a unique PTUUID for each disk/partition table.
+        let seed = Uuid::new_v4();
+
         let repart_output_json = Command::new("systemd-repart")
             .arg(self.disk.as_os_str())
             .arg("--dry-run=no")
             .arg(format!("--empty={}", self.mode.to_str()))
-            .arg("--seed=random")
+            .arg(format!("--seed={}", seed))
             .arg("--json=short")
             .arg("--definitions")
             .arg(repart_root.path())
@@ -731,10 +735,12 @@ mod functional_test {
             unchanged_block_device_list_after
         );
 
+        let block_device = lsblk::run(&disk_bus_path).unwrap();
         let expected_block_device = BlockDevice {
             name: TEST_DISK_DEVICE_PATH.into(),
             fstype: None,
             fssize: None,
+            ptuuid: block_device.ptuuid.clone(),
             part_uuid: None,
             size: DISK_SIZE,
             parent_kernel_name: None,
@@ -748,6 +754,7 @@ mod functional_test {
                     name: format!("{TEST_DISK_DEVICE_PATH}1"),
                     fstype: None,
                     fssize: None,
+                    ptuuid: None,
                     part_uuid: Some(part1.uuid.into()),
                     size: part1.size,
                     parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
@@ -762,6 +769,7 @@ mod functional_test {
                     name: format!("{TEST_DISK_DEVICE_PATH}2"),
                     fstype: None,
                     fssize: None,
+                    ptuuid: None,
                     part_uuid: Some(part2.uuid.into()),
                     size: part2.size,
                     parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
@@ -775,7 +783,6 @@ mod functional_test {
             ],
         };
 
-        let block_device = lsblk::run(&disk_bus_path).unwrap();
         assert_eq!(expected_block_device, block_device);
     }
 
@@ -806,5 +813,29 @@ mod functional_test {
         let repart = SystemdRepartInvoker::new(disk_bus_path, RepartEmptyMode::Force)
             .with_partition_entries(partition_definition);
         assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nCan't fit requested partitions into available free space (15.9G), refusing.\nAutomatically determined minimal disk image size as 16.0G, current image size is 16.0G.\n\n");
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_execute_unique_ptuuid() {
+        // Run execute() once
+        let partition_definition = repart::generate_partition_definition_esp_generic();
+        let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
+        let repart = SystemdRepartInvoker::new(disk_bus_path.clone(), RepartEmptyMode::Force)
+            .with_partition_entries(partition_definition.clone());
+        repart.execute().unwrap();
+        // Run lsblk and extract PTUUID of the disk/partition table
+        let block_device = lsblk::run(&disk_bus_path).unwrap();
+        let ptuuid = block_device.ptuuid.unwrap();
+
+        // Run execute() again on the same disk
+        let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartEmptyMode::Force)
+            .with_partition_entries(partition_definition);
+        repart.execute().unwrap();
+        // Run lsblk and extract PTUUID of the disk/partition table after the repartitioning
+        let block_device = lsblk::run(&disk_bus_path).unwrap();
+        let ptuuid_after = block_device.ptuuid.unwrap();
+
+        // Ensure that the two PTUUIDs are unique
+        assert_ne!(ptuuid, ptuuid_after);
     }
 }

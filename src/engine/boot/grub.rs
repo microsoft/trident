@@ -321,8 +321,10 @@ pub(crate) mod functional_test {
                     - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
             );
 
+            let block_device = lsblk::run(&disk_bus_path).unwrap();
             let expected_block_device = BlockDevice {
                 name: TEST_DISK_DEVICE_PATH.into(),
+                ptuuid: block_device.ptuuid.clone(),
                 size: DISK_SIZE,
                 partition_table_type: Some(PartitionTableType::Gpt),
                 readonly: false,
@@ -331,6 +333,7 @@ pub(crate) mod functional_test {
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
                         part_uuid: Some(part1.uuid.into()),
+                        ptuuid: None,
                         size: part1.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -341,6 +344,7 @@ pub(crate) mod functional_test {
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
                         part_uuid: Some(part2.uuid.into()),
+                        ptuuid: None,
                         size: part2.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -351,6 +355,7 @@ pub(crate) mod functional_test {
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
                         part_uuid: Some(part3.uuid.into()),
+                        ptuuid: None,
                         size: part3.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -361,6 +366,7 @@ pub(crate) mod functional_test {
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}4").into(),
                         part_uuid: Some(part4.uuid.into()),
+                        ptuuid: None,
                         size: part4.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -372,7 +378,6 @@ pub(crate) mod functional_test {
                 ..Default::default()
             };
 
-            let block_device = lsblk::run(&disk_bus_path).unwrap();
             assert_eq!(expected_block_device, block_device);
         } else {
             let part3 = &partitions[2];
@@ -384,8 +389,10 @@ pub(crate) mod functional_test {
 
             udevadm::settle().unwrap();
 
+            let block_device = lsblk::run(&disk_bus_path).unwrap();
             let expected_block_device = BlockDevice {
                 name: TEST_DISK_DEVICE_PATH.into(),
+                ptuuid: block_device.ptuuid.clone(),
                 size: DISK_SIZE,
                 partition_table_type: Some(PartitionTableType::Gpt),
                 readonly: false,
@@ -394,6 +401,7 @@ pub(crate) mod functional_test {
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
                         part_uuid: Some(part1.uuid.into()),
+                        ptuuid: None,
                         size: part1.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -404,6 +412,7 @@ pub(crate) mod functional_test {
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
                         part_uuid: Some(part2.uuid.into()),
+                        ptuuid: None,
                         size: part2.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -414,6 +423,7 @@ pub(crate) mod functional_test {
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
                         part_uuid: Some(part3.uuid.into()),
+                        ptuuid: None,
                         size: part3.size,
                         parent_kernel_name: Some(PathBuf::from(TEST_DISK_DEVICE_PATH)),
                         partition_table_type: None,
@@ -425,7 +435,6 @@ pub(crate) mod functional_test {
                 ..Default::default()
             };
 
-            let block_device = lsblk::run(&disk_bus_path).unwrap();
             assert_eq!(expected_block_device, block_device);
         }
     }
