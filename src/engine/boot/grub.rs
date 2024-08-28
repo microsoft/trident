@@ -85,9 +85,8 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     }
 
     let boot_block_device_id = &boot_mount_point.target_id;
-    let boot_block_device_path =
-        engine::get_block_device_path(host_status, boot_block_device_id, false)
-            .context("Failed to find boot block device")?;
+    let boot_block_device_path = engine::get_block_device_path(host_status, boot_block_device_id)
+        .context("Failed to find boot block device")?;
 
     let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_path)?;
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);

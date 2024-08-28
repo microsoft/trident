@@ -95,7 +95,7 @@ fn rebuild_raid_array(
     );
 
     // Get the RAID path
-    let raid_path = engine::get_block_device_path(host_status, raid_id, false).context(format!(
+    let raid_path = engine::get_block_device_path(host_status, raid_id).context(format!(
         "Failed to find block device path for RAID array'{}'",
         raid_id
     ))?;

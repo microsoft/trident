@@ -43,9 +43,10 @@ fn entry_from_mountpoint(hs: &HostStatus, mp: &InternalMountPoint) -> Result<Tab
         // Now, for all the types that *do* require a block device:
         fs_type => {
             // Try to look up the block device
-            let device = engine::get_block_device_path(hs, &mp.target_id, false).context(
-                format!("Failed to find block device with id {}", mp.target_id),
-            )?;
+            let device = engine::get_block_device_path(hs, &mp.target_id).context(format!(
+                "Failed to find block device with id {}",
+                mp.target_id
+            ))?;
 
             // Create the entry according to the file system type
             match fs_type {

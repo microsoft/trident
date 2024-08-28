@@ -64,7 +64,7 @@ fn block_devices_needing_fs_creation(
                     Some(device_id),
                 ) if !host_status.spec.storage.is_adopted_partition(device_id) => {
                     // Get the block device info for the device_id
-                    engine::get_block_device_path(host_status, device_id, false)
+                    engine::get_block_device_path(host_status, device_id)
                     .map(|bd_info| (device_id.clone(), bd_info, fs.fs_type))
                 },
 

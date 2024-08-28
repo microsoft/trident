@@ -71,7 +71,7 @@ fn deploy_images(
 
     for (device_id, image) in images_to_deploy {
         // Validate that block device exists
-        let block_device_path = engine::get_block_device_path(host_status, &device_id, false)
+        let block_device_path = engine::get_block_device_path(host_status, &device_id)
             .context(format!("No block device with id '{}' found", device_id))?;
 
         // Parse the URL to determine the download strategy
@@ -380,10 +380,10 @@ fn get_verity_data_volume_pair_paths(
         .find(|vp| vp.id == root_verity_device_config.data_target_id)
         .context("No volume pair for root data device found")?;
     let volume_a_path =
-        engine::get_block_device_path(host_status, &root_data_device_pair.volume_a_id, false)
+        engine::get_block_device_path(host_status, &root_data_device_pair.volume_a_id)
             .context("Failed to get block device for data volume A")?;
     let volume_b_path =
-        engine::get_block_device_path(host_status, &root_data_device_pair.volume_b_id, false)
+        engine::get_block_device_path(host_status, &root_data_device_pair.volume_b_id)
             .context("Failed to get block device for data volume B")?;
     let root_verity_status = veritysetup::status(&root_verity_device_config.device_name)
         .context("Failed to get verity status")?;

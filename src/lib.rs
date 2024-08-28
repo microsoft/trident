@@ -669,7 +669,7 @@ fn get_expected_root_device_path(host_status: &HostStatus) -> Result<PathBuf, Tr
     // Fetch the expected root device path from host status, based on device ID of root. Set
     // active=false b/c need to fetch info for volume that we expect to be active at this point,
     // after host has already rebooted, and it used to be the update volume before the reboot.
-    let expected_root_path = get_block_device_path(host_status, root_device_id, false).structured(
+    let expected_root_path = get_block_device_path(host_status, root_device_id).structured(
         ServicingError::GetBlockDevicePath {
             device_id: root_device_id.to_string(),
         },

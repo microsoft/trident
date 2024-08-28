@@ -169,10 +169,11 @@ impl NewrootMount {
                     mp.target_id
                 ))?;
 
-                let device_path =
-                    engine::get_block_device_path(host_status, &mp.target_id, false).context(
-                        format!("Failed to find block device path for id '{}'", mp.target_id),
-                    )?;
+                let device_path = engine::get_block_device_path(host_status, &mp.target_id)
+                    .context(format!(
+                        "Failed to find block device path for id '{}'",
+                        mp.target_id
+                    ))?;
 
                 mount::mount(
                     &device_path,
