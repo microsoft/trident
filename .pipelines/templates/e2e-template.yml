@@ -39,6 +39,8 @@ stages:
       outputArtifactName: trident-verity-testimage
 
   - template: stages/building_tools/building-tools.yml
+  
+  - template: stages/build_docker_image/trident-container.yml
 
   - ${{ if eq(parameters.blockPublishing, false) }}:
       - template: stages/deployment_testing/functional_testing/functional-testing.yml

@@ -1,0 +1,42 @@
+stages:
+  - stage: BuildTridentContainerImage
+    displayName: Build Docker Image
+    dependsOn: Trident
+
+    jobs:
+      - job: BuildImage
+        displayName: Build Image
+        pool:
+          type: linux
+
+        variables:
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/trident/out"
+
+        steps:
+          - script: |
+              set -eux
+
+              # Download newer systemd RPMs (needed until we switch to AZL3)
+              make artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+
+              mkdir -p bin/RPMS
+            displayName: Prepare to build docker image
+            retryCountOnTaskFailure: 3
+
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download trident rpms"
+            inputs:
+              buildType: current
+              artifactName: "trident-binaries"
+              patterns: '**/*.rpm'
+              targetPath: "$(Build.SourcesDirectory)/bin/RPMS/x86_64"
+
+          - script: |
+              set -eux
+
+              mkdir -p $(ob_outputDirectory)
+              DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:$(Build.BuildNumber) .
+              docker save trident/trident:$(Build.BuildNumber) | gzip > $(ob_outputDirectory)/trident-container-$(Build.BuildNumber).tar.gz
+            displayName: Build Docker image
