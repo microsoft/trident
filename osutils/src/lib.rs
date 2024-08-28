@@ -10,6 +10,7 @@ pub mod files;
 pub mod filesystems;
 pub mod findmnt;
 pub mod grub;
+pub mod grub_mkconfig;
 pub mod hashing_reader;
 pub mod image_streamer;
 pub mod lsblk;

@@ -4,7 +4,9 @@ use anyhow::{bail, Context, Error};
 use log::debug;
 use uuid::Uuid;
 
-use osutils::{blkid, exe::RunAndCheck, grub::GrubConfig, osrelease};
+use osutils::{
+    blkid, exe::RunAndCheck, grub::GrubConfig, grub_mkconfig::GrubMkConfigScript, osrelease,
+};
 use trident_api::{
     config::{FileSystemType, SelinuxMode},
     constants::{
@@ -105,6 +107,20 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
             boot_grub_config_path.display()
         ))?;
     } else {
+        // For AzL 3.0 we need to drop a grub-mkconfig script to manipulate the SELinux policy.
+        if let Some(mode) = host_status.spec.os.selinux.mode {
+            let mut script = GrubMkConfigScript::new("70_selinux_policy");
+            for (key, value) in match mode {
+                SelinuxMode::Disabled => vec![("selinux", "0")],
+                SelinuxMode::Permissive => vec![("selinux", "1"), ("enforcing", "0")],
+                SelinuxMode::Enforcing => vec![("selinux", "1"), ("enforcing", "1")],
+            } {
+                script.add_kv_param(key, value);
+            }
+
+            script.write().context("Failed to set SELinux policy")?;
+        }
+
         std::process::Command::new("bash")
             .arg("-c")
             .arg(format!("grub2-mkconfig > /{GRUB2_CONFIG_RELATIVE_PATH}"))

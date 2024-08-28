@@ -1,8 +1,6 @@
 use std::{
     collections::HashSet,
-    ffi::OsString,
     fs,
-    os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -18,9 +16,10 @@ use osutils::{
     exe::RunAndCheck,
     filesystems::MountFileSystemType,
     grub::GrubConfig,
+    grub_mkconfig::GrubMkConfigScript,
     lsblk, mount,
     osrelease::{AzureLinuxRelease, Distro, OsRelease},
-    path, veritysetup,
+    veritysetup,
 };
 use trident_api::{
     config::{self, HostConfiguration, InternalMountPoint},
@@ -60,8 +59,8 @@ const KARG_VERITY_OPTIONS: &str = "systemd.verity_root_options";
 /// Holds a comma-separated list of overlayfs paths.
 const KARG_OVERLAYS: &str = "rd.overlayfs";
 
-/// grub-mkconfig script location for Azure Linux 3.0.
-const GRUB_MKCONFIG_SCRIPT: &str = "/etc/default/grub.d/50_verity.cfg";
+/// grub-mkconfig script name for Azure Linux 3.0.
+const GRUB_MKCONFIG_SCRIPT_NAME: &str = "90_verity";
 
 /// Checks if verity is enabled in the GRUB config.
 pub(super) fn check_verity_enabled(grub_config_path: &Path) -> Result<bool, Error> {
@@ -369,47 +368,21 @@ pub(super) fn update_root_verity_in_grub_config(
             // Get the verity root hash from the GRUB config
             let root_hash = grub_config.read_linux_command_line_argument(KARG_VERITY_ROOT_HASH)?;
 
-            // Prepare all the verity-related options
-            let new_opts: Vec<(&'static str, OsString)> = vec![
-                (KARG_VERITY_ENABLED, "1".into()),
-                (KARG_VERITY_ROOT_HASH, root_hash.into()),
-                (KARG_VERITY_ROOT_DATA_DEV, verity_data_path.into()),
-                (KARG_VERITY_ROOT_HASH_DEV, verity_hash_path.into()),
-                (KARG_OVERLAYS, overlays_value.into()),
-                (KARG_VERITY_OPTIONS, "".into()),
-            ];
+            let mut script =
+                GrubMkConfigScript::new(GRUB_MKCONFIG_SCRIPT_NAME).with_root(root_mount_path);
+            script.add_simple_param("rd.debug");
+            script.add_kv_param(KARG_VERITY_ENABLED, "1");
+            script.add_kv_param(KARG_VERITY_ROOT_HASH, root_hash);
+            script.add_kv_param(KARG_VERITY_ROOT_DATA_DEV, verity_data_path);
+            script.add_kv_param(KARG_VERITY_ROOT_HASH_DEV, verity_hash_path);
+            script.add_kv_param(KARG_OVERLAYS, overlays_value);
+            script.add_kv_param(KARG_VERITY_OPTIONS, "");
 
-            // Build the new grub-mkconfig script
-            let grup_mkconfig_conf = {
-                // Override `GRUB_CMDLINE_LINUX` with its current value and append the new options
-                let mut conf = OsString::from("GRUB_CMDLINE_LINUX=\"$GRUB_CMDLINE_LINUX rd.debug ");
-                for (key, value) in new_opts {
-                    conf.push(key);
-                    conf.push("=");
-                    conf.push(value);
-                    conf.push(" ");
-                }
-                conf.push("\"\n");
+            script.set_boot_device("/dev/mapper/root");
 
-                // Set the GRUB_DEVICE to the root verity device
-                conf.push("GRUB_DEVICE=\"/dev/mapper/root\"\n");
-
-                conf
-            };
-
-            // Write the updated configuration to the grub-mkconfig script
-            let grub_cfg_cfg = path::join_relative(root_mount_path, GRUB_MKCONFIG_SCRIPT);
-            debug!(
-                "Writing grub-mkconfig script with verity parameters to '{}' with contents:\n{}",
-                grub_cfg_cfg.display(),
-                grup_mkconfig_conf.to_string_lossy()
-            );
-            fs::write(&grub_cfg_cfg, grup_mkconfig_conf.into_vec()).with_context(|| {
-                format!(
-                    "Failed to write grub-mkconfig script with verity parameters to '{}'",
-                    grub_cfg_cfg.display()
-                )
-            })?;
+            script
+                .write()
+                .context("Failed to write verity grub-mkconfig script")?;
         }
         distro => {
             bail!("Unsupported Linux distribution for verity setup: '{distro:?}'")
@@ -1395,6 +1368,12 @@ mod functional_test {
 
     #[functional_test]
     fn test_update_root_verity_in_grub_config() {
+        let _ = env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::max())
+            .try_init();
+        info!("Set up logging in tests!");
+
         let expected_root_hash = verity::setup_verity_volumes();
 
         // no change
@@ -1561,10 +1540,9 @@ mod functional_test {
                 .expect("Create mock os-release file");
 
             // Path to the mkgrub-config script file
-            let mkgrub_config_path = path::join_relative(mount_dir.path(), GRUB_MKCONFIG_SCRIPT);
-
-            // Create the directory where the script will be written to
-            files::create_dirs(mkgrub_config_path.parent().unwrap()).unwrap();
+            let mkgrub_config_path = GrubMkConfigScript::new(GRUB_MKCONFIG_SCRIPT_NAME)
+                .with_root(mount_dir.path())
+                .file_path();
 
             // Perform the call to update the grub-mkconfig script
             update_root_verity_in_grub_config(&host_status, mount_dir.path()).unwrap();
