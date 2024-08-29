@@ -5,23 +5,23 @@ parameters:
 
   - name: tridentConfigPath
     type: string
-  
+
   - name: deploymentEnvironment
     type: string
-  
+
   - name: tridentConfigurationName
     type: string
-  
+
   - name: metricsFile
     type: string
 
   - name: kustoDatabaseName
     type: string
     default: "trident"
-  
+
   - name: kustoTableName
     type: string
-  
+
   - name: kustoTableMapping
     type: string
     default: "trident_mapping"
@@ -43,7 +43,7 @@ steps:
       MACHINE_TYPE: ${{ parameters.deploymentEnvironment }}
       PIPELINE_NAME: $(Build.DefinitionName)
 
-  - template: pipelines/templates/upload-metrics-step.yml@platform-telemetry
+  - template: pipelines/templates/upload-metrics-step.yaml@platform-telemetry
     parameters:
       kustoDatabaseName: ${{ parameters.kustoDatabaseName }}
       kustoTableName: ${{ parameters.kustoTableName }}
