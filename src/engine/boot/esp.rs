@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -154,19 +154,11 @@ fn copy_file_artifacts(
             esp_dir_path.display()
         ))?;
 
-    // Fail if no-prefix is not used on Azure Linux 2.0
-    if grub_noprefix {
-        info!("grub-noprefix.efi is used");
-
-    // Check if we are on Azure Linux 2.0
-    } else if osutils::osrelease::is_azl2()
-        .context("Failed to check if the system is Azure Linux 2.0")?
-    {
-        bail!("grub-noprefix.efi should be used on Azure Linux 2.0 images for trident");
-
-    // Otherwise, log message and continue
-    } else {
-        debug!("grub-noprefix.efi is not used and the system is not on Azure Linux 2.0");
+    // Warn if grub_noprefix.efi is not found on Azure Linux images.
+    if !grub_noprefix {
+        let arch =
+            current_arch_efi_str().context("Failed to get the target architecture string")?;
+        warn!("Cannot locate grub{}-noprefix.efi in the boot image. Verify if the grub-noprefix package was installed on the boot image or if it was renamed to grub{0}.efi.", arch);
     }
 
     Ok(())
