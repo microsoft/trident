@@ -163,7 +163,7 @@ fn validate_rebuild_raid(
     host_status: &mut HostStatus,
     disks_to_rebuild: &[BlockDeviceId],
 ) -> Result<(), Error> {
-    validate_host_config_delta(host_config, host_status)
+    validate_host_config_delta(host_config, &host_status.spec)
         .context("Failed to validate host configuration delta for rebuild-raid operation")?;
 
     if host_status.servicing_type == ServicingType::CleanInstall {
@@ -370,10 +370,10 @@ fn get_raid_disks_to_rebuild_map(
 /// configuration are identical.
 fn validate_host_config_delta(
     host_config: &HostConfiguration,
-    host_status: &HostStatus,
+    host_status_spec: &HostConfiguration,
 ) -> Result<(), Error> {
     // Compare the host status spec and host_config.
-    let mut host_status_spec = host_status.spec.clone();
+    let mut host_status_spec = host_status_spec.clone();
     let mut host_config_to_compare = host_config.clone();
 
     // Skip checking the Trident field as Trident fields gets populated only on
@@ -406,13 +406,20 @@ fn partition_is_raid_member(partition_id: &BlockDeviceId, host_config: &HostConf
         .iter()
         .any(|raid| raid.devices.contains(&partition_id.to_string()))
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use std::path::PathBuf;
     use std::str::FromStr;
-    use trident_api::config::{Disk, Partition, PartitionSize, PartitionType, RaidLevel, Storage};
+    use trident_api::config::{
+        FileSystemSource, FileSystemType, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
+    };
+    use trident_api::{
+        config::{Disk, Partition, PartitionSize, PartitionType, RaidLevel, Storage},
+        status::ServicingState,
+    };
 
     fn get_host_config() -> HostConfiguration {
         HostConfiguration {
@@ -488,7 +495,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(validate_host_config_delta(&host_config, &host_status).is_ok());
+        validate_host_config_delta(&host_config, &host_status.spec).unwrap();
 
         host_config.storage.disks.push(Disk {
             id: "disk3".to_string(),
@@ -508,86 +515,109 @@ mod tests {
             ..Default::default()
         });
 
-        assert!(validate_host_config_delta(&host_config, &host_status).is_err());
+        assert_eq!(validate_host_config_delta(&host_config, &host_status.spec).unwrap_err().to_string(), "We do not support the updated host configuration for the Trident rebuild-raid process. The configuration must match the original host configuration used during host provisioning.");
     }
-}
 
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use pytest_gen::functional_test;
-    use trident_api::status::ServicingState;
+    #[test]
+    fn test_get_raid_disks_to_rebuild_map() {
+        let host_config = get_host_config();
 
-    use super::*;
+        // RAID array is on the disk to rebuild.
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let result = get_raid_disks_to_rebuild_map(&host_config, &disks_to_rebuild).unwrap();
+        let mut expected = HashMap::new();
+        expected.insert("raid1".to_string(), vec!["disk2".to_string()]);
+        assert_eq!(result, expected);
 
-    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
-    use std::path::Path;
-    use std::path::PathBuf;
-    use std::str::FromStr;
-    use trident_api::config::Disk;
-    use trident_api::config::Partition;
-    use trident_api::config::PartitionSize;
-    use trident_api::config::PartitionType;
-    use trident_api::config::RaidLevel;
-    use trident_api::config::Storage;
-
-    fn get_host_config() -> HostConfiguration {
-        HostConfiguration {
-            storage: Storage {
-                disks: vec![
-                    Disk {
-                        id: "disk1".to_string(),
-                        device: PathBuf::from("/dev/sda"),
-                        partitions: vec![
-                            Partition {
-                                id: "disk1part1".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::from_str("1M").unwrap(),
-                            },
-                            Partition {
-                                id: "disk1part2".to_string(),
-                                partition_type: PartitionType::Swap,
-                                size: PartitionSize::from_str("2M").unwrap(),
-                            },
-                        ],
-                        ..Default::default()
-                    },
-                    Disk {
-                        id: "disk2".to_string(),
-                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                        partitions: vec![
-                            Partition {
-                                id: "disk2part1".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: PartitionSize::from_str("1M").unwrap(),
-                            },
-                            Partition {
-                                id: "disk2part2".to_string(),
-                                partition_type: PartitionType::Swap,
-                                size: PartitionSize::from_str("2M").unwrap(),
-                            },
-                        ],
-                        ..Default::default()
-                    },
-                ],
-                raid: trident_api::config::Raid {
-                    software: vec![trident_api::config::SoftwareRaidArray {
-                        name: "raid1".to_string(),
-                        id: "raid1".to_string(),
-                        level: RaidLevel::Raid1,
-                        devices: vec!["disk1part1".to_string(), "disk2part1".to_string()],
-                    }],
-                    ..Default::default()
+        // Append a new disk to the host configuration.
+        let mut host_config = host_config;
+        host_config.storage.disks.push(Disk {
+            id: "disk3".to_string(),
+            device: PathBuf::from("/dev/sdc"),
+            partitions: vec![
+                Partition {
+                    id: "disk3part1".to_string(),
+                    partition_type: PartitionType::Root,
+                    size: PartitionSize::from_str("1M").unwrap(),
                 },
-
-                ..Default::default()
-            },
+                Partition {
+                    id: "disk3part2".to_string(),
+                    partition_type: PartitionType::Swap,
+                    size: PartitionSize::from_str("2M").unwrap(),
+                },
+            ],
             ..Default::default()
-        }
+        });
+
+        // RAID array is not on the disk to rebuild.
+        let disks_to_rebuild = vec!["disk3".to_string()];
+        let result = get_raid_disks_to_rebuild_map(&host_config, &disks_to_rebuild).unwrap();
+        let expected = HashMap::new();
+        assert_eq!(result, expected);
+
+        // Disks to rebuild is empty.
+        let disks_to_rebuild = vec![];
+        let result = get_raid_disks_to_rebuild_map(&host_config, &disks_to_rebuild).unwrap();
+        let expected = HashMap::new();
+        assert_eq!(result, expected);
+
+        // Disk to rebuild is not part of the host configuration.
+        let disks_to_rebuild = vec!["doesnotexist".to_string()];
+        let result = get_raid_disks_to_rebuild_map(&host_config, &disks_to_rebuild);
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to find configuration for disk 'doesnotexist' in host config"
+        );
     }
 
-    #[functional_test(feature = "helpers")]
-    fn test_validate_rebuild_success() {
+    #[test]
+    fn test_validate_raid_recovery() {
+        let host_config = get_host_config();
+
+        // RAID array is recoverable.
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let result = validate_raid_recovery(&host_config, &disks_to_rebuild);
+        result.unwrap();
+
+        // Append a new raid array to the host configuration.
+        let mut host_config = host_config;
+        host_config
+            .storage
+            .raid
+            .software
+            .push(trident_api::config::SoftwareRaidArray {
+                name: "raid2".to_string(),
+                id: "raid2".to_string(),
+                level: RaidLevel::Raid1,
+                devices: vec!["disk1part2".to_string(), "disk1part1".to_string()],
+            });
+
+        // RAID array raid2 is not recoverable.
+        let disks_to_rebuild = vec!["disk1".to_string()];
+        let result = validate_raid_recovery(&host_config, &disks_to_rebuild);
+        assert_eq!(result.unwrap_err().to_string(), "Recovery is not possible as all the partitions in array 'raid2' are in the disks to rebuild");
+
+        // RAID arrays are not recoverable.
+        let disks_to_rebuild = vec!["disk1".to_string(), "disk2".to_string()];
+        let result = validate_raid_recovery(&host_config, &disks_to_rebuild);
+        assert_eq!(result.unwrap_err().to_string(), "Recovery is not possible as all the partitions in array 'raid1' are in the disks to rebuild");
+
+        // Disks to rebuild is empty.
+        let disks_to_rebuild = vec![];
+        let result = validate_raid_recovery(&host_config, &disks_to_rebuild);
+        result.unwrap();
+
+        // Disk to rebuild does not exist in the host configuration.
+        let disks_to_rebuild = vec!["doesnotexist".to_string()];
+        let result = validate_raid_recovery(&host_config, &disks_to_rebuild);
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to find configuration for disk 'doesnotexist' in host config"
+        );
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_success() {
         let host_config = get_host_config();
         let mut host_status = HostStatus {
             servicing_state: ServicingState::Provisioned,
@@ -596,26 +626,14 @@ mod functional_test {
             ..Default::default()
         };
 
-        // Get disk uuid of /dev/sda.
-        let disk1_osuuid = sfdisk::get_disk_uuid(Path::new("/dev/sda"))
-            .unwrap()
-            .unwrap();
-        let disk1_uuid = disk1_osuuid.as_uuid().unwrap();
-        // Create a new (disk1_uuid, disk1) and set it to
-        // host_status.storage.disk_uuid_id_map.
-        let mut new_disk_uuid_id_map: HashMap<Uuid, BlockDeviceId> = HashMap::new();
-
-        new_disk_uuid_id_map.insert(disk1_uuid, "disk1".to_string());
-        host_status.storage.disks_by_uuid = new_disk_uuid_id_map.clone();
-
         let disks_to_rebuild = vec!["disk2".to_string()];
         let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
 
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_validate_rebuild_failure_no_disks_to_rebuild() {
+    #[test]
+    fn test_validate_rebuild_raid_failure_no_disks_to_rebuild() {
         let host_config = HostConfiguration {
             storage: Storage {
                 disks: vec![Disk {
@@ -641,25 +659,200 @@ mod functional_test {
         };
 
         let mut host_status = HostStatus {
-            servicing_state: ServicingState::Provisioned,
             spec: host_config.clone(),
             storage: Default::default(),
             ..Default::default()
         };
 
-        let disk1_osuuid = sfdisk::get_disk_uuid(Path::new("/dev/sda"))
-            .unwrap()
-            .unwrap();
-        let disk1_uuid = disk1_osuuid.as_uuid().unwrap();
-        // Update the host_status.storage.disk_uuid_id_map with the same disk
-        // uuid, disk id so that there are no disks to rebuild.
-        let mut new_disk_uuid_id_map = HashMap::new();
-        new_disk_uuid_id_map.insert(disk1_uuid, "disk1".to_string());
-        host_status.storage.disks_by_uuid = new_disk_uuid_id_map.clone();
-
         let disks_to_rebuild = vec![];
         let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
 
-        assert!(result.is_ok());
+        result.unwrap();
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_servicing_type_failure() {
+        let host_config = get_host_config();
+
+        let mut host_status = HostStatus {
+            servicing_type: ServicingType::CleanInstall,
+            spec: host_config.clone(),
+            storage: Default::default(),
+            ..Default::default()
+        };
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "rebuild-raid command is not allowed when servicing type is CleanInstall"
+        );
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_host_config_delta_failure() {
+        let host_config = get_host_config();
+        // Append a new disk and create a new host configuration.
+        let mut host_config1 = host_config.clone();
+        host_config1.storage.disks.push(Disk {
+            id: "disk3".to_string(),
+            device: PathBuf::from("/dev/sdc"),
+            partitions: vec![
+                Partition {
+                    id: "disk3part1".to_string(),
+                    partition_type: PartitionType::Root,
+                    size: PartitionSize::from_str("1M").unwrap(),
+                },
+                Partition {
+                    id: "disk3part2".to_string(),
+                    partition_type: PartitionType::Swap,
+                    size: PartitionSize::from_str("2M").unwrap(),
+                },
+            ],
+            ..Default::default()
+        });
+
+        let mut host_status = HostStatus {
+            spec: host_config,
+            storage: Default::default(),
+            ..Default::default()
+        };
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let result = validate_rebuild_raid(&host_config1, &mut host_status, &disks_to_rebuild);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to validate host configuration delta for rebuild-raid operation"
+        );
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_raid_recovery_failure() {
+        let host_config = get_host_config();
+        let mut host_status = HostStatus {
+            spec: host_config.clone(),
+            storage: Default::default(),
+            ..Default::default()
+        };
+
+        // RAID array is not recoverable.
+        let disks_to_rebuild = vec!["disk1".to_string(), "disk2".to_string()];
+        let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to validate RAID recovery"
+        );
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_storage_graph_failure() {
+        let host_config = get_host_config();
+        let mut host_config = host_config;
+        host_config
+            .storage
+            .filesystems
+            .push(trident_api::config::FileSystem {
+                device_id: Some("disk2part1".to_string()),
+                fs_type: FileSystemType::Ext4,
+                source: FileSystemSource::Image(Image {
+                    url: "http://example.com/root_1.img".to_string(),
+                    sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+                    format: ImageFormat::RawZst,
+                }),
+                mount_point: Some(MountPoint {
+                    path: PathBuf::from("/"),
+                    options: MountOptions::empty(),
+                }),
+            });
+
+        let mut host_status = HostStatus {
+            spec: host_config.clone(),
+            storage: Default::default(),
+            ..Default::default()
+        };
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+
+        // Failed to build storage graph for host config as disk2part1 has a filesystem and is also a RAID member.
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to build storage graph for host config"
+        );
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_all_raw_partitions_warning() {
+        let host_config = get_host_config();
+        let mut host_config = host_config;
+        // Clear raid in the host configuration.
+        host_config.storage.raid.software.clear();
+
+        let mut host_status = HostStatus {
+            spec: host_config.clone(),
+            storage: Default::default(),
+            ..Default::default()
+        };
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+        result.unwrap();
+
+        let disks_to_rebuild = vec!["disk1".to_string(), "disk2".to_string()];
+        let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+        result.unwrap();
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_invalid_hostconfig_for_rebuild_failure() {
+        let host_config = get_host_config();
+        let mut host_config = host_config;
+        // Append esp partition to disk2.
+        host_config.storage.disks[1].partitions.push(Partition {
+            id: "disk2part3".to_string(),
+            partition_type: PartitionType::Esp,
+            size: PartitionSize::from_str("1M").unwrap(),
+        });
+
+        host_config
+            .storage
+            .filesystems
+            .push(trident_api::config::FileSystem {
+                device_id: Some("disk2part3".to_string()),
+                fs_type: FileSystemType::Vfat,
+                source: FileSystemSource::EspImage(Image {
+                    url: "http://example.com/esp_2.img".to_string(),
+                    sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                    format: ImageFormat::RawZst,
+                }),
+                mount_point: Some(MountPoint {
+                    path: PathBuf::from("/esp"),
+                    options: MountOptions::empty(),
+                }),
+            });
+
+        let mut host_status = HostStatus {
+            spec: host_config.clone(),
+            storage: Default::default(),
+            ..Default::default()
+        };
+
+        // Disk1 can be rebuild.
+        let disks_to_rebuild = vec!["disk1".to_string()];
+        let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+
+        result.unwrap();
+
+        // Disk2 cannot be rebuild as it has a ESP partition.
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let result = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Partition 'disk2part3' is neither a member of a software RAID array nor a raw partition, refusing to rebuild"
+        );
     }
 }
