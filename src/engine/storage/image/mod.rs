@@ -287,13 +287,19 @@ fn update_active_volume(
         .context("No mount point for root volume found")?;
     debug!("Root device id: {:?}", root_device_id);
 
-    let ((volume_a_path, volume_b_path), root_device_path) = if let Some(root_verity_device) =
-        host_status.storage.block_device_paths.get(root_device_id)
-    {
-        debug!("Root verity device: {:?}", root_verity_device);
+    let root_is_verity = host_status
+        .spec
+        .storage
+        .verity_filesystems
+        .iter()
+        .any(|fs| fs.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH));
+
+    let ((volume_a_path, volume_b_path), root_device_path) = if root_is_verity {
+        debug!("Root is a verity device");
         get_verity_data_volume_pair_paths(host_status, ab_update, root_device_id)
             .context("Failed to find root verity data volume pair")?
     } else {
+        debug!("Root is not on verity");
         get_plain_volume_pair_paths(host_status, ab_update, root_device_id, root_device_path)
             .context("Failed to find root volume pair")?
     };
@@ -894,7 +900,8 @@ mod functional_test {
     };
     use trident_api::{
         config::{
-            self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition, PartitionType,
+            self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, MountOptions, MountPoint,
+            Partition, PartitionType, VerityFileSystem,
         },
         status::Storage,
     };
@@ -1423,6 +1430,26 @@ mod functional_test {
             .storage
             .block_device_paths
             .insert("root".to_string(), PathBuf::from("/dev/mapper/root"));
+        host_status.spec.storage.verity_filesystems = vec![VerityFileSystem {
+            name: "root".to_string(),
+            data_device_id: "root-data".to_string(),
+            hash_device_id: "root-hash".to_string(),
+            data_image: Image {
+                url: "http://example.com/root-data.img".to_string(),
+                sha256: ImageSha256::Ignored,
+                format: ImageFormat::RawZst,
+            },
+            hash_image: Image {
+                url: "http://example.com/root-hash.img".to_string(),
+                sha256: ImageSha256::Ignored,
+                format: ImageFormat::RawZst,
+            },
+            fs_type: FileSystemType::Ext4,
+            mount_point: MountPoint {
+                path: ROOT_MOUNT_POINT_PATH.into(),
+                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+            },
+        }];
         host_status.spec.storage.internal_verity = vec![config::InternalVerityDevice {
             id: "root".to_string(),
             device_name: "root".to_string(),
