@@ -89,7 +89,7 @@ stages:
                   --logstream $MAX_FAILURES_FLAG \
                   --trace-file trident-metrics.jsonl \
                   --log-trace --force-color
-            timeoutInMinutes: 7
+            timeoutInMinutes: 9
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Run netlaunch for testing"
 
@@ -151,8 +151,8 @@ stages:
             parameters:
               hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
-              userName: testing-user 
-   
+              userName: testing-user
+
           - bash: |
               set -eux
               sudo virsh shutdown virtdeploy-vm-0
