@@ -823,6 +823,7 @@ mod functional_test {
         let repart = SystemdRepartInvoker::new(disk_bus_path.clone(), RepartEmptyMode::Force)
             .with_partition_entries(partition_definition.clone());
         repart.execute().unwrap();
+        udevadm::settle().unwrap();
         // Run lsblk and extract PTUUID of the disk/partition table
         let block_device = lsblk::run(&disk_bus_path).unwrap();
         let ptuuid = block_device.ptuuid.unwrap();
@@ -831,6 +832,7 @@ mod functional_test {
         let repart = SystemdRepartInvoker::new(&disk_bus_path, RepartEmptyMode::Force)
             .with_partition_entries(partition_definition);
         repart.execute().unwrap();
+        udevadm::settle().unwrap();
         // Run lsblk and extract PTUUID of the disk/partition table after the repartitioning
         let block_device = lsblk::run(&disk_bus_path).unwrap();
         let ptuuid_after = block_device.ptuuid.unwrap();
