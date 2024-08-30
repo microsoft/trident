@@ -278,8 +278,9 @@ impl SystemdRepartInvoker {
                     .get(&partition.file)
                     .with_context(|| {
                         format!(
-                            "Failed to find ID mapping for partition definition file {}",
-                            partition.file.display()
+                            "Failed to find ID mapping for partition definition file {}, existing mappings:\n{:#?}",
+                            partition.file.display(),
+                            id_mapping.iter().map(|(k, v)| format!("{} -> {}", k.display(), v)).collect::<Vec<_>>().join("\n")
                         )
                     })?
                     .clone();
