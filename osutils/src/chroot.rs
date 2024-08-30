@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    fs, mem,
     os::{
         fd::{IntoRawFd, RawFd},
         unix,
@@ -8,7 +8,7 @@ use std::{
 };
 
 use log::info;
-use sys_mount::{Mount, MountFlags, Unmount, UnmountFlags};
+use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
 
 // TODO: Implement drop for Chroot that panics if the chroot has not been
@@ -17,10 +17,9 @@ use trident_api::error::{ReportError, ServicingError, TridentError, TridentResul
 /// Create a chroot environment.
 ///
 /// Note: Dropping this object does *not* exit the chroot. You must call `exit()` manually.
-#[derive(Debug)]
 pub struct Chroot {
     rootfd: RawFd,
-    mounts: Vec<Mount>,
+    mounts: Vec<UnmountDrop<Mount>>,
 }
 impl Chroot {
     /// Mount special directories ('/dev', '/proc', and '/sys') and enter chroot.
@@ -38,21 +37,24 @@ impl Chroot {
                 .mount("devtmpfs", path.join("dev"))
                 .structured(ServicingError::ChrootMountSpecialDir {
                     dir: "/dev".to_string(),
-                })?,
+                })?
+                .into_unmount_drop(UnmountFlags::empty()),
             Mount::builder()
                 .fstype("proc")
                 .flags(MountFlags::empty())
                 .mount("proc", path.join("proc"))
                 .structured(ServicingError::ChrootMountSpecialDir {
                     dir: "/proc".to_string(),
-                })?,
+                })?
+                .into_unmount_drop(UnmountFlags::empty()),
             Mount::builder()
                 .fstype("sysfs")
                 .flags(MountFlags::empty())
                 .mount("sysfs", path.join("sys"))
                 .structured(ServicingError::ChrootMountSpecialDir {
                     dir: "/sys".to_string(),
-                })?,
+                })?
+                .into_unmount_drop(UnmountFlags::empty()),
         ];
 
         // Enter the chroot.
@@ -96,6 +98,7 @@ impl Chroot {
             mount
                 .unmount(UnmountFlags::empty())
                 .structured(ServicingError::ChrootUnmountSpecialDir)?;
+            mem::forget(mount);
         }
         Ok(())
     }
@@ -213,7 +216,7 @@ mod functional_test {
         // Attempt to enter the chroot
         let result_dev = Chroot::enter(&chroot_path);
         assert_eq!(
-            result_dev.unwrap_err().kind(),
+            result_dev.err().unwrap().kind(),
             &ErrorKind::Servicing(ServicingError::ChrootMountSpecialDir {
                 dir: "/dev".to_string()
             })
@@ -232,7 +235,7 @@ mod functional_test {
         // Attempt to enter the chroot
         let result_sys = Chroot::enter(&chroot_path);
         assert_eq!(
-            result_sys.unwrap_err().kind(),
+            result_sys.err().unwrap().kind(),
             &ErrorKind::Servicing(ServicingError::ChrootMountSpecialDir {
                 dir: "/sys".to_string()
             })
@@ -249,7 +252,7 @@ mod functional_test {
         // Attempt to enter the chroot
         let result = Chroot::enter(Path::new("/nonexistent-dir"));
         assert_eq!(
-            result.unwrap_err().kind(),
+            result.err().unwrap().kind(),
             &ErrorKind::Servicing(ServicingError::EnterChroot)
         );
     }

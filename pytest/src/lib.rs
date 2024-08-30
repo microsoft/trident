@@ -12,6 +12,8 @@ pub struct TestCaseMetadata<'a> {
     pub module: &'a str,
     pub function: &'a str,
     pub negative: bool,
+    pub xfail: Option<&'a str>,
+    pub skip: Option<&'a str>,
     pub feature: &'a str,
     pub type_: &'a str,
 }
@@ -40,6 +42,14 @@ struct TestCaseInfo {
     /// Pytest markers to apply to this test case.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     markers: Vec<String>,
+
+    /// States whether the test case should be marked as expected to fail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    xfail: Option<String>,
+
+    /// States whether the test case should be skipped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skip: Option<String>,
 }
 
 // Registers `TestCaseMetadata` with `inventory` for further processing.
@@ -105,6 +115,8 @@ fn generate_manifest() -> Manifest {
         module.test_cases.insert(
             item.function.to_string(),
             TestCaseInfo {
+                xfail: item.xfail.map(|s| s.to_string()),
+                skip: item.skip.map(|s| s.to_string()),
                 markers: make_markers(item),
             },
         );
@@ -150,6 +162,8 @@ mod test {
             module: "foo::bar::baz",
             function: "test_foo",
             negative: false,
+            xfail: None,
+            skip: None,
             feature: "",
             type_: "",
         });
@@ -159,6 +173,8 @@ mod test {
             module: "foo::bar::baz",
             function: "test_foo",
             negative: true,
+            xfail: None,
+            skip: None,
             feature: "",
             type_: "",
         });
@@ -168,6 +184,8 @@ mod test {
             module: "foo::bar::baz",
             function: "test_foo",
             negative: false,
+            xfail: None,
+            skip: None,
             feature: "foo",
             type_: "",
         });
@@ -177,6 +195,8 @@ mod test {
             module: "foo::bar::baz",
             function: "test_foo",
             negative: false,
+            xfail: None,
+            skip: None,
             feature: "",
             type_: DEFAULT_TYPE,
         });
@@ -190,6 +210,8 @@ mod test {
             module: "foo::bar::baz",
             function: "test_foo",
             negative: false,
+            xfail: None,
+            skip: None,
             feature: "",
             type_: "unexpected-type",
         });
@@ -207,6 +229,8 @@ mod test {
             module: "pytest::pytest_gen",
             function: "test_foo",
             negative: false,
+            xfail: None,
+            skip: None,
             feature: "",
             type_: "",
         }

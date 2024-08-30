@@ -20,4 +20,4 @@ RUN \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \
     --define="rpm_rel $RPM_REL" && \
-    tar -czvf trident-rpms-azl3.tar.gz -C /usr/src/azl ./RPMS
+    tar -czvf trident-rpms.tar.gz -C /usr/src/azl ./RPMS

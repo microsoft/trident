@@ -11,21 +11,7 @@ steps:
       system: "Custom"
       customVersion: $(trident_version)
 
-  - task: CopyFiles@2
-    inputs:
-      sourceFolder: "./artifacts"
-      targetFolder: "/usr/src/mariner/SOURCES"
-      contents: "*"
-    displayName: Copy EMU to SOURCES
-  
-  - task: CopyFiles@2
-    inputs:
-      sourceFolder: "./"
-      targetFolder: "/usr/src/mariner/SOURCES"
-      contents: "trident-selinuxpolicies.cil"
-    displayName: Copy Trident selinux policy to SOURCES  
-  
-  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust p7zip p7zip-plugins zstd moby-buildx
+  - script: sudo tdnf install -y moby-buildx p7zip p7zip-plugins zstd
     displayName: Install native dependencies
     retryCountOnTaskFailure: 3
 
@@ -38,18 +24,20 @@ steps:
       version=$(echo $full_version | cut -d'-' -f1)
       prerelease=$(echo $full_version | cut -d'-' -f2-)
 
-      rpmbuild -bb --build-in-place trident.spec \
-        --define="trident_version $full_version" \
-        --define="rpm_ver $version" \
-        --define="rpm_rel $prerelease"
+      docker build -f Dockerfile.full -t trident/trident-build:latest \
+        --build-arg TRIDENT_VERSION="$full_version" \
+        --build-arg RPM_VER="$version"\
+        --build-arg RPM_REL="$prerelease"\
+        .
+
+      id=$(docker create trident/trident-build:latest) && \
+        docker cp -q $id:/work/trident-rpms.tar.gz . && \
+        docker rm -v $id
+
+      mkdir -p $(ob_outputDirectory)
+      tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3
+
     displayName: Build RPMs
 
-  - task: CopyFiles@2
-    inputs:
-      sourceFolder: "/usr/src/mariner/RPMS/x86_64"
-      targetFolder: "$(ob_outputDirectory)"
-    displayName: Copy RPM file to output
-
-  - script: ./scripts/extract-binary.sh /usr/src/mariner/RPMS/x86_64 $(ob_outputDirectory)
+  - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
     displayName: Extract Trident binary
-    

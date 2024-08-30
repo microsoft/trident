@@ -24,7 +24,7 @@ stages:
       micVersion: "*.*.*"
       baseimgBuildType: "release"
       baseimgVersion: "*.*.*"
-      baseimgAzureLinuxVersion: "2.0"
+      baseimgAzureLinuxVersion: "3.0"
 
     steps:
     - task: DownloadPipelineArtifact@2

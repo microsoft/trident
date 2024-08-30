@@ -104,8 +104,15 @@ mod functional_test {
         // Test case 1: Run resize2fs on a non-existent block device
         let block_device_path_nonexistent = Path::new("/dev/nonexistent");
 
-        assert_eq!(run(block_device_path_nonexistent).unwrap_err().root_cause().to_string(),
-                   "Process output:\nstderr:\nresize2fs 1.46.5 (30-Dec-2021)\nopen: No such file or directory while opening /dev/nonexistent\n\n");
+        let error_string = run(block_device_path_nonexistent)
+            .unwrap_err()
+            .root_cause()
+            .to_string();
+        assert!(
+            error_string
+                .contains("\nopen: No such file or directory while opening /dev/nonexistent"),
+            "Unexpected output: {error_string}"
+        );
 
         // Test case 2: Run resize2fs on a valid block device that does not have a filesystem.
         // Create a new loop device
@@ -133,22 +140,40 @@ mod functional_test {
             .output_and_check()
             .unwrap();
 
+        let error_string = run(Path::new(&loop_device_path))
+            .unwrap_err()
+            .root_cause()
+            .to_string();
         assert!(
-            run(Path::new(&loop_device_path))
-                .unwrap_err()
-                .root_cause()
-                .to_string().starts_with(
-            "Process output:\nstdout:\nCouldn't find valid filesystem superblock.\n\n\nstderr:\nresize2fs 1.46.5 (30-Dec-2021)\nresize2fs: Bad magic number in super-block while trying to open /dev/loop"
-        ));
+            error_string.starts_with(
+                "Process output:\nstdout:\nCouldn't find valid filesystem superblock.\n\n\nstderr:\nresize2fs "
+            ),
+            "Unexpected output: {error_string}"
+        );
+        assert!(
+            error_string.contains(
+                "\nresize2fs: Bad magic number in super-block while trying to open /dev/loop"
+            ),
+            "Unexpected output: {error_string}"
+        );
 
         // Fail on unsupported FS
         mkfs::run(Path::new(&loop_device_path), MkfsFileSystemType::Vfat).unwrap();
+        let error_string = run(Path::new(&loop_device_path))
+            .unwrap_err()
+            .root_cause()
+            .to_string();
         assert!(
-            run(Path::new(&loop_device_path))
-                .unwrap_err()
-                .root_cause()
-                .to_string().starts_with(
-            "Process output:\nstdout:\nCouldn't find valid filesystem superblock.\n\n\nstderr:\nresize2fs 1.46.5 (30-Dec-2021)\nresize2fs: Bad magic number in super-block while trying to open /dev/loop"
-        ));
+            error_string.starts_with(
+                "Process output:\nstdout:\nCouldn't find valid filesystem superblock.\n\n\nstderr:\nresize2fs "
+            ),
+            "Unexpected output: {error_string}"
+        );
+        assert!(
+            error_string.contains(
+                "\nresize2fs: Bad magic number in super-block while trying to open /dev/loop"
+            ),
+            "Unexpected output: {error_string}"
+        );
     }
 }

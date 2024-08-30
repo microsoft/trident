@@ -16,21 +16,16 @@ stages:
         steps:
           - script: |
               set -eux
-
-              # Download newer systemd RPMs (needed until we switch to AZL3)
-              make artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
-
               mkdir -p bin/RPMS
             displayName: Prepare to build docker image
             retryCountOnTaskFailure: 3
-
 
           - task: DownloadPipelineArtifact@2
             displayName: "Download trident rpms"
             inputs:
               buildType: current
               artifactName: "trident-binaries"
-              patterns: '**/*.rpm'
+              patterns: "**/*.rpm"
               targetPath: "$(Build.SourcesDirectory)/bin/RPMS/x86_64"
 
           - script: |

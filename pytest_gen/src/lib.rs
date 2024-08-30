@@ -1,12 +1,14 @@
-use std::path::MAIN_SEPARATOR_STR;
+use std::{ops::Deref, path::MAIN_SEPARATOR_STR};
 
 use proc_macro::{TokenStream, TokenTree};
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::Lit;
 
 /// Negative/positive test case metadata enum
 #[derive(PartialEq)]
 enum TestCaseMetadataAttribute {
+    Xfail,
+    Skip,
     Negative,
     Feature,
 }
@@ -19,6 +21,37 @@ struct TestCaseMetadataInt {
     function: String,
     negative: bool,
     feature: String,
+    xfail: StringOption,
+    skip: StringOption,
+}
+
+/// Wrapper for `Option<String>` to implement `ToTokens` trait
+#[derive(Debug, Default)]
+struct StringOption(pub Option<String>);
+
+impl StringOption {
+    /// Creates a new `StringOption` with the provided value.
+    fn new(value: String) -> Self {
+        Self(Some(value))
+    }
+}
+
+impl Deref for StringOption {
+    type Target = Option<String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ToTokens for StringOption {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let value = match &self.0 {
+            Some(value) => quote! { Some(#value) },
+            None => quote! { None },
+        };
+        tokens.extend(value);
+    }
 }
 
 /// The `functional_test` attribute macro. This macro is used to annotate test functions
@@ -68,6 +101,8 @@ fn pytest(attr: TokenStream, item: TokenStream, test_type: &str) -> TokenStream 
     let function = metadata.function.as_str();
     let negative = metadata.negative;
     let feature = metadata.feature.as_str();
+    let xfail = metadata.xfail;
+    let skip = metadata.skip;
 
     // Construct the output, injecting the inventory::submit!() and `#[test]` macros
     let output = quote! {
@@ -76,6 +111,8 @@ fn pytest(attr: TokenStream, item: TokenStream, test_type: &str) -> TokenStream 
             function: #function,
             negative: #negative,
             feature: #feature,
+            xfail: #xfail,
+            skip: #skip,
             type_: #test_type,
         }}
 
@@ -114,6 +151,20 @@ fn extract_test_case_metadata(attr: TokenStream) -> TestCaseMetadataInt {
                             panic!("Missing attribute value");
                         }
                         current_key = Some(TestCaseMetadataAttribute::Feature);
+                    }
+                    "xfail" => {
+                        if current_key.is_some() {
+                            panic!("Missing attribute value");
+                        }
+
+                        current_key = Some(TestCaseMetadataAttribute::Xfail);
+                    }
+                    "skip" => {
+                        if current_key.is_some() {
+                            panic!("Missing attribute value");
+                        }
+
+                        current_key = Some(TestCaseMetadataAttribute::Skip);
                     }
                     "true" | "false" => {
                         if current_key != Some(TestCaseMetadataAttribute::Negative) {
@@ -171,6 +222,12 @@ fn extract_test_case_metadata(attr: TokenStream) -> TestCaseMetadataInt {
                         TestCaseMetadataAttribute::Feature => {
                             metadata.feature = literal_str.unwrap();
                         }
+                        TestCaseMetadataAttribute::Xfail => {
+                            metadata.xfail = StringOption::new(literal_str.unwrap());
+                        }
+                        TestCaseMetadataAttribute::Skip => {
+                            metadata.skip = StringOption::new(literal_str.unwrap());
+                        }
                     },
                 }
             }
@@ -198,6 +255,17 @@ fn validate_metadata(metadata: &TestCaseMetadataInt) {
             metadata.function
         );
     }
+    if let Some(content) = metadata.xfail.as_ref() {
+        if content.trim().is_empty() {
+            panic!("xfail attribute must contain a non-empty string explanation");
+        }
+    }
+
+    if let Some(content) = metadata.skip.as_ref() {
+        if content.trim().is_empty() {
+            panic!("skip attribute must contain a non-empty string explanation");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -209,6 +277,8 @@ mod tests {
             function: "test_settle".into(),
             negative: false,
             feature: "helpers".into(),
+            xfail: StringOption::default(),
+            skip: StringOption::default(),
         }
     }
 

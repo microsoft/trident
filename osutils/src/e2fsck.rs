@@ -41,24 +41,32 @@ mod functional_test {
     fn test_e2fsck_run_negative() {
         // Test case 1: Run e2fsck on a non-existent file system
         let block_device_path_nonexistent = Path::new("/dev/nonexistent");
-        let result = run(block_device_path_nonexistent);
-        let error_message = result.unwrap_err().root_cause().to_string();
-
-        assert_eq!(
-            error_message,
-            "Process output:\nstdout:\nPossibly non-existent device?\n\n\nstderr:\ne2fsck 1.46.5 (30-Dec-2021)\ne2fsck: No such file or directory while trying to open /dev/nonexistent\n\n",
-            "Running tune2fs on a non-existent block device did not return the expected error message"
+        let error_string = run(block_device_path_nonexistent)
+            .unwrap_err()
+            .root_cause()
+            .to_string();
+        assert!(
+            error_string.contains(
+                "e2fsck: No such file or directory while trying to open /dev/nonexistent"
+            ),
+            "Unexpected output: {error_string}"
         );
 
         // Test case 2: Run e2fsck on a corrupted file system
         let block_device_path_corrupted = Path::new(TEST_DISK_DEVICE_PATH);
-        // Create a new ext4 filesystem on /dev/sdc
+        // Create a new ext4 filesystem
         crate::mkfs::run(block_device_path_corrupted, MkfsFileSystemType::Ext4).unwrap();
         // Corrupt the filesystem
         repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 
         // Run e2fsck on the corrupted filesystem
-        let result = run(block_device_path_corrupted);
-        assert!(result.is_err());
+        let error_string = run(block_device_path_corrupted)
+            .unwrap_err()
+            .root_cause()
+            .to_string();
+        assert!(
+            error_string.contains("ext2fs_open2: Bad magic number in super-block"),
+            "Unexpected output: {error_string}"
+        );
     }
 }

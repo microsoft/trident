@@ -4,7 +4,7 @@ TRIDENT_CONFIG ?= input/trident.yaml
 HOST_CONFIG ?= base.yaml
 
 .PHONY: all
-all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
+all: format check test build-api-docs bin/trident-rpms-azl2.tar.gz bin/trident-rpms-azl3.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
 .PHONY: check
 check:
@@ -79,42 +79,39 @@ artifacts/osmodifier:
 bin/trident: build
 	@cp -u target/release/trident bin/
 
-bin/trident-rpms.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifier bin/trident
+bin/trident-rpms-azl2.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifier bin/trident
 	@docker build --quiet -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)"\
-		--build-arg RPM_REL="dev.$(GIT_COMMIT)"\
+		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
+		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+		-f Dockerfile.azl2 \
 		.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
-	    docker cp -q $$id:/work/trident-rpms.tar.gz bin/ && \
+	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ && \
 	    docker rm -v $$id
 	@rm -rf bin/RPMS/x86_64
-	@tar xf bin/trident-rpms.tar.gz -C bin/
+	@tar xf $@ -C bin/
 
 bin/trident-rpms-azl3.tar.gz: Dockerfile.azl3 systemd/*.service trident.spec artifacts/osmodifier bin/trident
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)"\
-		--build-arg RPM_REL="dev.$(GIT_COMMIT)"\
+		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
+		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
 		-f Dockerfile.azl3 \
 		.
 	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
-	    docker cp -q $$id:/work/trident-rpms-azl3.tar.gz bin/ || \
+	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
 	    docker rm -v $$id
 	@rm -rf bin/RPMS/x86_64
-	@tar xf bin/trident-rpms-azl3.tar.gz -C bin/
+	@tar xf $@ -C bin/
 
-SYSTEMD_RPM_TAR_URL ?= https://hermesimages.blob.core.windows.net/hermes-test/systemd-254-3.tar.gz
-
-artifacts/systemd/systemd-254-3.cm2.x86_64.rpm:
-	mkdir -p ./artifacts/systemd
-	curl $(SYSTEMD_RPM_TAR_URL) | tar -xz -C ./artifacts/systemd --strip-components=1
-	rm -f ./artifacts/systemd/*.src.rpm ./artifacts/systemd/systemd-debuginfo*.rpm ./artifacts/systemd/systemd-devel-*.rpm
+bin/trident-rpms.tar.gz: bin/trident-rpms-azl3.tar.gz
+	cp $< $@
 
 .PHONY: docker-build
-docker-build: Dockerfile.runtime bin/trident-rpms.tar.gz artifacts/systemd/systemd-254-3.cm2.x86_64.rpm
+docker-build: Dockerfile.runtime bin/trident-rpms-azl3.tar.gz
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
 artifacts/test-image/trident-container.bin: docker-build
@@ -432,7 +429,7 @@ copy-runtime-partition-images: ../test-images/build/trident-testimage/*.raw.zst 
 	done
 	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
 
-BASE_IMAGE_NAME ?= baremetal_vhdx-2.0-stable
+BASE_IMAGE_NAME ?= baremetal_vhdx-3.0-stable
 BASE_IMAGE_VERSION ?= *
 artifacts/baremetal.vhdx:
 	@mkdir -p artifacts
@@ -450,7 +447,7 @@ artifacts/baremetal.vhdx:
 		echo $$result | jq > artifacts/baremetal.vhdx.metadata.json
 
 MIC_PACKAGE_NAME ?= imagecustomizer
-MIC_PACKAGE_VERSION ?= 0.4.0
+MIC_PACKAGE_VERSION ?= *
 artifacts/imagecustomizer:
 	@mkdir -p artifacts
 	@az artifacts universal download \
@@ -464,19 +461,18 @@ artifacts/imagecustomizer:
 	@chmod +x artifacts/imagecustomizer
 	@touch artifacts/imagecustomizer
 
-bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/iso.yaml artifacts/systemd/systemd-254-3.cm2.x86_64.rpm trident-mos/files/* trident-mos/post-install.sh
+bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/iso.yaml trident-mos/files/* trident-mos/post-install.sh
 	BUILD_DIR=`mktemp -d`; \
 		mkdir -p bin; \
 		sudo ./artifacts/imagecustomizer \
 			--log-level=debug \
-			--rpm-source ./artifacts/systemd \
 			--build-dir $$BUILD_DIR \
 			--image-file $< \
 			--output-image-file $@ \
 			--config-file trident-mos/iso.yaml \
 			--output-image-format iso; \
 		sudo rm -rf $$BUILD_DIR
-	sudo rm -r artifacts/systemd/repodata
+
 bin/trident-containerhost-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/containerhost-iso.yaml trident-mos/files/* trident-mos/post-install.sh
 	BUILD_DIR=`mktemp -d`; \
 		mkdir -p bin; \

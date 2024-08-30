@@ -306,13 +306,13 @@ mod functional_test {
             MountFileSystemType::Auto,
             &[],
         );
-        assert_eq!(
-            mount_result_1.unwrap_err().root_cause().to_string(),
-            format!(
-                "Process output:\nstderr:\nmount: {}: special device /path/to/non/existent/file does not exist.\n\n",
+        let error_string = mount_result_1.unwrap_err().root_cause().to_string();
+        assert!(
+            error_string.contains(&format!(
+                "mount: {}: special device /path/to/non/existent/file does not exist.",
                 temp_mount_dir.path().display()
-            ),
-            "Unexpected error message for non-existent file"
+            )),
+            "Unexpected output: {error_string}",
         );
 
         // Test case 2: Create a valid temporary file but use an invalid directory path
@@ -325,10 +325,10 @@ mod functional_test {
             MountFileSystemType::Auto,
             &[],
         );
-        assert_eq!(
-            mount_result_2.unwrap_err().root_cause().to_string(),
-            "Process output:\nstderr:\nmount: /path/to/non/existent/directory: mount point does not exist.\n\n",
-            "Mounting a file to a non-existent directory should fail"
+        let error_string = mount_result_2.unwrap_err().root_cause().to_string();
+        assert!(
+            error_string.contains("mount: /path/to/non/existent/directory: can't read superblock"),
+            "Unexpected output: {error_string}",
         );
     }
 

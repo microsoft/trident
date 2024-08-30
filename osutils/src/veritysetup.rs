@@ -631,13 +631,22 @@ mod functional_test {
 
             {
                 let verity_mount_dir = tempfile::tempdir().unwrap();
-                assert_eq!(mount::mount(
+                let errstr = mount::mount(
                     Path::new(DEV_MAPPER_PATH).join("verity-test"),
                     verity_mount_dir.path(),
                     MountFileSystemType::Ext4,
                     &[MOUNT_OPTION_READ_ONLY.into()],
                 )
-                .unwrap_err().root_cause().to_string(), format!("Process output:\nstderr:\nmount: {}: can't read superblock on /dev/mapper/verity-test.\n\n", verity_mount_dir.path().display()));
+                .unwrap_err()
+                .root_cause()
+                .to_string();
+
+                let expected = format!(
+                    "mount: {}: can't read superblock on /dev/mapper/verity-test.",
+                    verity_mount_dir.path().display()
+                );
+
+                assert!(errstr.contains(&expected));
             }
         }
     }

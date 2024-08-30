@@ -51,11 +51,13 @@ resources:
     - repository: test-images
       type: git
       name: test-images
+      # TODO: REVERT TO MAIN ONCE UPGRADE IS DONE!
+      ref: refs/heads/frhuelsz/azl-3
 
     - repository: platform-telemetry
       name: platform-telemetry
       type: git
-      ref : refs/heads/main
+      ref: refs/heads/main
 
 extends:
   template: v2/OneBranch.Official.CrossPlat.yml@templates

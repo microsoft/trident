@@ -26,13 +26,21 @@ pub fn execute() -> Result<(), TridentError> {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use crate::osrelease::is_azl3;
+
     use super::*;
 
     use pytest_gen::functional_test;
 
     #[functional_test]
     fn test_regenerate_initrd() {
-        let initrd_path = glob::glob("/boot/initrd.img-*").unwrap().next();
+        let pattern = if is_azl3().unwrap() {
+            "/boot/initramfs-*.azl3.img"
+        } else {
+            "/boot/initrd.img-*"
+        };
+
+        let initrd_path = glob::glob(pattern).unwrap().next();
         let original = &initrd_path;
         if let Some(initrd_path) = &initrd_path {
             std::fs::remove_file(initrd_path.as_ref().unwrap()).unwrap();
@@ -41,7 +49,7 @@ mod functional_test {
         execute().unwrap();
 
         // Some initrd should have been created
-        let initrd_path = glob::glob("/boot/initrd.img-*").unwrap().next();
+        let initrd_path = glob::glob(pattern).unwrap().next();
         assert!(initrd_path.is_some());
 
         // And the filename should match the original, if it previously existed

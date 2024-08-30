@@ -171,6 +171,8 @@ class RustModule(Collector):
                     crate=self.crate,
                     module_path="::".join(self.module_path),
                     test_case=test_name,
+                    skip=test_data.get("skip", None),
+                    xfail=test_data.get("xfail", None),
                 ),
             )
             for marker in test_data.get("markers", []):
@@ -179,8 +181,21 @@ class RustModule(Collector):
 
 
 @pytest.mark.depends("test_deploy_vm")
-def run_rust_functional_test(vm, wipe_sdb, crate, module_path, test_case):
+def run_rust_functional_test(
+    vm,
+    wipe_sdb,
+    crate,
+    module_path,
+    test_case,
+    skip=Optional[str],
+    xfail=Optional[str],
+):
     """Runs a rust test on the VM."""
+    if skip:
+        pytest.skip(skip)
+    if xfail:
+        pytest.xfail(xfail)
+
     from functional_tests.tools.runner import RunnerTool
 
     testRunner = RunnerTool(vm)
@@ -198,6 +213,7 @@ def wipe_sdb(vm: SshNode):
     yield
 
     # Clean sdb
+    assert_disk_has_no_mounts(vm, "sdb")
     vm.execute("sudo wipefs -af /dev/sdb")
     assert_clean_disk(vm, "sdb")
 
@@ -211,6 +227,17 @@ def assert_clean_disk(vm: SshNode, kernel_name: str):
     children = [child for child in info.get("children", []) if child]
     assert len(children) == 0, f"Disk {kernel_name} is not clean!"
     assert info.get("pttype", None) is None, f"Disk {kernel_name} is not clean!"
+
+
+def assert_disk_has_no_mounts(vm: SshNode, kernel_name: str):
+    res = vm.execute(f"sudo findmnt -o SOURCE,TARGET -r")
+    res.assert_exit_code()
+    mounts: List[str] = res.stdout.splitlines()
+    for mount in mounts:
+        source, target = mount.split()
+        assert not source.startswith(
+            f"/dev/{kernel_name}"
+        ), f"Partition '{source}' is mounted at '{target}'"
 
 
 def fetch_code_coverage(ssh_node):

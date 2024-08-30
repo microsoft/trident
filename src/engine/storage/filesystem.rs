@@ -522,10 +522,13 @@ mod functional_test {
             FileSystemType::Ext4,
         );
 
-        assert_eq!(
-                result.unwrap_err().root_cause().to_string(),
-                "Process output:\nstderr:\nmke2fs 1.46.5 (30-Dec-2021)\nThe file /dev/sdb2 does not exist and no size was specified.\n\n",
-                "Failed to initialize block device that does not exist"
-            );
+        let error_string = result.as_ref().unwrap_err().root_cause().to_string();
+        assert!(
+            error_string.contains(&format!(
+                "The file {}2 does not exist and no size was specified",
+                TEST_DISK_DEVICE_PATH
+            )),
+            "Unexpected output: {error_string}"
+        );
     }
 }
