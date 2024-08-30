@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::container;
+
 fn strip_root(path: &Path) -> &Path {
     match path.strip_prefix("/") {
         Ok(relative) => relative,
@@ -7,9 +9,10 @@ fn strip_root(path: &Path) -> &Path {
     }
 }
 
-/// Prepend '/host' to the given path.
+/// Returns the path obtained by prepending the path to the root of the host filesystem to the
+/// given path.
 pub fn host_relative(path: impl AsRef<Path>) -> PathBuf {
-    Path::new("/host").join(strip_root(path.as_ref()))
+    Path::new(container::HOST_ROOT_PATH).join(strip_root(path.as_ref()))
 }
 
 /// Returns the path obtained by joining the given base path with the given relative path.

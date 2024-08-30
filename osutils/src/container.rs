@@ -9,7 +9,7 @@ use trident_api::error::{
 
 /// Path to the root of the host filesystem. Expected to be mounted there when
 /// running in a container.
-const HOST_ROOT_PATH: &str = "/host";
+pub const HOST_ROOT_PATH: &str = "/host";
 
 /// Environment variable that is set when running in a container. Value is not
 /// important.
