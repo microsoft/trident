@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-use log::info;
+use log::{info, warn};
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
 
@@ -68,22 +68,25 @@ impl Chroot {
         Ok(Self { rootfd, mounts })
     }
 
-    pub fn execute_and_exit<F, T>(self, f: F) -> Result<T, TridentError>
+    pub fn execute_and_exit<F>(self, f: F) -> Result<(), TridentError>
     where
-        F: FnOnce() -> Result<T, TridentError>,
+        F: FnOnce() -> Result<(), TridentError>,
     {
         // Execute the function.
         let result = f();
 
-        // Exit the chroot and return any errors from the function, the exit
-        // call, or both.
-        match self.exit() {
-            Ok(_) => result,
-            Err(e2) => match result {
-                Ok(_) => Err(e2),
-                Err(e) => Err(e.secondary_error_context(e2)),
-            },
+        // Exit the chroot.
+        //
+        // If function `f` produced an error it is returned from this function and any errors from
+        // the exit are logged at the warn level. If `f` returned successfully, then directly return
+        // any errors produced by the exit.
+        if let Err(e) = self.exit() {
+            if result.is_ok() {
+                return Err(e);
+            }
+            warn!("Encountered secondary error while handling earlier error: {e:?}");
         }
+        result
     }
 
     /// Exit the chroot environment and unmount special directories.

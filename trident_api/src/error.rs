@@ -462,14 +462,6 @@ impl TridentError {
     }
 
     #[track_caller]
-    pub fn secondary_error_context(mut self, secondary: TridentError) -> Self {
-        self.0.context.push((format!(
-            "While handling the error, an additional error was caught: \n\n{secondary:?}\n\nThe earlier error:"
-        ).into(), Location::caller()));
-        self
-    }
-
-    #[track_caller]
     pub fn internal(message: &'static str) -> Self {
         Self::new(InternalError::Internal(message))
     }

@@ -127,11 +127,11 @@ impl NewrootMount {
 
     /// Unmount all registered mounts in the correct order.
     pub fn unmount_all(&mut self) -> Result<(), TridentError> {
-        // Pop from the stack and unmount each mount point until the stack is
-        // empty.
-        while let Some(ref mount) = self.mounts.pop() {
+        // Unmount all mounts in reverse order. If we fail to unmount one, we still clear
+        // `self.mounts` but stop trying to unmount the rest of the mounts.
+        for mount in self.mounts.drain(..).rev() {
             debug!("Unmounting '{}'", mount.display());
-            mount::umount(mount, true).structured(ServicingError::UnmountNewroot {
+            mount::umount(&mount, false).structured(ServicingError::UnmountNewroot {
                 dir: mount.to_string_lossy().into(),
             })?;
         }

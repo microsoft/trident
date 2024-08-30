@@ -293,12 +293,12 @@ fn stage_clean_install(
     prepare(modules, state)?;
 
     info!("Preparing storage to mount new root");
-    let newroot_mount = initialize_new_root(state, host_config)?;
+    let mut newroot_mount = initialize_new_root(state, host_config)?;
 
     provision(modules, state, newroot_mount.path())?;
 
     info!("Entering '{}' chroot", newroot_mount.path().display());
-    chroot::enter_update_chroot(newroot_mount.path())
+    let result = chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
         .execute_and_exit(|| {
             info!("Entered chroot");
@@ -325,8 +325,17 @@ fn stage_clean_install(
             send_host_status_state(sender, state)?;
 
             Ok(())
-        })
-        .message("Failed to execute in chroot")?;
+        });
+
+    if let Err(original_error) = result {
+        if let Err(e) = state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH)) {
+            warn!("While handling an earlier error: {e:?}");
+        }
+        if let Err(e) = newroot_mount.unmount_all() {
+            warn!("While handling an earlier error: {e:?}");
+        }
+        return Err(original_error).message("Failed to execute in chroot");
+    }
 
     info!("Staging of clean install succeeded");
 
@@ -509,7 +518,7 @@ fn stage_update(
     let newroot_mount = if let ServicingType::AbUpdate = servicing_type {
         info!("Preparing storage to mount new root");
 
-        let newroot_mount = initialize_new_root(state, host_config)?;
+        let mut newroot_mount = initialize_new_root(state, host_config)?;
 
         provision(modules, state, newroot_mount.path())?;
 
@@ -519,7 +528,7 @@ fn stage_update(
         let use_overlay = !host_config.storage.internal_verity.is_empty();
 
         info!("Entering '{}' chroot", newroot_mount.path().display());
-        chroot::enter_update_chroot(newroot_mount.path())
+        let result = chroot::enter_update_chroot(newroot_mount.path())
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 configure(
@@ -528,8 +537,14 @@ fn stage_update(
                     newroot_mount.execroot_relative_path(),
                     use_overlay,
                 )
-            })
-            .message("Failed to execute in chroot")?;
+            });
+
+        if let Err(original_error) = result {
+            if let Err(e) = newroot_mount.unmount_all() {
+                warn!("While handling an earlier error: {e:?}");
+            }
+            return Err(original_error).message("Failed to execute in chroot");
+        }
 
         Some(newroot_mount)
     } else {
