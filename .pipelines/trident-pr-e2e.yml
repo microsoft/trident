@@ -29,7 +29,7 @@ resources:
     - repository: test-images
       type: git
       name: test-images
-      # TODO: REVERT TO MAIN ONCE UPGRADE IS DONE!
+      # TODO(8848): REVERT TO MAIN ONCE UPGRADE IS DONE!
       ref: refs/heads/frhuelsz/azl-3
 
     - repository: platform-pipelines
