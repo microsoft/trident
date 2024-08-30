@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info, trace, warn};
+use log::{debug, info, trace};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -154,11 +154,11 @@ fn copy_file_artifacts(
             esp_dir_path.display()
         ))?;
 
-    // Warn if grub_noprefix.efi is not found on Azure Linux images.
+    // Bail if grub_noprefix.efi is not found on Azure Linux images.
     if !grub_noprefix {
         let arch =
             current_arch_efi_str().context("Failed to get the target architecture string")?;
-        warn!("Cannot locate grub{}-noprefix.efi in the boot image. Verify if the grub-noprefix package was installed on the boot image or if it was renamed to grub{0}.efi.", arch);
+        bail!("Cannot locate grub{}-noprefix.efi in the boot image. Verify if the grub2-efi-binary-noprefix package was installed on the boot image.", arch);
     }
 
     Ok(())
