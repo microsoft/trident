@@ -305,7 +305,7 @@ mod functional_test {
         let datastore = DataStore::open(&datastore_path).unwrap();
         assert_eq!(
             datastore.host_status().servicing_state,
-            ServicingState::Staging
+            ServicingState::CleanInstallFailed
         );
     }
 }
