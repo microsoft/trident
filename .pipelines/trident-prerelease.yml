@@ -52,7 +52,7 @@ resources:
       type: git
       name: test-images
       # TODO(8848): REVERT TO MAIN ONCE UPGRADE IS DONE!
-      ref: refs/heads/frhuelsz/azl-3
+      ref: refs/heads/trident-azl3
 
     - repository: platform-telemetry
       name: platform-telemetry
