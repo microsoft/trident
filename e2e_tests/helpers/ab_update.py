@@ -40,7 +40,7 @@ def trident_run(connection, keys_file_path, ip_address, user_name, trident_confi
             warn=True,
             out_stream=out_stream,
             err_stream=err_stream,
-            timeout=180,
+            timeout=240,
             watchers=[watcher],
         )
 
