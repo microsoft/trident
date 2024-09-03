@@ -7,7 +7,11 @@ use log::{debug, error, info, warn};
 use nix::unistd::Uid;
 use tokio::sync::mpsc::{self};
 
-use osutils::{container, path};
+use osutils::{
+    container,
+    efibootmgr::{self, EfiBootManagerOutput},
+    path,
+};
 use setsail::KsTranslator;
 use trident_api::config::{
     HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
@@ -402,6 +406,24 @@ impl Trident {
                 .message("Host failed to boot from the expected root device")?
             {
                 info!("Host correctly booted into the updated runtime OS image");
+
+                // If it's QEMU, after confirming that we have booted into the
+                // correct image, we set the `BootCurrent` entry as the first
+                // entry in `BootOrder`.
+                if osutils::virt::is_qemu() {
+                    // Get `BootCurrent` from the boot manager output.
+                    let bootmgr_output: EfiBootManagerOutput =
+                        efibootmgr::list_and_parse_bootmgr_entries()
+                            .structured(ServicingError::ListAndParseBootEntries)?;
+                    let boot_current = &bootmgr_output.boot_current;
+
+                    // Modify `BootOrder` to have `BootCurrent` as the first entry.
+                    bootentries::first_boot_order(boot_current).structured(
+                        ServicingError::SetBootOrder {
+                            boot_entry_number: boot_current.to_string(),
+                        },
+                    )?;
+                }
             } else if datastore.host_status().servicing_type == ServicingType::CleanInstall {
                 datastore.with_host_status(|host_status| {
                     host_status.servicing_type = ServicingType::NoActiveServicing;
@@ -423,19 +445,6 @@ impl Trident {
                     expected_device_path: expected_root_dev_path.to_string_lossy().to_string(),
                 }));
             }
-
-            // Update boot order
-            let datastore_path = match self.config.datastore {
-                Some(ref path) => path,
-                None => {
-                    error!("Datastore path not set in local config");
-                    return Err(TridentError::new(
-                        InternalError::GetDatastorePathFromLocalTridentConfig,
-                    ));
-                }
-            };
-            info!("Setting boot order");
-            bootentries::set_boot_order(datastore_path)?;
 
             if datastore.host_status().servicing_type == ServicingType::CleanInstall {
                 info!(

@@ -1,115 +1,111 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
-use log::{debug, info};
+use log::debug;
 use osutils::efibootmgr::EfiBootManagerOutput;
 use osutils::{block_devices, efibootmgr};
 use trident_api::constants;
-use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
+use trident_api::error::{InternalError, ReportError, ServicingError, TridentError};
 use trident_api::status::HostStatus;
-
-use crate::datastore::DataStore;
 
 /// Boot efi executable
 const BOOT64_EFI: &str = "bootx64.efi";
 
-/// Calls the set_boot_next to set the `BootNext` variable and then updates the host status.
-///
-/// This function first sets the `BootNext` variable by calling set_boot_next. Then, it retrieves
-/// the output of `efibootmgr` to get information about the boot manager entries. Finally, it\
-/// updates the host status with the retrieved `BootNext` variable.
-///
-pub fn call_set_boot_next_and_update_hs(
-    host_status: &mut HostStatus,
-    esp_path: &Path,
-) -> Result<(), TridentError> {
-    set_boot_next(host_status, esp_path).structured(ServicingError::SetBootNext)?;
-
-    // Get the output of efibootmgr
-    let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
-        .structured(ServicingError::ListAndParseBootEntries)?;
-
-    // Update host status with BootNext variable
-    host_status.boot_next = if !bootmgr_output.boot_next.is_empty() {
-        debug!(
-            "Setting boot_next in host status to {:?}",
-            bootmgr_output.boot_next
-        );
-        Some(bootmgr_output.boot_next)
-    } else {
-        debug!("Setting boot_next in host status to none");
-        None
-    };
-
-    Ok(())
-}
-
 /// Creates a boot entry for the A/B update volume and sets the `BootNext`
-/// variable to boot from the updated partition on next boot.
+/// variable to boot from the updated partition on next boot. Also updates the
+/// `BootOrder` for non-qemu targets.
 ///
 /// Takes in the path where we expect to find the entry matching the install ID.
 /// During clean install, this corresponds to /mnt/newroot/boot/efi, but during
 /// A/B update, both A and B share a single ESP at /boot/efi.
-fn set_boot_next(host_status: &HostStatus, esp_path: &Path) -> Result<(), Error> {
+pub fn set_boot_next_and_update_boot_order(
+    host_status: &HostStatus,
+    esp_path: &Path,
+) -> Result<(), TridentError> {
     // Get the label and path for the EFI boot loader of the inactive A/B update volume.
     let (entry_label_new, bootloader_path_new) =
-        get_label_and_path(host_status).context("Failed to get label and path")?;
+        get_label_and_path(host_status).structured(ServicingError::GetLabelandPath)?;
 
     // Check if the boot entry already exists, if so, delete the entry and
-    // remove it from the boot order.
-    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
-    if bootmgr_output.boot_entry_exists(&entry_label_new)? {
-        debug!("Boot entry already exists, deleting entries with label '{entry_label_new}'");
-        bootmgr_output.delete_entries_with_label(&entry_label_new)?;
+    // remove it from the `BootOrder`.
+    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()
+        .structured(ServicingError::ListAndParseBootEntries)?;
+    if bootmgr_output
+        .boot_entry_exists(&entry_label_new)
+        .structured(ServicingError::BootEntryCheck {
+            boot_entry: entry_label_new.clone(),
+        })?
+    {
+        debug!(
+            "Boot entry already exists, deleting entries with label '{}'",
+            entry_label_new.as_str()
+        );
+        bootmgr_output
+            .delete_entries_with_label(&entry_label_new)
+            .structured(ServicingError::DeleteEntries {
+                boot_entry: entry_label_new.clone(),
+            })?;
         // Get boot entry numbers for the entries with label '{entry_label_new}'
-        let entry_numbers = bootmgr_output.get_entries_with_label(&entry_label_new)?;
-        // Get the current boot order
-        let current_boot_order = bootmgr_output.get_boot_order()?;
-        // Get the modified boot order after removing the entries with label '{entry_label_new}'
+        let entry_numbers = bootmgr_output
+            .get_entries_with_label(&entry_label_new)
+            .structured(ServicingError::ReadEfibootmgr)?;
+        // Get the current `BootOrder`
+        let current_boot_order = bootmgr_output
+            .get_boot_order()
+            .structured(ServicingError::ReadEfibootmgr)?;
+        // Get the modified `BootOrder` after removing the entries with label '{entry_label_new}'
         let new_boot_order: Vec<String> = current_boot_order
             .iter()
             .filter(|&x| !entry_numbers.contains(x))
             .map(|x| x.to_string())
             .collect();
 
-        // Get the updated boot order
-        let new_boot_order_after_deletion =
-            efibootmgr::list_and_parse_bootmgr_entries()?.get_boot_order()?;
+        // Get the updated `BootOrder`
+        let new_boot_order_after_deletion = efibootmgr::list_and_parse_bootmgr_entries()
+            .structured(ServicingError::ListAndParseBootEntries)?
+            .get_boot_order()
+            .structured(ServicingError::ReadEfibootmgr)?;
 
+        // If the `BootOrder` has changed, update the `BootOrder`
         if current_boot_order != new_boot_order && new_boot_order_after_deletion != new_boot_order {
-            efibootmgr::modify_boot_order(new_boot_order.join(",").as_str())?;
+            efibootmgr::modify_boot_order(new_boot_order.join(",").as_str())
+                .structured(ServicingError::ModifyBootOrder)?;
         }
     }
 
     // Get the disk path of the ESP partition
-    let disk_path = get_esp_partition_disk(host_status).context("Failed to fetch esp disk path")?;
+    let disk_path =
+        get_esp_partition_disk(host_status).structured(InternalError::GetEspPartitionDiskPath)?;
     debug!("Disk path of first ESP partition {:?}", disk_path);
 
     // Create a boot entry for the new OS.
     efibootmgr::create_boot_entry(&entry_label_new, disk_path, bootloader_path_new, esp_path)
-        .context(format!(
-            "Failed to add boot entry with label '{entry_label_new}'"
-        ))?;
-    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()?;
+        .structured(ServicingError::CreateBootEntry {
+            boot_entry: entry_label_new.clone(),
+        })?;
+    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()
+        .structured(ServicingError::ListAndParseBootEntries)?;
 
     let added_entry_number = bootmgr_output
         .get_boot_entry_number(&entry_label_new)
-        .context("Failed to get boot entry number")?;
-    debug!("Added boot entry: {added_entry_number}");
+        .structured(ServicingError::ReadEfibootmgr)?;
 
-    // HACK: detect if we're inside qemu to avoid modifying boot order
+    debug!(
+        "Added boot entry '{added_entry_number}' with label '{}'",
+        entry_label_new.as_str()
+    );
+
+    // Set the `BootNext` variable to boot from the newly added entry on next boot.
+    efibootmgr::set_boot_next(&added_entry_number).structured(ServicingError::SetBootNext)?;
+    debug!("Set `BootNext` to newly added entry '{added_entry_number}'");
+
+    // HACK: detect if we're inside qemu to avoid modifying `BootOrder`
     // TODO(#7139): remove this special case.
     if !osutils::virt::is_qemu() {
-        let mut boot_order = bootmgr_output.get_boot_order()?;
-        boot_order.push(added_entry_number.clone());
-        efibootmgr::modify_boot_order(&boot_order.join(","))
-            .context("Failed to append new entry to boot order")?;
-        debug!("Appended entry to boot order");
+        first_boot_order(&added_entry_number).structured(ServicingError::SetBootOrder {
+            boot_entry_number: added_entry_number,
+        })?;
     }
-
-    efibootmgr::set_boot_next(&added_entry_number).context("Failed to get set `BootNext`")?;
-    debug!("Set `BootNext` to new entry");
-
     Ok(())
 }
 
@@ -174,87 +170,58 @@ fn get_label_and_path(host_status: &HostStatus) -> Result<(String, PathBuf), Err
     Ok((esp_dir_name, path))
 }
 
-/// Sets the EFI boot variables based on host status and current boot order.
-/// This function opens the Trident DataStore, retrieves host status, lists EFI boot entries,
-/// determines whether the boot order needs modification, and performs the necessary actions.
+/// Lists EFI boot manager entries, checks if the `BootOrder` requires
+/// updates based on the given boot entry, and updates the `BootOrder` if
+/// needed.
 ///
-// TODO - https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807 needs refactoring
 #[tracing::instrument(skip_all)]
-pub fn set_boot_order(datastore_path: &Path) -> Result<(), TridentError> {
-    let mut datastore = DataStore::open(datastore_path)
-        .message("Failed to open datastore while setting boot order")?;
-    let host_status = datastore.host_status();
-
+pub fn first_boot_order(boot_entry: &String) -> Result<(), Error> {
     let bootmgr_output: EfiBootManagerOutput = efibootmgr::list_and_parse_bootmgr_entries()
-        .structured(ServicingError::ListAndParseBootEntries)?;
+        .context("Failed to list and parse boot manager entries")?;
 
-    let (new_boot_order, clear_boot_next) = update_efi_boot_order(host_status, &bootmgr_output);
+    let new_boot_order = generate_new_boot_order(&bootmgr_output, boot_entry);
 
     if let Some(new_boot_order) = new_boot_order {
-        debug!("Modifying boot order to: {}", new_boot_order);
+        debug!("Modifying `BootOrder` to {}", new_boot_order);
         efibootmgr::modify_boot_order(&new_boot_order)
-            .structured(ServicingError::ModifyBootOrder)?;
+            .context(format!("Failed to modify `BootOrder` to {new_boot_order}"))?;
     } else {
-        info!("Boot order not modified");
-    }
-
-    if clear_boot_next {
-        debug!("Clearing boot_next variable from host status");
-        datastore.with_host_status(|s| {
-            s.boot_next = None;
-        })?;
+        debug!("Skipping `BootOrder` modification as it is already up-to-date");
     }
 
     Ok(())
 }
 
-/// Analyzes whether the EFI boot order should be modified based on the `boot_next` value in host status.
-///
-/// If the `boot_next` value is set, this function compares it with the current EFI boot entries
-/// and adjusts the boot order accordingly.
+/// Analyzes whether the EFI `BootOrder` should be modified based on the given boot entry value.
 ///
 /// # Returns
-/// - `new_boot_order`: A string representing the new boot order after adjustments.
-/// - `clear_boot_next`: A boolean indicating whether the `boot_next` variable needs to be cleared.
-///
+/// - `Some(new_boot_order)`: A string representing the new `BootOrder` after adjustments.
+/// - `None`: If no modifications to the `BootOrder` are needed.
 #[tracing::instrument(skip_all)]
-fn update_efi_boot_order(
-    host_status: &HostStatus,
+fn generate_new_boot_order(
     bootmgr_output: &EfiBootManagerOutput,
-) -> (Option<String>, bool) {
-    if let Some(hs_boot_next) = &host_status.boot_next {
-        if !bootmgr_output.boot_next.is_empty() {
-            info!("Bootnext is not empty, Trident reran before trying to reboot from the updated partition");
-            return (None, false);
-        }
-        let mut boot_order_initial: Vec<String> = bootmgr_output.boot_order.clone();
-        let boot_current = &bootmgr_output.boot_current;
-        if boot_current.as_str() == *hs_boot_next {
-            info!("Booted from the updated partition");
-            if boot_order_initial.contains(boot_current) {
-                if let Some(index) = boot_order_initial.iter().position(|x| x == boot_current) {
-                    if index != 0 {
-                        boot_order_initial.remove(index);
-                        boot_order_initial.insert(0, boot_current.to_string());
-                    } else {
-                        debug!("Boot_current is already at the first position in boot_order");
-                        return (None, true);
-                    }
-                }
+    boot_entry: &String,
+) -> Option<String> {
+    let mut boot_order_initial: Vec<String> = bootmgr_output.boot_order.clone();
+
+    if boot_order_initial.contains(boot_entry) {
+        if let Some(index) = boot_order_initial.iter().position(|x| x == boot_entry) {
+            if index != 0 {
+                // Boot entry is part of `BootOrder` but not at the first position. Move it to the first position.
+                boot_order_initial.remove(index);
+                boot_order_initial.insert(0, boot_entry.to_string());
             } else {
-                boot_order_initial.insert(0, boot_current.to_string());
+                // Boot entry is already at the first position in `BootOrder`. No need to modify.
+                return None;
             }
-            let new_boot_order_str = boot_order_initial.join(",");
-            return (Some(new_boot_order_str), true);
-        } else {
-            info!("Booted from the old partition");
         }
     } else {
-        debug!("Bootnext is None, skipping update of boot order");
-        return (None, false);
+        boot_order_initial.insert(0, boot_entry.to_string());
     }
 
-    (None, true)
+    let new_boot_order_str = boot_order_initial.join(",");
+
+    Some(new_boot_order_str)
 }
 
 #[cfg(test)]
@@ -343,109 +310,34 @@ mod tests {
         }
     }
 
-    /// This function sets the host_status.boot_next to the boot_current variable of efibootmgr and checks if the boot order is updated with boot_next as the first entry.
-    /// Which indicates that the target was able to boot into the updated partition and hence boot order was modified with boot_next as the first entry.
+    /// This function tests the update_efi_boot_order function which modifies
+    /// the `BootOrder` by placing the boot entry at the first position.
     #[test]
-    fn test_boot_order_when_booted_from_updated_partition() {
-        let host_status = HostStatus {
-            boot_next: Some(String::from("0003")),
-            ..Default::default()
-        };
-
+    fn test_update_efi_boot_order() {
         let bootmgr_output = get_bootmgr_output();
-        let result = update_efi_boot_order(&host_status, &bootmgr_output);
-        assert_eq!(result, (Some(String::from("0003,0001,0000")), true));
-    }
 
-    /// This function sets the host_status.boot_next not equal to the boot_current variable of efibootmgr.
-    /// Which indicates that the target was not able to boot into the updated partition and the test verifies that boot order was not modified.
-    #[test]
-    fn test_boot_order_when_booted_from_old_partition() {
-        let host_status = HostStatus {
-            boot_next: Some(String::from("0001")),
-            ..Default::default()
-        };
-        let bootmgr_output = get_bootmgr_output();
-        let result = update_efi_boot_order(&host_status, &bootmgr_output);
-        assert_eq!(result, (None, true));
-    }
+        // Test case where boot entry is already at the first position in `BootOrder`
+        let result = generate_new_boot_order(&bootmgr_output, &String::from("0001"));
+        assert_eq!(result, None);
 
-    /// This function sets the host_status.boot_next to none.
-    /// Which indicates that there was no update and hence the test verifies that boot order was not modified.
-    #[test]
-    fn test_boot_order_when_boot_next_none() {
-        let host_status = HostStatus {
-            ..Default::default()
-        };
+        // Test case where boot entry is not part of `BootOrder`
+        let result = generate_new_boot_order(&bootmgr_output, &String::from("0002"));
+        assert_eq!(result, Some("0002,0001,0000".to_string()));
 
-        let bootmgr_output = get_bootmgr_output();
-        let result = update_efi_boot_order(&host_status, &bootmgr_output);
-        assert_eq!(result, (None, false));
-    }
-
-    /// This function sets the host_status.boot_next to boot_current which is already part of boot order.
-    /// The test verifies that boot_order is modified with boot_next as the first entry.
-    #[test]
-    fn test_boot_order_when_boot_entry_exists() {
-        let host_status = HostStatus {
-            boot_next: Some(String::from("0003")),
-            ..Default::default()
-        };
-
-        let mut bootmgr_output = get_bootmgr_output();
-        bootmgr_output.boot_order =
-            vec!["0001".to_string(), "0003".to_string(), "0000".to_string()];
-
-        let result = update_efi_boot_order(&host_status, &bootmgr_output);
-        assert_eq!(result, (Some(String::from("0003,0001,0000")), true));
-    }
-
-    /// This function sets the host_status.boot_next not equal boot_current which is already part of boot order.
-    /// The test verifies that boot_order is not modified.
-    #[test]
-    fn test_boot_order_when_boot_entry_exists_boot_next_not_equal_boot_order() {
-        let host_status = HostStatus {
-            boot_next: Some(String::from("0000")),
-            ..Default::default()
-        };
-
-        let mut bootmgr_output = get_bootmgr_output();
-        bootmgr_output.boot_order =
-            vec!["0001".to_string(), "0003".to_string(), "0000".to_string()];
-
-        let result = update_efi_boot_order(&host_status, &bootmgr_output);
-        assert_eq!(result, (None, true));
-    }
-
-    /// This function sets the host_status.boot_next to boot_current which is already the first entry of boot order.
-    /// The test verifies that the boot order is not modified.
-    #[test]
-    fn test_boot_order_when_boot_order_is_updated() {
-        let host_status = HostStatus {
-            boot_next: Some(String::from("0003")),
-            ..Default::default()
-        };
-
-        let mut bootmgr_output = get_bootmgr_output();
-        bootmgr_output.boot_order =
-            vec!["0003".to_string(), "0001".to_string(), "0000".to_string()];
-
-        let result = update_efi_boot_order(&host_status, &bootmgr_output);
-        assert_eq!(result, (None, true));
+        // Test case where boot entry is part of `BootOrder` but not at the first position
+        let result = generate_new_boot_order(&bootmgr_output, &String::from("0000"));
+        assert_eq!(result, Some("0000,0001".to_string()));
     }
 }
 
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::{
-        engine::storage::partitioning::create_partitions, TRIDENT_TEMPORARY_DATASTORE_PATH,
-    };
+    use crate::engine::storage::partitioning::create_partitions;
 
     use super::*;
     use constants::ESP_MOUNT_POINT_PATH;
 
-    use tempfile::TempDir;
     use trident_api::config::{
         self, Disk, FileSystemType, HostConfiguration, MountOptions, MountPoint, Partition,
         PartitionSize, PartitionType,
@@ -472,7 +364,7 @@ mod functional_test {
     }
 
     fn set_some_boot_entries() {
-        // Create new boot entries for testing
+        // Create new boot manager entries for testing
         let tempdir = tempfile::tempdir().unwrap();
         // Create bootloader path
         let bootloader_path = Path::new(r"/EFI/AZLA/bootx64.efi");
@@ -513,7 +405,7 @@ mod functional_test {
         boot_order.insert(0, entry_number2.to_string());
         boot_order.insert(1, entry_number3.to_string());
 
-        // Add to bootorder
+        // Add to `BootOrder`
         efibootmgr::modify_boot_order(&boot_order.join(",")).unwrap();
     }
 
@@ -579,49 +471,25 @@ mod functional_test {
         );
     }
 
-    /// Function to test set_boot_order after setting boot_next of host status equal to the boot_current variable of efibootmgr.
-    /// This tests the update success case i.e  the target was able to boot into the updated partition which was set as boot_next making the entry as boot_current.
-    /// Boot order should be updated with boot_next as the first entry.
     #[functional_test(feature = "helpers")]
-    fn test_set_boot_order_when_update_success() {
+    fn test_first_boot_order_when_update_success() {
         delete_boot_next();
         set_some_boot_entries();
-
-        // Create a temporary datastore
-        let _ = std::fs::remove_file(TRIDENT_TEMPORARY_DATASTORE_PATH);
-        let temp_dir = TempDir::new().unwrap();
-        let datastore_path = temp_dir.path().join("db.sqlite");
 
         let bootmgr_output: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let boot_current = &bootmgr_output.boot_current;
         let initial_boot_order = bootmgr_output.boot_order;
-        let mut datastore = DataStore::open_temporary().unwrap();
 
-        // Set boot_next of host_status to boot_current which indicates that the target was able to boot into the updated partition.
-        datastore
-            .with_host_status(|s| {
-                s.boot_next = Some(boot_current.to_string());
-            })
-            .unwrap();
-        datastore.persist(&datastore_path).unwrap();
-        datastore.close();
-
-        set_boot_order(&datastore_path).unwrap();
-
-        // We clear the boot_next variable in set_boot_order, check if it is cleared.
-        let datastore1 = DataStore::open(&datastore_path).unwrap();
-        let host_status: &HostStatus = datastore1.host_status();
-
-        // Check if boot_next is cleared
-        assert!(host_status.boot_next.is_none());
+        // Test that target was able to boot into the updated partition.
+        first_boot_order(boot_current).unwrap();
 
         // Get the modified boot_order
         let bootmgr_output1: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let final_boot_order = bootmgr_output1.boot_order;
 
-        // Set expected boot_order i.e boot_next as the first entry and rest of the entries in the same order as initial_boot_order.
+        // Set expected `BootOrder` i.e `BootCurrent` as the first entry and rest of the entries in the same order as initial_boot_order.
         let mut expected_boot_order = initial_boot_order.clone();
         if expected_boot_order.contains(boot_current) {
             let index = expected_boot_order
@@ -643,43 +511,20 @@ mod functional_test {
         assert_eq!(expected_boot_order, final_boot_order);
     }
 
-    /// Function to test set_boot_order after setting boot_next of host status not equal to the boot_current variable of efibootmgr.
-    /// This tests the update fail case i.e the target was not able to boot into the updated partition which was set as boot_next.
-    /// Boot order should not be updated.
+    /// Test that the `BootOrder` is not modified if the boot entry is already at the first position.
     #[functional_test(feature = "helpers")]
-    fn test_set_boot_order_when_ab_update_failed() {
+    fn test_first_boot_order_skip_boot_order_update() {
         delete_boot_next();
         set_some_boot_entries();
 
-        // Create a temporary datastore
-        let _ = std::fs::remove_file(TRIDENT_TEMPORARY_DATASTORE_PATH);
-        let temp_dir = TempDir::new().unwrap();
-        let datastore_path = temp_dir.path().join("db.sqlite");
-
         let bootmgr_output: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
-        let entry_number1 = bootmgr_output.get_boot_entry_number("TestBoot2").unwrap();
         let initial_boot_order = bootmgr_output.boot_order;
-        let mut datastore = DataStore::open_temporary().unwrap();
-        let new_boot_next = entry_number1;
+        let boot_entry = initial_boot_order[0].clone();
 
-        // Set boot_next of host_status to a newly added entry TESTBOOT1 which is not equal to boot_current.
-        datastore
-            .with_host_status(|s| {
-                s.boot_next = Some(new_boot_next);
-            })
-            .unwrap();
-        datastore.persist(&datastore_path).unwrap();
-        datastore.close();
+        first_boot_order(&boot_entry).unwrap();
 
-        set_boot_order(&datastore_path).unwrap();
-        let datastore1 = DataStore::open(&datastore_path).unwrap();
-        let host_status = datastore1.host_status();
-
-        // Check if boot_next is cleared
-        assert!(host_status.boot_next.is_none());
-
-        // Get the modified boot_order
+        // Get the modified `BootOrder`
         let bootmgr_output1: EfiBootManagerOutput =
             efibootmgr::list_and_parse_bootmgr_entries().unwrap();
         let final_boot_order = bootmgr_output1.boot_order;
@@ -688,50 +533,5 @@ mod functional_test {
         delete_created_boot_entries();
 
         assert_eq!(initial_boot_order, final_boot_order);
-    }
-
-    /// Function to test set_boot_order after setting boot_next None.
-    /// This tests that there was no update from the last boot.
-    /// Boot order should not be updated.
-    #[functional_test(feature = "helpers")]
-    fn test_set_boot_order_boot_next_none() {
-        delete_boot_next();
-        set_some_boot_entries();
-
-        // Create a temporary datastore
-        let _ = std::fs::remove_file(TRIDENT_TEMPORARY_DATASTORE_PATH);
-        let temp_dir = TempDir::new().unwrap();
-        let datastore_path = temp_dir.path().join("db.sqlite");
-
-        let bootmgr_output: EfiBootManagerOutput =
-            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
-        let initial_boot_order = bootmgr_output.boot_order;
-        let mut datastore = DataStore::open_temporary().unwrap();
-
-        // Set boot_next to None
-        datastore
-            .with_host_status(|s| {
-                s.boot_next = None;
-            })
-            .unwrap();
-        datastore.persist(&datastore_path).unwrap();
-        datastore.close();
-
-        set_boot_order(&datastore_path).unwrap();
-        let datastore1 = DataStore::open(&datastore_path).unwrap();
-        let host_status = datastore1.host_status();
-
-        // Check if boot_next of host_status is not modified
-        assert!(host_status.boot_next.is_none());
-
-        // Get the modified boot_order
-        let bootmgr_output1: EfiBootManagerOutput =
-            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
-        let final_boot_order = bootmgr_output1.boot_order;
-
-        // Cleanup
-        delete_created_boot_entries();
-
-        assert_eq!(initial_boot_order, final_boot_order)
     }
 }

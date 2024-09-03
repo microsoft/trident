@@ -877,10 +877,9 @@ fn finalize_deployment(datastore: &mut DataStore, esp_path: &Path) -> Result<(),
     // TODO: Delete boot entries. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/
 
-    info!("Setting boot entries");
-    datastore.try_with_host_status(|host_status| {
-        bootentries::call_set_boot_next_and_update_hs(host_status, esp_path)
-    })?;
+    info!("Setting boot entries to finalize deployment");
+    let host_status = datastore.host_status();
+    bootentries::set_boot_next_and_update_boot_order(host_status, esp_path)?;
 
     debug!("Updating host's servicing state to Finalized");
     datastore.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;

@@ -284,17 +284,18 @@ mod functional_test {
                 datastore.host_status().servicing_state,
                 ServicingState::Staging
             );
-
             datastore
-                .with_host_status(|s| s.boot_next = Some("test".to_string()))
+                .with_host_status(|s| s.servicing_state = ServicingState::CleanInstallFailed)
                 .unwrap();
             datastore.persist(&datastore_path).unwrap();
         }
 
         // Re-open the persisted datastore and verify that the servicing state was retained.
         let mut datastore = DataStore::open(&datastore_path).unwrap();
-        assert_eq!(datastore.host_status().boot_next.as_deref(), Some("test"));
-
+        assert_eq!(
+            datastore.host_status().servicing_state,
+            ServicingState::CleanInstallFailed
+        );
         // Ensure that the datastore can be closed and re-opened.
         datastore.close();
         datastore

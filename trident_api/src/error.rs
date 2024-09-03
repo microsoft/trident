@@ -77,6 +77,9 @@ pub enum InternalError {
     #[error("Failed to get datastore path from local Trident config")]
     GetDatastorePathFromLocalTridentConfig,
 
+    #[error("Failed to get the first ESP partition disk path")]
+    GetEspPartitionDiskPath,
+
     #[error("Failed to get root block device")]
     GetRootBlockDevicePath,
 
@@ -157,6 +160,9 @@ pub enum ServicingError {
     #[error("Failed to apply Netplan config")]
     ApplyNetplanConfig,
 
+    #[error("Failed to check if the boot entry '{boot_entry}' exists via efibootmgr")]
+    BootEntryCheck { boot_entry: String },
+
     #[error("Failed to canonicalize path '{path}'")]
     CanonicalizePath { path: String },
 
@@ -189,6 +195,9 @@ pub enum ServicingError {
 
     #[error("Failed to copy Trident binary to runtime OS")]
     CopyTridentBinary,
+
+    #[error("Failed to create boot entry '{boot_entry}' via efibootmgr")]
+    CreateBootEntry { boot_entry: String },
 
     #[error("Failed to create crypttab at path '{crypttab_path}'")]
     CreateCrypttab { crypttab_path: String },
@@ -232,6 +241,9 @@ pub enum ServicingError {
         inner: DatastoreError,
     },
 
+    #[error("Failed to delete boot entries with label '{boot_entry}' via efibootmgr")]
+    DeleteEntries { boot_entry: String },
+
     #[error("Failed to perform file-based deployment of ESP images")]
     DeployESPImages,
 
@@ -270,6 +282,9 @@ pub enum ServicingError {
     #[error("Failed to get block device path for device '{device_id}'")]
     GetBlockDevicePath { device_id: String },
 
+    #[error("Failed to get the label and path for the EFI boot loader of the A/B update volume")]
+    GetLabelandPath,
+
     #[error("Failed to get mount point info for root with path '{root_path}'")]
     GetRootMountPointInfo { root_path: String },
 
@@ -303,6 +318,9 @@ pub enum ServicingError {
     #[error("Failed to parse non-Unicode path '{path}'")]
     PathIsNotUnicode { path: String },
 
+    #[error("Failed to do a read operation with efibootmgr")]
+    ReadEfibootmgr,
+
     #[error("Failed to reboot")]
     Reboot,
 
@@ -332,6 +350,9 @@ pub enum ServicingError {
 
     #[error("Failed to set the 'BootNext' UEFI variable")]
     SetBootNext,
+
+    #[error("Failed to set the `BootOrder` via efibootmgr by checking for boot entry '{boot_entry_number}'")]
+    SetBootOrder { boot_entry_number: String },
 
     #[error("Failed to set the kernel cmdline")]
     SetKernelCmdline,
