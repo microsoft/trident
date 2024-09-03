@@ -110,6 +110,9 @@ stages:
           - name: K8S_SANITY_DIR
             value: $(Build.SourcesDirectory)/platform-tests/k8s-sanity
 
+          - name: netlistenPort
+            value: 4000
+
           - group: baremetal_controller
 
         steps:
@@ -155,6 +158,7 @@ stages:
               hostConfigYaml: $(TRIDENT_CONFIG_FILE)
               sshKeyFile: $(SSH_KEY_FILE)
               installerIsoDirectory: $(System.ArtifactsDirectory)/trident-installer-testimage
+              netlistenPort: ${{variables.netlistenPort}}
 
           - template: ../common_tasks/trident-metrics.yml
             parameters:
@@ -194,3 +198,4 @@ stages:
               tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
               hostIp: ${{ parameters.oamIp }}
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              netlistenPort: ${{variables.netlistenPort}}

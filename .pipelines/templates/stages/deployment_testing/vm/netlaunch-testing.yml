@@ -52,6 +52,8 @@ stages:
           ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
           ob_artifactBaseName: $(tridentConfigurationName)_deployment_log_$(System.JobAttempt)
 
+          netlaunchPort: 4000
+
         steps:
           - checkout: argus-toolkit
             fetchDepth: 1
@@ -80,7 +82,6 @@ stages:
                 MAX_FAILURES_FLAG="--max-failures 1"
               fi
 
-              echo "Netlaunch output:" > ./deployment.log
               ./bin/netlaunch \
                   --iso $(System.ArtifactsDirectory)/trident-installer-testimage.iso \
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
@@ -88,10 +89,15 @@ stages:
                   --servefolder ./artifacts/test-image \
                   --logstream $MAX_FAILURES_FLAG \
                   --trace-file trident-metrics.jsonl \
-                  --log-trace --force-color
+                  --log-trace --force-color \
+                  --port ${{variables.netlaunchPort}} > ./clean-install-deployment.log 2>&1
             timeoutInMinutes: 9
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Run netlaunch for testing"
+
+          - template: ../common_tasks/display-deployment-logs.yml
+            parameters:
+              deploymentLogPath: $(tridentSourceDirectory)/clean-install-deployment.log
 
           - bash: |
               set -ux
@@ -146,6 +152,7 @@ stages:
               sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
               userName: testing-user
               artifactsDirectory: artifacts/test-image
+              netlistenPort: ${{variables.netlaunchPort}}
 
           - template: ../common_tasks/trident-rebuild.yml
             parameters:

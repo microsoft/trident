@@ -33,11 +33,15 @@ parameters:
 
   - name: userName
     type: string
-    default: 'testing-user'
+    default: "testing-user"
 
   - name: artifactsDirectory
     type: string
     default: artifacts/test-image
+
+  - name: netlistenPort
+    type: number
+    default: 4000
 
 steps:
   - bash: |
@@ -102,7 +106,7 @@ steps:
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Run Trident E2E tests after clean install of runtime OS"
-  
+
   - task: PublishTestResults@2
     condition: succeededOrFailed()
     inputs:
@@ -129,7 +133,8 @@ steps:
   # If current config requires A/B update testing, execute script to ssh into the host, update
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
   - bash: |
-      set -eu
+      set -eux
+      ./bin/netlisten -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
       echo "Running script to stage and finalize A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
           --ip-address ${{ parameters.hostIp }} \
@@ -150,6 +155,10 @@ steps:
     displayName: "Stage and finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
+  - template: ../common_tasks/display-deployment-logs.yml
+    parameters:
+      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-runtime-os-B.log
+
   - bash: |
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
@@ -157,6 +166,19 @@ steps:
           "${{ parameters.hostIp }}"
     displayName: "Check SSH connection after booting into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - template: ../common_tasks/trident-metrics.yml
+    parameters:
+      tridentSourceDirectory: $(Build.SourcesDirectory)
+      tridentConfigPath: ${{ parameters.tridentConfigPath }}
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
+      metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
+      runOnFailure: true
+      ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+        kustoTableName: main
+      ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
+        kustoTableName: dev
 
   # Re-run E2E tests after A/B update into runtime OS B.
   - bash: |
@@ -196,7 +218,8 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
-      set -eu
+      set -eux
+      ./bin/netlisten -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
       echo "Running script to stage and finalize A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
           --ip-address ${{ parameters.hostIp }} \
@@ -217,6 +240,10 @@ steps:
     displayName: "Stage and finalize A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
+  - template: ../common_tasks/display-deployment-logs.yml
+    parameters:
+      deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-runtime-os-A.log
+
   - bash: |
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
@@ -224,6 +251,19 @@ steps:
           "${{ parameters.hostIp }}"
     displayName: "Check SSH connection after booting into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - template: ../common_tasks/trident-metrics.yml
+    parameters:
+      tridentSourceDirectory: $(Build.SourcesDirectory)
+      tridentConfigPath: ${{ parameters.tridentConfigPath }}
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
+      metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
+      runOnFailure: true
+      ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+        kustoTableName: main
+      ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
+        kustoTableName: dev
 
   - bash: |
       set -eux
@@ -238,7 +278,7 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Run Trident E2E tests after A/B update into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-  
+
   - task: PublishTestResults@2
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
     inputs:
@@ -261,3 +301,4 @@ steps:
           userName: ${{ parameters.userName }}
           artifactsDirectory: ${{ parameters.artifactsDirectory }}
           deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+          netlistenPort: ${{ parameters.netlistenPort }}

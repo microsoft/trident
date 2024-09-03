@@ -25,11 +25,13 @@ steps:
       verityTestImageDir: $(System.ArtifactsDirectory)/verity-testimage
 
   - task: DownloadPipelineArtifact@2
-    displayName: "Download go-tools/netlaunch"
+    displayName: "Download go-tools"
     inputs:
       buildType: current
       artifactName: "go-tools"
-      patterns: "netlaunch"
+      patterns: |
+        netlaunch
+        netlisten
       targetPath: "$(Build.SourcesDirectory)/bin/"
 
   - bash: |
@@ -47,7 +49,8 @@ steps:
       set -eux
 
       chmod +x "$(Build.SourcesDirectory)/bin/netlaunch"
-    displayName: "Make netlaunch executable"
+      chmod +x "$(Build.SourcesDirectory)/bin/netlisten"
+    displayName: "Make netlaunch and netlisten executable"
 
   - bash: |
       set -eux

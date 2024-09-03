@@ -149,8 +149,7 @@ def update_host_config_images(
         sed_command = f"sudo sed -i 's#{old_url}#{new_url}#g' {trident_config}"
         run_ssh_command(connection, sed_command)
 
-    # Remove phonehome and selfUpgrade fields from the Trident config
-    run_ssh_command(connection, f"sudo sed -i -r 's#phonehome:.+##g' {trident_config}")
+    # Remove selfUpgrade field from the Trident config
     run_ssh_command(
         connection,
         f"sudo sed -i 's#selfUpgrade: true#selfUpgrade: false#g' {trident_config}",
@@ -263,6 +262,37 @@ def update_allowed_operations(
     print("Updated allowed operations in Trident config:\n", updated_host_config_output)
 
 
+def add_logstream(connection, trident_config):
+    """
+    Adds a logstream to the host configuration in the Trident config via sed command.
+    """
+    # Grab the current Trident config from the host
+    trident_config_output = run_ssh_command(
+        connection, f"sudo cat {trident_config}"
+    ).strip()
+    # Grab the phonehome string from the current Trident config
+    trident_config_dict = yaml.load(trident_config_output, Loader=yaml.SafeLoader)
+    # Check if logstream already exists
+    if trident_config_dict.get("logstream") is None:
+        phonehome = trident_config_dict["phonehome"]
+        logstream_url = phonehome[:].replace("phonehome", "logstream")
+        # Create the logstream string to add to the Trident config
+        logstream_str = f"logstream: {logstream_url}"
+        # Insert the logstream entry after the phonehome entry in the Trident config
+        sed_command = (
+            f"sudo sed -i '0,/phonehome:/a\\{logstream_str}\n' {trident_config}"
+        )
+        run_ssh_command(connection, sed_command)
+        print("Added logstream in Trident config:\n")
+
+        updated_host_config_output = run_ssh_command(
+            connection, f"sudo cat {trident_config}"
+        ).strip()
+        print(updated_host_config_output)
+    else:
+        print("Logstream already exists in Trident config.")
+
+
 def trigger_ab_update(
     ip_address,
     user_name,
@@ -291,6 +321,9 @@ def trigger_ab_update(
         stage_ab_update,
         finalize_ab_update,
     )
+
+    # Add logstream to the Trident config to stream with netlisten
+    add_logstream(connection, trident_config)
 
     # Re-run Trident and capture logs
     print("Re-running Trident to trigger A/B update", flush=True)

@@ -45,6 +45,9 @@ parameters:
   - name: installerIsoDirectory
     type: string
 
+  - name: netlistenPort
+    type: number
+
 steps:
   - task: DownloadPipelineArtifact@2
     inputs:
@@ -104,7 +107,7 @@ steps:
       sudo chown -R $(USER):$(USER) ./bin/netlisten
       sudo chmod 755 ./bin/netlisten
       ls -ltr ./bin
-      ./bin/netlisten -p 12000 > ./bm-deployment.log 2>&1 &
+      ./bin/netlisten -p ${{ parameters.netlistenPort }}  > ./bm-deployment.log 2>&1 &
 
       cd ${{ parameters.k8sSanityDir }}
 

@@ -11,7 +11,7 @@ parameters:
   - name: tridentConfigurationName
     type: string
     default: ""
-  
+
   - name: deploymentEnvironment
     type: string
     default: virtualMachine
@@ -33,11 +33,15 @@ parameters:
 
   - name: userName
     type: string
-    default: 'testing-user'
+    default: "testing-user"
 
   - name: artifactsDirectory
     type: string
     default: artifacts/test-image
+
+  - name: netlistenPort
+    type: number
+    default: 4000
 
 steps:
   - bash: |
@@ -55,7 +59,8 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
-      set -eu
+      set -eux
+      ./bin/netlisten -p ${{ parameters.netlistenPort }}  > ./stage-ab-update-deployment.log 2>&1 &
       echo "Running script to stage A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
           --ip-address ${{ parameters.hostIp }} \
@@ -69,6 +74,10 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage A/B update"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - template: ../common_tasks/display-deployment-logs.yml
+    parameters:
+      deploymentLogPath: $(Build.SourcesDirectory)/stage-ab-update-deployment.log
 
   - bash: |
       set -eux
@@ -84,8 +93,23 @@ steps:
     displayName: "Run tests to validate staging of A/B update"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
+  - template: ../common_tasks/trident-metrics.yml
+    parameters:
+      tridentSourceDirectory: $(Build.SourcesDirectory)
+      tridentConfigPath: ${{ parameters.tridentConfigPath }}
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
+      metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
+      runOnFailure: true
+      ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+        kustoTableName: main
+      ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
+        kustoTableName: dev
+
+
   - bash: |
-      set -eu
+      set -eux
+      ./bin/netlisten -p ${{ parameters.netlistenPort }} > ./finalize-ab-update.log 2>&1 &
       echo "Running script to finalize A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
           --ip-address ${{ parameters.hostIp }} \
@@ -104,6 +128,10 @@ steps:
     displayName: "Finalize A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
+  - template: ../common_tasks/display-deployment-logs.yml
+    parameters:
+      deploymentLogPath: $(Build.SourcesDirectory)/finalize-ab-update.log
+
   - bash: |
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
@@ -111,6 +139,19 @@ steps:
           "${{ parameters.hostIp }}"
     displayName: "Check SSH connection after booting into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - template: ../common_tasks/trident-metrics.yml
+    parameters:
+      tridentSourceDirectory: $(Build.SourcesDirectory)
+      tridentConfigPath: ${{ parameters.tridentConfigPath }}
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
+      metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
+      runOnFailure: true
+      ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+        kustoTableName: main
+      ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
+        kustoTableName: dev
 
   - bash: |
       set -eux
@@ -125,7 +166,7 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Run Trident E2E tests after A/B update into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-  
+
   - task: PublishTestResults@2
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
     inputs:

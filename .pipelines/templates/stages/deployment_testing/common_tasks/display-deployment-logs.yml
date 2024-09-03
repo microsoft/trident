@@ -1,0 +1,20 @@
+parameters:
+  - name: deploymentLogPath
+    type: string
+
+steps:
+  - bash: |
+      set -eux
+      if [[ -f ${{ parameters.deploymentLogPath }} ]]; then
+        cat ${{ parameters.deploymentLogPath }}
+      fi
+    condition: succeededOrFailed()
+    displayName: "Display ${{ parameters.deploymentLogPath }}"
+
+  - bash: |
+      if [[ -f ${{ parameters.deploymentLogPath }} ]]; then
+        mkdir -p $(ob_outputDirectory)
+        sudo cp ${{ parameters.deploymentLogPath }} $(ob_outputDirectory)
+      fi
+    condition: succeededOrFailed()
+    displayName: "Publish ${{ parameters.deploymentLogPath }}"

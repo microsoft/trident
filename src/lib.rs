@@ -453,6 +453,7 @@ impl Trident {
                 tracing::info!(metric_name = "clean_install_success", value = true);
             } else {
                 info!("A/B update succeeded. Setting servicing state to Provisioned");
+                tracing::info!(metric_name = "ab_update_success", value = true);
             }
             datastore.with_host_status(|host_status| {
                 host_status.servicing_state = ServicingState::Provisioned;
@@ -549,6 +550,7 @@ impl Trident {
                     if cmd.allowed_operations.has_finalize() {
                         engine::finalize_update(
                             datastore,
+                            None,
                             #[cfg(feature = "grpc-dangerous")]
                             &mut cmd.sender,
                         )

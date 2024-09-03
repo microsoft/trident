@@ -386,6 +386,7 @@ pub(super) fn finalize_clean_install(
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) fn update(
     command: HostUpdateCommand,
     state: &mut DataStore,
@@ -425,6 +426,13 @@ pub(super) fn update(
 
     validate_host_config(&modules, state, host_config, servicing_type)?;
 
+    let update_start_time = Instant::now();
+    tracing::info!(
+        metric_name = "update_start",
+        servicing_type = format!("{:?}", servicing_type),
+        servicing_state = format!("{:?}", state.host_status().servicing_state)
+    );
+
     // Stage update
     let root_mount = stage_update(
         &mut modules,
@@ -448,6 +456,7 @@ pub(super) fn update(
             // Otherwise, finalize update
             finalize_update(
                 state,
+                Some(update_start_time),
                 #[cfg(feature = "grpc-dangerous")]
                 &mut sender,
             )?;
@@ -480,6 +489,7 @@ pub(super) fn update(
 /// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
 fn stage_update(
     modules: &mut [Box<dyn Module>],
     state: &mut DataStore,
@@ -567,8 +577,10 @@ fn stage_update(
 /// Finalizes an update. Takes in 2 arguments:
 /// - state: A mutable reference to the DataStore.
 /// - sender: Optional mutable reference to the gRPC sender.
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", state.host_status().servicing_type)))]
 pub(super) fn finalize_update(
     state: &mut DataStore,
+    update_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
@@ -590,6 +602,15 @@ pub(super) fn finalize_update(
         PathBuf::from(ESP_MOUNT_POINT_PATH)
     };
     finalize_deployment(state, &esp_path)?;
+
+    // Metric for update time in seconds
+    if let Some(start_time) = update_start_time {
+        tracing::info!(
+            metric_name = "update_time_secs",
+            value = start_time.elapsed().as_secs_f64(),
+            servicing_type = format!("{:?}", state.host_status().servicing_type)
+        );
+    }
 
     perform_reboot()?;
 
