@@ -353,7 +353,7 @@ pub fn generate_efi_bin_base_dir_path(
 
     // Return the path to the ESP directory with the ESP dir name
     Ok(
-        esp_efi_path.join(host_status.get_update_esp_dir_name().context(
+        esp_efi_path.join(super::get_update_esp_dir_name(host_status).context(
             "Failed to get ESP directory name for the new OS. Host status is in an invalid state.",
         )?),
     )
@@ -362,7 +362,7 @@ pub fn generate_efi_bin_base_dir_path(
 /// Tries to find the next available AzL install index by looking at the
 /// ESP directory names present in the specified ESP EFI path.
 fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, TridentError> {
-    Ok(HostStatus::make_esp_dir_name_candidates()
+    Ok(super::make_esp_dir_name_candidates()
         // Take a limited number of candidates to avoid an infinite loop.
         .take(1000)
         // Go over all the candidates and find the first one that doesn't exist.
@@ -452,6 +452,8 @@ pub(super) fn deploy_esp_images(host_status: &HostStatus, mount_point: &Path) ->
 
 #[cfg(test)]
 mod tests {
+    use crate::engine::boot::{get_update_esp_dir_name, make_esp_dir_name_candidates};
+
     use super::*;
 
     use std::io::Write;
@@ -499,7 +501,7 @@ mod tests {
         let test_dir = TempDir::new().unwrap();
 
         // Create all ESP directories for indices 0-9
-        HostStatus::make_esp_dir_name_candidates()
+        make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
                 for dir_name in dir_names {
@@ -519,7 +521,7 @@ mod tests {
         let test_dir = TempDir::new().unwrap();
 
         // Create Volume A ESP directories for indices 0-9
-        HostStatus::make_esp_dir_name_candidates()
+        make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
                 fs::create_dir(test_dir.path().join(&dir_names[0])).unwrap();
@@ -537,7 +539,7 @@ mod tests {
         let test_dir = TempDir::new().unwrap();
 
         // Create Volume B ESP directories for indices 0-9
-        HostStatus::make_esp_dir_name_candidates()
+        make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
                 fs::create_dir(test_dir.path().join(&dir_names[1])).unwrap();
@@ -558,7 +560,7 @@ mod tests {
         let mut volume_selector = (0..=1).cycle();
 
         // Create alternating A/B Volume ESP directories for indices 0-9, starting with A
-        HostStatus::make_esp_dir_name_candidates()
+        make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
                 fs::create_dir(
@@ -587,7 +589,7 @@ mod tests {
         volume_selector.next();
 
         // Create alternating A/B Volume ESP directories for indices 0-9, starting with B
-        HostStatus::make_esp_dir_name_candidates()
+        make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
                 fs::create_dir(
@@ -622,7 +624,7 @@ mod tests {
         // that the function can return the expected ESP directory name. Then,
         // we create it, and then call the function again to make sure it will
         // return the next one. Do that a few times.
-        for (idx, dir_names) in HostStatus::make_esp_dir_name_candidates().take(50) {
+        for (idx, dir_names) in make_esp_dir_name_candidates().take(50) {
             println!(
                 "Checking install index '{}' in folder {}",
                 idx,
@@ -670,9 +672,8 @@ mod tests {
             // Record the expected install index
             let expected = host_status.install_index;
             // Expected ESP dir name
-            let expected_dir_name = host_status
-                .get_update_esp_dir_name()
-                .expect("Failed to get ESP dir name");
+            let expected_dir_name =
+                get_update_esp_dir_name(host_status).expect("Failed to get ESP dir name");
 
             // Set up temp dirs.
             let test_dir = TempDir::new().unwrap();
@@ -696,7 +697,7 @@ mod tests {
 
             // Create all directories for the expected index + 50 to ensure they are ignored
             // and we still get the same install index.
-            HostStatus::make_esp_dir_name_candidates()
+            make_esp_dir_name_candidates()
                 .take(expected + 50)
                 .for_each(|(_, dir_names)| {
                     fs::create_dir_all(test_esp_dir.join(&dir_names[0])).unwrap();

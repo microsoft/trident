@@ -8,6 +8,8 @@ use trident_api::constants;
 use trident_api::error::{InternalError, ReportError, ServicingError, TridentError};
 use trident_api::status::HostStatus;
 
+use super::boot;
+
 /// Boot efi executable
 const BOOT64_EFI: &str = "bootx64.efi";
 
@@ -158,9 +160,8 @@ fn get_esp_partition_disk(host_status: &HostStatus) -> Result<PathBuf, Error> {
 /// the label associated with the inactive A/B update volume and the path to its EFI boot loader.
 ///
 fn get_label_and_path(host_status: &HostStatus) -> Result<(String, PathBuf), Error> {
-    let esp_dir_name = host_status
-        .get_update_esp_dir_name()
-        .context("Failed to get install id")?;
+    let esp_dir_name =
+        boot::get_update_esp_dir_name(host_status).context("Failed to get install id")?;
 
     let path = Path::new(constants::ROOT_MOUNT_POINT_PATH)
         .join(constants::ESP_EFI_DIRECTORY)
@@ -226,6 +227,7 @@ fn generate_new_boot_order(
 
 #[cfg(test)]
 mod tests {
+    use boot::get_update_esp_dir_name;
     use osutils::efibootmgr::EfiBootEntry;
     use trident_api::{
         config::{self, AbUpdate, HostConfiguration},
@@ -256,10 +258,10 @@ mod tests {
         assert_eq!(
             get_label_and_path(&host_status).unwrap(),
             (
-                host_status.get_update_esp_dir_name().unwrap(),
+                get_update_esp_dir_name(&host_status).unwrap(),
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
                     .join(constants::ESP_EFI_DIRECTORY)
-                    .join(host_status.get_update_esp_dir_name().unwrap())
+                    .join(get_update_esp_dir_name(&host_status).unwrap())
                     .join(BOOT64_EFI)
             )
         );
@@ -271,10 +273,10 @@ mod tests {
         assert_eq!(
             get_label_and_path(&host_status).unwrap(),
             (
-                host_status.get_update_esp_dir_name().unwrap(),
+                get_update_esp_dir_name(&host_status).unwrap(),
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
                     .join(constants::ESP_EFI_DIRECTORY)
-                    .join(host_status.get_update_esp_dir_name().unwrap())
+                    .join(get_update_esp_dir_name(&host_status).unwrap())
                     .join(BOOT64_EFI)
             )
         );

@@ -131,8 +131,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     let bootentry_config_path = Path::new(ESP_MOUNT_POINT_PATH)
         .join(ESP_EFI_DIRECTORY)
         .join(
-            host_status
-                .get_update_esp_dir_name()
+            super::get_update_esp_dir_name(host_status)
                 .context("Failed to get update install ID")?,
         )
         .join(GRUB2_CONFIG_FILENAME);
