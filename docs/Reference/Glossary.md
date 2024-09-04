@@ -98,3 +98,8 @@ The specific kind of [Servicing](#servicing) that is being performed on an
 install, such as [clean install](#clean-install), or an [A/B
 update](#ab-update).
 
+# Unformatted Partition
+
+An unformatted partition is a partition on a storage device that has been
+created but does not yet contain a filesystem. It is not associated with any
+filesystem, verity-filesystem, RAID array, or encryption volume.

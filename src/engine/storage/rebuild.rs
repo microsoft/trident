@@ -176,9 +176,9 @@ fn validate_rebuild_raid(
     validate_raid_recovery(host_config, disks_to_rebuild)
         .context("Failed to validate RAID recovery")?;
 
-    // Fail validation if any of the disk partitions are not raw partitions or
+    // Fail validation if any of the disk partitions are not unformatted partitions or
     // part of a RAID array. Additionally, issue a warning if all partitions on
-    // the disk to be rebuilt are raw partitions.
+    // the disk to be rebuilt are unformatted partitions.
     for disk in disks_to_rebuild {
         let disk_info = host_config
             .storage
@@ -194,7 +194,7 @@ fn validate_rebuild_raid(
         if partitions_len == 0 {
             continue;
         }
-        let mut raw_partitions = 0;
+        let mut unformatted_partitions = 0;
 
         // Build the graph of storage devices.
         let graph = host_config
@@ -206,21 +206,21 @@ fn validate_rebuild_raid(
             if !partition_is_raid_member(&partition.id, host_config) {
                 if !host_config
                     .storage
-                    .is_raw_partition(&graph.nodes, &partition.id)
+                    .is_unformatted_partition(&graph.nodes, &partition.id)
                 {
                     bail!(
-                        "Partition '{}' is neither a member of a software RAID array nor a raw partition, refusing to rebuild",
+                        "Partition '{}' is neither a member of a software RAID array nor an unformatted partition, refusing to rebuild",
                         partition.id
                     );
                 } else {
-                    raw_partitions += 1;
+                    unformatted_partitions += 1;
                 }
             }
         }
 
-        if raw_partitions == partitions_len {
+        if unformatted_partitions == partitions_len {
             warn!(
-                "All partitions in disk '{}' are raw partitions. The disk has no RAID arrays",
+                "All partitions in disk '{}' are unformatted partitions. The disk has no RAID arrays",
                 disk
             );
         }
@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_rebuild_raid_all_raw_partitions_warning() {
+    fn test_validate_rebuild_raid_all_unformatted_partitions_warning() {
         let host_config = get_host_config();
         let mut host_config = host_config;
         // Clear raid in the host configuration.
@@ -852,7 +852,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Partition 'disk2part3' is neither a member of a software RAID array nor a raw partition, refusing to rebuild"
+            "Partition 'disk2part3' is neither a member of a software RAID array nor an unformatted partition, refusing to rebuild"
         );
     }
 }
