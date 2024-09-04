@@ -3,17 +3,14 @@ bareMetal:
     - base
     - raid-big
     - raid-resync-small
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - abupdate-on-encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - abupdate-on-encrypted-partitions
+    - abupdate-on-encrypted-partitions
     - abupdate-with-verity
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-partition
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    - encrypted-partition
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-swap
+    - encrypted-swap
     - rerun
     - simple
     - verity
@@ -22,17 +19,14 @@ bareMetal:
     - base
     - raid-big
     - raid-resync-small
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - abupdate-on-encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - abupdate-on-encrypted-partitions
+    - abupdate-on-encrypted-partitions
     - abupdate-with-verity
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-partition
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    - encrypted-partition
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-swap
+    - encrypted-swap
     - rerun
     - simple
     - verity
@@ -40,17 +34,14 @@ bareMetal:
 virtualMachine:
   daily:
     - base
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - abupdate-on-encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - abupdate-on-encrypted-partitions
+    - abupdate-on-encrypted-partitions
     - abupdate-with-verity
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-partition
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    - encrypted-partition
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-swap
+    - encrypted-swap
     - raid-small
     - raid-resync-small
     - rerun
@@ -59,17 +50,14 @@ virtualMachine:
     - verity-raid
   post_merge:
     - base
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - abupdate-on-encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - abupdate-on-encrypted-partitions
+    - abupdate-on-encrypted-partitions
     - abupdate-with-verity
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-partition
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    - encrypted-partition
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-swap
+    - encrypted-swap
     - raid-small
     - raid-resync-small
     - rerun
@@ -78,17 +66,14 @@ virtualMachine:
     - verity-raid
   pullrequest:
     - base
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - abupdate-on-encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - abupdate-on-encrypted-partitions
+    - abupdate-on-encrypted-partitions
     - abupdate-with-verity
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-partition
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    - encrypted-partition
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-swap
+    - encrypted-swap
     - raid-small
     - raid-resync-small
     - rerun
@@ -97,17 +82,14 @@ virtualMachine:
     - verity-raid
   validation:
     - base
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - abupdate-on-encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - abupdate-on-encrypted-partitions
+    - abupdate-on-encrypted-partitions
     - abupdate-with-verity
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-partition
-    # TODO: Re-enable encryption tests (#8008, #8299)
+    - encrypted-partition
+    # TODO: Re-enable raid+encryption tests (#8849)
     # - encrypted-raid
-    # TODO: Re-enable encryption tests (#8008, #8299)
-    # - encrypted-swap
+    - encrypted-swap
     - raid-small
     - raid-resync-small
     - rerun
