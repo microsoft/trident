@@ -14,11 +14,9 @@ use trident_api::{
         EXEC_ROOT_PATH, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH,
         UPDATE_ROOT_PATH,
     },
-    error::{ReportError, ServicingError, TridentError, TridentResultExt},
-    status::HostStatus,
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    status::{AbVolumeSelection, HostStatus},
 };
-
-use crate::engine;
 
 /// List of special directories that should not be bind mounted anywhere in the
 /// execroot.
@@ -146,6 +144,36 @@ impl NewrootMount {
 
     /// Mount all block devices in the newroot.
     fn mount_newroot_partitions(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
+        let mut block_device_paths = host_status.storage.block_device_paths.clone();
+
+        for raid in &host_status.spec.storage.raid.software {
+            block_device_paths.insert(raid.id.clone(), raid.device_path());
+        }
+
+        if let Some(encryption) = &host_status.spec.storage.encryption {
+            for volume in &encryption.volumes {
+                block_device_paths.insert(volume.id.clone(), volume.device_path());
+            }
+        }
+
+        for verity in &host_status.spec.storage.internal_verity {
+            block_device_paths.insert(verity.id.clone(), verity.temporary_device_path());
+        }
+
+        if let Some(ab) = &host_status.spec.storage.ab_update {
+            let update_volume = host_status
+                .get_ab_update_volume()
+                .structured(InternalError::Internal("Couldn't get active volume"))?;
+            for pair in &ab.volume_pairs {
+                let path = match update_volume {
+                    AbVolumeSelection::VolumeA => block_device_paths.get(&pair.volume_a_id),
+                    AbVolumeSelection::VolumeB => block_device_paths.get(&pair.volume_b_id),
+                }
+                .structured(InternalError::Internal("Bad reference in A/B volume"))?;
+                block_device_paths.insert(pair.id.clone(), path.clone());
+            }
+        }
+
         // Mount all block devices in the newroot
         mount_points_map(host_status)
             .iter()
@@ -169,14 +197,13 @@ impl NewrootMount {
                     mp.target_id
                 ))?;
 
-                let device_path = engine::get_block_device_path(host_status, &mp.target_id)
-                    .context(format!(
-                        "Failed to find block device path for id '{}'",
-                        mp.target_id
-                    ))?;
+                let device_path = block_device_paths.get(&mp.target_id).context(format!(
+                    "Failed to find block device path for id '{}'",
+                    mp.target_id
+                ))?;
 
                 mount::mount(
-                    &device_path,
+                    device_path,
                     &target_path,
                     MountFileSystemType::from_api_type(mp.filesystem).context(format!(
                         "Filesystem type of block device '{}' is not valid for mounting: '{}'",

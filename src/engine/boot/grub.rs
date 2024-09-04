@@ -512,7 +512,7 @@ pub(crate) mod functional_test {
             level: RaidLevel::Raid1,
         };
         create_sw_raid_array(&mut host_status, &raid_array).unwrap();
-        let root_device_path = PathBuf::from(format!("/dev/md/{}", &raid_array.name));
+        let root_device_path = raid_array.device_path();
         let result = test_update_grub_root_raided_internal(
             &mut host_status,
             &raid_array,

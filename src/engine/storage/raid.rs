@@ -6,7 +6,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    str::FromStr,
     thread::sleep,
     time::{Duration, Instant},
 };
@@ -17,7 +16,9 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use osutils::{block_devices, exe::OutputChecker, lsblk, mdadm, udevadm};
+use osutils::{block_devices, exe::OutputChecker, mdadm, udevadm};
+
+use crate::engine;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
 #[serde(rename_all = "kebab-case")]
@@ -36,11 +37,10 @@ pub(super) enum RaidState {
 
 fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Result<(), Error> {
     let devices = &config.devices;
-    let raid_path = PathBuf::from(format!("/dev/md/{}", &config.name));
     let device_paths =
         get_device_paths(host_status, devices).context("Failed to get device paths")?;
 
-    mdadm::create(&raid_path, &config.level, device_paths)
+    mdadm::create(&config.device_path(), &config.level, device_paths)
         .context("Failed to create RAID array")?;
     Ok(())
 }
@@ -62,53 +62,6 @@ pub(super) struct RaidDetail {
     pub size: u64,
 }
 
-pub(super) fn get_raid_details(
-    raid_device: &Path,
-    config: SoftwareRaidArray,
-    host_status: &HostStatus,
-) -> Result<RaidDetail, Error> {
-    let device_name = get_raid_device_name(raid_device)?;
-
-    let md_folder = PathBuf::from(format!("/sys/devices/virtual/block/{}/md", device_name));
-
-    let array_state = osutils::files::read_file_trim(&md_folder.join("array_state"))?;
-    let raid_disks = osutils::files::read_file_trim(&md_folder.join("raid_disks"))?;
-    let raid_uuid = osutils::files::read_file_trim(&md_folder.join("uuid"))?;
-    let raid_level = &config.level;
-    let raid_array_name = &config.name;
-    let devices = &config.devices;
-    let metadata_version = mdadm::METADATA_VERSION;
-    let raid_id = &config.id;
-    let raid_path = PathBuf::from(format!("/dev/md/{}", raid_array_name));
-    let device_paths =
-        get_device_paths(host_status, devices).context("Failed to get device paths")?;
-    let first_device = host_status
-        .spec
-        .storage
-        .get_partition(&devices[0])
-        .context("Failed to get partition")?;
-    let first_device_type: PartitionType = first_device.partition_type;
-
-    let block_device = lsblk::run(raid_device).context("Failed to get RAID device size")?;
-    let array_size = block_device.size;
-
-    let raid_detail = RaidDetail {
-        id: raid_id.clone(),
-        name: raid_array_name.clone(),
-        path: raid_path,
-        devices: device_paths.clone(),
-        partition_type: first_device_type,
-        uuid: raid_uuid,
-        level: *raid_level,
-        state: RaidState::from_str(&array_state)?,
-        num_devices: raid_disks.parse::<u32>()?,
-        metadata_version: metadata_version.to_owned(),
-        size: array_size,
-    };
-
-    Ok(raid_detail)
-}
-
 fn get_raid_device_name(raid_device: &Path) -> Result<String, Error> {
     let device_name = match raid_device.file_name().and_then(|os_str| os_str.to_str()) {
         Some(name) => name,
@@ -125,12 +78,10 @@ fn get_device_paths(
     devices
         .iter()
         .map(|device_id| {
-            host_status
-                .storage
-                .block_device_paths
-                .get(device_id)
-                .cloned()
-                .context(format!("Failed to find block device with id '{device_id}'"))
+            engine::get_block_device_path(host_status, device_id).context(format!(
+                "Failed to get block device path for '{}'",
+                device_id
+            ))
         })
         .collect()
 }
@@ -147,28 +98,6 @@ pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> 
             .context("Failed to write mdadm config file")?;
     }
     Ok(())
-}
-
-// Create a new RaidArray and add it to the host status
-pub(super) fn add_to_host_status(host_status: &mut HostStatus, raid_details: RaidDetail) {
-    // let new_raid_array = status::RaidArray {
-    //     device_paths: raid_details.devices,
-    //     partition_type: raid_details.partition_type,
-    //     name: raid_details.name.clone(),
-    //     level: raid_details.level,
-    //     status: RaidArrayStatus::Created,
-    //     array_size: raid_details.size,
-    //     ty: RaidType::Software,
-    //     path: raid_details.path,
-    //     uuid: Uuid::parse_str(&raid_details.uuid).unwrap(),
-    //     contents: status::BlockDeviceContents::Unknown,
-    // };
-
-    // TODO: Track more details in HS
-    host_status
-        .storage
-        .block_device_paths
-        .insert(raid_details.id.clone(), raid_details.path.clone());
 }
 
 pub(super) fn get_raid_disks(raid_array: &Path) -> Result<HashSet<PathBuf>, Error> {
@@ -325,27 +254,22 @@ pub(super) fn create_sw_raid(
 
 pub fn create_sw_raid_array(
     host_status: &mut HostStatus,
-    config: &SoftwareRaidArray,
+    raid_array: &SoftwareRaidArray,
 ) -> Result<(), Error> {
-    create(config.clone(), host_status)
-        .context(format!("Failed to create RAID array '{}'", config.name))?;
+    create(raid_array.clone(), host_status)
+        .context(format!("Failed to create RAID array '{}'", raid_array.name))?;
 
-    let raid_device = &PathBuf::from(format!("/dev/md/{}", &config.name));
+    let raid_device = raid_array.device_path();
 
     // Wait for symlink to appear. Kernel creates /dev/mdXX and udev crates symlink (raid_device)
-    udevadm::wait(raid_device).context(format!(
+    udevadm::wait(&raid_device).context(format!(
         "Failed waiting for RAID device '{}' to appear",
         raid_device.display()
     ))?;
 
-    let raid_device_resolved_path = raid_device
+    let _raid_device_resolved_path = raid_device
         .canonicalize()
         .context("Unable to find RAID device resolved path after RAID creation")?;
-
-    let raid_details = get_raid_details(&raid_device_resolved_path, config.clone(), host_status)
-        .context("Failed to read RAID details after creation")?;
-
-    add_to_host_status(host_status, raid_details.clone());
 
     Ok(())
 }
@@ -506,31 +430,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_raid_array() {
-        let raid_details: RaidDetail = RaidDetail {
-            id: "some_raid".to_string(),
-            name: "raid1".to_string(),
-            path: PathBuf::from("/dev/md/some_raid"),
-            devices: vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sdb1")],
-            partition_type: PartitionType::LinuxGeneric,
-            uuid: "00000000-0000-0000-0000-000000000000".to_string(),
-            level: RaidLevel::Raid1,
-            state: RaidState::Clean,
-            num_devices: 2,
-            metadata_version: "1.0".to_string(),
-            size: 12345,
-        };
-
-        let host_status = &mut HostStatus::default();
-        add_to_host_status(host_status, raid_details.clone());
-
-        assert!(host_status
-            .storage
-            .block_device_paths
-            .contains_key(&raid_details.id));
-    }
-
-    #[test]
     fn test_get_raid_device_name() {
         let raid_device = Path::new("/dev/md/my-raid");
 
@@ -560,6 +459,7 @@ mod functional_test {
     use const_format::formatcp;
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use std::path::PathBuf;
+    use std::str::FromStr;
     use trident_api::config::{
         self, Disk, HostConfiguration, Partition, PartitionSize, PartitionType, RaidLevel,
         SoftwareRaidArray, Storage,

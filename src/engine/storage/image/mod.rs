@@ -345,22 +345,16 @@ fn get_plain_volume_pair_paths(
         .context("No volume pair for root volume found")?;
     debug!("Root device pair: {:?}", root_device_pair);
 
-    let volume_a_path = host_status
-        .storage
-        .block_device_paths
-        .get(&root_device_pair.volume_a_id)
+    let volume_a_path = engine::get_block_device_path(host_status, &root_device_pair.volume_a_id)
         .context(format!(
-            "Failed to get block device path for volume A with ID {}",
-            root_device_pair.volume_a_id
-        ))?;
-    let volume_b_path = host_status
-        .storage
-        .block_device_paths
-        .get(&root_device_pair.volume_b_id)
+        "Failed to get block device path for volume A with ID {}",
+        root_device_pair.volume_a_id
+    ))?;
+    let volume_b_path = engine::get_block_device_path(host_status, &root_device_pair.volume_b_id)
         .context(format!(
-            "Failed to get block device path for volume B with ID {}",
-            root_device_pair.volume_b_id
-        ))?;
+        "Failed to get block device path for volume B with ID {}",
+        root_device_pair.volume_b_id
+    ))?;
 
     Ok((
         (volume_a_path.clone(), volume_b_path.clone()),

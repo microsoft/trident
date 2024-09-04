@@ -1,10 +1,12 @@
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::BlockDeviceId;
+use crate::{constants::DEV_MD_PATH, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::{block_device_id_list_schema, block_device_id_schema};
@@ -102,4 +104,10 @@ pub enum RaidLevel {
     /// # Stripe of mirrors
     #[strum(serialize = "10")]
     Raid10,
+}
+
+impl SoftwareRaidArray {
+    pub fn device_path(&self) -> PathBuf {
+        Path::new(DEV_MD_PATH).join(&self.name)
+    }
 }

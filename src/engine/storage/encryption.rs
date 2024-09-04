@@ -18,11 +18,12 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, Partition, PartitionType,
     },
-    constants::DEV_MAPPER_PATH,
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::HostStatus,
     BlockDeviceId,
 };
+
+use crate::engine;
 
 const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
@@ -158,16 +159,13 @@ pub(super) fn provision(
                 partition.partition_type.to_sdrepart_part_type()
             );
 
-            let device_path = host_status
-                .storage
-                .block_device_paths
-                .get_mut(&ev.device_id)
+            let device_path = engine::get_block_device_path(host_status, &ev.device_id)
                 .structured(ServicingError::FindEncryptedVolumeBlockDevice {
                     device_id: ev.device_id.clone(),
                     encrypted_volume: ev.id.clone(),
                 })?;
 
-            encrypt_and_open_device(device_path, &ev.device_name, &key_file_path).structured(
+            encrypt_and_open_device(&device_path, &ev.device_name, &key_file_path).structured(
                 ServicingError::EncryptBlockDevice {
                     device_path: device_path.to_string_lossy().to_string(),
                     device_id: ev.device_id.clone(),
@@ -175,12 +173,6 @@ pub(super) fn provision(
                     encrypted_volume: ev.id.clone(),
                 },
             )?;
-
-            // Record the path of the created volume in the Host Status.
-            host_status.storage.block_device_paths.insert(
-                ev.id.clone(),
-                Path::new(DEV_MAPPER_PATH).join(&ev.device_name),
-            );
         }
     }
 
@@ -331,14 +323,12 @@ pub fn configure(host_status: &mut HostStatus) -> Result<(), TridentError> {
                     encrypted_volume: ev.id.clone(),
                 },
             ))?;
-        let device_path = &host_status
-            .storage
-            .block_device_paths
-            .get(&ev.device_id)
-            .structured(ServicingError::FindEncryptedVolumeBlockDevice {
+        let device_path = &engine::get_block_device_path(host_status, &ev.device_id).structured(
+            ServicingError::FindEncryptedVolumeBlockDevice {
                 device_id: ev.device_id.clone(),
                 encrypted_volume: ev.id.clone(),
-            })?;
+            },
+        )?;
 
         // An encrypted swap device is special-cased in the crypttab due
         // to the unique nature and requirements of swap spaces in a Linux

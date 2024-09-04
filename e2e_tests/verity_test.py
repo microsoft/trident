@@ -132,14 +132,6 @@ def test_verity(connection, tridentConfiguration, abActiveVolume):
     #   size: 0
     #   contents: initialized
 
-    # Assert if verity info from host config has been involved in host status.
-    for i, verity_name in enumerate(expected_verity_config):
-        # This comes from `trident_api/src/config/host/storage/internal.rs` in
-        # the `Storage::populate_internal()` method. Verity FSs get an ascending
-        # number as the unique block device identifier.
-        expected_device_name = f"verity-{i}"
-        assert expected_device_name in host_status["storage"]["blockDevicePaths"]
-
     # Assert verity data device and hash device. Refer to logic from base test
     # to extract the ID of the mount point with path "/".
     root_mount_id = None

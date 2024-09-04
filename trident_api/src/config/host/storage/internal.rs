@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use log::trace;
 
-use crate::{config::FileSystemType, misc::IdGenerator, BlockDeviceId};
+use crate::{config::FileSystemType, constants::DEV_MAPPER_PATH, misc::IdGenerator, BlockDeviceId};
 
 use super::Storage;
 
@@ -122,6 +122,20 @@ impl Storage {
             "Internal verity configuration:\n{:#?}",
             self.internal_verity
         );
+    }
+}
+
+impl InternalVerityDevice {
+    pub fn device_path(&self) -> PathBuf {
+        Path::new(DEV_MAPPER_PATH).join(&self.device_name)
+    }
+
+    /// The path where this verity device will be mounted while staging an update.
+    ///
+    /// This path must be different from where the device will be mounted at runtime because the
+    /// verity device_name is shared between the A and B devices.
+    pub fn temporary_device_path(&self) -> PathBuf {
+        Path::new(DEV_MAPPER_PATH).join(format!("{}_new", self.device_name))
     }
 }
 

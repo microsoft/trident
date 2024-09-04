@@ -30,7 +30,6 @@ use trident_api::{
         TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
     status::HostStatus,
-    BlockDeviceId,
 };
 
 use crate::engine;
@@ -118,24 +117,11 @@ pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-pub(super) fn configure_device_names(host_status: &mut HostStatus) -> Result<(), Error> {
-    for vd in &host_status.spec.storage.internal_verity {
-        *host_status
-            .storage
-            .block_device_paths
-            .get_mut(&vd.id)
-            .context(format!("Failed to find verity device '{}'", vd.id))? =
-            Path::new(DEV_MAPPER_PATH).join(&vd.device_name);
-    }
-
-    Ok(())
-}
-
 /// Setup the root verity device.
 fn setup_root_verity_device(
     host_status: &HostStatus,
     root_verity_device: &config::InternalVerityDevice,
-) -> Result<(BlockDeviceId, PathBuf), Error> {
+) -> Result<(), Error> {
     // Extract the root hash from GRUB config
     let root_hash = get_root_verity_root_hash(host_status)?;
 
@@ -170,10 +156,7 @@ fn setup_root_verity_device(
             }
         }
     }
-    Ok((
-        root_verity_device.id.clone(),
-        Path::new(DEV_MAPPER_PATH).join(updated_device_name),
-    ))
+    Ok(())
 }
 
 /// Get the root verity root hash from the GRUB config.
@@ -231,13 +214,7 @@ pub(super) fn setup_verity_devices(host_status: &mut HostStatus) -> Result<(), E
     // Validated from API there is only one verity device at the moment and it
     // is tied to the root volume
     let root_verity_device = &host_status.spec.storage.internal_verity[0];
-    let (id, verity_device_status) = setup_root_verity_device(host_status, root_verity_device)?;
-
-    // Update the host status
-    host_status
-        .storage
-        .block_device_paths
-        .insert(id, verity_device_status);
+    setup_root_verity_device(host_status, root_verity_device)?;
 
     Ok(())
 }
@@ -772,81 +749,6 @@ mod test {
     }
 
     #[test]
-    fn test_configure_device_names() {
-        let mut host_status = HostStatus {
-            spec: config::HostConfiguration {
-                storage: config::Storage {
-                    internal_verity: vec![
-                        config::InternalVerityDevice {
-                            id: "root".into(),
-                            device_name: "root".into(),
-                            data_target_id: "root".into(),
-                            hash_target_id: "root".into(),
-                        },
-                        config::InternalVerityDevice {
-                            id: "boot".into(),
-                            device_name: "boot".into(),
-                            data_target_id: "boot".into(),
-                            hash_target_id: "boot".into(),
-                        },
-                    ],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            storage: status::Storage {
-                block_device_paths: btreemap! {
-                    "root".to_owned() => PathBuf::from("/dev/sda1"),
-                    "boot".to_owned() => PathBuf::from("/dev/sda2"),
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        configure_device_names(&mut host_status).unwrap();
-
-        assert_eq!(
-            host_status
-                .spec
-                .storage
-                .internal_verity
-                .iter()
-                .find(|vd| vd.id == "root")
-                .unwrap()
-                .device_name,
-            "root"
-        );
-        assert_eq!(
-            host_status
-                .spec
-                .storage
-                .internal_verity
-                .iter()
-                .find(|vd| vd.id == "boot")
-                .unwrap()
-                .device_name,
-            "boot"
-        );
-
-        // test non-existing device
-        let mut host_status_no_device = host_status.clone();
-        host_status_no_device
-            .spec
-            .storage
-            .internal_verity
-            .get_mut(0)
-            .unwrap()
-            .id = "non-existing".into();
-        assert_eq!(
-            configure_device_names(&mut host_status_no_device)
-                .unwrap_err()
-                .to_string(),
-            "Failed to find verity device 'non-existing'"
-        );
-    }
-
-    #[test]
     fn test_get_updated_device_name() {
         assert_eq!(get_updated_device_name("root"), "root_new");
         assert_eq!(get_updated_device_name("foo"), "foo_new");
@@ -1173,17 +1075,12 @@ mod functional_test {
         };
 
         {
-            let (bdi, vd) = setup_root_verity_device(
-                &host_status,
-                &host_status.spec.storage.internal_verity[0],
-            )
-            .unwrap();
+            setup_root_verity_device(&host_status, &host_status.spec.storage.internal_verity[0])
+                .unwrap();
             let _verityguard = VerityGuard {
                 device_name: "root_new",
             };
-            assert_eq!(bdi, "root-verity");
             assert!(verity_device_path.exists());
-            assert_eq!(vd, PathBuf::from(DEV_MAPPER_PATH).join("root_new"));
         }
 
         // test failure when root hash is not matching
@@ -1313,16 +1210,7 @@ mod functional_test {
                 device_name: "root_new",
             };
             assert!(verity_device_path.exists());
-            assert_eq!(host_status.storage.block_device_paths.len(), 6);
-            let verity_device = host_status
-                .storage
-                .block_device_paths
-                .get("root-verity")
-                .unwrap();
-            assert_eq!(
-                verity_device,
-                &PathBuf::from(DEV_MAPPER_PATH).join("root_new")
-            );
+            assert_eq!(host_status.storage.block_device_paths.len(), 5);
         }
 
         // test failure when root hash is not matching

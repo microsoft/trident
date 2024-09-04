@@ -1,10 +1,14 @@
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{config::HostConfigurationStaticValidationError, BlockDeviceId};
+use crate::{
+    config::HostConfigurationStaticValidationError, constants::DEV_MAPPER_PATH, BlockDeviceId,
+};
 
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::block_device_id_schema;
@@ -140,6 +144,12 @@ impl Encryption {
         }
 
         Ok(())
+    }
+}
+
+impl EncryptedVolume {
+    pub fn device_path(&self) -> PathBuf {
+        Path::new(DEV_MAPPER_PATH).join(&self.device_name)
     }
 }
 

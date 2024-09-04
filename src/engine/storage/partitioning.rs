@@ -115,11 +115,6 @@ pub fn create_partitions_on_disk(
         disk.id
     ))?;
 
-    host_status
-        .storage
-        .block_device_paths
-        .insert(disk.id.into(), disk.bus_path.clone());
-
     // Get disk UUID from osuuid
     match disk_information.id.as_uuid() {
         Some(disk_uuid) => {
@@ -851,7 +846,7 @@ mod functional_test {
 
         create_partitions(&mut host_status, &host_config).unwrap();
 
-        assert_eq!(host_status.storage.block_device_paths.len(), 4);
+        assert_eq!(host_status.storage.block_device_paths.len(), 3);
 
         let check_part = |name: &str| {
             host_status
@@ -939,7 +934,7 @@ mod functional_test {
 
         create_partitions(&mut host_status, &host_config).unwrap();
 
-        assert_eq!(host_status.storage.block_device_paths.len(), 3);
+        assert_eq!(host_status.storage.block_device_paths.len(), 2);
         assert!(
             host_status.storage.block_device_paths.contains_key("part1"),
             "part1 not found"

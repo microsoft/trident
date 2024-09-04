@@ -182,9 +182,6 @@ impl Module for StorageModule {
         host_status: &mut HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
-        verity::configure_device_names(host_status)
-            .structured(ServicingError::ConfigureVerityDeviceNames)?;
-
         generate_fstab(host_status, Path::new(tabfile::DEFAULT_FSTAB_PATH)).structured(
             ServicingError::GenerateFstab {
                 fstab_path: tabfile::DEFAULT_FSTAB_PATH.to_string(),

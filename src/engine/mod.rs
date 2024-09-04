@@ -646,18 +646,44 @@ pub(super) fn get_root_block_device_path(host_status: &HostStatus) -> Option<Pat
 
 /// Returns the path of the block device with id `block_device_id`.
 ///
-/// If the volume is part of an A/B Volume Pair and active is true it returns the active volume, and
-/// if active is false it returns the update volume (i.e. the one that isn't active).
+/// If the volume is part of an A/B Volume Pair this returns the update volume (i.e. the one that
+/// isn't active).
 pub(super) fn get_block_device_path(
     host_status: &HostStatus,
     block_device_id: &BlockDeviceId,
 ) -> Option<PathBuf> {
-    host_status
+    if let Some(partition_path) = host_status.storage.block_device_paths.get(block_device_id) {
+        return Some(partition_path.clone());
+    }
+
+    if let Some(raid) = host_status
+        .spec
         .storage
-        .block_device_paths
-        .get(block_device_id)
-        .cloned()
-        .or_else(|| get_ab_volume(host_status, block_device_id, false))
+        .raid
+        .software
+        .iter()
+        .find(|r| &r.id == block_device_id)
+    {
+        return Some(raid.device_path());
+    }
+
+    if let Some(encryption) = &host_status.spec.storage.encryption {
+        if let Some(encrypted) = encryption.volumes.iter().find(|e| &e.id == block_device_id) {
+            return Some(encrypted.device_path());
+        }
+    }
+
+    if let Some(verity) = host_status
+        .spec
+        .storage
+        .internal_verity
+        .iter()
+        .find(|v| &v.id == block_device_id)
+    {
+        return Some(verity.device_path());
+    }
+
+    get_ab_volume(host_status, block_device_id, false)
 }
 
 /// Returns a block device path for a volume from the given A/B Volume Pair.
@@ -670,13 +696,7 @@ fn get_ab_volume(
     active: bool,
 ) -> Option<PathBuf> {
     get_ab_volume_block_device_id(host_status, block_device_id, active).and_then(
-        |child_block_device_id| {
-            host_status
-                .storage
-                .block_device_paths
-                .get(&child_block_device_id)
-                .cloned()
-        },
+        |child_block_device_id| get_block_device_path(host_status, &child_block_device_id),
     )
 }
 

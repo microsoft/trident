@@ -3,7 +3,6 @@ servicingState: provisioned
 installIndex: 0
 storage:
   blockDevicePaths:
-    os: placeholder
     esp: placeholder
     root-a: placeholder
     root-b: placeholder
