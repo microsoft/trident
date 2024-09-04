@@ -1,0 +1,200 @@
+stages:
+  - stage: ServicingTesting
+    displayName: Servicing Testing
+    dependsOn:
+      - Trident
+
+    jobs:
+      - job: Testing
+        timeoutInMinutes: 25
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          tridentSourceDirectory: $(Build.SourcesDirectory)
+          ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
+          micBuildType: "release"
+          micVersion: "*.*.*"
+          baseimgBuildType: "release"
+          baseimgVersion: "*.*.*"
+          baseimgAzureLinuxVersion: "3.0"
+          vmname: vmtrident
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: trident-binaries
+              targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+            displayName: Download Trident RPMs
+
+          - bash: |
+              set -eux
+              cp -r $(Build.ArtifactStagingDirectory)/trident $(Build.ArtifactStagingDirectory)/trident-backup
+            displayName: Backup Trident RPMs
+
+          - bash: |
+              set -eux
+              ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
+            displayName: Set up SSH Keys
+
+          - template: .pipelines/templates/trident-testimg-template.yml@test-images
+            parameters:
+              target: build/trident-vm-verity-testimage.qcow2
+              outputDirectory: ${{ variables.tridentSourceDirectory }}
+              testImagesRepo: test-images
+              micBuildType: ${{ variables.micBuildType }}
+              micVersion: ${{ variables.micVersion }}
+              baseimgBuildType: ${{ variables.baseimgBuildType }}
+              baseimgVersion: ${{ variables.baseimgVersion }}
+              baseimgAzureLinuxVersion: ${{ variables.baseimgAzureLinuxVersion }}
+              downloadTrident: false
+
+          - bash: |
+              set -ux
+
+              sudo virt-install \
+                --name ${{ variables.vmname }} \
+                --memory 2048 \
+                --vcpus 2 \
+                --os-variant generic \
+                --import \
+                --disk ${{ variables.tridentSourceDirectory }}/trident-vm-verity-testimage.qcow2,bus=sata \
+                --network default \
+                --boot uefi,loader=/usr/share/OVMF/OVMF_CODE_4M.fd,loader_secure=no \
+                --noautoconsole
+              until sudo virsh dumpxml ${{ variables.vmname }}; do sudo virsh list; sleep 0.1; done
+              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.vmname }} | grep -A 1 console | grep source | cut -d"'" -f2`
+
+              until [ -c "$VM_SERIAL_LOG" ]
+              do
+                  sleep 0.1
+              done
+
+              echo "Found VM serial log file: $VM_SERIAL_LOG"
+              echo "VM serial log:"
+
+              sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
+                  -d "$VM_SERIAL_LOG" \
+                  -o ./serial.log \
+                  -t 120
+
+              WAIT_FOR_LOGIN_EXITCODE=$?
+
+              mkdir -p $(ob_outputDirectory)
+              sudo cp ./serial.log $(ob_outputDirectory)/serial.log
+
+              exit $WAIT_FOR_LOGIN_EXITCODE
+            timeoutInMinutes: 5
+            displayName: "Check Runtime OS deployment"
+
+          - bash: |
+              set -eu
+
+              while [ `sudo virsh domifaddr ${{ variables.vmname }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
+              sudo virsh domifaddr ${{ variables.vmname }}
+              VM_IP=`sudo virsh domifaddr ${{ variables.vmname }} | grep ipv4 | awk '{print $4}' | cut -d'/' -f1`
+              echo "##vso[task.setvariable variable=vmip]$VM_IP"
+              echo "VM IP: $VM_IP"
+            displayName: "Get VM IP"
+            timeoutInMinutes: 5
+
+          - bash: |
+              set -eux
+
+              ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$(vmip) \
+                "sudo trident get"
+
+              ACTIVE=`ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$(vmip) \
+                "sudo trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
+              if [ "$ACTIVE" != "volume-a" ]; then
+                echo "Active volume is not A"
+                exit 1
+              fi
+
+              mkdir -p $(tridentSourceDirectory)/update
+            displayName: "Check that Trident can adopt the deployment"
+
+          - bash: |
+              set -eux
+              mv $(Build.ArtifactStagingDirectory)/trident-backup $(Build.ArtifactStagingDirectory)/trident
+            displayName: Restore Trident RPMs
+
+
+          - template: .pipelines/templates/trident-testimg-template.yml@test-images
+            parameters:
+              target: trident-vm-verity-testimage
+              outputDirectory: ${{ variables.tridentSourceDirectory }}/update
+              testImagesRepo: test-images
+              micBuildType: ${{ variables.micBuildType }}
+              micVersion: ${{ variables.micVersion }}
+              baseimgBuildType: ${{ variables.baseimgBuildType }}
+              baseimgVersion: ${{ variables.baseimgVersion }}
+              baseimgAzureLinuxVersion: ${{ variables.baseimgAzureLinuxVersion }}
+              downloadTrident: false
+
+          - bash: |
+              set -ux
+
+              cd $(tridentSourceDirectory)/update
+              python3 -m http.server &
+
+              ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$(vmip) \
+                "sudo trident run -c /var/lib/trident/update-config.yaml"
+
+              set -e
+
+              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.vmname }} | grep -A 1 console | grep source | cut -d"'" -f2`
+
+              until [ -c "$VM_SERIAL_LOG" ]
+              do
+                  sleep 0.1
+              done
+
+              echo "Found VM serial log file: $VM_SERIAL_LOG"
+              echo "VM serial log:"
+
+              sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
+                  -d "$VM_SERIAL_LOG" \
+                  -o ./serial.log \
+                  -t 120
+
+              WAIT_FOR_LOGIN_EXITCODE=$?
+
+              mkdir -p $(ob_outputDirectory)
+              sudo cp ./serial.log $(ob_outputDirectory)/serial-update.log
+
+              exit $WAIT_FOR_LOGIN_EXITCODE
+
+            displayName: "Check that Trident can perform the update"
+
+          - bash: |
+              set -eux
+
+              while [ `sudo virsh domifaddr ${{ variables.vmname }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
+              VM_IP=`sudo virsh domifaddr ${{ variables.vmname }} | grep ipv4 | awk '{print $4}' | cut -d'/' -f1`
+              ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$VM_IP \
+                "sudo trident get"
+
+              ACTIVE=`ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$VM_IP \
+                "sudo trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
+              if [ "$ACTIVE" != "volume-b" ]; then
+                echo "Active volume is not B"
+                exit 1
+              fi
+            displayName: "Check that Trident updated correctly"
+            timeoutInMinutes: 5
+
+          # TODO add more e2e tests here (Task 8813)
+
+          - bash: |
+              set -eux
+              sudo virsh shutdown vmtrident
+              mkdir -p $(ob_outputDirectory)
+              sudo cp $(tridentSourceDirectory)/trident-vm-verity-testimage.qcow2 $(ob_outputDirectory)/
+              sudo zstd -T0 $(ob_outputDirectory)/trident-vm-verity-testimage.qcow2
+            workingDirectory: $(tridentSourceDirectory)
+            condition: failed()
+            displayName: "Publish OS disk"

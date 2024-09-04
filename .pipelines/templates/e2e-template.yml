@@ -60,8 +60,10 @@ stages:
       - template: stages/deployment_testing/baremetal/baremetal-testing.yml
         parameters:
           buildPurpose: "daily"
-  
+
   - ${{ else }}:
       - template: stages/deployment_testing/vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
+  
+  - template: stages/deployment_testing/servicing/vm-testing.yml
