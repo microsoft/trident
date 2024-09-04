@@ -20,7 +20,7 @@ impl Module for InitrdModule {
     #[tracing::instrument(skip_all)]
     fn configure(
         &mut self,
-        _host_status: &mut HostStatus,
+        _host_status: &HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
         // We could autodetect configurations on the fly, but for more predictable

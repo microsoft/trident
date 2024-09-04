@@ -109,7 +109,7 @@ trait Module: Send {
     /// provisioning operations that need to be done before the chroot is entered.
     fn provision(
         &mut self,
-        _host_status: &mut HostStatus,
+        _host_status: &HostStatus,
         _mount_path: &Path,
     ) -> Result<(), TridentError> {
         Ok(())
@@ -119,7 +119,7 @@ trait Module: Send {
     /// accordingly.
     fn configure(
         &mut self,
-        _host_status: &mut HostStatus,
+        _host_status: &HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
         Ok(())
@@ -294,6 +294,11 @@ fn stage_clean_install(
 
     info!("Preparing storage to mount new root");
     let mut newroot_mount = initialize_new_root(state, host_config)?;
+
+    state.try_with_host_status(|host_status| {
+        host_status.install_index = boot::esp::next_install_index(newroot_mount.path())?;
+        Ok(())
+    })?;
 
     provision(modules, state, newroot_mount.path())?;
 

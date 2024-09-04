@@ -19,7 +19,8 @@ use osutils::{
 };
 use trident_api::{
     config::{Image, ImageFormat, ImageSha256},
-    status::{HostStatus, ServicingType},
+    error::{ReportError, TridentError, TridentResultExt, UnsupportedConfigurationError},
+    status::HostStatus,
 };
 
 use crate::engine::{
@@ -49,7 +50,7 @@ use crate::engine::{
 fn copy_file_artifacts(
     image_url: &Url,
     image: &Image,
-    host_status: &mut HostStatus,
+    host_status: &HostStatus,
     is_local: bool,
     mount_point: &Path,
 ) -> Result<(), Error> {
@@ -317,6 +318,22 @@ fn get_arch_efi_str(arch: SystemArchitecture) -> Result<&'static str, Error> {
     })
 }
 
+pub fn next_install_index(mount_point: &Path) -> Result<usize, TridentError> {
+    let esp_efi_path = mount_point
+        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+        .join(ESP_EFI_DIRECTORY);
+
+    debug!(
+        "Looking for next available install index in '{}'",
+        esp_efi_path.display()
+    );
+    let first_available_install_index = find_first_available_install_index(&esp_efi_path)
+        .message("Failed to find the first available install index")?;
+
+    debug!("Selected first available install index: '{first_available_install_index}'",);
+    Ok(first_available_install_index)
+}
+
 /// Returns the path to the ESP directory where the boot files need to be copied
 /// to.
 ///
@@ -326,39 +343,13 @@ fn get_arch_efi_str(arch: SystemArchitecture) -> Result<&'static str, Error> {
 /// The function will find the next available install ID for this install and
 /// update the install index in the host status.
 pub fn generate_efi_bin_base_dir_path(
-    host_status: &mut HostStatus,
+    host_status: &HostStatus,
     mount_point: &Path,
 ) -> Result<PathBuf, Error> {
     // Compose the path to the ESP directory
     let esp_efi_path = mount_point
         .join(ESP_RELATIVE_MOUNT_POINT_PATH)
         .join(ESP_EFI_DIRECTORY);
-
-    // If we are doing a clean install, we need to find the next available install index.
-    if host_status.servicing_type == ServicingType::CleanInstall {
-        // If this is a clean install, we need to find the next available install index.
-        debug!(
-            "Clean install: Looking for next available install index in '{}'",
-            esp_efi_path.display()
-        );
-
-        let first_available_install_index = find_first_available_install_index(&esp_efi_path)
-            .context("Failed to find the first available install index")?;
-
-        debug!(
-            "Selected first available install index: '{}'",
-            first_available_install_index,
-        );
-
-        // Update the install index in the host status.
-        debug!(
-            "Updating install index to '{}'",
-            first_available_install_index
-        );
-        host_status.install_index = first_available_install_index;
-    } else {
-        debug!("Not a clean install: Using existing install index.");
-    }
 
     // Return the path to the ESP directory with the ESP dir name
     Ok(
@@ -370,7 +361,7 @@ pub fn generate_efi_bin_base_dir_path(
 
 /// Tries to find the next available AzL install index by looking at the
 /// ESP directory names present in the specified ESP EFI path.
-fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, Error> {
+fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, TridentError> {
     Ok(HostStatus::make_esp_dir_name_candidates()
         // Take a limited number of candidates to avoid an infinite loop.
         .take(1000)
@@ -385,15 +376,12 @@ fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, Erro
                 !path.exists()
             })
         })
-        .context("Failed to find an available install index")?
+        .structured(UnsupportedConfigurationError::NoAvailableInstallIndex)?
         .0)
 }
 
 /// Performs file-based deployment of ESP images.
-pub(super) fn deploy_esp_images(
-    host_status: &mut HostStatus,
-    mount_point: &Path,
-) -> Result<(), Error> {
+pub(super) fn deploy_esp_images(host_status: &HostStatus, mount_point: &Path) -> Result<(), Error> {
     // Fetch the list of ESP images that need to be deployed onto ESP partitions
     for (device_id, image) in &host_status.spec.storage.get_esp_images() {
         debug!(
@@ -640,8 +628,11 @@ mod tests {
                 idx,
                 test_dir.path().display()
             );
+            host_status.install_index = next_install_index(test_dir.path()).unwrap();
+            assert_eq!(idx, host_status.install_index);
+
             let esp_dir_path =
-                generate_efi_bin_base_dir_path(&mut host_status, test_dir.path()).unwrap();
+                generate_efi_bin_base_dir_path(&host_status, test_dir.path()).unwrap();
             println!("Returned ESP directory path: {:?}", esp_dir_path);
             assert!(
                 !esp_dir_path.exists(),

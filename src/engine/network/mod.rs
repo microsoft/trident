@@ -20,7 +20,7 @@ impl Module for NetworkModule {
 
     fn configure(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
         match host_status.spec.os.network.as_ref() {

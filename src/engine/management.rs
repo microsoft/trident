@@ -52,7 +52,7 @@ impl Module for ManagementModule {
 
     fn configure(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         exec_root: &Path,
     ) -> Result<(), TridentError> {
         if host_status.spec.trident.disable {

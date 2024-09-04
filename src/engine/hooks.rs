@@ -110,7 +110,7 @@ impl Module for HooksModule {
     #[tracing::instrument(name = "hooks_provision", skip_all)]
     fn provision(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         mount_path: &Path,
     ) -> Result<(), TridentError> {
         info!("Running post-provision scripts");
@@ -137,7 +137,7 @@ impl Module for HooksModule {
     #[tracing::instrument(name = "hooks_configure", skip_all)]
     fn configure(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         exec_root: &Path,
     ) -> Result<(), TridentError> {
         info!("Adding additional files");
@@ -399,7 +399,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut host_status = HostStatus {
+        let host_status = HostStatus {
             spec: HostConfiguration {
                 scripts: Scripts {
                     post_provision: vec![Script {
@@ -424,10 +424,7 @@ mod tests {
         let mut module = HooksModule::default();
         module.prepare(&host_status).unwrap();
         module
-            .provision(
-                &mut host_status,
-                Path::new(constants::ROOT_MOUNT_POINT_PATH),
-            )
+            .provision(&host_status, Path::new(constants::ROOT_MOUNT_POINT_PATH))
             .unwrap();
 
         assert!(test_dir.exists());
@@ -603,7 +600,7 @@ mod tests {
 
         // Content
         let mut module = HooksModule::default();
-        let mut host_status = HostStatus {
+        let host_status = HostStatus {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -619,7 +616,7 @@ mod tests {
         };
         module.prepare(&host_status).unwrap();
         module
-            .configure(&mut host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+            .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
@@ -629,7 +626,7 @@ mod tests {
 
         // Content + permissions
         let mut module = HooksModule::default();
-        let mut host_status = HostStatus {
+        let host_status = HostStatus {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -646,7 +643,7 @@ mod tests {
         };
         module.prepare(&host_status).unwrap();
         module
-            .configure(&mut host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+            .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
@@ -658,7 +655,7 @@ mod tests {
         let source_file = temp_dir.path().join("source-file");
         fs::write(&source_file, "\u{2603}").unwrap();
         let mut module = HooksModule::default();
-        let mut host_status = HostStatus {
+        let host_status = HostStatus {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -674,7 +671,7 @@ mod tests {
         };
         module.prepare(&host_status).unwrap();
         module
-            .configure(&mut host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+            .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), "\u{2603}");
         assert_eq!(

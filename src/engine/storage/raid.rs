@@ -87,7 +87,7 @@ fn get_device_paths(
 }
 
 #[tracing::instrument(skip_all)]
-pub(super) fn create_raid_config(host_status: &HostStatus) -> Result<(), Error> {
+pub(super) fn configure(host_status: &HostStatus) -> Result<(), Error> {
     if !host_status.spec.storage.raid.software.is_empty() {
         info!("Creating mdadm config file");
         let output = mdadm::examine().context("Failed to examine RAID arrays")?;

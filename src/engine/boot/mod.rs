@@ -19,7 +19,7 @@ impl Module for BootModule {
 
     fn provision(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         mount_point: &Path,
     ) -> Result<(), TridentError> {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
@@ -32,7 +32,7 @@ impl Module for BootModule {
 
     fn configure(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
         grub::update_configs(host_status).structured(ServicingError::UpdateGrubConfigs)?;

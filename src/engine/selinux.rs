@@ -43,7 +43,7 @@ impl Module for SelinuxModule {
 
     fn configure(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
         if let ServicingType::CleanInstall | ServicingType::AbUpdate = host_status.servicing_type {

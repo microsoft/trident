@@ -54,7 +54,7 @@ impl Module for OsConfigModule {
 
     fn configure(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         exec_root: &Path,
     ) -> Result<(), TridentError> {
         // TODO: When we switch to MIC, figure out a strategy for handling

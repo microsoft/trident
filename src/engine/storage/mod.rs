@@ -162,7 +162,7 @@ impl Module for StorageModule {
 
     fn provision(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         mount_point: &Path,
     ) -> Result<(), TridentError> {
         if verity::validate_compatibility(&host_status.spec, mount_point).structured(
@@ -179,7 +179,7 @@ impl Module for StorageModule {
 
     fn configure(
         &mut self,
-        host_status: &mut HostStatus,
+        host_status: &HostStatus,
         _exec_root: &Path,
     ) -> Result<(), TridentError> {
         generate_fstab(host_status, Path::new(tabfile::DEFAULT_FSTAB_PATH)).structured(
@@ -196,10 +196,10 @@ impl Module for StorageModule {
         ))?;
 
         // Persist on reboots
-        raid::create_raid_config(host_status).structured(ServicingError::CreateMdadmConf)?;
+        raid::configure(host_status).structured(ServicingError::CreateMdadmConf)?;
 
         // Update paths for root verity devices in GRUB configs
-        verity::update_root_verity_in_grub_config(host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+        verity::configure(host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .structured(ServicingError::UpdateGrubConfigsAfterVerityCreation)?;
 
         Ok(())

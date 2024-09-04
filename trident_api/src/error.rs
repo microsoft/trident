@@ -424,7 +424,10 @@ pub enum DatastoreError {
 /// of the host.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum UnsupportedConfigurationError {}
+pub enum UnsupportedConfigurationError {
+    #[error("No available install index on ESP")]
+    NoAvailableInstallIndex,
+}
 
 /// Describes different categories of structured errors that can occur in Trident.
 ///

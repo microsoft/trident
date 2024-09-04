@@ -95,7 +95,7 @@ pub(super) fn create_etc_overlay_mount_point() -> InternalMountPoint {
     }
 }
 
-pub(super) fn get_updated_device_name(device_name: &str) -> String {
+pub(crate) fn get_updated_device_name(device_name: &str) -> String {
     format!("{}_new", device_name)
 }
 
@@ -265,10 +265,7 @@ fn get_verity_related_device_paths(
 /// Update the root data, hash and overlay davice paths in the GRUB config,
 /// along with the overlay configuration.
 #[tracing::instrument(skip_all)]
-pub(super) fn update_root_verity_in_grub_config(
-    host_status: &HostStatus,
-    root_mount_path: &Path,
-) -> Result<(), Error> {
+pub(super) fn configure(host_status: &HostStatus, root_mount_path: &Path) -> Result<(), Error> {
     if host_status.spec.storage.internal_verity.is_empty() {
         return Ok(());
     }
@@ -1289,7 +1286,7 @@ mod functional_test {
             let grub_config_path = boot_path.join("grub2/grub.cfg");
             let grub_config_original = fs::read_to_string(&grub_config_path).unwrap();
 
-            update_root_verity_in_grub_config(&host_status, mount_dir.path()).unwrap();
+            configure(&host_status, mount_dir.path()).unwrap();
 
             let grub_config_updated = fs::read_to_string(grub_config_path).unwrap();
             assert_eq!(grub_config_original, grub_config_updated);
@@ -1382,7 +1379,7 @@ mod functional_test {
             testutils::osrelease::make_mock_os_release(mount_dir.path(), AzureLinuxRelease::AzL2)
                 .expect("Create mock os-release file");
 
-            update_root_verity_in_grub_config(&host_status, mount_dir.path()).unwrap();
+            configure(&host_status, mount_dir.path()).unwrap();
 
             let grub_config_path = boot_path.join("grub2/grub.cfg");
             let mut grub_config = GrubConfig::read(grub_config_path).unwrap();
@@ -1433,7 +1430,7 @@ mod functional_test {
                 .file_path();
 
             // Perform the call to update the grub-mkconfig script
-            update_root_verity_in_grub_config(&host_status, mount_dir.path()).unwrap();
+            configure(&host_status, mount_dir.path()).unwrap();
 
             // Expected verity options to be found in the grub config
             let new_opts = vec![
@@ -1525,7 +1522,7 @@ mod functional_test {
             testutils::osrelease::make_mock_os_release(mount_dir.path(), AzureLinuxRelease::AzL2)
                 .expect("Create mock os-release file");
 
-            assert_eq!(update_root_verity_in_grub_config(&host_status, mount_dir.path())
+            assert_eq!(configure(&host_status, mount_dir.path())
                 .unwrap_err().root_cause().to_string(), format!("Unable to find systemd.verity_root_data on linux command line in '{}/boot/grub2/grub.cfg'", mount_dir.path().display()));
         }
     }
