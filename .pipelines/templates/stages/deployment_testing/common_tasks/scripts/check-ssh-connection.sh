@@ -15,7 +15,7 @@ waitTime=1  # Initial wait time set to 1 second
 # Check SSH connection and exponentially increase wait time if it fails,
 # so that the total wait time is 5+ minutes
 for i in {1..10}; do
-    if ssh -q -o "StrictHostKeyChecking=no" -i "$ssh_key_path" "${user_name}@${host_ip}" exit; then
+    if ssh -q -o "ConnectTimeout=10" -o "StrictHostKeyChecking=no" -i "$ssh_key_path" "${user_name}@${host_ip}" exit; then
         echo "SSH connection successful. Host is up and running."
         sshSucceeded=true
         break
