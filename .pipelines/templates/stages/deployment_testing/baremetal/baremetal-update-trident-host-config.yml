@@ -46,4 +46,4 @@ steps:
   - bash: |
       set -xe
       cargo run -- validate --config ${{ parameters.tridentConfigFile }}
-    displayName: "Validate the modified HostConfig by running trident validate"
+    displayName: "Validate the modified HostConfig by running Trident validate"

@@ -30,6 +30,11 @@ stages:
 
   - template: stages/build_image/trident-testimg.yml
     parameters:
+      imageName: build/trident-container-installer-testimage.iso
+      outputArtifactName: trident-container-installer-testimage
+
+  - template: stages/build_image/trident-testimg.yml
+    parameters:
       imageName: trident-testimage
       outputArtifactName: trident-testimage
 
@@ -41,6 +46,8 @@ stages:
   - template: stages/building_tools/building-tools.yml
   
   - template: stages/build_docker_image/trident-container.yml
+
+  - template: stages/deployment_testing/servicing/vm-testing.yml
 
   - ${{ if eq(parameters.blockPublishing, false) }}:
       - template: stages/deployment_testing/functional_testing/functional-testing.yml
@@ -56,14 +63,28 @@ stages:
       - template: stages/deployment_testing/vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "daily"
+          runtimeEnv: "host"
   
       - template: stages/deployment_testing/baremetal/baremetal-testing.yml
         parameters:
           buildPurpose: "daily"
+          runtimeEnv: "host"
+
+      - template: stages/deployment_testing/vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "daily"
+          installerISO: trident-container-installer-testimage
+          runtimeEnv: "container"
 
   - ${{ else }}:
       - template: stages/deployment_testing/vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
-  
-  - template: stages/deployment_testing/servicing/vm-testing.yml
+          installerISO: trident-installer-testimage
+          runtimeEnv: "host"
+          
+      - template: stages/deployment_testing/vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "post_merge"
+          installerISO: trident-container-installer-testimage
+          runtimeEnv: "container"

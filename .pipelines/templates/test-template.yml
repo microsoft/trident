@@ -34,16 +34,16 @@ stages:
     - template: stages/deployment_testing/vm/netlaunch-testing.yml
       parameters:
         buildPurpose: validation
-        stageDependencies: DownloadTestingElements
+        testingRun: true
 
   - ${{ if parameters.runDeploymentBM }}:
     - template: stages/deployment_testing/baremetal/baremetal-testing.yml
       parameters:
         buildPurpose: validation
-        stageDependencies: DownloadTestingElements
+        testingRun: true
 
   - ${{ if parameters.runFunctionalTests }}:
     - template: stages/deployment_testing/functional_testing/functional-testing.yml
       parameters:
-        stageDependencies: DownloadTestingElements
         buildPurpose: validation
+        testingRun: true

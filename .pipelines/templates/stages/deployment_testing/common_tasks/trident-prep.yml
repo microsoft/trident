@@ -3,10 +3,6 @@ parameters:
     type: string
     default: "."
 
-  - name: updateRuntimeOSTrident
-    type: boolean
-    default: false
-
   - name: tridentConfigPath
     type: string
 
@@ -15,13 +11,7 @@ steps:
       set -eux
       sudo snap install yq
     displayName: "Installing dependencies"
-
-  - bash: |
-      set -eux
-      sudo yq eval '.host-configuration.trident.self-upgrade = true' trident-config.yaml -i
-    condition: eq(${{ parameters.updateRuntimeOSTrident }}, true)
-    workingDirectory: ${{ parameters.tridentConfigPath }}
-    displayName: "Update trident in Runtime OS"
+    retryCountOnTaskFailure: 3
 
   - bash: |
       set -eux

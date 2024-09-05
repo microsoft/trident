@@ -35,13 +35,10 @@ parameters:
     type: string
     default: trident_baremetal_tests
 
-  - name: stageDependencies
-    type: object
-    default:
-      - BuildingTools
-      - TridentTestImg_trident_installer_testimage
-      - TridentTestImg_trident_testimage
-      - TridentTestImg_trident_verity_testimage
+  - name: testingRun
+    displayName: "Pipeline run downloaded Trident images"
+    type: boolean
+    default: false
 
   - name: buildPurpose
     type: string
@@ -52,9 +49,13 @@ parameters:
       - post_merge
       - validation
 
-  - name: updateRuntimeOSTrident
-    type: boolean
-    default: false
+  - name: runtimeEnv
+    displayName: "Runtime environment (host vs container)"
+    type: string
+    default: "host"
+    values:
+      - host
+      - container
 
   - name: deleteIsoOnCleanup
     displayName: Delete ISO from HTTP server
@@ -62,15 +63,26 @@ parameters:
     default: true
 
 stages:
-  - stage: BaremetalDeploymentTesting
-    displayName: Baremetal Deployment Testing
-    dependsOn: ${{ parameters.stageDependencies }}
+  - stage: BaremetalDeploymentTesting_${{ parameters.runtimeEnv }}
+    displayName: Baremetal Deployment Testing ${{ parameters.runtimeEnv }}
+    dependsOn: 
+      - ${{ if eq(parameters.testingRun, true) }}: 
+        - DownloadTestingElements
+      - ${{ else }}:
+        - BuildingTools
+        - TridentTestImg_trident_testimage
+        - TridentTestImg_trident_verity_testimage
+        - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+            - TridentTestImg_trident_container_installer_testimage
+        - ${{ else }}:
+            - TridentTestImg_trident_installer_testimage
 
     jobs:
       - template: ../common_tasks/get-tests.yml
         parameters:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: bareMetal
+          runtimeEnv: ${{ parameters.runtimeEnv }}
 
       - job: ${{ parameters.jobName }}
         displayName: Run E2E Test
@@ -133,7 +145,6 @@ stages:
           - template: ../common_tasks/trident-prep.yml
             parameters:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
-              updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
 
           - template: baremetal-update-trident-host-config.yml
             parameters:

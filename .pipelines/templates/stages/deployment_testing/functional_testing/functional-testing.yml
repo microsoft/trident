@@ -1,11 +1,8 @@
 parameters:
-  - name: stageDependencies
-    type: object
-    default:
-      - BuildingTools
-      - TridentTestImg_trident_installer_testimage
-      - TridentTestImg_trident_testimage
-      - TridentTestImg_trident_verity_testimage
+  - name: testingRun
+    displayName: "Pipeline run downloaded Trident images"
+    type: boolean
+    default: false
 
   - name: buildPurpose
     type: string
@@ -17,7 +14,15 @@ parameters:
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
-    dependsOn: ${{ parameters.stageDependencies }}
+    dependsOn: 
+      - ${{ if eq(parameters.testingRun, true) }}: 
+        - DownloadTestingElements
+      - ${{ else }}:
+        - BuildingTools
+        - TridentTestImg_trident_testimage
+        - TridentTestImg_trident_verity_testimage
+        - TridentTestImg_trident_container_installer_testimage
+
     jobs:
       - job: FunctionalTests
         displayName: Functional Tests

@@ -8,28 +8,48 @@ parameters:
       - post_merge
       - validation
 
-  - name: stageDependencies
-    type: object
-    default:
-      - BuildingTools
-      - TridentTestImg_trident_installer_testimage
-      - TridentTestImg_trident_testimage
-      - TridentTestImg_trident_verity_testimage
-
-  - name: updateRuntimeOSTrident
+  - name: testingRun
+    displayName: "Pipeline run downloaded Trident images"
     type: boolean
     default: false
 
+  - name: runtimeEnv
+    displayName: "Runtime environment (host vs container)"
+    type: string
+    default: "host"
+    values:
+      - host
+      - container
+
+  - name: installerISO
+    displayName: "Image used for the installer, source of trident (container vs host)"
+    type: string
+    default: trident-installer-testimage
+    values:
+      - trident-installer-testimage
+      - trident-container-installer-testimage
+
 stages:
-  - stage: DeploymentTesting
-    displayName: Deployment Testing
-    dependsOn: ${{ parameters.stageDependencies }}
+  - stage: DeploymentTesting_${{ parameters.runtimeEnv }}
+    displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
+    dependsOn: 
+      - ${{ if eq(parameters.testingRun, true) }}: 
+        - DownloadTestingElements
+      - ${{ else }}:
+        - BuildingTools
+        - TridentTestImg_trident_testimage
+        - TridentTestImg_trident_verity_testimage
+        - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+            - TridentTestImg_trident_container_installer_testimage
+        - ${{ else }}:
+            - TridentTestImg_trident_installer_testimage
 
     jobs:
       - template: ../common_tasks/get-tests.yml
         parameters:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: virtualMachine
+          runtimeEnv: ${{ parameters.runtimeEnv }}
 
       - job: Testing
         dependsOn: DefineTests
@@ -50,7 +70,7 @@ stages:
 
           tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(tridentConfigurationName)
           ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
-          ob_artifactBaseName: $(tridentConfigurationName)_deployment_log_$(System.JobAttempt)
+          ob_artifactBaseName: $(tridentConfigurationName)_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
 
           netlaunchPort: 4000
 
@@ -59,19 +79,26 @@ stages:
             fetchDepth: 1
 
           - template: netlaunch-prep.yml
+            parameters: 
+              installerISO: ${{ parameters.installerISO }}
 
           - template: ../common_tasks/trident-prep.yml
             parameters:
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
-              updateRuntimeOSTrident: ${{ parameters.updateRuntimeOSTrident }}
 
           - bash: |
               set -eux
-              sg libvirt "./virt-deploy create -d 32,32"
+              sg libvirt "./virt-deploy create --mem 12 --disks 32,32"
               sg libvirt "./virt-deploy run"
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Running sushy tools for testing deployment with BMC"
+
+          - bash: |
+              set -eux
+              mv $(System.ArtifactsDirectory)/container/trident-container.tar.gz $(tridentSourceDirectory)/artifacts/test-image/
+            condition: and(succeeded(), eq('${{ parameters.runtimeEnv }}', 'container'))
+            displayName: "Move container image to the serveFolder for netlaunch"
 
           - bash: |
               set -eux
@@ -83,7 +110,7 @@ stages:
               fi
 
               ./bin/netlaunch \
-                  --iso $(System.ArtifactsDirectory)/trident-installer-testimage.iso \
+                  --iso $(System.ArtifactsDirectory)/${{ parameters.installerISO }}.iso \
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \
@@ -91,7 +118,7 @@ stages:
                   --trace-file trident-metrics.jsonl \
                   --log-trace --force-color \
                   --port ${{variables.netlaunchPort}} > ./clean-install-deployment.log 2>&1
-            timeoutInMinutes: 9
+            timeoutInMinutes: 11
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Run netlaunch for testing"
 

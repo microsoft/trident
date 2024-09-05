@@ -43,7 +43,7 @@ stages:
 
         steps:
           - script: sudo tdnf install -y p7zip p7zip-plugins zstd
-            displayName: Install native dependencies to extract trident binary
+            displayName: Install native dependencies to extract Trident binary
             retryCountOnTaskFailure: 3
 
           - template: ../common_tasks/download-universal-artifact.yml

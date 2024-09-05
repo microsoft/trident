@@ -110,7 +110,7 @@ def main():
         "--proxy", required=False, help="Proxy to use if required", default=None
     )
 
-    # In case of using trident image, the variable names start with trident
+    # In case of using Trident image, the variable names start with trident
     parser.add_argument(
         "--trident-httpd-ip",
         dest="httpd_ip",

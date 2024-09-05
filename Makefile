@@ -114,8 +114,8 @@ bin/trident-rpms.tar.gz: bin/trident-rpms-azl3.tar.gz
 docker-build: Dockerfile.runtime bin/trident-rpms-azl3.tar.gz
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
-artifacts/test-image/trident-container.bin: docker-build
-	docker save trident/trident:latest > $@
+artifacts/test-image/trident-container.tar.gz: docker-build
+	docker save trident/trident:latest | gzip > $@
 
 .PHONY: clean
 clean:
@@ -306,7 +306,7 @@ watch-virtdeploy:
 	@while true; do virsh console virtdeploy-vm-0; sleep 1; done
 
 .PHONY: run-netlaunch-container
-run-netlaunch-container: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.bin
+run-netlaunch-container: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.tar.gz
 	@bin/netlaunch -i bin/trident-containerhost-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 # This target leverages the samples that are automatically generated as part of

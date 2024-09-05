@@ -15,6 +15,13 @@ parameters:
       - bareMetal
       - virtualMachine
 
+  - name: runtimeEnv
+    displayName: "Runtime environment (host vs container)"
+    type: string
+    values:
+      - host
+      - container
+
 jobs:
   - job: DefineTests
     displayName: Get List of tests to run
@@ -30,10 +37,11 @@ jobs:
           set -eux
           matrix=$(
               python3 ./e2e_tests/helpers/read_target_configurations.py \
-                --config ./e2e_tests/target-configurations.yaml \
+                --configurations ./e2e_tests/target-configurations.yaml \
                 --env ${{ parameters.deploymentEnvironment }} \
+                --runtimeEnv ${{ parameters.runtimeEnv }} \
                 --purpose ${{ parameters.buildPurpose }} \
               )
           echo "##vso[task.setvariable variable=matrixConfigurations;isOutput=true]$matrix"
         name: setConfigurations
-        displayName: Matrix of trident configurations for E2E Tests
+        displayName: Matrix of Trident configurations for E2E Tests

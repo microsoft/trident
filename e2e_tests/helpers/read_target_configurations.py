@@ -10,9 +10,9 @@ def format_matrix(configurations):
 def main():
     parser = argparse.ArgumentParser(
         description="Reads a YAML file containing target configurations, "
-        "selects the configurations based on the deployment environment and "
-        "the build purpose of the pipeline, and returns "
-        "the configuration formatted into a matrix for the pipeline to define jobs."
+        "selects the configurations based on the deployment environment, "
+        "the build purpose, and the runtime environment of trident, and returns the "
+        "configurations formatted into a matrix to define the pipeline jobs."
     )
     parser.add_argument(
         "-c",
@@ -26,6 +26,7 @@ def main():
         "--env",
         type=str,
         required=True,
+        choices=["virtualMachine", "bareMetal"],
         help="Deployment environment that will be used.",
     )
     parser.add_argument(
@@ -35,21 +36,35 @@ def main():
         required=True,
         help="The purpose of the build pipeline which influences the tests for E2E testing.",
     )
+    parser.add_argument(
+        "-r",
+        "--runtimeEnv",
+        type=str,
+        required=True,
+        choices=["host", "container"],
+        help="The runtime environment of trident (e.g., host or container).",
+    )
     args = parser.parse_args()
 
     with open(args.configurations, "r") as file:
         target_configurations = yaml.safe_load(file)
 
-    if not args.env in target_configurations:
+    if args.env not in target_configurations:
         sys.exit(
             f"Deployment environment {args.env} not found in {args.configurations}."
         )
-    elif not args.purpose in target_configurations[args.env]:
+    elif args.runtimeEnv not in target_configurations[args.env]:
         sys.exit(
-            f"Build purpose {args.purpose} not found in {args.configurations} for {args.env}."
+            f"Runtime environment {args.runtimeEnv} not found in {args.configurations} for {args.env}."
+        )
+    elif args.purpose not in target_configurations[args.env][args.runtimeEnv]:
+        sys.exit(
+            f"Build purpose {args.purpose} not found in {args.configurations} for {args.env} and {args.runtimeEnv}."
         )
     else:
-        matrix = format_matrix(target_configurations[args.env][args.purpose])
+        matrix = format_matrix(
+            target_configurations[args.env][args.runtimeEnv][args.purpose]
+        )
         print(matrix)
 
 

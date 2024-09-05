@@ -18,9 +18,10 @@ stages:
     dependsOn:
       - Trident
       - ${{ if eq(parameters.stageType, 'pre') }}:
-          - DeploymentTesting
+          - DeploymentTesting_host
+          - DeploymentTesting_container
           - FunctionalTesting
-          - BaremetalDeploymentTesting
+          - BaremetalDeploymentTesting_host
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
 
     jobs:

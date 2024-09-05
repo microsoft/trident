@@ -1,98 +1,193 @@
 bareMetal:
-  daily:
-    - base
-    - raid-big
-    - raid-resync-small
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - abupdate-on-encrypted-raid
-    - abupdate-on-encrypted-partitions
-    - abupdate-with-verity
-    - encrypted-partition
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - encrypted-raid
-    - encrypted-swap
-    - rerun
-    - simple
-    - verity
-    - verity-raid
-  validation:
-    - base
-    - raid-big
-    - raid-resync-small
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - abupdate-on-encrypted-raid
-    - abupdate-on-encrypted-partitions
-    - abupdate-with-verity
-    - encrypted-partition
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - encrypted-raid
-    - encrypted-swap
-    - rerun
-    - simple
-    - verity
-    - verity-raid
+  host:
+    daily:
+      - base
+      - raid-big
+      - raid-resync-small
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - abupdate-on-encrypted-raid
+      - abupdate-on-encrypted-partitions
+      - abupdate-with-verity
+      - encrypted-partition
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - encrypted-raid
+      - encrypted-swap
+      - rerun
+      - simple
+      - verity
+      - verity-raid
+    validation:
+      - base
+      - raid-big
+      - raid-resync-small
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - abupdate-on-encrypted-raid
+      - abupdate-on-encrypted-partitions
+      - abupdate-with-verity
+      - encrypted-partition
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - encrypted-raid
+      - encrypted-swap
+      - rerun
+      - simple
+      - verity
+      - verity-raid
 virtualMachine:
-  daily:
-    - base
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - abupdate-on-encrypted-raid
-    - abupdate-on-encrypted-partitions
-    - abupdate-with-verity
-    - encrypted-partition
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - encrypted-raid
-    - encrypted-swap
-    - raid-small
-    - raid-resync-small
-    - rerun
-    - simple
-    - verity
-    - verity-raid
-  post_merge:
-    - base
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - abupdate-on-encrypted-raid
-    - abupdate-on-encrypted-partitions
-    - abupdate-with-verity
-    - encrypted-partition
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - encrypted-raid
-    - encrypted-swap
-    - raid-small
-    - raid-resync-small
-    - rerun
-    - simple
-    - verity
-    - verity-raid
-  pullrequest:
-    - base
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - abupdate-on-encrypted-raid
-    - abupdate-on-encrypted-partitions
-    - abupdate-with-verity
-    - encrypted-partition
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - encrypted-raid
-    - encrypted-swap
-    - raid-small
-    - raid-resync-small
-    - rerun
-    - simple
-    - verity
-    - verity-raid
-  validation:
-    - base
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - abupdate-on-encrypted-raid
-    - abupdate-on-encrypted-partitions
-    - abupdate-with-verity
-    - encrypted-partition
-    # TODO: Re-enable raid+encryption tests (#8849)
-    # - encrypted-raid
-    - encrypted-swap
-    - raid-small
-    - raid-resync-small
-    - rerun
-    - simple
-    - verity
-    - verity-raid
+  host:
+    daily:
+      - base
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - abupdate-on-encrypted-raid
+      - abupdate-on-encrypted-partitions
+      - abupdate-with-verity
+      - encrypted-partition
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - encrypted-raid
+      - encrypted-swap
+      - raid-small
+      - raid-resync-small
+      - rerun
+      - simple
+      - verity
+      - verity-raid
+    post_merge:
+      - base
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - abupdate-on-encrypted-raid
+      - abupdate-on-encrypted-partitions
+      - abupdate-with-verity
+      - encrypted-partition
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - encrypted-raid
+      - encrypted-swap
+      - raid-small
+      - raid-resync-small
+      - rerun
+      - simple
+      - verity
+      - verity-raid
+    pullrequest:
+      - base
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - abupdate-on-encrypted-raid
+      - abupdate-on-encrypted-partitions
+      - abupdate-with-verity
+      - encrypted-partition
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - encrypted-raid
+      - encrypted-swap
+      - raid-small
+      - raid-resync-small
+      - rerun
+      - simple
+      - verity
+      - verity-raid
+    validation:
+      - base
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - abupdate-on-encrypted-raid
+      - abupdate-on-encrypted-partitions
+      - abupdate-with-verity
+      - encrypted-partition
+      # TODO: Re-enable raid+encryption tests (#8849)
+      # - encrypted-raid
+      - encrypted-swap
+      - raid-small
+      - raid-resync-small
+      - rerun
+      - simple
+      - verity
+      - verity-raid
+  container:
+    daily:
+      - base
+      # TODO: Re-enable when (#8890) is fixed
+      # - abupdate-on-encrypted-raid
+      # TODO: Re-enable when (#8890) is fixed
+      # - abupdate-on-encrypted-partitions
+      # TODO: Re-enable when (#8891) is fixed
+      # - abupdate-with-verity
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-partition
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-raid
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-swap
+      - raid-small
+      - raid-resync-small
+      # TODO: Re-enable when (#8891) is fixed
+      # - rerun
+      - simple
+      # TODO: Re-enable when (#8891) is fixed
+      # - verity
+      # TODO: Re-enable when (#8891) is fixed
+      # - verity-raid
+    post_merge:
+      - base
+      # TODO: Re-enable when (#8890) is fixed
+      # - abupdate-on-encrypted-raid
+      # TODO: Re-enable when (#8890) is fixed
+      # - abupdate-on-encrypted-partitions
+      # TODO: Re-enable when (#8891) is fixed
+      # - abupdate-with-verity
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-partition
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-raid
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-swap
+      - raid-small
+      - raid-resync-small
+      # TODO: Re-enable when (#8891) is fixed
+      # - rerun
+      - simple
+      # TODO: Re-enable when (#8891) is fixed
+      # - verity
+      # TODO: Re-enable when (#8891) is fixed
+      # - verity-raid
+    pullrequest:
+      - base
+      # TODO: Re-enable when (#8890) is fixed
+      # - abupdate-on-encrypted-raid
+      # TODO: Re-enable when (#8890) is fixed
+      # - abupdate-on-encrypted-partitions
+      # TODO: Re-enable when (#8891) is fixed
+      # - abupdate-with-verity
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-partition
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-raid
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-swap
+      - raid-small
+      - raid-resync-small
+      # TODO: Re-enable when (#8891) is fixed
+      # - rerun
+      - simple
+      # TODO: Re-enable when (#8891) is fixed
+      # - verity
+      # TODO: Re-enable when (#8891) is fixed
+      # - verity-raid
+    validation:
+      - base
+      # TODO: Re-enable when (#8890) is fixed
+      # - abupdate-on-encrypted-raid
+      # TODO: Re-enable when (#8890) is fixed
+      # - abupdate-on-encrypted-partitions
+      # TODO: Re-enable when (#8891) is fixed
+      # - abupdate-with-verity
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-partition
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-raid
+      # TODO: Re-enable when (#8890) is fixed
+      # - encrypted-swap
+      - raid-small
+      - raid-resync-small
+      # TODO: Re-enable when (#8891) is fixed
+      # - rerun
+      - simple
+      # TODO: Re-enable when (#8891) is fixed
+      # - verity
+      # TODO: Re-enable when (#8891) is fixed
+      # - verity-raid

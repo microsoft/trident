@@ -3,7 +3,7 @@ steps:
       set -eux
       TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit)
       echo "##vso[task.setvariable variable=trident_version]$TRIDENT_VERSION"
-    displayName: "Setting trident version"
+    displayName: "Setting Trident version"
 
   - task: onebranch.pipeline.version@1
     displayName: "Set build number"

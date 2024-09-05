@@ -15,7 +15,8 @@ Requires:       util-linux
 Requires:       dosfstools
 Requires:       efibootmgr
 Requires:       lsof
-Requires:       systemd >= 254
+Requires:       systemd >= 255
+Requires:       systemd-udev
 
 # Optional dependencies for various optional features
 

@@ -10,8 +10,8 @@ stages:
           type: linux
 
         variables:
-          - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/trident/out"
+          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
+          ob_artifactBaseName: "trident-docker-image"
 
         steps:
           - script: |
@@ -21,7 +21,7 @@ stages:
             retryCountOnTaskFailure: 3
 
           - task: DownloadPipelineArtifact@2
-            displayName: "Download trident rpms"
+            displayName: "Download Trident rpms"
             inputs:
               buildType: current
               artifactName: "trident-binaries"
@@ -32,6 +32,6 @@ stages:
               set -eux
 
               mkdir -p $(ob_outputDirectory)
-              DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:$(Build.BuildNumber) .
-              docker save trident/trident:$(Build.BuildNumber) | gzip > $(ob_outputDirectory)/trident-container-$(Build.BuildNumber).tar.gz
+              DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
+              docker save trident/trident:latest | gzip > $(ob_outputDirectory)/trident-container.tar.gz
             displayName: Build Docker image
