@@ -29,7 +29,6 @@ pub fn run(directory_path: impl AsRef<Path>) -> Result<Vec<ProcessFiles>, Error>
 }
 
 fn parse_lsof_output(output: &str) -> Result<Vec<ProcessFiles>, Error> {
-    println!("parsing");
     let mut processes = Vec::new();
     let mut process: Option<ProcessFiles> = None;
     for line in output.lines() {
