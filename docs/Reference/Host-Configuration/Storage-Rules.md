@@ -4,6 +4,8 @@ Documentation about the rules used to validate the storage configuration.
 
 ## Contents
 
+- [Block Device Description](#block-device-description)
+- [Referrer Description](#referrer-description)
 - [Reference Validity](#reference-validity)
 - [Reference Count](#reference-count)
 - [Reference Sharing](#reference-sharing)
@@ -19,11 +21,41 @@ Documentation about the rules used to validate the storage configuration.
 - [Partition Type Valid Mounting Paths](#partition-type-valid-mounting-paths)
 - [Partition Type Matching Hash Partition](#partition-type-matching-hash-partition)
 
+## Block Device Description
+
+This table lists all the different kinds of block devices that exist in the
+configuration, along with their descriptions.
+
+| Block device kind | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| disk              | A disk                                               |
+| partition         | A new physical partition                             |
+| adopted-partition | An existing physical partition that is being adopted |
+| raid-array        | A RAID array                                         |
+| ab-volume         | An A/B volume                                        |
+| encrypted-volume  | An encrypted volume                                  |
+
+## Referrer Description
+
+This table lists all the different kinds of referrers that exist in the
+configuration, along with their descriptions.
+
+| Referrer kind          | Description           |
+| ---------------------- | --------------------- |
+| raid-array             | A RAID array          |
+| ab-volume              | An A/B volume         |
+| encrypted-volume       | An encrypted volume   |
+| filesystem             | A regular filesystem  |
+| filesystem-esp         | An ESP/EFI filesystem |
+| filesystem-adopted     | An adopted filesystem |
+| verity-filesystem-data | A Verity filesystem   |
+| verity-filesystem-hash | A Verity filesystem   |
+
 ## Reference Validity
 
 This table contains the rules for valid references in the storage configuration.
 The rows represent the different types of referrers that exists in the
-configuration, and the columns replresent the different types of block devices
+configuration, and the columns represent the different types of block devices
 that can be referenced.
 
 A single cell in the table represents whether a referrer of a certain type can

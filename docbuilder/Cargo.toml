@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 anyhow = { version = "1.0.82", features = ["backtrace"] }
 clap = { version = "4.4.0", features = ["derive", "wrap_help"] }
+documented = "0.6.0"
 indoc = "2"
 itertools = "0.13.0"
 log = "0.4.21"

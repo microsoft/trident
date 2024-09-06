@@ -154,9 +154,9 @@ TRIDENT_API_HC_SCHEMA_GENERATED  := target/trident-api-docs/host-config-schema.j
 TRIDENT_API_HC_SCHEMA_CHECKED_IN := trident_api/schemas/host-config-schema.json
 
 TRIDENT_API_HC_MARKDOWN_DIR := docs/Reference/Host-Configuration/API-Reference
-TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/sample-host-configuration.md
+TRIDENT_API_HC_EXAMPLE_FILE := docs/Reference/Host-Configuration/Sample-Host-Configuration.md
 TRIDENT_API_HC_EXAMPLE_YAML := docs/Reference/Host-Configuration/sample-host-configuration.yaml
-TRIDENT_API_HC_STORAGE_RULES_FILES := docs/Reference/Host-Configuration/storage-rules.md
+TRIDENT_API_HC_STORAGE_RULES_FILES := docs/Reference/Host-Configuration/Storage-Rules.md
 
 target/trident-api-docs:
 	mkdir -p target/trident-api-docs

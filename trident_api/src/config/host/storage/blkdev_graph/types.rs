@@ -1,5 +1,8 @@
 //! Basic types for the block device graph
 
+#[cfg(feature = "documentation")]
+use documented::{Documented, DocumentedVariants};
+
 use std::fmt::Display;
 
 use anyhow::{bail, Error};
@@ -16,7 +19,10 @@ use crate::{
 /// Enum for supported block device types
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
-#[cfg_attr(any(test, feature = "documentation"), derive(strum_macros::EnumIter))]
+#[cfg_attr(
+    any(test, feature = "documentation"),
+    derive(strum_macros::EnumIter, Documented, DocumentedVariants)
+)]
 pub enum BlkDevKind {
     /// A disk
     Disk,
@@ -78,7 +84,10 @@ pub enum HostConfigBlockDevice<'a> {
 ///
 /// Referrers are config items that refer to other block devices.
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "documentation", derive(strum_macros::EnumIter))]
+#[cfg_attr(
+    feature = "documentation",
+    derive(strum_macros::EnumIter, Documented, DocumentedVariants)
+)]
 pub enum BlkDevReferrerKind {
     /// Represents an 'null referrer' i.e. an entity that does not refer to any
     /// block device.

@@ -1,8 +1,29 @@
+use documented::DocumentedVariants;
 use std::vec;
 
 use crate::markdown::table::MdTable;
 
 use super::{get_devices, get_referrers, RuleDefinition};
+
+pub(super) fn referrer_description_table() -> RuleDefinition {
+    let mut table = MdTable::new(vec!["Referrer kind", "Description"]);
+
+    for referrer_kind in get_referrers() {
+        table.add_row(vec![
+            referrer_kind.to_string(),
+            referrer_kind
+                .get_variant_docs()
+                .unwrap_or("No description available")
+                .to_string(),
+        ]);
+    }
+
+    RuleDefinition {
+        name: "Referrer Description",
+        template: "referrer_description",
+        body: table.render(),
+    }
+}
 
 pub(super) fn valid_targets_table() -> RuleDefinition {
     let dev_kinds = get_devices();

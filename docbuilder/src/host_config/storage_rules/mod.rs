@@ -66,6 +66,8 @@ pub(crate) fn write(dest: Option<impl AsRef<Path>>) -> Result<(), Error> {
     .context("Failed to create Tera instance")?;
 
     let mut rules: Vec<RuleDefinition> = vec![
+        devices::block_device_description_table(),
+        referrers::referrer_description_table(),
         referrers::valid_targets_table(),
         referrers::reference_count_table(),
         referrers::reference_sharing_table(),

@@ -1,6 +1,28 @@
+use documented::DocumentedVariants;
+
 use crate::markdown::table::MdTable;
 
 use super::{get_devices, RuleDefinition};
+
+pub(super) fn block_device_description_table() -> RuleDefinition {
+    let mut table = MdTable::new(vec!["Block device kind", "Description"]);
+
+    for block_device_kind in get_devices() {
+        table.add_row(vec![
+            block_device_kind.to_string(),
+            block_device_kind
+                .get_variant_docs()
+                .unwrap_or("No description available")
+                .to_string(),
+        ]);
+    }
+
+    RuleDefinition {
+        name: "Block Device Description",
+        template: "block_device_description",
+        body: table.render(),
+    }
+}
 
 pub(super) fn unique_field_value_constraints() -> RuleDefinition {
     let dev_kinds = get_devices();
