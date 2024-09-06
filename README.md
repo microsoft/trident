@@ -200,7 +200,7 @@ The desired state of the machine is described by passing one of the following:
 For more details on the Host Configuration format:
 
 - An example Host Configuration YAML MD file is available here:
-[sample-host-configuration](docs/Reference/Host-Configuration/sample-host-configuration.md).
+[Sample-Host-Configuration.md](docs/Reference/Host-Configuration/Sample-Host-Configuration.md).
 
 - Additional raw YAML configuration samples are available in [Samples](docs/Reference/Host-Configuration/Samples).
 
