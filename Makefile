@@ -429,6 +429,14 @@ copy-runtime-partition-images: ../test-images/build/trident-testimage/*.raw.zst 
 	done
 	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
 
+# Uses the simple e2e test to set up a starter host config
+.PHONY: starter-configuration
+starter-configuration:
+	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
+	@cp e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
+	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
+	@echo "\033[33mDon't forget to add your SSH public key to the host configuration!"
+
 BASE_IMAGE_NAME ?= baremetal_vhdx-3.0-stable
 BASE_IMAGE_VERSION ?= *
 artifacts/baremetal.vhdx:

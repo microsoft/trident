@@ -19,6 +19,7 @@ deployments, but can be leveraged outside of that as well.
   - [Contents](#contents)
   - [Background](#background)
   - [Getting Started](#getting-started)
+    - [Developer Quickstart](#developer-quickstart)
     - [Download artifacts](#download-artifacts)
     - [Install Trident](#install-trident)
     - [Dependencies](#dependencies)
@@ -50,6 +51,12 @@ Architecture](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shar
   Design](https://microsoft.sharepoint.com/teams/COSINEIoT-ServicesTeam/Shared%20Documents/General/BareMetal/Trident%20Agent%20Design.docx?web=1)
 
 ## Getting Started
+
+### Developer Quickstart
+
+Go to the [Quickstart Guide](dev-docs/quickstart.md) to get started with
+development. This guide will help you set up your development environment and
+build Trident.
 
 ### Download artifacts
 
