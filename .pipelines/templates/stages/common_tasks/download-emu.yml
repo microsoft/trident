@@ -9,11 +9,14 @@ steps:
       emu_package_name=$(grep 'EMU_PACKAGE_NAME ?= [^ ]*' \
                         ./Makefile | \
                         sed 's/EMU_PACKAGE_NAME ?= //')
+      set +x
       echo "##vso[task.setvariable variable=emu_package_name]$emu_package_name"
 
+      set -x
       emu_package_version=$(grep 'EMU_PACKAGE_VERSION ?= [^ ]*' \
                             ./Makefile | \
                             sed 's/EMU_PACKAGE_VERSION ?= //')
+      set +x
       echo "##vso[task.setvariable variable=emu_package_version]$emu_package_version"
     displayName: "Extract and Set EMU Package Variables"
 

@@ -45,6 +45,7 @@ parameters:
 
 steps:
   - bash: |
+      set -eux
       ls -ltr $(System.ArtifactsDirectory)
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/copy-runtime-os-images.sh \
           "${{ parameters.sshKeyPath }}" \
@@ -119,10 +120,13 @@ steps:
           --trident-config $(tridentConfigFile) \
           --version $(version) \
           --finalize-ab-update
-      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
+      # Un-set the 'x' flag to avoid errors.
+      set +x
       echo "##vso[task.setvariable variable=version]$new_version"
+      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Finalize A/B update into runtime OS B"
@@ -133,6 +137,7 @@ steps:
       deploymentLogPath: $(Build.SourcesDirectory)/finalize-ab-update.log
 
   - bash: |
+      set -eux
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \

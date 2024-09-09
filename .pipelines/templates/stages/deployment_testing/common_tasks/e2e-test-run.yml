@@ -88,6 +88,7 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
+      set -eux
       chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
@@ -117,6 +118,7 @@ steps:
 
   # If current Trident config requires A/B update testing, copy runtime OS images onto the host.
   - bash: |
+      set -eux
       chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/copy-runtime-os-images.sh
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/copy-runtime-os-images.sh \
           "${{ parameters.sshKeyPath }}" \
@@ -146,10 +148,12 @@ steps:
           --stage-ab-update \
           --finalize-ab-update
 
-      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
+      # Un-set the 'x' flag to avoid errors.
+      set +x
       echo "##vso[task.setvariable variable=version]$new_version"
+      echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage and finalize A/B update into runtime OS B"
@@ -160,6 +164,7 @@ steps:
       deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-runtime-os-B.log
 
   - bash: |
+      set -eux
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
@@ -204,6 +209,7 @@ steps:
     displayName: "Publish test results for A/B update into runtime OS B"
 
   - bash: |
+      set -eux
       ls -ltr $(System.ArtifactsDirectory)
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/copy-runtime-os-images.sh \
           "${{ parameters.sshKeyPath }}" \
@@ -231,10 +237,12 @@ steps:
           --stage-ab-update \
           --finalize-ab-update
 
-      echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
       current_version=$(echo $(version))
       new_version=$((current_version + 1))
+      # Un-set the 'x' flag to avoid errors.
+      set +x
       echo "##vso[task.setvariable variable=version]$new_version"
+      echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage and finalize A/B update into runtime OS A"
@@ -245,6 +253,7 @@ steps:
       deploymentLogPath: $(Build.SourcesDirectory)/stage-finalize-ab-update-runtime-os-A.log
 
   - bash: |
+      set -eux
       $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
