@@ -9,41 +9,78 @@ parameters:
     default: main
     displayName: Branch to download Artifacts from
 
-  - name: runDeploymentVM
+  - name: tridentPipelineRunId
+    type: string
+    default: latestFromBranch
+    displayName: Pipeline run ID
+
+  - name: runDeploymentVMHost
     type: boolean
     default: true
-    displayName: Run E2E testing on Virtual Machines
+    displayName: E2E tests Virtual Machines Host
+
+  - name: runDeploymentVMContainer
+    type: boolean
+    default: false
+    displayName: E2E tests Virtual Machines Container
 
   - name: runDeploymentBM
     type: boolean
     default: false
-    displayName: Run E2E testing on Bare Metal
+    displayName: E2E tests Bare Metal Host
 
   - name: runFunctionalTests
     type: boolean
     default: false
-    displayName: Run functional tests
+    displayName: Functional tests
+
+  - name: runServicingTests
+    type: boolean
+    default: false
+    displayName: Servicing VM testing
 
 stages:
   - template: stages/download_artifacts/get-artifacts.yml
     parameters:
       definition: ${{ parameters.definition }}
-      branch: ${{ parameters.branch }}
+      ${{ if eq(parameters.tridentPipelineRunId, 'latestFromBranch') }}:
+        runVersion: latestFromBranch
+        branch: ${{ parameters.branch }}
+        allowFailedBuilds: false
+      ${{ else }}:
+        runVersion: specific
+        tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
+        allowFailedBuilds: true
 
-  - ${{ if parameters.runDeploymentVM }}:
+  - ${{ if parameters.runDeploymentVMHost }}:
     - template: stages/deployment_testing/vm/netlaunch-testing.yml
       parameters:
-        buildPurpose: validation
+        buildPurpose: "validation"
+        runtimeEnv: "host"
+        testingRun: true
+
+  - ${{ if parameters.runDeploymentVMContainer }}:
+    - template: stages/deployment_testing/vm/netlaunch-testing.yml
+      parameters:
+        buildPurpose: "validation"
+        installerISO: trident-container-installer-testimage
+        runtimeEnv: "container"
         testingRun: true
 
   - ${{ if parameters.runDeploymentBM }}:
     - template: stages/deployment_testing/baremetal/baremetal-testing.yml
       parameters:
-        buildPurpose: validation
+        buildPurpose: "validation"
+        runtimeEnv: "host"
         testingRun: true
 
   - ${{ if parameters.runFunctionalTests }}:
     - template: stages/deployment_testing/functional_testing/functional-testing.yml
       parameters:
-        buildPurpose: validation
+        buildPurpose: "validation"
+        testingRun: true
+
+  - ${{ if parameters.runServicingTests }}:
+    - template: stages/deployment_testing/servicing/vm-testing.yml
+      parameters:
         testingRun: true

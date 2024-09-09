@@ -25,21 +25,36 @@ parameters:
     default: main
     displayName: Branch to download Artifacts from
 
-  - name: runDeploymentVM
+  - name: tridentPipelineRunId
+    type: string
+    default: latestFromBranch
+    displayName: Pipeline run ID (branch will be ignored if ID is provided)
+
+  - name: runDeploymentVMHost
     type: boolean
     default: true
-    displayName: Run E2E testing on Virtual Machines
+    displayName: E2E tests Virtual Machines Host
+
+  - name: runDeploymentVMContainer
+    type: boolean
+    default: false
+    displayName: E2E tests Virtual Machines Container
 
   - name: runDeploymentBM
     type: boolean
     default: false
-    displayName: Run E2E testing on Bare Metal
+    displayName: E2E tests Bare Metal Host
 
   - name: runFunctionalTests
     type: boolean
     default: false
-    displayName: Run functional tests
+    displayName: Functional tests
 
+  - name: runServicingTests
+    type: boolean
+    default: false
+    displayName: Servicing VM testing
+    
 trigger: none
 
 variables:
@@ -64,6 +79,11 @@ resources:
     - repository: argus-toolkit
       type: git
       name: argus-toolkit
+      ref: refs/heads/main
+
+    - repository: test-images
+      type: git
+      name: test-images
       ref: refs/heads/main
 
     - repository: platform-tests
@@ -102,6 +122,9 @@ extends:
         parameters:
           definition: ${{ parameters.definition }}
           branch: ${{ parameters.branch }}
-          runDeploymentVM: ${{ parameters.runDeploymentVM }}
+          tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
+          runDeploymentVMHost: ${{ parameters.runDeploymentVMHost }}
+          runDeploymentVMContainer: ${{ parameters.runDeploymentVMContainer }}
           runDeploymentBM: ${{ parameters.runDeploymentBM }}
           runFunctionalTests: ${{ parameters.runFunctionalTests }}
+          runServicingTests: ${{ parameters.runServicingTests }}

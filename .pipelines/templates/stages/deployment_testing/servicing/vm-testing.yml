@@ -1,8 +1,17 @@
+parameters:
+  - name: testingRun
+    displayName: "Pipeline run downloaded Trident"
+    type: boolean
+    default: false
+
 stages:
   - stage: ServicingTesting
     displayName: Servicing Testing
-    dependsOn:
-      - Trident
+    dependsOn: 
+      - ${{ if eq(parameters.testingRun, true) }}: 
+        - DownloadTestingElements
+      - ${{ else }}:
+        - Trident
 
     jobs:
       - job: Testing
