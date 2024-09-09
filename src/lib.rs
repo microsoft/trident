@@ -24,7 +24,7 @@ use trident_api::error::{
 use trident_api::status::{HostStatus, ServicingState, ServicingType};
 
 use crate::datastore::DataStore;
-use crate::engine::{bootentries, get_block_device_path, storage::tabfile};
+use crate::engine::{bootentries, storage::tabfile};
 
 mod datastore;
 mod engine;
@@ -35,7 +35,7 @@ mod orchestrate;
 #[cfg(feature = "grpc-dangerous")]
 mod grpc;
 
-pub use engine::network::provisioning::start as start_provisioning_network;
+pub use engine::network::provisioning as network_provisioning;
 pub use logging::{
     background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
     tracestream::TraceStream,
@@ -233,7 +233,7 @@ impl Trident {
         let host_config = Self::get_host_configuration(&self.config)?;
 
         info!("Starting network");
-        start_provisioning_network(
+        network_provisioning::start(
             self.config.network_override.clone(),
             host_config.as_deref(),
             self.config.wait_for_provisioning_network,
@@ -680,11 +680,10 @@ fn get_expected_root_device_path(host_status: &HostStatus) -> Result<PathBuf, Tr
     // Fetch the expected root device path from host status, based on device ID of root. Set
     // active=false b/c need to fetch info for volume that we expect to be active at this point,
     // after host has already rebooted, and it used to be the update volume before the reboot.
-    let expected_root_path = get_block_device_path(host_status, root_device_id).structured(
-        ServicingError::GetBlockDevicePath {
+    let expected_root_path = engine::get_block_device_path(host_status, root_device_id)
+        .structured(ServicingError::GetBlockDevicePath {
             device_id: root_device_id.to_string(),
-        },
-    )?;
+        })?;
 
     Ok(expected_root_path)
 }

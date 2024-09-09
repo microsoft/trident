@@ -427,7 +427,7 @@ mod tests {
     };
     use url::Url;
 
-    use crate::engine::storage::tests::get_recovery_key_file;
+    use crate::engine::storage::tests;
 
     use super::*;
 
@@ -560,7 +560,7 @@ mod tests {
     // Encryption configuration without modification is valid.
     #[test]
     fn test_validate_host_config_pass() {
-        let recovery_key_file = get_recovery_key_file();
+        let recovery_key_file = tests::get_recovery_key_file();
         let host_config = get_host_config(&recovery_key_file);
         validate_host_config(&host_config).unwrap();
     }
@@ -568,7 +568,7 @@ mod tests {
     // Encryption doesn't need to be configured at all.
     #[test]
     fn test_validate_host_config_encryption_none_pass() {
-        let recovery_key_file = get_recovery_key_file();
+        let recovery_key_file = tests::get_recovery_key_file();
         let mut host_config = get_host_config(&recovery_key_file);
 
         host_config.storage.encryption = None;
@@ -579,7 +579,7 @@ mod tests {
     // Encryption recovery key file needs to exist on the system.
     #[test]
     fn test_validate_host_config_recovery_key_not_exist_fail() {
-        let recovery_key_file = get_recovery_key_file();
+        let recovery_key_file = tests::get_recovery_key_file();
         let host_config = get_host_config(&recovery_key_file);
 
         // Delete the recovery key file.
@@ -598,7 +598,7 @@ mod tests {
     // Encryption needs recovery key url to point to a file.
     #[test]
     fn test_validate_host_config_recovery_key_not_file_fail() {
-        let recovery_key_file = get_recovery_key_file();
+        let recovery_key_file = tests::get_recovery_key_file();
         let mut host_config = get_host_config(&recovery_key_file);
         let encryption = host_config.storage.encryption.as_mut().unwrap();
 
@@ -619,7 +619,7 @@ mod tests {
     // Encryption needs recovery key url to point to a file that is only accessible by the owner.
     #[test]
     fn test_validate_host_config_recovery_key_perm_pass() {
-        let recovery_key_file = get_recovery_key_file();
+        let recovery_key_file = tests::get_recovery_key_file();
         let host_config = get_host_config(&recovery_key_file);
 
         // Loop through all possible permission modes.
@@ -646,7 +646,7 @@ mod tests {
 
     #[test]
     fn test_validate_host_config_recovery_key_perm_fail() {
-        let recovery_key_file = get_recovery_key_file();
+        let recovery_key_file = tests::get_recovery_key_file();
         let host_config = get_host_config(&recovery_key_file);
 
         // Loop through all possible permission modes.
@@ -681,7 +681,7 @@ mod tests {
 
     #[test]
     fn test_validate_host_config_recovery_key_empty_fail() {
-        let recovery_key_file = get_recovery_key_file();
+        let recovery_key_file = tests::get_recovery_key_file();
         let host_config = get_host_config(&recovery_key_file);
 
         // Set the recovery key file's contents to empty.

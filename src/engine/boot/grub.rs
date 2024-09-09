@@ -262,7 +262,7 @@ pub(crate) mod functional_test {
     use std::path::PathBuf;
 
     use const_format::formatcp;
-    use engine::storage::raid::create_sw_raid_array;
+    use engine::storage::raid;
     use maplit::btreemap;
     use osutils::{
         filesystems::MkfsFileSystemType,
@@ -510,7 +510,7 @@ pub(crate) mod functional_test {
             devices: vec!["root1".to_string(), "root2".to_string()],
             level: RaidLevel::Raid1,
         };
-        create_sw_raid_array(&mut host_status, &raid_array).unwrap();
+        raid::create_sw_raid_array(&mut host_status, &raid_array).unwrap();
         let root_device_path = raid_array.device_path();
         let result = test_update_grub_root_raided_internal(
             &mut host_status,
@@ -518,7 +518,7 @@ pub(crate) mod functional_test {
             root_device_path.as_path(),
         );
         // Unmount and stop the raid array
-        engine::storage::raid::unmount_and_stop(&root_device_path).unwrap();
+        raid::unmount_and_stop(&root_device_path).unwrap();
         result.unwrap();
     }
 

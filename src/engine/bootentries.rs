@@ -335,7 +335,7 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::engine::storage::partitioning::create_partitions;
+    use crate::engine::storage::partitioning;
 
     use super::*;
     use constants::ESP_MOUNT_POINT_PATH;
@@ -460,7 +460,7 @@ mod functional_test {
 
         // Borrow checker bypass :)
         let config = host_status.spec.clone();
-        create_partitions(&mut host_status, &config).unwrap();
+        partitioning::create_partitions(&mut host_status, &config).unwrap();
 
         let disk_path = get_esp_partition_disk(&host_status).unwrap();
 

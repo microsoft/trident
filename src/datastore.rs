@@ -1,5 +1,5 @@
 use log::info;
-use osutils::path::join_relative;
+use osutils::path;
 use std::{fs, path::Path};
 use trident_api::{
     error::{DatastoreError, InternalError, ReportError, ServicingError, TridentError},
@@ -77,7 +77,7 @@ impl DataStore {
                 },
             }));
         }
-        let db_path = join_relative(new_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
+        let db_path = path::join_relative(new_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
         if !db_path.exists() {
             log::error!("New Datastore path is invalid {}", db_path.display());
             return Err(TridentError::new(ServicingError::Datastore {
