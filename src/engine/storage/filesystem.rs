@@ -135,7 +135,7 @@ mod test {
             HostConfiguration, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
             Partition, PartitionType, Storage as StorageConfig,
         },
-        status::{AbVolumeSelection, ServicingState, Storage},
+        status::{AbVolumeSelection, ServicingState},
     };
 
     use super::*;
@@ -224,15 +224,12 @@ mod test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
             },
             ..Default::default()
         };
@@ -334,17 +331,14 @@ mod test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
-                },
-                ab_active_volume: Some(AbVolumeSelection::VolumeA),
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
             },
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
         assert!(block_devices_needing_fs_creation(&host_status_ab_update).is_empty());
@@ -433,16 +427,13 @@ mod test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                },
-                ab_active_volume: Some(AbVolumeSelection::VolumeA),
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
             },
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
         assert_eq!(

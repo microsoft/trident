@@ -176,7 +176,7 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
     # Check partitions size and type
     for partition_id in expected_partitions:
         # Partition present
-        assert partition_id in host_status["storage"]["blockDevicePaths"]
+        assert partition_id in host_status["blockDevicePaths"]
         assert partition_id in partitions_system_info
 
     # Fetch path of block device mounted at /
@@ -253,14 +253,14 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
 
             # Iterate through block devices and confirm that path of active volume corresponds to
             # non-canonicalized root device path
-            for block_device_id, block_device_path in host_status["storage"][
+            for block_device_id, block_device_path in host_status[
                 "blockDevicePaths"
             ].items():
                 if block_device_id == active_volume_id:
                     assert block_device_path == root_device_path
 
             # Verify abActiveVolume
-            assert host_status["storage"]["abActiveVolume"] == abActiveVolume
+            assert host_status["abActiveVolume"] == abActiveVolume
 
 
 # Returns true if block device with block_device_id is a partition; otherwise, returns false

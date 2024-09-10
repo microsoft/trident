@@ -144,7 +144,7 @@ impl NewrootMount {
 
     /// Mount all block devices in the newroot.
     fn mount_newroot_partitions(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
-        let mut block_device_paths = host_status.storage.block_device_paths.clone();
+        let mut block_device_paths = host_status.block_device_paths.clone();
 
         for raid in &host_status.spec.storage.raid.software {
             block_device_paths.insert(raid.id.clone(), raid.device_path());
@@ -540,7 +540,6 @@ mod functional_test {
         config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
         constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
-        status::Storage,
     };
 
     #[functional_test(feature = "engine")]
@@ -580,12 +579,9 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/sr"),
-                    "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/sr"),
+                "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
             },
             ..Default::default()
         };
@@ -649,13 +645,10 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                    "esp".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                    "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                "esp".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
             },
             ..Default::default()
         };
@@ -781,12 +774,9 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/sr"),
-                    "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/sr"),
+                "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
             },
             ..Default::default()
         };
@@ -878,12 +868,9 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/sr"),
-                    "sr0".into() => PathBuf::from("/dev/sr0")
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/sr"),
+                "sr0".into() => PathBuf::from("/dev/sr0")
             },
             ..Default::default()
         };

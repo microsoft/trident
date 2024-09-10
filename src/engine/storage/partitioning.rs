@@ -119,10 +119,7 @@ pub fn create_partitions_on_disk(
     match disk_information.id.as_uuid() {
         Some(disk_uuid) => {
             // Update the host status with disk UUID to disk ID mapping
-            host_status
-                .storage
-                .disks_by_uuid
-                .insert(disk_uuid, disk.id.into());
+            host_status.disks_by_uuid.insert(disk_uuid, disk.id.into());
         }
         None => {
             debug!(
@@ -149,7 +146,6 @@ pub fn create_partitions_on_disk(
             repart_partition
         );
         host_status
-            .storage
             .block_device_paths
             .insert(repart_partition.id.clone(), repart_partition.path_by_uuid());
     }
@@ -846,11 +842,10 @@ mod functional_test {
 
         create_partitions(&mut host_status, &host_config).unwrap();
 
-        assert_eq!(host_status.storage.block_device_paths.len(), 3);
+        assert_eq!(host_status.block_device_paths.len(), 3);
 
         let check_part = |name: &str| {
             host_status
-                .storage
                 .block_device_paths
                 .get(name)
                 .unwrap_or_else(|| panic!("Failed to find block device '{}' in status", name));
@@ -934,17 +929,17 @@ mod functional_test {
 
         create_partitions(&mut host_status, &host_config).unwrap();
 
-        assert_eq!(host_status.storage.block_device_paths.len(), 2);
+        assert_eq!(host_status.block_device_paths.len(), 2);
         assert!(
-            host_status.storage.block_device_paths.contains_key("part1"),
+            host_status.block_device_paths.contains_key("part1"),
             "part1 not found"
         );
         assert!(
-            !host_status.storage.block_device_paths.contains_key("part2"),
+            !host_status.block_device_paths.contains_key("part2"),
             "part2 found"
         );
         assert!(
-            host_status.storage.block_device_paths.contains_key("part3"),
+            host_status.block_device_paths.contains_key("part3"),
             "part3 not found"
         );
 

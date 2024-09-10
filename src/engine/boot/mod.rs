@@ -143,7 +143,7 @@ pub fn make_esp_dir_name(index: usize, volume: AbVolumeSelection) -> String {
 #[cfg(test)]
 mod tests {
     use const_format::formatcp;
-    use trident_api::status::{ServicingState, ServicingType, Storage};
+    use trident_api::status::{ServicingState, ServicingType};
 
     use super::*;
 
@@ -244,10 +244,7 @@ mod tests {
         let mut host_status = HostStatus {
             servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
-            storage: Storage {
-                ab_active_volume: Some(AbVolumeSelection::VolumeB),
-                ..Default::default()
-            },
+            ab_active_volume: Some(AbVolumeSelection::VolumeB),
             ..Default::default()
         };
 
@@ -275,10 +272,7 @@ mod tests {
         let mut host_status = HostStatus {
             servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
-            storage: Storage {
-                ab_active_volume: Some(AbVolumeSelection::VolumeA),
-                ..Default::default()
-            },
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
 

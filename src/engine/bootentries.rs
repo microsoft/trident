@@ -131,7 +131,6 @@ fn get_esp_partition_disk(host_status: &HostStatus) -> Result<PathBuf, Error> {
 
     // Find the device path of the ESP partition
     let device_path = host_status
-        .storage
         .block_device_paths
         .get(esp_device_id)
         .with_context(|| {
@@ -269,7 +268,7 @@ mod tests {
         // Test that servicing types HotPatch, NormalUpdate, UpdateAndReboot will always use the
         // active volume for updates
         host_status.servicing_type = ServicingType::NormalUpdate;
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_label_and_path(&host_status).unwrap(),
             (

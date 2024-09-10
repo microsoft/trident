@@ -23,4 +23,4 @@ def test_ab_update_staged(connection, tridentConfiguration, abActiveVolume):
     assert host_status["servicingState"] == "staged"
 
     # Assert that the active volume has not changed.
-    assert host_status["storage"]["abActiveVolume"] == abActiveVolume
+    assert host_status["abActiveVolume"] == abActiveVolume

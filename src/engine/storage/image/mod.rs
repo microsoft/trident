@@ -248,7 +248,7 @@ pub(super) fn refresh_host_status(
         update_active_volume(host_status, root_device_path)
             .structured(ServicingError::UpdateAbActiveVolume)?;
     } else {
-        host_status.storage.ab_active_volume = None;
+        host_status.ab_active_volume = None;
     }
 
     Ok(())
@@ -305,7 +305,7 @@ fn update_active_volume(
     };
 
     // TODO: better error handling if canonicalize fails, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7320/
-    host_status.storage.ab_active_volume = if volume_a_path
+    host_status.ab_active_volume = if volume_a_path
         .canonicalize()
         .context(format!("Failed to find path '{}'", volume_a_path.display()))?
         == root_device_path
@@ -495,7 +495,7 @@ pub(super) fn provision(
 ) -> Result<(), TridentError> {
     if host_status.servicing_type == ServicingType::CleanInstall {
         debug!("Initializing A/B volumes");
-        host_status.storage.ab_active_volume = None;
+        host_status.ab_active_volume = None;
     }
 
     deploy_images(host_status, host_config).structured(ServicingError::DeployImages)?;
@@ -515,7 +515,7 @@ mod tests {
             ImageSha256, MountOptions, MountPoint, Partition, PartitionType,
             Storage as StorageConfig,
         },
-        status::{ServicingState, ServicingType, Storage},
+        status::{ServicingState, ServicingType},
     };
 
     use super::*;
@@ -605,15 +605,12 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root-a".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "root-b".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root-a".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "root-b".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
             },
             ..Default::default()
         };
@@ -740,18 +737,15 @@ mod tests {
             servicing_type: ServicingType::NoActiveServicing,
             servicing_state: ServicingState::Provisioned,
             spec: host_config.clone(),
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root-a".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "root-b".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
-                },
-                // Set active volume to A
-                ab_active_volume: Some(AbVolumeSelection::VolumeA),
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root-a".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "root-b".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
             },
+            // Set active volume to A
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
 
@@ -892,12 +886,9 @@ mod functional_test {
         repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
         verity::{self, VerityGuard},
     };
-    use trident_api::{
-        config::{
-            self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, MountOptions, MountPoint,
-            Partition, PartitionType, VerityFileSystem,
-        },
-        status::Storage,
+    use trident_api::config::{
+        self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, MountOptions, MountPoint,
+        Partition, PartitionType, VerityFileSystem,
     };
 
     #[functional_test]
@@ -911,10 +902,7 @@ mod functional_test {
     #[functional_test]
     fn test_get_plain_volume_pair_paths() {
         let mut host_status = HostStatus {
-            storage: Storage {
-                ab_active_volume: Some(AbVolumeSelection::VolumeA),
-                ..Default::default()
-            },
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             spec: HostConfiguration {
                 storage: config::Storage {
                     ab_update: Some(AbUpdate {
@@ -956,7 +944,6 @@ mod functional_test {
             }],
         }];
         host_status
-            .storage
             .block_device_paths
             .insert("root-a".to_string(), PathBuf::from("/dev/sda1"));
 
@@ -987,7 +974,6 @@ mod functional_test {
                 size: 100.into(),
             });
         host_status
-            .storage
             .block_device_paths
             .insert("root-b".to_string(), PathBuf::from("/dev/sda2"));
 
@@ -1112,7 +1098,6 @@ mod functional_test {
             }],
         }];
         host_status
-            .storage
             .block_device_paths
             .insert("root-data-a".to_string(), PathBuf::from("/dev/sda1"));
 
@@ -1132,7 +1117,6 @@ mod functional_test {
                 size: 100.into(),
             });
         host_status
-            .storage
             .block_device_paths
             .insert("root-data-b".to_string(), PathBuf::from("/dev/sda2"));
 
@@ -1154,20 +1138,17 @@ mod functional_test {
         }
 
         let host_status = HostStatus {
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                    "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                    "root-data-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                    "root-hash-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                    "boot2".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
-                    "root-data-b".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
-                    "root-hash-b".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
-                    "root".into() => PathBuf::from("/dev/mapper/root"),
-                },
-                ab_active_volume: Some(AbVolumeSelection::VolumeA),
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                "root-data-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "root-hash-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                "boot2".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
+                "root-data-b".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                "root-hash-b".into() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
+                "root".into() => PathBuf::from("/dev/mapper/root"),
             },
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             spec: HostConfiguration {
                 storage: config::Storage {
                     internal_verity: vec![config::InternalVerityDevice {
@@ -1247,7 +1228,7 @@ mod functional_test {
         );
 
         // Missing root mount point
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         host_status.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![AbVolumePair {
                 id: "rootq".to_string(),
@@ -1298,7 +1279,7 @@ mod functional_test {
         );
 
         // Missing block device for volume B
-        host_status.storage.block_device_paths = btreemap! {
+        host_status.block_device_paths = btreemap! {
             "root-a".to_owned() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}15")),
         };
 
@@ -1310,7 +1291,7 @@ mod functional_test {
             "Failed to get block device path for volume B with ID root-b"
         );
 
-        host_status.storage.block_device_paths.insert(
+        host_status.block_device_paths.insert(
             "root-b".to_owned(),
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
         );
@@ -1328,11 +1309,8 @@ mod functional_test {
         );
 
         // A or B paths do not match the root volume path
-        *host_status
-            .storage
-            .block_device_paths
-            .get_mut("root-a")
-            .unwrap() = PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
+        *host_status.block_device_paths.get_mut("root-a").unwrap() =
+            PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
 
         assert_eq!(
             update_active_volume(
@@ -1353,7 +1331,7 @@ mod functional_test {
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
         )
         .unwrap();
-        assert_eq!(host_status.storage.ab_active_volume, None);
+        assert_eq!(host_status.ab_active_volume, None);
 
         // Volume A is the root device path
         update_active_volume(
@@ -1362,7 +1340,7 @@ mod functional_test {
         )
         .unwrap();
         assert_eq!(
-            host_status.storage.ab_active_volume,
+            host_status.ab_active_volume,
             Some(AbVolumeSelection::VolumeA)
         );
 
@@ -1373,7 +1351,7 @@ mod functional_test {
         )
         .unwrap();
         assert_eq!(
-            host_status.storage.ab_active_volume,
+            host_status.ab_active_volume,
             Some(AbVolumeSelection::VolumeB)
         );
 
@@ -1395,7 +1373,7 @@ mod functional_test {
             device_name: "root",
         };
 
-        host_status.storage.block_device_paths = btreemap! {
+        host_status.block_device_paths = btreemap! {
             "root-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             "root-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
         };
@@ -1406,7 +1384,7 @@ mod functional_test {
         )
         .unwrap();
         assert_eq!(
-            host_status.storage.ab_active_volume,
+            host_status.ab_active_volume,
             Some(AbVolumeSelection::VolumeA)
         );
 
@@ -1416,12 +1394,11 @@ mod functional_test {
         )
         .unwrap();
         assert_eq!(
-            host_status.storage.ab_active_volume,
+            host_status.ab_active_volume,
             Some(AbVolumeSelection::VolumeB)
         );
 
         host_status
-            .storage
             .block_device_paths
             .insert("root".to_string(), PathBuf::from("/dev/mapper/root"));
         host_status.spec.storage.verity_filesystems = vec![VerityFileSystem {
@@ -1471,7 +1448,7 @@ mod functional_test {
         )
         .unwrap();
         assert_eq!(
-            host_status.storage.ab_active_volume,
+            host_status.ab_active_volume,
             Some(AbVolumeSelection::VolumeA)
         );
     }

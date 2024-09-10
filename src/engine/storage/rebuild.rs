@@ -74,7 +74,6 @@ fn rebuild_raid_array(
         .iter()
         .map(|device| {
             host_status
-                .storage
                 .block_device_paths
                 .get(device)
                 .cloned()
@@ -236,9 +235,8 @@ pub(crate) fn validate_and_rebuild_raid(
 ) -> Result<(), Error> {
     let resolved_disks = block_devices::get_resolved_disks(host_config)
         .context("Failed to resolve disks to device paths")?;
-    let disks_to_rebuild =
-        get_disks_to_rebuild(&host_status.storage.disks_by_uuid, &resolved_disks)
-            .context("Failed to get disks to rebuild from host status")?;
+    let disks_to_rebuild = get_disks_to_rebuild(&host_status.disks_by_uuid, &resolved_disks)
+        .context("Failed to get disks to rebuild from host status")?;
 
     if disks_to_rebuild.is_empty() {
         info!("No disks to rebuild to perform RAID recovery");
@@ -491,7 +489,6 @@ mod tests {
         let mut host_config = get_host_config();
         let host_status = HostStatus {
             spec: host_config.clone(),
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -622,7 +619,6 @@ mod tests {
         let mut host_status = HostStatus {
             servicing_state: ServicingState::Provisioned,
             spec: host_config.clone(),
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -660,7 +656,6 @@ mod tests {
 
         let mut host_status = HostStatus {
             spec: host_config.clone(),
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -677,7 +672,6 @@ mod tests {
         let mut host_status = HostStatus {
             servicing_type: ServicingType::CleanInstall,
             spec: host_config.clone(),
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -715,7 +709,6 @@ mod tests {
 
         let mut host_status = HostStatus {
             spec: host_config,
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -733,7 +726,6 @@ mod tests {
         let host_config = get_host_config();
         let mut host_status = HostStatus {
             spec: host_config.clone(),
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -770,7 +762,6 @@ mod tests {
 
         let mut host_status = HostStatus {
             spec: host_config.clone(),
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -793,7 +784,6 @@ mod tests {
 
         let mut host_status = HostStatus {
             spec: host_config.clone(),
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -836,7 +826,6 @@ mod tests {
 
         let mut host_status = HostStatus {
             spec: host_config.clone(),
-            storage: Default::default(),
             ..Default::default()
         };
 
@@ -946,7 +935,6 @@ mod functional_test {
         };
         let host_status = trident_api::status::HostStatus {
             spec: host_config.clone(),
-            storage: Default::default(),
             servicing_state: Provisioned,
             ..Default::default()
         };
@@ -999,7 +987,6 @@ mod functional_test {
 
         // Add block device path of raid array to host status.
         host_status
-            .storage
             .block_device_paths
             .insert("raid1".to_string(), raid_path.clone());
 
@@ -1027,7 +1014,6 @@ mod functional_test {
 
         // Remove disk2 UUID from host status.
         host_status
-            .storage
             .disks_by_uuid
             .remove(&disk2_uuid.as_uuid().unwrap());
 
@@ -1053,7 +1039,6 @@ mod functional_test {
         if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
             // Remove disk2 UUID from host status.
             host_status
-                .storage
                 .disks_by_uuid
                 .remove(&disk2_uuid.as_uuid().unwrap());
         }
@@ -1076,7 +1061,6 @@ mod functional_test {
         if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
             // Remove disk2 UUID from host status.
             host_status
-                .storage
                 .disks_by_uuid
                 .remove(&disk2_uuid.as_uuid().unwrap());
         }

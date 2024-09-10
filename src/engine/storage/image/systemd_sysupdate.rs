@@ -468,7 +468,6 @@ fn get_partition_path(
 ) -> Result<String, Error> {
     // Fetch BlockDeviceInfo of partition based on its id
     let part_block_device_path = host_status
-        .storage
         .block_device_paths
         .get(block_device_id)
         .context(format!("No partition with id '{block_device_id}' found"))?;
@@ -513,11 +512,7 @@ fn get_parent_disk(host_status: &HostStatus, partition_id: &BlockDeviceId) -> Op
         for partition in &disk.partitions {
             // Check if the partition id matches the given BlockDeviceId
             if &partition.id == partition_id {
-                return host_status
-                    .storage
-                    .block_device_paths
-                    .get(&disk.id)
-                    .cloned();
+                return host_status.block_device_paths.get(&disk.id).cloned();
             }
         }
     }
@@ -828,7 +823,7 @@ mod tests {
 
     use trident_api::{
         config::{self, AbUpdate, AbVolumePair, HostConfiguration},
-        status::{ServicingState, ServicingType, Storage},
+        status::{ServicingState, ServicingType},
     };
 
     // Import everything from the parent module
@@ -983,15 +978,12 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
@@ -999,7 +991,7 @@ mod tests {
         };
 
         host_status.servicing_type = ServicingType::AbUpdate;
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
         // Scenario 1: Target ID matches with an entry and active volume is VolumeA
         match get_update_partition_id(&host_status, &"osab".to_string()) {
@@ -1015,7 +1007,7 @@ mod tests {
         }
 
         // Scenario 3: Switch active-volume to VolumeB and verify
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         match get_update_partition_id(&host_status, &"osab".to_string()) {
             Ok(volume_id) => assert_eq!(volume_id, "root"),
             Err(e) => panic!("Unexpected error: {}", e),
@@ -1044,15 +1036,11 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                },
-
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
@@ -1106,17 +1094,14 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                },
-                ab_active_volume: Some(AbVolumeSelection::VolumeA),
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
 
@@ -1156,12 +1141,9 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             ..Default::default()
         };
@@ -1209,15 +1191,12 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "rootb".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             ..Default::default()
         };
@@ -1225,7 +1204,7 @@ mod tests {
         // Case 1: Partition ID is valid
         assert_eq!(
             &get_parent_disk(&host_status, &"root".to_string()).unwrap(),
-            host_status.storage.block_device_paths.get("os").unwrap()
+            host_status.block_device_paths.get("os").unwrap()
         );
         // Case 2: Partition ID is invalid
         assert_eq!(get_parent_disk(&host_status, &"invalid".to_string()), None);

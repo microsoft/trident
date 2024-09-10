@@ -139,7 +139,7 @@ mod tests {
             PartitionType, Storage,
         },
         constants::{self, MOUNT_OPTION_READ_ONLY, SWAP_MOUNT_POINT},
-        status::{HostStatus, ServicingState, ServicingType, Storage as StorageStatus},
+        status::{HostStatus, ServicingState, ServicingType},
     };
 
     fn get_host_status() -> HostStatus {
@@ -180,15 +180,12 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: StorageStatus {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "home".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "swap".into() => PathBuf::from("/dev/disk/by-partlabel/swap"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "home".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "swap".into() => PathBuf::from("/dev/disk/by-partlabel/swap"),
             },
             ..Default::default()
         }
@@ -360,15 +357,12 @@ mod tests {
             servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staging,
             spec: host_config.clone(),
-            storage: StorageStatus {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "home".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "swap".into() => PathBuf::from("/dev/disk/by-partlabel/swap"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "home".into() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "swap".into() => PathBuf::from("/dev/disk/by-partlabel/swap"),
             },
             ..Default::default()
         };

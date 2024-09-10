@@ -1,12 +1,11 @@
 servicingType: no-active-servicing
 servicingState: provisioned
 installIndex: 0
-storage:
-  blockDevicePaths:
-    esp: placeholder
-    root-a: placeholder
-    root-b: placeholder
-    swap: placeholder
-    trident: placeholder
-  abActiveVolume: volume-a
-  disksByUuid: {placeholder: placeholder}
+blockDevicePaths:
+  esp: placeholder
+  root-a: placeholder
+  root-b: placeholder
+  swap: placeholder
+  trident: placeholder
+abActiveVolume: volume-a
+disksByUuid: {placeholder: placeholder}

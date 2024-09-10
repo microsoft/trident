@@ -46,9 +46,9 @@ def test_trident_get(vm):
     # images we put into the HostConfiguraion.
     del host_status["spec"]
     placeholder = "placeholder"
-    for id in host_status["storage"]["blockDevicePaths"]:
-        host_status["storage"]["blockDevicePaths"][id] = placeholder
-    host_status["storage"]["disksByUuid"] = {placeholder: placeholder}
+    for id in host_status["blockDevicePaths"]:
+        host_status["blockDevicePaths"][id] = placeholder
+    host_status["disksByUuid"] = {placeholder: placeholder}
     with open(
         TRIDENT_REPO_DIR_PATH / "functional_tests/host-status-template.yaml", "r"
     ) as file:

@@ -657,7 +657,7 @@ pub(super) fn get_block_device_path(
     host_status: &HostStatus,
     block_device_id: &BlockDeviceId,
 ) -> Option<PathBuf> {
-    if let Some(partition_path) = host_status.storage.block_device_paths.get(block_device_id) {
+    if let Some(partition_path) = host_status.block_device_paths.get(block_device_id) {
         return Some(partition_path.clone());
     }
 
@@ -941,9 +941,8 @@ mod test {
 
     use maplit::btreemap;
 
-    use trident_api::{
-        config::{self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionType},
-        status::Storage,
+    use trident_api::config::{
+        self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionType,
     };
 
     use super::*;
@@ -988,13 +987,10 @@ mod test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "foo".to_owned() => PathBuf::from("/dev/sda"),
-                    "boot".to_owned() => PathBuf::from("/dev/sda1"),
-                    "root".to_owned() => PathBuf::from("/dev/sda2"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "foo".to_owned() => PathBuf::from("/dev/sda"),
+                "boot".to_owned() => PathBuf::from("/dev/sda1"),
+                "root".to_owned() => PathBuf::from("/dev/sda2"),
             },
             servicing_state: ServicingState::Provisioned,
             ..Default::default()
@@ -1054,15 +1050,12 @@ mod test {
                 },
                 ..Default::default()
             },
-            storage: Storage {
-                block_device_paths: btreemap! {
-                    "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "efi".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
-                    "root".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
-                    "rootb".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
-                    "data".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "efi".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
+                "root".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
+                "rootb".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
+                "data".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             servicing_state: ServicingState::Provisioned,
             servicing_type: ServicingType::NoActiveServicing,
@@ -1097,7 +1090,7 @@ mod test {
             None
         );
         // Now, set ab_active_volume to VolumeA.
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
             get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
             Some("root".to_owned())
@@ -1132,7 +1125,7 @@ mod test {
 
         // When active volume is VolumeB, should return VolumeB when active=true; VolumeA when
         // active=false.
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
             Some("rootb".to_owned())

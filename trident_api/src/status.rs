@@ -25,11 +25,20 @@ pub struct HostStatus {
     /// Current state of the servicing that Trident is executing on the host.
     pub servicing_state: ServicingState,
 
-    #[serde(default)]
-    pub storage: Storage,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<serde_yaml::Value>,
+
+    /// The path associated with each block device in the Host Configuration.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub block_device_paths: BTreeMap<BlockDeviceId, PathBuf>,
+
+    /// A/B update status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ab_active_volume: Option<AbVolumeSelection>,
+
+    /// Stores the Disks UUID to ID mapping of the host.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub disks_by_uuid: HashMap<Uuid, BlockDeviceId>,
 
     /// Index of the current Azure Linux install. Used to distinguish between
     /// different installs of Azure Linux on the same host.
@@ -92,23 +101,6 @@ pub enum ServicingState {
     Provisioned,
 }
 
-/// Storage status of a host.
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Storage {
-    /// The path associated with each block device in the Host Configuration.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub block_device_paths: BTreeMap<BlockDeviceId, PathBuf>,
-
-    /// A/B update status.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ab_active_volume: Option<AbVolumeSelection>,
-
-    /// Stores the Disks UUID to ID mapping of the host.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub disks_by_uuid: HashMap<Uuid, BlockDeviceId>,
-}
-
 /// A/B volume selection. Determines which set of volumes are currently
 /// active/used by the OS.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
@@ -128,10 +120,10 @@ impl HostStatus {
             // If host is executing a "normal" update, active and update volumes are the same.
             ServicingType::HotPatch
             | ServicingType::NormalUpdate
-            | ServicingType::UpdateAndReboot => self.storage.ab_active_volume,
+            | ServicingType::UpdateAndReboot => self.ab_active_volume,
             // If host is executing an A/B update, update volume is the opposite of active volume.
             ServicingType::AbUpdate => {
-                if self.storage.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
+                if self.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
                     Some(AbVolumeSelection::VolumeB)
                 } else {
                     Some(AbVolumeSelection::VolumeA)
@@ -150,7 +142,7 @@ impl HostStatus {
             ServicingType::HotPatch
             | ServicingType::NormalUpdate
             | ServicingType::UpdateAndReboot
-            | ServicingType::AbUpdate => self.storage.ab_active_volume,
+            | ServicingType::AbUpdate => self.ab_active_volume,
             // If host is executing a clean install, there is no active volume yet.
             ServicingType::CleanInstall => None,
             ServicingType::NoActiveServicing => match self.servicing_state {
@@ -159,7 +151,7 @@ impl HostStatus {
                 ServicingState::NotProvisioned | ServicingState::CleanInstallFailed => None,
                 // If host is in Provisioned OR AbUpdateFailed, active volume is the current one.
                 ServicingState::Provisioned | ServicingState::AbUpdateFailed => {
-                    self.storage.ab_active_volume
+                    self.ab_active_volume
                 }
                 // This should never happen, as we should not be in Staging, Staged, Finalizing, or
                 // Finalized states if there is no servicing in progress.
@@ -268,48 +260,48 @@ mod tests {
 
         // 6. If host is doing HotPatch, NormalUpdate, or UpdateAndReboot, update volume is always
         // the currently active volume
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         host_status.servicing_state = ServicingState::Staging;
         host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_update_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::NormalUpdate;
         assert_eq!(
             host_status.get_ab_update_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::UpdateAndReboot;
         assert_eq!(
             host_status.get_ab_update_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_update_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::NormalUpdate;
         assert_eq!(
             host_status.get_ab_update_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::UpdateAndReboot;
         assert_eq!(
             host_status.get_ab_update_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         // 7. If host is doing A/B update, update volume is the opposite of the active volume
         host_status.servicing_type = ServicingType::AbUpdate;
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeB)
@@ -322,7 +314,7 @@ mod tests {
             Some(AbVolumeSelection::VolumeB)
         );
 
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeA)
@@ -364,18 +356,18 @@ mod tests {
 
         // 3. If host is in Provisioned, active volume is the current one
         host_status.servicing_state = ServicingState::Provisioned;
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         // 4. If host is in AbUpdateFailed, active volume is the current one
         host_status.servicing_state = ServicingState::AbUpdateFailed;
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         // 5. If host is doing CleanInstall, active volume is always None
@@ -388,55 +380,55 @@ mod tests {
 
         // 6. If host is doing HotPatch, NormalUpdate, UpdateAndReboot, or AbUpdate, the active
         // volume is in host status
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::NormalUpdate;
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::UpdateAndReboot;
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         host_status.servicing_state = ServicingState::Finalizing;
         host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::NormalUpdate;
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::UpdateAndReboot;
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
 
         host_status.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
             host_status.get_ab_active_volume(),
-            host_status.storage.ab_active_volume
+            host_status.ab_active_volume
         );
     }
 }

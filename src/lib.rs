@@ -737,7 +737,7 @@ mod tests {
             PartitionType, Storage,
         },
         error::ErrorKind,
-        status::{AbVolumeSelection, Storage as HostStorage},
+        status::AbVolumeSelection,
     };
 
     use super::*;
@@ -817,10 +817,6 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: HostStorage {
-                block_device_paths: [].into(),
-                ..Default::default()
-            },
             servicing_state: ServicingState::Finalized,
             servicing_type: ServicingType::CleanInstall,
             ..Default::default()
@@ -854,7 +850,7 @@ mod tests {
 
         // Test case #3: When block devices are defined, should return the expected root device
         // path of 'root-a'.
-        host_status.storage.block_device_paths = btreemap! {
+        host_status.block_device_paths = btreemap! {
             "os".to_owned() => PathBuf::from("/dev/sda"),
             "efi".to_owned() => PathBuf::from("/dev/sda1"),
             "root-a".to_owned() => PathBuf::from("/dev/sda2"),
@@ -867,7 +863,7 @@ mod tests {
 
         // Test case #4: After rebooting after an A/B update, should return the expected root
         // device path of 'root-b'.
-        host_status.storage.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         host_status.servicing_type = ServicingType::AbUpdate;
         host_status.servicing_state = ServicingState::Finalized;
         assert_eq!(

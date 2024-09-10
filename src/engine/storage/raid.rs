@@ -362,7 +362,7 @@ mod tests {
 
     use trident_api::{
         config::{Disk, Partition, PartitionSize, PartitionType, Storage},
-        status::{ServicingState, ServicingType, Storage as StorageStatus},
+        status::{ServicingState, ServicingType},
     };
 
     use super::*;
@@ -400,14 +400,11 @@ mod tests {
                 },
                 ..Default::default()
             },
-            storage: StorageStatus {
-                block_device_paths: btreemap! {
-                    "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
-                    "boot".into() => PathBuf::from("/dev/sda1"),
-                    "root".into() => PathBuf::from("/dev/sda2"),
-                    "home".into() => PathBuf::from("/dev/sda3"),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
+                "boot".into() => PathBuf::from("/dev/sda1"),
+                "root".into() => PathBuf::from("/dev/sda2"),
+                "home".into() => PathBuf::from("/dev/sda3"),
             },
             ..Default::default()
         };

@@ -497,9 +497,8 @@ mod test {
     use maplit::btreemap;
 
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
-    use trident_api::{
-        config::{Disk, FileSystemType, Partition, PartitionSize, PartitionType, Storage},
-        status,
+    use trident_api::config::{
+        Disk, FileSystemType, Partition, PartitionSize, PartitionType, Storage,
     };
 
     fn get_original_grub_content() -> &'static str {
@@ -642,14 +641,11 @@ mod test {
                 },
                 ..Default::default()
             },
-            storage: status::Storage {
-                block_device_paths: btreemap! {
-                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
         };
@@ -730,10 +726,7 @@ mod test {
             .unwrap()
             .partitions
             .retain(|p| p.id != "overlay");
-        host_status_no_overlay
-            .storage
-            .block_device_paths
-            .remove("overlay");
+        host_status_no_overlay.block_device_paths.remove("overlay");
         assert_eq!(
             get_verity_related_device_paths(
                 &host_status_no_overlay,
@@ -774,9 +767,8 @@ mod functional_test {
         },
     };
     use pytest_gen::functional_test;
-    use trident_api::{
-        config::{Disk, FileSystemType, InternalVerityDevice, Partition, PartitionType, Storage},
-        status,
+    use trident_api::config::{
+        Disk, FileSystemType, InternalVerityDevice, Partition, PartitionType, Storage,
     };
 
     #[functional_test]
@@ -914,14 +906,11 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: status::Storage {
-                block_device_paths: btreemap! {
-                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                    "root-verity".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                "root-verity".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             },
             ..Default::default()
         };
@@ -955,10 +944,7 @@ mod functional_test {
             .unwrap()
             .partitions
             .retain(|p| p.id != "boot");
-        host_status_no_boot_part
-            .storage
-            .block_device_paths
-            .remove("boot");
+        host_status_no_boot_part.block_device_paths.remove("boot");
         assert_eq!(
             get_root_verity_root_hash(&host_status_no_boot_part)
                 .unwrap_err()
@@ -1058,15 +1044,12 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: status::Storage {
-                block_device_paths: btreemap! {
-                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
         };
@@ -1121,7 +1104,7 @@ mod functional_test {
         let mut host_status = HostStatus::default();
         setup_verity_devices(&mut host_status).unwrap();
 
-        assert!(host_status.storage.block_device_paths.is_empty());
+        assert!(host_status.block_device_paths.is_empty());
 
         // test root verity device
         let _expected_root_hash = verity::setup_verity_volumes();
@@ -1187,15 +1170,12 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: status::Storage {
-                block_device_paths: btreemap! {
-                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
         };
@@ -1207,7 +1187,7 @@ mod functional_test {
                 device_name: "root_new",
             };
             assert!(verity_device_path.exists());
-            assert_eq!(host_status.storage.block_device_paths.len(), 5);
+            assert_eq!(host_status.block_device_paths.len(), 5);
         }
 
         // test failure when root hash is not matching
@@ -1244,10 +1224,10 @@ mod functional_test {
             "Failed to activate verity device 'root', status: 'corrupted'"
         );
         assert!(!verity_device_path.exists());
-        assert_eq!(host_status.storage.block_device_paths.len(), 5);
+        assert_eq!(host_status.block_device_paths.len(), 5);
         assert_eq!(
-            host_status.storage.block_device_paths,
-            host_status_golden.storage.block_device_paths
+            host_status.block_device_paths,
+            host_status_golden.block_device_paths
         );
     }
 
@@ -1347,15 +1327,12 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: status::Storage {
-                block_device_paths: btreemap! {
-                    "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
         };
@@ -1584,15 +1561,12 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            storage: status::Storage {
-                block_device_paths: btreemap! {
-                    "foo".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
-                    "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                    "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-                    "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                    "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
-                },
-                ..Default::default()
+            block_device_paths: btreemap! {
+                "foo".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+                "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                "overlay".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
             },
             ..Default::default()
         };

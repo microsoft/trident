@@ -44,15 +44,14 @@ impl Module for StorageModule {
         clean_install: bool,
     ) -> Result<(), TridentError> {
         // Remove block devices that no longer exist.
-        let original_block_devices = host_status.storage.block_device_paths.clone();
+        let original_block_devices = host_status.block_device_paths.clone();
         host_status
-            .storage
             .block_device_paths
             .retain(|_id, block_device| block_device.exists());
 
         let removed_block_devices = original_block_devices
             .keys()
-            .filter(|id| !host_status.storage.block_device_paths.contains_key(*id))
+            .filter(|id| !host_status.block_device_paths.contains_key(*id))
             .collect::<Vec<_>>();
         if !removed_block_devices.is_empty() {
             info!(
@@ -292,7 +291,7 @@ mod tests {
         },
         constants::ROOT_MOUNT_POINT_PATH,
         error::ErrorKind,
-        status::{ServicingState, Storage},
+        status::ServicingState,
     };
 
     use super::*;
@@ -501,11 +500,8 @@ mod tests {
         generate_fstab(
             &HostStatus {
                 spec: get_host_config(&temp_tabfile),
-                storage: Storage {
-                    block_device_paths: btreemap! {
-                        "part1".into() => PathBuf::from("/part1"),
-                    },
-                    ..Default::default()
+                block_device_paths: btreemap! {
+                    "part1".into() => PathBuf::from("/part1"),
                 },
                 ..Default::default()
             },
@@ -533,11 +529,8 @@ mod tests {
         generate_fstab(
             &HostStatus {
                 spec: hc,
-                storage: Storage {
-                    block_device_paths: btreemap! {
-                        "part1".into() => PathBuf::from("/part1"),
-                    },
-                    ..Default::default()
+                block_device_paths: btreemap! {
+                    "part1".into() => PathBuf::from("/part1"),
                 },
                 ..Default::default()
             },

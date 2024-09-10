@@ -460,7 +460,7 @@ mod tests {
 
     use trident_api::{
         constants::GRUB2_RELATIVE_PATH,
-        status::{AbVolumeSelection, ServicingState, ServicingType, Storage},
+        status::{AbVolumeSelection, ServicingState, ServicingType},
     };
 
     /// Validates that generate_arch_str() returns the correct string based on target architecture
@@ -662,7 +662,7 @@ mod tests {
         fn test_generate_efi_bin_base_dir_path(host_status: &mut HostStatus) {
             println!(
                 "Checking AB update to {}",
-                match host_status.storage.ab_active_volume {
+                match host_status.ab_active_volume {
                     Some(AbVolumeSelection::VolumeA) => "A",
                     Some(AbVolumeSelection::VolumeB) => "B",
                     None => "unknown",
@@ -722,10 +722,7 @@ mod tests {
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
             servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
-            storage: Storage {
-                ab_active_volume: Some(AbVolumeSelection::VolumeA),
-                ..Default::default()
-            },
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         });
 
@@ -734,10 +731,7 @@ mod tests {
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
             servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
-            storage: Storage {
-                ab_active_volume: Some(AbVolumeSelection::VolumeB),
-                ..Default::default()
-            },
+            ab_active_volume: Some(AbVolumeSelection::VolumeB),
             ..Default::default()
         });
 
@@ -746,11 +740,8 @@ mod tests {
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
             servicing_type: ServicingType::AbUpdate,
             servicing_state: ServicingState::Staging,
-            storage: Storage {
-                // Set to None to trigger default behavior
-                ab_active_volume: None,
-                ..Default::default()
-            },
+            // Set to None to trigger default behavior
+            ab_active_volume: None,
             ..Default::default()
         });
     }
