@@ -72,6 +72,8 @@ extends:
       # suppression:
       #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
       disableLegacyManifest: true
+      cg:
+        alertWarningLevel: Medium
     featureFlags:
       runOnHost: true
       EnableCDPxPAT: false

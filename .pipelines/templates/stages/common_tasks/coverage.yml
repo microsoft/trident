@@ -24,7 +24,7 @@ steps:
   - ${{ if eq(parameters.rustup, 'true') }}:
       - template: rustup.yml
 
-  - script: cargo install grcov --locked
+  - script: cargo install grcov # TODO: Add back '--locked' flag once https://github.com/mozilla/grcov/issues/1187 is fixed.
     displayName: Install grcov
     retryCountOnTaskFailure: 3
 
