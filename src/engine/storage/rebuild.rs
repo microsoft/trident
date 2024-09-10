@@ -856,3 +856,258 @@ mod tests {
         );
     }
 }
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+
+    use engine::storage;
+
+    use super::*;
+    use pytest_gen::functional_test;
+
+    use osutils::{
+        testutils::{raid, repart::TEST_DISK_DEVICE_PATH},
+        udevadm,
+    };
+    use std::{process::Command, str::FromStr};
+    use trident_api::config::{
+        AdoptedPartition, Disk, HostConfiguration, Partition, PartitionSize, PartitionTableType,
+        PartitionType, RaidLevel, Storage,
+    };
+    use trident_api::status::ServicingState::Provisioned;
+
+    /// Returns the host configuration and host status.
+    fn get_hostconfig_and_hoststatus() -> (HostConfiguration, trident_api::status::HostStatus) {
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "disk".to_string(),
+                        device: PathBuf::from("/dev/sda"),
+                        partitions: vec![Partition {
+                            id: "raidpart1".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        }],
+                        partition_table_type: PartitionTableType::Gpt,
+                        adopted_partitions: vec![
+                            AdoptedPartition {
+                                id: "esp".to_string(),
+                                match_label: Some("esp".to_string()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "root-a".to_string(),
+                                match_label: Some("root-a".to_string()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "root-b".to_string(),
+                                match_label: Some("root-b".to_string()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "swap".to_string(),
+                                match_label: Some("swap".to_string()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "trident".to_string(),
+                                match_label: Some("trident".to_string()),
+                                match_uuid: None,
+                            },
+                        ],
+                    },
+                    Disk {
+                        id: "disk2".to_string(),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        partitions: vec![Partition {
+                            id: "raidpart2".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                raid: trident_api::config::Raid {
+                    software: vec![trident_api::config::SoftwareRaidArray {
+                        name: "raid1".to_string(),
+                        id: "raid1".to_string(),
+                        level: RaidLevel::Raid1,
+                        devices: vec!["raidpart1".to_string(), "raidpart2".to_string()],
+                    }],
+                    ..Default::default()
+                },
+
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let host_status = trident_api::status::HostStatus {
+            spec: host_config.clone(),
+            storage: Default::default(),
+            servicing_state: Provisioned,
+            ..Default::default()
+        };
+
+        (host_config, host_status)
+    }
+
+    /// Deletes the partition /dev/sda6.
+    fn delete_partition() {
+        // Get sfdisk information for /dev/sda6.
+        let sfdisk_info = sfdisk::SfDisk::get_info(PathBuf::from("/dev/sda")).unwrap();
+        // Get partition information for /dev/sda6.
+        let partition_info = sfdisk_info
+            .partitions
+            .iter()
+            .find(|p| p.name == Some(String::from("raidpart1")))
+            .unwrap();
+        // Delete the partition.
+        partition_info.delete().unwrap();
+        // Run partx --delete on /dev/sda6 to delete the partition.
+        Command::new("partx")
+            .arg("--delete")
+            .arg("/dev/sda6")
+            .output()
+            .unwrap();
+    }
+
+    #[functional_test]
+    fn test_validate_and_rebuild_raid_success() {
+        let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
+
+        // Stop any pre-existing RAID arrays.
+        let err = storage::raid::stop_pre_existing_raid_arrays(&host_config);
+        assert!(err.is_ok());
+
+        // Create partitions on the test disks.
+        let err = storage::partitioning::create_partitions(&mut host_status, &host_config);
+        assert!(err.is_ok());
+        udevadm::settle().unwrap();
+
+        // Create a raid array raid1.
+        let raid_path = PathBuf::from("/dev/md/raid1");
+        let devices = [PathBuf::from("/dev/sda6"), PathBuf::from("/dev/sdb1")].to_vec();
+
+        mdadm::create(&raid_path, &RaidLevel::Raid1, devices.clone()).unwrap();
+        raid::verify_raid_creation(&raid_path, devices.clone());
+
+        // Add block device path of raid array to host status.
+        host_status
+            .storage
+            .block_device_paths
+            .insert("raid1".to_string(), raid_path.clone());
+
+        // Mark raid1 array as failed to simulate a disk failure.
+        mdadm::fail(&raid_path, PathBuf::from("/dev/sdb1")).unwrap();
+
+        // Wait for sdb to be freed.
+        udevadm::settle().unwrap();
+
+        // Now remove the disk2part1 from the RAID array.
+        mdadm::remove(&raid_path, PathBuf::from("/dev/sdb1")).unwrap();
+
+        // Disks to rebuild is empty as 2 disks UUIDs are already present in host status.
+        validate_and_rebuild_raid(&host_config, &mut host_status).unwrap();
+
+        // Verify that the RAID array hasnt been rebuilt as disks to rebuild is empty.
+        let raid_devices = mdadm::detail(raid_path.as_ref()).unwrap();
+        // Check if the RAID array has only 1 device.
+        assert_eq!(raid_devices.devices.len(), 1);
+
+        // Get disk UUID of disk2.
+        let disk2_uuid = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb"))
+            .unwrap()
+            .unwrap();
+
+        // Remove disk2 UUID from host status.
+        host_status
+            .storage
+            .disks_by_uuid
+            .remove(&disk2_uuid.as_uuid().unwrap());
+
+        // Validate and rebuild RAID arrays.
+        validate_and_rebuild_raid(&host_config, &mut host_status).unwrap();
+
+        // Verify that the RAID array has been rebuilt successfully.
+        raid::verify_raid_creation(raid_path.clone(), devices);
+
+        // Cleanup the raid array.
+        raid::stop_if_exists(&raid_path);
+
+        osutils::wipefs::all("/dev/sda6").unwrap();
+
+        // Delete the partition.
+        delete_partition();
+    }
+
+    #[functional_test]
+    fn test_validate_and_rebuild_raid_validation_failure() {
+        let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
+
+        if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
+            // Remove disk2 UUID from host status.
+            host_status
+                .storage
+                .disks_by_uuid
+                .remove(&disk2_uuid.as_uuid().unwrap());
+        }
+
+        // Fail validation.
+        host_status.servicing_type = trident_api::status::ServicingType::CleanInstall;
+
+        let err = validate_and_rebuild_raid(&host_config, &mut host_status);
+
+        assert_eq!(
+            err.unwrap_err().to_string(),
+            "Trident rebuild-raid validation failed or could not be performed"
+        );
+    }
+
+    #[functional_test]
+    fn test_validate_and_rebuild_raid_raidrecovery_failure() {
+        let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
+
+        if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
+            // Remove disk2 UUID from host status.
+            host_status
+                .storage
+                .disks_by_uuid
+                .remove(&disk2_uuid.as_uuid().unwrap());
+        }
+
+        // Add a raid array raid2 which has partitions on disk2 to the host configuration.
+        let mut host_config = host_config;
+        host_config.storage.disks[1].partitions.push(Partition {
+            id: "disk2part2".to_string(),
+            partition_type: PartitionType::Root,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        host_config.storage.disks[1].partitions.push(Partition {
+            id: "disk2part3".to_string(),
+            partition_type: PartitionType::Root,
+            size: PartitionSize::from_str("1G").unwrap(),
+        });
+        host_config
+            .storage
+            .raid
+            .software
+            .push(trident_api::config::SoftwareRaidArray {
+                name: "raid2".to_string(),
+                id: "raid2".to_string(),
+                level: RaidLevel::Raid1,
+                devices: vec!["disk2part2".to_string(), "disk2part3".to_string()],
+            });
+
+        host_status.spec = host_config.clone();
+
+        let err = validate_and_rebuild_raid(&host_config, &mut host_status);
+
+        assert_eq!(
+            err.unwrap_err().to_string(),
+            "Trident rebuild-raid validation failed or could not be performed"
+        );
+    }
+}

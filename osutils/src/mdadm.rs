@@ -98,6 +98,46 @@ pub fn add(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), 
         .context("Failed to run mdadm add device")
 }
 
+/// Marks a device as failed in a RAID array.
+///
+/// This function uses `mdadm --fail` to mark the specified device as failed in
+/// the given RAID array.
+///
+pub fn fail(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), Error> {
+    info!(
+        "Marking RAID device '{}' as failed for '{}'",
+        device.as_ref().display(),
+        raid_path.as_ref().display()
+    );
+
+    Command::new("mdadm")
+        .arg(raid_path.as_ref())
+        .arg("--fail")
+        .arg(device.as_ref())
+        .run_and_check()
+        .context("Failed to run mdadm fail device")
+}
+
+/// Removes a device from a RAID array.
+///
+/// This function uses `mdadm --remove` to remove the specified device from the
+/// given RAID array.
+///
+pub fn remove(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), Error> {
+    info!(
+        "Removing RAID device: '{}' from '{}'",
+        device.as_ref().display(),
+        raid_path.as_ref().display()
+    );
+
+    Command::new("mdadm")
+        .arg(raid_path.as_ref())
+        .arg("--remove")
+        .arg(device.as_ref())
+        .run_and_check()
+        .context("Failed to run mdadm remove device")
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Default)]
 pub struct MdadmDetail {
     pub raid_path: PathBuf,
@@ -295,6 +335,45 @@ mod functional_test {
                 .unwrap_err()
                 .to_string(),
             format!("Failed to stop RAID array {}", NON_EXISTENT_RAID_DEVICE)
+        );
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_raid_add_failure() {
+        assert_eq!(
+            self::add(
+                PathBuf::from(NON_EXISTENT_RAID_DEVICE),
+                PathBuf::from(NON_EXISTENT_RAID_DEVICE)
+            )
+            .unwrap_err()
+            .to_string(),
+            "Failed to run mdadm add device"
+        );
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_raid_fail_failure() {
+        assert_eq!(
+            self::fail(
+                PathBuf::from(NON_EXISTENT_RAID_DEVICE),
+                PathBuf::from(NON_EXISTENT_RAID_DEVICE)
+            )
+            .unwrap_err()
+            .to_string(),
+            "Failed to run mdadm fail device"
+        );
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_raid_remove_failure() {
+        assert_eq!(
+            self::remove(
+                PathBuf::from(NON_EXISTENT_RAID_DEVICE),
+                PathBuf::from(NON_EXISTENT_RAID_DEVICE)
+            )
+            .unwrap_err()
+            .to_string(),
+            "Failed to run mdadm remove device"
         );
     }
 }

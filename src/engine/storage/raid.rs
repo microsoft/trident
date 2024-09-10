@@ -457,7 +457,7 @@ mod functional_test {
     use pytest_gen::functional_test;
 
     use const_format::formatcp;
-    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
+    use osutils::testutils::{raid, repart::TEST_DISK_DEVICE_PATH};
     use std::path::PathBuf;
     use std::str::FromStr;
     use trident_api::config::{
@@ -469,21 +469,6 @@ mod functional_test {
     const DEVICE_TWO: &str = formatcp!("{TEST_DISK_DEVICE_PATH}2");
     const NON_EXISTENT_DEVICE: &str = "/dev/non-existent-path";
     const RAID_PATH: &str = "/dev/md/some-raid";
-
-    fn stop_if_exists(raid_path: impl AsRef<Path>) {
-        if raid_path.as_ref().exists() {
-            mdadm::stop(raid_path.as_ref()).unwrap();
-        }
-    }
-
-    fn verify_raid_creation(raid_path: impl AsRef<Path>, devices: Vec<PathBuf>) {
-        let raid_devices = mdadm::detail(raid_path.as_ref()).unwrap();
-        // Check if the RAID array was created on the specified devices
-        assert_eq!(raid_devices.devices.len(), devices.len());
-        for (i, device) in devices.iter().enumerate() {
-            assert_eq!(&raid_devices.devices[i], device);
-        }
-    }
 
     fn raid_cleanup_and_create_partitions() {
         let mut host_status = HostStatus {
@@ -537,9 +522,9 @@ mod functional_test {
         let devices = [PathBuf::from(DEVICE_ONE), PathBuf::from(DEVICE_TWO)].to_vec();
 
         mdadm::create(&raid_path, &RaidLevel::Raid1, devices.clone()).unwrap();
-        verify_raid_creation(&raid_path, devices);
+        raid::verify_raid_creation(&raid_path, devices);
 
-        stop_if_exists(&raid_path);
+        raid::stop_if_exists(&raid_path);
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -793,5 +778,67 @@ mod functional_test {
                 .to_string(),
             "Failed to create RAID array 'md0'"
         );
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_raid_create_add_fail_remove() {
+        raid_cleanup_and_create_partitions();
+        let raid_path = PathBuf::from(RAID_PATH);
+        let devices = [PathBuf::from(DEVICE_ONE), PathBuf::from(DEVICE_TWO)].to_vec();
+
+        // Create RAID array
+        mdadm::create(&raid_path, &RaidLevel::Raid1, devices.clone()).unwrap();
+        raid::verify_raid_creation(&raid_path, devices);
+
+        // Fail the device in the RAID array
+        mdadm::fail(raid_path.clone(), PathBuf::from(DEVICE_TWO)).unwrap();
+
+        // Remove the failed device from the RAID array
+        mdadm::remove(raid_path.clone(), PathBuf::from(DEVICE_TWO)).unwrap();
+
+        // Add the failed device back to the RAID array
+        mdadm::add(raid_path.clone(), PathBuf::from(DEVICE_TWO)).unwrap();
+
+        raid::stop_if_exists(&raid_path);
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_raid_add_fail_remove_rerun() {
+        raid_cleanup_and_create_partitions();
+        let raid_path = PathBuf::from(RAID_PATH);
+        let devices = [PathBuf::from(DEVICE_ONE), PathBuf::from(DEVICE_TWO)].to_vec();
+
+        // Create RAID array
+        mdadm::create(&raid_path, &RaidLevel::Raid1, devices.clone()).unwrap();
+        raid::verify_raid_creation(&raid_path, devices);
+
+        // Fail the device in the RAID array
+        mdadm::fail(raid_path.clone(), PathBuf::from(DEVICE_TWO)).unwrap();
+        // Re-fail the device in the RAID array
+        mdadm::fail(raid_path.clone(), PathBuf::from(DEVICE_TWO)).unwrap();
+
+        // Remove the failed device from the RAID array
+        mdadm::remove(raid_path.clone(), PathBuf::from(DEVICE_TWO)).unwrap();
+
+        // Re-remove the failed device from the RAID array
+        assert_eq!(
+            mdadm::remove(raid_path.clone(), PathBuf::from(DEVICE_TWO))
+                .unwrap_err()
+                .to_string(),
+            "Failed to run mdadm remove device"
+        );
+
+        // Add the failed device back to the RAID array
+        mdadm::add(raid_path.clone(), PathBuf::from(DEVICE_TWO)).unwrap();
+
+        // Re-add the failed device back to the RAID array
+        assert_eq!(
+            mdadm::add(raid_path.clone(), PathBuf::from(DEVICE_TWO))
+                .unwrap_err()
+                .to_string(),
+            "Failed to run mdadm add device"
+        );
+
+        raid::stop_if_exists(&raid_path);
     }
 }
