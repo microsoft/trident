@@ -179,7 +179,6 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
-      runOnFailure: true
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
@@ -268,7 +267,6 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
-      runOnFailure: true
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:

@@ -26,17 +26,31 @@ parameters:
     type: string
     default: "trident_mapping"
 
-  - name: runOnFailure
-    type: boolean
-    default: false
-
 steps:
+  - bash: |
+      set -eu
+      if [ -s "${{ parameters.metricsFile }}" ]; then
+        echo "##vso[task.setvariable variable=ProcessMetricsFile]true"
+        echo "Metrics file exists and is not empty."
+      else
+        if [[ "$AGENT_JOBSTATUS" == "Succeeded" ]]; then
+          echo "Metrics file does not exist or is empty, but there were no previous failures!"
+          echo "##vso[task.setvariable variable=ProcessMetricsFile]false"
+          echo "##vso[task.complete result=Failed;]"
+        else
+          echo "Metrics file does not exist or is empty, but a previous failure occurred."
+          echo "##vso[task.setvariable variable=ProcessMetricsFile]false"
+        fi
+      fi
+    displayName: "Check if metrics file exists and is not empty"
+    condition: succeededOrFailed()
+
   - bash: |
       set -eux
       python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/process_trident_metrics.py --trident-config ${{ parameters.tridentConfigPath }}/trident-config.yaml --metrics-file ${{ parameters.metricsFile }}
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Process Trident metrics"
-    condition: or(succeeded(), and(succeededOrFailed(), eq('${{ parameters.runOnFailure }}', true)))
+    condition: eq(variables['ProcessMetricsFile'], 'true')
     env:
       TRIDENT_CONFIGURATION_NAME: ${{ parameters.tridentConfigurationName }}
       SOURCE_BRANCH_NAME: $(Build.SourceBranchName)
@@ -49,4 +63,4 @@ steps:
       kustoTableName: ${{ parameters.kustoTableName }}
       kustoTableMapping: ${{ parameters.kustoTableMapping }}
       metricsFile: ${{ parameters.metricsFile }}
-      runOnFailure: ${{ parameters.runOnFailure }}
+      runOnFailure: true
