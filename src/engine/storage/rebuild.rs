@@ -972,6 +972,8 @@ mod functional_test {
             .arg("/dev/sda6")
             .output()
             .unwrap();
+        // Also run  partx --update on /dev/sda to update the partition table.
+        block_devices::partx_update("/dev/sda").unwrap();
     }
 
     #[functional_test]
@@ -992,6 +994,7 @@ mod functional_test {
         let devices = [PathBuf::from("/dev/sda6"), PathBuf::from("/dev/sdb1")].to_vec();
 
         mdadm::create(&raid_path, &RaidLevel::Raid1, devices.clone()).unwrap();
+        udevadm::wait(&raid_path).unwrap();
         raid::verify_raid_creation(&raid_path, devices.clone());
 
         // Add block device path of raid array to host status.
