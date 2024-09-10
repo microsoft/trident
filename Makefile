@@ -79,7 +79,7 @@ artifacts/osmodifier:
 bin/trident: build
 	@cp -u target/release/trident bin/
 
-bin/trident-rpms-azl2.tar.gz: Dockerfile systemd/*.service trident.spec artifacts/osmodifier bin/trident
+bin/trident-rpms-azl2.tar.gz: Dockerfile.azl2 systemd/*.service trident.spec artifacts/osmodifier bin/trident
 	@docker build --quiet -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
