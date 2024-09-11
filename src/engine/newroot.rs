@@ -4,15 +4,20 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
-use osutils::{container, files, filesystems::MountFileSystemType, findmnt::FindMnt, mount, path};
+use osutils::{
+    container, files,
+    filesystems::MountFileSystemType,
+    findmnt::{FindMnt, MountpointMetadata},
+    mount, path,
+};
 use trident_api::{
     config::InternalMountPoint,
     constants::{
-        EXEC_ROOT_PATH, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH,
-        UPDATE_ROOT_PATH,
+        EXEC_ROOT_PATH, MOUNT_OPTION_READ_ONLY, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH,
+        UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, HostStatus},
@@ -27,13 +32,30 @@ const PROHIBITED_EXECROOT_MOUNTS: [&str; 6] = [
     "/proc",
     // All sysfs
     "/sys",
-    // All of /tmp
-    "/tmp",
-    // All of /var/tmp
-    "/var/tmp",
     // Docker containers
     "/var/lib/docker/vfs/dir",
+    // Everything under /run/netns, fix for #8879
+    "/run/netns",
+    // Everything under /run/contained, fix for #8926
+    "/run/contained",
 ];
+
+/// PREVIEW-ONLY OVERRIDE
+/// Execroot deny-list extension file
+const EXECROOT_DENYLIST_EXTENSION_FILE: &str = "/etc/trident/execroot_denylist";
+
+/// Filter function to prevent specific mount points from being bind mounted in
+/// the execroot.
+///
+/// Used in a call to
+/// `FindMnt::traverse_depth().into_iter().filter(execroot_filter)`
+///
+/// Should return `true` if the mount point should be bind mounted in the
+/// execroot.
+fn execroot_filter(mnt: &&MountpointMetadata) -> bool {
+    // Skip anything with docker in the name
+    !mnt.target.components().any(|c| c.as_os_str() == "docker")
+}
 
 /// NewrootMount represents all the necessary mounting points for newroot and
 /// the nested execmount to exit the chroot jail. It is also responsible for
@@ -276,10 +298,19 @@ impl NewrootMount {
         // Remove anything mounted under newroot from the execroot mounts
         mounts.prune_prefix(self.path());
 
+        // Generate a list of paths to deny-list from being bind mounted in the
+        // execroot.
+        let execroot_deny_list =
+            make_execroot_deny_list(Path::new(EXECROOT_DENYLIST_EXTENSION_FILE));
+
         // Prune special directories from the execroot mounts
-        PROHIBITED_EXECROOT_MOUNTS
-            .iter()
-            .for_each(|special_mount| mounts.prune_prefix(special_mount));
+        execroot_deny_list.iter().for_each(|deny_path| {
+            debug!(
+                "Blocking all mounts under '{}' from being bind mounted in execroot",
+                deny_path
+            );
+            mounts.prune_prefix(deny_path)
+        });
 
         // If we are running in a container, we expect a bind mount to the
         // container's host, generally `/host`. We must also prune the special
@@ -297,9 +328,12 @@ impl NewrootMount {
             );
 
             // Prune special directories from the host root path. (e.g. `/host/dev`)
-            PROHIBITED_EXECROOT_MOUNTS.iter().for_each(|special_mount| {
-                let prune = path::join_relative(&host, special_mount);
-                trace!("Pruning special mount '{}'", prune.display());
+            execroot_deny_list.iter().for_each(|deny_path| {
+                let prune = path::join_relative(&host, deny_path);
+                debug!(
+                    "Blocking all mounts under '{}' from being bind mounted in execroot",
+                    prune.display()
+                );
                 mounts.prune_prefix(prune);
             });
         }
@@ -309,22 +343,39 @@ impl NewrootMount {
         mounts
             .traverse_depth()
             .into_iter()
-            // Skip anything with docker in the name
-            // Skip all nodev mounts
-            .filter(|mnt| {
-                !mnt.target.components().any(|c| c.as_os_str() == "docker") && !mnt.is_nodev()
-            })
+            .filter(execroot_filter)
             .try_for_each(|item| {
                 // The target for the bind mount is the path in the newroot
                 let target = path::join_relative(self.execroot_path(), &item.target);
                 // The source for the bind mount is the path in the host
                 let source = &item.target;
 
-                do_bind_mount(source, &target).with_context(|| {
-                    format!(
-                        "Failed to bind mount '{}' to '{}' in execroot",
+                if item.is_unbindable() {
+                    warn!(
+                        "Skipping unbindable mount '{}' to '{}'",
                         source.display(),
                         target.display()
+                    );
+
+                    return Ok(());
+                }
+
+                // Check if the mount is read-only, if so, we need to bind mount
+                // it as read-only.
+                let flags = if item.options.contains(MOUNT_OPTION_READ_ONLY) {
+                    MountFlags::RDONLY
+                } else {
+                    MountFlags::empty()
+                };
+
+                do_bind_mount(source, &target, flags).with_context(|| {
+                    format!(
+                        "Failed to bind mount '{}' to '{}' in execroot. This is likely due to a \
+                        special directory that should not be bind mounted. Please send all of this \
+                        output to support :)\n{:#?}",
+                        source.display(),
+                        target.display(),
+                        item,
                     )
                 })?;
 
@@ -374,7 +425,7 @@ fn get_new_root_path() -> PathBuf {
 /// Perform a bind mount from the source to the target path. If the target does
 /// not exist, it will be created based on the type of the source. Supports
 /// both files and directories.
-fn do_bind_mount(source: &Path, target: &Path) -> Result<(), Error> {
+fn do_bind_mount(source: &Path, target: &Path, flags: MountFlags) -> Result<(), Error> {
     debug!(
         "Bind mounting '{}' to '{}'",
         source.display(),
@@ -414,7 +465,7 @@ fn do_bind_mount(source: &Path, target: &Path) -> Result<(), Error> {
 
     // Do the actual bind mount
     MountBuilder::default()
-        .flags(MountFlags::BIND)
+        .flags(MountFlags::BIND | flags)
         .mount(source, target)
         .with_context(|| {
             format!(
@@ -427,12 +478,120 @@ fn do_bind_mount(source: &Path, target: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Returns a list of paths to deny-list from the execroot.
+fn make_execroot_deny_list(override_file: &Path) -> Vec<String> {
+    let mut execroot_deny_list = PROHIBITED_EXECROOT_MOUNTS
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+
+    // Preview workaround to allow customers to get unblocked without
+    // needing new binaries.
+    if override_file.exists() {
+        warn!(
+            "PREVIEW-ONLY OVERRIDE: Using execroot deny-list extension file '{}'",
+            override_file.display()
+        );
+        match read_execroot_deny_list(override_file) {
+            Ok(deny_list) => {
+                debug!(
+                    "Read {} {} from the execroot deny-list extension file.",
+                    deny_list.len(),
+                    match deny_list.len() {
+                        1 => "entry",
+                        _ => "entries",
+                    }
+                );
+                execroot_deny_list.extend(deny_list);
+            }
+            Err(e) => {
+                error!("Failed to read execroot deny-list extension file: {:?}", e);
+            }
+        }
+    } else {
+        trace!(
+            "Execroot deny-list extension file '{}' does not exist",
+            override_file.display()
+        );
+    }
+
+    execroot_deny_list
+}
+
+/// PREVIEW-ONLY OVERRIDE
+/// Reads a list of paths from a file and returns them as a vector of strings.
+/// Trims whitespace on all lines, skips empty lines and lines starting with a `#`.
+/// Returns an error if the file cannot be read.
+fn read_execroot_deny_list(path: &Path) -> Result<Vec<String>, Error> {
+    std::fs::read_to_string(path)
+        .with_context(|| {
+            format!(
+                "Failed to read execroot deny-list extension file '{}'",
+                path.display()
+            )
+        })
+        .map(|content| {
+            content
+                .lines()
+                .map(|line| line.trim())
+                .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                .map(|entry| {
+                    debug!("Read execroot deny-list entry '{}'", entry);
+                    entry.to_string()
+                })
+                .collect()
+        })
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     use std::path::PathBuf;
     use trident_api::config::{FileSystemType, HostConfiguration, InternalMountPoint, Storage};
+
+    #[test]
+    fn test_read_execroot_deny_list() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let temp_file_path = temp_file.path();
+
+        let content = "foo\n/bar/file\n\n   baz   \n#comment\n";
+        std::fs::write(temp_file_path, content).unwrap();
+
+        let deny_list = read_execroot_deny_list(temp_file_path).unwrap();
+        assert_eq!(deny_list, vec!["foo", "/bar/file", "baz"]);
+    }
+
+    #[test]
+    fn test_make_execroot_deny_list_simple() {
+        let non_existent_file = Path::new("/does-not-exist-abc-1234");
+        assert!(
+            !Path::new(EXECROOT_DENYLIST_EXTENSION_FILE).exists(),
+            "Deny-list file exists"
+        );
+        let deny_list = make_execroot_deny_list(non_existent_file);
+        assert_eq!(deny_list, PROHIBITED_EXECROOT_MOUNTS);
+    }
+
+    #[test]
+    fn test_make_execroot_deny_list_overrides() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let temp_file_path = temp_file.path();
+
+        let new_items = ["foo", "/bar/file", "baz"];
+        let content = new_items.join("\n");
+        std::fs::write(temp_file_path, content).unwrap();
+
+        let deny_list = make_execroot_deny_list(temp_file_path);
+        assert_eq!(
+            deny_list,
+            PROHIBITED_EXECROOT_MOUNTS
+                .iter()
+                .chain(new_items.iter())
+                .cloned()
+                .collect::<Vec<_>>()
+        );
+    }
 
     #[test]
     fn test_mount_point_ordering() {

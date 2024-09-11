@@ -74,13 +74,13 @@ use trident_api::{config::MountOptions, constants::ROOT_MOUNT_POINT_PATH};
 
 use crate::exe::RunAndCheck;
 
-/// String representation of the nodev option.
-pub const NODEV: &str = "nodev";
+/// String representation of the unbindable propagation type.
+pub const PROPAGATION_UNBINDABLE: &str = "unbindable";
 
 /// String with a comma-separated list of columns to be used with `findmnt
 /// --json -o` to output the columns that can be deserialized into a
 /// `MountpointMetadata` structure.
-pub const FINDMNT_COLUMNS: &str = "id,target,source,fsroot,options";
+pub const FINDMNT_COLUMNS: &str = "id,target,source,fsroot,options,propagation";
 
 /// Represents the output of `findmnt --json` as a Rust structure.
 #[derive(Debug, Deserialize)]
@@ -109,6 +109,9 @@ pub struct MountpointMetadata {
 
     /// Options
     pub options: MountOptions,
+
+    /// Propagation type
+    pub propagation: String,
 
     /// Mounts under this filesystem
     #[serde(default)]
@@ -296,9 +299,16 @@ impl MountpointMetadata {
             .collect()
     }
 
-    /// Returns whether this mount point has the `nodev` option.
-    pub fn is_nodev(&self) -> bool {
-        self.options.contains(NODEV)
+    /// Returns whether this mount point is unbindable.
+    pub fn is_unbindable(&self) -> bool {
+        self.has_propagation_type(PROPAGATION_UNBINDABLE)
+    }
+
+    /// Returns whether the propagation type is present in the mount point.
+    fn has_propagation_type(&self, propagation_type: &str) -> bool {
+        self.propagation
+            .split(',')
+            .any(|propagation| propagation.trim() == propagation_type)
     }
 }
 
@@ -489,19 +499,20 @@ mod tests {
     }
 
     #[test]
-    fn test_is_nodev() {
+    fn test_propagation_parsing() {
         let root = FindMnt::from_json(sample_json()).unwrap().root().unwrap();
 
-        // The root mount point should not have the nodev option
-        assert!(!root.is_nodev());
+        root.traverse_depth().iter().for_each(|fs| {
+            let mut unbindable: bool = false;
 
-        // The /sys mount point should have the nodev option
-        let sys = root.find_mount_point_for_path("/sys").unwrap();
-        assert!(sys.is_nodev());
+            fs.propagation.split(',').for_each(|propagation| {
+                if propagation == PROPAGATION_UNBINDABLE {
+                    unbindable = true;
+                }
+            });
 
-        // The /proc mount point should have the nodev option
-        let proc = root.find_mount_point_for_path("/proc").unwrap();
-        assert!(proc.is_nodev());
+            assert_eq!(fs.is_unbindable(), unbindable);
+        });
     }
 }
 
