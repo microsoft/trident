@@ -15,6 +15,7 @@ def update_trident_host_config(
     trident_yaml_content,
     iso_httpd_ip,
     oam_ip,
+    netlisten_port,
     ssh_pub_key,
     interface_name,
     host_interface,
@@ -79,8 +80,12 @@ def update_trident_host_config(
     logging.info(f"Output of ip addr show {host_interface}: {output}")
     netlisten_address = output.split(" ")[1].split("/")[0]
     logging.info(f"Netlisten address: {netlisten_address}")
-    trident_yaml_content["phonehome"] = f"http://{netlisten_address}:12000/phonehome"
-    trident_yaml_content["logstream"] = f"http://{netlisten_address}:12000/logstream"
+    trident_yaml_content["phonehome"] = (
+        f"http://{netlisten_address}:{netlisten_port}/phonehome"
+    )
+    trident_yaml_content["logstream"] = (
+        f"http://{netlisten_address}:{netlisten_port}/logstream"
+    )
 
     logging.info(
         "Final trident_yaml content post all the updates: %s", trident_yaml_content
@@ -104,6 +109,11 @@ def main():
     )
     parser.add_argument(
         "--oam-ip", required=True, help="IP address of the OAM interface."
+    )
+    parser.add_argument(
+        "--netlisten-port",
+        required=True,
+        help="Port to use for netlisten.",
     )
     parser.add_argument(
         "--ssh-pub-key", required=True, help="SSH public key to use for provisioning."
@@ -132,6 +142,7 @@ def main():
         trident_yaml_content,
         args.iso_httpd_ip,
         args.oam_ip,
+        args.netlisten_port,
         ssh_pub_key_content.strip().strip("\n"),
         args.interface_name,
         args.host_interface,

@@ -21,6 +21,10 @@ parameters:
   - name: tridentConfigFile
     type: string
 
+  - name: netlistenPort
+    type: string
+    default: "4000"
+
 steps:
   - bash: |
       set -xe
@@ -35,6 +39,7 @@ steps:
             --trident-yaml ${{ parameters.tridentConfigFile }} \
             --iso-httpd-ip ${{ parameters.isoHttpdServerIp }} \
             --oam-ip ${{ parameters.oamIp }} \
+            --netlisten-port ${{ parameters.netlistenPort }} \
             --oam-gateway ${{ parameters.oamGateway }} \
             --ssh-pub-key ${{ parameters.sshKeyFile }}.pub  \
             --interface-name ${{ parameters.interfaceForOamIp }}
