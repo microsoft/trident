@@ -319,16 +319,17 @@ fn match_servicing_type_env_var(servicing_type: &ServicingType) -> OsString {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::fs;
     use std::{collections::HashMap, path::Path};
 
-    use super::*;
     use indoc::indoc;
     use maplit::hashmap;
-    use trident_api::config::{Scripts, ServicingTypeSelection};
-    use trident_api::constants;
-    use trident_api::constants::ROOT_MOUNT_POINT_PATH;
+
     use trident_api::{
+        config::{Scripts, ServicingTypeSelection},
+        constants::ROOT_MOUNT_POINT_PATH,
         error::ErrorKind,
         status::{ServicingState, ServicingType},
     };
@@ -424,7 +425,7 @@ mod tests {
         let mut module = HooksModule::default();
         module.prepare(&host_status).unwrap();
         module
-            .provision(&host_status, Path::new(constants::ROOT_MOUNT_POINT_PATH))
+            .provision(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
 
         assert!(test_dir.exists());

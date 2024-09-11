@@ -26,15 +26,15 @@ pub fn execute() -> Result<(), TridentError> {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::osrelease::is_azl3;
-
     use super::*;
 
     use pytest_gen::functional_test;
 
+    use crate::osrelease;
+
     #[functional_test]
     fn test_regenerate_initrd() {
-        let pattern = if is_azl3().unwrap() {
+        let pattern = if osrelease::is_azl3().unwrap() {
             "/boot/initramfs-*.azl3.img"
         } else {
             "/boot/initrd.img-*"

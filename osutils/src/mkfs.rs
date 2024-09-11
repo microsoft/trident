@@ -34,9 +34,10 @@ pub(super) fn run_blocks(
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
 
     use sys_mount::{MountFlags, UnmountFlags};
+
+    use pytest_gen::functional_test;
 
     use crate::testutils::repart::{self, TEST_DISK_DEVICE_PATH};
 

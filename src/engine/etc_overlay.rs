@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use log::debug;
-use osutils::files;
 use sys_mount::{FilesystemType, Mount, MountFlags, UnmountDrop, UnmountFlags};
+
+use osutils::files;
 use trident_api::{
     constants::{
         TRIDENT_OVERLAY_LOWER_RELATIVE_PATH, TRIDENT_OVERLAY_RELATIVE_PATH,
@@ -73,9 +74,10 @@ pub(super) fn create(
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
+
     use std::fs;
 
-    use super::*;
     use pytest_gen::functional_test;
 
     #[functional_test]

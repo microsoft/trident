@@ -9,6 +9,7 @@ use std::{
 
 use log::{info, warn};
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
+
 use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
 
 // TODO: Implement drop for Chroot that panics if the chroot has not been
@@ -115,9 +116,12 @@ pub fn enter_update_chroot(root_mount_path: &Path) -> Result<Chroot, TridentErro
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
+
     use std::fs::{self, File};
+
     use tempfile::tempdir;
+
+    use pytest_gen::functional_test;
     use trident_api::error::ErrorKind;
 
     #[functional_test(feature = "helpers")]

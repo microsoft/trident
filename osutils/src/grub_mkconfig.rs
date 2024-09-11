@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{Context, Error};
 use log::{debug, trace};
+
 use trident_api::constants::ROOT_MOUNT_POINT_PATH;
 
 use crate::{files, path};
@@ -176,7 +177,6 @@ impl GrubMkConfigScript {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]

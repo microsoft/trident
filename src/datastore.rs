@@ -1,6 +1,8 @@
-use log::info;
-use osutils::path;
 use std::{fs, path::Path};
+
+use log::info;
+
+use osutils::path;
 use trident_api::{
     error::{DatastoreError, InternalError, ReportError, ServicingError, TridentError},
     status::HostStatus,
@@ -231,8 +233,10 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
+
     use tempfile::TempDir;
+
+    use pytest_gen::functional_test;
     use trident_api::status::{ServicingState, ServicingType};
 
     #[functional_test]

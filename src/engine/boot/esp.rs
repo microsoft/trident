@@ -452,8 +452,6 @@ pub(super) fn deploy_esp_images(host_status: &HostStatus, mount_point: &Path) ->
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::boot::{get_update_esp_dir_name, make_esp_dir_name_candidates};
-
     use super::*;
 
     use std::io::Write;
@@ -462,6 +460,8 @@ mod tests {
         constants::GRUB2_RELATIVE_PATH,
         status::{AbVolumeSelection, ServicingState, ServicingType},
     };
+
+    use crate::engine::boot::{get_update_esp_dir_name, make_esp_dir_name_candidates};
 
     /// Validates that generate_arch_str() returns the correct string based on target architecture
     #[test]

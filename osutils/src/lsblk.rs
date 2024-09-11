@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use serde::{Deserialize, Serialize};
+
 use trident_api::primitives::bytes::ByteCount;
 
 use crate::{exe::RunAndCheck, osuuid::OsUuid};
@@ -174,7 +175,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     /// Output obtained from running `lsblk --json --bytes --output-all --path /dev/sda`

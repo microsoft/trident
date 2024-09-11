@@ -577,11 +577,12 @@ impl<'a> PartitionAdopter<'a> {
 
 #[cfg(test)]
 mod test {
-    use osutils::sfdisk::{SfDiskLabel, SfDiskUnit};
-    use trident_api::config::{AbUpdate, AbVolumePair, Partition, PartitionTableType};
+    use super::*;
+
     use uuid::Uuid;
 
-    use super::*;
+    use osutils::sfdisk::{SfDiskLabel, SfDiskUnit};
+    use trident_api::config::{AbUpdate, AbVolumePair, Partition, PartitionTableType};
 
     #[test]
     fn test_add_repart_entries() {
@@ -767,9 +768,9 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use std::str::FromStr;
-
     use super::*;
+
+    use std::str::FromStr;
 
     use osutils::{
         repart::RepartActivity,

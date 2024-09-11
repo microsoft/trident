@@ -16,8 +16,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine;
-use crate::engine::storage::partitioning;
+use crate::engine::{self, storage::partitioning};
 
 /// Rebuilds the RAID array i.e adds the new disks partitions for the
 /// given RAID array.
@@ -408,14 +407,15 @@ fn partition_is_raid_member(partition_id: &BlockDeviceId, host_config: &HostConf
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::{path::PathBuf, str::FromStr};
+
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
-    use std::path::PathBuf;
-    use std::str::FromStr;
-    use trident_api::config::{
-        FileSystemSource, FileSystemType, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
-    };
     use trident_api::{
-        config::{Disk, Partition, PartitionSize, PartitionType, RaidLevel, Storage},
+        config::{
+            Disk, FileSystemSource, FileSystemType, Image, ImageFormat, ImageSha256, MountOptions,
+            MountPoint, Partition, PartitionSize, PartitionType, RaidLevel, Storage,
+        },
         status::ServicingState,
     };
 

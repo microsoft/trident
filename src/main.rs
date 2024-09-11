@@ -5,7 +5,6 @@ use clap::{Args, Parser, Subcommand};
 use log::{error, info, LevelFilter};
 
 use trident::{offline_init, BackgroundLog, Logstream, MultiLogger, TraceStream};
-
 use trident_api::error::TridentResultExt;
 
 mod validation;

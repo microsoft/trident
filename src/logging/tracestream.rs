@@ -8,10 +8,6 @@ use std::{
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use log::{debug, info, trace, warn};
-use osutils::{
-    osrelease::{OsRelease, OS_RELEASE_PATH},
-    uname,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sysinfo::System;
@@ -19,8 +15,12 @@ use tracing::{
     field::{Field, Visit},
     span, Event, Subscriber,
 };
-
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
+
+use osutils::{
+    osrelease::{OsRelease, OS_RELEASE_PATH},
+    uname,
+};
 
 use crate::TRIDENT_VERSION;
 
@@ -359,9 +359,9 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write};
-
     use super::*;
+
+    use std::{fs::File, io::Write};
 
     #[test]
     fn test_tracestream() {

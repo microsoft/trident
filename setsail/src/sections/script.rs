@@ -1,9 +1,10 @@
-use log::{debug, error};
-use osutils::scripts::ScriptRunner;
 use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::{Command, CommandFactory, Parser};
+use log::{debug, error};
+
+use osutils::scripts::ScriptRunner;
 
 use crate::{data::ParsedData, errors::ToResultSetsailError, types::KSLine, SetsailError};
 

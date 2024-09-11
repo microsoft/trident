@@ -2,6 +2,7 @@ use std::path::Path;
 
 use anyhow::{bail, Context, Error};
 use log::{error, info};
+
 use setsail::KsTranslator;
 use trident_api::config::{HostConfiguration, HostConfigurationSource, LocalConfigFile};
 
@@ -89,9 +90,9 @@ fn validate_host_config(hc: HostConfiguration) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
+
+    use std::path::PathBuf;
 
     #[test]
     fn test_validate_embedded_host_configuration() {

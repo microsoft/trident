@@ -938,14 +938,13 @@ fn finalize_deployment(datastore: &mut DataStore, esp_path: &Path) -> Result<(),
 
 #[cfg(test)]
 mod test {
+    use super::*;
 
     use maplit::btreemap;
 
     use trident_api::config::{
         self, AbUpdate, AbVolumePair, Disk, FileSystemType, Partition, PartitionType,
     };
-
-    use super::*;
 
     #[test]
     fn test_get_root_block_device_path() {

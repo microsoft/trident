@@ -548,6 +548,7 @@ mod test {
     use super::*;
 
     use std::path::PathBuf;
+
     use trident_api::config::{FileSystemType, HostConfiguration, InternalMountPoint, Storage};
 
     #[test]
@@ -676,8 +677,6 @@ mod test {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use const_format::formatcp;
-    use pytest_gen::functional_test;
 
     use std::{
         fs::{self, File},
@@ -685,6 +684,7 @@ mod functional_test {
         path::{Path, PathBuf},
     };
 
+    use const_format::formatcp;
     use maplit::btreemap;
     use tempfile::{NamedTempFile, TempDir};
 
@@ -695,6 +695,7 @@ mod functional_test {
         testutils::repart::{self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, TEST_DISK_DEVICE_PATH},
         udevadm,
     };
+    use pytest_gen::functional_test;
     use trident_api::{
         config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
         constants::MOUNT_OPTION_READ_ONLY,

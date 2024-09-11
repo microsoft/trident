@@ -2,9 +2,11 @@ use std::path::{Path, PathBuf};
 
 use log::debug;
 
-use super::errors::SetsailError;
-use super::load;
-use super::types::{KSLine, KSLineSource};
+use super::{
+    errors::SetsailError,
+    load,
+    types::{KSLine, KSLineSource},
+};
 
 /// How to process %ksappend lines
 #[derive(Debug, Clone, Copy)]
@@ -100,12 +102,13 @@ pub(crate) fn preprocess(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::io::Write;
 
     use indoc::indoc;
     use tempfile::NamedTempFile;
 
-    use super::*;
     use crate::load_kickstart_string;
 
     #[test]

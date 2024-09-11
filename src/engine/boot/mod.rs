@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use strum::IntoEnumIterator;
+
 use trident_api::{
     constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX},
     error::{ReportError, ServicingError, TridentError},
@@ -142,10 +143,11 @@ pub fn make_esp_dir_name(index: usize, volume: AbVolumeSelection) -> String {
 
 #[cfg(test)]
 mod tests {
-    use const_format::formatcp;
-    use trident_api::status::{ServicingState, ServicingType};
-
     use super::*;
+
+    use const_format::formatcp;
+
+    use trident_api::status::{ServicingState, ServicingType};
 
     #[test]
     fn test_make_install_id() {

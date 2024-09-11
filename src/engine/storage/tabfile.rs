@@ -5,13 +5,13 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use serde_json::Value;
+
 use osutils::{
     exe::RunAndCheck,
     filesystems::TabFileSystemType,
     tabfile::{TabFile, TabFileEntry},
 };
-use serde_json::Value;
-
 use trident_api::{
     config::{FileSystemType, InternalMountPoint},
     status::HostStatus,

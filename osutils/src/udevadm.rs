@@ -32,6 +32,7 @@ pub fn wait(path: &Path) -> Result<(), Error> {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+
     use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]

@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use log::{debug, info};
-use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
 use rayon::prelude::*;
+
+use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
 use trident_api::{
     config::{FileSystemSource, FileSystemType},
     status::{HostStatus, ServicingType},
@@ -126,9 +127,12 @@ fn create_filesystem_on_block_device(
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     use std::path::PathBuf;
 
     use maplit::btreemap;
+
     use trident_api::{
         config::{
             self, AdoptedPartition, Disk, FileSystem, FileSystemSource, FileSystemType,
@@ -137,8 +141,6 @@ mod test {
         },
         status::{AbVolumeSelection, ServicingState},
     };
-
-    use super::*;
 
     /// Validates that block_devices_needing_fs_creation () returns the correct list of block
     /// devices that need to have clean filesystems created on them.
@@ -448,7 +450,6 @@ mod test {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
 
     use std::process::Command;
 
@@ -460,6 +461,7 @@ mod functional_test {
         lsblk, mount,
         testutils::repart::{self, TEST_DISK_DEVICE_PATH},
     };
+    use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]
     /// Validates that initialize_block_device() correctly initializes a block device by formatting it

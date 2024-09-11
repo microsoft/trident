@@ -1,19 +1,19 @@
-use std::net::SocketAddr;
-use std::process::Command;
+use std::{net::SocketAddr, process::Command};
 
-use anyhow::Context;
-use anyhow::Error;
+use anyhow::{Context, Error};
 use log::info;
-use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::{
+    runtime::Runtime,
+    sync::mpsc::{self, Sender},
+};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::Server;
-use tonic::{Request, Response, Status};
+use tonic::{transport::Server, Request, Response, Status};
 
 use osutils::exe::RunAndCheck;
-use trident_api::config::{GrpcConfiguration, Operations};
-use trident_api::error::{InternalError, ReportError};
-use trident_api::error::{ServicingError, TridentError};
+use trident_api::{
+    config::{GrpcConfiguration, Operations},
+    error::{InternalError, ReportError, ServicingError, TridentError},
+};
 
 use crate::{HostUpdateCommand, OrchestratorConnection};
 

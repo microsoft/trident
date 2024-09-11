@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-
 use tempfile::TempDir;
 
 use crate::{exe::RunAndCheck, files};
@@ -72,9 +71,9 @@ impl EphemeralOverlay {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use pytest_gen::functional_test;
-
     use super::*;
+
+    use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]
     fn test_ephemeral_overlay_mount_unmount() {

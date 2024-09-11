@@ -1,5 +1,7 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Error};
 use engine::storage::rebuild;
@@ -16,12 +18,14 @@ use setsail::KsTranslator;
 use trident_api::config::{
     HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
 };
-use trident_api::constants::ROOT_MOUNT_POINT_PATH;
-use trident_api::error::{
-    ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
-    InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
+use trident_api::{
+    constants::ROOT_MOUNT_POINT_PATH,
+    error::{
+        ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
+        InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
+    },
+    status::{HostStatus, ServicingState, ServicingType},
 };
-use trident_api::status::{HostStatus, ServicingState, ServicingType};
 
 use crate::datastore::DataStore;
 use crate::engine::{bootentries, storage::tabfile};
@@ -731,6 +735,12 @@ fn validate_reboot(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use std::path::PathBuf;
+
+    use maplit::btreemap;
+
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystemType, InternalMountPoint, Partition,
@@ -739,10 +749,6 @@ mod tests {
         error::ErrorKind,
         status::AbVolumeSelection,
     };
-
-    use super::*;
-    use maplit::btreemap;
-    use std::path::PathBuf;
 
     #[test]
     fn test_get_host_configuration() {
@@ -877,6 +883,7 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+
     use pytest_gen::functional_test;
 
     /// Validates that validate_reboot() correctly detects rollback when root is a partition.

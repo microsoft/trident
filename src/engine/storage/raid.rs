@@ -1,6 +1,3 @@
-use anyhow::{bail, Context, Error};
-use log::{debug, info, trace, warn};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     fs,
@@ -9,14 +6,18 @@ use std::{
     thread::sleep,
     time::{Duration, Instant},
 };
+
+use anyhow::{bail, Context, Error};
+use log::{debug, info, trace, warn};
+use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
+
+use osutils::{block_devices, exe::OutputChecker, mdadm, udevadm};
 use trident_api::{
     config::{HostConfiguration, PartitionType, RaidLevel, SoftwareRaidArray},
     status::HostStatus,
     BlockDeviceId,
 };
-
-use osutils::{block_devices, exe::OutputChecker, mdadm, udevadm};
 
 use crate::engine;
 
@@ -358,14 +359,14 @@ fn wait_for_raid_sync(host_status: &mut HostStatus, sync_timeout: u64) -> Result
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use maplit::btreemap;
 
     use trident_api::{
         config::{Disk, Partition, PartitionSize, PartitionType, Storage},
         status::{ServicingState, ServicingType},
     };
-
-    use super::*;
 
     #[test]
     fn test_get_device_paths() {
@@ -447,20 +448,20 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-
-    use crate::engine::storage;
-
     use super::*;
-    use pytest_gen::functional_test;
+
+    use std::{path::PathBuf, str::FromStr};
 
     use const_format::formatcp;
+
     use osutils::testutils::{raid, repart::TEST_DISK_DEVICE_PATH};
-    use std::path::PathBuf;
-    use std::str::FromStr;
+    use pytest_gen::functional_test;
     use trident_api::config::{
         self, Disk, HostConfiguration, Partition, PartitionSize, PartitionType, RaidLevel,
         SoftwareRaidArray, Storage,
     };
+
+    use crate::engine::storage;
 
     const DEVICE_ONE: &str = formatcp!("{TEST_DISK_DEVICE_PATH}1");
     const DEVICE_TWO: &str = formatcp!("{TEST_DISK_DEVICE_PATH}2");

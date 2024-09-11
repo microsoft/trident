@@ -505,6 +505,8 @@ pub(super) fn provision(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::path::PathBuf;
 
     use maplit::btreemap;
@@ -517,8 +519,6 @@ mod tests {
         },
         status::{ServicingState, ServicingType},
     };
-
-    use super::*;
 
     /// Validates that the logic in validate_host_config() is correct.
     #[test]
@@ -875,17 +875,17 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use const_format::formatcp;
-    use pytest_gen::functional_test;
 
     use std::path::PathBuf;
 
+    use const_format::formatcp;
     use maplit::btreemap;
 
     use osutils::testutils::{
         repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
         verity::{self, VerityGuard},
     };
+    use pytest_gen::functional_test;
     use trident_api::config::{
         self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, MountOptions, MountPoint,
         Partition, PartitionType, VerityFileSystem,

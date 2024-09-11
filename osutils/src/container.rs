@@ -134,12 +134,12 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
+
     use std::fs::File;
 
     use pytest_gen::functional_test;
     use trident_api::error::{ContainerConfigurationError, ErrorKind};
-
-    use super::*;
 
     #[functional_test(feature = "helpers")]
     fn test_is_running_in_container() {

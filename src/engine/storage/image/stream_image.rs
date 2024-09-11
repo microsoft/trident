@@ -83,9 +83,9 @@ pub(crate) fn exponential_backoff_get(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use super::*;
+
+    use std::time::Instant;
 
     #[test]
     fn test_exponential_backoff() {

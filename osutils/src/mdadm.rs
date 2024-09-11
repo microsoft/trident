@@ -7,6 +7,7 @@ use anyhow::{Context, Error};
 use log::{debug, error, info};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+
 use trident_api::config::RaidLevel;
 
 use crate::{exe::RunAndCheck, lsblk};
@@ -235,9 +236,9 @@ fn mdadm_detail_to_struct(mdadm_output: &str) -> Result<Vec<MdadmDetail>, Error>
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
-
     use super::*;
+
+    use indoc::indoc;
 
     #[test]
     fn test_mdadm_detail_to_struct() {
@@ -311,10 +312,11 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-
     use super::*;
-    use pytest_gen::functional_test;
+
     use std::path::PathBuf;
+
+    use pytest_gen::functional_test;
 
     const NON_EXISTENT_RAID_DEVICE: &str = "/dev/md/non-existent-path";
 

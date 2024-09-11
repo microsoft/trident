@@ -70,12 +70,12 @@ impl Log for BackgroundLog {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::fs;
 
     use log::Level;
     use tempfile::tempdir;
-
-    use super::*;
 
     #[test]
     fn test_filter() {

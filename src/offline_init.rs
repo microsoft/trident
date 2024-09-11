@@ -1,6 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use log::info;
+
 use trident_api::{
     error::{InitializationError, ReportError, TridentError, TridentResultExt},
     status::HostStatus,

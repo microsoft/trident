@@ -9,10 +9,10 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
-use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
+use osutils::exe::RunAndCheck;
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
@@ -415,7 +415,11 @@ fn get_first_backing_partition<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::{os::unix::fs::PermissionsExt, str::FromStr};
+
+    use url::Url;
 
     use trident_api::{
         config::{
@@ -425,11 +429,8 @@ mod tests {
         constants,
         error::ErrorKind,
     };
-    use url::Url;
 
     use crate::engine::storage::tests;
-
-    use super::*;
 
     #[test]
     fn test_get_first_backing_partition() {

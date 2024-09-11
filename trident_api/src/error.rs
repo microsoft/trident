@@ -1,5 +1,8 @@
-use std::fmt::{Debug, Write};
-use std::{borrow::Cow, panic::Location};
+use std::{
+    borrow::Cow,
+    fmt::{Debug, Write},
+    panic::Location,
+};
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;

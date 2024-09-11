@@ -70,6 +70,7 @@ use std::{
 
 use anyhow::Context;
 use serde::Deserialize;
+
 use trident_api::{config::MountOptions, constants::ROOT_MOUNT_POINT_PATH};
 
 use crate::exe::RunAndCheck;
@@ -314,9 +315,9 @@ impl MountpointMetadata {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
-
     use super::*;
+
+    use std::vec;
 
     fn sample_json() -> &'static str {
         // Sample output of `findmnt` from an AzL2.0 MOS. Full command:

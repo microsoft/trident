@@ -1,5 +1,6 @@
-use log::info;
 use std::path::Path;
+
+use log::info;
 
 use trident_api::{
     error::{ReportError, ServicingError, TridentError},

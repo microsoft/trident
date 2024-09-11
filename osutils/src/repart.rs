@@ -688,17 +688,19 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
+
     use std::path::PathBuf;
 
     use pytest_gen::functional_test;
 
-    use crate::lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType};
-    use crate::testutils::repart::{
-        self, DISK_SIZE, OS_DISK_DEVICE_PATH, PART1_SIZE, TEST_DISK_DEVICE_PATH,
+    use crate::{
+        lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType},
+        testutils::repart::{
+            self, DISK_SIZE, OS_DISK_DEVICE_PATH, PART1_SIZE, TEST_DISK_DEVICE_PATH,
+        },
+        udevadm,
     };
-    use crate::udevadm;
-
-    use super::*;
 
     #[functional_test(feature = "helpers")]
     fn test_execute_and_resulting_layout() {

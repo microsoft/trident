@@ -1,5 +1,7 @@
-use std::path::Path;
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use trident_api::{
     config::{
@@ -10,8 +12,11 @@ use trident_api::{
     misc::IdGenerator,
 };
 
-use crate::commands::partition::{FsType, PartitionMount};
-use crate::{data::ParsedData, SetsailError};
+use crate::{
+    commands::partition::{FsType, PartitionMount},
+    data::ParsedData,
+    SetsailError,
+};
 
 pub fn translate(input: &ParsedData, hc: &mut HostConfiguration, errors: &mut Vec<SetsailError>) {
     let mut disk_id_gen = IdGenerator::new("disk");

@@ -58,14 +58,14 @@ impl Log for MultiLogger {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     };
 
     use log::Level;
-
-    use super::*;
 
     #[derive(Default)]
     struct TestLogger {

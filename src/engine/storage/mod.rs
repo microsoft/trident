@@ -17,8 +17,6 @@ use trident_api::{
 
 use crate::engine::Module;
 
-use tabfile::DEFAULT_FSTAB_PATH;
-
 mod encryption;
 mod filesystem;
 pub mod image;
@@ -27,6 +25,8 @@ pub mod raid;
 pub mod rebuild;
 pub mod tabfile;
 mod verity;
+
+use tabfile::DEFAULT_FSTAB_PATH;
 
 const IMAGE_SUB_MODULE_NAME: &str = "image";
 const ENCRYPTION_SUB_MODULE_NAME: &str = "encryption";
@@ -275,6 +275,8 @@ fn get_hostconfig_disk_paths(host_config: &HostConfiguration) -> Result<Vec<Path
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::{
         fs::{self, Permissions},
         os::unix::fs::PermissionsExt,
@@ -283,6 +285,7 @@ mod tests {
 
     use maplit::btreemap;
     use tempfile::NamedTempFile;
+
     use trident_api::{
         config::{
             self, Disk as DiskConfig, FileSystemType, HostConfiguration, InternalMountPoint,
@@ -293,8 +296,6 @@ mod tests {
         error::ErrorKind,
         status::ServicingState,
     };
-
-    use super::*;
 
     fn get_host_status() -> HostStatus {
         HostStatus {
@@ -549,9 +550,9 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
 
     use osutils::testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH};
+    use pytest_gen::functional_test;
     use trident_api::config::{Disk, Storage};
 
     #[functional_test]

@@ -1,8 +1,9 @@
 use std::{ffi::OsStr, path::Path, process::Command};
 
-use crate::{exe::RunAndCheck, path::join_relative};
 use anyhow::{bail, Context, Error};
 use regex::Regex;
+
+use crate::{exe::RunAndCheck, path::join_relative};
 
 /// Represents an entry in the EFI Boot Manager.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -257,10 +258,15 @@ pub fn list_and_parse_bootmgr_entries() -> Result<EfiBootManagerOutput, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::{
+        fs::{self, File},
+        io::Write,
+    };
+
     use indoc::indoc;
-    use std::fs::{self, File};
-    use std::io::Write;
     use tempfile::tempdir;
+
     #[test]
     fn test_boot_mgr() {
         let sample_output = indoc! {"

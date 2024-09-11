@@ -2,9 +2,10 @@ use std::{io::Write, path::Path, process::Command};
 
 use anyhow::{Context, Error};
 use log::debug;
-use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
+
+use osutils::exe::RunAndCheck;
 
 #[derive(Serialize, Deserialize)]
 struct MICHostname {

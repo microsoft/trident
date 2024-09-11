@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use anyhow::{bail, Error};
+
 use trident_api::config::FileSystemType;
 
 /// File system types for `mount`

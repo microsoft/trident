@@ -1,5 +1,6 @@
-use sha2::Digest;
 use std::io::{self, Read};
+
+use sha2::Digest;
 
 /// This struct wraps a reader and computes the SHA256 hash of the data as it is read.
 pub struct HashingReader<R: Read>(R, sha2::Sha256);
@@ -25,9 +26,9 @@ impl<R: Read> Read for HashingReader<R> {
 
 #[cfg(test)]
 mod test {
-    use std::io::Cursor;
-
     use super::*;
+
+    use std::io::Cursor;
 
     #[test]
     fn test_hashing_reader() {

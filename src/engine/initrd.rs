@@ -1,5 +1,6 @@
-use log::info;
 use std::path::Path;
+
+use log::info;
 
 use osutils::mkinitrd;
 use trident_api::{error::TridentError, status::HostStatus};

@@ -22,6 +22,7 @@ pub fn run(fs_uuid: &Uuid, block_device_path: &Path) -> Result<(), Error> {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+
     use pytest_gen::functional_test;
 
     use crate::{filesystems::MkfsFileSystemType, testutils::repart::TEST_DISK_DEVICE_PATH};

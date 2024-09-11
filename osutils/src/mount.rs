@@ -1,5 +1,4 @@
-use std::fs;
-use std::{path::Path, process::Command};
+use std::{fs, path::Path, process::Command};
 
 use anyhow::{bail, Context, Error};
 use log::{error, info};
@@ -159,15 +158,16 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::mountpoint;
-
     use super::*;
+
     use std::{fs, path::Path};
-    use tempfile::NamedTempFile;
-    use tempfile::TempDir;
+
+    use tempfile::{NamedTempFile, TempDir};
 
     use pytest_gen::functional_test;
     use trident_api::constants::MOUNT_OPTION_READ_ONLY;
+
+    use crate::mountpoint;
 
     #[functional_test(feature = "helpers")]
     fn test_mount_and_umount() {

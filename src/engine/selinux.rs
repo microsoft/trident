@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Error};
+
 use osutils::exe::RunAndCheck;
 use trident_api::{
     config::FileSystemType,
@@ -84,11 +85,11 @@ impl Module for SelinuxModule {
 
 #[cfg(test)]
 mod test {
+    use super::*;
 
     use std::io::Write;
-    use tempfile::NamedTempFile;
 
-    use super::*;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_get_selinux_type_success() {

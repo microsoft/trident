@@ -6,8 +6,9 @@ use std::{
 use anyhow::{bail, Context, Error};
 use log::debug;
 use regex::Regex;
-use trident_api::config::SelinuxMode;
 use uuid::Uuid;
+
+use trident_api::config::SelinuxMode;
 
 /// Represents the GRUB configuration file. Support simple validation and
 /// retrieving and updating values. Temporary solution until we switch to more

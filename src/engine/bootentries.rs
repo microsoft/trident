@@ -2,11 +2,16 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use log::debug;
-use osutils::efibootmgr::EfiBootManagerOutput;
-use osutils::{block_devices, efibootmgr};
-use trident_api::constants;
-use trident_api::error::{InternalError, ReportError, ServicingError, TridentError};
-use trident_api::status::HostStatus;
+
+use osutils::{
+    block_devices,
+    efibootmgr::{self, EfiBootManagerOutput},
+};
+use trident_api::{
+    constants,
+    error::{InternalError, ReportError, ServicingError, TridentError},
+    status::HostStatus,
+};
 
 use super::boot;
 
@@ -226,14 +231,15 @@ fn generate_new_boot_order(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use boot::get_update_esp_dir_name;
+
     use osutils::efibootmgr::EfiBootEntry;
     use trident_api::{
         config::{self, AbUpdate, HostConfiguration},
         status::{AbVolumeSelection, ServicingState, ServicingType},
     };
-
-    use super::*;
 
     /// Validates logic for determining which A/B volume to use for updates
     #[test]
@@ -334,15 +340,11 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::engine::storage::partitioning;
-
     use super::*;
-    use constants::ESP_MOUNT_POINT_PATH;
 
-    use trident_api::config::{
-        self, Disk, FileSystemType, HostConfiguration, MountOptions, MountPoint, Partition,
-        PartitionSize, PartitionType,
-    };
+    use std::{iter::Iterator, str::FromStr};
+
+    use constants::ESP_MOUNT_POINT_PATH;
 
     use osutils::{
         efibootmgr::{self, EfiBootManagerOutput},
@@ -351,8 +353,12 @@ mod functional_test {
         testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
     };
     use pytest_gen::functional_test;
+    use trident_api::config::{
+        self, Disk, FileSystemType, HostConfiguration, MountOptions, MountPoint, Partition,
+        PartitionSize, PartitionType,
+    };
 
-    use std::{iter::Iterator, str::FromStr};
+    use crate::engine::storage::partitioning;
 
     #[allow(dead_code)]
     fn delete_boot_next() {

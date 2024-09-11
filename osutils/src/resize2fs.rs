@@ -1,5 +1,6 @@
-use anyhow::{Context, Error};
 use std::{path::Path, process::Command};
+
+use anyhow::{Context, Error};
 
 use crate::exe::RunAndCheck;
 
@@ -15,14 +16,15 @@ pub fn run(block_device_path: &Path) -> Result<(), Error> {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use pytest_gen::functional_test;
+    use super::*;
+
     use sys_mount::{MountFlags, UnmountFlags};
+
+    use pytest_gen::functional_test;
 
     use crate::{
         filesystems::MkfsFileSystemType, lsblk, mkfs, testutils::repart::TEST_DISK_DEVICE_PATH,
     };
-
-    use super::*;
 
     fn create_and_resize_filesystem(
         block_device_path: &Path,

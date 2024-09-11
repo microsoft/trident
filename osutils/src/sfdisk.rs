@@ -197,9 +197,9 @@ pub fn get_disk_uuid(disk: &Path) -> Result<Option<OsUuid>, Error> {
 
 #[cfg(test)]
 mod tests {
-    use uuid::Uuid;
-
     use super::*;
+
+    use uuid::Uuid;
 
     #[test]
     fn test_parse_disk() {
@@ -378,12 +378,13 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use super::*;
+
     use std::path::PathBuf;
 
-    use pytest_gen::functional_test;
     use uuid::Uuid;
 
-    use super::*;
+    use pytest_gen::functional_test;
 
     /// Functional test for `SfDisk::get_info`
     ///

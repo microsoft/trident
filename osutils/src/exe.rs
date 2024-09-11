@@ -273,9 +273,9 @@ impl RunAndCheck for Command {
 }
 #[cfg(test)]
 mod test {
-    use std::process::Command;
-
     use super::*;
+
+    use std::process::Command;
 
     #[test]
     fn test_output_checker() {

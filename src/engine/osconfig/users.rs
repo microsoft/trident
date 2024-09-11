@@ -6,9 +6,10 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::{debug, warn};
-use osutils::exe::RunAndCheck;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
+
+use osutils::exe::RunAndCheck;
 use trident_api::config::{Password, SshMode, User};
 
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";

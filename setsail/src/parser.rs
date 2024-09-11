@@ -1,15 +1,16 @@
-use log::debug;
-use std::collections::VecDeque;
-use std::path;
+use std::{collections::VecDeque, path};
 
-use crate::commands::CommandHandler;
-use crate::data::ParsedData;
-use crate::errors::ToResultSetsailError;
-use crate::load;
-use crate::sections::SectionManager;
-use crate::types::KSLine;
-use crate::types::KSLineSource;
-use crate::SetsailError;
+use log::debug;
+
+use crate::{
+    commands::CommandHandler,
+    data::ParsedData,
+    errors::ToResultSetsailError,
+    load,
+    sections::SectionManager,
+    types::{KSLine, KSLineSource},
+    SetsailError,
+};
 
 pub(crate) struct Parser {
     // parsed data

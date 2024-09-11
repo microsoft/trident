@@ -145,8 +145,10 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indoc::indoc;
+
     use std::fs;
+
+    use indoc::indoc;
     use uuid::Uuid;
 
     fn get_original_grub_content() -> (&'static str, &'static str) {
@@ -257,13 +259,13 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 pub(crate) mod functional_test {
     use super::*;
-    use pytest_gen::functional_test;
 
     use std::path::PathBuf;
 
     use const_format::formatcp;
     use engine::storage::raid;
     use maplit::btreemap;
+
     use osutils::{
         filesystems::MkfsFileSystemType,
         lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType},
@@ -274,6 +276,7 @@ pub(crate) mod functional_test {
         },
         udevadm,
     };
+    use pytest_gen::functional_test;
     use trident_api::{
         config::{
             self, AbUpdate, AbVolumePair, Disk, HostConfiguration, InternalMountPoint, Partition,

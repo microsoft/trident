@@ -433,11 +433,13 @@ mod test {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
-    use const_format::formatcp;
-    use pytest_gen::functional_test;
-    use trident_api::constants::MOUNT_OPTION_READ_ONLY;
 
     use std::fs;
+
+    use const_format::formatcp;
+
+    use pytest_gen::functional_test;
+    use trident_api::constants::MOUNT_OPTION_READ_ONLY;
 
     use crate::{
         files,

@@ -819,15 +819,15 @@ pub(super) fn deploy(
 
 #[cfg(test)]
 mod tests {
+    // Import everything from the parent module
+    use super::*;
+
     use maplit::btreemap;
 
     use trident_api::{
         config::{self, AbUpdate, AbVolumePair, HostConfiguration},
         status::{ServicingState, ServicingType},
     };
-
-    // Import everything from the parent module
-    use super::*;
 
     /// Validates that filename_dir_from_url() parses image URL correctly.
     #[test]

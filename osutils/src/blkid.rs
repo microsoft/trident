@@ -38,10 +38,11 @@ pub fn get_partition_label(device_path: impl AsRef<Path>) -> Result<String, Erro
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use pytest_gen::functional_test;
+    use super::*;
+
     use uuid::Uuid;
 
-    use super::*;
+    use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]
     fn test_run_success() {
