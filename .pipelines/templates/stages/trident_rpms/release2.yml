@@ -38,6 +38,10 @@ steps:
       version=$(echo $full_version | cut -d'-' -f1)
       prerelease=$(echo $full_version | cut -d'-' -f2-)
 
+      # Edit the trident.spec file to not require 3.0 dependencies
+      sed -i 's/systemd >= 255/systemd >= 254/g' trident.spec
+      sed -i 's/Requires:[[:blank:]]*systemd-udev//g' trident.spec
+
       rpmbuild -bb --build-in-place trident.spec \
         --define="trident_version $full_version" \
         --define="rpm_ver $version" \
