@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    fmt::Write,
     path::{Path, PathBuf},
 };
 
@@ -125,13 +126,13 @@ impl NewrootMount {
             let overrides = res.structured(InternalError::Internal(
                 "Failed to get execroot deny-list extension",
             ))?;
-            warn!(
-                "PREVIEW ONLY: Extending execroot deny-list with:\n{}",
-                overrides
-                    .iter()
-                    .map(|s| format!("  - {}\n", s))
-                    .collect::<String>()
-            );
+
+            let mut overrides_string = String::new();
+            for s in &overrides {
+                let _ = writeln!(overrides_string, "  - {s}");
+            }
+            warn!("PREVIEW ONLY: Extending execroot deny-list with:\n{overrides_string}");
+
             overrides
         } else {
             Vec::new()
