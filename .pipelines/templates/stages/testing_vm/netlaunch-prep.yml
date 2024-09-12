@@ -9,13 +9,13 @@ parameters:
 
 steps:
   - ${{ if eq(parameters.installerISO, 'trident-container-installer-testimage') }}:
-    - task: DownloadPipelineArtifact@2
-      displayName: "Download Trident container"
-      inputs:
-        buildType: current
-        artifactName: "trident-docker-image"
-        patterns: "**/trident-container.tar.gz"
-        targetPath: "$(System.ArtifactsDirectory)/container/"
+      - task: DownloadPipelineArtifact@2
+        displayName: "Download Trident container"
+        inputs:
+          buildType: current
+          artifactName: "trident-docker-image"
+          patterns: "**/trident-container.tar.gz"
+          targetPath: "$(System.ArtifactsDirectory)/container/"
 
   - task: DownloadPipelineArtifact@2
     displayName: "Download ${{ parameters.installerISO }}"
@@ -38,7 +38,7 @@ steps:
       artifactName: "trident-verity-testimage"
       targetPath: "$(System.ArtifactsDirectory)/verity-testimage"
 
-  - template: ../common_tasks/rename-test-images.yml
+  - template: ../testing_common/rename-test-images.yml
     parameters:
       targetDirectory: artifacts/test-image
       testImageDir: $(System.ArtifactsDirectory)/testimage

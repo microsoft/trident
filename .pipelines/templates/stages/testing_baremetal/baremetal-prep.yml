@@ -108,7 +108,7 @@ steps:
       scp -o StrictHostKeyChecking=no -i $(httpdPrivKey.secureFilePath) $(System.ArtifactsDirectory)/verity-testimage/var.raw.zst ubuntu@${{ parameters.isoHttpdServerIp }}:/home/ubuntu/www/hermes-image/verity_var.rawzst
     displayName: "Upload runtime images manually to the HTTP Server"
 
-  - template: ../common_tasks/rename-test-images.yml
+  - template: ../testing_common/rename-test-images.yml
     parameters:
       targetDirectory: artifacts/test-image
       testImageDir: $(System.ArtifactsDirectory)/trident-testimage

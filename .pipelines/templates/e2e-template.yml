@@ -44,46 +44,46 @@ stages:
       outputArtifactName: trident-verity-testimage
 
   - template: stages/building_tools/building-tools.yml
-  
+
   - template: stages/build_docker_image/trident-container.yml
 
-  - template: stages/deployment_testing/servicing/vm-testing.yml
+  - template: stages/testing_servicing/vm-testing.yml
 
   - ${{ if eq(parameters.blockPublishing, false) }}:
-      - template: stages/deployment_testing/functional_testing/functional-testing.yml
+      - template: stages/testing_functional/functional-testing.yml
       - template: stages/publishing/publish.yml
         parameters:
           stageType: ${{ parameters.stageType }}
   - ${{ else }}:
-      - template: stages/deployment_testing/functional_testing/functional-testing.yml
+      - template: stages/testing_functional/functional-testing.yml
         parameters:
           buildPurpose: "validation"
 
   - ${{ if eq(parameters.stageType, 'pre') }}:
-      - template: stages/deployment_testing/vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "daily"
-          runtimeEnv: "host"
-  
-      - template: stages/deployment_testing/baremetal/baremetal-testing.yml
+      - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "daily"
           runtimeEnv: "host"
 
-      - template: stages/deployment_testing/vm/netlaunch-testing.yml
+      - template: stages/testing_baremetal/baremetal-testing.yml
+        parameters:
+          buildPurpose: "daily"
+          runtimeEnv: "host"
+
+      - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "daily"
           installerISO: trident-container-installer-testimage
           runtimeEnv: "container"
 
   - ${{ else }}:
-      - template: stages/deployment_testing/vm/netlaunch-testing.yml
+      - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
           installerISO: trident-installer-testimage
           runtimeEnv: "host"
-          
-      - template: stages/deployment_testing/vm/netlaunch-testing.yml
+
+      - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
           installerISO: trident-container-installer-testimage

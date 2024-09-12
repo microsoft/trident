@@ -15,7 +15,14 @@ more details in the following sections.
     - [Additional Notes](#additional-notes)
     - [Selective Test Execution](#selective-test-execution)
   - [E2E Tests](#e2e-tests)
-  - [Testing on Baremetal](#testing-on-baremetal)
+    - [Testing on Baremetal](#testing-on-baremetal)
+      - [Flowchart to describe steps for tests running on Baremetal](#flowchart-to-describe-steps-for-tests-running-on-baremetal)
+      - [Install prerequisites for BM Host communication - baremetal-prep.yml](#install-prerequisites-for-bm-host-communication---baremetal-prepyml)
+      - [Create prerequisites required for the E2E tests - trident-prep.yml](#create-prerequisites-required-for-the-e2e-tests---trident-prepyml)
+      - [Deploy Baremetal Environment - baremetal-deploy.yml](#deploy-baremetal-environment---baremetal-deployyml)
+      - [Run End-to-End Tests on the BM Host - e2e-test-run.yml](#run-end-to-end-tests-on-the-bm-host---e2e-test-runyml)
+      - [Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details - baremetal-update-trident-host-config.yml](#update-tridentyaml-to-reflect-the-oam-ip-http-server-and-ssh-key-details---baremetal-update-trident-host-configyml)
+      - [Boot baremetal lab machine - .pipelines/stages/testing\_baremetal/deploy\_on\_bm.py](#boot-baremetal-lab-machine---pipelinesstagestesting_baremetaldeploy_on_bmpy)
 
 ## Unit Tests
 
@@ -305,6 +312,6 @@ End to end tests should:
 
 ![Update trident.yaml to reflect the OAM IP, HTTP server and SSH Key Details](./diagrams/update-trident-yaml.png)
 
-#### Boot baremetal lab machine - .pipelines/stages/deployment_testing/deploy_on_bm.py
+#### Boot baremetal lab machine - .pipelines/templates/stages/testing_baremetal/deploy_on_bm.py
 
 ![Boot baremetal lab machine](./diagrams/boot-baremetal-lab-machine.png)

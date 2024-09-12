@@ -1,15 +1,14 @@
 parameters:
- 
   - name: sshKeyPath
     type: string
-    default: $(Build.SourcesDirectory)/e2e_tests/helpers/key   
+    default: $(Build.SourcesDirectory)/e2e_tests/helpers/key
 
   - name: userName
     type: string
-    default: 'testing-user'
+    default: "testing-user"
 
   - name: hostIp
-    type: string  
+    type: string
 
 steps:
   - bash: |
@@ -22,9 +21,9 @@ steps:
   - bash: |
       set -eux
       echo "Changing the boot order of the VM to boot from sda."
-      python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/vm/update-vm-bootorder.py 
+      python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_vm/update-vm-bootorder.py
     displayName: "Change boot order"
-    
+
   - bash: |
       set -eux
 
@@ -55,7 +54,7 @@ steps:
     displayName: "Restart the VM"
 
   - bash: |
-      $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/common_tasks/scripts/check-ssh-connection.sh \
+      $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}"
@@ -72,6 +71,4 @@ steps:
           --trident-config $tridentRebuildRaidConfigFile \
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
-    displayName: "Test Trident rebuild-raid"   
-  
-  
+    displayName: "Test Trident rebuild-raid"

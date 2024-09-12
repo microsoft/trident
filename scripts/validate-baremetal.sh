@@ -15,7 +15,7 @@ for CONFIG in $CONFIGS; do
   echo "Validating $TEMP_FILE from $CONFIG..."
   rm -f $TEMP_FILE
   cp $CONFIG $TEMP_FILE
-  python3 .pipelines/templates/stages/deployment_testing/baremetal/update_host_config.py \
+  python3 .pipelines/templates/stages/testing_baremetal/update_host_config.py \
     --trident-yaml $TEMP_FILE \
     --iso-httpd-ip 127.0.0.1 \
     --oam-ip 127.0.0.2 \

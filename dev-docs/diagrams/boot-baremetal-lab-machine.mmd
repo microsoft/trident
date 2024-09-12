@@ -3,8 +3,8 @@ graph TD;
     classDef Amber fill:#FFDEAD,stroke:#333,stroke-width:4px;
     classDef Green fill:#BDFFA4,stroke:#333,stroke-width:4px;
     classDef Purple fill:#f9f,stroke:#333,stroke-width:4px;
-    A[Call to .pipelines/stages/deployment_testing/deploy_on_bm.py] --> B[Parse command line arguments];
-    subgraph .pipelines/stages/deployment_testing/deploy_on_bm.py in trident
+    A[Call to .pipelines/templates/stages/testing_baremetal/deploy_on_bm.py] --> B[Parse command line arguments];
+    subgraph .pipelines/templates/stages/testing_baremetal/deploy_on_bm.py in trident
         B --> C[Get baremetal configuration];
         C --> D[Get SSH username and key];
         C --> E[Get network information];

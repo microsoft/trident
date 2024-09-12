@@ -10,18 +10,18 @@ parameters:
     values:
       - post_merge
       - validation
-      
+
 stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
-    dependsOn: 
-      - ${{ if eq(parameters.testingRun, true) }}: 
-        - DownloadTestingElements
+    dependsOn:
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
       - ${{ else }}:
-        - BuildingTools
-        - TridentTestImg_trident_testimage
-        - TridentTestImg_trident_verity_testimage
-        - TridentTestImg_trident_container_installer_testimage
+          - BuildingTools
+          - TridentTestImg_trident_testimage
+          - TridentTestImg_trident_verity_testimage
+          - TridentTestImg_trident_container_installer_testimage
 
     jobs:
       - job: FunctionalTests
@@ -42,7 +42,7 @@ stages:
           - checkout: platform-tests
             fetchDepth: 1
 
-          - template: ../vm/netlaunch-prep.yml
+          - template: ../testing_vm/netlaunch-prep.yml
 
           - bash: |
               set -eux
@@ -60,7 +60,7 @@ stages:
             displayName: Set up SSH Keys
             retryCountOnTaskFailure: 3
 
-          - template: ../../common_tasks/rustup.yml
+          - template: ../common_tasks/rustup.yml
 
           - bash: |
               set -eux
@@ -76,7 +76,7 @@ stages:
               sg libvirt "make functional-test-core INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimage.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
-          - template: ../../common_tasks/coverage.yml
+          - template: ../common_tasks/coverage.yml
             parameters:
               codeCoverageBaseline: 78 # Unit + functional tests
               executeUnitTests: true

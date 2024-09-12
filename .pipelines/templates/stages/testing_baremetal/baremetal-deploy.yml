@@ -119,7 +119,7 @@ steps:
       sleep 5
 
       # Boot the baremetal lab machine
-      sudo env "PATH=$PATH" poetry run $(Build.SourcesDirectory)/.pipelines/templates/stages/deployment_testing/baremetal/deploy_on_bm.py \
+      sudo env "PATH=$PATH" poetry run $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_baremetal/deploy_on_bm.py \
         --trident-yaml ${{ parameters.hostConfigYaml }} \
         --installer-iso $PATCHED_INSTALLER_ISO \
         --baremetal-config $DEPLOYMENT_BMC_CONFIG_FILE \

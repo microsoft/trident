@@ -35,7 +35,7 @@ steps:
       ls -l
 
       # Run script to update the trident.yaml file
-      python3 ./.pipelines/templates/stages/deployment_testing/baremetal/update_host_config.py \
+      python3 ./.pipelines/templates/stages/testing_baremetal/update_host_config.py \
             --trident-yaml ${{ parameters.tridentConfigFile }} \
             --iso-httpd-ip ${{ parameters.isoHttpdServerIp }} \
             --oam-ip ${{ parameters.oamIp }} \

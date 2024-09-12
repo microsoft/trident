@@ -2,8 +2,8 @@ graph TD;
     classDef Red fill:#FF9999,stroke:#333,stroke-width:4px;
     classDef Amber fill:#FFDEAD,stroke:#333,stroke-width:4px;
     classDef Green fill:#BDFFA4,stroke:#333,stroke-width:4px;
-    A[Call to .pipelines/templates/stages/deployment_testing/baremetal/update_host_config.py] --> B[Parse command line arguments];
-    subgraph .pipelines/templates/stages/deployment_testing/baremetal/update_host_config.py in trident
+    A[Call to .pipelines/templates/stages/testing_baremetal/update_host_config.py] --> B[Parse command line arguments];
+    subgraph .pipelines/templates/stages/testing_baremetal/update_host_config.py in trident
       B --> C[Adding OAM IP to Ethernet Interface  - eno*]
       C --> D[Setting DHCP4 Configuration - dhcp4:true];
       subgraph Updating os disks in trident.yaml

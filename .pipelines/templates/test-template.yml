@@ -53,34 +53,34 @@ stages:
         allowFailedBuilds: true
 
   - ${{ if parameters.runDeploymentVMHost }}:
-    - template: stages/deployment_testing/vm/netlaunch-testing.yml
-      parameters:
-        buildPurpose: "validation"
-        runtimeEnv: "host"
-        testingRun: true
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          runtimeEnv: "host"
+          testingRun: true
 
   - ${{ if parameters.runDeploymentVMContainer }}:
-    - template: stages/deployment_testing/vm/netlaunch-testing.yml
-      parameters:
-        buildPurpose: "validation"
-        installerISO: trident-container-installer-testimage
-        runtimeEnv: "container"
-        testingRun: true
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          installerISO: trident-container-installer-testimage
+          runtimeEnv: "container"
+          testingRun: true
 
   - ${{ if parameters.runDeploymentBM }}:
-    - template: stages/deployment_testing/baremetal/baremetal-testing.yml
-      parameters:
-        buildPurpose: "validation"
-        runtimeEnv: "host"
-        testingRun: true
+      - template: stages/testing_baremetal/baremetal-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          runtimeEnv: "host"
+          testingRun: true
 
   - ${{ if parameters.runFunctionalTests }}:
-    - template: stages/deployment_testing/functional_testing/functional-testing.yml
-      parameters:
-        buildPurpose: "validation"
-        testingRun: true
+      - template: stages/testing_functional/functional-testing.yml
+        parameters:
+          buildPurpose: "validation"
+          testingRun: true
 
   - ${{ if parameters.runServicingTests }}:
-    - template: stages/deployment_testing/servicing/vm-testing.yml
-      parameters:
-        testingRun: true
+      - template: stages/testing_servicing/vm-testing.yml
+        parameters:
+          testingRun: true

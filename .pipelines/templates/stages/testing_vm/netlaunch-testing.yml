@@ -32,20 +32,20 @@ parameters:
 stages:
   - stage: DeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
-    dependsOn: 
-      - ${{ if eq(parameters.testingRun, true) }}: 
-        - DownloadTestingElements
+    dependsOn:
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
       - ${{ else }}:
-        - BuildingTools
-        - TridentTestImg_trident_testimage
-        - TridentTestImg_trident_verity_testimage
-        - ${{ if eq(parameters.runtimeEnv, 'container') }}:
-            - TridentTestImg_trident_container_installer_testimage
-        - ${{ else }}:
-            - TridentTestImg_trident_installer_testimage
+          - BuildingTools
+          - TridentTestImg_trident_testimage
+          - TridentTestImg_trident_verity_testimage
+          - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              - TridentTestImg_trident_container_installer_testimage
+          - ${{ else }}:
+              - TridentTestImg_trident_installer_testimage
 
     jobs:
-      - template: ../common_tasks/get-tests.yml
+      - template: ../testing_common/get-tests.yml
         parameters:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: virtualMachine
@@ -79,10 +79,10 @@ stages:
             fetchDepth: 1
 
           - template: netlaunch-prep.yml
-            parameters: 
+            parameters:
               installerISO: ${{ parameters.installerISO }}
 
-          - template: ../common_tasks/trident-prep.yml
+          - template: ../testing_common/trident-prep.yml
             parameters:
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
@@ -122,7 +122,7 @@ stages:
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Run netlaunch for testing"
 
-          - template: ../common_tasks/display-deployment-logs.yml
+          - template: ../testing_common/display-deployment-logs.yml
             parameters:
               deploymentLogPath: $(tridentSourceDirectory)/clean-install-deployment.log
 
@@ -156,7 +156,7 @@ stages:
             condition: succeededOrFailed()
             displayName: "Check Runtime OS deployment"
 
-          - template: ../common_tasks/trident-metrics.yml
+          - template: ../testing_common/trident-metrics.yml
             parameters:
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
@@ -168,7 +168,7 @@ stages:
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: dev
 
-          - template: ../common_tasks/e2e-test-run.yml
+          - template: ../testing_common/e2e-test-run.yml
             parameters:
               buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: virtualMachine
@@ -180,7 +180,7 @@ stages:
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
 
-          - template: ../common_tasks/trident-rebuild.yml
+          - template: ../testing_common/trident-rebuild.yml
             parameters:
               hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key

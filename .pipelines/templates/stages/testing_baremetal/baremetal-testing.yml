@@ -65,20 +65,20 @@ parameters:
 stages:
   - stage: BaremetalDeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Baremetal Deployment Testing ${{ parameters.runtimeEnv }}
-    dependsOn: 
-      - ${{ if eq(parameters.testingRun, true) }}: 
-        - DownloadTestingElements
+    dependsOn:
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
       - ${{ else }}:
-        - BuildingTools
-        - TridentTestImg_trident_testimage
-        - TridentTestImg_trident_verity_testimage
-        - ${{ if eq(parameters.runtimeEnv, 'container') }}:
-            - TridentTestImg_trident_container_installer_testimage
-        - ${{ else }}:
-            - TridentTestImg_trident_installer_testimage
+          - BuildingTools
+          - TridentTestImg_trident_testimage
+          - TridentTestImg_trident_verity_testimage
+          - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              - TridentTestImg_trident_container_installer_testimage
+          - ${{ else }}:
+              - TridentTestImg_trident_installer_testimage
 
     jobs:
-      - template: ../common_tasks/get-tests.yml
+      - template: ../testing_common/get-tests.yml
         parameters:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: bareMetal
@@ -142,7 +142,7 @@ stages:
               isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
               sshKeyFile: $(SSH_KEY_FILE)
 
-          - template: ../common_tasks/trident-prep.yml
+          - template: ../testing_common/trident-prep.yml
             parameters:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
 
@@ -171,7 +171,7 @@ stages:
               installerIsoDirectory: $(System.ArtifactsDirectory)/trident-installer-testimage
               netlistenPort: ${{variables.netlistenPort}}
 
-          - template: ../common_tasks/trident-metrics.yml
+          - template: ../testing_common/trident-metrics.yml
             parameters:
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
@@ -201,7 +201,7 @@ stages:
                 condition: always()
                 displayName: "Delete generated ISO"
 
-          - template: ../common_tasks/e2e-test-run.yml
+          - template: ../testing_common/e2e-test-run.yml
             parameters:
               buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: bareMetal
