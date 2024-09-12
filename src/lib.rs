@@ -376,31 +376,39 @@ impl Trident {
         // If host's servicing state is Finalized, need to verify if firmware correctly booted from
         // the updated runtime OS image.
         if datastore.host_status().servicing_state == ServicingState::Finalized {
-            // If Trident is running inside a container, need to get the mount info file in the
-            // host's root filesystem bind-mounted at a path inside the container.
-            let proc_mountinfo_path = if container::is_running_in_container()
+            // If Trident is running inside a container, need to get the device path for the mount
+            // point at '/host', since the host's root path is mounted at '/host' inside the
+            // container.
+            let root_mount_path = if container::is_running_in_container()
                 .message("Running in container check failed")?
             {
-                let host_root =
+                let host_root_path =
                     container::get_host_root_path().message("Failed to get host's root path")?;
-                path::join_relative(&host_root, PROC_MOUNTINFO_PATH)
+                debug!(
+                    "Running inside a container. Using root mount path '{}'",
+                    host_root_path.display()
+                );
+                host_root_path
             } else {
-                Path::new(PROC_MOUNTINFO_PATH).to_path_buf()
+                debug!(
+                    "Not running inside a container. Using default root mount path '{}'",
+                    ROOT_MOUNT_POINT_PATH
+                );
+                Path::new(ROOT_MOUNT_POINT_PATH).to_path_buf()
             };
 
-            // Get device path of root mount point
-            let root_dev_path = match tabfile::get_device_path(
-                &proc_mountinfo_path,
-                Path::new(ROOT_MOUNT_POINT_PATH),
-            ) {
-                Ok(path) => path,
-                Err(e) => {
-                    error!("Failed to get device path of root mount point: {e}");
-                    return Err(TridentError::new(ServicingError::RootMountPointDevPath {
-                        mountinfo_file: proc_mountinfo_path.to_string_lossy().to_string(),
-                    }));
-                }
-            };
+            // Get device path of root mount point. Contents of '/host/proc/self/mountinfo' and
+            // '/proc/self/mountinfo' are identical, so we use the latter by default.
+            let root_dev_path =
+                match tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &root_mount_path) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        error!("Failed to get device path of root mount point: {e}");
+                        return Err(TridentError::new(ServicingError::RootMountPointDevPath {
+                            mountinfo_file: PROC_MOUNTINFO_PATH.to_string(),
+                        }));
+                    }
+                };
 
             // Get expected device path of root mount point
             let expected_root_dev_path = get_expected_root_device_path(datastore.host_status())?;
@@ -729,6 +737,8 @@ fn validate_reboot(
 
         return Ok(false);
     }
+
+    info!("Host booted from the expected root device");
 
     Ok(true)
 }
