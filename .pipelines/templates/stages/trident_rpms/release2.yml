@@ -1,0 +1,51 @@
+steps:
+  - script: |
+      set -eux
+      TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit)
+      echo "##vso[task.setvariable variable=trident_version]$TRIDENT_VERSION"
+    displayName: "Setting Trident version"
+
+  - task: onebranch.pipeline.version@1
+    displayName: "Set build number"
+    inputs:
+      system: "Custom"
+      customVersion: $(trident_version)
+
+  - task: CopyFiles@2
+    inputs:
+      sourceFolder: "./artifacts"
+      targetFolder: "/usr/src/mariner/SOURCES"
+      contents: "*"
+    displayName: Copy EMU to SOURCES
+
+  - task: CopyFiles@2
+    inputs:
+      sourceFolder: "./"
+      targetFolder: "/usr/src/mariner/SOURCES"
+      contents: "trident-selinuxpolicies.cil"
+    displayName: Copy Trident selinux policy to SOURCES
+
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust p7zip p7zip-plugins zstd moby-buildx
+    displayName: Install native dependencies
+    retryCountOnTaskFailure: 3
+
+  - script: |
+      set -eux
+      full_version=$(trident_version)
+
+      # Separate into version and prerelease identifier
+      # for the RPM build.
+      version=$(echo $full_version | cut -d'-' -f1)
+      prerelease=$(echo $full_version | cut -d'-' -f2-)
+
+      rpmbuild -bb --build-in-place trident.spec \
+        --define="trident_version $full_version" \
+        --define="rpm_ver $version" \
+        --define="rpm_rel $prerelease"
+    displayName: Build 2.0 RPMs
+
+  - task: CopyFiles@2
+    inputs:
+      sourceFolder: "/usr/src/mariner/RPMS/x86_64"
+      targetFolder: "$(ob_outputDirectory)"
+    displayName: Copy RPM file to output
