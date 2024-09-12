@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
 use osutils::{
@@ -41,8 +41,8 @@ const PROHIBITED_EXECROOT_MOUNTS: [&str; 6] = [
 ];
 
 /// PREVIEW-ONLY OVERRIDE
-/// Execroot deny-list extension file
-const EXECROOT_DENYLIST_EXTENSION_FILE: &str = "/etc/trident/execroot_denylist";
+/// Execroot deny-list extension parameter name
+const EXECROOT_DENYLIST_EXTENSION_PARAM: &str = "execrootDenyList";
 
 /// Filter function to prevent specific mount points from being bind mounted in
 /// the execroot.
@@ -116,9 +116,30 @@ impl NewrootMount {
         newroot_mount.mount_tmpfs("/tmp")?;
         newroot_mount.mount_tmpfs("/run")?;
 
+        // PREVIEW-ONLY OVERRIDE
+        let execroot_deny_list_extension = if let Some(res) = host_status
+            .spec
+            .preview_params
+            .get_vec_string(EXECROOT_DENYLIST_EXTENSION_PARAM)
+        {
+            let overrides = res.structured(InternalError::Internal(
+                "Failed to get execroot deny-list extension",
+            ))?;
+            warn!(
+                "PREVIEW ONLY: Extending execroot deny-list with:\n{}",
+                overrides
+                    .iter()
+                    .map(|s| format!("  - {}\n", s))
+                    .collect::<String>()
+            );
+            overrides
+        } else {
+            Vec::new()
+        };
+
         // Mount execroot on newroot
         newroot_mount
-            .mount_execroot()
+            .mount_execroot(execroot_deny_list_extension)
             .structured(ServicingError::MountExecroot)?;
 
         Ok(newroot_mount)
@@ -277,7 +298,7 @@ impl NewrootMount {
 
     /// Create bind mount points to the local root filesystem & nested mounts
     /// for the execroot inside newroot.
-    fn mount_execroot(&mut self) -> Result<(), Error> {
+    fn mount_execroot(&mut self, execroot_deny_list_extension: Vec<String>) -> Result<(), Error> {
         debug!(
             "Attempting to bind mount execroot to '{}'",
             self.execroot_path().display()
@@ -300,8 +321,11 @@ impl NewrootMount {
 
         // Generate a list of paths to deny-list from being bind mounted in the
         // execroot.
-        let execroot_deny_list =
-            make_execroot_deny_list(Path::new(EXECROOT_DENYLIST_EXTENSION_FILE));
+        let execroot_deny_list = PROHIBITED_EXECROOT_MOUNTS
+            .iter()
+            .map(|s| s.to_string())
+            .chain(execroot_deny_list_extension)
+            .collect::<Vec<_>>();
 
         // Prune special directories from the execroot mounts
         execroot_deny_list.iter().for_each(|deny_path| {
@@ -478,71 +502,6 @@ fn do_bind_mount(source: &Path, target: &Path, flags: MountFlags) -> Result<(), 
     Ok(())
 }
 
-/// Returns a list of paths to deny-list from the execroot.
-fn make_execroot_deny_list(override_file: &Path) -> Vec<String> {
-    let mut execroot_deny_list = PROHIBITED_EXECROOT_MOUNTS
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
-
-    // Preview workaround to allow customers to get unblocked without
-    // needing new binaries.
-    if override_file.exists() {
-        warn!(
-            "PREVIEW-ONLY OVERRIDE: Using execroot deny-list extension file '{}'",
-            override_file.display()
-        );
-        match read_execroot_deny_list(override_file) {
-            Ok(deny_list) => {
-                debug!(
-                    "Read {} {} from the execroot deny-list extension file.",
-                    deny_list.len(),
-                    match deny_list.len() {
-                        1 => "entry",
-                        _ => "entries",
-                    }
-                );
-                execroot_deny_list.extend(deny_list);
-            }
-            Err(e) => {
-                error!("Failed to read execroot deny-list extension file: {:?}", e);
-            }
-        }
-    } else {
-        trace!(
-            "Execroot deny-list extension file '{}' does not exist",
-            override_file.display()
-        );
-    }
-
-    execroot_deny_list
-}
-
-/// PREVIEW-ONLY OVERRIDE
-/// Reads a list of paths from a file and returns them as a vector of strings.
-/// Trims whitespace on all lines, skips empty lines and lines starting with a `#`.
-/// Returns an error if the file cannot be read.
-fn read_execroot_deny_list(path: &Path) -> Result<Vec<String>, Error> {
-    std::fs::read_to_string(path)
-        .with_context(|| {
-            format!(
-                "Failed to read execroot deny-list extension file '{}'",
-                path.display()
-            )
-        })
-        .map(|content| {
-            content
-                .lines()
-                .map(|line| line.trim())
-                .filter(|line| !line.is_empty() && !line.starts_with('#'))
-                .map(|entry| {
-                    debug!("Read execroot deny-list entry '{}'", entry);
-                    entry.to_string()
-                })
-                .collect()
-        })
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -550,49 +509,6 @@ mod test {
     use std::path::PathBuf;
 
     use trident_api::config::{FileSystemType, HostConfiguration, InternalMountPoint, Storage};
-
-    #[test]
-    fn test_read_execroot_deny_list() {
-        let temp_file = tempfile::NamedTempFile::new().unwrap();
-        let temp_file_path = temp_file.path();
-
-        let content = "foo\n/bar/file\n\n   baz   \n#comment\n";
-        std::fs::write(temp_file_path, content).unwrap();
-
-        let deny_list = read_execroot_deny_list(temp_file_path).unwrap();
-        assert_eq!(deny_list, vec!["foo", "/bar/file", "baz"]);
-    }
-
-    #[test]
-    fn test_make_execroot_deny_list_simple() {
-        let non_existent_file = Path::new("/does-not-exist-abc-1234");
-        assert!(
-            !Path::new(EXECROOT_DENYLIST_EXTENSION_FILE).exists(),
-            "Deny-list file exists"
-        );
-        let deny_list = make_execroot_deny_list(non_existent_file);
-        assert_eq!(deny_list, PROHIBITED_EXECROOT_MOUNTS);
-    }
-
-    #[test]
-    fn test_make_execroot_deny_list_overrides() {
-        let temp_file = tempfile::NamedTempFile::new().unwrap();
-        let temp_file_path = temp_file.path();
-
-        let new_items = ["foo", "/bar/file", "baz"];
-        let content = new_items.join("\n");
-        std::fs::write(temp_file_path, content).unwrap();
-
-        let deny_list = make_execroot_deny_list(temp_file_path);
-        assert_eq!(
-            deny_list,
-            PROHIBITED_EXECROOT_MOUNTS
-                .iter()
-                .chain(new_items.iter())
-                .cloned()
-                .collect::<Vec<_>>()
-        );
-    }
 
     #[test]
     fn test_mount_point_ordering() {

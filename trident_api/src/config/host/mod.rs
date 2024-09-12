@@ -12,11 +12,13 @@ use crate::{
 
 pub(crate) mod error;
 pub(crate) mod os;
+pub(crate) mod preview_params;
 pub(crate) mod scripts;
 pub(crate) mod storage;
 pub(crate) mod trident;
 
 use os::Os;
+use preview_params::PreviewParams;
 use scripts::Scripts;
 use storage::Storage;
 use trident::Trident;
@@ -53,6 +55,13 @@ pub struct HostConfiguration {
     /// ignored on updates.
     #[serde(default, skip_serializing_if = "is_default")]
     pub management_os: ManagementOs,
+
+    /// PREVIEW-ONLY: TODO: Remove before GA. (#9023)
+    ///
+    /// Extra parameters to override default trident behavior.
+    #[serde(default, skip_serializing_if = "is_default")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub preview_params: PreviewParams,
 }
 
 impl HostConfiguration {
