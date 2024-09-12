@@ -30,6 +30,10 @@ def update_trident_host_config(
     network = os.setdefault("network", {})
     ethernets = network.setdefault("ethernets", {})
     eno_interface = ethernets.setdefault(interface_name, {})
+
+    # Temporary fix for #8837.
+    eno_interface["match"] = {"macaddress": "c8:4b:d6:7a:73:c6"}
+
     eno_interface.setdefault("addresses", []).append(oam_ip + "/23")
     eno_interface["dhcp4"] = True
     if oam_gateway:

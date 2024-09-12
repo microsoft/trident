@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Error};
-use log::{error, info};
+use log::{debug, error, info};
 
 use setsail::KsTranslator;
 use trident_api::config::{HostConfiguration, HostConfigurationSource, LocalConfigFile};
@@ -85,6 +85,10 @@ fn validate_host_config(hc: HostConfiguration) -> Result<(), Error> {
     hc.validate().context("Host config is invalid")?;
 
     info!("Host Configuration is valid");
+    debug!(
+        "Parsed contents:\n{}",
+        serde_yaml::to_string(&hc).context("Failed to serialize host configuration file.")?
+    );
     Ok(())
 }
 

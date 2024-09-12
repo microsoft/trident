@@ -22,7 +22,8 @@ for CONFIG in $CONFIGS; do
     --ssh-pub-key \
     $TEMP_DIR/mysshkey \
     --interface-name ifname \
-    --host-interface "$DEFAULT_INTERFACE_NAME"
-  cargo run validate -c $TEMP_FILE
+    --host-interface "$DEFAULT_INTERFACE_NAME" \
+    --netlisten-port 8080
+  cargo run validate -c $TEMP_FILE -v debug
 done
 rm -rf $TEMP_DIR
