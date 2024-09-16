@@ -26,10 +26,11 @@ impl Module for NetworkModule {
     ) -> Result<(), TridentError> {
         match host_status.spec.os.network.as_ref() {
             Some(config) => {
+                info!("Configuring network");
                 let config = netplan::render_netplan_yaml(config)
                     .structured(ServicingError::RenderNetworkNetplanYaml)?;
                 netplan::write(&config).structured(ServicingError::WriteNetplanConfig)?;
-                netplan::apply().structured(ServicingError::ApplyNetplanConfig)?;
+                netplan::generate().structured(ServicingError::GenerateNetplanConfig)?;
             }
             None => {
                 info!("Network config not provided");

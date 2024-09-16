@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Error};
-use log::debug;
+use log::{debug, info};
 use uuid::Uuid;
 
 use osutils::{
@@ -106,6 +106,18 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
             boot_grub_config_path.display()
         ))?;
     } else {
+        // For azl 3.0, we need to disable cloud-init's network configuration when trident is
+        // configuring the network. This is done by setting the 'network-config' kernel parameter
+        // to 'disabled'.
+        if host_status.spec.os.network.is_some() {
+            info!("Disabling default cloud-init network config");
+            let mut disable_default_cloud_init_network = GrubMkConfigScript::new("prefer-netplan");
+            disable_default_cloud_init_network.add_kv_param("network-config", "disabled");
+            disable_default_cloud_init_network
+                .write()
+                .context("Failed to disable default cloud-init network config")?;
+        }
+
         // For AzL 3.0 we need to drop a grub-mkconfig script to manipulate the SELinux policy.
         if let Some(mode) = host_status.spec.os.selinux.mode {
             let mut script = GrubMkConfigScript::new("70_selinux_policy");

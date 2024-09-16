@@ -160,8 +160,8 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
-    #[error("Failed to apply Netplan config")]
-    ApplyNetplanConfig,
+    #[error("Failed to generate Netplan config")]
+    GenerateNetplanConfig,
 
     #[error("Failed to check if the boot entry '{boot_entry}' exists via efibootmgr")]
     BootEntryCheck { boot_entry: String },
