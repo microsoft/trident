@@ -1,6 +1,13 @@
 # Path to the trident configuration file for validate and run-netlaunch
 # targets.
 TRIDENT_CONFIG ?= input/trident.yaml
+
+ARGUS_TOOLKIT_PATH ?= ../argus-toolkit
+
+PLATFORM_TESTS_PATH ?= ../platform-tests
+
+TEST_IMAGES_PATH ?= ../test-images
+
 HOST_CONFIG ?= base.yaml
 
 .PHONY: all
@@ -226,8 +233,8 @@ build-functional-test-cc:
 
 .PHONY: functional-test
 functional-test: bin/trident-mos.iso bin/trident artifacts/osmodifier artifacts/test-image/*.rawzst bin/netlaunch
-	cp ../platform-tests/tools/marinerhci_test_tools/node_interface.py functional_tests/
-	cp ../platform-tests/tools/marinerhci_test_tools/ssh_node.py functional_tests/
+	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/node_interface.py functional_tests/
+	cp $(PLATFORM_TESTS_PATH)/tools/marinerhci_test_tools/ssh_node.py functional_tests/
 	cp bin/trident artifacts/test-image/
 	cp artifacts/osmodifier artifacts/test-image/
 	$(MAKE) functional-test-core
@@ -399,31 +406,27 @@ endif
 		--artifact-name 'trident-installer-testimage'
 
 .PHONY: copy-runtime-partition-images
-copy-runtime-partition-images: ../test-images/build/trident-testimage/*.raw.zst ../test-images/build/trident-verity-testimage/*.raw.zst
-# 	Check repo is adjacent
-	@test -d ../test-images || { \
-		echo "Test images repo not found in adjacent directory."; \
+copy-runtime-partition-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.raw.zst $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.raw.zst
+	@test -d $(TEST_IMAGES_PATH) || { \
+		echo "$(TEST_IMAGES_PATH) not found"; \
 		exit 1; \
 	}
-#	Check directory exists
-	@test -d ../test-images/build/trident-testimage || { \
-		echo "Trident images not found in adjacent test-images repo."; \
+	@test -d $(TEST_IMAGES_PATH)/build/trident-testimage || { \
+		echo "$(TEST_IMAGES_PATH)/build/trident-testimage not found"; \
 		exit 1; \
 	}
-#	Check directory exists
-	@test -d ../test-images/build/trident-verity-testimage || { \
-		echo "Trident images not found in adjacent test-images repo."; \
+	@test -d $(TEST_IMAGES_PATH)/build/trident-verity-testimage || { \
+		echo "$(TEST_IMAGES_PATH)/build/trident-verity-testimage not found"; \
 		exit 1; \
 	}
-#   Clean & create artifacts dir
 	@rm -rf ./artifacts/test-image
 	@mkdir -p ./artifacts/test-image
-	@for file in ../test-images/build/trident-testimage/*.raw.zst; do \
+	@for file in $(TEST_IMAGES_PATH)/build/trident-testimage/*.raw.zst; do \
 		name=$$(basename $$file | cut -d'.' -f1); \
 		cp $$file ./artifacts/test-image/$$name.rawzst; \
 		echo "Copied $$file to ./artifacts/test-image/$$name.rawzst"; \
 	done
-	@for file in ../test-images/build/trident-verity-testimage/*.raw.zst; do \
+	@for file in $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.raw.zst; do \
 		name=$$(basename $$file | cut -d'.' -f1); \
 		cp $$file ./artifacts/test-image/verity_$$name.rawzst; \
 		echo "Copied $$file to ./artifacts/test-image/verity_$$name.rawzst"; \
