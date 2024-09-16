@@ -5,11 +5,11 @@ use log::info;
 use osutils::mkinitrd;
 use trident_api::{error::TridentError, status::HostStatus};
 
-use super::Module;
+use super::Subsystem;
 
 #[derive(Default)]
-pub(super) struct InitrdModule;
-impl Module for InitrdModule {
+pub(super) struct InitrdSubsystem;
+impl Subsystem for InitrdSubsystem {
     fn name(&self) -> &'static str {
         "initrd"
     }

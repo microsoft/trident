@@ -8,14 +8,14 @@ use trident_api::{
     status::{AbVolumeSelection, HostStatus},
 };
 
-use crate::engine::Module;
+use crate::engine::Subsystem;
 
 pub(super) mod esp;
 pub(super) mod grub;
 
 #[derive(Default, Debug)]
-pub(super) struct BootModule;
-impl Module for BootModule {
+pub(super) struct BootSubsystem;
+impl Subsystem for BootSubsystem {
     fn name(&self) -> &'static str {
         "boot"
     }

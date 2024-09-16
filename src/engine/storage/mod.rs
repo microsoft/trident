@@ -15,7 +15,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::Module;
+use crate::engine::Subsystem;
 
 mod encryption;
 mod filesystem;
@@ -28,12 +28,12 @@ mod verity;
 
 use tabfile::DEFAULT_FSTAB_PATH;
 
-const IMAGE_SUB_MODULE_NAME: &str = "image";
-const ENCRYPTION_SUB_MODULE_NAME: &str = "encryption";
+const IMAGE_SUBSYSTEM_NAME: &str = "image";
+const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
 
 #[derive(Default, Debug)]
-pub(super) struct StorageModule;
-impl Module for StorageModule {
+pub(super) struct StorageSubsystem;
+impl Subsystem for StorageSubsystem {
     fn name(&self) -> &'static str {
         "storage"
     }
@@ -65,7 +65,7 @@ impl Module for StorageModule {
         }
 
         image::refresh_host_status(host_status, clean_install).message(format!(
-            "Step 'Refresh host status' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"
+            "Step 'Refresh host status' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
         ))?;
 
         Ok(())
@@ -136,11 +136,11 @@ impl Module for StorageModule {
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
         image::validate_host_config(host_status, host_config, planned_servicing_type).message(
-            format!("Step 'Validate' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"),
+            format!("Step 'Validate' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"),
         )?;
 
         encryption::validate_host_config(host_config).message(format!(
-            "Step 'Validate' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
+            "Step 'Validate' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
 
         Ok(())
@@ -191,7 +191,7 @@ impl Module for StorageModule {
         // is located
 
         encryption::configure(host_status).message(format!(
-            "Step 'Configure' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
+            "Step 'Configure' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
 
         // Persist on reboots
@@ -243,12 +243,12 @@ pub(super) fn initialize_block_devices(
             .structured(ServicingError::CreatePartitions)?;
         raid::create_sw_raid(host_status, host_config).structured(ServicingError::CreateRaid)?;
         encryption::provision(host_status, host_config).message(format!(
-            "Step 'Provision' failed for sub-module '{ENCRYPTION_SUB_MODULE_NAME}'"
+            "Step 'Provision' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
     }
 
     image::provision(host_status, host_config).message(format!(
-        "Step 'Provision' failed for sub-module '{IMAGE_SUB_MODULE_NAME}'"
+        "Step 'Provision' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
     ))?;
     filesystem::create_filesystems(host_status).structured(ServicingError::CreateFilesystems)?;
 
@@ -396,14 +396,14 @@ mod tests {
         }
     }
 
-    /// Validates Storage module HostConfiguration validation logic.
+    /// Validates Storage subsystem HostConfiguration validation logic.
     #[test]
     fn test_validate_host_config_pass() {
         let host_status = get_host_status();
         let recovery_key_file = get_recovery_key_file();
         let host_config = get_host_config(&recovery_key_file);
 
-        StorageModule
+        StorageSubsystem
             .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
             .unwrap();
     }
@@ -419,7 +419,7 @@ mod tests {
         host_config.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
 
         assert_eq!(
-            StorageModule
+            StorageSubsystem
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
                 .unwrap_err()
                 .kind(),
@@ -442,7 +442,7 @@ mod tests {
         host_config.storage.disks.get_mut(0).unwrap().device = "/dev".into();
 
         assert_eq!(
-            StorageModule
+            StorageSubsystem
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
                 .unwrap_err()
                 .kind(),
@@ -456,7 +456,7 @@ mod tests {
         );
     }
 
-    // Validating the Storage module include encryption configuration validation.
+    // Validating the Storage subsystem include encryption configuration validation.
     #[test]
     fn test_validate_host_config_encryption_invalid_fail() {
         let host_status = get_host_status();
@@ -467,7 +467,7 @@ mod tests {
         fs::remove_file(recovery_key_file.path()).unwrap();
 
         assert_eq!(
-            StorageModule
+            StorageSubsystem
                 .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
                 .unwrap_err()
                 .kind(),

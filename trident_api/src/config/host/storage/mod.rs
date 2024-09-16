@@ -189,7 +189,7 @@ impl Storage {
 
         // Ensure the root mount point is present when:
         //  - Storage configuration is requested
-        //  - Other modules require root mount point
+        //  - Other subsystems require root mount point
         //  - Verity filesystems are present
         if require_root_mount_point
             || *self != Storage::default()

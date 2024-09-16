@@ -1,8 +1,9 @@
-//! Systemd-sysupdate is a sub-module of Image module that provides A/B upgrade functionality by
-//! using sysupdate, a systemd component. This is v1, which supports the most basic e2e flow:
-//! 1. Trident delegates download of the image and update of partition to systemd-sysupdate.
-//!    Currently, only partitions of type root and can be updated; boot can be written to. More
-//!    info in README.md.
+//! Systemd-sysupdate is a subsystem of the Image subsystem that provides A/B
+//! upgrade functionality by using sysupdate, a systemd component. This is v1,
+//! which supports the most basic e2e flow:
+//! 1. Trident delegates download of the image and update of partition to
+//!    systemd-sysupdate. Currently, only partitions of type root and can be
+//!    updated; boot can be written to. More info in README.md.
 //! 2. Other advanced features are not yet implemented.
 
 // TODO: In a future iteration, systemd-sysupdate.rs needs to be refactored, to
@@ -297,7 +298,7 @@ impl ImageDeployment {
 
     /// Takes in an instance of ImageDeployment, runs sysupdate, and returns image_length, a u64
     /// representing the number of bytes acquired by systemd-sysupdate to download an image. This
-    /// is to be used for updating HostStatus inside of Image module.
+    /// is to be used for updating HostStatus inside of Image subsystem.
     pub(super) fn run_sysupdate(&mut self, host_status: &mut HostStatus) -> Result<u64, Error> {
         // Fetch block device path from HostStatus and partition_id_to_update
         let partition_path = get_partition_path(host_status, &self.partition_id_to_update)
@@ -368,7 +369,7 @@ impl ImageDeployment {
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6128.
 
     /// Triggers an update with systemd-sysupdate. Returns the number of bytes that sysupdate
-    /// downloaded, to be used for updating HostStatus inside of Image module.
+    /// downloaded, to be used for updating HostStatus inside of Image subsystem.
     fn sysupdate_update(&self) -> Result<u64, Error> {
         // Run systemd-sysupdate update [VERSION] command, with option --definitions set to dir
         // where transfer config file is located
@@ -786,7 +787,7 @@ pub(super) fn deploy(
     directory: Option<&Path>,
     filename: Option<&str>,
 ) -> Result<(), Error> {
-    debug!("Calling Systemd-Sysupdate sub-module to execute A/B update");
+    debug!("Calling Systemd-Sysupdate subsystem to execute A/B update");
     // Create ImageDeployment instance
     let mut img_deploy_instance =
         ImageDeployment::new(image, device_id, host_status, directory, filename).context(
@@ -805,7 +806,7 @@ pub(super) fn deploy(
     // If A/B update succeeded, update HostStatus
     if image_length > 0 && img_deploy_instance.status == Status::Succeeded {
         info!(
-            "Systemd-Sysupdate sub-module successfully updated partition with id '{}' to version '{}'",
+            "Systemd-Sysupdate subsystem successfully updated partition with id '{}' to version '{}'",
             &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
         );
     } else {

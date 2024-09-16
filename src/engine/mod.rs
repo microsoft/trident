@@ -29,19 +29,19 @@ use crate::grpc::{self, protobufs::HostStatusState};
 use crate::{
     datastore::DataStore,
     engine::{
-        boot::BootModule,
-        hooks::HooksModule,
-        initrd::InitrdModule,
-        management::ManagementModule,
-        network::NetworkModule,
-        osconfig::{MosConfigModule, OsConfigModule},
-        selinux::SelinuxModule,
-        storage::StorageModule,
+        boot::BootSubsystem,
+        hooks::HooksSubsystem,
+        initrd::InitrdSubsystem,
+        management::ManagementSubsystem,
+        network::NetworkSubsystem,
+        osconfig::{MosConfigSubsystem, OsConfigSubsystem},
+        selinux::SelinuxSubsystem,
+        storage::StorageSubsystem,
     },
     HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH,
 };
 
-// Trident modules
+// Trident Subsystems
 pub mod boot;
 pub mod hooks;
 pub mod initrd;
@@ -59,7 +59,7 @@ pub mod selinux;
 
 use newroot::NewrootMount;
 
-trait Module: Send {
+trait Subsystem: Send {
     fn name(&self) -> &'static str;
 
     fn writable_etc_overlay(&self) -> bool {
@@ -127,16 +127,16 @@ trait Module: Send {
 }
 
 lazy_static::lazy_static! {
-    static ref MODULES: Mutex<Vec<Box<dyn Module>>> = Mutex::new(vec![
-        Box::<MosConfigModule>::default(),
-        Box::<StorageModule>::default(),
-        Box::<BootModule>::default(),
-        Box::<NetworkModule>::default(),
-        Box::<OsConfigModule>::default(),
-        Box::<ManagementModule>::default(),
-        Box::<HooksModule>::default(),
-        Box::<InitrdModule>::default(),
-        Box::<SelinuxModule>::default(),
+    static ref SUBSYSTEMS: Mutex<Vec<Box<dyn Subsystem>>> = Mutex::new(vec![
+        Box::<MosConfigSubsystem>::default(),
+        Box::<StorageSubsystem>::default(),
+        Box::<BootSubsystem>::default(),
+        Box::<NetworkSubsystem>::default(),
+        Box::<OsConfigSubsystem>::default(),
+        Box::<ManagementSubsystem>::default(),
+        Box::<HooksSubsystem>::default(),
+        Box::<InitrdSubsystem>::default(),
+        Box::<SelinuxSubsystem>::default(),
     ]);
 }
 
@@ -175,17 +175,17 @@ pub(super) fn clean_install(
     clean_install_safety_check(&command.host_config)?;
     info!("Safety check passed, continuing with clean install.");
 
-    let mut modules = MODULES.lock().unwrap();
+    let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    refresh_host_status(&mut modules, state, true)?;
-    validate_host_config(&modules, state, host_config, ServicingType::CleanInstall)?;
+    refresh_host_status(&mut subsystems, state, true)?;
+    validate_host_config(&subsystems, state, host_config, ServicingType::CleanInstall)?;
 
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(&mut sender, state)?;
 
     // Stage clean install
     let mut root_mount = stage_clean_install(
-        &mut modules,
+        &mut subsystems,
         state,
         host_config,
         #[cfg(feature = "grpc-dangerous")]
@@ -265,7 +265,7 @@ fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), Tri
 }
 
 /// Stages a clean install. Takes in 4 arguments:
-/// - modules: A mutable reference to the list of modules.
+/// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - host_config: A reference to the HostConfiguration.
 /// - sender: Optional mutable reference to the gRPC sender.
@@ -273,7 +273,7 @@ fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), Tri
 /// On success, returns a NewrootMount.
 #[tracing::instrument(skip_all)]
 fn stage_clean_install(
-    modules: &mut MutexGuard<Vec<Box<dyn Module>>>,
+    subsystems: &mut MutexGuard<Vec<Box<dyn Subsystem>>>,
     state: &mut DataStore,
     host_config: &HostConfiguration,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
@@ -290,7 +290,7 @@ fn stage_clean_install(
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    prepare(modules, state)?;
+    prepare(subsystems, state)?;
 
     info!("Preparing storage to mount new root");
     let mut newroot_mount = initialize_new_root(state, host_config)?;
@@ -300,7 +300,7 @@ fn stage_clean_install(
         Ok(())
     })?;
 
-    provision(modules, state, newroot_mount.path())?;
+    provision(subsystems, state, newroot_mount.path())?;
 
     info!("Entering '{}' chroot", newroot_mount.path().display());
     let result = chroot::enter_update_chroot(newroot_mount.path())
@@ -314,7 +314,7 @@ fn stage_clean_install(
             // a writable overlay for it.
             let use_overlay = !host_config.storage.internal_verity.is_empty();
             configure(
-                modules,
+                subsystems,
                 state,
                 newroot_mount.execroot_relative_path(),
                 use_overlay,
@@ -404,15 +404,15 @@ pub(super) fn update(
     } = command;
 
     info!("Starting update()");
-    let mut modules = MODULES.lock().unwrap();
+    let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    refresh_host_status(&mut modules, state, false)?;
+    refresh_host_status(&mut subsystems, state, false)?;
 
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(&mut sender, state)?;
 
     info!("Determining servicing type");
-    let servicing_type = modules
+    let servicing_type = subsystems
         .iter()
         .map(|m| m.select_servicing_type(state.host_status(), host_config))
         .collect::<Result<Vec<_>, TridentError>>()?
@@ -429,7 +429,7 @@ pub(super) fn update(
         servicing_type
     );
 
-    validate_host_config(&modules, state, host_config, servicing_type)?;
+    validate_host_config(&subsystems, state, host_config, servicing_type)?;
 
     let update_start_time = Instant::now();
     tracing::info!(
@@ -440,7 +440,7 @@ pub(super) fn update(
 
     // Stage update
     let root_mount = stage_update(
-        &mut modules,
+        &mut subsystems,
         state,
         host_config,
         servicing_type,
@@ -487,7 +487,7 @@ pub(super) fn update(
 }
 
 /// Stages an update. Takes in 5 arguments:
-/// - modules: A mutable reference to the list of modules.
+/// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - host_config: Updated host configuration.
 /// - servicing_type: Servicing type of the update that Trident will now stage, based on host config.
@@ -496,7 +496,7 @@ pub(super) fn update(
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
 #[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
 fn stage_update(
-    modules: &mut [Box<dyn Module>],
+    subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
     host_config: &HostConfiguration,
     servicing_type: ServicingType,
@@ -528,14 +528,14 @@ fn stage_update(
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    prepare(modules, state)?;
+    prepare(subsystems, state)?;
 
     let newroot_mount = if let ServicingType::AbUpdate = servicing_type {
         info!("Preparing storage to mount new root");
 
         let mut newroot_mount = initialize_new_root(state, host_config)?;
 
-        provision(modules, state, newroot_mount.path())?;
+        provision(subsystems, state, newroot_mount.path())?;
 
         // If verity is present, it means that we are currently doing root
         // verity. For now, we can assume that /etc is readonly, so we setup
@@ -547,7 +547,7 @@ fn stage_update(
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
                 configure(
-                    modules,
+                    subsystems,
                     state,
                     newroot_mount.execroot_relative_path(),
                     use_overlay,
@@ -564,7 +564,7 @@ fn stage_update(
         Some(newroot_mount)
     } else {
         info!("Running configure");
-        configure(modules, state, Path::new(ROOT_MOUNT_POINT_PATH), false)?;
+        configure(subsystems, state, Path::new(ROOT_MOUNT_POINT_PATH), false)?;
         None
     };
 
@@ -738,19 +738,22 @@ fn get_ab_volume_block_device_id(
 
 #[tracing::instrument(skip_all)]
 fn refresh_host_status(
-    modules: &mut [Box<dyn Module>],
+    subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
     clean_install: bool,
 ) -> Result<(), TridentError> {
     info!("Starting step 'Refresh host status'");
-    for module in modules {
-        debug!("Starting step 'Refresh' for module '{}'", module.name());
+    for subsystem in subsystems {
+        debug!(
+            "Starting step 'Refresh' for subsystem '{}'",
+            subsystem.name()
+        );
         state.try_with_host_status(|s| {
-            module
+            subsystem
                 .refresh_host_status(s, clean_install)
                 .message(format!(
-                    "Step 'Refresh host status' failed for module '{}'",
-                    module.name()
+                    "Step 'Refresh host status' failed for subsystem '{}'",
+                    subsystem.name()
                 ))
         })?;
     }
@@ -760,33 +763,42 @@ fn refresh_host_status(
 
 #[tracing::instrument(skip_all)]
 fn validate_host_config(
-    modules: &[Box<dyn Module>],
+    subsystems: &[Box<dyn Subsystem>],
     state: &DataStore,
     host_config: &HostConfiguration,
     planned_servicing_type: ServicingType,
 ) -> Result<(), TridentError> {
     info!("Starting step 'Validate'");
-    for module in modules {
-        debug!("Starting step 'Validate' for module '{}'", module.name());
-        module
+    for subsystem in subsystems {
+        debug!(
+            "Starting step 'Validate' for subsystem '{}'",
+            subsystem.name()
+        );
+        subsystem
             .validate_host_config(state.host_status(), host_config, planned_servicing_type)
             .message(format!(
-                "Step 'Validate' failed for module '{}'",
-                module.name()
+                "Step 'Validate' failed for subsystem '{}'",
+                subsystem.name()
             ))?;
     }
     debug!("Finished step 'Validate'");
     Ok(())
 }
 
-fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(), TridentError> {
+fn prepare(
+    subsystems: &mut [Box<dyn Subsystem>],
+    state: &mut DataStore,
+) -> Result<(), TridentError> {
     info!("Starting step 'Prepare'");
-    for module in modules {
-        debug!("Starting step 'Prepare' for module '{}'", module.name());
+    for subsystem in subsystems {
+        debug!(
+            "Starting step 'Prepare' for subsystem '{}'",
+            subsystem.name()
+        );
         state.try_with_host_status(|s| {
-            module.prepare(s).message(format!(
-                "Step 'Prepare' failed for module '{}'",
-                module.name()
+            subsystem.prepare(s).message(format!(
+                "Step 'Prepare' failed for subsystem '{}'",
+                subsystem.name()
             ))
         })?;
     }
@@ -795,7 +807,7 @@ fn prepare(modules: &mut [Box<dyn Module>], state: &mut DataStore) -> Result<(),
 }
 
 fn provision(
-    modules: &mut [Box<dyn Module>],
+    subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
@@ -805,22 +817,25 @@ fn provision(
     let use_overlay = !state.host_status().spec.storage.internal_verity.is_empty();
 
     info!("Starting step 'Provision'");
-    for module in modules {
-        debug!("Starting step 'Provision' for module '{}'", module.name());
+    for subsystem in subsystems {
+        debug!(
+            "Starting step 'Provision' for subsystem '{}'",
+            subsystem.name()
+        );
         let _etc_overlay_mount = if use_overlay {
             Some(etc_overlay::create(
                 Path::new(new_root_path),
-                module.writable_etc_overlay(),
+                subsystem.writable_etc_overlay(),
             )?)
         } else {
             None
         };
         state.try_with_host_status(|host_status| {
-            module
+            subsystem
                 .provision(host_status, new_root_path)
                 .message(format!(
-                    "Step 'Provision' failed for module '{}'",
-                    module.name()
+                    "Step 'Provision' failed for subsystem '{}'",
+                    subsystem.name()
                 ))
         })?;
     }
@@ -845,27 +860,30 @@ pub(super) fn initialize_new_root(
 }
 
 fn configure(
-    modules: &mut [Box<dyn Module>],
+    subsystems: &mut [Box<dyn Subsystem>],
     state: &mut DataStore,
     exec_root: &Path,
     use_overlay: bool,
 ) -> Result<(), TridentError> {
     info!("Starting step 'Configure'");
-    for module in modules {
-        debug!("Starting step 'Configure' for module '{}'", module.name());
+    for subsystem in subsystems {
+        debug!(
+            "Starting step 'Configure' for subsystem '{}'",
+            subsystem.name()
+        );
         // unmount on drop
         let _etc_overlay_mount = if use_overlay {
             Some(etc_overlay::create(
                 Path::new("/"),
-                module.writable_etc_overlay(),
+                subsystem.writable_etc_overlay(),
             )?)
         } else {
             None
         };
         state.try_with_host_status(|s| {
-            module.configure(s, exec_root).message(format!(
-                "Step 'Configure' failed for module '{}'",
-                module.name()
+            subsystem.configure(s, exec_root).message(format!(
+                "Step 'Configure' failed for subsystem '{}'",
+                subsystem.name()
             ))
         })?;
     }

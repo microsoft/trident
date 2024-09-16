@@ -35,7 +35,7 @@ pub(crate) mod stream_image;
 mod systemd_sysupdate;
 
 /// Deploys images onto block devices that are not ESP partitions, as ESP image deployments are
-/// handled separately by the boot module.
+/// handled separately by the boot subsystem.
 ///
 /// Depending on the image format, Trident will use different strategies to deploy the image:
 /// 1. If image is a local file or an HTTP file published in RawZstd format, Trident will use a
@@ -49,7 +49,7 @@ mod systemd_sysupdate;
 ///    Trident will download the image from Azure container registry and pass it to
 ///    systemd-sysupdate.rs. ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/5503/.
 ///
-/// This function is called by the provision() function in the image submodule and returns an error
+/// This function is called by the provision() function in the image subsystem and returns an error
 /// if the image cannot be downloaded or deployed correctly.
 fn deploy_images(
     host_status: &mut HostStatus,

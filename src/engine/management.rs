@@ -1,4 +1,4 @@
-//! Module in charge of configuring the Trident agent on the runtime OS.
+//! Subsystem in charge of configuring the Trident agent on the runtime OS.
 
 use std::{
     fs::{self},
@@ -15,11 +15,11 @@ use trident_api::{
     status::{HostStatus, ServicingType},
 };
 
-use crate::{engine::Module, TRIDENT_BINARY_PATH, TRIDENT_LOCAL_CONFIG_PATH};
+use crate::{engine::Subsystem, TRIDENT_BINARY_PATH, TRIDENT_LOCAL_CONFIG_PATH};
 
 #[derive(Default, Debug)]
-pub struct ManagementModule;
-impl Module for ManagementModule {
+pub struct ManagementSubsystem;
+impl Subsystem for ManagementSubsystem {
     fn name(&self) -> &'static str {
         "management"
     }
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_validate_host_config() {
-        let mgmt_mod = ManagementModule;
+        let mgmt_mod = ManagementSubsystem;
 
         let mut host_status = HostStatus::default();
         let mut host_config = HostConfiguration::default();

@@ -10,7 +10,7 @@ use trident_api::{
     status::{HostStatus, ServicingType},
 };
 
-use crate::{engine::Module, OS_MODIFIER_BINARY_PATH};
+use crate::{engine::Subsystem, OS_MODIFIER_BINARY_PATH};
 
 mod hostname;
 mod users;
@@ -26,8 +26,8 @@ fn requires_os_modifier_mos(mos_config: &ManagementOs) -> bool {
 }
 
 #[derive(Default, Debug)]
-pub struct OsConfigModule;
-impl Module for OsConfigModule {
+pub struct OsConfigSubsystem;
+impl Subsystem for OsConfigSubsystem {
     fn name(&self) -> &'static str {
         "os-config"
     }
@@ -65,7 +65,7 @@ impl Module for OsConfigModule {
             && host_status.servicing_type != ServicingType::AbUpdate
         {
             debug!(
-                "Skipping step 'Configure' for module '{}' during servicing type '{:?}'",
+                "Skipping step 'Configure' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
                 host_status.servicing_type
             );
@@ -91,8 +91,8 @@ impl Module for OsConfigModule {
 }
 
 #[derive(Default, Debug)]
-pub struct MosConfigModule;
-impl Module for MosConfigModule {
+pub struct MosConfigSubsystem;
+impl Subsystem for MosConfigSubsystem {
     fn name(&self) -> &'static str {
         "mos-config"
     }
@@ -105,7 +105,7 @@ impl Module for MosConfigModule {
     ) -> Result<(), TridentError> {
         if planned_servicing_type != ServicingType::CleanInstall {
             debug!(
-                "Skipping step 'Validate' for module '{}' during servicing type '{:?}'",
+                "Skipping step 'Validate' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
                 planned_servicing_type
             );
@@ -130,7 +130,7 @@ impl Module for MosConfigModule {
     fn prepare(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
         if host_status.servicing_type != ServicingType::CleanInstall {
             debug!(
-                "Skipping step 'Prepare' for module '{}' during servicing type '{:?}'",
+                "Skipping step 'Prepare' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
                 host_status.servicing_type
             );

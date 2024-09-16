@@ -20,7 +20,7 @@ use trident_api::{
     status::{HostStatus, ServicingType},
 };
 
-use crate::engine::Module;
+use crate::engine::Subsystem;
 
 #[derive(Debug)]
 struct StagedFile {
@@ -29,10 +29,10 @@ struct StagedFile {
 }
 
 #[derive(Default, Debug)]
-pub struct HooksModule {
+pub struct HooksSubsystem {
     staged_files: HashMap<PathBuf, StagedFile>,
 }
-impl Module for HooksModule {
+impl Subsystem for HooksSubsystem {
     fn name(&self) -> &'static str {
         "hooks"
     }
@@ -206,7 +206,7 @@ impl Module for HooksModule {
     }
 }
 
-impl HooksModule {
+impl HooksSubsystem {
     fn stage_file(&mut self, path: PathBuf) -> Result<(), Error> {
         let contents =
             std::fs::read(&path).context(format!("Failed to read file '{}'", path.display()))?;
@@ -341,17 +341,17 @@ mod tests {
         let test_content = "test-content";
         fs::write(&test_file, test_content).unwrap();
 
-        let mut module = HooksModule::default();
-        module
+        let mut subsystem = HooksSubsystem::default();
+        subsystem
             .stage_file(test_file.clone())
             .expect("Failed to stage file");
         assert_eq!(
-            module.staged_files.get(&test_file).unwrap().contents,
+            subsystem.staged_files.get(&test_file).unwrap().contents,
             test_content.as_bytes()
         );
 
-        let mut module = HooksModule::default();
-        let result = module.stage_file(PathBuf::from("non-existing-file"));
+        let mut subsystem = HooksSubsystem::default();
+        let result = subsystem.stage_file(PathBuf::from("non-existing-file"));
         assert!(result.is_err());
 
         // Cleanup
@@ -373,7 +373,7 @@ mod tests {
             environment_variables,
             ..Default::default()
         };
-        HooksModule::default()
+        HooksSubsystem::default()
             .run_script(
                 &script,
                 ServicingType::CleanInstall,
@@ -422,9 +422,9 @@ mod tests {
             ..Default::default()
         };
 
-        let mut module = HooksModule::default();
-        module.prepare(&host_status).unwrap();
-        module
+        let mut subsystem = HooksSubsystem::default();
+        subsystem.prepare(&host_status).unwrap();
+        subsystem
             .provision(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
 
@@ -459,9 +459,9 @@ mod tests {
             ..Default::default()
         };
 
-        let mut module = HooksModule::default();
+        let mut subsystem = HooksSubsystem::default();
         assert_eq!(
-            module.prepare(&host_status).unwrap_err().kind(),
+            subsystem.prepare(&host_status).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                 inner: HostConfigurationDynamicValidationError::LoadScript {
                     name: "test-script".into(),
@@ -482,7 +482,7 @@ mod tests {
             content: Some("cat nonexisting.txt".into()),
             ..Default::default()
         };
-        assert!(HooksModule::default()
+        assert!(HooksSubsystem::default()
             .run_script(
                 &script,
                 ServicingType::CleanInstall,
@@ -501,7 +501,7 @@ mod tests {
             content: Some("mkdir test-directory".into()),
             ..Default::default()
         };
-        assert!(HooksModule::default()
+        assert!(HooksSubsystem::default()
             .run_script(
                 &script,
                 ServicingType::CleanInstall,
@@ -527,7 +527,7 @@ mod tests {
             ..Default::default()
         };
         // Check that the test-directory does not exist since the script should not be run
-        HooksModule::default()
+        HooksSubsystem::default()
             .run_script(
                 &script,
                 ServicingType::CleanInstall,
@@ -576,7 +576,7 @@ mod tests {
             content: Some("touch $TARGET_ROOT/a && touch $EXEC_ROOT/b".into()),
             ..Default::default()
         };
-        HooksModule::default()
+        HooksSubsystem::default()
             .run_script(
                 &script,
                 ServicingType::CleanInstall,
@@ -600,7 +600,7 @@ mod tests {
         let test_content = "test-content";
 
         // Content
-        let mut module = HooksModule::default();
+        let mut subsystem = HooksSubsystem::default();
         let host_status = HostStatus {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
@@ -615,8 +615,8 @@ mod tests {
             },
             ..Default::default()
         };
-        module.prepare(&host_status).unwrap();
-        module
+        subsystem.prepare(&host_status).unwrap();
+        subsystem
             .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
@@ -626,7 +626,7 @@ mod tests {
         );
 
         // Content + permissions
-        let mut module = HooksModule::default();
+        let mut subsystem = HooksSubsystem::default();
         let host_status = HostStatus {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
@@ -642,8 +642,8 @@ mod tests {
             },
             ..Default::default()
         };
-        module.prepare(&host_status).unwrap();
-        module
+        subsystem.prepare(&host_status).unwrap();
+        subsystem
             .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
@@ -655,7 +655,7 @@ mod tests {
         // File
         let source_file = temp_dir.path().join("source-file");
         fs::write(&source_file, "\u{2603}").unwrap();
-        let mut module = HooksModule::default();
+        let mut subsystem = HooksSubsystem::default();
         let host_status = HostStatus {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
@@ -670,8 +670,8 @@ mod tests {
             },
             ..Default::default()
         };
-        module.prepare(&host_status).unwrap();
-        module
+        subsystem.prepare(&host_status).unwrap();
+        subsystem
             .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), "\u{2603}");

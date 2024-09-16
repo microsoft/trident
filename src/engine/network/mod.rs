@@ -7,14 +7,14 @@ use trident_api::{
     status::HostStatus,
 };
 
-use crate::engine::Module;
+use crate::engine::Subsystem;
 
 mod netplan;
 pub mod provisioning;
 
 #[derive(Default, Debug)]
-pub struct NetworkModule;
-impl Module for NetworkModule {
+pub struct NetworkSubsystem;
+impl Subsystem for NetworkSubsystem {
     fn name(&self) -> &'static str {
         "network"
     }

@@ -15,7 +15,7 @@ use trident_api::{
     status::{HostStatus, ServicingType},
 };
 
-use super::Module;
+use super::Subsystem;
 
 /// Gets the seinux type from the selinux config file.
 fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Error> {
@@ -36,8 +36,8 @@ fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Err
 }
 
 #[derive(Default)]
-pub struct SelinuxModule;
-impl Module for SelinuxModule {
+pub struct SelinuxSubsystem;
+impl Subsystem for SelinuxSubsystem {
     fn name(&self) -> &'static str {
         "selinux"
     }
