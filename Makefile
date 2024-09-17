@@ -302,6 +302,10 @@ validate: $(TRIDENT_CONFIG) bin/trident
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
+input/netlaunch.yaml: $(ARGUS_TOOLKIT_PATH)/vm-netlaunch.yaml
+	@mkdir -p input
+	ln -vsf "$$(realpath "$<")" $@
+
 .PHONY: run-netlaunch
 run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier
 	@mkdir -p artifacts/test-image
