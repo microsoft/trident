@@ -107,7 +107,7 @@ steps:
       sudo chown -R $(USER):$(USER) ./bin/netlisten
       sudo chmod 755 ./bin/netlisten
       ls -ltr ./bin
-      ./bin/netlisten -p ${{ parameters.netlistenPort }}  > ./bm-deployment.log 2>&1 &
+      ./bin/netlisten -p ${{ parameters.netlistenPort }} --log-trace --force-color 2>&1 | tee ./bm-deployment.log &
 
       cd ${{ parameters.k8sSanityDir }}
 
