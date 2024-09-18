@@ -71,7 +71,17 @@ clean-coverage:
 	rm -rf target/coverage/profraw
 
 EMU_PACKAGE_NAME ?= osmodifier_preview
+
+.PHONY: print-var-emu-package-name
+print-var-emu-package-name:
+	@echo $(EMU_PACKAGE_NAME)
+
 EMU_PACKAGE_VERSION ?= 0.2.0-preview.551433
+
+.PHONY: print-var-emu-package-version
+print-var-emu-package-version:
+	@echo $(EMU_PACKAGE_VERSION)
+
 artifacts/osmodifier:
 	az artifacts universal download \
 		--organization "https://dev.azure.com/mariner-org/" \

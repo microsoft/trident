@@ -59,10 +59,6 @@ stages:
             value: ${{ parameters.tridentArtifactName }}
           - name: ob_outputDirectory
             value: "$(Build.SourcesDirectory)/out"
-          - name: emu_package_name
-            value: ""
-          - name: emu_package_version
-            value: ""
           - template: common/setup-registries-vars-template.yaml@platform-pipelines
             parameters:
               buildType: auto
@@ -81,10 +77,6 @@ stages:
             value: ${{ parameters.tridentArtifactName }}2
           - name: ob_outputDirectory
             value: "$(Build.SourcesDirectory)/out"
-          - name: emu_package_name
-            value: ""
-          - name: emu_package_version
-            value: ""
           - template: common/setup-registries-vars-template.yaml@platform-pipelines
             parameters:
               buildType: auto

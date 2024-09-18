@@ -5,19 +5,9 @@ parameters:
 
 steps:
   - script: |
-      set -eux
-      emu_package_name=$(grep 'EMU_PACKAGE_NAME ?= [^ ]*' \
-                        ./Makefile | \
-                        sed 's/EMU_PACKAGE_NAME ?= //')
-      set +x
-      echo "##vso[task.setvariable variable=emu_package_name]$emu_package_name"
-
-      set -x
-      emu_package_version=$(grep 'EMU_PACKAGE_VERSION ?= [^ ]*' \
-                            ./Makefile | \
-                            sed 's/EMU_PACKAGE_VERSION ?= //')
-      set +x
-      echo "##vso[task.setvariable variable=emu_package_version]$emu_package_version"
+      set -eu
+      echo "##vso[task.setvariable variable=emu_package_name]$(make print-var-emu-package-name)"
+      echo "##vso[task.setvariable variable=emu_package_version]$(make print-var-emu-package-version)"
     displayName: "Extract and Set EMU Package Variables"
 
   - task: UniversalPackages@0

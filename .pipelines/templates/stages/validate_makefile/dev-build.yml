@@ -13,8 +13,6 @@ stages:
 
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
-          emu_package_name: ""
-          emu_package_version: ""
 
         steps:
           - template: ../common_tasks/download-emu.yml
