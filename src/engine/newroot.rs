@@ -15,13 +15,14 @@ use osutils::{
     mount, path,
 };
 use trident_api::{
-    config::InternalMountPoint,
+    config::{HostConfiguration, InternalMountPoint},
     constants::{
         EXEC_ROOT_PATH, MOUNT_OPTION_READ_ONLY, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH,
         UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::{AbVolumeSelection, HostStatus},
+    status::AbVolumeSelection,
+    BlockDeviceId,
 };
 
 /// List of special directories that should not be bind mounted anywhere in the
@@ -96,7 +97,11 @@ impl NewrootMount {
 
     /// Given a host status, create all the required mount points for newroot
     /// and return a NewrootMount object.
-    pub fn create_and_mount(host_status: &HostStatus) -> Result<Self, TridentError> {
+    pub fn create_and_mount(
+        host_config: &HostConfiguration,
+        disk_paths: &BTreeMap<BlockDeviceId, PathBuf>,
+        update_volume: AbVolumeSelection,
+    ) -> Result<Self, TridentError> {
         // Get the path where the newroot should be mounted
         let new_root_path = get_new_root_path();
         info!(
@@ -110,7 +115,7 @@ impl NewrootMount {
         let mut newroot_mount = NewrootMount::new(new_root_path);
 
         newroot_mount
-            .mount_newroot_partitions(host_status)
+            .mount_newroot_partitions(host_config, disk_paths, update_volume)
             .message("Failed to mount all partitions in newroot")?;
 
         // Mount tmpfs for /tmp and /run
@@ -118,8 +123,7 @@ impl NewrootMount {
         newroot_mount.mount_tmpfs("/run")?;
 
         // PREVIEW-ONLY OVERRIDE
-        let execroot_deny_list_extension = if let Some(res) = host_status
-            .spec
+        let execroot_deny_list_extension = if let Some(res) = host_config
             .preview_params
             .get_vec_string(EXECROOT_DENYLIST_EXTENSION_PARAM)
         {
@@ -187,27 +191,29 @@ impl NewrootMount {
     }
 
     /// Mount all block devices in the newroot.
-    fn mount_newroot_partitions(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
-        let mut block_device_paths = host_status.block_device_paths.clone();
+    fn mount_newroot_partitions(
+        &mut self,
+        host_config: &HostConfiguration,
+        disk_paths: &BTreeMap<BlockDeviceId, PathBuf>,
+        update_volume: AbVolumeSelection,
+    ) -> Result<(), TridentError> {
+        let mut block_device_paths = disk_paths.clone();
 
-        for raid in &host_status.spec.storage.raid.software {
+        for raid in &host_config.storage.raid.software {
             block_device_paths.insert(raid.id.clone(), raid.device_path());
         }
 
-        if let Some(encryption) = &host_status.spec.storage.encryption {
+        if let Some(encryption) = &host_config.storage.encryption {
             for volume in &encryption.volumes {
                 block_device_paths.insert(volume.id.clone(), volume.device_path());
             }
         }
 
-        for verity in &host_status.spec.storage.internal_verity {
+        for verity in &host_config.storage.internal_verity {
             block_device_paths.insert(verity.id.clone(), verity.temporary_device_path());
         }
 
-        if let Some(ab) = &host_status.spec.storage.ab_update {
-            let update_volume = host_status
-                .get_ab_update_volume()
-                .structured(InternalError::Internal("Couldn't get active volume"))?;
+        if let Some(ab) = &host_config.storage.ab_update {
             for pair in &ab.volume_pairs {
                 let path = match update_volume {
                     AbVolumeSelection::VolumeA => block_device_paths.get(&pair.volume_a_id),
@@ -219,7 +225,7 @@ impl NewrootMount {
         }
 
         // Mount all block devices in the newroot
-        mount_points_map(host_status)
+        mount_points_map(host_config)
             .iter()
             .try_for_each(|(path, mp)| {
                 let target_path =
@@ -427,9 +433,8 @@ impl Drop for NewrootMount {
 }
 
 /// Returns an ordered map of mount points to their corresponding InternalMountPoint objects.
-fn mount_points_map(host_status: &HostStatus) -> BTreeMap<&Path, &InternalMountPoint> {
-    host_status
-        .spec
+fn mount_points_map(host_config: &HostConfiguration) -> BTreeMap<&Path, &InternalMountPoint> {
+    host_config
         .storage
         .internal_mount_points
         .iter()
@@ -513,49 +518,46 @@ mod test {
 
     #[test]
     fn test_mount_point_ordering() {
-        let host_status = HostStatus {
-            spec: HostConfiguration {
-                storage: Storage {
-                    internal_mount_points: vec![
-                        InternalMountPoint {
-                            path: PathBuf::from("/mnt/boot/efi"),
-                            target_id: "sda3".to_string(),
-                            filesystem: FileSystemType::Vfat,
-                            options: vec![],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from("/mnt"),
-                            target_id: "sda1".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from("/a"),
-                            target_id: "sda1".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from("/"),
-                            target_id: "sda1".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                        InternalMountPoint {
-                            path: PathBuf::from("/mnt/boot"),
-                            target_id: "sda2".to_string(),
-                            filesystem: FileSystemType::Ext4,
-                            options: vec![],
-                        },
-                    ],
-                    ..Default::default()
-                },
+        let host_config = HostConfiguration {
+            storage: Storage {
+                internal_mount_points: vec![
+                    InternalMountPoint {
+                        path: PathBuf::from("/mnt/boot/efi"),
+                        target_id: "sda3".to_string(),
+                        filesystem: FileSystemType::Vfat,
+                        options: vec![],
+                    },
+                    InternalMountPoint {
+                        path: PathBuf::from("/mnt"),
+                        target_id: "sda1".to_string(),
+                        filesystem: FileSystemType::Ext4,
+                        options: vec![],
+                    },
+                    InternalMountPoint {
+                        path: PathBuf::from("/a"),
+                        target_id: "sda1".to_string(),
+                        filesystem: FileSystemType::Ext4,
+                        options: vec![],
+                    },
+                    InternalMountPoint {
+                        path: PathBuf::from("/"),
+                        target_id: "sda1".to_string(),
+                        filesystem: FileSystemType::Ext4,
+                        options: vec![],
+                    },
+                    InternalMountPoint {
+                        path: PathBuf::from("/mnt/boot"),
+                        target_id: "sda2".to_string(),
+                        filesystem: FileSystemType::Ext4,
+                        options: vec![],
+                    },
+                ],
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        let paths = mount_points_map(&host_status)
+        let paths = mount_points_map(&host_config)
             .keys()
             .cloned()
             .collect::<Vec<_>>();
@@ -617,6 +619,7 @@ mod functional_test {
         config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
         constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
+        status::HostStatus,
     };
 
     #[functional_test(feature = "engine")]
@@ -665,7 +668,11 @@ mod functional_test {
 
         let mut newroot_mount = NewrootMount::new(mount_point.to_owned());
         newroot_mount
-            .mount_newroot_partitions(&host_status)
+            .mount_newroot_partitions(
+                &host_status.spec,
+                &host_status.block_device_paths,
+                AbVolumeSelection::VolumeA,
+            )
             .unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
@@ -763,7 +770,11 @@ mod functional_test {
         // Test recursive mounting
         let mut newroot_mount2 = NewrootMount::new(root_mount_dir.path().to_owned());
         newroot_mount2
-            .mount_newroot_partitions(&host_status)
+            .mount_newroot_partitions(
+                &host_status.spec,
+                &host_status.block_device_paths,
+                AbVolumeSelection::VolumeA,
+            )
             .unwrap();
 
         assert!(root_mount_dir
@@ -862,7 +873,11 @@ mod functional_test {
 
         assert_eq!(
             newroot_mount
-                .mount_newroot_partitions(&host_status)
+                .mount_newroot_partitions(
+                    &host_status.spec,
+                    &host_status.block_device_paths,
+                    AbVolumeSelection::VolumeA
+                )
                 .unwrap_err()
                 .kind(),
             &ErrorKind::Servicing(ServicingError::MountNewroot)
@@ -878,7 +893,11 @@ mod functional_test {
 
         assert_eq!(
             newroot_mount
-                .mount_newroot_partitions(&host_status)
+                .mount_newroot_partitions(
+                    &host_status.spec,
+                    &host_status.block_device_paths,
+                    AbVolumeSelection::VolumeA
+                )
                 .unwrap_err()
                 .kind(),
             &ErrorKind::Servicing(ServicingError::MountNewroot)
@@ -962,7 +981,11 @@ mod functional_test {
 
         assert_eq!(
             newroot_mount
-                .mount_newroot_partitions(&host_status)
+                .mount_newroot_partitions(
+                    &host_status.spec,
+                    &host_status.block_device_paths,
+                    AbVolumeSelection::VolumeA
+                )
                 .expect_err(
                     "Expected mount_new_root to fail because of populated directory as path"
                 )

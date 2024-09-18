@@ -57,7 +57,7 @@ mod kexec;
 mod newroot;
 pub mod selinux;
 
-use newroot::NewrootMount;
+pub use newroot::NewrootMount;
 
 trait Subsystem: Send {
     fn name(&self) -> &'static str;
@@ -289,7 +289,14 @@ fn stage_clean_install(
     prepare(subsystems, state.host_status())?;
 
     info!("Preparing storage to mount new root");
-    let mut newroot_mount = initialize_new_root(state, host_config)?;
+    state.try_with_host_status(|host_status| {
+        storage::initialize_block_devices(host_status, host_config)
+    })?;
+    let mut newroot_mount = NewrootMount::create_and_mount(
+        host_config,
+        &state.host_status().block_device_paths,
+        AbVolumeSelection::VolumeA,
+    )?;
 
     state.try_with_host_status(|host_status| {
         host_status.install_index = boot::esp::next_install_index(newroot_mount.path())?;
@@ -543,7 +550,19 @@ fn stage_update(
     let newroot_mount = if let ServicingType::AbUpdate = servicing_type {
         info!("Preparing storage to mount new root");
 
-        let mut newroot_mount = initialize_new_root(state, host_config)?;
+        state.try_with_host_status(|host_status| {
+            storage::initialize_block_devices(host_status, host_config)
+        })?;
+        let mut newroot_mount = NewrootMount::create_and_mount(
+            host_config,
+            &state.host_status().block_device_paths,
+            state
+                .host_status()
+                .get_ab_update_volume()
+                .structured(InternalError::Internal(
+                    "No update volume despite there being an update in prgoress",
+                ))?,
+        )?;
 
         provision(subsystems, state.host_status(), newroot_mount.path())?;
 
@@ -828,19 +847,16 @@ fn provision(
 }
 
 #[tracing::instrument(skip_all)]
-pub(super) fn initialize_new_root(
-    state: &mut DataStore,
-    host_config: &HostConfiguration,
-) -> Result<NewrootMount, TridentError> {
-    // Only initialize block devices if currently staging a deployment
-    if state.host_status().servicing_state == ServicingState::Staging {
-        state.try_with_host_status(|host_status| {
-            storage::initialize_block_devices(host_status, host_config)
-        })?;
-    }
-
-    // Mount newroot
-    NewrootMount::create_and_mount(state.host_status()).message("Failed to create new root mount")
+pub(super) fn initialize_new_root(host_status: &HostStatus) -> Result<NewrootMount, TridentError> {
+    NewrootMount::create_and_mount(
+        &host_status.spec,
+        &host_status.block_device_paths,
+        host_status
+            .get_ab_update_volume()
+            .structured(InternalError::Internal(
+                "No update volume despite there being an update in prgoress",
+            ))?,
+    )
 }
 
 fn configure(

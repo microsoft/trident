@@ -612,7 +612,7 @@ impl Trident {
                     debug!("There is a clean install staged on the host");
                     if cmd.allowed_operations.has_finalize() {
                         // Remount new root and custom mounts if we're finalizing a clean install
-                        let root_mount = engine::initialize_new_root(datastore, &cmd.host_config)
+                        let root_mount = engine::initialize_new_root(datastore.host_status())
                             .message("Failed to remount new root")?;
 
                         engine::finalize_clean_install(
