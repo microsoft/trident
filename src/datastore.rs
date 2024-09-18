@@ -2,7 +2,6 @@ use std::{fs, path::Path};
 
 use log::info;
 
-use osutils::path;
 use trident_api::{
     error::{DatastoreError, InternalError, ReportError, ServicingError, TridentError},
     status::HostStatus,
@@ -67,38 +66,6 @@ impl DataStore {
             host_status,
             temporary: false,
         })
-    }
-
-    /// Switches the datastore to a new path, by appending the Trident temporary datastore path to
-    /// new_path.
-    pub(crate) fn switch_datastore_to_path(&mut self, new_path: &Path) -> Result<(), TridentError> {
-        if !self.temporary {
-            return Err(TridentError::new(ServicingError::Datastore {
-                inner: DatastoreError::SwitchPathOnPersistentDatastore {
-                    new_path: new_path.to_string_lossy().into(),
-                },
-            }));
-        }
-        let db_path = path::join_relative(new_path, TRIDENT_TEMPORARY_DATASTORE_PATH);
-        if !db_path.exists() {
-            log::error!("New Datastore path is invalid {}", db_path.display());
-            return Err(TridentError::new(ServicingError::Datastore {
-                inner: DatastoreError::LoadDatastore {
-                    path: db_path.to_string_lossy().into(),
-                },
-            }));
-        }
-
-        info!("Switching datastore to path {}", db_path.display());
-        self.db = Some(
-            sqlite::open(&db_path).structured(ServicingError::Datastore {
-                inner: DatastoreError::LoadDatastore {
-                    path: db_path.to_string_lossy().into(),
-                },
-            })?,
-        );
-
-        Ok(())
     }
 
     pub(crate) fn is_persistent(&self) -> bool {

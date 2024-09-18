@@ -187,21 +187,16 @@ pub(super) fn clean_install(
         &mut sender,
     )?;
 
-    let new_root_path = root_mount.path();
-
-    // Switch datastore back to the old path
-    state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH))?;
-
     if !allowed_operations.has_finalize() {
         info!("Finalizing of clean install not requested, skipping finalizing and reboot");
         state.close();
 
-        info!("Unmounting '{}'", new_root_path.display());
+        info!("Unmounting '{}'", root_mount.path().display());
         root_mount.unmount_all()?;
     } else {
         finalize_clean_install(
             state,
-            new_root_path,
+            root_mount.path(),
             Some(clean_install_start_time),
             #[cfg(feature = "grpc-dangerous")]
             &mut sender,
@@ -309,42 +304,26 @@ fn stage_clean_install(
     let result = chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
         .execute_and_exit(|| {
-            info!("Entered chroot");
-            state.switch_datastore_to_path(newroot_mount.execroot_relative_path())?;
-
-            // If verity is present, it means that we are currently doing root
-            // verity. For now, we can assume that /etc is readonly, so we setup
-            // a writable overlay for it.
-            let use_overlay = !host_config.storage.internal_verity.is_empty();
             configure(
                 subsystems,
                 state.host_status(),
                 newroot_mount.execroot_relative_path(),
-                use_overlay,
-            )?;
-
-            // At this point, clean install has been staged, so update servicing state
-            debug!("Updating host's servicing state to Staged");
-            state.with_host_status(|host_status| {
-                host_status.servicing_state = ServicingState::Staged
-            })?;
-            info!("Host status updated");
-            #[cfg(feature = "grpc-dangerous")]
-            send_host_status_state(sender, state)?;
-
-            Ok(())
+            )
         });
 
     if let Err(original_error) = result {
-        if let Err(e) = state.switch_datastore_to_path(Path::new(ROOT_MOUNT_POINT_PATH)) {
-            warn!("While handling an earlier error: {e:?}");
-        }
         if let Err(e) = newroot_mount.unmount_all() {
             warn!("While handling an earlier error: {e:?}");
         }
         return Err(original_error).message("Failed to execute in chroot");
     }
 
+    // At this point, clean install has been staged, so update servicing state
+    debug!("Updating host's servicing state to Staged");
+    state.with_host_status(|host_status| host_status.servicing_state = ServicingState::Staged)?;
+    info!("Host status updated");
+    #[cfg(feature = "grpc-dangerous")]
+    send_host_status_state(sender, state)?;
     info!("Staging of clean install succeeded");
 
     // Return the newroot mount object
@@ -566,11 +545,6 @@ fn stage_update(
 
         provision(subsystems, state.host_status(), newroot_mount.path())?;
 
-        // If verity is present, it means that we are currently doing root
-        // verity. For now, we can assume that /etc is readonly, so we setup
-        // a writable overlay for it.
-        let use_overlay = !host_config.storage.internal_verity.is_empty();
-
         info!("Entering '{}' chroot", newroot_mount.path().display());
         let result = chroot::enter_update_chroot(newroot_mount.path())
             .message("Failed to enter chroot")?
@@ -579,7 +553,6 @@ fn stage_update(
                     subsystems,
                     state.host_status(),
                     newroot_mount.execroot_relative_path(),
-                    use_overlay,
                 )
             });
 
@@ -597,7 +570,6 @@ fn stage_update(
             subsystems,
             state.host_status(),
             Path::new(ROOT_MOUNT_POINT_PATH),
-            false,
         )?;
         None
     };
@@ -863,8 +835,14 @@ fn configure(
     subsystems: &mut [Box<dyn Subsystem>],
     host_status: &HostStatus,
     exec_root: &Path,
-    use_overlay: bool,
 ) -> Result<(), TridentError> {
+    // If verity is present, it means that we are currently doing root
+    // verity. For now, we can assume that /etc is readonly, so we setup
+    // a writable overlay for it.
+    let use_overlay = (host_status.servicing_type == ServicingType::CleanInstall
+        || host_status.servicing_type == ServicingType::AbUpdate)
+        && !host_status.spec.storage.internal_verity.is_empty();
+
     info!("Starting step 'Configure'");
     for subsystem in subsystems {
         debug!(
