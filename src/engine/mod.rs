@@ -17,8 +17,8 @@ use trident_api::{
     config::HostConfiguration,
     constants::{self, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
     error::{
-        InitializationError, InvalidInputError, ReportError, ServicingError, TridentError,
-        TridentResultExt,
+        InitializationError, InternalError, InvalidInputError, ReportError, ServicingError,
+        TridentError, TridentResultExt,
     },
     status::{AbVolumeSelection, HostStatus, ServicingState, ServicingType},
     BlockDeviceId,
@@ -68,15 +68,6 @@ trait Subsystem: Send {
 
     // TODO: Implement dependencies
     // fn dependencies(&self) -> &'static [&'static str];
-
-    /// Refresh the host status.
-    fn refresh_host_status(
-        &mut self,
-        _host_status: &mut HostStatus,
-        _clean_install: bool,
-    ) -> Result<(), TridentError> {
-        Ok(())
-    }
 
     /// Select the servicing type based on the host status and host config.
     fn select_servicing_type(
@@ -177,8 +168,12 @@ pub(super) fn clean_install(
 
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    refresh_host_status(&mut subsystems, state, true)?;
-    validate_host_config(&subsystems, state, host_config, ServicingType::CleanInstall)?;
+    validate_host_config(
+        &subsystems,
+        state.host_status(),
+        host_config,
+        ServicingType::CleanInstall,
+    )?;
 
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(&mut sender, state)?;
@@ -285,12 +280,13 @@ fn stage_clean_install(
     state.with_host_status(|host_status| {
         host_status.servicing_type = ServicingType::CleanInstall;
         host_status.servicing_state = ServicingState::Staging;
+        host_status.ab_active_volume = None;
         host_status.spec = host_config.clone();
     })?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    prepare(subsystems, state)?;
+    prepare(subsystems, state.host_status())?;
 
     info!("Preparing storage to mount new root");
     let mut newroot_mount = initialize_new_root(state, host_config)?;
@@ -300,7 +296,7 @@ fn stage_clean_install(
         Ok(())
     })?;
 
-    provision(subsystems, state, newroot_mount.path())?;
+    provision(subsystems, state.host_status(), newroot_mount.path())?;
 
     info!("Entering '{}' chroot", newroot_mount.path().display());
     let result = chroot::enter_update_chroot(newroot_mount.path())
@@ -315,7 +311,7 @@ fn stage_clean_install(
             let use_overlay = !host_config.storage.internal_verity.is_empty();
             configure(
                 subsystems,
-                state,
+                state.host_status(),
                 newroot_mount.execroot_relative_path(),
                 use_overlay,
             )?;
@@ -406,7 +402,16 @@ pub(super) fn update(
     info!("Starting update()");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    refresh_host_status(&mut subsystems, state, false)?;
+    // Initialize ab_update_volume.
+    if state.host_status().spec.storage.ab_update.is_some() {
+        debug!("A/B update is enabled");
+        let root_device_path = storage::image::get_root_device_path()
+            .structured(InternalError::GetRootBlockDevicePath)?;
+        state.try_with_host_status(|host_status| {
+            storage::image::update_active_volume(host_status, root_device_path)
+                .structured(ServicingError::UpdateAbActiveVolume)
+        })?;
+    }
 
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(&mut sender, state)?;
@@ -429,7 +434,12 @@ pub(super) fn update(
         servicing_type
     );
 
-    validate_host_config(&subsystems, state, host_config, servicing_type)?;
+    validate_host_config(
+        &subsystems,
+        state.host_status(),
+        host_config,
+        servicing_type,
+    )?;
 
     let update_start_time = Instant::now();
     tracing::info!(
@@ -528,14 +538,14 @@ fn stage_update(
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    prepare(subsystems, state)?;
+    prepare(subsystems, state.host_status())?;
 
     let newroot_mount = if let ServicingType::AbUpdate = servicing_type {
         info!("Preparing storage to mount new root");
 
         let mut newroot_mount = initialize_new_root(state, host_config)?;
 
-        provision(subsystems, state, newroot_mount.path())?;
+        provision(subsystems, state.host_status(), newroot_mount.path())?;
 
         // If verity is present, it means that we are currently doing root
         // verity. For now, we can assume that /etc is readonly, so we setup
@@ -548,7 +558,7 @@ fn stage_update(
             .execute_and_exit(|| {
                 configure(
                     subsystems,
-                    state,
+                    state.host_status(),
                     newroot_mount.execroot_relative_path(),
                     use_overlay,
                 )
@@ -564,7 +574,12 @@ fn stage_update(
         Some(newroot_mount)
     } else {
         info!("Running configure");
-        configure(subsystems, state, Path::new(ROOT_MOUNT_POINT_PATH), false)?;
+        configure(
+            subsystems,
+            state.host_status(),
+            Path::new(ROOT_MOUNT_POINT_PATH),
+            false,
+        )?;
         None
     };
 
@@ -627,8 +642,6 @@ fn send_host_status_state(
     sender: &mut Option<mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>>,
     state: &DataStore,
 ) -> Result<(), TridentError> {
-    use trident_api::error::InternalError;
-
     if let Some(ref mut sender) = sender {
         sender
             .send(Ok(HostStatusState {
@@ -737,34 +750,9 @@ fn get_ab_volume_block_device_id(
 }
 
 #[tracing::instrument(skip_all)]
-fn refresh_host_status(
-    subsystems: &mut [Box<dyn Subsystem>],
-    state: &mut DataStore,
-    clean_install: bool,
-) -> Result<(), TridentError> {
-    info!("Starting step 'Refresh host status'");
-    for subsystem in subsystems {
-        debug!(
-            "Starting step 'Refresh' for subsystem '{}'",
-            subsystem.name()
-        );
-        state.try_with_host_status(|s| {
-            subsystem
-                .refresh_host_status(s, clean_install)
-                .message(format!(
-                    "Step 'Refresh host status' failed for subsystem '{}'",
-                    subsystem.name()
-                ))
-        })?;
-    }
-    debug!("Finished step 'Refresh host status'");
-    Ok(())
-}
-
-#[tracing::instrument(skip_all)]
 fn validate_host_config(
     subsystems: &[Box<dyn Subsystem>],
-    state: &DataStore,
+    host_status: &HostStatus,
     host_config: &HostConfiguration,
     planned_servicing_type: ServicingType,
 ) -> Result<(), TridentError> {
@@ -775,7 +763,7 @@ fn validate_host_config(
             subsystem.name()
         );
         subsystem
-            .validate_host_config(state.host_status(), host_config, planned_servicing_type)
+            .validate_host_config(host_status, host_config, planned_servicing_type)
             .message(format!(
                 "Step 'Validate' failed for subsystem '{}'",
                 subsystem.name()
@@ -787,7 +775,7 @@ fn validate_host_config(
 
 fn prepare(
     subsystems: &mut [Box<dyn Subsystem>],
-    state: &mut DataStore,
+    host_status: &HostStatus,
 ) -> Result<(), TridentError> {
     info!("Starting step 'Prepare'");
     for subsystem in subsystems {
@@ -795,12 +783,10 @@ fn prepare(
             "Starting step 'Prepare' for subsystem '{}'",
             subsystem.name()
         );
-        state.try_with_host_status(|s| {
-            subsystem.prepare(s).message(format!(
-                "Step 'Prepare' failed for subsystem '{}'",
-                subsystem.name()
-            ))
-        })?;
+        subsystem.prepare(host_status).message(format!(
+            "Step 'Prepare' failed for subsystem '{}'",
+            subsystem.name()
+        ))?;
     }
     debug!("Finished step 'Prepare'");
     Ok(())
@@ -808,13 +794,13 @@ fn prepare(
 
 fn provision(
     subsystems: &mut [Box<dyn Subsystem>],
-    state: &mut DataStore,
+    host_status: &HostStatus,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
     // If verity is present, it means that we are currently doing root
     // verity. For now, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
-    let use_overlay = !state.host_status().spec.storage.internal_verity.is_empty();
+    let use_overlay = !host_status.spec.storage.internal_verity.is_empty();
 
     info!("Starting step 'Provision'");
     for subsystem in subsystems {
@@ -830,14 +816,12 @@ fn provision(
         } else {
             None
         };
-        state.try_with_host_status(|host_status| {
-            subsystem
-                .provision(host_status, new_root_path)
-                .message(format!(
-                    "Step 'Provision' failed for subsystem '{}'",
-                    subsystem.name()
-                ))
-        })?;
+        subsystem
+            .provision(host_status, new_root_path)
+            .message(format!(
+                "Step 'Provision' failed for subsystem '{}'",
+                subsystem.name()
+            ))?;
     }
     debug!("Finished step 'Provision'");
     Ok(())
@@ -861,7 +845,7 @@ pub(super) fn initialize_new_root(
 
 fn configure(
     subsystems: &mut [Box<dyn Subsystem>],
-    state: &mut DataStore,
+    host_status: &HostStatus,
     exec_root: &Path,
     use_overlay: bool,
 ) -> Result<(), TridentError> {
@@ -880,12 +864,12 @@ fn configure(
         } else {
             None
         };
-        state.try_with_host_status(|s| {
-            subsystem.configure(s, exec_root).message(format!(
+        subsystem
+            .configure(host_status, exec_root)
+            .message(format!(
                 "Step 'Configure' failed for subsystem '{}'",
                 subsystem.name()
-            ))
-        })?;
+            ))?;
     }
     debug!("Finished step 'Configure'");
 

@@ -229,7 +229,7 @@ pub fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
 
 #[tracing::instrument(name = "raid_creation", skip_all)]
 pub(super) fn create_sw_raid(
-    host_status: &mut HostStatus,
+    host_status: &HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     if !host_config.storage.raid.software.is_empty() {
@@ -254,7 +254,7 @@ pub(super) fn create_sw_raid(
 }
 
 pub fn create_sw_raid_array(
-    host_status: &mut HostStatus,
+    host_status: &HostStatus,
     raid_array: &SoftwareRaidArray,
 ) -> Result<(), Error> {
     create(raid_array.clone(), host_status)
@@ -279,7 +279,7 @@ pub fn create_sw_raid_array(
 /// devices, and waits for all RAID devices to sync within the given timeout. If
 /// the RAID arrays have not finished their sync within the timeout, an error is
 /// returned.
-fn wait_for_raid_sync(host_status: &mut HostStatus, sync_timeout: u64) -> Result<(), Error> {
+fn wait_for_raid_sync(host_status: &HostStatus, sync_timeout: u64) -> Result<(), Error> {
     info!("Waiting for RAID arrays to sync");
 
     let start_time = Instant::now();
@@ -605,7 +605,7 @@ mod functional_test {
         let err = storage::partitioning::create_partitions(&mut host_status, spec);
         assert!(err.is_ok());
 
-        create_sw_raid(&mut host_status, spec).unwrap();
+        create_sw_raid(&host_status, spec).unwrap();
 
         // cleanup the RAID array
         let err = stop_pre_existing_raid_arrays(spec);
@@ -657,7 +657,7 @@ mod functional_test {
         let err = storage::partitioning::create_partitions(&mut host_status, spec);
         assert!(err.is_ok());
 
-        create_sw_raid(&mut host_status, spec).unwrap();
+        create_sw_raid(&host_status, spec).unwrap();
 
         // cleanup the RAID array
         let err = stop_pre_existing_raid_arrays(spec);
@@ -710,9 +710,7 @@ mod functional_test {
         assert!(err.is_ok());
 
         assert_eq!(
-            create_sw_raid(&mut host_status, spec)
-                .unwrap_err()
-                .to_string(),
+            create_sw_raid(&host_status, spec).unwrap_err().to_string(),
             "Failed to wait for RAID sync"
         );
 
@@ -771,7 +769,7 @@ mod functional_test {
         assert!(err.is_ok());
 
         assert_eq!(
-            create_sw_raid_array(&mut host_status, &raid_array)
+            create_sw_raid_array(&host_status, &raid_array)
                 .unwrap_err()
                 .to_string(),
             "Failed to create RAID array 'md0'"

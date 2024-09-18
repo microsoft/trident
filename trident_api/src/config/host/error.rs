@@ -169,4 +169,7 @@ pub enum HostConfigurationDynamicValidationError {
 
     #[error("Failed to load script '{name}' at '{path}'")]
     LoadScript { name: String, path: String },
+
+    #[error("Cannot modify storage configuration during update")]
+    StorageConfigurationChanged,
 }

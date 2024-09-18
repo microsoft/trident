@@ -20,10 +20,7 @@ use trident_api::{
         ImageSha256,
     },
     constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
-    error::{
-        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
-        TridentResultExt,
-    },
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, HostStatus, ServicingType},
     BlockDeviceId,
 };
@@ -51,10 +48,7 @@ mod systemd_sysupdate;
 ///
 /// This function is called by the provision() function in the image subsystem and returns an error
 /// if the image cannot be downloaded or deployed correctly.
-fn deploy_images(
-    host_status: &mut HostStatus,
-    host_config: &HostConfiguration,
-) -> Result<(), Error> {
+fn deploy_images(host_status: &HostStatus, host_config: &HostConfiguration) -> Result<(), Error> {
     // 1. During clean install, Trident will deploy images onto all non-ESP block devices here.
     // This includes A/B volume pairs and other standalone block devices that are not ESP.
     // 2. During A/B update, Trident will assume that all A/B volume pair and ESP images have been
@@ -236,25 +230,7 @@ fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
     ))
 }
 
-pub(super) fn refresh_host_status(
-    host_status: &mut HostStatus,
-    clean_install: bool,
-) -> Result<(), TridentError> {
-    // if A/B update is enabled
-    if host_status.spec.storage.ab_update.is_some() && !clean_install {
-        debug!("A/B update is enabled");
-        let root_device_path =
-            get_root_device_path().structured(InternalError::GetRootBlockDevicePath)?;
-        update_active_volume(host_status, root_device_path)
-            .structured(ServicingError::UpdateAbActiveVolume)?;
-    } else {
-        host_status.ab_active_volume = None;
-    }
-
-    Ok(())
-}
-
-fn get_root_device_path() -> Result<PathBuf, Error> {
+pub(crate) fn get_root_device_path() -> Result<PathBuf, Error> {
     let root_mount_path = if container::is_running_in_container()
         .unstructured("Failed to determine wheter running in a container")?
     {
@@ -268,7 +244,7 @@ fn get_root_device_path() -> Result<PathBuf, Error> {
     Ok(path)
 }
 
-fn update_active_volume(
+pub(crate) fn update_active_volume(
     host_status: &mut HostStatus,
     root_device_path: PathBuf,
 ) -> Result<(), Error> {
@@ -490,14 +466,9 @@ pub(super) fn validate_host_config(
 
 #[tracing::instrument(name = "image_provision", skip_all)]
 pub(super) fn provision(
-    host_status: &mut HostStatus,
+    host_status: &HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
-    if host_status.servicing_type == ServicingType::CleanInstall {
-        debug!("Initializing A/B volumes");
-        host_status.ab_active_volume = None;
-    }
-
     deploy_images(host_status, host_config).structured(ServicingError::DeployImages)?;
 
     Ok(())

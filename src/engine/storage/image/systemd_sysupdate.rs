@@ -299,7 +299,7 @@ impl ImageDeployment {
     /// Takes in an instance of ImageDeployment, runs sysupdate, and returns image_length, a u64
     /// representing the number of bytes acquired by systemd-sysupdate to download an image. This
     /// is to be used for updating HostStatus inside of Image subsystem.
-    pub(super) fn run_sysupdate(&mut self, host_status: &mut HostStatus) -> Result<u64, Error> {
+    pub(super) fn run_sysupdate(&mut self, host_status: &HostStatus) -> Result<u64, Error> {
         // Fetch block device path from HostStatus and partition_id_to_update
         let partition_path = get_partition_path(host_status, &self.partition_id_to_update)
             .context(format!(
@@ -783,7 +783,7 @@ pub(super) fn get_local_image(
 pub(super) fn deploy(
     image: &Image,
     device_id: &BlockDeviceId,
-    host_status: &mut HostStatus,
+    host_status: &HostStatus,
     directory: Option<&Path>,
     filename: Option<&str>,
 ) -> Result<(), Error> {

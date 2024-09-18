@@ -522,7 +522,7 @@ pub(crate) mod functional_test {
             devices: vec!["root1".to_string(), "root2".to_string()],
             level: RaidLevel::Raid1,
         };
-        raid::create_sw_raid_array(&mut host_status, &raid_array).unwrap();
+        raid::create_sw_raid_array(&host_status, &raid_array).unwrap();
         let root_device_path = raid_array.device_path();
         let result = test_update_grub_root_raided_internal(
             &mut host_status,

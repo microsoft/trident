@@ -4,13 +4,16 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use log::{debug, info, trace, warn};
+use log::{debug, error, trace, warn};
 
 use osutils::lsblk;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError},
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{
+        InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
+        UnsupportedConfigurationError,
+    },
     status::{HostStatus, ServicingType},
     BlockDeviceId,
 };
@@ -38,45 +41,48 @@ impl Subsystem for StorageSubsystem {
         "storage"
     }
 
-    fn refresh_host_status(
-        &mut self,
-        host_status: &mut HostStatus,
-        clean_install: bool,
-    ) -> Result<(), TridentError> {
-        // Remove block devices that no longer exist.
-        let original_block_devices = host_status.block_device_paths.clone();
-        host_status
-            .block_device_paths
-            .retain(|_id, block_device| block_device.exists());
-
-        let removed_block_devices = original_block_devices
-            .keys()
-            .filter(|id| !host_status.block_device_paths.contains_key(*id))
-            .collect::<Vec<_>>();
-        if !removed_block_devices.is_empty() {
-            info!(
-                "Removed block devices that no longer exist from status: {}",
-                removed_block_devices
-                    .iter()
-                    .map(|id| id.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-
-        image::refresh_host_status(host_status, clean_install).message(format!(
-            "Step 'Refresh host status' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
-        ))?;
-
-        Ok(())
-    }
-
     fn validate_host_config(
         &self,
         host_status: &HostStatus,
         host_config: &HostConfiguration,
         planned_servicing_type: ServicingType,
     ) -> Result<(), TridentError> {
+        if planned_servicing_type != ServicingType::CleanInstall {
+            // Ensure that relevant portions of the host configuration have not changed.
+            if host_status.spec.storage.disks != host_config.storage.disks
+                || host_status.spec.storage.raid != host_config.storage.raid
+                || host_status.spec.storage.encryption != host_config.storage.encryption
+                || host_status.spec.storage.ab_update != host_config.storage.ab_update
+            {
+                return Err(TridentError::new(InvalidInputError::from(
+                    HostConfigurationDynamicValidationError::StorageConfigurationChanged,
+                )));
+            }
+
+            // Ensure that all partitions still exist.
+            let removed_block_devices: Vec<_> = host_status
+                .block_device_paths
+                .iter()
+                .filter(|&(_id, path)| !path.exists())
+                .collect();
+            for (id, path) in &removed_block_devices {
+                error!(
+                    "Partition '{id}' formerly with path '{}' no longer exists",
+                    path.display()
+                );
+            }
+            if !removed_block_devices.is_empty() {
+                return Err(TridentError::new(
+                    UnsupportedConfigurationError::PartitionsRemoved {
+                        partition_ids: removed_block_devices
+                            .into_iter()
+                            .map(|(id, _path)| id.clone())
+                            .collect(),
+                    },
+                ));
+            }
+        }
+
         // Ensure any two disks point to different devices. This requires canonicalizing the device
         // paths, which can only be done on the target system.
         let mut device_paths = HashMap::<PathBuf, BlockDeviceId>::new();

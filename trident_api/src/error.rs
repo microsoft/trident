@@ -430,6 +430,9 @@ pub enum DatastoreError {
 pub enum UnsupportedConfigurationError {
     #[error("No available install index on ESP")]
     NoAvailableInstallIndex,
+
+    #[error("Disk partition(s) no longer exist on system: {partition_ids:?}")]
+    PartitionsRemoved { partition_ids: Vec<String> },
 }
 
 /// Describes different categories of structured errors that can occur in Trident.

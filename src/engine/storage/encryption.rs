@@ -95,7 +95,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 /// This function provisions all configured encrypted volumes.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub(super) fn provision(
-    host_status: &mut HostStatus,
+    host_status: &HostStatus,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
     if let Some(encryption) = &host_config.storage.encryption {

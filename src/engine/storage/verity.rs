@@ -206,7 +206,7 @@ fn get_root_verity_root_hash(host_status: &HostStatus) -> Result<String, Error> 
 
 /// Setup verity devices; currently, only the root verity device is supported.
 #[tracing::instrument(skip_all)]
-pub(super) fn setup_verity_devices(host_status: &mut HostStatus) -> Result<(), Error> {
+pub(super) fn setup_verity_devices(host_status: &HostStatus) -> Result<(), Error> {
     if host_status.spec.storage.internal_verity.is_empty() {
         return Ok(());
     }
@@ -1101,8 +1101,8 @@ mod functional_test {
     #[functional_test]
     fn test_setup_verity_devices() {
         // test no verity devices
-        let mut host_status = HostStatus::default();
-        setup_verity_devices(&mut host_status).unwrap();
+        let host_status = HostStatus::default();
+        setup_verity_devices(&host_status).unwrap();
 
         assert!(host_status.block_device_paths.is_empty());
 
@@ -1181,8 +1181,8 @@ mod functional_test {
         };
 
         {
-            let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&mut host_status).unwrap();
+            let host_status = host_status_golden.clone();
+            setup_verity_devices(&host_status).unwrap();
             let _verityguard = VerityGuard {
                 device_name: "root_new",
             };
@@ -1216,11 +1216,9 @@ mod functional_test {
             grub_config.write().unwrap();
         }
 
-        let mut host_status = host_status_golden.clone();
+        let host_status = host_status_golden.clone();
         assert_eq!(
-            setup_verity_devices(&mut host_status)
-                .unwrap_err()
-                .to_string(),
+            setup_verity_devices(&host_status).unwrap_err().to_string(),
             "Failed to activate verity device 'root', status: 'corrupted'"
         );
         assert!(!verity_device_path.exists());
@@ -1578,8 +1576,8 @@ mod functional_test {
 
         // root verity opened
         {
-            let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&mut host_status).unwrap();
+            let host_status = host_status_golden.clone();
+            setup_verity_devices(&host_status).unwrap();
             assert!(verity_root_path.exists());
             stop_pre_existing_verity_devices(&host_status.spec).unwrap();
             assert!(!verity_root_path.exists());
@@ -1587,8 +1585,8 @@ mod functional_test {
 
         // root verity opened & mounted
         {
-            let mut host_status = host_status_golden.clone();
-            setup_verity_devices(&mut host_status).unwrap();
+            let host_status = host_status_golden.clone();
+            setup_verity_devices(&host_status).unwrap();
             assert!(verity_root_path.exists());
             let mount_dir = tempfile::tempdir().unwrap();
             mount::mount(
