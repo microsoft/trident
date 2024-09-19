@@ -24,7 +24,7 @@ parameters:
 
   - name: kustoTableMapping
     type: string
-    default: "trident_mapping"
+    default: "metrics"
 
 steps:
   - bash: |
