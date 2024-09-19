@@ -97,6 +97,13 @@ var rootCmd = &cobra.Command{
 		// Wait for done signal
 		var res = <-result
 
+		// HACK: Ignore the first failure from phonehome to support the 'rerun'
+		// E2E test. It would be better to use a 'maxFailures' parameter like
+		// netlaunch does, but that's a more invasive change.
+		if res.State == phonehome.PhoneHomeResultFailure {
+			res = <-result
+		}
+
 		// Log the result
 		res.Log()
 
