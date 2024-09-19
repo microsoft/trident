@@ -4,6 +4,7 @@ parameters:
     type: string
     values:
       - pr
+      - pr-e2e
       - ci
       - pre
       - rel
@@ -16,14 +17,14 @@ parameters:
     type: string
 
 stages:
-  - ${{ if or(eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'ci')) }}:
-    - template: build-source.yml
-      parameters:
-        tridentArtifactName: ${{ parameters.tridentArtifactName }}
-        codeCoverage: ${{ parameters.codeCoverage }}
+  - ${{ if or(eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
+      - template: build-source.yml
+        parameters:
+          tridentArtifactName: ${{ parameters.tridentArtifactName }}
+          codeCoverage: ${{ parameters.codeCoverage }}
 
   - ${{ else }}:
-    - template: download-staged.yml
-      parameters:
-        tridentArtifactName: ${{ parameters.tridentArtifactName }}
-        stageType: ${{ parameters.stageType }}
+      - template: download-staged.yml
+        parameters:
+          tridentArtifactName: ${{ parameters.tridentArtifactName }}
+          stageType: ${{ parameters.stageType }}

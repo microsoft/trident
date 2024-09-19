@@ -6,9 +6,10 @@ parameters:
 
   - name: targetStage
     type: string
-    default: ""
+    default: "ci"
     values:
       - "pr"
+      - "pr-e2e"
       - "ci"
       - "pre"
       - "rel"

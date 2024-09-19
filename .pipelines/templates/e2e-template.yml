@@ -4,6 +4,7 @@ parameters:
     type: string
     default: ci
     values:
+      - pr-e2e
       - ci
       - pre
       - rel
@@ -14,77 +15,119 @@ parameters:
     default: false
 
 stages:
+  # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
     parameters:
       stageType: ${{ parameters.stageType }}
       tridentArtifactName: trident-binaries
       codeCoverage: false
 
-  - ${{ if eq(parameters.stageType, 'ci') }}:
+  # Makefile validation, only for CI and PR-E2E
+  - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e')) }}:
       - template: stages/validate_makefile/dev-build.yml
 
+  # Build Trident installer ISO (host)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: build/trident-installer-testimage.iso
       outputArtifactName: trident-installer-testimage
 
+  # Build Trident installer ISO (container)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: build/trident-container-installer-testimage.iso
       outputArtifactName: trident-container-installer-testimage
 
+  # Build Trident test image (regular)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: trident-testimage
       outputArtifactName: trident-testimage
 
+  # Build Trident test image (verity)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: trident-verity-testimage
       outputArtifactName: trident-verity-testimage
 
+  # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
 
+  # Build Trident container image
   - template: stages/build_docker_image/trident-container.yml
 
+  # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
 
-  - ${{ if eq(parameters.blockPublishing, false) }}:
-      - template: stages/testing_functional/functional-testing.yml
-      - template: stages/publishing/publish.yml
-        parameters:
-          stageType: ${{ parameters.stageType }}
-  - ${{ else }}:
-      - template: stages/testing_functional/functional-testing.yml
-        parameters:
-          buildPurpose: "validation"
-
+  # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
+      # Functional Testing
+      - template: stages/testing_functional/functional-testing.yml
+
+      # VM Testing (host, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "daily"
           runtimeEnv: "host"
 
+      # BM Testing (host, daily)
       - template: stages/testing_baremetal/baremetal-testing.yml
         parameters:
           buildPurpose: "daily"
           runtimeEnv: "host"
 
+      # VM Testing (container, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "daily"
           installerISO: trident-container-installer-testimage
           runtimeEnv: "container"
 
-  - ${{ else }}:
+  # Stages for CI
+  - ${{ if eq(parameters.stageType, 'ci') }}:
+      # Functional Testing
+      - template: stages/testing_functional/functional-testing.yml
+
+      # VM Testing (host, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
           installerISO: trident-installer-testimage
           runtimeEnv: "host"
 
+      # VM Testing (container, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
           installerISO: trident-container-installer-testimage
           runtimeEnv: "container"
+
+  # Stages for PR-E2E
+  - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
+      # Functional Testing (short version)
+      - template: stages/testing_functional/functional-testing.yml
+        parameters:
+          buildPurpose: "validation"
+
+      # VM Testing (host, pullrequest)
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "pullrequest"
+          installerISO: trident-installer-testimage
+          runtimeEnv: "host"
+
+      # VM Testing (container, pullrequest)
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "pullrequest"
+          installerISO: trident-container-installer-testimage
+          runtimeEnv: "container"
+
+  # PUBLISHING
+  #
+  # Only enabled for PRERELEASE and CI unless blockPublishing is set to true.
+  - ${{ if eq(parameters.blockPublishing, false) }}:
+      - ${{ if or(eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'ci')) }}:
+          - template: stages/publishing/publish.yml
+            parameters:
+              stageType: ${{ parameters.stageType }}

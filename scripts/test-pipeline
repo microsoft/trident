@@ -15,13 +15,33 @@ import tempfile
 import json
 from typing import Any, Dict
 
+
+@dataclass
+class PipelineMetadata:
+    id: int
+    parameters: Dict[str, Any] = None
+
+
+pipeline_metadata_map: Dict[str, PipelineMetadata] = {
+    "pr": PipelineMetadata(id=2113),
+    "pr-e2e": PipelineMetadata(id=2195),
+    "ci": PipelineMetadata(id=3371),
+    "pre": PipelineMetadata(id=2648),
+    "rel": PipelineMetadata(
+        id=3370,
+        parameters={"specificVersion": "1.0.0"},
+    ),
+    "testing": PipelineMetadata(id=3262),
+    "tester": PipelineMetadata(id=3210),
+}
+
 parser = argparse.ArgumentParser(description="Preview a pipeline run")
 
 parser.add_argument(
     "pipeline",
     type=str,
     help="The pipeline to preview",
-    choices=["pr", "ci", "pre", "rel"],
+    choices=pipeline_metadata_map.keys(),
 )
 
 parser.add_argument(
@@ -38,22 +58,6 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-
-@dataclass
-class PipelineMetadata:
-    id: int
-    parameters: Dict[str, Any] = None
-
-
-pipeline_metadata_map: Dict[str, PipelineMetadata] = {
-    "pr": PipelineMetadata(id=2113),
-    "ci": PipelineMetadata(id=2195),
-    "pre": PipelineMetadata(id=2648),
-    "rel": PipelineMetadata(
-        id=3370,
-        parameters={"specificVersion": "1.0.0"},
-    ),
-}
 
 pipeline_metadata = pipeline_metadata_map[args.pipeline]
 

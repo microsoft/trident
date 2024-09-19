@@ -10,6 +10,7 @@ parameters:
     type: string
     values:
       - "pr"
+      - "pr-e2e"
       - "ci"
       - "pre"
     displayName: "Stage to run"

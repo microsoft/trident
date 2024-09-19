@@ -29,9 +29,12 @@ ifdef BRANCH
 	$(eval BRANCH_FLAG := -b $(BRANCH))
 endif
 	./scripts/test-pipeline pr -q $(BRANCH_FLAG)
+	./scripts/test-pipeline pr-e2e -q $(BRANCH_FLAG)
 	./scripts/test-pipeline ci -q $(BRANCH_FLAG)
 	./scripts/test-pipeline pre -q $(BRANCH_FLAG)
 	./scripts/test-pipeline rel -q $(BRANCH_FLAG)
+	./scripts/test-pipeline testing -q $(BRANCH_FLAG)
+	./scripts/test-pipeline tester -q $(BRANCH_FLAG)
 
 .PHONY: build
 build:

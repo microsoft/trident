@@ -67,20 +67,14 @@ virtualMachine:
       - verity
       - verity-raid
     pullrequest:
-      - base
       # TODO: Re-enable raid+encryption tests (#8849)
       # - abupdate-on-encrypted-raid
       - abupdate-on-encrypted-partitions
       - abupdate-with-verity
       - encrypted-partition
-      # TODO: Re-enable raid+encryption tests (#8849)
-      # - encrypted-raid
-      - encrypted-swap
-      - raid-small
       - raid-resync-small
       - rerun
       - simple
-      - verity
       - verity-raid
     validation:
       - base

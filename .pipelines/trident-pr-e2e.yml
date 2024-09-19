@@ -62,5 +62,5 @@ extends:
     stages:
       - template: templates/pipeline-selector.yml
         parameters:
-          targetStage: ci
+          targetStage: pr-e2e
           blockPublishing: true
