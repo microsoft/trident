@@ -344,9 +344,13 @@ pub(super) fn finalize_clean_install(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    debug!("Updating host's servicing state to Finalizing");
-    state
-        .with_host_status(|host_status| host_status.servicing_state = ServicingState::Finalizing)?;
+    info!("Finalizing clean install");
+    // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
+    let esp_path = join_relative(new_root_path, ESP_MOUNT_POINT_PATH);
+    bootentries::set_boot_next_and_update_boot_order(state.host_status(), &esp_path)?;
+
+    info!("Updating host's servicing state to Finalized");
+    state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
@@ -355,11 +359,7 @@ pub(super) fn finalize_clean_install(
         new_root_path,
         &state.host_status().spec.trident.datastore_path,
     ))?;
-
-    info!("Finalizing clean install");
-    // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
-    let esp_path = join_relative(new_root_path, ESP_MOUNT_POINT_PATH);
-    finalize_deployment(state, &esp_path)?;
+    state.close();
 
     // Metric for clean install provisioning time in seconds
     if let Some(start_time) = clean_install_start_time {
@@ -596,13 +596,6 @@ pub(super) fn finalize_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    debug!("Updating host's servicing state to Finalizing");
-    state
-        .with_host_status(|host_status| host_status.servicing_state = ServicingState::Finalizing)?;
-
-    #[cfg(feature = "grpc-dangerous")]
-    send_host_status_state(sender, state)?;
-
     info!("Finalizing update");
     let esp_path = if container::is_running_in_container()
         .message("Failed to check if Trident is running in a container.")?
@@ -612,7 +605,13 @@ pub(super) fn finalize_update(
     } else {
         PathBuf::from(ESP_MOUNT_POINT_PATH)
     };
-    finalize_deployment(state, &esp_path)?;
+    bootentries::set_boot_next_and_update_boot_order(state.host_status(), &esp_path)?;
+
+    info!("Updating host's servicing state to Finalized");
+    state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
+    #[cfg(feature = "grpc-dangerous")]
+    send_host_status_state(sender, state)?;
+    state.close();
 
     // Metric for update time in seconds
     if let Some(start_time) = update_start_time {
@@ -910,26 +909,6 @@ fn perform_reboot() -> Result<(), TridentError> {
 
     info!("Performing reboot");
     reboot()
-}
-
-/// Finalizes deployment by setting bootNext and updating host status. Changes host's servicing state
-/// to Finalized.
-#[tracing::instrument(skip_all)]
-fn finalize_deployment(datastore: &mut DataStore, esp_path: &Path) -> Result<(), TridentError> {
-    // TODO: Delete boot entries. Related ADO task:
-    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6807/
-
-    info!("Setting boot entries to finalize deployment");
-    let host_status = datastore.host_status();
-    bootentries::set_boot_next_and_update_boot_order(host_status, esp_path)?;
-
-    debug!("Updating host's servicing state to Finalized");
-    datastore.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
-
-    info!("Closing datastore");
-    datastore.close();
-
-    Ok(())
 }
 
 #[cfg(test)]

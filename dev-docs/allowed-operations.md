@@ -55,7 +55,6 @@ executing. In the host status, `servicingState` describes the progress of the
    - `Staging`: Trident is finalizing the ongoing servicing.
    - `Staged`: Servicing has been staged, i.e., the updated runtime OS image has
    been deployed onto block devices.
-   - `Finalizing`: Trident is finalizing the ongoing servicing.
    - `Finalized`: Servicing has been finalized i.e., UEFI variables have been set,
    so that firmware boots from the updated runtime OS image after reboot.
    - `AbUpdateFailed`: Servicing of type AbUpdate has failed.

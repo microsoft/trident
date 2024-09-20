@@ -87,8 +87,6 @@ pub enum ServicingState {
     /// Servicing has been staged, i.e., the updated runtime OS image has been deployed onto block
     /// devices.
     Staged,
-    /// Trident is finalizing the ongoing servicing.
-    Finalizing,
     /// Servicing has been finalized, i.e., UEFI variables have been set, so that firmware boots
     /// from the updated runtime OS image after reboot.
     Finalized,
@@ -246,12 +244,6 @@ mod tests {
             Some(AbVolumeSelection::VolumeA)
         );
 
-        host_status.servicing_state = ServicingState::Finalizing;
-        assert_eq!(
-            host_status.get_ab_update_volume(),
-            Some(AbVolumeSelection::VolumeA)
-        );
-
         host_status.servicing_state = ServicingState::Finalized;
         assert_eq!(
             host_status.get_ab_update_volume(),
@@ -315,13 +307,6 @@ mod tests {
         );
 
         host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        assert_eq!(
-            host_status.get_ab_update_volume(),
-            Some(AbVolumeSelection::VolumeA)
-        );
-
-        // If servicing state changes, the update volume should not change
-        host_status.servicing_state = ServicingState::Finalizing;
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeA)
@@ -406,7 +391,7 @@ mod tests {
         );
 
         host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        host_status.servicing_state = ServicingState::Finalizing;
+        host_status.servicing_state = ServicingState::Staging;
         host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_active_volume(),
