@@ -31,6 +31,13 @@ File system types.
 | Type           | `string` |
 | Value          | `vfat`   |
 
+### Ntfs file system
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Value          | `ntfs`   |
+
 ### Swap partition
 
 | Characteristic | Value    |

@@ -418,6 +418,13 @@
           ]
         },
         {
+          "title": "Ntfs file system",
+          "type": "string",
+          "enum": [
+            "ntfs"
+          ]
+        },
+        {
           "title": "Swap partition",
           "type": "string",
           "enum": [

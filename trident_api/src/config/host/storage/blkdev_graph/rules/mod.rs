@@ -168,6 +168,7 @@ impl FileSystemType {
             Self::Ext4
             | Self::Xfs
             | Self::Vfat
+            | Self::Ntfs
             | Self::Iso9660
             | Self::Swap
             | Self::Auto
@@ -179,7 +180,7 @@ impl FileSystemType {
     /// Returns the valid sources for a filesystem type.
     pub fn valid_sources(&self) -> FileSystemSourceKindList {
         match self {
-            Self::Ext4 | Self::Xfs => FileSystemSourceKindList(vec![
+            Self::Ext4 | Self::Xfs | Self::Ntfs => FileSystemSourceKindList(vec![
                 FileSystemSourceKind::Create,
                 FileSystemSourceKind::Image,
                 FileSystemSourceKind::Adopted,
@@ -206,6 +207,7 @@ impl FileSystemType {
             Self::Ext4
             | Self::Xfs
             | Self::Vfat
+            | Self::Ntfs
             | Self::Iso9660
             | Self::Tmpfs
             | Self::Overlay
@@ -221,6 +223,7 @@ impl FileSystemType {
             Self::Vfat
             | Self::Iso9660
             | Self::Swap
+            | Self::Ntfs
             | Self::Tmpfs
             | Self::Overlay
             | Self::Auto

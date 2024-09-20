@@ -173,6 +173,9 @@ pub enum FileSystemType {
     /// # Vfat file system
     Vfat,
 
+    /// # Ntfs file system
+    Ntfs,
+
     /// # Swap partition
     Swap,
 
@@ -235,6 +238,7 @@ impl FileSystemType {
             Self::Ext4 => true,
             Self::Xfs
             | Self::Vfat
+            | Self::Ntfs
             | Self::Swap
             | Self::Tmpfs
             | Self::Overlay

@@ -16,6 +16,7 @@ pub enum MountFileSystemType {
     Tmpfs,
     Auto,
     Overlay,
+    Ntfs,
 }
 
 /// File system types for `mkfs`
@@ -26,6 +27,7 @@ pub enum MkfsFileSystemType {
     Ext4,
     Xfs,
     Vfat,
+    Ntfs,
 }
 
 /// File system types for fstab file
@@ -37,6 +39,7 @@ pub enum TabFileSystemType {
     Ext4,
     Xfs,
     Vfat,
+    Ntfs,
     Iso9660,
     Tmpfs,
     Swap,
@@ -55,6 +58,7 @@ impl MountFileSystemType {
             MountFileSystemType::Tmpfs => "tmpfs",
             MountFileSystemType::Auto => "auto",
             MountFileSystemType::Overlay => "overlay",
+            MountFileSystemType::Ntfs => "ntfs",
         }
     }
 
@@ -64,6 +68,7 @@ impl MountFileSystemType {
             FileSystemType::Ext4 => Self::Ext4,
             FileSystemType::Xfs => Self::Xfs,
             FileSystemType::Vfat => Self::Vfat,
+            FileSystemType::Ntfs => Self::Ntfs,
             FileSystemType::Iso9660 => Self::Iso9660,
             FileSystemType::Tmpfs => Self::Tmpfs,
             FileSystemType::Overlay => Self::Overlay,
@@ -95,6 +100,7 @@ impl MkfsFileSystemType {
             Self::Ext4 => "ext4",
             Self::Xfs => "xfs",
             Self::Vfat => "vfat",
+            Self::Ntfs => "ntfs",
         }
     }
 
@@ -103,6 +109,7 @@ impl MkfsFileSystemType {
             FileSystemType::Ext4 => Self::Ext4,
             FileSystemType::Xfs => Self::Xfs,
             FileSystemType::Vfat => Self::Vfat,
+            FileSystemType::Ntfs => Self::Ntfs,
             FileSystemType::Swap
             | FileSystemType::Iso9660
             | FileSystemType::Tmpfs
@@ -130,6 +137,7 @@ impl TabFileSystemType {
             Self::Ext4 => "ext4",
             Self::Xfs => "xfs",
             Self::Vfat => "vfat",
+            Self::Ntfs => "ntfs",
             Self::Iso9660 => "iso9660",
             Self::Tmpfs => "tmpfs",
             Self::Overlay => "overlay",
@@ -142,6 +150,7 @@ impl TabFileSystemType {
             FileSystemType::Ext4 => Self::Ext4,
             FileSystemType::Xfs => Self::Xfs,
             FileSystemType::Vfat => Self::Vfat,
+            FileSystemType::Ntfs => Self::Ntfs,
             FileSystemType::Iso9660 => Self::Iso9660,
             FileSystemType::Tmpfs => Self::Tmpfs,
             FileSystemType::Overlay => Self::Overlay,

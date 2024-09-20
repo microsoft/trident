@@ -127,6 +127,7 @@ block device.
 | ext4             | Yes                   |
 | xfs              | Yes                   |
 | vfat             | Yes                   |
+| ntfs             | Yes                   |
 | swap             | Yes                   |
 | tmpfs            | No                    |
 | auto             | Yes                   |
@@ -141,6 +142,7 @@ Depending on the type of a filesystem, they may have different source types.
 | ext4             | create or image or adopted              |
 | xfs              | create or image or adopted              |
 | vfat             | create or image or adopted or esp-image |
+| ntfs             | create or image or adopted              |
 | swap             | create                                  |
 | tmpfs            | create                                  |
 | auto             | adopted                                 |
@@ -156,6 +158,7 @@ configured.
 | ext4             | Yes                  |
 | xfs              | Yes                  |
 | vfat             | Yes                  |
+| ntfs             | Yes                  |
 | swap             | No                   |
 | tmpfs            | Yes                  |
 | auto             | Yes                  |
@@ -170,6 +173,7 @@ Depending on the type of a filesystem, they may or may not be used for verity.
 | ext4             | Yes             |
 | xfs              | Yes             |
 | vfat             | No              |
+| ntfs             | No              |
 | swap             | No              |
 | tmpfs            | No              |
 | auto             | No              |

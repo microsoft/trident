@@ -104,6 +104,8 @@ The following dependencies are optional:
 - `cryptsetup`, `tpm2-tools`: support for encrypted volumes. This supports `storage.encryption`
   section.
 - `veritysetup`: support for dm-verity. This supports `storage.verity` section.
+- `ntfs-3g`: support for mounting NTFS filesystems.
+- `ntfsprogs`: support for creating NTFS filesystems.
 
 Trident also depends on more recent version of `systemd` compared to what is
 available in Mariner/Azure Linux 2.0. For evaluation, you can use this

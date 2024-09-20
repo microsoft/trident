@@ -16,6 +16,10 @@ os:
       - lsof
       - mdadm
       - netplan
+      # Support for mounting NTFS filesystems
+      - ntfs-3g
+      # Support for creating NTFS filesystems
+      - ntfsprogs
       - openssh-server
       - squashfs-tools
       - tar

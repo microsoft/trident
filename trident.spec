@@ -28,7 +28,11 @@ Suggests:       mdadm
 Suggests:       tpm2-tools     
 Suggests:       cryptsetup
 # For integrity support (storage.verity)     
-Suggests:       veritysetup    
+Suggests:       veritysetup
+# For mounting NTFS filesystems
+Suggests:       ntfs-3g
+# For creating NTFS filesystems
+Suggests:       ntfsprogs
 
 
 %description
