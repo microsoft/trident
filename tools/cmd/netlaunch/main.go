@@ -183,7 +183,7 @@ var rootCmd = &cobra.Command{
 		var isoFetcheLog sync.Once
 		var isoLogFunc = func(address string) {
 			isoFetcheLog.Do(func() {
-				log.WithField("address", address).Info("BMC has requeted the ISO!")
+				log.WithField("address", address).Info("BMC has requested the ISO!")
 			})
 		}
 
