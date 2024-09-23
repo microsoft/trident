@@ -5,6 +5,8 @@ package main
 
 import (
 	"argus_toolkit/pkg/phonehome"
+	"argus_toolkit/pkg/serial"
+	"sync"
 
 	"bytes"
 	"context"
@@ -20,6 +22,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/stmcginnis/gofish/redfish"
 	"gopkg.in/yaml.v2"
 
 	bmclib "github.com/bmc-toolbox/bmclib/v2"
@@ -35,12 +38,22 @@ var MagicString = `#8505c8ab802dd717290331acd0592804c4e413b030150c53f5018ac998b7
 
 type NetLaunchConfig struct {
 	Netlaunch struct {
-		PublicIp string
-		Bmc      struct {
-			Ip       string
-			Username string
-			Password string
+		AnnounceIp   string
+		AnnouncePort *uint16
+		Bmc          struct {
+			Ip            string
+			Port          *string
+			Username      string
+			Password      string
+			SerialOverSsh *struct {
+				SshPort uint16
+				ComPort string
+				Output  string
+			}
 		}
+	}
+	Iso struct {
+		PreTridentScript *string
 	}
 }
 
@@ -96,6 +109,9 @@ var rootCmd = &cobra.Command{
 			log.Fatal("ISO file not specified")
 		}
 
+		// To enable logstream, we need either:
+		// - A specified port
+		// - A trident config file (so that we can patch in the assigned port)
 		if logstream && listenPort == 0 && len(tridentConfigFile) == 0 {
 			log.Fatal("logstream requires a specified port or trident config file")
 		}
@@ -118,6 +134,12 @@ var rootCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		// Read the ISO
+		iso, err := os.ReadFile(iso)
+		if err != nil {
+			log.WithError(err).Fatalf("failed to find iso for testing")
+		}
+
 		viper.SetConfigType("yaml")
 		viper.SetConfigFile(netlaunchConfigFile)
 		if err := viper.ReadInConfig(); err != nil {
@@ -130,15 +152,18 @@ var rootCmd = &cobra.Command{
 			log.WithError(err).Fatal("could not unmarshal configuration")
 		}
 
-		address := fmt.Sprintf("%s:%d", config.Netlaunch.PublicIp, listenPort)
-		listen, err := net.Listen("tcp4", address)
+		localListenAddress := fmt.Sprintf(":%d", listenPort)
+		listen, err := net.Listen("tcp4", localListenAddress)
 		if err != nil {
-			log.WithError(err).Fatalf("failed to open port listening on %s", address)
+			log.WithError(err).Fatalf("failed to open port listening on %s", localListenAddress)
 		}
 
-		iso, err := os.ReadFile(iso)
-		if err != nil {
-			log.WithError(err).Fatalf("failed to find iso for testing")
+		// Find the port we're listening on
+		var announcePort string
+		if config.Netlaunch.AnnouncePort != nil {
+			announcePort = fmt.Sprintf("%d", *config.Netlaunch.AnnouncePort)
+		} else {
+			announcePort = strings.Split(listen.Addr().String(), ":")[1]
 		}
 
 		// Do we expect trident to reach back? If so we need to listen to it.
@@ -149,6 +174,19 @@ var rootCmd = &cobra.Command{
 		result := make(chan phonehome.PhoneHomeResult)
 		server := &http.Server{}
 
+		// Create the final address that will be announced to the BMC and Trident.
+		announceAddress := fmt.Sprintf("%s:%s", config.Netlaunch.AnnounceIp, announcePort)
+		log.WithField("address", announceAddress).Info("Announcing address")
+
+		// A flag to record if we've already logged the ISO being fetched by the
+		// BMC. We only want to log this once.
+		var isoFetcheLog sync.Once
+		var isoLogFunc = func(address string) {
+			isoFetcheLog.Do(func() {
+				log.WithField("address", address).Info("BMC has requeted the ISO!")
+			})
+		}
+
 		// If we have a trident config file, we need to patch it into the ISO.
 		if len(tridentConfigFile) != 0 {
 			log.Info("Using Trident config file: ", tridentConfigFile)
@@ -158,7 +196,7 @@ var rootCmd = &cobra.Command{
 			}
 
 			// Replace NETLAUNCH_HOST_ADDRESS with the address of the netlaunch server
-			tridentConfigContentsStr := strings.ReplaceAll(string(tridentConfigContents), "NETLAUNCH_HOST_ADDRESS", listen.Addr().String())
+			tridentConfigContentsStr := strings.ReplaceAll(string(tridentConfigContents), "NETLAUNCH_HOST_ADDRESS", announceAddress)
 
 			trident := make(map[string]interface{})
 			err = yaml.UnmarshalStrict([]byte(tridentConfigContentsStr), &trident)
@@ -166,10 +204,10 @@ var rootCmd = &cobra.Command{
 				log.WithError(err).Fatalf("failed to unmarshal Trident config")
 			}
 
-			trident["phonehome"] = fmt.Sprintf("http://%s/phonehome", listen.Addr().String())
+			trident["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
 
 			if logstream {
-				trident["logstream"] = fmt.Sprintf("http://%s/logstream", listen.Addr().String())
+				trident["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
 			}
 
 			tridentConfig, err := yaml.Marshal(trident)
@@ -182,7 +220,16 @@ var rootCmd = &cobra.Command{
 				log.WithError(err).Fatalf("failed to patch trident config into ISO")
 			}
 
+			if config.Iso.PreTridentScript != nil {
+				log.Info("Patching in pre-trident script!")
+				err = patchFile(iso, "/trident_cdrom/pre-trident-script.sh", []byte(*config.Iso.PreTridentScript))
+				if err != nil {
+					log.WithError(err).Fatalf("failed to patch pre-trident script into ISO")
+				}
+			}
+
 			http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+				isoLogFunc(r.RemoteAddr)
 				http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
 			})
 
@@ -191,6 +238,7 @@ var rootCmd = &cobra.Command{
 		} else {
 			// Otherwise, serve the iso as-is
 			http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+				isoLogFunc(r.RemoteAddr)
 				http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
 				terminate <- true
 			})
@@ -217,33 +265,62 @@ var rootCmd = &cobra.Command{
 		go server.Serve(listen)
 		log.WithField("address", listen.Addr().String()).Info("Listening...")
 
+		if config.Netlaunch.Bmc.SerialOverSsh != nil {
+			serial, err := serial.NewSerialOverSshSession(serial.SerialOverSSHSettings{
+				Host:     config.Netlaunch.Bmc.Ip,
+				Port:     config.Netlaunch.Bmc.SerialOverSsh.SshPort,
+				Username: config.Netlaunch.Bmc.Username,
+				Password: config.Netlaunch.Bmc.Password,
+				ComPort:  config.Netlaunch.Bmc.SerialOverSsh.ComPort,
+				Output:   config.Netlaunch.Bmc.SerialOverSsh.Output,
+			})
+			if err != nil {
+				log.WithError(err).Fatalf("Failed to open serial over SSH session")
+			}
+			defer serial.Close()
+		}
+
 		// Deploy ISO to BMC
+
+		// Default to port 443
+		port := "443"
+		if config.Netlaunch.Bmc.Port != nil {
+			port = *config.Netlaunch.Bmc.Port
+		}
+
 		client := bmclib.NewClient(
 			config.Netlaunch.Bmc.Ip,
 			config.Netlaunch.Bmc.Username,
 			config.Netlaunch.Bmc.Password,
+			bmclib.WithRedfishPort(port),
 		)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
+		log.Info("Connecting to BMC")
 		client.Registry.Drivers = client.Registry.For("gofish")
 		if err := client.Open(context.Background()); err != nil {
 			log.WithError(err).Fatalf("failed to open connection to BMC")
 		}
 
+		log.Info("Shutting down machine")
 		if _, err = client.SetPowerState(ctx, "off"); err != nil {
 			log.WithError(err).Fatalf("failed to turn off machine")
 		}
 
-		if _, err = client.SetVirtualMedia(ctx, "CD", "http://"+listen.Addr().String()+"/provision.iso"); err != nil {
+		iso_location := fmt.Sprintf("http://%s/provision.iso", announceAddress)
+		log.WithField("url", iso_location).Info("Setting virtual media to ISO")
+		if _, err = client.SetVirtualMedia(ctx, string(redfish.CDMediaType), iso_location); err != nil {
 			log.WithError(err).Fatalf("failed to set virtual media")
 		}
 
+		log.Info("Setting boot media")
 		if _, err = client.SetBootDevice(ctx, "cdrom", false, true); err != nil {
 			log.WithError(err).Fatalf("failed to set boot media")
 		}
 
+		log.Info("Turning on machine")
 		if _, err = client.SetPowerState(ctx, "on"); err != nil {
 			log.WithError(err).Fatalf("failed to turn on machine")
 		}

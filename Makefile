@@ -10,6 +10,8 @@ TEST_IMAGES_PATH ?= ../test-images
 
 HOST_CONFIG ?= base.yaml
 
+NETLAUNCH_CONFIG ?= input/netlaunch.yaml
+
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms-azl2.tar.gz bin/trident-rpms-azl3.tar.gz docker-build build-functional-test coverage validate-configs generate-mermaid-diagrams
 
@@ -309,6 +311,10 @@ bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/phonehome/*
 	mkdir -p bin
 	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
 
+bin/miniproxy: tools/cmd/miniproxy/* tools/go.sum
+	mkdir -p bin
+	cd tools && go build -o ../bin/miniproxy ./cmd/miniproxy
+
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
 	@bin/trident validate -c $(TRIDENT_CONFIG)
@@ -320,19 +326,25 @@ input/netlaunch.yaml: $(ARGUS_TOOLKIT_PATH)/vm-netlaunch.yaml
 	ln -vsf "$$(realpath "$<")" $@
 
 .PHONY: run-netlaunch
-run-netlaunch: input/netlaunch.yaml $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier
 	@mkdir -p artifacts/test-image
 	@cp bin/trident artifacts/test-image/
 	@cp artifacts/osmodifier artifacts/test-image/
-	@bin/netlaunch -i $(NETLAUNCH_ISO) -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image -m trident-metrics.jsonl
+	@bin/netlaunch -i $(NETLAUNCH_ISO) \
+		$(if $(NETLAUNCH_PORT),-p $(NETLAUNCH_PORT)) \
+		-c $(NETLAUNCH_CONFIG) \
+		-t $(TRIDENT_CONFIG) \
+		-l -r remote-addr \
+		-s artifacts/test-image \
+		-m trident-metrics.jsonl
 
 .PHONY: watch-virtdeploy
 watch-virtdeploy:
 	@while true; do virsh console virtdeploy-vm-0; sleep 1; done
 
 .PHONY: run-netlaunch-container
-run-netlaunch-container: input/netlaunch.yaml $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.tar.gz
-	@bin/netlaunch -i bin/trident-containerhost-mos.iso -c input/netlaunch.yaml -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
+run-netlaunch-container: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.tar.gz
+	@bin/netlaunch -i bin/trident-containerhost-mos.iso -c $(NETLAUNCH_CONFIG) -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 # This target leverages the samples that are automatically generated as part of
 # the build-api-docs target. The HC sample is selected by setting the

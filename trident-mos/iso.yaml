@@ -29,17 +29,17 @@ os:
 
   additionalFiles:
     files/getty@.service:
-    - path: /usr/lib/systemd/system/getty@.service
+      - path: /usr/lib/systemd/system/getty@.service
     files/serial-getty@.service:
-    - path: /usr/lib/systemd/system/serial-getty@.service
+      - path: /usr/lib/systemd/system/serial-getty@.service
     files/root.profile:
-    - path: /root/.profile
+      - path: /root/.profile
     files/download-trident.service:
-    - path: /usr/lib/systemd/system/download-trident.service
+      - path: /usr/lib/systemd/system/download-trident.service
 
   services:
     enable:
-    - download-trident
+      - download-trident
 
 scripts:
   postCustomization:
@@ -49,5 +49,7 @@ iso:
   additionalFiles:
     files/config-placeholder.yaml:
       - path: /trident-config.yaml
+    files/pre-trident-script.sh:
+      - path: /pre-trident-script.sh
   kernelCommandLine:
     extraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
