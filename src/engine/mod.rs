@@ -179,7 +179,7 @@ pub(super) fn clean_install(
     send_host_status_state(&mut sender, state)?;
 
     // Stage clean install
-    let mut root_mount = stage_clean_install(
+    let root_mount = stage_clean_install(
         &mut subsystems,
         state,
         host_config,
@@ -196,7 +196,7 @@ pub(super) fn clean_install(
     } else {
         finalize_clean_install(
             state,
-            root_mount.path(),
+            root_mount,
             Some(clean_install_start_time),
             #[cfg(feature = "grpc-dangerous")]
             &mut sender,
@@ -287,7 +287,7 @@ fn stage_clean_install(
     state.try_with_host_status(|host_status| {
         storage::initialize_block_devices(host_status, host_config)
     })?;
-    let mut newroot_mount = NewrootMount::create_and_mount(
+    let newroot_mount = NewrootMount::create_and_mount(
         host_config,
         &state.host_status().block_device_paths,
         AbVolumeSelection::VolumeA,
@@ -338,7 +338,7 @@ fn stage_clean_install(
 #[tracing::instrument(skip_all)]
 pub(super) fn finalize_clean_install(
     state: &mut DataStore,
-    new_root_path: &Path,
+    new_root: NewrootMount,
     clean_install_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -346,7 +346,7 @@ pub(super) fn finalize_clean_install(
 ) -> Result<(), TridentError> {
     info!("Finalizing clean install");
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
-    let esp_path = join_relative(new_root_path, ESP_MOUNT_POINT_PATH);
+    let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
     bootentries::set_boot_next_and_update_boot_order(state.host_status(), &esp_path)?;
 
     info!("Updating host's servicing state to Finalized");
@@ -356,7 +356,7 @@ pub(super) fn finalize_clean_install(
 
     // Persist and close the datastore
     state.persist(&join_relative(
-        new_root_path,
+        new_root.path(),
         &state.host_status().spec.trident.datastore_path,
     ))?;
     state.close();
@@ -368,9 +368,11 @@ pub(super) fn finalize_clean_install(
             value = start_time.elapsed().as_secs_f64()
         );
     }
-    perform_reboot()?;
 
-    Ok(())
+    if let Err(e) = new_root.unmount_all() {
+        error!("Failed to unmount new root: {e:?}");
+    }
+    reboot()
 }
 
 #[tracing::instrument(skip_all)]
@@ -435,32 +437,29 @@ pub(super) fn update(
     );
 
     // Stage update
-    let root_mount = stage_update(
+    stage_update(
         &mut subsystems,
         state,
         host_config,
         servicing_type,
         #[cfg(feature = "grpc-dangerous")]
         &mut sender,
-    )?;
+    )
+    .message("Failed to stage update")?;
 
     match servicing_type {
         ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of update not requested, skipping reboot");
-                if let Some(mut root_mount) = root_mount {
-                    root_mount.unmount_all()?;
-                }
-                return Ok(());
+            } else {
+                finalize_update(
+                    state,
+                    Some(update_start_time),
+                    #[cfg(feature = "grpc-dangerous")]
+                    &mut sender,
+                )
+                .message("Failed to finalize update")?;
             }
-
-            // Otherwise, finalize update
-            finalize_update(
-                state,
-                Some(update_start_time),
-                #[cfg(feature = "grpc-dangerous")]
-                &mut sender,
-            )?;
 
             Ok(())
         }
@@ -478,7 +477,7 @@ pub(super) fn update(
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
         )),
-        ServicingType::NoActiveServicing => unreachable!(),
+        ServicingType::NoActiveServicing => Err(TridentError::internal("No active servicing type")),
     }
 }
 
@@ -499,7 +498,7 @@ fn stage_update(
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
-) -> Result<Option<NewrootMount>, TridentError> {
+) -> Result<(), TridentError> {
     match servicing_type {
         ServicingType::HotPatch => info!("Performing hot patch update"),
         ServicingType::NormalUpdate => info!("Performing normal update"),
@@ -526,13 +525,13 @@ fn stage_update(
 
     prepare(subsystems, state.host_status())?;
 
-    let newroot_mount = if let ServicingType::AbUpdate = servicing_type {
+    if ServicingType::AbUpdate == servicing_type {
         info!("Preparing storage to mount new root");
 
         state.try_with_host_status(|host_status| {
             storage::initialize_block_devices(host_status, host_config)
         })?;
-        let mut newroot_mount = NewrootMount::create_and_mount(
+        let newroot_mount = NewrootMount::create_and_mount(
             host_config,
             &state.host_status().block_device_paths,
             state
@@ -563,7 +562,7 @@ fn stage_update(
             return Err(original_error).message("Failed to execute in chroot");
         }
 
-        Some(newroot_mount)
+        newroot_mount.unmount_all()?;
     } else {
         info!("Running configure");
         configure(
@@ -571,7 +570,6 @@ fn stage_update(
             state.host_status(),
             Path::new(ROOT_MOUNT_POINT_PATH),
         )?;
-        None
     };
 
     // At this point, deployment has been staged, so update servicing state
@@ -582,7 +580,7 @@ fn stage_update(
 
     info!("Staging of update '{:?}' succeeded", servicing_type);
 
-    Ok(newroot_mount)
+    Ok(())
 }
 
 /// Finalizes an update. Takes in 2 arguments:
@@ -622,9 +620,7 @@ pub(super) fn finalize_update(
         );
     }
 
-    perform_reboot()?;
-
-    Ok(())
+    reboot()
 }
 
 #[cfg(feature = "grpc-dangerous")]
@@ -871,6 +867,7 @@ fn configure(
 
 pub fn reboot() -> Result<(), TridentError> {
     // Sync all writes to the filesystem.
+    info!("Syncing filesystem");
     nix::unistd::sync();
 
     // This trace event will be used with the trident_start event to track the
@@ -887,28 +884,6 @@ pub fn reboot() -> Result<(), TridentError> {
 
     error!("Waited for reboot for 10 minutes, but nothing happened, aborting");
     Err(TridentError::new(ServicingError::RebootTimeout))
-}
-
-/// Triggers a reboot. Currently, this defaults to firmware reboot.
-fn perform_reboot() -> Result<(), TridentError> {
-    // TODO(6721): Re-enable kexec
-    // let root_block_device_path = root_block_device_path
-    //     .to_str()
-    //     .structured(ServicingError::SetKernelCmdline)
-    //     .message(format!(
-    //         "Failed to convert root device path {:?} to string",
-    //         root_block_device_path
-    //     ))?;
-    //
-    // info!("Performing soft reboot");
-    // storage::image::kexec(
-    //     new_root_path,
-    //     &format!("console=tty1 console=ttyS0 root={root_block_device_path}"),
-    // )
-    // .structured(ServicingError::Kexec)
-
-    info!("Performing reboot");
-    reboot()
 }
 
 #[cfg(test)]

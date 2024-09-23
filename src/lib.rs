@@ -617,7 +617,7 @@ impl Trident {
 
                         engine::finalize_clean_install(
                             datastore,
-                            root_mount.path(),
+                            root_mount,
                             None,
                             #[cfg(feature = "grpc-dangerous")]
                             &mut cmd.sender,

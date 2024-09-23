@@ -167,8 +167,7 @@ impl NewrootMount {
         Path::new(EXEC_ROOT_PATH)
     }
 
-    /// Unmount all registered mounts in the correct order.
-    pub fn unmount_all(&mut self) -> Result<(), TridentError> {
+    fn unmount_all_impl(&mut self) -> Result<(), TridentError> {
         // Unmount all mounts in reverse order. If we fail to unmount one, we still clear
         // `self.mounts` but stop trying to unmount the rest of the mounts.
         for mount in self.mounts.drain(..).rev() {
@@ -179,6 +178,12 @@ impl NewrootMount {
         }
 
         Ok(())
+    }
+
+    /// Unmount all registered mounts in the correct order.
+    pub fn unmount_all(mut self) -> Result<(), TridentError> {
+        info!("Unmounting newroot at '{}'", self.path().display());
+        self.unmount_all_impl()
     }
 
     /// Add a new mount point to newroot object.
@@ -419,7 +424,7 @@ impl Drop for NewrootMount {
             error!("NewrootMount was dropped without unmounting all mounts");
         }
 
-        if let Err(e) = self.unmount_all() {
+        if let Err(e) = self.unmount_all_impl() {
             error!(
                 "Failed to unmount new root while handling another error: {:?}",
                 e
@@ -1042,8 +1047,6 @@ mod functional_test {
 
         // Unmount the tmpfs
         newroot_mount.unmount_all().unwrap();
-
-        assert_eq!(newroot_mount.mounts.len(), 0);
 
         let root_mount = FindMnt::run().unwrap().root().unwrap();
         assert!(!root_mount.contains_mountpoint(&temp_mount_path));
