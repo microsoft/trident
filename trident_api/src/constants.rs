@@ -140,3 +140,9 @@ pub const AB_VOLUME_B_NAME: &str = "B";
 
 /// Read-only mount option.
 pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
+
+/// Internal-only overrides
+pub mod internal_params {
+    /// Execroot deny-list extension parameter name
+    pub const EXECROOT_DENYLIST_EXTENSION: &str = "execrootDenyList";
+}

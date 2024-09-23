@@ -11,14 +11,14 @@ use crate::{
 };
 
 pub(crate) mod error;
+pub(crate) mod internal_params;
 pub(crate) mod os;
-pub(crate) mod preview_params;
 pub(crate) mod scripts;
 pub(crate) mod storage;
 pub(crate) mod trident;
 
+use internal_params::InternalParams;
 use os::Os;
-use preview_params::PreviewParams;
 use scripts::Scripts;
 use storage::Storage;
 use trident::Trident;
@@ -61,7 +61,7 @@ pub struct HostConfiguration {
     /// Extra parameters to override default trident behavior.
     #[serde(default, skip_serializing_if = "is_default")]
     #[cfg_attr(feature = "schemars", schemars(skip))]
-    pub preview_params: PreviewParams,
+    pub internal_params: InternalParams,
 }
 
 impl HostConfiguration {

@@ -7,11 +7,11 @@ use serde_yaml::Value;
 
 /// Struct to hold free-form preview parameters.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PreviewParams(HashMap<String, Value>);
+pub struct InternalParams(HashMap<String, Value>);
 
 type Parameter<T> = Option<Result<T, Error>>;
 
-impl PreviewParams {
+impl InternalParams {
     /// Get the value of a key as a generic type.
     pub fn get<T>(&self, key: impl AsRef<str>) -> Parameter<T>
     where
@@ -19,7 +19,7 @@ impl PreviewParams {
     {
         self.0.get(key.as_ref()).map(|v| {
             warn!(
-                "USING PREVIEW-ONLY OVERRIDE PARAMETER '{}':\n{:#?}",
+                "USING INTERNAL OVERRIDE PARAMETER '{}':\n{:#?}",
                 key.as_ref(),
                 v
             );
@@ -37,6 +37,11 @@ impl PreviewParams {
     pub fn get_vec_string(&self, key: impl AsRef<str>) -> Parameter<Vec<String>> {
         self.get(key)
     }
+
+    /// Get the value of a key as a boolean.
+    pub fn get_flag(&self, key: impl AsRef<str>) -> bool {
+        self.get(key).transpose().ok().flatten().unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -45,7 +50,7 @@ mod test {
 
     #[test]
     fn test_get_string() {
-        let params: PreviewParams = serde_yaml::from_str(
+        let params: InternalParams = serde_yaml::from_str(
             r#"
             key: value
         "#,
@@ -61,7 +66,7 @@ mod test {
 
     #[test]
     fn test_get_vec_string() {
-        let params: PreviewParams = serde_yaml::from_str(
+        let params: InternalParams = serde_yaml::from_str(
             r#"
             key:
               - value1
@@ -86,5 +91,24 @@ mod test {
 
         // Assert we get None for missing key
         assert!(params.get_vec_string("missing").is_none());
+    }
+
+    #[test]
+    fn test_get_flag() {
+        let params: InternalParams = serde_yaml::from_str(
+            r#"
+            key:
+              - value1
+              - value2
+            myString: true
+            x: false
+        "#,
+        )
+        .unwrap();
+
+        assert!(!params.get_flag("key"));
+        assert!(params.get_flag("myString"));
+        assert!(!params.get_flag("x"));
+        assert!(!params.get_flag("missing"));
     }
 }

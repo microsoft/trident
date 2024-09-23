@@ -17,8 +17,8 @@ use osutils::{
 use trident_api::{
     config::{HostConfiguration, InternalMountPoint},
     constants::{
-        EXEC_ROOT_PATH, MOUNT_OPTION_READ_ONLY, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH,
-        UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
+        internal_params::EXECROOT_DENYLIST_EXTENSION, EXEC_ROOT_PATH, MOUNT_OPTION_READ_ONLY,
+        NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -41,10 +41,6 @@ const PROHIBITED_EXECROOT_MOUNTS: [&str; 6] = [
     // Everything under /run/contained, fix for #8926
     "/run/contained",
 ];
-
-/// PREVIEW-ONLY OVERRIDE
-/// Execroot deny-list extension parameter name
-const EXECROOT_DENYLIST_EXTENSION_PARAM: &str = "execrootDenyList";
 
 /// Filter function to prevent specific mount points from being bind mounted in
 /// the execroot.
@@ -124,8 +120,8 @@ impl NewrootMount {
 
         // PREVIEW-ONLY OVERRIDE
         let execroot_deny_list_extension = if let Some(res) = host_config
-            .preview_params
-            .get_vec_string(EXECROOT_DENYLIST_EXTENSION_PARAM)
+            .internal_params
+            .get_vec_string(EXECROOT_DENYLIST_EXTENSION)
         {
             let overrides = res.structured(InternalError::Internal(
                 "Failed to get execroot deny-list extension",
