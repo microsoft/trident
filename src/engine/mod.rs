@@ -38,7 +38,8 @@ use crate::{
         selinux::SelinuxSubsystem,
         storage::StorageSubsystem,
     },
-    HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH,
+    HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH, TRIDENT_BACKGROUND_LOG_PATH,
+    TRIDENT_INSTALL_LOG_FILENAME,
 };
 
 // Trident Subsystems
@@ -354,7 +355,7 @@ pub(super) fn finalize_clean_install(
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    // Persist and close the datastore
+    // Persist the datastore to the new root
     state.persist(&join_relative(
         new_root.path(),
         &state.host_status().spec.trident.datastore_path,
@@ -368,6 +369,12 @@ pub(super) fn finalize_clean_install(
             value = start_time.elapsed().as_secs_f64()
         );
     }
+
+    // Persist the Trident background log to the new root
+    persist_background_log(
+        new_root.path(),
+        &state.host_status().spec.trident.datastore_path,
+    );
 
     if let Err(e) = new_root.unmount_all() {
         error!("Failed to unmount new root: {e:?}");
@@ -621,6 +628,60 @@ pub(super) fn finalize_update(
     }
 
     reboot()
+}
+
+/// Persists the Trident background log from the MOS to the new root, i.e. the runtime OS, to the
+/// directory adjacent to the datastore. Takes in 2 arguments:
+/// - new_root_path: New root device path.
+/// - datastore_path: Path to the datastore.
+///
+/// On failure, only prints out the error message.
+fn persist_background_log(new_root_path: &Path, datastore_path: &Path) {
+    // Fetch the directory path from the full datastore path
+    let Some(datastore_dir) = datastore_path.parent() else {
+        warn!(
+            "Failed to get parent directory for datastore path '{}'",
+            datastore_path.display()
+        );
+        return;
+    };
+
+    // Construct the path to copy the log to the new root
+    let new_root_datastore_dir = join_relative(new_root_path, datastore_dir);
+    let new_background_log_path =
+        join_relative(new_root_datastore_dir, TRIDENT_INSTALL_LOG_FILENAME);
+
+    // Ensure all directories in the path exist
+    if let Some(parent) = new_background_log_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            warn!(
+                "Failed to create parent directories for Trident background log copy at path '{}': {}",
+                new_background_log_path.display(),
+                e
+            );
+            return;
+        }
+    }
+
+    debug!(
+        "Persisting Trident background log from '{}' to '{}'",
+        TRIDENT_BACKGROUND_LOG_PATH,
+        new_background_log_path.display()
+    );
+    if let Err(e) = fs::copy(TRIDENT_BACKGROUND_LOG_PATH, &new_background_log_path) {
+        warn!(
+            "Failed to persist Trident background log from '{}' to '{}': {}",
+            TRIDENT_BACKGROUND_LOG_PATH,
+            new_background_log_path.display(),
+            e
+        );
+        return;
+    }
+    debug!(
+        "Successfully persisted Trident background log from '{}' to '{}'",
+        TRIDENT_BACKGROUND_LOG_PATH,
+        new_background_log_path.display()
+    );
 }
 
 #[cfg(feature = "grpc-dangerous")]
@@ -1094,5 +1155,78 @@ mod test {
             get_ab_volume_block_device_id(&host_status, &"non-existent".to_owned(), false),
             None
         );
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+    use pytest_gen::functional_test;
+
+    use tempfile::tempdir;
+
+    #[functional_test]
+    fn test_persist_background_log_success() {
+        // Create temp dir-s as arg-s to persist_background_log() function
+        let new_root_dir = tempdir().unwrap();
+        let datastore_dir = tempdir().unwrap();
+
+        let new_root_path = new_root_dir.path();
+        let datastore_path = datastore_dir.path().join("datastore");
+
+        // Create mock datastore directory and log file
+        fs::create_dir_all(&datastore_path).unwrap();
+
+        persist_background_log(new_root_path, &datastore_path);
+
+        // Check that the log was copied to the expected location
+        let expected_log_path = join_relative(
+            join_relative(new_root_path, datastore_dir.path()),
+            Path::new(TRIDENT_INSTALL_LOG_FILENAME),
+        );
+        assert!(
+            expected_log_path.exists(),
+            "The background log should be copied successfully."
+        );
+
+        // Clean up the copied log file
+        fs::remove_file(&expected_log_path).unwrap();
+    }
+
+    #[functional_test(feature = "helpers", negative = true)]
+    fn test_persist_background_log_failure() {
+        // Create temp dir-s as arg-s to persist_background_log() function
+        let new_root_dir = tempdir().unwrap();
+        let datastore_dir = tempdir().unwrap();
+
+        let new_root_path = new_root_dir.path();
+        let datastore_path = datastore_dir.path().join("datastore");
+
+        // Ensure the directory structure is valid
+        fs::create_dir_all(&datastore_path).unwrap();
+
+        // Copy TRIDENT_BACKGROUND_LOG_PATH to a temp file
+        let temp_log_path = datastore_path.join("temp_log");
+        fs::copy(TRIDENT_BACKGROUND_LOG_PATH, &temp_log_path).unwrap();
+        // Remove TRIDENT_BACKGROUND_LOG_PATH
+        fs::remove_file(TRIDENT_BACKGROUND_LOG_PATH).unwrap();
+
+        persist_background_log(new_root_path, &datastore_path);
+
+        // Check that the log was NOT persisted
+        let expected_log_path = join_relative(
+            join_relative(new_root_path, datastore_dir.path()),
+            Path::new(TRIDENT_INSTALL_LOG_FILENAME),
+        );
+        assert!(
+            !expected_log_path.exists(),
+            "The background log should not be copied if the source file doesn't exist."
+        );
+
+        // Re-create TRIDENT_BACKGROUND_LOG_PATH
+        fs::copy(&temp_log_path, TRIDENT_BACKGROUND_LOG_PATH).unwrap();
+        // Clean up the temp log file
+        fs::remove_file(&temp_log_path).unwrap();
     }
 }

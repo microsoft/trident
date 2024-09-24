@@ -4,7 +4,9 @@ use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand};
 use log::{error, info, LevelFilter};
 
-use trident::{offline_init, BackgroundLog, Logstream, MultiLogger, TraceStream};
+use trident::{
+    offline_init, BackgroundLog, Logstream, MultiLogger, TraceStream, TRIDENT_BACKGROUND_LOG_PATH,
+};
 use trident_api::error::TridentResultExt;
 
 mod validation;
@@ -206,8 +208,7 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
 
     if matches!(args.command, Commands::Run(_)) || matches!(args.command, Commands::RebuildRaid(_))
     {
-        multilogger
-            .add_logger(BackgroundLog::new(trident::TRIDENT_BACKGROUND_LOG_PATH).into_logger());
+        multilogger.add_logger(BackgroundLog::new(TRIDENT_BACKGROUND_LOG_PATH).into_logger());
     }
 
     multilogger.init().context("Logger already registered")?;

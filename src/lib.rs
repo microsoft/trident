@@ -70,8 +70,13 @@ pub const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 /// OS Modifier (EMU) binary path.
 pub const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
 
-/// Trident background log path.
+/// Path to the Trident background log for the current servicing.
 pub const TRIDENT_BACKGROUND_LOG_PATH: &str = "/var/log/trident-full.log";
+
+/// Name of the log file that is persisted from the background log to the new root at the end of
+/// the install. For example, it allows to access the background log recorded during clean install
+/// in the MOS from the updated runtime OS.
+pub const TRIDENT_INSTALL_LOG_FILENAME: &str = "trident-install.log";
 
 /// Trident will by default prevent running Clean Install on deployments other
 /// than from the Provisioning ISO, to limit chances of accidental data loss. To
