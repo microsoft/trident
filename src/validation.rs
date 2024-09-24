@@ -1,12 +1,36 @@
 use std::path::Path;
 
-use anyhow::{bail, Context, Error};
-use log::{debug, error, info};
+use anyhow::{Context, Error};
+use log::{debug, info};
 
+#[cfg(feature = "setsail")]
 use setsail::KsTranslator;
+
 use trident_api::config::{HostConfiguration, HostConfigurationSource, LocalConfigFile};
 
-pub fn validate_setsail(path: impl AsRef<Path>) -> Result<(), Error> {
+#[cfg(feature = "setsail")]
+pub fn validate_setsail(conents: impl AsRef<str>) -> Result<(), Error> {
+    info!("Validating embedded kickstart.");
+    let translator = KsTranslator::new().include_fail_is_error(false);
+    match translator.translate(setsail::load_kickstart_string(conents.as_ref())) {
+        Ok(hc) => {
+            info!("Kickstart is valid.");
+            println!("{}", serde_yaml::to_string(&hc)?);
+        }
+        Err(e) => {
+            log::error!(
+                "Failed to translate kickstart:\n{}",
+                serde_json::to_string_pretty(&e.0)?
+            );
+            anyhow::bail!("Failed to translate kickstart");
+        }
+    };
+
+    Ok(())
+}
+
+#[cfg(feature = "setsail")]
+pub fn validate_setsail_file(path: impl AsRef<Path>) -> Result<(), Error> {
     info!("Validating kickstart file: {}", path.as_ref().display());
     let translator = KsTranslator::new().include_fail_is_error(false);
     match translator.translate(
@@ -14,15 +38,15 @@ pub fn validate_setsail(path: impl AsRef<Path>) -> Result<(), Error> {
             .context(format!("Failed to read {}", path.as_ref().display()))?,
     ) {
         Ok(hc) => {
-            info!("Kickstart is valid");
+            info!("Kickstart is valid.");
             println!("{}", serde_yaml::to_string(&hc)?);
         }
         Err(e) => {
-            error!(
+            log::error!(
                 "Failed to translate kickstart:\n{}",
                 serde_json::to_string_pretty(&e.0)?
             );
-            bail!("Failed to translate kickstart");
+            anyhow::bail!("Failed to translate kickstart");
         }
     };
 
@@ -49,14 +73,23 @@ pub fn validate_trident_config_file(path: impl AsRef<Path>) -> Result<(), Error>
         .context("Trident Config does not contain Host Configuration.")?
     {
         HostConfigurationSource::Embedded(hc) => {
-            info!("Loading embedded Host Configuration");
+            info!("Loading embedded Host Configuration.");
             validate_host_config(*hc)?
         }
         HostConfigurationSource::File(path) => {
             info!("Loading Host Configuration from file: {}", path.display());
             validate_host_config_file(path)?
         }
-        s => bail!("Validation is only supported for Host Configuration, found: {s}",),
+        #[cfg(feature = "setsail")]
+        HostConfigurationSource::KickstartEmbedded(contents) => {
+            info!("Loading embedded kickstart.");
+            validate_setsail(contents)?
+        }
+        #[cfg(feature = "setsail")]
+        HostConfigurationSource::KickstartFile(path) => {
+            info!("Loading kickstart from file: {}", path.display());
+            validate_setsail_file(path)?
+        }
     }
 
     Ok(())

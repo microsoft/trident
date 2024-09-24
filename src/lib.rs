@@ -14,7 +14,6 @@ use osutils::{
     efibootmgr::{self, EfiBootManagerOutput},
     path,
 };
-use setsail::KsTranslator;
 use trident_api::config::{
     HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
 };
@@ -26,6 +25,9 @@ use trident_api::{
     },
     status::{HostStatus, ServicingState, ServicingType},
 };
+
+#[cfg(feature = "setsail")]
+use setsail::KsTranslator;
 
 use crate::datastore::DataStore;
 use crate::engine::{bootentries, storage::tabfile};
@@ -177,6 +179,7 @@ impl Trident {
         source: &HostConfigurationSource,
     ) -> Result<Box<HostConfiguration>, TridentError> {
         let host_config = match source {
+            // Load the host configuration from a file.
             HostConfigurationSource::File(path) => {
                 info!("Loading host config from file at path '{}'", path.display());
 
@@ -189,13 +192,23 @@ impl Trident {
                     path: path.display().to_string(),
                 })?
             }
+
+            // Use the embedded host configuration.
             HostConfigurationSource::Embedded(contents) => contents.clone(),
+
+            // When enabled, load a kickstart body from the local config and translate it to a host
+            // configuration.
+            #[cfg(feature = "setsail")]
             HostConfigurationSource::KickstartEmbedded(contents) => Box::new(
                 KsTranslator::new()
                     .run_pre_scripts(true)
                     .translate(setsail::load_kickstart_string(contents))
                     .structured(InvalidInputError::TranslateKickstart)?,
             ),
+
+            // When enabled, load a kickstart file from the local config and translate it to a host
+            // configuration.
+            #[cfg(feature = "setsail")]
             HostConfigurationSource::KickstartFile(ref file) => Box::new(
                 KsTranslator::new()
                     .run_pre_scripts(true)
@@ -222,6 +235,7 @@ impl Trident {
         // later stage so %pre scripts can run and do their thing. It would also mean parsing twice,
         // unless we updated the config file in place. That sounds like a can of worms and we still
         // have the issue about being too early.
+        #[cfg(feature = "setsail")]
         if let Some(
             HostConfigurationSource::KickstartFile(_)
             | HostConfigurationSource::KickstartEmbedded(_),

@@ -46,7 +46,7 @@ url = { version = "2.5.0", features = ["serde"] }
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
 
 osutils = { path = "osutils" }
-setsail = { path = "setsail" }
+setsail = { path = "setsail", optional = true }
 trident_api = { path = "trident_api" }
 
 # Optional dependencies used by functional tests
@@ -77,9 +77,17 @@ dangerous-options = [
     "setsail/dangerous-options",
 ]
 sysupdate = ["trident_api/sysupdate"]
-functional-test = ["pytest", "pytest_gen", "osutils/functional-test", "indoc", "inventory", "maplit"]
+functional-test = [
+    "pytest",
+    "pytest_gen",
+    "osutils/functional-test",
+    "indoc",
+    "inventory",
+    "maplit",
+]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
 grpc-dangerous = ["prost", "tonic", "tokio-stream", "tonic-build"]
+setsail = ["dep:setsail", "trident_api/setsail"]
 
 [workspace]
 members = [

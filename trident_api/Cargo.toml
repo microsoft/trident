@@ -45,3 +45,6 @@ schema = ["schemars", "serde_json", "indoc"]
 
 # Enables all required features for building docs
 documentation = ["schema", "samples", "documented"]
+
+# Enables taking in kickstart
+setsail = []

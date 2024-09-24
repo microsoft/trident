@@ -52,10 +52,6 @@ enum Commands {
     #[clap(name = "get")]
     GetHostStatus(GetArgs),
 
-    /// Validates input KickStart file
-    // TODO(5910): Remove this in the future
-    ParseKickstart { path: PathBuf },
-
     /// Validate HostConfiguration
     ///
     /// Provide one Trident Configuration file or one Host Configuration file.
@@ -100,8 +96,6 @@ fn run_trident(
                 }
             }
         }
-
-        Commands::ParseKickstart { path } => return validation::validate_setsail(path),
 
         #[cfg(feature = "pytest-generator")]
         Commands::Pytest => {
@@ -168,9 +162,7 @@ fn run_trident(
                 .retrieve_host_status(&args.status)
                 .context("Failed to retrieve Host Status")?,
 
-            Commands::ParseKickstart { .. }
-            | Commands::Validate { .. }
-            | Commands::OfflineInitialize { .. } => unreachable!(),
+            Commands::Validate { .. } | Commands::OfflineInitialize { .. } => unreachable!(),
 
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => unreachable!(),

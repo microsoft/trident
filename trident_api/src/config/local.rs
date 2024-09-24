@@ -82,12 +82,14 @@ pub struct LocalConfigFile {
     /// configuration that Trident will apply to the host (same payload as
     /// `kickstart-file`, but directly embedded in the Trident configuration). WIP,
     /// early preview only.
+    #[cfg(feature = "setsail")]
     #[serde(skip_serializing_if = "Option::is_none")]
     kickstart: Option<String>,
 
     /// Path to the kickstart file. This is a kickstart file that describes the host
     /// configuration in the kickstart format. WIP, early preview only. TODO:
     /// document what is supported.
+    #[cfg(feature = "setsail")]
     #[serde(skip_serializing_if = "Option::is_none")]
     kickstart_file: Option<PathBuf>,
 }
@@ -98,7 +100,9 @@ impl LocalConfigFile {
         let config_sources = [
             self.host_configuration.is_some(),
             self.host_configuration_file.is_some(),
+            #[cfg(feature = "setsail")]
             self.kickstart.is_some(),
+            #[cfg(feature = "setsail")]
             self.kickstart_file.is_some(),
         ]
         .into_iter()
@@ -114,11 +118,17 @@ impl LocalConfigFile {
                 HostConfigurationSource::Embedded(host_configuration.clone())
             } else if let Some(host_configuration_file) = &self.host_configuration_file {
                 HostConfigurationSource::File(host_configuration_file.clone())
-            } else if let Some(kickstart) = &self.kickstart {
-                HostConfigurationSource::KickstartEmbedded(kickstart.clone())
-            } else if let Some(kickstart_file) = &self.kickstart_file {
-                HostConfigurationSource::KickstartFile(kickstart_file.clone())
             } else {
+                #[cfg(feature = "setsail")]
+                if let Some(kickstart) = &self.kickstart {
+                    HostConfigurationSource::KickstartEmbedded(kickstart.clone())
+                } else if let Some(kickstart_file) = &self.kickstart_file {
+                    HostConfigurationSource::KickstartFile(kickstart_file.clone())
+                } else {
+                    return Ok(None);
+                }
+
+                #[cfg(not(feature = "setsail"))]
                 return Ok(None);
             },
         ))
@@ -137,9 +147,11 @@ impl LocalConfigFile {
             HostConfigurationSource::File(host_configuration_file) => {
                 self.host_configuration_file = Some(host_configuration_file);
             }
+            #[cfg(feature = "setsail")]
             HostConfigurationSource::KickstartEmbedded(kickstart) => {
                 self.kickstart = Some(kickstart);
             }
+            #[cfg(feature = "setsail")]
             HostConfigurationSource::KickstartFile(kickstart_file) => {
                 self.kickstart_file = Some(kickstart_file);
             }
@@ -184,7 +196,9 @@ impl LocalConfigFile {
 pub enum HostConfigurationSource {
     File(PathBuf),
     Embedded(Box<HostConfiguration>),
+    #[cfg(feature = "setsail")]
     KickstartFile(PathBuf),
+    #[cfg(feature = "setsail")]
     KickstartEmbedded(String),
 }
 
@@ -193,9 +207,11 @@ impl std::fmt::Display for HostConfigurationSource {
         match self {
             HostConfigurationSource::File(path) => write!(f, "file: {}", path.display()),
             HostConfigurationSource::Embedded(_) => write!(f, "embedded"),
+            #[cfg(feature = "setsail")]
             HostConfigurationSource::KickstartFile(path) => {
                 write!(f, "kickstart file: {}", path.display())
             }
+            #[cfg(feature = "setsail")]
             HostConfigurationSource::KickstartEmbedded(_) => write!(f, "kickstart embedded"),
         }
     }
@@ -262,7 +278,9 @@ mod tests {
         assert!(local_config.grpc.is_some());
         assert!(local_config.host_configuration.is_some());
         assert!(local_config.host_configuration_file.is_none());
+        #[cfg(feature = "setsail")]
         assert!(local_config.kickstart.is_none());
+        #[cfg(feature = "setsail")]
         assert!(local_config.kickstart_file.is_none());
     }
 
@@ -277,7 +295,9 @@ mod tests {
 
         assert!(cfg.host_configuration.is_some());
         assert!(cfg.host_configuration_file.is_none());
+        #[cfg(feature = "setsail")]
         assert!(cfg.kickstart.is_none());
+        #[cfg(feature = "setsail")]
         assert!(cfg.kickstart_file.is_none());
 
         assert!(matches!(
@@ -292,7 +312,9 @@ mod tests {
 
         assert!(cfg.host_configuration.is_none());
         assert!(cfg.host_configuration_file.is_some());
+        #[cfg(feature = "setsail")]
         assert!(cfg.kickstart.is_none());
+        #[cfg(feature = "setsail")]
         assert!(cfg.kickstart_file.is_none());
 
         assert!(matches!(
@@ -300,36 +322,39 @@ mod tests {
             Some(HostConfigurationSource::File(_))
         ));
 
-        let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
+        #[cfg(feature = "setsail")]
+        {
+            let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
             kickstart: |
               part / --option --option
         "#})
-        .unwrap();
+            .unwrap();
 
-        assert!(cfg.host_configuration.is_none());
-        assert!(cfg.host_configuration_file.is_none());
-        assert!(cfg.kickstart.is_some());
-        assert!(cfg.kickstart_file.is_none());
+            assert!(cfg.host_configuration.is_none());
+            assert!(cfg.host_configuration_file.is_none());
+            assert!(cfg.kickstart.is_some());
+            assert!(cfg.kickstart_file.is_none());
 
-        assert!(matches!(
-            cfg.get_host_configuration_source().unwrap(),
-            Some(HostConfigurationSource::KickstartEmbedded(_))
-        ));
+            assert!(matches!(
+                cfg.get_host_configuration_source().unwrap(),
+                Some(HostConfigurationSource::KickstartEmbedded(_))
+            ));
 
-        let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
+            let cfg: LocalConfigFile = serde_yaml::from_str(indoc! {r#"
             kickstartFile: /tmp/foo.yaml
         "#})
-        .unwrap();
+            .unwrap();
 
-        assert!(cfg.host_configuration.is_none());
-        assert!(cfg.host_configuration_file.is_none());
-        assert!(cfg.kickstart.is_none());
-        assert!(cfg.kickstart_file.is_some());
+            assert!(cfg.host_configuration.is_none());
+            assert!(cfg.host_configuration_file.is_none());
+            assert!(cfg.kickstart.is_none());
+            assert!(cfg.kickstart_file.is_some());
 
-        assert!(matches!(
-            cfg.get_host_configuration_source().unwrap(),
-            Some(HostConfigurationSource::KickstartFile(_))
-        ));
+            assert!(matches!(
+                cfg.get_host_configuration_source().unwrap(),
+                Some(HostConfigurationSource::KickstartFile(_))
+            ));
+        }
     }
 
     #[test]
