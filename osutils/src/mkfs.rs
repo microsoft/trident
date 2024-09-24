@@ -39,7 +39,11 @@ mod functional_test {
 
     use pytest_gen::functional_test;
 
-    use crate::testutils::repart::{self, TEST_DISK_DEVICE_PATH};
+    use crate::{
+        partition_types::DiscoverablePartitionType,
+        repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
+        testutils::repart::{self, TEST_DISK_DEVICE_PATH},
+    };
 
     /// This function wipes the /dev/sdb device and ensures the /mnt
     /// directory exists.
@@ -176,6 +180,36 @@ mod functional_test {
             .run_and_check()
             .unwrap();
         assert!(Path::new("/mnt/test").exists());
+        Command::new("umount").arg("/mnt").run_and_check().unwrap();
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_create_ntfs() {
+        setup_test();
+
+        // NTFS requires partitions
+        // Create parititions on block device
+        let repart = SystemdRepartInvoker::new(TEST_DISK_DEVICE_PATH, RepartEmptyMode::Force)
+            .with_partition_entries(vec![RepartPartitionEntry {
+                id: "1".to_string(),
+                partition_type: DiscoverablePartitionType::Root,
+                label: Some("1".to_string()),
+                size_max_bytes: Some(10 * 1048576),
+                size_min_bytes: Some(10 * 1048576),
+            }]);
+        let partition1 = &repart.execute().unwrap()[0];
+
+        // Create a NTFS filesystem on the partition.
+        super::run(&partition1.node, MkfsFileSystemType::Ntfs).unwrap();
+        Command::new("mount")
+            .arg(&partition1.node)
+            .arg("/mnt")
+            .run_and_check()
+            .unwrap();
+        Command::new("touch")
+            .arg("/mnt/test")
+            .run_and_check()
+            .unwrap();
         Command::new("umount").arg("/mnt").run_and_check().unwrap();
     }
 }
