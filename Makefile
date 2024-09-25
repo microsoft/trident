@@ -286,9 +286,7 @@ validate-configs:
 
 .PHONY: generate-mermaid-diagrams
 generate-mermaid-diagrams: mmdc
-	rm -f $(abspath dev-docs/diagrams)/*.png
 	$(MAKE) $(addsuffix .png, $(basename $(wildcard $(abspath dev-docs/diagrams)/*.mmd)))
-	rm -f $(abspath dev-docs/diagrams/state-diagrams)/*.png
 	$(MAKE) $(addsuffix .png, $(basename $(wildcard $(abspath dev-docs/diagrams/state-diagrams)/*.mmd)))
 
 mmdc:
