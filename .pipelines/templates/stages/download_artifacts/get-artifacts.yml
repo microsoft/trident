@@ -11,7 +11,7 @@ parameters:
 
   - name: tridentPipelineRunId
     type: string
-    default: ''
+    default: ""
     displayName: Pipeline run ID
 
   - name: branch
@@ -33,17 +33,17 @@ stages:
         timeoutInMinutes: 10
         pool:
           type: linux
-      
+
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
           ob_artifactBaseName: "trident-binaries"
 
         steps:
           - task: DownloadPipelineArtifact@2
-            displayName: "Download trident rpms anc container"
+            displayName: "Download trident rpms and container"
             inputs:
               source: specific
-              project: 'ECF'
+              project: "ECF"
               definition: ${{ parameters.definition }}
               runVersion: ${{ parameters.runVersion }}
               branchName: "refs/heads/${{ parameters.branch }}"
@@ -57,7 +57,7 @@ stages:
         timeoutInMinutes: 10
         pool:
           type: linux
-      
+
         variables:
           ob_outputDirectory: "$(System.ArtifactsDirectory)/container/"
           ob_artifactBaseName: "trident-docker-image"
@@ -67,7 +67,7 @@ stages:
             displayName: "Download Trident container"
             inputs:
               source: specific
-              project: 'ECF'
+              project: "ECF"
               definition: ${{ parameters.definition }}
               runVersion: ${{ parameters.runVersion }}
               branchName: "refs/heads/${{ parameters.branch }}"
@@ -82,7 +82,7 @@ stages:
         timeoutInMinutes: 10
         pool:
           type: linux
-      
+
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
           ob_artifactBaseName: "trident-installer-testimage"
@@ -92,7 +92,7 @@ stages:
             displayName: "Download installer-iso/installer.iso"
             inputs:
               source: specific
-              project: 'ECF'
+              project: "ECF"
               definition: ${{ parameters.definition }}
               runVersion: ${{ parameters.runVersion }}
               branchName: "refs/heads/${{ parameters.branch }}"
@@ -101,12 +101,12 @@ stages:
               artifactName: "trident-installer-testimage"
               targetPath: $(ob_outputDirectory)
 
-      - job: TridentContainerInstallerTestimage 
+      - job: TridentContainerInstallerTestimage
         displayName: Download trident-container-installer-testimage
         timeoutInMinutes: 10
         pool:
           type: linux
-      
+
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
           ob_artifactBaseName: "trident-container-installer-testimage"
@@ -116,7 +116,7 @@ stages:
             displayName: "Download installer-iso/installer.iso"
             inputs:
               source: specific
-              project: 'ECF'
+              project: "ECF"
               definition: ${{ parameters.definition }}
               runVersion: ${{ parameters.runVersion }}
               branchName: "refs/heads/${{ parameters.branch }}"
@@ -130,7 +130,7 @@ stages:
         timeoutInMinutes: 10
         pool:
           type: linux
-      
+
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
           ob_artifactBaseName: "trident-testimage"
@@ -139,7 +139,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             inputs:
               source: specific
-              project: 'ECF'
+              project: "ECF"
               definition: ${{ parameters.definition }}
               runVersion: ${{ parameters.runVersion }}
               branchName: "refs/heads/${{ parameters.branch }}"
@@ -153,7 +153,7 @@ stages:
         timeoutInMinutes: 10
         pool:
           type: linux
-      
+
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
           ob_artifactBaseName: "trident-verity-testimage"
@@ -162,7 +162,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             inputs:
               source: specific
-              project: 'ECF'
+              project: "ECF"
               definition: ${{ parameters.definition }}
               runVersion: ${{ parameters.runVersion }}
               branchName: "refs/heads/${{ parameters.branch }}"
@@ -176,7 +176,7 @@ stages:
         timeoutInMinutes: 10
         pool:
           type: linux
-      
+
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
           ob_artifactBaseName: "go-tools"
@@ -185,7 +185,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             inputs:
               source: specific
-              project: 'ECF'
+              project: "ECF"
               definition: ${{ parameters.definition }}
               runVersion: ${{ parameters.runVersion }}
               branchName: "refs/heads/${{ parameters.branch }}"

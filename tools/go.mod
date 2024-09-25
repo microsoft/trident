@@ -15,6 +15,8 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
+require github.com/vishvananda/netns v0.0.4 // indirect
+
 require (
 	github.com/VictorLowther/simplexml v0.0.0-20180716164440-0bff93621230 // indirect
 	github.com/VictorLowther/soap v0.0.0-20150314151524-8e36fca84b22 // indirect
@@ -41,6 +43,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stmcginnis/gofish v0.19.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/vishvananda/netlink v1.3.0
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.27.0
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect

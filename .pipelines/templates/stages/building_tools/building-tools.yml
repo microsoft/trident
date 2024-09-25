@@ -7,6 +7,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: buildMiniproxy
+    type: boolean
+    default: true
+
 stages:
   - stage: BuildingTools
     displayName: Building Tools
@@ -33,7 +37,7 @@ stages:
                   mv bin/netlaunch $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
                 displayName: "Building netlaunch"
-          
+
           - ${{ if eq(parameters.buildNetlaunch, true) }}:
               - bash: |
                   set -eux
@@ -42,3 +46,12 @@ stages:
                   mv bin/netlisten $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
                 displayName: "Building netlisten"
+
+          - ${{ if eq(parameters.buildMiniproxy, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/miniproxy
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/miniproxy $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building miniproxy"

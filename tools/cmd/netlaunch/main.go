@@ -4,6 +4,7 @@ Copyright © 2023 Microsoft Corporation
 package main
 
 import (
+	"argus_toolkit/pkg/netfinder"
 	"argus_toolkit/pkg/phonehome"
 	"argus_toolkit/pkg/serial"
 	"sync"
@@ -38,7 +39,7 @@ var MagicString = `#8505c8ab802dd717290331acd0592804c4e413b030150c53f5018ac998b7
 
 type NetLaunchConfig struct {
 	Netlaunch struct {
-		AnnounceIp   string
+		AnnounceIp   *string
 		AnnouncePort *uint16
 		Bmc          struct {
 			Ip            string
@@ -175,7 +176,21 @@ var rootCmd = &cobra.Command{
 		server := &http.Server{}
 
 		// Create the final address that will be announced to the BMC and Trident.
-		announceAddress := fmt.Sprintf("%s:%s", config.Netlaunch.AnnounceIp, announcePort)
+		var announceIp string
+		if config.Netlaunch.AnnounceIp != nil {
+			// If an IP is specified, use it.
+			announceIp = *config.Netlaunch.AnnounceIp
+		} else {
+			// Otherwise, try to be clever...
+			// We need to find the IP of the local interface that can reach the BMC.
+			log.Warn("No announce IP specified. Attempting to find local IP to announce based on BMC IP.")
+			announceIp, err = netfinder.FindLocalIpForTargetIp(config.Netlaunch.Bmc.Ip)
+			if err != nil {
+				log.WithError(err).Fatalf("failed to find local IP for BMC")
+			}
+		}
+
+		announceAddress := fmt.Sprintf("%s:%s", announceIp, announcePort)
 		log.WithField("address", announceAddress).Info("Announcing address")
 
 		// A flag to record if we've already logged the ISO being fetched by the

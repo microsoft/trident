@@ -1,0 +1,104 @@
+parameters:
+  - name: installerISO
+    displayName: "Image used for the installer, source of trident (container vs host)"
+    type: string
+    default: trident-installer-testimage
+    values:
+      - trident-installer-testimage
+      - trident-container-installer-testimage
+
+  - name: targetDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)/artifacts/test-image"
+
+  - name: isoDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)/artifacts/iso"
+
+  - name: toolsDirectory
+    type: string
+    default: "$(Build.SourcesDirectory)/bin"
+
+  - name: testImageDir
+    type: string
+    default: "$(System.ArtifactsDirectory)/testimage"
+
+  - name: testImageDirVerity
+    type: string
+    default: "$(System.ArtifactsDirectory)/verity-testimage"
+
+steps:
+  - ${{ if eq(parameters.installerISO, 'trident-container-installer-testimage') }}:
+      - task: DownloadPipelineArtifact@2
+        displayName: "Download Trident container"
+        inputs:
+          buildType: current
+          artifactName: "trident-docker-image"
+          patterns: "**/trident-container.tar.gz"
+          targetPath: "${{ parameters.targetDirectory }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download ${{ parameters.installerISO }}"
+    inputs:
+      buildType: current
+      artifactName: "${{ parameters.installerISO }}"
+      targetPath: "${{ parameters.isoDirectory }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download trident-testimage"
+    inputs:
+      buildType: current
+      artifactName: "trident-testimage"
+      targetPath: "${{ parameters.testImageDir }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download trident-verity-testimage"
+    inputs:
+      buildType: current
+      artifactName: "trident-verity-testimage"
+      targetPath: "${{ parameters.testImageDirVerity }}"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download go-tools"
+    inputs:
+      buildType: current
+      artifactName: "go-tools"
+      patterns: |
+        netlaunch
+        netlisten
+      targetPath: "${{ parameters.toolsDirectory }}"
+
+  - bash: |
+      set -eux
+
+      # Set tools to be executable
+      chmod +x ${{ parameters.toolsDirectory }}/net*
+
+      # Create the target directory
+      mkdir -p "${{ parameters.targetDirectory }}"
+
+      # If testImageDir is not an empty string, rename the Trident test images
+      if [ -n "${{ parameters.testImageDir }}" ]; then
+        mv "${{ parameters.testImageDir }}/esp.raw.zst" "${{ parameters.targetDirectory }}/esp.rawzst"
+        mv "${{ parameters.testImageDir }}/root.raw.zst" "${{ parameters.targetDirectory }}/root.rawzst"
+      fi
+
+      # If testImageDirVerity is not an empty string, rename the Trident verity test images
+      if [ -n "${{ parameters.testImageDirVerity }}" ]; then
+        # Verity image for functional testing and e2e testing
+        mv "${{ parameters.testImageDirVerity }}/esp.raw.zst" "${{ parameters.targetDirectory }}/verity_esp.rawzst"
+        mv "${{ parameters.testImageDirVerity }}/boot.raw.zst" "${{ parameters.targetDirectory }}/verity_boot.rawzst"
+        mv "${{ parameters.testImageDirVerity }}/root.raw.zst" "${{ parameters.targetDirectory }}/verity_root.rawzst"
+        mv "${{ parameters.testImageDirVerity }}/root-hash.raw.zst" "${{ parameters.targetDirectory }}/verity_roothash.rawzst"
+        mv "${{ parameters.testImageDirVerity }}/var.raw.zst" "${{ parameters.targetDirectory }}/verity_var.rawzst"
+      fi
+
+      # List tools in the target directory
+      ls -lh "${{ parameters.toolsDirectory }}"
+
+      # List ISOs in the target directory
+      ls -lh "${{ parameters.isoDirectory }}"
+
+      # List images in the target directory
+      ls -lh "${{ parameters.targetDirectory }}"
+    displayName: "Move and Rename Trident Test Images"

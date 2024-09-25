@@ -1,36 +1,4 @@
 parameters:
-  - name: httpProxy
-    type: string
-    default: "http://172.16.1.10:3128"
-
-  - name: noProxy
-    type: string
-    default: "10.96.0.0/12,10.244.0.0/16,172.27.254.0/24,.svc,127.0.0.1,localhost"
-
-  - name: isoHttpdServerIp
-    type: string
-    default: "10.248.0.4"
-
-  - name: bmcIp
-    type: string
-    default: "10.8.3.20"
-
-  - name: oamIp
-    type: string
-    default: "10.8.4.50"
-
-  - name: oamGateway
-    type: string
-    default: "10.8.6.1"
-
-  - name: interfaceForOamIp
-    type: string
-    default: "eno8303"
-
-  - name: oamMacAddress
-    type: string
-    default: "c8:4b:d6:7a:73:c6"
-
   - name: jobName
     type: string
     default: trident_baremetal_tests
@@ -56,11 +24,6 @@ parameters:
     values:
       - host
       - container
-
-  - name: deleteIsoOnCleanup
-    displayName: Delete ISO from HTTP server
-    type: boolean
-    default: true
 
 stages:
   - stage: BaremetalDeploymentTesting_${{ parameters.runtimeEnv }}
@@ -98,6 +61,20 @@ stages:
           maxParallel: 1
 
         variables:
+          # Definition of what server to use for the test and related settings!
+          - name: BAREMETAL_BMC_IP
+            value: "10.8.3.20"
+          - name: BAREMETAL_OAM_INTERFACE
+            value: "eno8303"
+          - name: BAREMETAL_OAM_IP
+            value: "10.8.4.50"
+          - name: BAREMETAL_OAM_GATEWAY
+            value: "10.8.4.1"
+          - name: BAREMETAL_OAM_MAC
+            value: "c8:4b:d6:7a:73:c6"
+          - name: BAREMETAL_LAB_CANARY_IP
+            value: "10.8.6.1"
+
           - name: TRIDENT_CONFIGURATION_NAME
             value: $(configuration)
 
@@ -110,66 +87,130 @@ stages:
           - name: TRIDENT_CONFIG_FILE
             value: $(TRIDENT_CONFIG_PATH)/trident-config.yaml
 
-          - name: SSH_KEY_FILE
-            value: $(Pipeline.Workspace)/ssh-key
-
           - name: ob_outputDirectory
             value: $(Build.SourcesDirectory)/deployment_logs
 
           - name: ob_artifactBaseName
             value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_deployment_log_$(System.JobAttempt)
 
-          - name: K8S_SANITY_DIR
-            value: $(Build.SourcesDirectory)/platform-tests/k8s-sanity
-
-          - name: netlistenPort
+          - name: NETLAUNCH_PORT
             value: 4000
 
           - group: baremetal_controller
 
         steps:
-          - checkout: platform-tests
-            fetchDepth: 1
+          - bash: |
+              set -xe
+              ping -c 3 "${{ variables.BAREMETAL_LAB_CANARY_IP }}"
+            displayName: "Validate if the Baremetal lab is up and running"
 
           - bash: |
               set -xe
-              ping -c 10 ${{ parameters.oamGateWay }}
-            displayName: "Validate if the Baremetal lab is up and running"
 
-          - template: baremetal-prep.yml
-            parameters:
-              k8sSanityDir: $(K8S_SANITY_DIR)
-              isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
-              sshKeyFile: $(SSH_KEY_FILE)
+              # Install packages.
+              sudo apt update
+              sudo apt install -y \
+                libgirepository1.0-dev \
+                python3-venv \
+                python3-dev \
+                openssh-client \
+                ncat \
+                libcairo2-dev \
+                acl \
+                protobuf-compiler
+              sudo snap install yq
+              setfacl --help
 
+              # Install poetry
+              curl -sSL https://install.python-poetry.org | python3 -
+            displayName: "Install dependencies"
+            retryCountOnTaskFailure: 3
+
+          # Run trident prep
           - template: ../testing_common/trident-prep.yml
             parameters:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
 
-          - template: baremetal-update-trident-host-config.yml
-            parameters:
-              isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
-              oamIp: ${{ parameters.oamIp }}
-              sshKeyFile: $(SSH_KEY_FILE)
-              interfaceForOamIp: ${{ parameters.interfaceForOamIp }}
-              tridentConfigFile: $(TRIDENT_CONFIG_FILE)
+          # Download all test images
+          - template: ../testing_common/download-test-images.yml
 
-          - template: baremetal-deploy.yml
-            parameters:
-              jobName: ${{ parameters.jobName }}_$(TRIDENT_CONFIGURATION_NAME)
-              bmcUsername: $(baremetal_controller.bmc_username)
-              bmcPassword: $(baremetal_controller.bmc_password)
-              bmcIp: ${{ parameters.bmcIp }}
-              oamIp: ${{ parameters.oamIp }}
-              oamMacAddress: ${{ parameters.oamMacAddress }}
-              isoHttpdServerIp: ${{ parameters.isoHttpdServerIp }}
-              noProxy: ${{ parameters.noProxy }}
-              httpProxy: ${{ parameters.httpProxy }}
-              k8sSanityDir: $(K8S_SANITY_DIR)
-              hostConfigYaml: $(TRIDENT_CONFIG_FILE)
-              sshKeyFile: $(SSH_KEY_FILE)
-              installerIsoDirectory: $(System.ArtifactsDirectory)/trident-installer-testimage
-              netlistenPort: ${{variables.netlistenPort}}
+          - bash: |
+              set -xe
+
+              # Add poetry to PATH.
+              export PATH="$HOME/.local/bin:$PATH"
+
+              ls -l
+
+              # Run script to update the trident.yaml file
+              python3 ./.pipelines/templates/stages/testing_baremetal/update_host_config.py \
+                    --trident-yaml $(TRIDENT_CONFIG_FILE) \
+                    --oam-ip ${{ variables.BAREMETAL_OAM_IP }} \
+                    --oam-gateway ${{ variables.BAREMETAL_OAM_GATEWAY }} \
+                    --interface-name ${{ variables.BAREMETAL_OAM_INTERFACE }} \
+                    --oam-mac ${{ variables.BAREMETAL_OAM_MAC }}
+              cat $(TRIDENT_CONFIG_FILE)
+            env:
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+            displayName: "Update Trident Config to inject static IP for OAM interface"
+
+          - bash: |
+              set -xe
+              cargo run -- validate --config $(TRIDENT_CONFIG_FILE)
+            displayName: "Validate the modified HostConfig by running Trident validate"
+
+          - bash: |
+              set -eux
+
+              cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml
+              netlaunch:
+                bmc:
+                  ip: "${{ variables.BAREMETAL_BMC_IP }}"
+                  username: "$(baremetal_controller.bmc_username)"
+                  password: "$(baremetal_controller.bmc_password)"
+                  serialOverSsh:
+                    sshPort: 22
+                    comPort: com2
+                    output:  "baremetal-serial.log"
+              EOF
+
+              cat $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml | grep -v password
+            displayName: "Write Netlaunch configuration"
+
+          - bash: |
+              set -eux
+
+              # rerun is expected to fail ONCE
+              MAX_FAILURES_FLAG=""
+              if [ ${{ variables['TRIDENT_CONFIGURATION_NAME'] }} == 'rerun' ]; then
+                MAX_FAILURES_FLAG="--max-failures 1"
+              fi
+
+              ./bin/netlaunch \
+                  --iso $(TRIDENT_SOURCE_DIR)/artifacts/iso/trident-installer-testimage.iso \
+                  --config $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml \
+                  --trident $(TRIDENT_CONFIG_FILE) \
+                  --servefolder ./artifacts/test-image \
+                  --logstream $MAX_FAILURES_FLAG \
+                  --trace-file $(TRIDENT_SOURCE_DIR)/trident-metrics.jsonl \
+                  --log-trace --force-color \
+                  --port ${{ variables.NETLAUNCH_PORT }} 2>&1 | tee ./clean-install-deployment.log
+            timeoutInMinutes: 30
+            workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
+            displayName: "Run netlaunch for testing"
+
+          - bash: |
+              SERIAL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log"
+
+              if [ -f $SERIAL_LOG ]; then
+                echo "Serial log found:"
+                cat $SERIAL_LOG
+              else
+                echo "Serial log not found!"
+                echo "(No serial log captured)" > $SERIAL_LOG
+              fi
+            displayName: "Output serial log"
+            continueOnError: true
 
           - template: ../testing_common/trident-metrics.yml
             parameters:
@@ -183,29 +224,11 @@ stages:
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: dev
 
-          - ${{ if parameters.deleteIsoOnCleanup }}:
-              - bash: |
-                  set -xe
-
-                  # Add poetry to PATH.
-                  export PATH="$HOME/.local/bin:$PATH"
-
-                  cd $(K8S_SANITY_DIR)
-
-                  # Eject the virtual CD from the BMC and delete the ISO file from the remote store
-                  sudo env "PATH=$PATH" poetry run python3 $(Pipeline.Workspace)/s/platform-tests/bare-metal/scripts/reset.py \
-                    --baremetal-config $(echo $DEPLOYMENT_BMC_CONFIG_FILE | tr -d "'") \
-                    --livecd-httpd-ip ${{ parameters.isoHttpdServerIp }} \
-                    --livecd-httpd-ssh-key $(httpdPrivKey.secureFilePath) \
-                    --iso-filename $(basename $(echo $PATCHED_INSTALLER_ISO | tr -d "'"))
-                condition: always()
-                displayName: "Delete generated ISO"
-
           - template: ../testing_common/e2e-test-run.yml
             parameters:
               buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: bareMetal
               tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
-              hostIp: ${{ parameters.oamIp }}
+              hostIp: ${{ variables.BAREMETAL_OAM_IP }}
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
-              netlistenPort: ${{variables.netlistenPort}}
+              netlistenPort: ${{ variables.NETLAUNCH_PORT }}
