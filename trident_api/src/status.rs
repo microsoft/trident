@@ -151,8 +151,8 @@ impl HostStatus {
                 ServicingState::Provisioned | ServicingState::AbUpdateFailed => {
                     self.ab_active_volume
                 }
-                // This should never happen, as we should not be in Staging, Staged, Finalizing, or
-                // Finalized states if there is no servicing in progress.
+                // This should never happen, as we should not be in Staging, Staged, or Finalized
+                // states if there is no servicing in progress.
                 _ => None,
             },
         }

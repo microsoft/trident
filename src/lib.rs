@@ -592,7 +592,7 @@ impl Trident {
                     }
                 } else {
                     // If servicing state is Provisioned, need to refresh host status. If servicing
-                    // state is Staging OR Finalizing, need to re-do update.
+                    // state is Staging, need to re-do update.
                     //
                     // State cannot be NotProvisioned or Finalized here; Staged and AbUpdateFailed
                     // were addressed above
@@ -647,7 +647,7 @@ impl Trident {
                         Ok(())
                     }
                 } else {
-                    // If servicing state is Staging OR Finalizing, need to re-do update.
+                    // If servicing state is Staging, need to re-do update.
                     //
                     // State cannot be NotProvisioned, Provisioned, AbUpdateFailed, or
                     // Finalized here; Staged and CleanInstallFailed were addressed above.
