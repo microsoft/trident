@@ -10,9 +10,14 @@ parameters:
   - name: hostIp
     type: string
 
+  - name: tridentSourceDirectory
+    type: string  
+
 steps:
   - bash: |
       set -eux
+      echo "Efibootmgr entries in the VM."
+      ssh -o StrictHostKeyChecking=no -i ${{ parameters.sshKeyPath }} ${{ parameters.userName }}@${{ parameters.hostIp }} "sudo efibootmgr"
       sudo virsh shutdown virtdeploy-vm-0
       sudo rm -f /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-1-volume.qcow2
       sudo qemu-img create -f qcow2 /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-1-volume.qcow2 16G
@@ -20,8 +25,18 @@ steps:
 
   - bash: |
       set -eux
+      echo "Dump the VM before boot order change."
+      until sudo virsh dumpxml virtdeploy-vm-0; do 
+          sudo virsh list
+          sleep 0.1
+      done
       echo "Changing the boot order of the VM to boot from sda."
       python3 $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_vm/update-vm-bootorder.py
+      echo "Dump the VM after boot order change."
+      until sudo virsh dumpxml virtdeploy-vm-0; do 
+          sudo virsh list
+          sleep 0.1
+      done
     displayName: "Change boot order"
 
   - bash: |
@@ -52,6 +67,35 @@ steps:
       echo "The domain did not shut down after 30 attempts."
 
     displayName: "Restart the VM"
+
+  - bash: |
+      set -eux
+      # Name of the domain
+      DOMAIN_NAME="virtdeploy-vm-0"
+      
+      # Get the VM serial log file path
+      VM_SERIAL_LOG=$(sudo virsh dumpxml $DOMAIN_NAME | grep -A 1 console | grep source | cut -d"'" -f2)
+
+      # Wait until the serial log file is created
+      until [ -c "$VM_SERIAL_LOG" ]; do
+          sleep 0.1
+      done
+
+      echo "Found VM serial log file: $VM_SERIAL_LOG"
+      echo "VM serial log:"
+
+      # Execute wait_for_login.py to retrieve the serial log
+      sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
+          -d "$VM_SERIAL_LOG" \
+          -o ./serial.log \
+          -t 300
+
+      # Capture the exit code from wait_for_login.py
+      WAIT_FOR_LOGIN_EXITCODE=$?
+
+      # Exit with the captured exit code
+      exit $WAIT_FOR_LOGIN_EXITCODE 
+    displayName: "Collect Serial Log of the VM"  
 
   - bash: |
       $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh \

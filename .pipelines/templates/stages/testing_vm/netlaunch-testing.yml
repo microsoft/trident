@@ -185,6 +185,7 @@ stages:
               hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
               userName: testing-user
+              tridentSourceDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
