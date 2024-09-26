@@ -200,9 +200,17 @@ stages:
             displayName: "Run netlaunch for testing"
 
           - bash: |
+              CLEAN_INSTALL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/clean-install-deployment.log"
               SERIAL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log"
 
+              # Copy the logs to the output directory
+              if [ -f $CLEAN_INSTALL_LOG ]; then
+                cp $CLEAN_INSTALL_LOG $(ob_outputDirectory)/
+              fi
+
+              # Output the serial log
               if [ -f $SERIAL_LOG ]; then
+                cp $SERIAL_LOG $(ob_outputDirectory)/
                 echo "Serial log found:"
                 cat $SERIAL_LOG
               else
@@ -210,7 +218,7 @@ stages:
                 echo "(No serial log captured)" > $SERIAL_LOG
               fi
             displayName: "Output serial log"
-            continueOnError: true
+            condition: always()
 
           - template: ../testing_common/trident-metrics.yml
             parameters:
