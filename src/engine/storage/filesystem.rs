@@ -83,7 +83,7 @@ fn block_devices_needing_fs_creation(
                     "Servicing type is A/B update and A/B volume pair detected: {:?}",
                     device_id
                 );
-                engine::get_ab_volume_block_device_id(host_status, &device_id, false)
+                engine::get_ab_volume_block_device_id(host_status, &device_id)
                     .map(|ab_volume_bdi| (ab_volume_bdi, bd_path, fs_type))
             // If the block device is NOT an A/B volume pair, only add it to block_devices if
             // a filesystem has not been previously created, i.e. we're doing a clean install

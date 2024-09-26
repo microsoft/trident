@@ -748,21 +748,9 @@ pub(super) fn get_block_device_path(
         return Some(verity.device_path());
     }
 
-    get_ab_volume(host_status, block_device_id, false)
-}
-
-/// Returns a block device path for a volume from the given A/B Volume Pair.
-///
-/// If active is true it returns the active volume, and if active is false it returns the update
-/// volume (i.e. the one that isn't active).
-fn get_ab_volume(
-    host_status: &HostStatus,
-    block_device_id: &BlockDeviceId,
-    active: bool,
-) -> Option<PathBuf> {
-    get_ab_volume_block_device_id(host_status, block_device_id, active).and_then(
-        |child_block_device_id| get_block_device_path(host_status, &child_block_device_id),
-    )
+    get_ab_volume_block_device_id(host_status, block_device_id).and_then(|child_block_device_id| {
+        get_block_device_path(host_status, &child_block_device_id)
+    })
 }
 
 /// Returns a block device id for a volume from the given A/B Volume Pair.
@@ -772,7 +760,6 @@ fn get_ab_volume(
 fn get_ab_volume_block_device_id(
     host_status: &HostStatus,
     block_device_id: &BlockDeviceId,
-    active: bool,
 ) -> Option<BlockDeviceId> {
     if let Some(ab_update) = &host_status.spec.storage.ab_update {
         let ab_volume = ab_update
@@ -780,12 +767,7 @@ fn get_ab_volume_block_device_id(
             .iter()
             .find(|v| &v.id == block_device_id);
         if let Some(v) = ab_volume {
-            // Determine which func to use based on 'active' flag
-            let selection = if active {
-                host_status.get_ab_active_volume()
-            } else {
-                host_status.get_ab_update_volume()
-            };
+            let selection = host_status.get_ab_update_volume();
             // Return the appropriate BlockDeviceId based on the selection
             return selection.map(|sel| match sel {
                 AbVolumeSelection::VolumeA => v.volume_a_id.clone(),
@@ -1093,66 +1075,43 @@ mod test {
             PathBuf::from("/dev/disk/by-bus/foobar")
         );
 
-        // If servicing state is Provisioned, get_block_device() should return the active volume
-        // when active=true and None when active=false, for A/B volume pair.
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
-            None
-        );
         // Now, set ab_active_volume to VolumeA.
         host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
-            Some("root".to_owned())
-        );
-
         assert_eq!(
             get_block_device_path(&host_status, &"osab".to_owned()),
             None
         );
         assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), false),
+            get_ab_volume_block_device_id(&host_status, &"osab".to_owned()),
             None
         );
 
         // Now, set servicing type to AbUpdate; servicing state to Staging.
         host_status.servicing_type = ServicingType::AbUpdate;
         host_status.servicing_state = ServicingState::Staging;
-        // When active=true, should return VolumeA; when active=false, return VolumeB.
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
-            Some("root".to_owned())
-        );
-
         assert_eq!(
             get_block_device_path(&host_status, &"osab".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-partlabel/osp3")
         );
         assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), false),
+            get_ab_volume_block_device_id(&host_status, &"osab".to_owned()),
             Some("rootb".to_owned())
         );
 
-        // When active volume is VolumeB, should return VolumeB when active=true; VolumeA when
-        // active=false.
+        // When active volume is VolumeB, should return VolumeA
         host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), true),
-            Some("rootb".to_owned())
-        );
-
         assert_eq!(
             get_block_device_path(&host_status, &"osab".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-partlabel/osp2")
         );
         assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned(), false),
+            get_ab_volume_block_device_id(&host_status, &"osab".to_owned()),
             Some("root".to_owned())
         );
 
         // If target block device id does not exist, should return None.
         assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"non-existent".to_owned(), false),
+            get_ab_volume_block_device_id(&host_status, &"non-existent".to_owned()),
             None
         );
     }
