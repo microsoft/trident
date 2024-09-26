@@ -43,6 +43,7 @@ mod functional_test {
         partition_types::DiscoverablePartitionType,
         repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
         testutils::repart::{self, TEST_DISK_DEVICE_PATH},
+        udevadm,
     };
 
     /// This function wipes the /dev/sdb device and ensures the /mnt
@@ -198,6 +199,9 @@ mod functional_test {
                 size_min_bytes: Some(10 * 1048576),
             }]);
         let partition1 = &repart.execute().unwrap()[0];
+
+        // Wait for udev to process pending events, so that the system recognizes the new partition
+        udevadm::settle().unwrap();
 
         // Create a NTFS filesystem on the partition.
         super::run(&partition1.node, MkfsFileSystemType::Ntfs).unwrap();
