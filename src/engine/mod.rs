@@ -15,7 +15,10 @@ use log::{debug, error, info, warn};
 use osutils::{chroot, container, exe::RunAndCheck, path::join_relative};
 use trident_api::{
     config::HostConfiguration,
-    constants::{self, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH},
+    constants::{
+        self, internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
+        UPDATE_ROOT_PATH,
+    },
     error::{
         InitializationError, InternalError, InvalidInputError, ReportError, ServicingError,
         TridentError, TridentResultExt,
@@ -379,7 +382,21 @@ pub(super) fn finalize_clean_install(
     if let Err(e) = new_root.unmount_all() {
         error!("Failed to unmount new root: {e:?}");
     }
-    reboot()
+
+    if !state
+        .host_status()
+        .spec
+        .internal_params
+        .get_flag(NO_TRANSITION)
+    {
+        reboot()
+    } else {
+        warn!(
+            "Skipping reboot as requested by internal parameter '{}'",
+            NO_TRANSITION
+        );
+        Ok(())
+    }
 }
 
 #[tracing::instrument(skip_all)]
@@ -627,7 +644,20 @@ pub(super) fn finalize_update(
         );
     }
 
-    reboot()
+    if !state
+        .host_status()
+        .spec
+        .internal_params
+        .get_flag(NO_TRANSITION)
+    {
+        reboot()
+    } else {
+        warn!(
+            "Skipping reboot as requested by internal parameter '{}'",
+            NO_TRANSITION
+        );
+        Ok(())
+    }
 }
 
 /// Persists the Trident background log from the MOS to the new root, i.e. the runtime OS, to the

@@ -145,4 +145,7 @@ pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 pub mod internal_params {
     /// Execroot deny-list extension parameter name
     pub const EXECROOT_DENYLIST_EXTENSION: &str = "execrootDenyList";
+
+    /// Block trident from transitioning to the new OS after finalizing
+    pub const NO_TRANSITION: &str = "noTransition";
 }
