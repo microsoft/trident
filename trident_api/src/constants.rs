@@ -143,6 +143,9 @@ pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 
 /// Internal-only overrides
 pub mod internal_params {
+    /// Disable check for grub-noprefix
+    pub const DISABLE_GRUB_NOPREFIX_CHECK: &str = "disableGrubNoprefixCheck";
+
     /// Execroot deny-list extension parameter name
     pub const EXECROOT_DENYLIST_EXTENSION: &str = "execrootDenyList";
 

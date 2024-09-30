@@ -19,6 +19,7 @@ use osutils::{
 };
 use trident_api::{
     config::{Image, ImageFormat, ImageSha256},
+    constants::internal_params::DISABLE_GRUB_NOPREFIX_CHECK,
     error::{ReportError, TridentError, TridentResultExt, UnsupportedConfigurationError},
     status::HostStatus,
 };
@@ -156,7 +157,12 @@ fn copy_file_artifacts(
         ))?;
 
     // Bail if grub_noprefix.efi is not found on Azure Linux images.
-    if !grub_noprefix {
+    if !grub_noprefix
+        && !host_status
+            .spec
+            .internal_params
+            .get_flag(DISABLE_GRUB_NOPREFIX_CHECK)
+    {
         let arch =
             current_arch_efi_str().context("Failed to get the target architecture string")?;
         bail!("Cannot locate grub{}-noprefix.efi in the boot image. Verify if the grub2-efi-binary-noprefix package was installed on the boot image.", arch);
