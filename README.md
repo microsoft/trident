@@ -132,6 +132,10 @@ following commands (input as a command line parameter):
   networking in the currently running OS. This is mainly used to startup
   networking during initial provisioning when the default DHCP configuration is
   not sufficient.
+- `rebuild-raid`: Trident can rebuild RAID arrays when a disk failure occurs and
+  a disk is replaced. After running the `trident rebuild-raid` command, the
+  rebuild process begins.  
+  Refer to [Rebuild RAID](./docs/Explanation/Rebuild-RAID.md) for more details.
 
 For any of the commands, you can change logging verbosity from the default
 `WARN` by passing `--verbosity` and appending one of the following values:
