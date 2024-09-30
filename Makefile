@@ -42,10 +42,11 @@ endif
 build:
 	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
-	@OPENSSL_STATIC=1 OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
-	    OPENSSL_INCLUDE_DIR=/usr/include/openssl \
-	    TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-	    cargo build --release --features dangerous-options
+	@OPENSSL_STATIC=1 \
+		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
+		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
+		TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		cargo build --release --features dangerous-options
 	@mkdir -p bin
 
 .PHONY: format
@@ -98,8 +99,8 @@ artifacts/osmodifier:
 		--path artifacts/
 	chmod +x artifacts/osmodifier
 
-# RPM target
 bin/trident: build
+	@mkdir -p bin
 	@cp -u target/release/trident bin/
 
 bin/trident-rpms-azl2.tar.gz: Dockerfile.azl2 systemd/*.service trident.spec artifacts/osmodifier bin/trident
@@ -109,7 +110,6 @@ bin/trident-rpms-azl2.tar.gz: Dockerfile.azl2 systemd/*.service trident.spec art
 		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
 		-f Dockerfile.azl2 \
 		.
-	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
 	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ && \
 	    docker rm -v $$id
@@ -233,16 +233,20 @@ BUILD_OUTPUT := $(shell mktemp)
 .PHONY: build-functional-tests-cc
 build-functional-test-cc:
 	# Redirect output to get to the test binaries; needs to be in sync with below
-	-@OPENSSL_STATIC=1 OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
+	-@OPENSSL_STATIC=1 \
+		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
-		CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' \
+		CARGO_INCREMENTAL=0 \
+		RUSTFLAGS='-Cinstrument-coverage' \
 		LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' \
 		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-test --all --message-format=json > $(BUILD_OUTPUT)
 
 	# Output this in case there were build failures
-	@OPENSSL_STATIC=1 OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
+	@OPENSSL_STATIC=1 \
+		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
-		CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' \
+		CARGO_INCREMENTAL=0 \
+		RUSTFLAGS='-Cinstrument-coverage' \
 		LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' \
 		cargo build --target-dir $(TRIDENT_COVERAGE_TARGET) --lib --tests --features functional-test --all
 
@@ -302,11 +306,11 @@ go.sum: go.mod
 	go mod tidy
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/phonehome/*
-	mkdir -p bin
+	@mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/phonehome/*
-	mkdir -p bin
+	@mkdir -p bin
 	cd tools && go build -o ../bin/netlisten ./cmd/netlisten
 
 bin/miniproxy: tools/cmd/miniproxy/* tools/go.sum
