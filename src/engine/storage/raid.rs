@@ -90,9 +90,10 @@ fn get_device_paths(
 #[tracing::instrument(skip_all)]
 pub(super) fn configure(host_status: &HostStatus) -> Result<(), Error> {
     if !host_status.spec.storage.raid.software.is_empty() {
-        info!("Creating mdadm config file");
         let output = mdadm::examine().context("Failed to examine RAID arrays")?;
         let mdadm_config_file_path = "/etc/mdadm/mdadm.conf";
+        info!("Creating mdadm config file '{}'", mdadm_config_file_path);
+        debug!("Contents:\n{}", output);
         osutils::files::create_file(mdadm_config_file_path)
             .context("Failed to create mdadm config file")?;
         fs::write(Path::new(mdadm_config_file_path), output)
