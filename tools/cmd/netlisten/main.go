@@ -38,8 +38,8 @@ import (
 
 var listen_port uint16
 var serveFolder string
-var logTrace bool
 var forceColor bool
+var backgroundLogstreamFull string
 
 // Filepath to store metrics from Trident
 var TRIDENT_METRICS_PATH = "trident-metrics.jsonl"
@@ -53,12 +53,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Set log level
-		if logTrace {
-			log.SetLevel(log.TraceLevel)
-			log.Traceln("Trace logging enabled!")
-		} else {
-			log.SetLevel(log.DebugLevel)
-		}
+		log.SetLevel(log.DebugLevel)
 
 		if forceColor {
 			log.SetFormatter(&log.TextFormatter{
@@ -80,7 +75,12 @@ var rootCmd = &cobra.Command{
 		// Set up listening for phonehome
 		phonehome.SetupPhoneHomeServer(result, "")
 		// Set up listening for logstream
-		phonehome.SetupLogstream()
+		logstreamFull, err := phonehome.SetupLogstream(backgroundLogstreamFull)
+		if err != nil {
+			log.WithError(err).Fatalf("failed to set up logstream")
+		}
+		defer logstreamFull.Close()
+
 		// Set up listening for tracestream
 		phonehome.SetupTraceStream(TRIDENT_METRICS_PATH)
 
@@ -116,8 +116,8 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().Uint16VarP(&listen_port, "port", "p", 0, "Port to listen on for logstream & phonehome. Random if not specified.")
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
-	rootCmd.PersistentFlags().BoolVarP(&logTrace, "log-trace", "", false, "Enable trace level logs.")
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
+	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to.")
 	rootCmd.MarkFlagRequired("port")
 	log.SetLevel(log.DebugLevel)
 }

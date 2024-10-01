@@ -2,19 +2,22 @@ parameters:
   - name: deploymentLogPath
     type: string
 
+  - name: displayName
+    type: string
+    default: ""
+
 steps:
   - bash: |
-      set -eux
       if [[ -f ${{ parameters.deploymentLogPath }} ]]; then
-        cat ${{ parameters.deploymentLogPath }}
-      fi
-    condition: succeededOrFailed()
-    displayName: "Display ${{ parameters.deploymentLogPath }}"
-
-  - bash: |
-      if [[ -f ${{ parameters.deploymentLogPath }} ]]; then
+        echo "Contents of ${{ parameters.deploymentLogPath }}:"
         mkdir -p $(ob_outputDirectory)
         sudo cp ${{ parameters.deploymentLogPath }} $(ob_outputDirectory)
+        cat ${{ parameters.deploymentLogPath }}
+      else
+        echo "No deployment log found at ${{ parameters.deploymentLogPath }}"
       fi
     condition: succeededOrFailed()
-    displayName: "Publish ${{ parameters.deploymentLogPath }}"
+    ${{ if ne(parameters.displayName, '') }}:
+      displayName: "${{ parameters.displayName }}"
+    ${{ else }}:
+      displayName: "Display ${{ parameters.deploymentLogPath }}"

@@ -67,8 +67,9 @@ var remoteAddressFile string
 var serveFolder string
 var maxFailures uint
 var traceFile string
-var logTrace bool
 var forceColor bool
+
+var backgroundLogstreamFull string
 
 func patchFile(iso []byte, filename string, contents []byte) error {
 	// Search for magic string
@@ -127,12 +128,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Set log level
-		if logTrace {
-			log.SetLevel(log.TraceLevel)
-			log.Traceln("Trace logging enabled!")
-		} else {
-			log.SetLevel(log.DebugLevel)
-		}
+		log.SetLevel(log.DebugLevel)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		// Read the ISO
@@ -265,7 +261,11 @@ var rootCmd = &cobra.Command{
 			phonehome.SetupPhoneHomeServer(result, remoteAddressFile)
 
 			// Set up listening for logstream
-			phonehome.SetupLogstream()
+			logstreamFull, err := phonehome.SetupLogstream(backgroundLogstreamFull)
+			if err != nil {
+				log.WithError(err).Fatalf("failed to setup logstream")
+			}
+			defer logstreamFull.Close()
 
 			// Set up listening for tracestream
 			phonehome.SetupTraceStream(traceFile)
@@ -406,7 +406,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
 	rootCmd.PersistentFlags().UintVarP(&maxFailures, "max-failures", "e", 0, "Maximum number of failures allowed before terminating. Default 0: no failures are tolerated.")
 	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "", "File for writing metrics collected from Trident.")
-	rootCmd.PersistentFlags().BoolVarP(&logTrace, "log-trace", "", false, "Enable trace level logs.")
+	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to. (Requires -l)")
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing.")
 	rootCmd.MarkFlagRequired("iso-template")

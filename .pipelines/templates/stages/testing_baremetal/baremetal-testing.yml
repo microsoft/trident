@@ -193,11 +193,17 @@ stages:
                   --servefolder ./artifacts/test-image \
                   --logstream $MAX_FAILURES_FLAG \
                   --trace-file $(TRIDENT_SOURCE_DIR)/trident-metrics.jsonl \
-                  --log-trace --force-color \
+                  --force-color \
+                  --full-logstream logstream-full.log \
                   --port ${{ variables.NETLAUNCH_PORT }} 2>&1 | tee ./clean-install-deployment.log
             timeoutInMinutes: 30
             workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
             displayName: "Run netlaunch for testing"
+
+          - template: ../testing_common/display-deployment-logs.yml
+            parameters:
+              deploymentLogPath: ${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log
+              displayName: "Display clean install logs"
 
           - bash: |
               CLEAN_INSTALL_LOG="${{ variables.TRIDENT_SOURCE_DIR }}/clean-install-deployment.log"
