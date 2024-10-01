@@ -30,7 +30,7 @@ fn test_basic_graph() {
     let partitions = (1..=6)
         .map(|i| Partition {
             id: format!("partition{}", i),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::LinuxGeneric,
         })
         .collect::<Vec<_>>();
@@ -100,7 +100,7 @@ fn test_duplicate_node() {
 fn test_duplicate_member() {
     let partition = Partition {
         id: "partition".into(),
-        size: PartitionSize::Fixed(1024.into()),
+        size: PartitionSize::Fixed(4096.into()),
         partition_type: PartitionType::Esp,
     };
 
@@ -153,7 +153,7 @@ fn test_member_validity() {
 
     let partition = Partition {
         id: "partition".into(),
-        size: PartitionSize::Fixed(1024.into()),
+        size: PartitionSize::Fixed(4096.into()),
         partition_type: PartitionType::Esp,
     };
     builder.add_node((&partition).into());
@@ -271,13 +271,13 @@ fn test_cardinality() {
 fn valid_target_count() {
     let partition1 = Partition {
         id: "partition1".into(),
-        size: PartitionSize::Fixed(1024.into()),
+        size: PartitionSize::Fixed(4096.into()),
         partition_type: PartitionType::LinuxGeneric,
     };
 
     let partition2 = Partition {
         id: "partition2".into(),
-        size: PartitionSize::Fixed(1024.into()),
+        size: PartitionSize::Fixed(4096.into()),
         partition_type: PartitionType::LinuxGeneric,
     };
 
@@ -331,6 +331,50 @@ fn valid_target_count() {
     );
 }
 
+#[test]
+fn test_invalid_sizes() {
+    let base_builder = BlockDeviceGraphBuilder::default();
+
+    let partition1 = Partition {
+        id: "partition1".into(),
+        size: PartitionSize::Fixed(2048.into()),
+        partition_type: PartitionType::LinuxGeneric,
+    };
+    let mut builder = base_builder.clone();
+    builder.add_node((&partition1).into());
+
+    matches!(
+        builder.build().unwrap_err(),
+        BlockDeviceGraphBuildError::BasicCheckFailed { .. }
+    );
+
+    let partition2 = Partition {
+        id: "partition2".into(),
+        size: PartitionSize::Fixed(5032.into()),
+        partition_type: PartitionType::LinuxGeneric,
+    };
+    let mut builder = base_builder.clone();
+    builder.add_node((&partition2).into());
+
+    matches!(
+        builder.build().unwrap_err(),
+        BlockDeviceGraphBuildError::BasicCheckFailed { .. }
+    );
+
+    let partition_zero = Partition {
+        id: "partition_zero".into(),
+        size: PartitionSize::Fixed(0.into()),
+        partition_type: PartitionType::LinuxGeneric,
+    };
+    let mut builder = base_builder.clone();
+    builder.add_node((&partition_zero).into());
+
+    matches!(
+        builder.build().unwrap_err(),
+        BlockDeviceGraphBuildError::BasicCheckFailed { .. }
+    );
+}
+
 mod verity {
     use crate::config::VerityFileSystem;
 
@@ -341,13 +385,13 @@ mod verity {
         let mut builder = BlockDeviceGraphBuilder::default();
         let part1 = Partition {
             id: "part1".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
         };
         builder.add_node((&part1).into());
         let part2 = Partition {
             id: "part2".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::RootVerity,
         };
         builder.add_node((&part2).into());
@@ -382,19 +426,19 @@ mod verity {
         let mut builder = BlockDeviceGraphBuilder::default();
         let part1 = Partition {
             id: "part1".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
         };
         builder.add_node((&part1).into());
         let part2 = Partition {
             id: "part2".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
         };
         builder.add_node((&part2).into());
         let part3 = Partition {
             id: "part3".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::RootVerity,
         };
         builder.add_node((&part3).into());
@@ -442,13 +486,13 @@ mod verity {
         let mut builder = BlockDeviceGraphBuilder::default();
         let part1 = Partition {
             id: "part1".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::LinuxGeneric,
         };
         builder.add_node((&part1).into());
         let part2 = Partition {
             id: "part2".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::LinuxGeneric,
         };
         builder.add_node((&part2).into());
@@ -492,13 +536,13 @@ mod verity {
         let mut builder = BlockDeviceGraphBuilder::default();
         let part1 = Partition {
             id: "part1".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
         };
         builder.add_node((&part1).into());
         let part2 = Partition {
             id: "part2".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::LinuxGeneric,
         };
         builder.add_node((&part2).into());
@@ -547,13 +591,13 @@ mod ab {
         let mut builder = BlockDeviceGraphBuilder::default();
         let part1 = Partition {
             id: "part1".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
         };
         builder.add_node((&part1).into());
         let part2 = Partition {
             id: "part2".into(),
-            size: PartitionSize::Fixed(1024.into()),
+            size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
         };
         builder.add_node((&part2).into());

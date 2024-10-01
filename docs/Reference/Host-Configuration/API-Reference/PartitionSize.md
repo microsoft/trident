@@ -21,7 +21,7 @@ Grow a partition to use all available space..
 
 ### Fixed
 
-A byte count with an optional suffix (K, M, G, T, to the base of 1024).
+A byte count with an optional suffix (K, M, G, T, to the base of 1024). Must be a non-zero multiple of 4096 bytes.
 
 | Characteristic | Value                                                           |
 | -------------- | --------------------------------------------------------------- |

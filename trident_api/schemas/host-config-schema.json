@@ -627,7 +627,7 @@
         },
         {
           "title": "Fixed",
-          "description": "A byte count with an optional suffix (K, M, G, T, to the base of 1024).",
+          "description": "A byte count with an optional suffix (K, M, G, T, to the base of 1024). Must be a non-zero multiple of 4096 bytes.",
           "examples": [
             0,
             1,

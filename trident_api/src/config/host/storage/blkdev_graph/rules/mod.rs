@@ -22,7 +22,9 @@ use std::os::unix::ffi::OsStrExt;
 
 use anyhow::{bail, ensure, Error};
 
-use crate::config::{FileSystemType, HostConfigurationStaticValidationError, PartitionType};
+use crate::config::{
+    FileSystemType, HostConfigurationStaticValidationError, Partition, PartitionSize, PartitionType,
+};
 
 use super::{
     cardinality::ValidCardinality,
@@ -52,7 +54,19 @@ impl<'a> HostConfigBlockDevice<'a> {
                     }
                 );
             }
-            Self::Partition(_) => (),
+            Self::Partition(Partition {
+                size: PartitionSize::Fixed(size),
+                ..
+            }) => {
+                ensure!(
+                    size.bytes() > 0 && size.bytes() % 4096 == 0,
+                    "Partition size must be a non-zero multiple of 4096 bytes."
+                );
+            }
+            Self::Partition(Partition {
+                size: PartitionSize::Grow,
+                ..
+            }) => (),
             Self::AdoptedPartition(ap) => match (&ap.match_label, &ap.match_uuid) {
                 (Some(_), Some(_)) => {
                     bail!("Adopted partitions cannot have both matchLabel and matchUUID");

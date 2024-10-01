@@ -178,7 +178,7 @@ pub enum PartitionSize {
 
     /// # Fixed
     ///
-    /// Fixed size in bytes.
+    /// Fixed size in bytes. Must be a multiple of 4096 bytes.
     #[serde(untagged)]
     Fixed(ByteCount),
 }
@@ -232,6 +232,9 @@ mod schemars_impl {
                         {
                             let mut schema = ByteCount::json_schema(gen).into_object();
                             schema.metadata().title = Some("Fixed".to_string());
+                            if let Some(ref mut description) = schema.metadata().description {
+                                description.push_str(" Must be a non-zero multiple of 4096 bytes.");
+                            }
                             schema.into()
                         },
                     ]),
