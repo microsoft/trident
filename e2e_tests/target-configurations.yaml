@@ -44,6 +44,7 @@ virtualMachine:
       # TODO: Re-enable raid+encryption tests (#8849)
       # - encrypted-raid
       - encrypted-swap
+      - misc
       - raid-small
       - raid-resync-small
       - rerun
@@ -60,6 +61,7 @@ virtualMachine:
       # TODO: Re-enable raid+encryption tests (#8849)
       # - encrypted-raid
       - encrypted-swap
+      - misc
       - raid-small
       - raid-resync-small
       - rerun

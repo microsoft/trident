@@ -1,0 +1,66 @@
+hostConfiguration:
+  storage:
+    disks:
+      - id: os
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+        partitionTableType: gpt
+        partitions:
+          - id: esp
+            type: esp
+            size: 1G
+          - id: root
+            type: root
+            size: 8G
+          - id: ntfs-partition
+            type: linux-generic
+            size: 100M
+      - id: disk2
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+        partitionTableType: gpt
+        partitions: []
+    filesystems:
+      - deviceId: root
+        type: ext4
+        source:
+          type: image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /
+          options: defaults
+      - deviceId: esp
+        type: vfat
+        source:
+          type: esp-image
+          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+          sha256: ignored
+          format: raw-zst
+        mountPoint:
+          path: /boot/efi
+          options: umask=0077
+      - deviceId: ntfs-partition
+        type: ntfs
+        mountPoint:
+          path: /mnt/ntfs-partition
+          options: defaults
+  scripts:
+    postConfigure:
+      - name: testing-privilege
+        runOn:
+          - clean-install
+        content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+  os:
+    selinux:
+      mode: enforcing
+    network:
+      version: 2
+      ethernets:
+        vmeths:
+          match:
+            name: enp*
+          dhcp4: true
+    users:
+      - name: testing-user
+        sshPublicKeys: []
+        sshMode: key-only

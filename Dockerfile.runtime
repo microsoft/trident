@@ -13,7 +13,9 @@ RUN tdnf -y install \
     mdadm \
     tpm2-tools \
     cryptsetup \
-    veritysetup
+    veritysetup \
+    ntfs-3g \
+    ntfsprogs
 
 RUN \
     --mount=type=bind,source=./bin/RPMS,target=/trident \
