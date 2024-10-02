@@ -383,6 +383,8 @@ pub(super) fn finalize_clean_install(
         error!("Failed to unmount new root: {e:?}");
     }
 
+    storage::check_block_devices(state.host_status());
+
     if !state
         .host_status()
         .spec

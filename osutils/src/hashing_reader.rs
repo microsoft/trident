@@ -1,4 +1,8 @@
-use std::io::{self, Read};
+use std::{
+    fs::File,
+    io::{self, Read},
+    path::Path,
+};
 
 use sha2::Digest;
 
@@ -22,6 +26,23 @@ impl<R: Read> Read for HashingReader<R> {
         // Return the number of bytes read
         Ok(n)
     }
+}
+
+pub fn compute_file_hash(path: &Path) -> io::Result<(u64, String)> {
+    let mut bytes_read = 0;
+    let mut reader = File::open(path)?;
+    let mut hasher = sha2::Sha384::new();
+    let mut buf = vec![0; 1024 * 1024];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        bytes_read += n as u64;
+        hasher.update(&buf[..n]);
+    }
+
+    Ok((bytes_read, format!("{:x}", hasher.finalize())))
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use crate::{e2fsck, exe::RunAndCheck};
 /// Assign filesystem UUID to the filesystem at block_device_path.
 pub fn run(fs_uuid: &Uuid, block_device_path: &Path) -> Result<(), Error> {
     // Always need to first run e2fsck to check the file system on the block device
-    e2fsck::run(block_device_path)?;
+    e2fsck::fix(block_device_path)?;
 
     // Run tune2fs to assign a new randomized FS UUID to the updated volume
     Command::new("tune2fs")

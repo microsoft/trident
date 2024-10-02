@@ -152,7 +152,7 @@ fn deploy_images(host_status: &HostStatus, host_config: &HostConfiguration) -> R
                     {
                         // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
                         info!("Checking filesystem on block device '{}'", &device_id);
-                        e2fsck::run(&block_device_path).context(format!(
+                        e2fsck::fix(&block_device_path).context(format!(
                             "Failed to check filesystem on block device '{}'",
                             &device_id
                         ))?;

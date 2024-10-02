@@ -151,4 +151,7 @@ pub mod internal_params {
 
     /// Block trident from transitioning to the new OS after finalizing
     pub const NO_TRANSITION: &str = "noTransition";
+
+    /// Run extra partition and filesystem checks before reboot
+    pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
 }

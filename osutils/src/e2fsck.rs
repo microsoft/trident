@@ -4,12 +4,20 @@ use anyhow::{Context, Error};
 
 use crate::exe::RunAndCheck;
 
-/// Runs e2fsck on the file system on the block device.
-pub fn run(block_device_path: &Path) -> Result<(), Error> {
-    // Run e2fsck to check the file system on the block device
+/// Runs e2fsck on the file system on the block device to fix errors.
+pub fn fix(block_device_path: &Path) -> Result<(), Error> {
     Command::new("e2fsck")
         .arg("-f")
         .arg("-y")
+        .arg(block_device_path)
+        .run_and_check()
+        .context("Failed to execute e2fsck")
+}
+
+/// Runs e2fsck on the file system on the block device to check for errors.
+pub fn check(block_device_path: &Path) -> Result<(), Error> {
+    Command::new("e2fsck")
+        .arg("-n")
         .arg(block_device_path)
         .run_and_check()
         .context("Failed to execute e2fsck")
@@ -35,7 +43,7 @@ mod functional_test {
         crate::mkfs::run(block_device_path, MkfsFileSystemType::Ext4).unwrap();
 
         // Run e2fsck to check the filesystem
-        run(block_device_path).unwrap();
+        fix(block_device_path).unwrap();
     }
 
     /// Validates that run() correctly handles negative cases.
@@ -43,7 +51,7 @@ mod functional_test {
     fn test_e2fsck_run_negative() {
         // Test case 1: Run e2fsck on a non-existent file system
         let block_device_path_nonexistent = Path::new("/dev/nonexistent");
-        let error_string = run(block_device_path_nonexistent)
+        let error_string = fix(block_device_path_nonexistent)
             .unwrap_err()
             .root_cause()
             .to_string();
@@ -62,7 +70,7 @@ mod functional_test {
         repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 
         // Run e2fsck on the corrupted filesystem
-        let error_string = run(block_device_path_corrupted)
+        let error_string = fix(block_device_path_corrupted)
             .unwrap_err()
             .root_cause()
             .to_string();

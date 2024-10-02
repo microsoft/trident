@@ -4,12 +4,12 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 
-use osutils::lsblk;
+use osutils::{e2fsck, hashing_reader::compute_file_hash, lsblk};
 use trident_api::{
-    config::{HostConfiguration, HostConfigurationDynamicValidationError},
-    constants::ROOT_MOUNT_POINT_PATH,
+    config::{FileSystemType, HostConfiguration, HostConfigurationDynamicValidationError},
+    constants::{internal_params::PRE_REBOOT_CHECKS, ROOT_MOUNT_POINT_PATH},
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -263,6 +263,56 @@ pub(super) fn initialize_block_devices(
     verity::setup_verity_devices(host_status).structured(ServicingError::CreateVerity)?;
 
     Ok(())
+}
+
+pub(super) fn check_block_devices(host_status: &HostStatus) {
+    if !host_status.spec.internal_params.get_flag(PRE_REBOOT_CHECKS) {
+        return;
+    }
+
+    for (id, path) in &host_status.block_device_paths {
+        let Ok(canonical) = path.canonicalize() else {
+            warn!(
+                "Block device '{id}' (path '{}'): No longer exists",
+                path.display()
+            );
+            continue;
+        };
+
+        let Ok((length, sha384)) = compute_file_hash(&canonical) else {
+            warn!(
+                "Block device '{id}' (path '{}' -> '{}'): Failed to compute hash",
+                path.display(),
+                canonical.display()
+            );
+            continue;
+        };
+
+        let fs_type = host_status
+            .spec
+            .storage
+            .internal_mount_points
+            .iter()
+            .find(|fs| &fs.target_id == id)
+            .map(|fs| fs.filesystem);
+
+        let fsck_status = match fs_type {
+            Some(FileSystemType::Ext4) => {
+                if let Err(e) = e2fsck::check(&canonical) {
+                    format!(", e2fsck failed: {e:?}")
+                } else {
+                    ", e2fsck OK".to_string()
+                }
+            }
+            _ => "".to_string(),
+        };
+
+        info!(
+            "Block device '{id}' (path '{}' -> '{}'): Size = {length} bytes, sha384 = {sha384}{fsck_status}",
+            path.display(),
+            canonical.display(),
+        );
+    }
 }
 
 /// Get the canonicalized paths of all disks in a Host Configuration
