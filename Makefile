@@ -138,6 +138,7 @@ docker-build: Dockerfile.runtime bin/trident-rpms-azl3.tar.gz
 	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
 
 artifacts/test-image/trident-container.tar.gz: docker-build
+	mkdir -p artifacts/test-image
 	docker save trident/trident:latest | gzip > $@
 
 .PHONY: clean
@@ -332,21 +333,41 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 	@mkdir -p artifacts/test-image
 	@cp bin/trident artifacts/test-image/
 	@cp artifacts/osmodifier artifacts/test-image/
-	@bin/netlaunch -i $(NETLAUNCH_ISO) \
-		$(if $(NETLAUNCH_PORT),-p $(NETLAUNCH_PORT)) \
-		-c $(NETLAUNCH_CONFIG) \
-		-t $(TRIDENT_CONFIG) \
-		-l -r remote-addr \
-		-s artifacts/test-image \
-		-m trident-metrics.jsonl
+	@bin/netlaunch \
+	 	--iso $(NETLAUNCH_ISO) \
+		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
+		--config $(NETLAUNCH_CONFIG) \
+		--trident $(TRIDENT_CONFIG) \
+		--logstream \
+		--remoteaddress remote-addr \
+		--servefolder artifacts/test-image \
+		--trace-file trident-metrics.jsonl \
+		$(if $(LOG_TRACE),--log-trace)
+
+
+#  To run this VM requires at least 11 GiB of memory (virt-deploy create --mem 11).
+.PHONY: run-netlaunch-container-images
+run-netlaunch-container-images: \
+	validate \
+	$(NETLAUNCH_CONFIG) \
+	artifacts/trident-container-installer-testimage.iso \
+	artifacts/test-image/trident-container.tar.gz \
+	$(TRIDENT_CONFIG) \
+	bin/netlaunch
+	@bin/netlaunch \
+		--iso artifacts/trident-container-installer-testimage.iso \
+		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
+		--config $(NETLAUNCH_CONFIG) \
+		--trident $(TRIDENT_CONFIG) \
+		--logstream \
+		--remoteaddress remote-addr \
+		--servefolder artifacts/test-image \
+		--trace-file trident-metrics.jsonl \
+		$(if $(LOG_TRACE),--log-trace)
 
 .PHONY: watch-virtdeploy
 watch-virtdeploy:
 	@while true; do virsh console virtdeploy-vm-0; sleep 1; done
-
-.PHONY: run-netlaunch-container
-run-netlaunch-container: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) bin/netlaunch bin/trident-containerhost-mos.iso validate artifacts/test-image/trident-container.tar.gz
-	@bin/netlaunch -i bin/trident-containerhost-mos.iso -c $(NETLAUNCH_CONFIG) -t $(TRIDENT_CONFIG) -l -r remote-addr -s artifacts/test-image
 
 # This target leverages the samples that are automatically generated as part of
 # the build-api-docs target. The HC sample is selected by setting the
@@ -423,6 +444,25 @@ download-runtime-partition-images:
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
+# Get container images
+	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
+	az pipelines runs artifact download \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--run-id $(RUN_ID) \
+		--path $(DOWNLOAD_DIR) \
+		--artifact-name 'trident-container-testimage'
+
+#	Extract partition images. The version is dropped and the extension is changed
+#	to .rawzst in case the files are inserted into the ISO filesystem
+# 	instead of the initrd.
+	for file in $(DOWNLOAD_DIR)/*.raw.zst; do \
+		name=$$(basename $$file | cut -d'.' -f1); \
+		mv $$file ./artifacts/test-image/container_$$name.rawzst; \
+	done
+#	Clean temp dir
+	rm -rf $(DOWNLOAD_DIR)
+
 .PHONY: download-trident-installer-iso
 download-trident-installer-iso:
 ifndef RUN_ID
@@ -435,6 +475,32 @@ endif
 		--run-id $(RUN_ID) \
 		--path artifacts/ \
 		--artifact-name 'trident-installer-testimage'
+
+.PHONY: download-trident-container-installer-iso
+download-trident-container-installer-iso:
+	$(eval BRANCH ?= main)
+	$(eval RUN_ID ?= $(shell az pipelines runs list \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--pipeline-ids 3371 \
+		--branch $(BRANCH) \
+		--query-order QueueTimeDesc \
+		--result succeeded \
+		--reason triggered \
+		--top 1 \
+		--query '[0].id'))
+	@echo PIPELINE RUN ID: $(RUN_ID)
+	mkdir -p ./artifacts
+	az pipelines runs artifact download \
+		--org 'https://dev.azure.com/mariner-org' \
+		--project "ECF" \
+		--run-id $(RUN_ID) \
+		--path artifacts/ \
+		--artifact-name 'trident-container-installer-testimage'
+
+artifacts/trident-container-installer-testimage.iso:
+	$(MAKE) download-trident-container-installer-iso; \
+	ls -l artifacts/trident-container-installer-testimage.iso
 
 .PHONY: copy-runtime-partition-images
 copy-runtime-partition-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.raw.zst $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.raw.zst
@@ -463,6 +529,11 @@ copy-runtime-partition-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.raw
 		echo "Copied $$file to ./artifacts/test-image/verity_$$name.rawzst"; \
 	done
 	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
+	@for file in $(TEST_IMAGES_PATH)/build/trident-container-testimage/*.raw.zst; do \
+		name=$$(basename $$file | cut -d'.' -f1); \
+		cp $$file ./artifacts/test-image/container_$$name.rawzst; \
+		echo "Copied $$file to ./artifacts/test-image/container_$$name.rawzst"; \
+	done
 
 # Uses the simple e2e test to set up a starter host config
 .PHONY: starter-configuration
@@ -514,16 +585,4 @@ bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-
 			--image-file $< \
 			--output-image-file $@ \
 			--config-file trident-mos/iso.yaml \
-			--output-image-format iso
-
-bin/trident-containerhost-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer trident-mos/containerhost-iso.yaml trident-mos/files/* trident-mos/post-install.sh
-	@mkdir -p bin
-	BUILD_DIR=`mktemp -d` && \
-		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \
-		sudo ./artifacts/imagecustomizer \
-			--log-level=debug \
-			--build-dir $$BUILD_DIR \
-			--image-file $< \
-			--output-image-file $@ \
-			--config-file trident-mos/containerhost-iso.yaml \
 			--output-image-format iso
