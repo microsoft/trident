@@ -27,7 +27,7 @@ use trident_api::{
 
 /// List of special directories that should not be bind mounted anywhere in the
 /// execroot.
-const PROHIBITED_EXECROOT_MOUNTS: [&str; 6] = [
+const PROHIBITED_EXECROOT_MOUNTS: [&str; 5] = [
     // All devfs
     "/dev",
     // All procfs
@@ -36,10 +36,8 @@ const PROHIBITED_EXECROOT_MOUNTS: [&str; 6] = [
     "/sys",
     // Docker containers
     "/var/lib/docker/vfs/dir",
-    // Everything under /run/netns, fix for #8879
-    "/run/netns",
-    // Everything under /run/contained, fix for #8926
-    "/run/contained",
+    // Everything under /run, fix for #8879 and #8926
+    "/run",
 ];
 
 /// Filter function to prevent specific mount points from being bind mounted in
