@@ -1,15 +1,15 @@
 [Unit]
 Description=Trident Agent
-After=network.target network-online.target systemd-udev-settle.service
+After=network.target network-online.target
+Before=trident.service
 
 [Service]
-ExecStartPre=/bin/bash /trident_cdrom/pre-trident-script.sh
-ExecStartPre=/bin/bash -c "curl $(grep -oP 'phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/trident -o /usr/bin/trident -f"
-ExecStartPre=chmod +x /usr/bin/trident
-ExecStartPre=/bin/bash -c "curl $(grep -oP 'phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/osmodifier -o /usr/bin/osmodifier -f"
-ExecStartPre=/bin/chmod +x /usr/bin/osmodifier
-ExecStart=/usr/bin/trident run --verbosity DEBUG
+ExecStart=/bin/bash /trident_cdrom/pre-trident-script.sh
+ExecStart=/bin/bash -c "curl $(grep -oP 'phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/trident -o /usr/bin/trident -f"
+ExecStart=chmod +x /usr/bin/trident
+ExecStart=/bin/bash -c "curl $(grep -oP 'phonehome: \\K.*(?=phonehome)' /etc/trident/config.yaml)files/osmodifier -o /usr/bin/osmodifier -f"
+ExecStart=/bin/chmod +x /usr/bin/osmodifier
 Type=oneshot
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=trident.service

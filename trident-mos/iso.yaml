@@ -34,11 +34,14 @@ os:
       - path: /usr/lib/systemd/system/serial-getty@.service
     files/root.profile:
       - path: /root/.profile
+    ../systemd/trident.service:
+      - path: /usr/lib/systemd/system/trident.service
     files/download-trident.service:
       - path: /usr/lib/systemd/system/download-trident.service
 
   services:
     enable:
+      - trident
       - download-trident
 
 scripts:
