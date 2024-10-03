@@ -33,6 +33,7 @@ impl Subsystem for BootSubsystem {
         Ok(())
     }
 
+    #[tracing::instrument(name = "boot_configuration", skip_all)]
     fn configure(
         &mut self,
         host_status: &HostStatus,

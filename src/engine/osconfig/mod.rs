@@ -52,6 +52,7 @@ impl Subsystem for OsConfigSubsystem {
         Ok(())
     }
 
+    #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(
         &mut self,
         host_status: &HostStatus,

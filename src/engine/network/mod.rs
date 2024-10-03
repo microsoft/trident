@@ -19,6 +19,7 @@ impl Subsystem for NetworkSubsystem {
         "network"
     }
 
+    #[tracing::instrument(name = "network_configuration", skip_all)]
     fn configure(
         &mut self,
         host_status: &HostStatus,

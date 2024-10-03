@@ -91,6 +91,7 @@ impl NewrootMount {
 
     /// Given a host status, create all the required mount points for newroot
     /// and return a NewrootMount object.
+    #[tracing::instrument(name = "initialize_new_root", skip_all)]
     pub fn create_and_mount(
         host_config: &HostConfiguration,
         disk_paths: &BTreeMap<BlockDeviceId, PathBuf>,

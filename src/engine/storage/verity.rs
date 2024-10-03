@@ -264,7 +264,7 @@ fn get_verity_related_device_paths(
 
 /// Update the root data, hash and overlay davice paths in the GRUB config,
 /// along with the overlay configuration.
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(name = "verity_configuration", skip_all)]
 pub(super) fn configure(host_status: &HostStatus, root_mount_path: &Path) -> Result<(), Error> {
     if host_status.spec.storage.internal_verity.is_empty() {
         return Ok(());

@@ -307,7 +307,7 @@ struct LuksDumpSegment {
     sector_size: u64,
 }
 
-#[tracing::instrument(name = "encryption_configure", skip_all)]
+#[tracing::instrument(name = "encryption_configuration", skip_all)]
 pub fn configure(host_status: &HostStatus) -> Result<(), TridentError> {
     let path: PathBuf = PathBuf::from(CRYPTTAB_PATH);
     let mut contents: String = String::new();

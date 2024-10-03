@@ -24,7 +24,7 @@ use trident_api::{
 };
 
 /// Given a host configuration, adopt and create partitions on the disks.
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(name = "partitions_creation", skip_all)]
 pub fn create_partitions(
     host_status: &mut HostStatus,
     host_config: &HostConfiguration,

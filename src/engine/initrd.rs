@@ -18,7 +18,7 @@ impl Subsystem for InitrdSubsystem {
         false
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(name = "initrd_regeneration", skip_all)]
     fn configure(
         &mut self,
         _host_status: &HostStatus,

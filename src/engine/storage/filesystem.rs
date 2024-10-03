@@ -16,7 +16,7 @@ use crate::engine;
 /// Creates clean filesystems on top of block devices that are not to be initialized with images,
 /// i.e. have the file system source 'Create'. The function also re-formats any inactive/update A/B
 /// volume with a clean FS, if the A/B volume pair is not requested to have an image.
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(name = "filesystems_creation", skip_all)]
 pub(super) fn create_filesystems(host_status: &HostStatus) -> Result<(), Error> {
     debug!("Creating filesystems on block devices");
     block_devices_needing_fs_creation(host_status)

@@ -42,6 +42,7 @@ impl Subsystem for SelinuxSubsystem {
         "selinux"
     }
 
+    #[tracing::instrument(name = "selinux_configuration", skip_all)]
     fn configure(
         &mut self,
         host_status: &HostStatus,

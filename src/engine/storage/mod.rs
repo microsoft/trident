@@ -182,6 +182,7 @@ impl Subsystem for StorageSubsystem {
         Ok(())
     }
 
+    #[tracing::instrument(name = "storage_configuration", skip_all)]
     fn configure(
         &mut self,
         host_status: &HostStatus,

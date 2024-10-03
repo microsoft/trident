@@ -51,6 +51,7 @@ impl Subsystem for ManagementSubsystem {
         Ok(())
     }
 
+    #[tracing::instrument(name = "management_configuration", skip_all)]
     fn configure(
         &mut self,
         host_status: &HostStatus,

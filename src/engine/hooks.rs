@@ -134,7 +134,7 @@ impl Subsystem for HooksSubsystem {
         Ok(())
     }
 
-    #[tracing::instrument(name = "hooks_configure", skip_all)]
+    #[tracing::instrument(name = "hooks_configuration", skip_all)]
     fn configure(
         &mut self,
         host_status: &HostStatus,
