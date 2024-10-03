@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Error};
 use log::trace;
+use strum_macros::IntoStaticStr;
 
 use crate::crate_private::Sealed;
 
@@ -271,6 +272,74 @@ impl RunAndCheck for Command {
         }
     }
 }
+
+/// Enum of runtime and test dependencies used in the code base.
+#[derive(Debug, Clone, Copy, IntoStaticStr)]
+#[strum(serialize_all = "lowercase")]
+pub enum Dependency {
+    Bash,
+    Blkid,
+    Cryptsetup,
+    Dd,
+    Dracut,
+    E2fsck,
+    Efibootmgr,
+    Findmnt,
+    Iptables,
+    Losetup,
+    Lsblk,
+    Lsof,
+    Mdadm,
+    Mkdir,
+    Mkfs,
+    Mkinitrd,
+    Mkswap,
+    Mount,
+    Mountpoint,
+    Netplan,
+    Partx,
+    Resize2fs,
+    Setfiles,
+    Sfdisk,
+    Swapoff,
+    Swapon,
+    Systemctl,
+    #[strum(serialize = "systemd-cryptenroll")]
+    SystemdCryptenroll,
+    #[strum(serialize = "systemd-escape")]
+    SystemdEscape,
+    #[strum(serialize = "systemd-firstboot")]
+    SystemdFirstboot,
+    #[strum(serialize = "systemd-repart")]
+    SystemdRepart,
+    #[strum(serialize = "systemd-sysusers")]
+    SystemdSysupdate,
+    Touch,
+    #[strum(serialize = "tpm2_clear")]
+    Tpm2Clear,
+    #[strum(serialize = "tpm2_pcrread")]
+    Tpm2Pcrread,
+    Tune2fs,
+    Udevadm,
+    Umount,
+    Uname,
+    Veritysetup,
+    Wipefs,
+    // Test dependencies
+    #[cfg(test)]
+    Cat,
+    #[cfg(test)]
+    Echo,
+    #[cfg(test)]
+    False,
+}
+
+impl Dependency {
+    pub fn name(&self) -> &'static str {
+        self.into()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
