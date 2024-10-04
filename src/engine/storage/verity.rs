@@ -344,7 +344,6 @@ pub(super) fn configure(host_status: &HostStatus, root_mount_path: &Path) -> Res
 
             let mut script =
                 GrubMkConfigScript::new(GRUB_MKCONFIG_SCRIPT_NAME).with_root(root_mount_path);
-            script.add_simple_param("rd.debug");
             script.add_kv_param(KARG_VERITY_ENABLED, "1");
             script.add_kv_param(KARG_VERITY_ROOT_HASH, root_hash);
             script.add_kv_param(KARG_VERITY_ROOT_DATA_DEV, verity_data_path);

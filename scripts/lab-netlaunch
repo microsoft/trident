@@ -166,6 +166,10 @@ iso:
   preTridentScript: |
     ip addr add {BAREMETAL_MACHINE_IP} dev {BAREMETAL_MACHINE_DEFAULT_INTERFACE}
     ip route add default via {BAREMETAL_MACHINE_GATEWAY} dev {BAREMETAL_MACHINE_DEFAULT_INTERFACE}
+    while true; do
+        curl -s -o /dev/null "http://{JUMPBOX_IP}:{LISTEN_HTTP_PORT_REMOTE}" && break
+        sleep 1
+    done
 """
 
 netlaunch_config_file.write_text(contents)
@@ -209,7 +213,6 @@ with background_process(tunnel_command) as ssh_tunnel:
     # Wait for the tunnel to be established. We *should* do this by reading the
     # output of the SSH command instead, but that's a bit more complicated.
     time.sleep(5)
-    # time.sleep(3600)
 
     # Start netlaunch
     subprocess.run(
@@ -221,3 +224,6 @@ with background_process(tunnel_command) as ssh_tunnel:
         ],
         check=True,
     )
+
+    while True:
+        time.sleep(60)
