@@ -9,7 +9,7 @@ use std::{
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
 
-use osutils::{files, scripts::ScriptRunner};
+use osutils::{exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
@@ -274,10 +274,22 @@ impl HooksSubsystem {
             "Failed to set environment variables for script '{}'",
             script.name
         ))?;
-        script_runner
+        let output = script_runner
             .with_logfile(script.log_file_path.as_ref())
-            .run_check()
-            .with_context(|| format!("Script '{}' failed", script.name))
+            .output_check()
+            .with_context(|| format!("Script '{}' failed", script.name))?
+            .output_report();
+
+        if output.trim().is_empty() {
+            info!(
+                "Script '{}' executed. (no output was captured)",
+                script.name
+            );
+        } else {
+            info!("Script '{}' executed:\n{}", script.name, output);
+        }
+
+        Ok(())
     }
 }
 

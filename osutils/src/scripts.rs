@@ -228,12 +228,19 @@ impl<'a> ScriptRunner<'a> {
         self.run_internal()
     }
 
-    /// Run the script and check the exit status
+    /// Runs the script and checks the exit status.
     pub fn run_check(&mut self) -> Result<(), Error> {
         self.run()
             .context("Failed to run script")?
             .check()
             .context("Script exited with an error")
+    }
+
+    /// Runs the script, checks the exit status, and returns the output.
+    pub fn output_check(&mut self) -> Result<ScriptResult, Error> {
+        let result = self.run().context("Failed to run script")?;
+        result.check().context("Script exited with an error")?;
+        Ok(result)
     }
 }
 
