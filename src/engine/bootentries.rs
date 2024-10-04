@@ -25,6 +25,7 @@ const BOOT64_EFI: &str = "bootx64.efi";
 /// Takes in the path where we expect to find the entry matching the install ID.
 /// During clean install, this corresponds to /mnt/newroot/boot/efi, but during
 /// A/B update, both A and B share a single ESP at /boot/efi.
+#[tracing::instrument(name = "set_boot_order_configuration", skip_all)]
 pub fn set_boot_next_and_update_boot_order(
     host_status: &HostStatus,
     esp_path: &Path,

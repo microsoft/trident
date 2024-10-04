@@ -365,14 +365,6 @@ pub(super) fn finalize_clean_install(
     ))?;
     state.close();
 
-    // Metric for clean install provisioning time in seconds
-    if let Some(start_time) = clean_install_start_time {
-        tracing::info!(
-            metric_name = "clean_install_provisioning_secs",
-            value = start_time.elapsed().as_secs_f64()
-        );
-    }
-
     // Persist the Trident background log to the new root
     persist_background_log(
         new_root.path(),
@@ -384,6 +376,14 @@ pub(super) fn finalize_clean_install(
     }
 
     storage::check_block_devices(state.host_status());
+
+    // Metric for clean install provisioning time in seconds
+    if let Some(start_time) = clean_install_start_time {
+        tracing::info!(
+            metric_name = "clean_install_provisioning_secs",
+            value = start_time.elapsed().as_secs_f64()
+        );
+    }
 
     if !state
         .host_status()

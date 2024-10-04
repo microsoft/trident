@@ -180,6 +180,7 @@ impl NewrootMount {
     }
 
     /// Unmount all registered mounts in the correct order.
+    #[tracing::instrument(name = "newroot_unmount", skip_all)]
     pub fn unmount_all(mut self) -> Result<(), TridentError> {
         info!("Unmounting newroot at '{}'", self.path().display());
         self.unmount_all_impl()

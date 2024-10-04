@@ -20,6 +20,7 @@ impl Subsystem for BootSubsystem {
         "boot"
     }
 
+    #[tracing::instrument(name = "boot_provision", skip_all)]
     fn provision(
         &mut self,
         host_status: &HostStatus,
