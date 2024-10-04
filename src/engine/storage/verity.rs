@@ -1450,15 +1450,14 @@ mod functional_test {
                 .expect("Failed to find GRUB_CMDLINE_LINUX in mkgrub config");
 
             // Parse the GRUB_CMDLINE_LINUX line to extract the existing kernel arguments
-            let parameters =
-                Regex::new(r#"GRUB_CMDLINE_LINUX="\$GRUB_CMDLINE_LINUX rd.debug (.*)""#)
-                    .unwrap()
-                    .captures(cmdline_config)
-                    .expect("Failed to parse GRUB_CMDLINE_LINUX")
-                    .get(1)
-                    .expect("Failed to get CMDLINE args")
-                    .as_str()
-                    .to_owned();
+            let parameters = Regex::new(r#"GRUB_CMDLINE_LINUX="\$GRUB_CMDLINE_LINUX (.*)""#)
+                .unwrap()
+                .captures(cmdline_config)
+                .expect("Failed to parse GRUB_CMDLINE_LINUX")
+                .get(1)
+                .expect("Failed to get CMDLINE args")
+                .as_str()
+                .to_owned();
 
             for opt in new_opts {
                 assert!(parameters.contains(&opt), "Missing option: {}", opt);
