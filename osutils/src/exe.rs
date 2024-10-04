@@ -329,14 +329,32 @@ pub enum Dependency {
     #[cfg(test)]
     Cat,
     #[cfg(test)]
+    DoesNotExist,
+    #[cfg(test)]
     Echo,
     #[cfg(test)]
     False,
 }
 
 impl Dependency {
+    /// Gets the name of the dependency
+    ///
+    /// For example, Dependency::Mdadm => "mdadm"
     pub fn name(&self) -> &'static str {
         self.into()
+    }
+
+    /// Checks if the dependency is present in the system
+    pub fn exists(&self) -> bool {
+        which::which(self.name()).is_ok()
+    }
+
+    /// Converts the dependency to a new Command instance,
+    /// or returns an error if it cannot be found
+    pub fn cmd(&self) -> Result<Command, Error> {
+        Ok(Command::new(which::which(self.name()).with_context(
+            || format!("Failed to find dependency: '{}'", self.name()),
+        )?))
     }
 }
 
@@ -491,5 +509,24 @@ mod test {
         let mut cmd = Command::new("cat");
         cmd.arg("/nonexistent_file_1234");
         cmd.raw_output_and_check().unwrap_err();
+    }
+
+    #[test]
+    fn test_existing_dependency() {
+        let dep = Dependency::Echo;
+        assert_eq!(dep.name(), "echo");
+        assert!(dep.exists());
+        let command = dep.cmd();
+        assert!(command.is_ok());
+        let output = command.unwrap().arg("test argument").output().unwrap();
+        assert_eq!(output.output(), "test argument\n");
+    }
+
+    #[test]
+    fn test_nonexistent_dependency() {
+        let dep = Dependency::DoesNotExist;
+        assert_eq!(dep.name(), "doesnotexist");
+        assert!(!dep.exists());
+        dep.cmd().unwrap_err();
     }
 }

@@ -433,6 +433,9 @@ pub enum UnsupportedConfigurationError {
 
     #[error("Disk partition(s) no longer exist on system: {partition_ids:?}")]
     PartitionsRemoved { partition_ids: Vec<String> },
+
+    #[error("Failed to find dependency '{name}'")]
+    RuntimeDependencyNotFound { name: String },
 }
 
 /// Describes different categories of structured errors that can occur in Trident.
