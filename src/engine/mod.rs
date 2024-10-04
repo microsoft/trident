@@ -10,6 +10,7 @@ use std::{
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
+use chrono::Utc;
 use log::{debug, error, info, warn};
 
 use osutils::{chroot, container, exe::RunAndCheck, path::join_relative};
@@ -42,7 +43,6 @@ use crate::{
         storage::StorageSubsystem,
     },
     HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH, TRIDENT_BACKGROUND_LOG_PATH,
-    TRIDENT_INSTALL_LOG_FILENAME,
 };
 
 // Trident Subsystems
@@ -367,8 +367,9 @@ pub(super) fn finalize_clean_install(
 
     // Persist the Trident background log to the new root
     persist_background_log(
-        new_root.path(),
         &state.host_status().spec.trident.datastore_path,
+        Some(new_root.path()),
+        ServicingType::CleanInstall,
     );
 
     if let Err(e) = new_root.unmount_all() {
@@ -497,6 +498,13 @@ pub(super) fn update(
             #[cfg(feature = "grpc-dangerous")]
             send_host_status_state(&mut sender, state)?;
 
+            // Persist the Trident background log to the updated runtime OS
+            persist_background_log(
+                &state.host_status().spec.trident.datastore_path,
+                None,
+                servicing_type,
+            );
+
             info!("Update complete");
             Ok(())
         }
@@ -511,7 +519,8 @@ pub(super) fn update(
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - host_config: Updated host configuration.
-/// - servicing_type: Servicing type of the update that Trident will now stage, based on host config.
+/// - servicing_type: Servicing type of the update that Trident will now stage, based on host
+/// config.
 /// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
@@ -646,6 +655,13 @@ pub(super) fn finalize_update(
         );
     }
 
+    // Persist the Trident background log to the updated runtime OS
+    persist_background_log(
+        &state.host_status().spec.trident.datastore_path,
+        None,
+        state.host_status().servicing_type,
+    );
+
     if !state
         .host_status()
         .spec
@@ -662,13 +678,24 @@ pub(super) fn finalize_update(
     }
 }
 
-/// Persists the Trident background log from the MOS to the new root, i.e. the runtime OS, to the
-/// directory adjacent to the datastore. Takes in 2 arguments:
-/// - new_root_path: New root device path.
-/// - datastore_path: Path to the datastore.
+/// Persists the Trident background log to the updated runtime OS, by copying the log file at
+/// TRIDENT_BACKGROUND_LOG_PATH to the directory adjacent to the datastore. On failure, only prints
+/// out an error message.
 ///
-/// On failure, only prints out the error message.
-fn persist_background_log(new_root_path: &Path, datastore_path: &Path) {
+/// In case of clean install, the log is persisted to the datastore path in the new root, so
+/// newroot_path is provided.
+fn persist_background_log(
+    datastore_path: &Path,
+    newroot_path: Option<&Path>,
+    servicing_type: ServicingType,
+) {
+    // Generate the new log filename based on the servicing type and the current timestamp
+    let new_background_log_filename = format!(
+        "trident-{:?}-{}.log",
+        servicing_type,
+        Utc::now().format("%Y%m%dT%H%M%SZ")
+    );
+
     // Fetch the directory path from the full datastore path
     let Some(datastore_dir) = datastore_path.parent() else {
         warn!(
@@ -678,28 +705,20 @@ fn persist_background_log(new_root_path: &Path, datastore_path: &Path) {
         return;
     };
 
-    // Construct the path to copy the log to the new root
-    let new_root_datastore_dir = join_relative(new_root_path, datastore_dir);
-    let new_background_log_path =
-        join_relative(new_root_datastore_dir, TRIDENT_INSTALL_LOG_FILENAME);
-
-    // Ensure all directories in the path exist
-    if let Some(parent) = new_background_log_path.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            warn!(
-                "Failed to create parent directories for Trident background log copy at path '{}': {}",
-                new_background_log_path.display(),
-                e
-            );
-            return;
-        }
-    }
+    // Create the full path for the new background log file
+    let new_background_log_path: PathBuf = if let Some(new_root) = newroot_path {
+        join_relative(new_root, datastore_dir).join(new_background_log_filename)
+    } else {
+        datastore_dir.join(new_background_log_filename)
+    };
 
     debug!(
-        "Persisting Trident background log from '{}' to '{}'",
+        "Persisting Trident background log from '{}' to '{}' ",
         TRIDENT_BACKGROUND_LOG_PATH,
         new_background_log_path.display()
     );
+
+    // Copy the background log file to the new location
     if let Err(e) = fs::copy(TRIDENT_BACKGROUND_LOG_PATH, &new_background_log_path) {
         warn!(
             "Failed to persist Trident background log from '{}' to '{}': {}",
@@ -709,6 +728,7 @@ fn persist_background_log(new_root_path: &Path, datastore_path: &Path) {
         );
         return;
     }
+
     debug!(
         "Successfully persisted Trident background log from '{}' to '{}'",
         TRIDENT_BACKGROUND_LOG_PATH,
@@ -1157,67 +1177,77 @@ mod functional_test {
 
     use tempfile::tempdir;
 
+    /// Helper function to check if the persisted background log file, i.e.
+    /// 'trident-<servicingType>-<timeStamp>.log', exists in the log directory.
+    fn persisted_log_exists(dir: &Path, servicing_type: ServicingType) -> bool {
+        let log_files = fs::read_dir(dir).unwrap();
+        let prefix = format!("trident-{:?}-", servicing_type);
+        for entry in log_files {
+            let entry = entry.unwrap();
+            let file_name = entry.file_name().into_string().unwrap();
+
+            // Check if any file starts with the correct prefix
+            if file_name.starts_with(&prefix) {
+                return true;
+            }
+        }
+        false
+    }
+
     #[functional_test]
     fn test_persist_background_log_success() {
-        // Create temp dir-s as arg-s to persist_background_log() function
-        let new_root_dir = tempdir().unwrap();
-        let datastore_dir = tempdir().unwrap();
+        // Create a tempdir for mock datastore path
+        let temp_dir_datastore = tempdir().unwrap();
+        let datastore_dir = temp_dir_datastore.path();
+        let datastore_path = datastore_dir.join("datastore");
 
-        let new_root_path = new_root_dir.path();
-        let datastore_path = datastore_dir.path().join("datastore");
+        // Create a tempdir for mock new root path
+        let temp_dir_newroot = tempdir().unwrap();
+        let newroot_path = temp_dir_newroot.path();
 
         // Create mock datastore directory and log file
         fs::create_dir_all(&datastore_path).unwrap();
 
-        persist_background_log(new_root_path, &datastore_path);
+        // Compose the log dir
+        let log_dir = join_relative(newroot_path, datastore_dir);
+        fs::create_dir_all(&log_dir).unwrap();
 
-        // Check that the log was copied to the expected location
-        let expected_log_path = join_relative(
-            join_relative(new_root_path, datastore_dir.path()),
-            Path::new(TRIDENT_INSTALL_LOG_FILENAME),
-        );
+        // Persist the background log
+        let servicing_type = ServicingType::CleanInstall;
+        persist_background_log(&datastore_path, Some(newroot_path), servicing_type);
+
         assert!(
-            expected_log_path.exists(),
-            "The background log should be copied successfully."
+            persisted_log_exists(&log_dir, servicing_type),
+            "Trident background log should be persisted successfully."
         );
-
-        // Clean up the copied log file
-        fs::remove_file(&expected_log_path).unwrap();
     }
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_persist_background_log_failure() {
-        // Create temp dir-s as arg-s to persist_background_log() function
-        let new_root_dir = tempdir().unwrap();
-        let datastore_dir = tempdir().unwrap();
+        // Create a tempdir for mock datastore path
+        let temp_dir_datastore = tempdir().unwrap();
+        let datastore_dir = temp_dir_datastore.path();
+        let datastore_path = datastore_dir.join("datastore");
 
-        let new_root_path = new_root_dir.path();
-        let datastore_path = datastore_dir.path().join("datastore");
-
-        // Ensure the directory structure is valid
+        // Create mock datastore directory and log file
         fs::create_dir_all(&datastore_path).unwrap();
 
-        // Copy TRIDENT_BACKGROUND_LOG_PATH to a temp file
-        let temp_log_path = datastore_path.join("temp_log");
+        // Create a temp copy of TRIDENT_BACKGROUND_LOG_PATH
+        let temp_log_path = TRIDENT_BACKGROUND_LOG_PATH.to_owned() + ".temp";
         fs::copy(TRIDENT_BACKGROUND_LOG_PATH, &temp_log_path).unwrap();
         // Remove TRIDENT_BACKGROUND_LOG_PATH
         fs::remove_file(TRIDENT_BACKGROUND_LOG_PATH).unwrap();
 
-        persist_background_log(new_root_path, &datastore_path);
+        // Persist the background log
+        let servicing_type = ServicingType::AbUpdate;
+        persist_background_log(&datastore_path, None, servicing_type);
 
-        // Check that the log was NOT persisted
-        let expected_log_path = join_relative(
-            join_relative(new_root_path, datastore_dir.path()),
-            Path::new(TRIDENT_INSTALL_LOG_FILENAME),
-        );
         assert!(
-            !expected_log_path.exists(),
-            "The background log should not be copied if the source file doesn't exist."
+            !persisted_log_exists(datastore_dir, servicing_type),
+            "Trident background log should not be persisted."
         );
 
-        // Re-create TRIDENT_BACKGROUND_LOG_PATH
+        // Re-create TRIDENT_BACKGROUND_LOG_PATH by copying from the temp file
         fs::copy(&temp_log_path, TRIDENT_BACKGROUND_LOG_PATH).unwrap();
-        // Clean up the temp log file
-        fs::remove_file(&temp_log_path).unwrap();
     }
 }
