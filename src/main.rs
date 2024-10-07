@@ -198,14 +198,19 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
 
     // Set up the multilogger
     let mut multilogger = MultiLogger::new()
+        // Add regular env_logger to output to stderr
         .with_logger(Box::new(
             env_logger::builder()
                 .format_timestamp(None)
                 .filter_level(args.verbosity)
                 .build(),
         ))
-        .with_logger(logstream.make_logger_with_level(LevelFilter::Trace));
+        // Add logstream to send logs to the log server
+        .with_logger(logstream.make_logger_with_level(LevelFilter::Trace))
+        // Set the global filter for reqwest to debug
+        .with_global_filter("reqwest", LevelFilter::Debug);
 
+    // Add background logger if we're running a command that needs it
     if matches!(args.command, Commands::Run(_)) || matches!(args.command, Commands::RebuildRaid(_))
     {
         multilogger.add_logger(BackgroundLog::new(TRIDENT_BACKGROUND_LOG_PATH).into_logger());

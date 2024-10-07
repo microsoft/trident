@@ -92,6 +92,7 @@ impl Log for LogSender {
         // BLock logs with a level higher than the max level
         // Block reqwest logs from being sent to the server
         // Block logs if there is no server
+        // Blocks logs from request to avoid logging recursively
         metadata.level() <= self.max_level
             && !metadata.target().starts_with("reqwest")
             && self.has_server()

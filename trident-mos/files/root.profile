@@ -1,2 +1,2 @@
 # Open journalctl immediately after autologin
-journalctl -f --no-tail -u download-trident
+journalctl -f --no-tail -u download-trident -u trident
