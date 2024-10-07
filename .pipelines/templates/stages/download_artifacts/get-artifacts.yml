@@ -40,7 +40,7 @@ stages:
 
         steps:
           - task: DownloadPipelineArtifact@2
-            displayName: "Download trident rpms and container"
+            displayName: "Download trident rpms"
             inputs:
               source: specific
               project: "ECF"
@@ -123,6 +123,29 @@ stages:
               runId: ${{ parameters.tridentPipelineRunId }}
               allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
               artifactName: "trident-container-installer-testimage"
+              targetPath: $(ob_outputDirectory)
+
+      - job: TridentContainerTestimage
+        displayName: "Download trident-container-testimage"
+        timeoutInMinutes: 10
+        pool:
+          type: linux
+      
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_artifactBaseName: "trident-container-testimage"
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              source: specific
+              project: "ECF"
+              definition: ${{ parameters.definition }}
+              runVersion: ${{ parameters.runVersion }}
+              branchName: "refs/heads/${{ parameters.branch }}"
+              runId: ${{ parameters.tridentPipelineRunId }}
+              allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
+              artifactName: "trident-container-testimage"
               targetPath: $(ob_outputDirectory)
 
       - job: TridentTestimage

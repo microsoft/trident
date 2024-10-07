@@ -63,7 +63,6 @@ stages:
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "validation"
-          installerISO: trident-container-installer-testimage
           runtimeEnv: "container"
           testingRun: true
 

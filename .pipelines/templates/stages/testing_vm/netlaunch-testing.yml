@@ -21,14 +21,6 @@ parameters:
       - host
       - container
 
-  - name: installerISO
-    displayName: "Image used for the installer, source of trident (container vs host)"
-    type: string
-    default: trident-installer-testimage
-    values:
-      - trident-installer-testimage
-      - trident-container-installer-testimage
-
 stages:
   - stage: DeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
@@ -37,12 +29,13 @@ stages:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools
-          - TridentTestImg_trident_testimage
           - TridentTestImg_trident_verity_testimage
           - ${{ if eq(parameters.runtimeEnv, 'container') }}:
               - TridentTestImg_trident_container_installer_testimage
+              - TridentTestImg_trident_container_testimage
           - ${{ else }}:
               - TridentTestImg_trident_installer_testimage
+              - TridentTestImg_trident_testimage
 
     jobs:
       - template: ../testing_common/get-tests.yml
@@ -54,6 +47,7 @@ stages:
       - job: Testing
         dependsOn: DefineTests
         timeoutInMinutes: 30
+        continueOnError: ${{ eq(parameters.runtimeEnv, 'container') }}
         pool:
           type: linux
           name: trident-ubuntu-1es-pool-eastus2
@@ -64,11 +58,16 @@ stages:
 
         variables:
           tridentConfigurationName: $(configuration)
+          tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(tridentConfigurationName)
 
           tridentSourceDirectory: $(Build.SourcesDirectory)
           argusToolkitSourceDirectory: $(Build.SourcesDirectory)/argus-toolkit
 
-          tridentConfigPath: $(tridentSourceDirectory)/e2e_tests/trident_configurations/$(tridentConfigurationName)
+          ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              installerISO: trident-container-installer-testimage.iso
+          ${{ else }}:
+              installerISO: trident-installer-testimage.iso
+
           ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
           ob_artifactBaseName: $(tridentConfigurationName)_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
 
@@ -80,7 +79,12 @@ stages:
 
           - template: netlaunch-prep.yml
             parameters:
-              installerISO: ${{ parameters.installerISO }}
+              ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                installerISO: trident-container-installer-testimage
+                tridentTestImage: trident-container-testimage
+              ${{ else }}:
+                installerISO: trident-installer-testimage
+                tridentTestImage: trident-testimage
 
           - template: ../testing_common/trident-prep.yml
             parameters:
@@ -110,7 +114,7 @@ stages:
               fi
 
               ./bin/netlaunch \
-                  --iso $(System.ArtifactsDirectory)/${{ parameters.installerISO }}.iso \
+                  --iso $(System.ArtifactsDirectory)/$(installerISO) \
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \

@@ -22,9 +22,15 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
 
+  # Build tools (Go stuff)
+  - template: stages/building_tools/building-tools.yml
+
   # Makefile validation, only for CI and PR-E2E
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e')) }}:
       - template: stages/validate_makefile/dev-build.yml
+
+  # Build Trident container image
+  - template: stages/build_docker_image/trident-container.yml
 
   # Build Trident installer ISO (host)
   - template: stages/build_image/trident-testimg.yml
@@ -44,17 +50,17 @@ stages:
       imageName: trident-testimage
       outputArtifactName: trident-testimage
 
+  # Build Trident test image (container)
+  - template: stages/build_image/trident-testimg.yml
+    parameters:
+      imageName: trident-container-testimage
+      outputArtifactName: trident-container-testimage
+
   # Build Trident test image (verity)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: trident-verity-testimage
       outputArtifactName: trident-verity-testimage
-
-  # Build tools (Go stuff)
-  - template: stages/building_tools/building-tools.yml
-
-  # Build Trident container image
-  - template: stages/build_docker_image/trident-container.yml
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
@@ -80,10 +86,9 @@ stages:
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "daily"
-          installerISO: trident-container-installer-testimage
           runtimeEnv: "container"
 
-  # Stages for CI
+  # TESTING stages for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       # Functional Testing
       - template: stages/testing_functional/functional-testing.yml
@@ -92,17 +97,15 @@ stages:
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
-          installerISO: trident-installer-testimage
           runtimeEnv: "host"
 
       # VM Testing (container, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
-          installerISO: trident-container-installer-testimage
           runtimeEnv: "container"
 
-  # Stages for PR-E2E
+  # TESTING stages for PR-E2E
   - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
       # Functional Testing (short version)
       - template: stages/testing_functional/functional-testing.yml
@@ -113,14 +116,12 @@ stages:
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "pullrequest"
-          installerISO: trident-installer-testimage
           runtimeEnv: "host"
 
       # VM Testing (container, pullrequest)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "pullrequest"
-          installerISO: trident-container-installer-testimage
           runtimeEnv: "container"
 
   # PUBLISHING
