@@ -53,7 +53,7 @@ stages:
 
       - job: Testing
         dependsOn: DefineTests
-        timeoutInMinutes: 25
+        timeoutInMinutes: 30
         pool:
           type: linux
           name: trident-ubuntu-1es-pool-eastus2
