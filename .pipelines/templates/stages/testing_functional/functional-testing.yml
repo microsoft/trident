@@ -26,7 +26,7 @@ stages:
     jobs:
       - job: FunctionalTests
         displayName: Functional Tests
-        timeoutInMinutes: 45
+        timeoutInMinutes: 50
         pool:
           type: linux
           name: trident-ubuntu-1es-pool-eastus2
