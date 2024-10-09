@@ -148,7 +148,7 @@ mod test {
     fn test_block_devices_needing_fs_creation() {
         let host_status_clean_install = HostStatus {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -255,7 +255,7 @@ mod test {
         // have already had FSs created OR are being updated with an image.
         let mut host_status_ab_update = HostStatus {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -372,7 +372,7 @@ mod test {
     fn test_block_devices_needing_fs_creation_adopted_esp() {
         let host_status = HostStatus {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {

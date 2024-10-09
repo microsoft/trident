@@ -36,7 +36,6 @@ impl Subsystem for OsConfigSubsystem {
         &self,
         _host_status: &HostStatus,
         host_config: &HostConfiguration,
-        _planned_servicing_type: ServicingType,
     ) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
         if requires_os_modifier_os(&host_config.os) && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
@@ -100,15 +99,14 @@ impl Subsystem for MosConfigSubsystem {
 
     fn validate_host_config(
         &self,
-        _host_status: &HostStatus,
+        host_status: &HostStatus,
         host_config: &HostConfiguration,
-        planned_servicing_type: ServicingType,
     ) -> Result<(), TridentError> {
-        if planned_servicing_type != ServicingType::CleanInstall {
+        if host_status.servicing_type != ServicingType::CleanInstall {
             debug!(
                 "Skipping step 'Validate' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
-                planned_servicing_type
+                host_status.servicing_type
             );
             return Ok(());
         }

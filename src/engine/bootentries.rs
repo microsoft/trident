@@ -256,7 +256,7 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
@@ -464,9 +464,7 @@ mod functional_test {
             ..Default::default()
         };
 
-        // Borrow checker bypass :)
-        let config = host_status.spec.clone();
-        partitioning::create_partitions(&mut host_status, &config).unwrap();
+        partitioning::create_partitions(&mut host_status).unwrap();
 
         let disk_path = get_esp_partition_disk(&host_status).unwrap();
 

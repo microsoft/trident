@@ -3,10 +3,6 @@
 # 
 # Basic sample with a bootable deployment.
 
-trident:
-  disable: false
-  selfUpgrade: false
-  phonehome: null
 storage:
   disks:
   - id: os

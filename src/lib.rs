@@ -14,8 +14,9 @@ use osutils::{
     efibootmgr::{self, EfiBootManagerOutput},
     path,
 };
-use trident_api::config::{
-    HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations,
+use trident_api::{
+    config::{HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations},
+    status::AbVolumeSelection,
 };
 use trident_api::{
     constants::ROOT_MOUNT_POINT_PATH,
@@ -484,6 +485,11 @@ impl Trident {
             datastore.with_host_status(|host_status| {
                 host_status.servicing_state = ServicingState::Provisioned;
                 host_status.servicing_type = ServicingType::NoActiveServicing;
+                host_status.spec_old = Default::default();
+                host_status.ab_active_volume = match host_status.ab_active_volume {
+                    None | Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
+                    Some(AbVolumeSelection::VolumeA) => Some(AbVolumeSelection::VolumeB),
+                };
             })?;
         }
 

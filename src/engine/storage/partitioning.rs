@@ -22,32 +22,36 @@ use trident_api::{
     status::HostStatus,
     BlockDeviceId,
 };
+use uuid::Uuid;
 
 /// Given a host configuration, adopt and create partitions on the disks.
 #[tracing::instrument(name = "partitions_creation", skip_all)]
-pub fn create_partitions(
-    host_status: &mut HostStatus,
-    host_config: &HostConfiguration,
-) -> Result<(), Error> {
+pub fn create_partitions(host_status: &mut HostStatus) -> Result<(), Error> {
     // Resolve the disk paths to ensure that all disks in the configuration exist.
-    let resolved_disks =
-        block_devices::get_resolved_disks(host_config).context("Failed to resolve disk paths")?;
+    let resolved_disks = block_devices::get_resolved_disks(&host_status.spec)
+        .context("Failed to resolve disk paths")?;
 
     // Do a non-destructive first pass of adoption to detect any issues before
     // we start making changes.
     partitioning_safety_check(&resolved_disks).context("Partitioning safety check failed")?;
 
     for disk in &resolved_disks {
-        create_partitions_on_disk(host_status, host_config, disk)
-            .with_context(|| format!("Failed to create partitions for disk '{}'", disk.id))?;
+        create_partitions_on_disk(
+            &host_status.spec,
+            disk,
+            &mut host_status.block_device_paths,
+            &mut host_status.disks_by_uuid,
+        )
+        .with_context(|| format!("Failed to create partitions for disk '{}'", disk.id))?;
     }
     Ok(())
 }
 
 pub fn create_partitions_on_disk(
-    host_status: &mut HostStatus,
     host_config: &HostConfiguration,
     disk: &ResolvedDisk,
+    block_device_paths: &mut BTreeMap<BlockDeviceId, PathBuf>,
+    disks_by_uuid: &mut HashMap<Uuid, BlockDeviceId>,
 ) -> Result<(), Error> {
     let mut repart = SystemdRepartInvoker::new(&disk.bus_path, RepartEmptyMode::Force);
 
@@ -57,7 +61,7 @@ pub fn create_partitions_on_disk(
 
     // Populate repart with entries for partitions that are to be created.
     add_repart_entries(
-        disk.spec,
+        &disk.spec,
         &generate_sysupdate_partlabels(&host_config.storage),
         &mut repart,
     );
@@ -119,7 +123,7 @@ pub fn create_partitions_on_disk(
     match disk_information.id.as_uuid() {
         Some(disk_uuid) => {
             // Update the host status with disk UUID to disk ID mapping
-            host_status.disks_by_uuid.insert(disk_uuid, disk.id.into());
+            disks_by_uuid.insert(disk_uuid, disk.id.clone());
         }
         None => {
             debug!(
@@ -145,9 +149,7 @@ pub fn create_partitions_on_disk(
             repart_partition.id,
             repart_partition
         );
-        host_status
-            .block_device_paths
-            .insert(repart_partition.id.clone(), repart_partition.path_by_uuid());
+        block_device_paths.insert(repart_partition.id.clone(), repart_partition.path_by_uuid());
     }
     Ok(())
 }
@@ -841,7 +843,7 @@ mod functional_test {
             ..Default::default()
         };
 
-        create_partitions(&mut host_status, &host_config).unwrap();
+        create_partitions(&mut host_status).unwrap();
 
         assert_eq!(host_status.block_device_paths.len(), 3);
 
@@ -928,7 +930,7 @@ mod functional_test {
             ..Default::default()
         };
 
-        create_partitions(&mut host_status, &host_config).unwrap();
+        create_partitions(&mut host_status).unwrap();
 
         assert_eq!(host_status.block_device_paths.len(), 2);
         assert!(
@@ -978,7 +980,7 @@ mod functional_test {
             ..Default::default()
         };
 
-        create_partitions(&mut host_status, &host_config).unwrap_err();
+        create_partitions(&mut host_status).unwrap_err();
 
         osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
     }

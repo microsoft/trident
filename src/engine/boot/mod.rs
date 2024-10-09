@@ -220,7 +220,7 @@ mod tests {
         // Test for clean install
         let mut host_status = HostStatus {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
@@ -247,7 +247,7 @@ mod tests {
         // Test for update to A
         let mut host_status = HostStatus {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ab_active_volume: Some(AbVolumeSelection::VolumeB),
             ..Default::default()
         };
@@ -275,7 +275,7 @@ mod tests {
         // Test for update to B
         let mut host_status = HostStatus {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };

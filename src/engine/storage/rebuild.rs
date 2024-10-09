@@ -254,13 +254,20 @@ pub(crate) fn validate_and_rebuild_raid(
         // Get resolved disk for the disk to rebuild
         let resolved_disk = resolved_disks
             .iter()
-            .find(|rd| rd.id == disk)
+            .find(|rd| rd.id == *disk)
             .context(format!("Failed to find resolved disk for disk '{}'", disk))?;
 
         // Create Partitions on the new disk
-        partitioning::create_partitions_on_disk(host_status, host_config, resolved_disk).context(
-            format!("Failed to create partitions on disk '{}'", resolved_disk.id),
-        )?;
+        partitioning::create_partitions_on_disk(
+            host_config,
+            resolved_disk,
+            &mut host_status.block_device_paths,
+            &mut host_status.disks_by_uuid,
+        )
+        .context(format!(
+            "Failed to create partitions on disk '{}'",
+            resolved_disk.id
+        ))?;
     }
 
     let raid_disks_to_rebuild_map =
@@ -973,7 +980,7 @@ mod functional_test {
         assert!(err.is_ok());
 
         // Create partitions on the test disks.
-        let err = storage::partitioning::create_partitions(&mut host_status, &host_config);
+        let err = storage::partitioning::create_partitions(&mut host_status);
         assert!(err.is_ok());
         udevadm::settle().unwrap();
 

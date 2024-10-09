@@ -230,7 +230,7 @@ mod functional_test {
                 .with_host_status(|s| s.servicing_type = ServicingType::CleanInstall)
                 .unwrap();
             datastore
-                .with_host_status(|s| s.servicing_state = ServicingState::Staging)
+                .with_host_status(|s| s.servicing_state = ServicingState::Staged)
                 .unwrap();
 
             assert_eq!(
@@ -239,7 +239,7 @@ mod functional_test {
             );
             assert_eq!(
                 datastore.host_status().servicing_state,
-                ServicingState::Staging
+                ServicingState::Staged
             );
         }
 
@@ -253,7 +253,7 @@ mod functional_test {
             );
             assert_eq!(
                 datastore.host_status().servicing_state,
-                ServicingState::Staging
+                ServicingState::Staged
             );
             datastore
                 .with_host_status(|s| s.servicing_state = ServicingState::CleanInstallFailed)

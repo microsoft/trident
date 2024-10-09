@@ -373,19 +373,20 @@ fn get_verity_data_volume_pair_paths(
 /// Checks if the host needs an A/B update by comparing the images targeting ESP partitions and A/B
 /// volume pairs in the host configuration with those in the host status. Returns true if there is
 /// at least one image that needs to be updated; otherwise, returns false.
-pub(super) fn needs_ab_update(host_status: &HostStatus, host_config: &HostConfiguration) -> bool {
+pub(super) fn needs_ab_update(host_status: &HostStatus) -> bool {
     let old_images = host_status
+        .spec_old
+        .storage
+        .get_ab_volume_pair_images()
+        .into_iter()
+        .chain(host_status.spec_old.storage.get_esp_images())
+        .collect();
+    let new_images = host_status
         .spec
         .storage
         .get_ab_volume_pair_images()
         .into_iter()
         .chain(host_status.spec.storage.get_esp_images())
-        .collect();
-    let new_images = host_config
-        .storage
-        .get_ab_volume_pair_images()
-        .into_iter()
-        .chain(host_config.storage.get_esp_images())
         .collect();
     !get_updated_images(old_images, new_images).is_empty()
 }
@@ -624,7 +625,7 @@ mod tests {
     #[test]
     fn test_needs_ab_update_and_get_updated_images() {
         // Initialize a host configuration
-        let mut host_config = HostConfiguration {
+        let host_config = HostConfiguration {
             storage: StorageConfig {
                 disks: vec![Disk {
                     id: "os".to_owned(),
@@ -704,10 +705,11 @@ mod tests {
         };
 
         // Initialize a host status with spec matching the host configuration
-        let host_status = HostStatus {
+        let mut host_status = HostStatus {
             servicing_type: ServicingType::NoActiveServicing,
             servicing_state: ServicingState::Provisioned,
             spec: host_config.clone(),
+            spec_old: host_config,
             block_device_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
@@ -722,27 +724,27 @@ mod tests {
 
         // Test case 1. Running needs_ab_update() when images are the same in host status and host
         // configuration should return false.
-        assert!(!needs_ab_update(&host_status, &host_config));
+        assert!(!needs_ab_update(&host_status));
         // Running get_updated_images() should return an empty list.
         assert!(get_updated_images(
-            host_status.spec.storage.get_images(),
-            host_config.storage.get_images()
+            host_status.spec_old.storage.get_images(),
+            host_status.spec.storage.get_images()
         )
         .is_empty());
 
         // Test case 2. Running needs_ab_update() when the URL of the ESP image in the host
         // configuration is different from that in the host status should return true.
-        host_config.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
+        host_status.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_2.img".to_string(),
             sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&host_status, &host_config));
+        assert!(needs_ab_update(&host_status));
         // Running get_updated_images() should return the 'esp' image.
         assert_eq!(
             get_updated_images(
-                host_status.spec.storage.get_esp_images(),
-                host_config.storage.get_esp_images()
+                host_status.spec_old.storage.get_esp_images(),
+                host_status.spec.storage.get_esp_images()
             ),
             vec![(
                 "esp".to_string(),
@@ -756,17 +758,17 @@ mod tests {
 
         // Test case 3. Running needs_ab_update() when the sha256sum of the ESP image in the host
         // configuration is different from that in the host status should return true.
-        host_config.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
+        host_status.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_1.img".to_string(),
             sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&host_status, &host_config));
+        assert!(needs_ab_update(&host_status));
         // Running get_updated_images() for ESP only should return the 'esp' image.
         assert_eq!(
             get_updated_images(
-                host_status.spec.storage.get_esp_images(),
-                host_config.storage.get_esp_images()
+                host_status.spec_old.storage.get_esp_images(),
+                host_status.spec.storage.get_esp_images()
             ),
             vec![(
                 "esp".to_string(),
@@ -779,24 +781,24 @@ mod tests {
         );
         // But running get_updated_images() for all non-ESP images should return an empty list.
         assert!(get_updated_images(
-            host_status.spec.storage.get_images(),
-            host_config.storage.get_images()
+            host_status.spec_old.storage.get_images(),
+            host_status.spec.storage.get_images()
         )
         .is_empty());
 
         // Test case 4. Running needs_ab_update() when the URL of the root image in the host
         // configuration is different from that in the host status should return true.
-        host_config.storage.filesystems[1].source = FileSystemSource::Image(Image {
+        host_status.spec.storage.filesystems[1].source = FileSystemSource::Image(Image {
             url: "http://example.com/root_2.img".to_string(),
             sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&host_status, &host_config));
+        assert!(needs_ab_update(&host_status));
         // Running get_updated_images() for all non-ESP images should return the 'root' image.
         assert_eq!(
             get_updated_images(
-                host_status.spec.storage.get_images(),
-                host_config.storage.get_images()
+                host_status.spec_old.storage.get_images(),
+                host_status.spec.storage.get_images()
             ),
             vec![(
                 "root".to_string(),
@@ -809,28 +811,32 @@ mod tests {
         );
         // But running get_updated_images() for all images should return both the 'esp' and 'root'
         // images.
-        let mut all_images = host_config.storage.get_images();
-        all_images.extend(host_config.storage.get_esp_images());
+        let mut all_images = host_status.spec.storage.get_images();
+        all_images.extend(host_status.spec.storage.get_esp_images());
         // Assert length of the returned list
         assert_eq!(
-            get_updated_images(host_status.spec.storage.get_images(), all_images.clone()).len(),
+            get_updated_images(
+                host_status.spec_old.storage.get_images(),
+                all_images.clone()
+            )
+            .len(),
             2
         );
         // Assert it contains both the 'esp' and 'root' images
+        assert!(get_updated_images(
+            host_status.spec_old.storage.get_images(),
+            all_images.clone()
+        )
+        .contains(&(
+            "esp".to_string(),
+            Image {
+                url: "http://example.com/esp_1.img".to_string(),
+                sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                format: ImageFormat::RawZst,
+            }
+        )));
         assert!(
-            get_updated_images(host_status.spec.storage.get_images(), all_images.clone()).contains(
-                &(
-                    "esp".to_string(),
-                    Image {
-                        url: "http://example.com/esp_1.img".to_string(),
-                        sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
-                        format: ImageFormat::RawZst,
-                    }
-                )
-            )
-        );
-        assert!(
-            get_updated_images(host_status.spec.storage.get_images(), all_images).contains(&(
+            get_updated_images(host_status.spec_old.storage.get_images(), all_images).contains(&(
                 "root".to_string(),
                 Image {
                     url: "http://example.com/root_2.img".to_string(),

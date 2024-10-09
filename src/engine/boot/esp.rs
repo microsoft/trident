@@ -616,7 +616,7 @@ mod tests {
         // Clean install HostStatus
         let mut host_status = HostStatus {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
@@ -727,7 +727,7 @@ mod tests {
         println!("Checking AB update to B");
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         });
@@ -736,7 +736,7 @@ mod tests {
         println!("Checking AB update to A");
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ab_active_volume: Some(AbVolumeSelection::VolumeB),
             ..Default::default()
         });
@@ -745,7 +745,7 @@ mod tests {
         println!("Checking AB update with no active volume");
         test_generate_efi_bin_base_dir_path(&mut HostStatus {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             // Set to None to trigger default behavior
             ab_active_volume: None,
             ..Default::default()

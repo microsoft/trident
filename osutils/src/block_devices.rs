@@ -6,19 +6,22 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use trident_api::config::{Disk, HostConfiguration};
+use trident_api::{
+    config::{Disk, HostConfiguration},
+    BlockDeviceId,
+};
 
 use crate::{
     exe::RunAndCheck,
     lsblk::{self, BlockDeviceType},
 };
 
-pub struct ResolvedDisk<'a> {
+pub struct ResolvedDisk {
     /// Shortcut to the disk id.
-    pub id: &'a str,
+    pub id: BlockDeviceId,
 
     /// Reference to the disk configuration.
-    pub spec: &'a Disk,
+    pub spec: Disk,
 
     /// Path to the disk in /dev.
     /// Will probably be used in the future.
@@ -50,8 +53,8 @@ pub fn get_resolved_disks(host_config: &HostConfiguration) -> Result<Vec<Resolve
             ))?;
 
             Ok(ResolvedDisk {
-                id: &disk.id,
-                spec: disk,
+                id: disk.id.clone(),
+                spec: disk.clone(),
                 dev_path,
                 bus_path,
             })

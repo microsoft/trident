@@ -3,10 +3,6 @@
 # 
 # Advanced sample showcasing combination of RAID, encryption, dm-verity and A/B update.
 
-trident:
-  disable: false
-  selfUpgrade: false
-  phonehome: null
 storage:
   disks:
   - id: disk1

@@ -5,10 +5,6 @@ Base sample config showcasing raid, encryption and A/B update.
  -->
 
 ```yaml
-trident:
-  disable: false
-  selfUpgrade: false
-  phonehome: null
 storage:
   disks:
   - id: os

@@ -3,10 +3,6 @@
 # 
 # Verity sample showcasing usage of dm-verity.
 
-trident:
-  disable: false
-  selfUpgrade: false
-  phonehome: null
 storage:
   disks:
   - id: os

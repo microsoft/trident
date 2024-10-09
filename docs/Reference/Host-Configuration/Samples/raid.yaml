@@ -3,10 +3,6 @@
 # 
 # RAID sample showcasing usage of RAID.
 
-trident:
-  disable: false
-  selfUpgrade: false
-  phonehome: null
 storage:
   disks:
   - id: disk1

@@ -34,11 +34,11 @@ use self::os::ManagementOs;
 pub struct HostConfiguration {
     /// The Trident Management configuration controls the installation of the
     /// Trident agent onto the runtime OS.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub trident: Trident,
 
     /// Describes the storage configuration of the host.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub storage: Storage,
 
     /// Optional scripts to be run after different Trident stages have completed.

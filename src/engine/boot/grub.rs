@@ -476,7 +476,7 @@ pub(crate) mod functional_test {
         let mut host_status = HostStatus {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -566,7 +566,7 @@ pub(crate) mod functional_test {
         let mut host_status = HostStatus {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -645,7 +645,7 @@ pub(crate) mod functional_test {
         let host_status = HostStatus {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -717,7 +717,7 @@ pub(crate) mod functional_test {
         let host_status = HostStatus {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -770,7 +770,7 @@ pub(crate) mod functional_test {
         let host_status = HostStatus {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {

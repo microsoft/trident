@@ -46,16 +46,14 @@ Describes the storage configuration of the host.
 | Characteristic | Value                   |
 | -------------- | ----------------------- |
 | Type           | `Storage`               |
-| Default        | `{}`                    |
 | Link           | [Storage](./Storage.md) |
 
 ### `trident` (optional)
 
 The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.
 
-| Characteristic | Value                                                    |
-| -------------- | -------------------------------------------------------- |
-| Type           | `Trident`                                                |
-| Default        | `{"disable":false,"phonehome":null,"selfUpgrade":false}` |
-| Link           | [Trident](./Trident.md)                                  |
+| Characteristic | Value                   |
+| -------------- | ----------------------- |
+| Type           | `Trident`               |
+| Link           | [Trident](./Trident.md) |
 

@@ -77,7 +77,6 @@ trait Subsystem: Send {
     fn select_servicing_type(
         &self,
         _host_status: &HostStatus,
-        _host_config: &HostConfiguration,
     ) -> Result<Option<ServicingType>, TridentError> {
         Ok(None)
     }
@@ -87,7 +86,6 @@ trait Subsystem: Send {
         &self,
         _host_status: &HostStatus,
         _host_config: &HostConfiguration,
-        _planned_servicing_type: ServicingType,
     ) -> Result<(), TridentError> {
         Ok(())
     }
@@ -171,16 +169,6 @@ pub(super) fn clean_install(
     info!("Safety check passed, continuing with clean install.");
 
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
-
-    validate_host_config(
-        &subsystems,
-        state.host_status(),
-        host_config,
-        ServicingType::CleanInstall,
-    )?;
-
-    #[cfg(feature = "grpc-dangerous")]
-    send_host_status_state(&mut sender, state)?;
 
     // Stage clean install
     let root_mount = stage_clean_install(
@@ -274,35 +262,44 @@ fn stage_clean_install(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<NewrootMount, TridentError> {
-    debug!("Setting host's servicing type to CleanInstall");
-    debug!("Updating host's servicing state to Staging");
+    // Initialize a copy of the host status with the changes that are planned. We make a copy rather
+    // than modifying the datastore's version so that we can wait until the clean install is staged
+    // before committing the changes.
+    let mut host_status = HostStatus {
+        spec: host_config.clone(),
+        spec_old: Default::default(),
+        servicing_type: ServicingType::CleanInstall,
+        servicing_state: ServicingState::NotProvisioned,
+        ab_active_volume: None,
+        last_error: None,
+        block_device_paths: Default::default(), // Will be initialized later
+        disks_by_uuid: Default::default(),      // Will be initialized later
+        install_index: 0,                       // Will be initialized later
+    };
+    validate_host_config(subsystems, &host_status, host_config)?;
+
+    debug!("Clearing saved host status");
     state.with_host_status(|host_status| {
-        host_status.servicing_type = ServicingType::CleanInstall;
-        host_status.servicing_state = ServicingState::Staging;
-        host_status.ab_active_volume = None;
-        host_status.spec = host_config.clone();
+        host_status.spec = Default::default();
+        host_status.servicing_type = ServicingType::NoActiveServicing;
+        host_status.servicing_state = ServicingState::NotProvisioned;
     })?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    prepare(subsystems, state.host_status())?;
+    prepare(subsystems, &host_status)?;
 
     info!("Preparing storage to mount new root");
-    state.try_with_host_status(|host_status| {
-        storage::initialize_block_devices(host_status, host_config)
-    })?;
+    storage::create_block_devices(&mut host_status)?;
+    storage::initialize_block_devices(&host_status)?;
     let newroot_mount = NewrootMount::create_and_mount(
         host_config,
-        &state.host_status().block_device_paths,
+        &host_status.block_device_paths,
         AbVolumeSelection::VolumeA,
     )?;
+    host_status.install_index = boot::esp::next_install_index(newroot_mount.path())?;
 
-    state.try_with_host_status(|host_status| {
-        host_status.install_index = boot::esp::next_install_index(newroot_mount.path())?;
-        Ok(())
-    })?;
-
-    provision(subsystems, state.host_status(), newroot_mount.path())?;
+    provision(subsystems, &host_status, newroot_mount.path())?;
 
     info!("Entering '{}' chroot", newroot_mount.path().display());
     let result = chroot::enter_update_chroot(newroot_mount.path())
@@ -310,7 +307,7 @@ fn stage_clean_install(
         .execute_and_exit(|| {
             configure(
                 subsystems,
-                state.host_status(),
+                &host_status,
                 newroot_mount.execroot_relative_path(),
             )
         });
@@ -322,15 +319,19 @@ fn stage_clean_install(
         return Err(original_error).message("Failed to execute in chroot");
     }
 
-    // At this point, clean install has been staged, so update servicing state
+    // At this point, clean install has been staged, so update host status
     debug!("Updating host's servicing state to Staged");
-    state.with_host_status(|host_status| host_status.servicing_state = ServicingState::Staged)?;
-    info!("Host status updated");
+    state.with_host_status(|hs| {
+        *hs = HostStatus {
+            servicing_type: ServicingType::CleanInstall,
+            servicing_state: ServicingState::Staged,
+            ..host_status
+        }
+    })?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
-    info!("Staging of clean install succeeded");
 
-    // Return the newroot mount object
+    info!("Staging of clean install succeeded");
     Ok(newroot_mount)
 }
 
@@ -417,24 +418,38 @@ pub(super) fn update(
     info!("Starting update()");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    // Initialize ab_update_volume.
-    if state.host_status().spec.storage.ab_update.is_some() {
-        debug!("A/B update is enabled");
-        let root_device_path = storage::image::get_root_device_path()
-            .structured(InternalError::GetRootBlockDevicePath)?;
-        state.try_with_host_status(|host_status| {
-            storage::image::update_active_volume(host_status, root_device_path)
-                .structured(ServicingError::UpdateAbActiveVolume)
+    if state.host_status().servicing_type == ServicingType::AbUpdate {
+        info!("Resetting A/B update state");
+        state.with_host_status(|host_status| {
+            host_status.spec = host_status.spec_old.clone();
+            host_status.spec_old = Default::default();
+            host_status.servicing_type = ServicingType::NoActiveServicing;
+            host_status.servicing_state = ServicingState::Provisioned;
         })?;
     }
 
-    #[cfg(feature = "grpc-dangerous")]
-    send_host_status_state(&mut sender, state)?;
+    // Initialize a copy of the host status with the changes that are planned. We make a copy rather
+    // than modifying the datastore's version so that we can wait until the update is staged before
+    // committing the changes.
+    let mut host_status = HostStatus {
+        spec: command.host_config.clone(),
+        spec_old: state.host_status().spec.clone(),
+        servicing_type: ServicingType::NoActiveServicing,
+        servicing_state: ServicingState::Provisioned,
+        ..state.host_status().clone()
+    };
+    if host_status.spec.storage.ab_update.is_some() {
+        debug!("A/B update is enabled");
+        let root_device_path = storage::image::get_root_device_path()
+            .structured(InternalError::GetRootBlockDevicePath)?;
+        storage::image::update_active_volume(&mut host_status, root_device_path)
+            .structured(ServicingError::UpdateAbActiveVolume)?;
+    }
 
     info!("Determining servicing type");
     let servicing_type = subsystems
         .iter()
-        .map(|m| m.select_servicing_type(state.host_status(), host_config))
+        .map(|m| m.select_servicing_type(&host_status))
         .collect::<Result<Vec<_>, TridentError>>()?
         .into_iter()
         .flatten()
@@ -449,26 +464,21 @@ pub(super) fn update(
         servicing_type
     );
 
-    validate_host_config(
-        &subsystems,
-        state.host_status(),
-        host_config,
-        servicing_type,
-    )?;
+    host_status.servicing_type = servicing_type;
+    validate_host_config(&subsystems, &host_status, host_config)?;
 
     let update_start_time = Instant::now();
     tracing::info!(
         metric_name = "update_start",
         servicing_type = format!("{:?}", servicing_type),
-        servicing_state = format!("{:?}", state.host_status().servicing_state)
+        servicing_state = format!("{:?}", host_status.servicing_state)
     );
 
     // Stage update
     stage_update(
         &mut subsystems,
+        host_status,
         state,
-        host_config,
-        servicing_type,
         #[cfg(feature = "grpc-dangerous")]
         &mut sender,
     )
@@ -524,17 +534,16 @@ pub(super) fn update(
 /// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
-#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", host_status.servicing_type)))]
 fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
+    host_status: HostStatus,
     state: &mut DataStore,
-    host_config: &HostConfiguration,
-    servicing_type: ServicingType,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    match servicing_type {
+    match host_status.servicing_type {
         ServicingType::HotPatch => info!("Performing hot patch update"),
         ServicingType::NormalUpdate => info!("Performing normal update"),
         ServicingType::UpdateAndReboot => info!("Performing update and reboot"),
@@ -547,37 +556,22 @@ fn stage_update(
         ServicingType::NoActiveServicing => unreachable!(),
     }
 
-    // Update host status and copy new host config to the spec field
-    debug!("Setting host's servicing type to {:?}", servicing_type);
-    debug!("Updating host's servicing state to Staging");
-    state.with_host_status(|host_status| {
-        host_status.servicing_type = servicing_type;
-        host_status.servicing_state = ServicingState::Staging;
-        host_status.spec = host_config.clone();
-    })?;
-    #[cfg(feature = "grpc-dangerous")]
-    send_host_status_state(sender, state)?;
+    prepare(subsystems, &host_status)?;
 
-    prepare(subsystems, state.host_status())?;
-
-    if ServicingType::AbUpdate == servicing_type {
+    if let ServicingType::AbUpdate = host_status.servicing_type {
         info!("Preparing storage to mount new root");
-
-        state.try_with_host_status(|host_status| {
-            storage::initialize_block_devices(host_status, host_config)
-        })?;
+        storage::initialize_block_devices(&host_status)?;
         let newroot_mount = NewrootMount::create_and_mount(
-            host_config,
-            &state.host_status().block_device_paths,
-            state
-                .host_status()
+            &host_status.spec,
+            &host_status.block_device_paths,
+            host_status
                 .get_ab_update_volume()
                 .structured(InternalError::Internal(
-                    "No update volume despite there being an update in prgoress",
+                    "No update volume despite there being an update in progress",
                 ))?,
         )?;
 
-        provision(subsystems, state.host_status(), newroot_mount.path())?;
+        provision(subsystems, &host_status, newroot_mount.path())?;
 
         info!("Entering '{}' chroot", newroot_mount.path().display());
         let result = chroot::enter_update_chroot(newroot_mount.path())
@@ -585,7 +579,7 @@ fn stage_update(
             .execute_and_exit(|| {
                 configure(
                     subsystems,
-                    state.host_status(),
+                    &host_status,
                     newroot_mount.execroot_relative_path(),
                 )
             });
@@ -600,20 +594,25 @@ fn stage_update(
         newroot_mount.unmount_all()?;
     } else {
         info!("Running configure");
-        configure(
-            subsystems,
-            state.host_status(),
-            Path::new(ROOT_MOUNT_POINT_PATH),
-        )?;
+        configure(subsystems, &host_status, Path::new(ROOT_MOUNT_POINT_PATH))?;
     };
 
     // At this point, deployment has been staged, so update servicing state
     debug!("Updating host's servicing state to Staged");
-    state.with_host_status(|host_status| host_status.servicing_state = ServicingState::Staged)?;
+    state.with_host_status(|hs| {
+        *hs = HostStatus {
+            servicing_state: ServicingState::Staged,
+            ab_active_volume: host_status.ab_active_volume,
+            ..host_status
+        };
+    })?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    info!("Staging of update '{:?}' succeeded", servicing_type);
+    info!(
+        "Staging of update '{:?}' succeeded",
+        host_status.servicing_type
+    );
 
     Ok(())
 }
@@ -835,7 +834,6 @@ fn validate_host_config(
     subsystems: &[Box<dyn Subsystem>],
     host_status: &HostStatus,
     host_config: &HostConfiguration,
-    planned_servicing_type: ServicingType,
 ) -> Result<(), TridentError> {
     info!("Starting step 'Validate'");
     for subsystem in subsystems {
@@ -844,7 +842,7 @@ fn validate_host_config(
             subsystem.name()
         );
         subsystem
-            .validate_host_config(host_status, host_config, planned_servicing_type)
+            .validate_host_config(host_status, host_config)
             .message(format!(
                 "Step 'Validate' failed for subsystem '{}'",
                 subsystem.name()
@@ -1140,7 +1138,7 @@ mod test {
 
         // Now, set servicing type to AbUpdate; servicing state to Staging.
         host_status.servicing_type = ServicingType::AbUpdate;
-        host_status.servicing_state = ServicingState::Staging;
+        host_status.servicing_state = ServicingState::NotProvisioned;
         assert_eq!(
             get_block_device_path(&host_status, &"osab".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-partlabel/osp3")

@@ -43,9 +43,8 @@ impl Subsystem for HooksSubsystem {
 
     fn validate_host_config(
         &self,
-        _host_status: &HostStatus,
+        host_status: &HostStatus,
         host_config: &HostConfiguration,
-        planned_servicing_type: ServicingType,
     ) -> Result<(), TridentError> {
         // Ensure that all scripts that should be run and have a path actually exist
         host_config
@@ -53,7 +52,7 @@ impl Subsystem for HooksSubsystem {
             .post_configure
             .iter()
             .chain(&host_config.scripts.post_provision)
-            .filter(|script| script.should_run(planned_servicing_type))
+            .filter(|script| script.should_run(host_status.servicing_type))
             .filter_map(|script| {
                 script.path.as_ref().and_then(|path| {
                     (path.exists() && path.is_file())
@@ -430,7 +429,7 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
@@ -467,7 +466,7 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 

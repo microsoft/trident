@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     config::{HostConfiguration, Partition},
-    BlockDeviceId,
+    is_default, BlockDeviceId,
 };
 
 /// HostStatus is the status of a host. Reflects the current state of the host and any encountered
@@ -18,6 +18,11 @@ use crate::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HostStatus {
     pub spec: HostConfiguration,
+
+    /// If an A/B update is currently in the Staged or Finalized state, this holds the previous host
+    /// configuration from before the update.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub spec_old: HostConfiguration,
 
     /// Type of servicing that Trident is executing on the host.
     pub servicing_type: ServicingType,
@@ -82,8 +87,6 @@ pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
     #[default]
     NotProvisioned,
-    /// Trident is now staging a new servicing.
-    Staging,
     /// Servicing has been staged, i.e., the updated runtime OS image has been deployed onto block
     /// devices.
     Staged,
@@ -206,7 +209,7 @@ mod tests {
 
         // 5. If host is doing CleanInstall, update volume is always A
         host_status.servicing_type = ServicingType::CleanInstall;
-        host_status.servicing_state = ServicingState::Staging;
+        host_status.servicing_state = ServicingState::Staged;
         assert_eq!(
             host_status.get_ab_update_volume(),
             Some(AbVolumeSelection::VolumeA)
@@ -227,7 +230,7 @@ mod tests {
         // 6. If host is doing HotPatch, NormalUpdate, or UpdateAndReboot, update volume is always
         // the currently active volume
         host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        host_status.servicing_state = ServicingState::Staging;
+        host_status.servicing_state = ServicingState::Staged;
         host_status.servicing_type = ServicingType::HotPatch;
         assert_eq!(
             host_status.get_ab_update_volume(),

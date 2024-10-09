@@ -987,7 +987,7 @@ mod tests {
                 "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
@@ -1044,7 +1044,7 @@ mod tests {
                 "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
@@ -1123,7 +1123,7 @@ mod tests {
         // Scenario 3: No partitions available
         let host_status2 = HostStatus {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![
@@ -1157,7 +1157,7 @@ mod tests {
     fn test_get_parent_disk() {
         let host_status = HostStatus {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {

@@ -145,7 +145,7 @@ mod tests {
     fn get_host_status() -> HostStatus {
         HostStatus {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -355,7 +355,7 @@ mod tests {
 
         let host_status = HostStatus {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             spec: host_config.clone(),
             block_device_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),

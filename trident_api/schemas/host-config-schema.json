@@ -30,7 +30,6 @@
     },
     "storage": {
       "description": "Describes the storage configuration of the host.",
-      "default": {},
       "allOf": [
         {
           "$ref": "#/definitions/Storage"
@@ -39,11 +38,6 @@
     },
     "trident": {
       "description": "The Trident Management configuration controls the installation of the Trident agent onto the runtime OS.",
-      "default": {
-        "disable": false,
-        "phonehome": null,
-        "selfUpgrade": false
-      },
       "allOf": [
         {
           "$ref": "#/definitions/Trident"

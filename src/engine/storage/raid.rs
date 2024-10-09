@@ -373,7 +373,7 @@ mod tests {
     fn test_get_device_paths() {
         let host_status = HostStatus {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staging,
+            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -510,7 +510,7 @@ mod functional_test {
         let err = storage::raid::stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        let err = storage::partitioning::create_partitions(&mut host_status);
         assert!(err.is_ok());
     }
 
@@ -603,7 +603,7 @@ mod functional_test {
         let err = stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        let err = storage::partitioning::create_partitions(&mut host_status);
         assert!(err.is_ok());
 
         create_sw_raid(&host_status, spec).unwrap();
@@ -655,7 +655,7 @@ mod functional_test {
         let err = stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        let err = storage::partitioning::create_partitions(&mut host_status);
         assert!(err.is_ok());
 
         create_sw_raid(&host_status, spec).unwrap();
@@ -707,7 +707,7 @@ mod functional_test {
         let err = stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        let err = storage::partitioning::create_partitions(&mut host_status);
         assert!(err.is_ok());
 
         assert_eq!(
@@ -766,7 +766,7 @@ mod functional_test {
         let err = stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status, spec);
+        let err = storage::partitioning::create_partitions(&mut host_status);
         assert!(err.is_ok());
 
         assert_eq!(

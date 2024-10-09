@@ -45,9 +45,8 @@ impl Subsystem for StorageSubsystem {
         &self,
         host_status: &HostStatus,
         host_config: &HostConfiguration,
-        planned_servicing_type: ServicingType,
     ) -> Result<(), TridentError> {
-        if planned_servicing_type != ServicingType::CleanInstall {
+        if host_status.servicing_type != ServicingType::CleanInstall {
             // Ensure that relevant portions of the host configuration have not changed.
             if host_status.spec.storage.disks != host_config.storage.disks
                 || host_status.spec.storage.raid != host_config.storage.raid
@@ -141,7 +140,7 @@ impl Subsystem for StorageSubsystem {
         // TODO: validate that block devices naming is consistent with the current state
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
-        image::validate_host_config(host_status, host_config, planned_servicing_type).message(
+        image::validate_host_config(host_status, host_config, host_status.servicing_type).message(
             format!("Step 'Validate' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"),
         )?;
 
@@ -155,10 +154,9 @@ impl Subsystem for StorageSubsystem {
     fn select_servicing_type(
         &self,
         host_status: &HostStatus,
-        host_config: &HostConfiguration,
     ) -> Result<Option<ServicingType>, TridentError> {
         // If needs_ab_update() returns true, A/B update is required.
-        if image::needs_ab_update(host_status, host_config) {
+        if image::needs_ab_update(host_status) {
             return Ok(Some(ServicingType::AbUpdate));
         }
 
@@ -231,30 +229,35 @@ fn generate_fstab(host_status: &HostStatus, path: &Path) -> Result<(), Error> {
 }
 
 #[tracing::instrument(skip_all)]
-pub(super) fn initialize_block_devices(
-    host_status: &mut HostStatus,
-    host_config: &HostConfiguration,
-) -> Result<(), TridentError> {
+pub(super) fn create_block_devices(host_status: &mut HostStatus) -> Result<(), TridentError> {
     trace!(
         "Mount points: {:?}",
-        host_config.storage.internal_mount_points
+        host_status.spec.storage.internal_mount_points
     );
 
-    if host_status.servicing_type == ServicingType::CleanInstall {
-        debug!("Initializing block devices");
-        // Stop verity before RAID, as verity can sit on top of RAID
-        verity::stop_pre_existing_verity_devices(host_config)
-            .structured(ServicingError::CleanupVerity)?;
-        raid::stop_pre_existing_raid_arrays(host_config).structured(ServicingError::CleanupRaid)?;
-        partitioning::create_partitions(host_status, host_config)
-            .structured(ServicingError::CreatePartitions)?;
-        raid::create_sw_raid(host_status, host_config).structured(ServicingError::CreateRaid)?;
-        encryption::provision(host_status, host_config).message(format!(
-            "Step 'Provision' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
-        ))?;
-    }
+    debug!("Initializing block devices");
+    // Stop verity before RAID, as verity can sit on top of RAID
+    verity::stop_pre_existing_verity_devices(&host_status.spec)
+        .structured(ServicingError::CleanupVerity)?;
+    raid::stop_pre_existing_raid_arrays(&host_status.spec)
+        .structured(ServicingError::CleanupRaid)?;
+    partitioning::create_partitions(host_status).structured(ServicingError::CreatePartitions)?;
+    raid::create_sw_raid(host_status, &host_status.spec).structured(ServicingError::CreateRaid)?;
+    encryption::provision(host_status, &host_status.spec).message(format!(
+        "Step 'Provision' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
+    ))?;
 
-    image::provision(host_status, host_config).message(format!(
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+pub(super) fn initialize_block_devices(host_status: &HostStatus) -> Result<(), TridentError> {
+    trace!(
+        "Mount points: {:?}",
+        host_status.spec.storage.internal_mount_points
+    );
+
+    image::provision(host_status, &host_status.spec).message(format!(
         "Step 'Provision' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
     ))?;
     filesystem::create_filesystems(host_status).structured(ServicingError::CreateFilesystems)?;
@@ -357,7 +360,7 @@ mod tests {
     fn get_host_status() -> HostStatus {
         HostStatus {
             servicing_state: ServicingState::NotProvisioned,
-            servicing_type: ServicingType::NoActiveServicing,
+            servicing_type: ServicingType::CleanInstall,
             ..Default::default()
         }
     }
@@ -461,7 +464,7 @@ mod tests {
         let host_config = get_host_config(&recovery_key_file);
 
         StorageSubsystem
-            .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+            .validate_host_config(&host_status, &host_config)
             .unwrap();
     }
 
@@ -477,7 +480,7 @@ mod tests {
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+                .validate_host_config(&host_status, &host_config)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
@@ -500,7 +503,7 @@ mod tests {
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+                .validate_host_config(&host_status, &host_config)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
@@ -525,7 +528,7 @@ mod tests {
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&host_status, &host_config, ServicingType::CleanInstall)
+                .validate_host_config(&host_status, &host_config)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
