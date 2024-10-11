@@ -3,46 +3,39 @@ os:
 
   packages:
     update:
-    - systemd
+      - systemd
 
     install:
-    - curl
-    - device-mapper
-    - dnf
-    - dosfstools
-    - efibootmgr
-    - iproute
-    - iptables
-    - lsof
-    - mdadm
-    - netplan
-
-    # Support for mounting NTFS filesystems
-    - ntfs-3g
-
-    # Support for creating NTFS filesystems
-    - ntfsprogs
-
-    - openssh-server
-    - squashfs-tools
-    - tar
-    - tpm2-tools
-    - veritysetup
-    - vim
+      - curl
+      - device-mapper
+      - dnf
+      - dosfstools
+      - efibootmgr
+      - iproute
+      - iptables
+      - lsof
+      - mdadm
+      - netplan
+      # Support for mounting NTFS filesystems
+      - ntfs-3g
+      # Support for creating NTFS filesystems
+      - ntfsprogs
+      - openssh-server
+      - squashfs-tools
+      - tar
+      - tpm2-tools
+      - veritysetup
+      - vim
 
   additionalFiles:
     files/getty@.service:
-    - path: /usr/lib/systemd/system/getty@.service
-
+      - path: /usr/lib/systemd/system/getty@.service
     files/serial-getty@.service:
-    - path: /usr/lib/systemd/system/serial-getty@.service
-
+      - path: /usr/lib/systemd/system/serial-getty@.service
     files/root.profile:
-    - path: /root/.profile
-
+      - path: /root/.profile
     ../systemd/trident.service:
       - path: /usr/lib/systemd/system/trident.service
-
     files/download-trident.service:
       - path: /usr/lib/systemd/system/download-trident.service
 
@@ -53,15 +46,13 @@ os:
 
 scripts:
   postCustomization:
-  - path: post-install.sh
+    - path: post-install.sh
 
 iso:
   additionalFiles:
     files/config-placeholder.yaml:
-    - path: /trident-config.yaml
-
+      - path: /trident-config.yaml
     files/pre-trident-script.sh:
-    - path: /pre-trident-script.sh
-
+      - path: /pre-trident-script.sh
   kernelCommandLine:
-    extraCommandLine: "console=tty0 console=ttyS0"
+    extraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
