@@ -5,7 +5,6 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Error};
 use log::trace;
-use strum_macros::IntoStaticStr;
 
 use crate::crate_private::Sealed;
 
@@ -273,91 +272,6 @@ impl RunAndCheck for Command {
     }
 }
 
-/// Enum of runtime and test dependencies used in the code base.
-#[derive(Debug, Clone, Copy, IntoStaticStr)]
-#[strum(serialize_all = "lowercase")]
-pub enum Dependency {
-    Bash,
-    Blkid,
-    Cryptsetup,
-    Dd,
-    Dracut,
-    E2fsck,
-    Efibootmgr,
-    Findmnt,
-    Iptables,
-    Losetup,
-    Lsblk,
-    Lsof,
-    Mdadm,
-    Mkdir,
-    Mkfs,
-    Mkinitrd,
-    Mkswap,
-    Mount,
-    Mountpoint,
-    Netplan,
-    Partx,
-    Resize2fs,
-    Setfiles,
-    Sfdisk,
-    Swapoff,
-    Swapon,
-    Systemctl,
-    #[strum(serialize = "systemd-cryptenroll")]
-    SystemdCryptenroll,
-    #[strum(serialize = "systemd-escape")]
-    SystemdEscape,
-    #[strum(serialize = "systemd-firstboot")]
-    SystemdFirstboot,
-    #[strum(serialize = "systemd-repart")]
-    SystemdRepart,
-    #[strum(serialize = "systemd-sysusers")]
-    SystemdSysupdate,
-    Touch,
-    #[strum(serialize = "tpm2_clear")]
-    Tpm2Clear,
-    #[strum(serialize = "tpm2_pcrread")]
-    Tpm2Pcrread,
-    Tune2fs,
-    Udevadm,
-    Umount,
-    Uname,
-    Veritysetup,
-    Wipefs,
-    // Test dependencies
-    #[cfg(test)]
-    Cat,
-    #[cfg(test)]
-    DoesNotExist,
-    #[cfg(test)]
-    Echo,
-    #[cfg(test)]
-    False,
-}
-
-impl Dependency {
-    /// Gets the name of the dependency
-    ///
-    /// For example, Dependency::Mdadm => "mdadm"
-    pub fn name(&self) -> &'static str {
-        self.into()
-    }
-
-    /// Checks if the dependency is present in the system
-    pub fn exists(&self) -> bool {
-        which::which(self.name()).is_ok()
-    }
-
-    /// Converts the dependency to a new Command instance,
-    /// or returns an error if it cannot be found
-    pub fn cmd(&self) -> Result<Command, Error> {
-        Ok(Command::new(which::which(self.name()).with_context(
-            || format!("Failed to find dependency: '{}'", self.name()),
-        )?))
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -509,24 +423,5 @@ mod test {
         let mut cmd = Command::new("cat");
         cmd.arg("/nonexistent_file_1234");
         cmd.raw_output_and_check().unwrap_err();
-    }
-
-    #[test]
-    fn test_existing_dependency() {
-        let dep = Dependency::Echo;
-        assert_eq!(dep.name(), "echo");
-        assert!(dep.exists());
-        let command = dep.cmd();
-        assert!(command.is_ok());
-        let output = command.unwrap().arg("test argument").output().unwrap();
-        assert_eq!(output.output(), "test argument\n");
-    }
-
-    #[test]
-    fn test_nonexistent_dependency() {
-        let dep = Dependency::DoesNotExist;
-        assert_eq!(dep.name(), "doesnotexist");
-        assert!(!dep.exists());
-        dep.cmd().unwrap_err();
     }
 }

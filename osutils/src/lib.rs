@@ -3,6 +3,7 @@ pub mod blkid;
 pub mod block_devices;
 pub mod chroot;
 pub mod container;
+pub mod dependencies;
 pub mod e2fsck;
 pub mod efibootmgr;
 pub mod exe;

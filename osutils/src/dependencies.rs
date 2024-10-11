@@ -1,0 +1,414 @@
+// Remove this line after integrating Command into the rest of osutils (#9296)
+#![allow(dead_code)]
+
+use std::{
+    ffi::{OsStr, OsString},
+    os::unix::process::ExitStatusExt,
+    path::PathBuf,
+    process::{Command as StdCommand, Output},
+};
+
+use log::trace;
+use strum_macros::IntoStaticStr;
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum DependencyError {
+    #[error("Failed to find dependency '{dependency}': {source}")]
+    NotFound {
+        dependency: Dependency,
+        #[source]
+        source: which::Error,
+    },
+
+    #[error("Failed to execute dependency '{dependency}': {inner}")]
+    CouldNotExecute {
+        dependency: Dependency,
+        inner: String,
+    },
+
+    #[error(
+        "Failed to execute dependency '{dependency}': {explanation}\nCmdline: {rendered_command}\n{output}"
+    )]
+    ExecutionFailed {
+        dependency: Dependency,
+        rendered_command: String,
+        code: Option<i32>,
+        signal: Option<i32>,
+        stdout: String,
+        stderr: String,
+        explanation: String,
+        output: String,
+    },
+}
+
+/// Enum of runtime and test dependencies used in the code base.
+#[derive(Debug, Clone, Copy, IntoStaticStr)]
+#[strum(serialize_all = "lowercase")]
+pub enum Dependency {
+    Bash,
+    Blkid,
+    Cryptsetup,
+    Dd,
+    Dracut,
+    E2fsck,
+    Efibootmgr,
+    Findmnt,
+    Iptables,
+    Losetup,
+    Lsblk,
+    Lsof,
+    Mdadm,
+    Mkdir,
+    Mkfs,
+    Mkinitrd,
+    Mkswap,
+    Mount,
+    Mountpoint,
+    Netplan,
+    Partx,
+    Resize2fs,
+    Setfiles,
+    Sfdisk,
+    Swapoff,
+    Swapon,
+    Systemctl,
+    #[strum(serialize = "systemd-cryptenroll")]
+    SystemdCryptenroll,
+    #[strum(serialize = "systemd-escape")]
+    SystemdEscape,
+    #[strum(serialize = "systemd-firstboot")]
+    SystemdFirstboot,
+    #[strum(serialize = "systemd-repart")]
+    SystemdRepart,
+    #[strum(serialize = "systemd-sysusers")]
+    SystemdSysupdate,
+    Touch,
+    #[strum(serialize = "tpm2_clear")]
+    Tpm2Clear,
+    #[strum(serialize = "tpm2_pcrread")]
+    Tpm2Pcrread,
+    Tune2fs,
+    Udevadm,
+    Umount,
+    Uname,
+    Veritysetup,
+    Wipefs,
+    // Test dependencies
+    #[cfg(test)]
+    Cat,
+    #[cfg(test)]
+    DoesNotExist,
+    #[cfg(test)]
+    Echo,
+    #[cfg(test)]
+    False,
+}
+
+impl std::fmt::Display for Dependency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.into())
+    }
+}
+
+impl Dependency {
+    /// Gets the name of the dependency
+    ///
+    /// For example, Dependency::Mdadm => "mdadm"
+    pub fn name(&self) -> &'static str {
+        self.into()
+    }
+
+    /// Checks if the dependency is present in the system
+    pub fn exists(&self) -> bool {
+        self.path().is_ok()
+    }
+
+    /// Gets the path of the dependency
+    pub fn path(&self) -> Result<PathBuf, Box<DependencyError>> {
+        which::which(self.name()).map_err(|source| {
+            Box::new(DependencyError::NotFound {
+                dependency: *self,
+                source,
+            })
+        })
+    }
+
+    /// Converts the dependency to a new Command instance
+    /// (Note this does not create a std::process::Command instance)
+    pub fn cmd(&self) -> Command {
+        Command {
+            dependency: *self,
+            args: vec![],
+        }
+    }
+}
+
+pub struct Command {
+    dependency: Dependency,
+    args: Vec<OsString>,
+}
+
+impl Command {
+    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
+        self.args.push(arg.as_ref().to_os_string());
+        self
+    }
+
+    pub fn with_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
+        self.arg(arg);
+        self
+    }
+
+    pub fn args<I, S>(&mut self, args: I) -> &mut Command
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        for arg in args {
+            self.arg(arg.as_ref());
+        }
+        self
+    }
+
+    fn run_and_check(&self) -> Result<(), Box<DependencyError>> {
+        self.output()?.check()
+    }
+
+    fn output_and_check(&self) -> Result<String, Box<DependencyError>> {
+        self.output()?.check_output()
+    }
+
+    fn raw_output_and_check(&self) -> Result<Output, Box<DependencyError>> {
+        self.output()?.check_raw_output()
+    }
+
+    fn render_command(&self) -> String {
+        if self.args.is_empty() {
+            self.dependency.to_string()
+        } else {
+            format!(
+                "{} {}",
+                self.dependency,
+                self.args
+                    .iter()
+                    .map(|arg| arg.to_string_lossy())
+                    .map(|arg| if arg.contains(' ') {
+                        format!("'{}'", arg)
+                    } else {
+                        arg.into()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )
+        }
+    }
+
+    fn output(&self) -> Result<CommandOutput, Box<DependencyError>> {
+        let mut cmd = StdCommand::new(self.dependency.path()?);
+        cmd.args(&self.args);
+        let rendered_command = self.render_command();
+        trace!("Executing '{rendered_command}'");
+        let output = cmd.output().map_err(|e| DependencyError::CouldNotExecute {
+            dependency: self.dependency,
+            inner: e.to_string(),
+        })?;
+        let output = CommandOutput {
+            rendered_command: rendered_command.clone(),
+            dependency: self.dependency,
+            inner: output,
+        };
+        trace!(
+            "Executed '{rendered_command}': {}. Report:\n{}",
+            output.explain_exit(),
+            output.output_report(),
+        );
+        Ok(output)
+    }
+}
+
+#[derive(Debug)]
+pub struct CommandOutput {
+    rendered_command: String,
+    dependency: Dependency,
+    inner: Output,
+}
+
+impl CommandOutput {
+    /// Checks if the process exited successfully
+    fn success(&self) -> bool {
+        self.inner.status.success()
+    }
+
+    /// Gets the exit code of the process, if it exited normally
+    fn code(&self) -> Option<i32> {
+        self.inner.status.code()
+    }
+
+    /// Gets the signal that terminated the process, if it was terminated by a signal
+    fn signal(&self) -> Option<i32> {
+        self.inner.status.signal()
+    }
+
+    /// Gets stderr
+    fn error_output(&self) -> String {
+        String::from_utf8_lossy(&self.inner.stderr).into()
+    }
+
+    /// Gets stdout
+    fn output(&self) -> String {
+        String::from_utf8_lossy(&self.inner.stdout).into()
+    }
+
+    /// Gets all available output, useful for reporting or debugging
+    fn output_report(&self) -> String {
+        let stdout = self.output();
+        let stderr = self.error_output();
+
+        let mut res = String::with_capacity(stdout.len() + stderr.len() + 20);
+
+        if !stdout.is_empty() {
+            res += &format!("stdout:\n{}\n", stdout);
+        }
+
+        if !stderr.is_empty() {
+            if !res.is_empty() {
+                res += "\n";
+            }
+            res += &format!("stderr:\n{}\n", stderr);
+        }
+
+        res
+    }
+
+    /// Checks if the process exited successfully, otherwise produces an error
+    fn check(&self) -> Result<(), Box<DependencyError>> {
+        if self.success() {
+            return Ok(());
+        }
+
+        Err(Box::new(DependencyError::ExecutionFailed {
+            dependency: self.dependency,
+            rendered_command: self.rendered_command.clone(),
+            code: self.code(),
+            signal: self.signal(),
+            stdout: self.output(),
+            stderr: self.error_output(),
+            explanation: self.explain_exit(),
+            output: match self.output_report() {
+                s if !s.is_empty() => s,
+                _ => "(no output collected)".into(),
+            },
+        }))
+    }
+
+    /// Checks if the process exited successfully and returns the output,
+    /// otherwise produces an error with the output
+    fn check_output(&self) -> Result<String, Box<DependencyError>> {
+        self.check()?;
+        Ok(self.output())
+    }
+
+    fn check_raw_output(self) -> Result<Output, Box<DependencyError>> {
+        self.check()?;
+        Ok(self.inner.clone())
+    }
+
+    /// Produces a string explaining the exit status of the process
+    fn explain_exit(&self) -> String {
+        if let Some(code) = self.code() {
+            format!("exited with status: {code}")
+        } else if let Some(signal) = self.signal() {
+            format!("terminated by signal: {signal}")
+        } else {
+            "exited with unknown status".into()
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_command() {
+        let run_and_check_res = Dependency::Echo.cmd().arg("Hello, world").run_and_check();
+        assert!(run_and_check_res.is_ok());
+        let output_and_check_res = Dependency::Echo
+            .cmd()
+            .arg("Hello, world")
+            .output_and_check();
+        assert!(output_and_check_res.is_ok());
+        assert_eq!(output_and_check_res.unwrap(), "Hello, world\n");
+
+        let raw_output_and_check_res = Dependency::Echo
+            .cmd()
+            .arg("Hello, world")
+            .raw_output_and_check();
+        assert!(raw_output_and_check_res.is_ok());
+        assert_eq!(raw_output_and_check_res.unwrap().stdout, b"Hello, world\n");
+
+        let render_command_res = Dependency::Echo.cmd().arg("Hello, world").render_command();
+        assert_eq!(render_command_res, "echo 'Hello, world'");
+
+        let output_res = Dependency::Echo.cmd().arg("Hello, world").output();
+        assert!(output_res.is_ok());
+        assert_eq!(output_res.unwrap().output(), "Hello, world\n");
+    }
+
+    #[test]
+    fn test_arg_and_args() {
+        let arg = Dependency::Echo.cmd().arg("Hello, world").output();
+        let args = Dependency::Echo.cmd().args(["Hello,", "world"]).output();
+        assert!(arg.is_ok());
+        assert!(args.is_ok());
+
+        let arg_output = arg.unwrap().output();
+        let args_output = args.unwrap().output();
+        assert_eq!(arg_output, args_output);
+        assert_eq!(arg_output, "Hello, world\n");
+    }
+
+    #[test]
+    fn test_nonexistent_dep() {
+        let output = Dependency::DoesNotExist.cmd().output().unwrap_err();
+        println!("{}", output);
+        assert!(matches!(*output, DependencyError::NotFound { .. }));
+        assert_eq!(
+            output.to_string(),
+            "Failed to find dependency 'doesnotexist': cannot find binary path"
+        );
+    }
+
+    #[test]
+    fn test_commandoutput() {
+        // This command should succeed
+        let output = Dependency::Echo.cmd().arg("Hello, world").output().unwrap();
+        assert!(output.success());
+        assert_eq!(output.code(), Some(0));
+        assert_eq!(output.signal(), None);
+        assert_eq!(output.error_output(), "");
+        assert_eq!(output.output(), "Hello, world\n");
+        assert_eq!(output.output_report(), "stdout:\nHello, world\n\n");
+        assert!(matches!(output.check(), Ok(())));
+        assert!(matches!(output.check_output(), Ok(s) if s == "Hello, world\n"));
+        assert_eq!(output.explain_exit(), "exited with status: 0");
+
+        // This command should fail
+        let output = Dependency::False.cmd().output().unwrap();
+        assert!(!output.success());
+        assert_eq!(output.code(), Some(1));
+        assert_eq!(output.signal(), None);
+        assert_eq!(output.error_output(), "");
+        assert_eq!(output.output(), "");
+        assert_eq!(output.output_report(), "");
+        assert!(matches!(
+            *output.check().unwrap_err(),
+            DependencyError::ExecutionFailed { .. }
+        ));
+        assert!(matches!(
+            *output.check_output().unwrap_err(),
+            DependencyError::ExecutionFailed { .. }
+        ));
+        assert_eq!(output.explain_exit(), "exited with status: 1");
+    }
+}

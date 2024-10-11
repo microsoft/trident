@@ -22,6 +22,7 @@ strum = "0.26.2"
 strum_macros = "0.26.2"
 sys-mount = { version = "3.0.1", default-features = false }
 tempfile = "3.10.1"
+thiserror = "1.0.59"
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
 which = "6.0.1"
 regex = "1.10.4"

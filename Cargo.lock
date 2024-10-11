@@ -1390,6 +1390,7 @@ dependencies = [
  "strum_macros",
  "sys-mount",
  "tempfile",
+ "thiserror",
  "trident_api",
  "uuid",
  "which",
