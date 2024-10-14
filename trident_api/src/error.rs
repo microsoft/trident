@@ -80,8 +80,8 @@ pub enum InternalError {
     #[error("Failed to get datastore path from local Trident config")]
     GetDatastorePathFromLocalTridentConfig,
 
-    #[error("Failed to get the first ESP partition disk path")]
-    GetEspPartitionDiskPath,
+    #[error("Failed to get the ESP partition information")]
+    GetEspDeviceInfo,
 
     #[error("Failed to get root block device")]
     GetRootBlockDevicePath,
@@ -287,6 +287,12 @@ pub enum ServicingError {
 
     #[error("Failed to get the label and path for the EFI boot loader of the A/B update volume")]
     GetLabelandPath,
+
+    #[error("Failed to get the partition number of '{part_uuid_path}' in the disk '{disk_path}'")]
+    GetPartitionNumber {
+        disk_path: String,
+        part_uuid_path: String,
+    },
 
     #[error("Failed to get mount point info for root with path '{root_path}'")]
     GetRootMountPointInfo { root_path: String },

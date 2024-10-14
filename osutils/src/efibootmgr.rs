@@ -154,6 +154,7 @@ pub fn create_boot_entry(
     disk_path: impl AsRef<Path>,
     bootloader_path: impl AsRef<Path>,
     esp_path: impl AsRef<Path>,
+    partition_number: u32,
 ) -> Result<(), Error> {
     // Check if disk path is valid
     if !disk_path.as_ref().exists() {
@@ -200,13 +201,14 @@ pub fn create_boot_entry(
         .arg(entry_label.as_ref())
         .arg("--loader")
         .arg(bootloader_path.as_ref())
+        .arg("--part")
+        .arg(partition_number.to_string())
         .run_and_check()
         .context(format!(
             "Failed to add boot entry {} at disk path {} through efibootmgr ",
             entry_label.as_ref().to_string_lossy(),
             disk_path.as_ref().display()
-        ))?;
-    Ok(())
+        ))
 }
 
 /// Sets `BootNext` variable using efibootmgr.
@@ -460,7 +462,7 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 2).unwrap();
         let bootmgr_output1 = list_and_parse_bootmgr_entries().unwrap();
 
         // Get the boot entry number of the boot entry that is created above
@@ -512,7 +514,7 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 2).unwrap();
         let bootmgr_output1 = list_and_parse_bootmgr_entries().unwrap();
 
         // Get the boot entry number of the boot entry that is created above
@@ -559,10 +561,10 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 2).unwrap();
 
         // Creating a boot entry with the same label should fail
-        let result = create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path());
+        let result = create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 3);
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
             format!(
@@ -580,6 +582,7 @@ mod functional_test {
             disk_path,
             bootloader_path_invalid,
             tempdir.path(),
+            4,
         );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
@@ -598,6 +601,7 @@ mod functional_test {
             disk_path_invalid,
             bootloader_path,
             tempdir.path(),
+            5,
         );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
@@ -651,7 +655,7 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 1).unwrap();
 
         // Create another boot entry with the same label using duplicate function
         create_boot_entry_duplicate(entry_label, disk_path, bootloader_path);
@@ -688,14 +692,14 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path()).unwrap();
+        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 1).unwrap();
 
         // Create another boot entry with the same label using duplicate function
         create_boot_entry_duplicate(entry_label, disk_path, bootloader_path);
 
         // Create a boot entry TestBoot2
         let entry_label2 = "TestBoot2";
-        create_boot_entry(entry_label2, disk_path, bootloader_path, tempdir.path()).unwrap();
+        create_boot_entry(entry_label2, disk_path, bootloader_path, tempdir.path(), 2).unwrap();
 
         // Get Boot entries vector for TestBoot1
         let bootmgr_output2 = list_and_parse_bootmgr_entries().unwrap();

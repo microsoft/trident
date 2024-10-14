@@ -10,6 +10,7 @@ use osutils::{
 use trident_api::{
     constants,
     error::{InternalError, ReportError, ServicingError, TridentError},
+    BlockDeviceId,
 };
 
 use super::{boot, EngineContext};
@@ -80,16 +81,42 @@ pub fn set_boot_next_and_update_boot_order(
         }
     }
 
-    // Get the disk path of the ESP partition
-    let disk_path =
-        get_esp_partition_disk(ctx).structured(InternalError::GetEspPartitionDiskPath)?;
-    debug!("Disk path of first ESP partition {:?}", disk_path);
+    let (esp_device_id, disk_path) =
+        get_esp_device_info(ctx).structured(InternalError::GetEspDeviceInfo)?;
+
+    // Get the uuid path of the ESP partition from ctx
+    let esp_uuid_path = ctx.block_device_paths.get(&esp_device_id).structured(
+        ServicingError::GetBlockDevicePath {
+            device_id: esp_device_id,
+        },
+    )?;
+
+    debug!(
+        "Disk path and part uuid path of first ESP partition {:?} {:?}",
+        disk_path, esp_uuid_path
+    );
+
+    // Get partition number of the ESP partition
+    let part_num = block_devices::get_partition_number(&disk_path, esp_uuid_path).structured(
+        ServicingError::GetPartitionNumber {
+            disk_path: disk_path.to_string_lossy().to_string(),
+            part_uuid_path: esp_uuid_path.to_string_lossy().to_string(),
+        },
+    )?;
+
+    debug!("ESP partition number: {}", part_num);
 
     // Create a boot entry for the new OS.
-    efibootmgr::create_boot_entry(&entry_label_new, disk_path, bootloader_path_new, esp_path)
-        .structured(ServicingError::CreateBootEntry {
-            boot_entry: entry_label_new.clone(),
-        })?;
+    efibootmgr::create_boot_entry(
+        &entry_label_new,
+        disk_path,
+        bootloader_path_new,
+        esp_path,
+        part_num,
+    )
+    .structured(ServicingError::CreateBootEntry {
+        boot_entry: entry_label_new.clone(),
+    })?;
     let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()
         .structured(ServicingError::ListAndParseBootEntries)?;
 
@@ -116,16 +143,8 @@ pub fn set_boot_next_and_update_boot_order(
     Ok(())
 }
 
-/// Returns the path of the disk containing the ESP partition.
-///
-/// The information is obtained from the filesystem configuration in the host
-/// configuration (`spec` field inside EngineContext). We currently only support
-/// one ESP partition per host, so we pick the first one we find.
-fn get_esp_partition_disk(ctx: &EngineContext) -> Result<PathBuf, Error> {
-    // TODO: What about deployments with multiple ESP partitions? (in multiple disks)
-    // This implementation just finds the first ESP filesystem and uses that.
-
-    // Find the device ID of the ESP filesystem
+/// Returns the ESP partition device id from Engine Context
+fn get_esp_device_id(ctx: &EngineContext) -> Result<BlockDeviceId, Error> {
     let esp_device_id = ctx
         .spec
         .storage
@@ -133,18 +152,46 @@ fn get_esp_partition_disk(ctx: &EngineContext) -> Result<PathBuf, Error> {
         .iter()
         .find_map(|fs| fs.source.esp_image().and(fs.device_id.as_ref()))
         .context("Host configuration does not contain any ESP file systems.")?;
+    Ok(esp_device_id.to_string())
+}
 
+/// Gets the EFI System Partition (ESP) device ID and the path of the disk containing the ESP
+/// partition.
+///
+/// This information is retrieved from the filesystem configuration in the host configuration
+/// (`spec` field inside `EngineContext`). Currently, only one ESP partition is supported per host, so
+/// the first one found is returned.
+///
+/// # Arguments
+///
+/// * `ctx` - A reference to the `EngineContext` which contains the host's configuration.
+///
+/// # Returns
+///
+/// * `Result<(String, PathBuf), Error>` - On success, returns a tuple containing the ESP device ID
+///   as a `String` and the path of the disk containing the ESP partition as a `PathBuf`. On
+///   failure, returns an `Error`.
+///
+fn get_esp_device_info(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
+    // TODO: What about deployments with multiple ESP partitions? (in multiple disks)
+    // This implementation just finds the first ESP filesystem and uses that.
+
+    // Find the device ID of the ESP filesystem
+    let esp_device_id = get_esp_device_id(ctx)?;
     // Find the device path of the ESP partition
-    let device_path = ctx.block_device_paths.get(esp_device_id).with_context(|| {
-        format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'")
-    })?;
+    let device_path = ctx
+        .block_device_paths
+        .get(&esp_device_id)
+        .with_context(|| {
+            format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'")
+        })?;
 
     debug!(
         "Found ESP partition '{esp_device_id}' with device path '{}'",
         device_path.display()
     );
 
-    block_devices::block_device_by_path(
+    let esp_disk_path = block_devices::block_device_by_path(
         block_devices::get_disk_for_partition(device_path.as_path()).with_context(|| {
             format!(
                 "Failed to get disk for ESP partition '{esp_device_id}' with device path '{}'",
@@ -152,7 +199,14 @@ fn get_esp_partition_disk(ctx: &EngineContext) -> Result<PathBuf, Error> {
             )
         })?,
     )
-    .context("Failed to get by-path symlink for disk")
+    .context("Failed to get by-path symlink for disk")?;
+
+    debug!(
+        "Found disk for ESP partition '{esp_device_id}' with device path '{}'",
+        esp_disk_path.display()
+    );
+
+    Ok((esp_device_id, esp_disk_path))
 }
 
 /// Retrieves the label and path for the EFI boot loader of the inactive A/B update volume.
@@ -380,6 +434,7 @@ mod functional_test {
             OS_DISK_DEVICE_PATH,
             bootloader_path,
             tempdir.path(),
+            1,
         )
         .unwrap();
         efibootmgr::create_boot_entry(
@@ -387,6 +442,7 @@ mod functional_test {
             OS_DISK_DEVICE_PATH,
             bootloader_path,
             tempdir.path(),
+            2,
         )
         .unwrap();
         efibootmgr::create_boot_entry(
@@ -394,6 +450,7 @@ mod functional_test {
             OS_DISK_DEVICE_PATH,
             bootloader_path,
             tempdir.path(),
+            3,
         )
         .unwrap();
         let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries().unwrap();
@@ -460,15 +517,35 @@ mod functional_test {
 
         partitioning::create_partitions(&mut ctx).unwrap();
 
-        let disk_path = get_esp_partition_disk(&ctx).unwrap();
-
+        let (esp_id, disk_path) = get_esp_device_info(&ctx).unwrap();
         let canon_path = disk_path.canonicalize().unwrap();
-
         assert_eq!(
             canon_path.as_path(),
             Path::new(TEST_DISK_DEVICE_PATH),
             "Disk path mismatch"
         );
+
+        // Test case where get_partition_number() finds the ESP partition number
+        let esp_partition_path = ctx.block_device_paths.get(&esp_id).unwrap();
+        let part_num = block_devices::get_partition_number(&disk_path, esp_partition_path).unwrap();
+        assert_eq!(part_num, 1, "Partition number mismatch");
+        // Test case where get_partition_number() fails to find the ESP partition number
+        let esp_partition_path1 = Path::new("/dev/sda1");
+        let part_num = block_devices::get_partition_number(&disk_path, esp_partition_path1);
+        debug_assert_eq!(
+            part_num.unwrap_err().root_cause().to_string(),
+            format!(
+                "Failed to find the partition '/dev/sda1' in disk '{}'",
+                disk_path.display()
+            )
+        );
+        // Test case where get_partition_number() fails to get the disk information
+        let doesnotexist = Path::new("/dev/doesnotexist");
+        let part_num = block_devices::get_partition_number(doesnotexist, esp_partition_path);
+        debug_assert_eq!(
+                   part_num.unwrap_err().root_cause().to_string(),
+                    "Process output:\nstderr:\nsfdisk: cannot open /dev/doesnotexist: No such file or directory\n\n"
+               );
     }
 
     #[functional_test(feature = "helpers")]

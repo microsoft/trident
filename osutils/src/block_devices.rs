@@ -13,6 +13,7 @@ use trident_api::{
 use crate::{
     dependencies::Dependency,
     lsblk::{self, BlockDeviceType},
+    sfdisk::SfDisk,
 };
 
 pub struct ResolvedDisk {
@@ -166,6 +167,36 @@ pub fn partx_update(disk: impl AsRef<Path>) -> Result<(), Error> {
                 disk.as_ref().display()
             )
         })
+}
+
+/// Gets the partition number of the given partition UUID on the specified disk.
+///
+/// This function takes the path to the disk and the partition UUID path, then returns the number of
+/// the partition that matches the provided UUID.
+///
+pub fn get_partition_number(
+    disk_path: impl AsRef<Path>,
+    part_uuid_path: impl AsRef<Path>,
+) -> Result<u32, Error> {
+    let disk_information = SfDisk::get_info(disk_path.as_ref()).context(format!(
+        "Failed to get information for disk '{}'",
+        disk_path.as_ref().display()
+    ))?;
+
+    for (index, partition) in disk_information.partitions.iter().enumerate() {
+        if partition.path_by_uuid() == part_uuid_path.as_ref() {
+            return (index + 1).try_into().context(format!(
+                "Failed to convert index to u32 for partition '{}'",
+                partition.path_by_uuid().display()
+            ));
+        }
+    }
+
+    bail!(
+        "Failed to find the partition '{}' in disk '{}'",
+        part_uuid_path.as_ref().display(),
+        disk_path.as_ref().display()
+    );
 }
 
 #[cfg(test)]
