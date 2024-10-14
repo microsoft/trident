@@ -32,11 +32,11 @@ use osutils::{
 };
 use trident_api::{
     config::{Image, ImageSha256, PartitionType},
-    status::{AbVolumeSelection, HostStatus},
+    status::AbVolumeSelection,
     BlockDeviceId,
 };
 
-use crate::Path;
+use crate::{engine::EngineContext, Path};
 
 /// This struct describes an A/B update of a SINGLE image via systemd-sysupdate.
 pub(super) struct ImageDeployment {
@@ -154,7 +154,7 @@ impl ImageDeployment {
     pub(super) fn new(
         update_image: &Image,
         device_id: &BlockDeviceId,
-        host_status: &HostStatus,
+        ctx: &EngineContext,
         local_update_dir: Option<&Path>,
         local_update_file: Option<&str>,
     ) -> Result<Self, Error> {
@@ -208,23 +208,20 @@ impl ImageDeployment {
 
         // Call get_update_partition_id(), to determine id of partition to update in this A/B
         // update, based on device_id, volume pairs, and active volume.
-        let partition_id_to_update =
-            get_update_partition_id(host_status, device_id).context(format!(
-                "Failed to fetch partition id for update image with device_id '{}'",
-                &device_id
-            ))?;
+        let partition_id_to_update = get_update_partition_id(ctx, device_id).context(format!(
+            "Failed to fetch partition id for update image with device_id '{}'",
+            &device_id
+        ))?;
         // Fetch block device path of the entire disk that the target partition belongs to, from
-        // HostStatus and partition_id_to_update
-        let disk_path =
-            get_parent_disk_path(host_status, &partition_id_to_update).context(format!(
+        // EngineContext and partition_id_to_update
+        let disk_path = get_parent_disk_path(ctx, &partition_id_to_update).context(format!(
             "Failed to fetch path of parent disk of partition with id '{partition_id_to_update}'"
         ))?;
 
-        // Fetch partition type from HostStatus based on partition_id_to_update
-        let partition_type =
-            get_partition_type(host_status, &partition_id_to_update).context(format!(
-                "Failed to fetch partition type of partition with id '{partition_id_to_update}'"
-            ))?;
+        // Fetch partition type from EngineContext based on partition_id_to_update
+        let partition_type = get_partition_type(ctx, &partition_id_to_update).context(format!(
+            "Failed to fetch partition type of partition with id '{partition_id_to_update}'"
+        ))?;
 
         let target = Target {
             type_: "partition".to_string(),
@@ -298,11 +295,11 @@ impl ImageDeployment {
 
     /// Takes in an instance of ImageDeployment, runs sysupdate, and returns image_length, a u64
     /// representing the number of bytes acquired by systemd-sysupdate to download an image. This
-    /// is to be used for updating HostStatus inside of Image subsystem.
-    pub(super) fn run_sysupdate(&mut self, host_status: &HostStatus) -> Result<u64, Error> {
-        // Fetch block device path from HostStatus and partition_id_to_update
-        let partition_path = get_partition_path(host_status, &self.partition_id_to_update)
-            .context(format!(
+    /// is to be used for updating EngineContext inside of Image subsystem.
+    pub(super) fn run_sysupdate(&mut self, ctx: &EngineContext) -> Result<u64, Error> {
+        // Fetch block device path from EngineContext and partition_id_to_update
+        let partition_path =
+            get_partition_path(ctx, &self.partition_id_to_update).context(format!(
                 "Failed to fetch path of partition with id '{}'",
                 &self.partition_id_to_update
             ))?;
@@ -369,7 +366,7 @@ impl ImageDeployment {
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6128.
 
     /// Triggers an update with systemd-sysupdate. Returns the number of bytes that sysupdate
-    /// downloaded, to be used for updating HostStatus inside of Image subsystem.
+    /// downloaded, to be used for updating EngineContext inside of Image subsystem.
     fn sysupdate_update(&self) -> Result<u64, Error> {
         // Run systemd-sysupdate update [VERSION] command, with option --definitions set to dir
         // where transfer config file is located
@@ -447,7 +444,7 @@ fn extract_image_length(stderr_str: &str) -> Result<u64, Error> {
 
 /// Computes the number of bytes of update image based on its path.
 // TODO: Reports the length of the uncomressed local raw lzma file, while the field length in
-// HostStatus is the length of the compressed image. Need to fix this in a future iteration.
+// EngineContext is the length of the compressed image. Need to fix this in a future iteration.
 // Related ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/6209.
 fn compute_image_length(image_path: &Path) -> Result<u64, Error> {
     // Fetch num of bytes of image
@@ -464,17 +461,17 @@ fn compute_image_length(image_path: &Path) -> Result<u64, Error> {
 
 /// Returns a string representation of the block device path of partition, based on partition id.
 fn get_partition_path(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     block_device_id: &BlockDeviceId,
 ) -> Result<String, Error> {
     // Fetch BlockDeviceInfo of partition based on its id
-    let part_block_device_path = host_status
+    let part_block_device_path = ctx
         .block_device_paths
         .get(block_device_id)
         .context(format!("No partition with id '{block_device_id}' found"))?;
 
     // Ensure block device is a partition
-    let _ = host_status
+    let _ = ctx
         .spec
         .storage
         .get_partition(block_device_id)
@@ -494,11 +491,11 @@ fn get_partition_path(
 /// Returns a string representation of the block device path of the parent disk of the partition,
 /// based on its id.
 fn get_parent_disk_path(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     block_device_id: &BlockDeviceId,
 ) -> Result<PathBuf, Error> {
     // Fetch block device path of the full disk, i.e. parent of partition
-    let parent_disk = get_parent_disk(host_status, block_device_id).context(format!(
+    let parent_disk = get_parent_disk(ctx, block_device_id).context(format!(
         "Failed to fetch parent disk for partition with id {block_device_id}"
     ))?;
 
@@ -506,14 +503,14 @@ fn get_parent_disk_path(
 }
 
 /// Returns the path of the parent disk of partition, based on its id.
-fn get_parent_disk(host_status: &HostStatus, partition_id: &BlockDeviceId) -> Option<PathBuf> {
-    // Iterate over all the disks in host_status
-    for disk in host_status.spec.storage.disks.iter() {
+fn get_parent_disk(ctx: &EngineContext, partition_id: &BlockDeviceId) -> Option<PathBuf> {
+    // Iterate over all the disks in ctx
+    for disk in ctx.spec.storage.disks.iter() {
         // Iterate over the partitions of the disk
         for partition in &disk.partitions {
             // Check if the partition id matches the given BlockDeviceId
             if &partition.id == partition_id {
-                return host_status.block_device_paths.get(&disk.id).cloned();
+                return ctx.block_device_paths.get(&disk.id).cloned();
             }
         }
     }
@@ -522,12 +519,9 @@ fn get_parent_disk(host_status: &HostStatus, partition_id: &BlockDeviceId) -> Op
 }
 
 /// Returns PartitionType of partition, based on its id.
-fn get_partition_type(
-    host_status: &HostStatus,
-    partition_id: &str,
-) -> Result<PartitionType, Error> {
+fn get_partition_type(ctx: &EngineContext, partition_id: &str) -> Result<PartitionType, Error> {
     // Iterate through all disks and partitions
-    for disk in host_status.spec.storage.disks.iter() {
+    for disk in ctx.spec.storage.disks.iter() {
         for partition in &disk.partitions {
             if partition.id == partition_id {
                 // Directly return the type of partition
@@ -542,16 +536,16 @@ fn get_partition_type(
 /// device_id corresponds to a valid partition inside of an A/B volume pair, b/c func
 /// stream_images() in image/mod.rs already verifies that.
 fn get_update_partition_id(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     device_id: &BlockDeviceId,
 ) -> Result<BlockDeviceId, Error> {
     // Iterate through storage.ab-update.volume-pairs and return the correct volume-id, i.e. id of
     // partition to be updated; when ServicingType is AbUpdate, get_ab_update_volume() already returns
     // the inactive AbVolumeSelection, i.e. the one to be updated
-    if let Some(ab_update) = &host_status.spec.storage.ab_update {
+    if let Some(ab_update) = &ctx.spec.storage.ab_update {
         // Call helper func from lib.rs, which returns AbVolumeSelection to be updated in this A/B
         // update, either VolumeA or VolumeB, depending on which volume is active now
-        let volume_selection: AbVolumeSelection = host_status
+        let volume_selection: AbVolumeSelection = ctx
             .get_ab_update_volume()
             .context("Failed to determine which A/B volume is currently inactive")?;
         // Fetch volume pair for the device_id
@@ -783,27 +777,23 @@ pub(super) fn get_local_image(
 pub(super) fn deploy(
     image: &Image,
     device_id: &BlockDeviceId,
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     directory: Option<&Path>,
     filename: Option<&str>,
 ) -> Result<(), Error> {
     debug!("Calling Systemd-Sysupdate subsystem to execute A/B update");
     // Create ImageDeployment instance
-    let mut img_deploy_instance =
-        ImageDeployment::new(image, device_id, host_status, directory, filename).context(
-            format!(
-                "Failed to create ImageDeployment instance for block device with id '{}'",
-                &device_id
-            ),
-        )?;
-    // Call run_sysupdate(); save return value as number of bytes written
-    let image_length = img_deploy_instance
-        .run_sysupdate(host_status)
+    let mut img_deploy_instance = ImageDeployment::new(image, device_id, ctx, directory, filename)
         .context(format!(
+            "Failed to create ImageDeployment instance for block device with id '{}'",
+            &device_id
+        ))?;
+    // Call run_sysupdate(); save return value as number of bytes written
+    let image_length = img_deploy_instance.run_sysupdate(ctx).context(format!(
         "Failed to run systemd-sysupdate: Failed to update partition with id '{}' to version '{}'.",
         &img_deploy_instance.partition_id_to_update, &img_deploy_instance.version
     ))?;
-    // If A/B update succeeded, update HostStatus
+    // If A/B update succeeded, update EngineContext
     if image_length > 0 && img_deploy_instance.status == Status::Succeeded {
         info!(
             "Systemd-Sysupdate subsystem successfully updated partition with id '{}' to version '{}'",
@@ -827,7 +817,7 @@ mod tests {
 
     use trident_api::{
         config::{self, AbUpdate, AbVolumePair, HostConfiguration},
-        status::{ServicingState, ServicingType},
+        status::ServicingType,
     };
 
     /// Validates that filename_dir_from_url() parses image URL correctly.
@@ -944,7 +934,7 @@ mod tests {
     /// Validates that get_update_partition_id() correctly returns the id of the partition that is
     /// inactive, or to be updated, based on device_id.
     fn test_get_update_partition_id() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {
@@ -987,34 +977,33 @@ mod tests {
                 "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
-        host_status.servicing_type = ServicingType::AbUpdate;
-        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.servicing_type = ServicingType::AbUpdate;
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
         // Scenario 1: Target ID matches with an entry and active volume is VolumeA
-        match get_update_partition_id(&host_status, &"osab".to_string()) {
+        match get_update_partition_id(&ctx, &"osab".to_string()) {
             Ok(volume_id) => assert_eq!(volume_id, "rootb"),
             Err(e) => panic!("Unexpected error: {}", e),
         }
 
         // Scenario 2: Target ID is a partition that is not part of any volume pair but has been
         // verified to exist in image/mod.rs and needs to be written to by systemd-sysupdate
-        match get_update_partition_id(&host_status, &"efi".to_string()) {
+        match get_update_partition_id(&ctx, &"efi".to_string()) {
             Ok(volume_id) => assert_eq!(volume_id, "efi"),
             Err(e) => panic!("Unexpected error: {}", e),
         }
 
         // Scenario 3: Switch active-volume to VolumeB and verify
-        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        match get_update_partition_id(&host_status, &"osab".to_string()) {
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        match get_update_partition_id(&ctx, &"osab".to_string()) {
             Ok(volume_id) => assert_eq!(volume_id, "root"),
             Err(e) => panic!("Unexpected error: {}", e),
         }
 
-        let host_status2 = HostStatus {
+        let ctx2 = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {
@@ -1044,23 +1033,22 @@ mod tests {
                 "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
         // Scenario 4: Set ab-update to None; this means that we are using systemd-sysupdate to
         // write to a partition in clean-install, so should return target-id itself
-        match get_update_partition_id(&host_status2, &"root".to_string()) {
+        match get_update_partition_id(&ctx2, &"root".to_string()) {
             Ok(volume_id) => assert_eq!(volume_id, "root"),
             Err(e) => panic!("Unexpected error: {}", e),
         }
     }
 
     /// Validates that get_partition_type() correctly fetches the type of the partition from
-    /// HostStatus, based on its id.
+    /// EngineContext, based on its id.
     #[test]
     fn test_get_partition_type() {
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {
@@ -1107,23 +1095,22 @@ mod tests {
         };
 
         // Scenario 1: Successfully get partition type for a given id
-        match get_partition_type(&host_status, "efi") {
+        match get_partition_type(&ctx, "efi") {
             Ok(type_str) => assert_eq!(type_str, PartitionType::Esp),
             Err(e) => panic!("Unexpected error: {}", e),
         }
 
-        match get_partition_type(&host_status, "rootb") {
+        match get_partition_type(&ctx, "rootb") {
             Ok(type_str) => assert_eq!(type_str, PartitionType::Root),
             Err(e) => panic!("Unexpected error: {}", e),
         }
 
         // Scenario 2: Failed to get type for non-existent partition id
-        assert!(get_partition_type(&host_status, "invalid_id").is_err());
+        assert!(get_partition_type(&ctx, "invalid_id").is_err());
 
         // Scenario 3: No partitions available
-        let host_status2 = HostStatus {
+        let ctx2 = EngineContext {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![
@@ -1148,16 +1135,15 @@ mod tests {
             },
             ..Default::default()
         };
-        assert!(get_partition_type(&host_status2, "root").is_err());
+        assert!(get_partition_type(&ctx2, "root").is_err());
     }
 
     /// Validates that get_parent_disk() correctly identifies parent disk of partition, given
     /// that it is valid.
     #[test]
     fn test_get_parent_disk() {
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![config::Disk {
@@ -1204,10 +1190,10 @@ mod tests {
 
         // Case 1: Partition ID is valid
         assert_eq!(
-            &get_parent_disk(&host_status, &"root".to_string()).unwrap(),
-            host_status.block_device_paths.get("os").unwrap()
+            &get_parent_disk(&ctx, &"root".to_string()).unwrap(),
+            ctx.block_device_paths.get("os").unwrap()
         );
         // Case 2: Partition ID is invalid
-        assert_eq!(get_parent_disk(&host_status, &"invalid".to_string()), None);
+        assert_eq!(get_parent_disk(&ctx, &"invalid".to_string()), None);
     }
 }

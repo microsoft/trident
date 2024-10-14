@@ -31,6 +31,8 @@ mod verity;
 
 use tabfile::DEFAULT_FSTAB_PATH;
 
+use super::EngineContext;
+
 const IMAGE_SUBSYSTEM_NAME: &str = "image";
 const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
 
@@ -43,15 +45,15 @@ impl Subsystem for StorageSubsystem {
 
     fn validate_host_config(
         &self,
-        host_status: &HostStatus,
+        ctx: &EngineContext,
         host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
-        if host_status.servicing_type != ServicingType::CleanInstall {
+        if ctx.servicing_type != ServicingType::CleanInstall {
             // Ensure that relevant portions of the host configuration have not changed.
-            if host_status.spec.storage.disks != host_config.storage.disks
-                || host_status.spec.storage.raid != host_config.storage.raid
-                || host_status.spec.storage.encryption != host_config.storage.encryption
-                || host_status.spec.storage.ab_update != host_config.storage.ab_update
+            if ctx.spec.storage.disks != host_config.storage.disks
+                || ctx.spec.storage.raid != host_config.storage.raid
+                || ctx.spec.storage.encryption != host_config.storage.encryption
+                || ctx.spec.storage.ab_update != host_config.storage.ab_update
             {
                 return Err(TridentError::new(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::StorageConfigurationChanged,
@@ -59,7 +61,7 @@ impl Subsystem for StorageSubsystem {
             }
 
             // Ensure that all partitions still exist.
-            let removed_block_devices: Vec<_> = host_status
+            let removed_block_devices: Vec<_> = ctx
                 .block_device_paths
                 .iter()
                 .filter(|&(_id, path)| !path.exists())
@@ -140,9 +142,9 @@ impl Subsystem for StorageSubsystem {
         // TODO: validate that block devices naming is consistent with the current state
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
-        image::validate_host_config(host_status, host_config, host_status.servicing_type).message(
-            format!("Step 'Validate' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"),
-        )?;
+        image::validate_host_config(ctx, host_config, ctx.servicing_type).message(format!(
+            "Step 'Validate' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
+        ))?;
 
         encryption::validate_host_config(host_config).message(format!(
             "Step 'Validate' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
@@ -153,22 +155,18 @@ impl Subsystem for StorageSubsystem {
 
     fn select_servicing_type(
         &self,
-        host_status: &HostStatus,
+        ctx: &EngineContext,
     ) -> Result<Option<ServicingType>, TridentError> {
         // If needs_ab_update() returns true, A/B update is required.
-        if image::needs_ab_update(host_status) {
+        if image::needs_ab_update(ctx) {
             return Ok(Some(ServicingType::AbUpdate));
         }
 
         Ok(Some(ServicingType::NoActiveServicing))
     }
 
-    fn provision(
-        &mut self,
-        host_status: &HostStatus,
-        mount_point: &Path,
-    ) -> Result<(), TridentError> {
-        if verity::validate_compatibility(&host_status.spec, mount_point).structured(
+    fn provision(&mut self, ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
+        if verity::validate_compatibility(&ctx.spec, mount_point).structured(
             InvalidInputError::from(
                 HostConfigurationDynamicValidationError::DmVerityMisconfiguration,
             ),
@@ -181,12 +179,8 @@ impl Subsystem for StorageSubsystem {
     }
 
     #[tracing::instrument(name = "storage_configuration", skip_all)]
-    fn configure(
-        &mut self,
-        host_status: &HostStatus,
-        _exec_root: &Path,
-    ) -> Result<(), TridentError> {
-        generate_fstab(host_status, Path::new(tabfile::DEFAULT_FSTAB_PATH)).structured(
+    fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+        generate_fstab(ctx, Path::new(tabfile::DEFAULT_FSTAB_PATH)).structured(
             ServicingError::GenerateFstab {
                 fstab_path: tabfile::DEFAULT_FSTAB_PATH.to_string(),
             },
@@ -195,28 +189,28 @@ impl Subsystem for StorageSubsystem {
         // TODO: Update /etc/repart.d directly for the matching disk, derive it from where the root
         // is located
 
-        encryption::configure(host_status).message(format!(
+        encryption::configure(ctx).message(format!(
             "Step 'Configure' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
 
         // Persist on reboots
-        raid::configure(host_status).structured(ServicingError::CreateMdadmConf)?;
+        raid::configure(ctx).structured(ServicingError::CreateMdadmConf)?;
 
         // Update paths for root verity devices in GRUB configs
-        verity::configure(host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+        verity::configure(ctx, Path::new(ROOT_MOUNT_POINT_PATH))
             .structured(ServicingError::UpdateGrubConfigsAfterVerityCreation)?;
 
         Ok(())
     }
 }
 
-/// Create a tabfile that captures all the desired as per the spec in host status.
-fn generate_fstab(host_status: &HostStatus, path: &Path) -> Result<(), Error> {
-    let mut mount_points = host_status.spec.storage.internal_mount_points.clone();
-    if !host_status.spec.storage.internal_verity.is_empty() {
+/// Create a tabfile that captures all the desired as per the spec in engine context.
+fn generate_fstab(ctx: &EngineContext, path: &Path) -> Result<(), Error> {
+    let mut mount_points = ctx.spec.storage.internal_mount_points.clone();
+    if !ctx.spec.storage.internal_verity.is_empty() {
         mount_points.push(verity::create_etc_overlay_mount_point());
     }
-    let fstab = tabfile::from_mountpoints(host_status, &mount_points)
+    let fstab = tabfile::from_mountpoints(ctx, &mount_points)
         .context("Failed to serialize mount point configuration for the target OS")?;
 
     fstab
@@ -229,21 +223,17 @@ fn generate_fstab(host_status: &HostStatus, path: &Path) -> Result<(), Error> {
 }
 
 #[tracing::instrument(skip_all)]
-pub(super) fn create_block_devices(host_status: &mut HostStatus) -> Result<(), TridentError> {
-    trace!(
-        "Mount points: {:?}",
-        host_status.spec.storage.internal_mount_points
-    );
+pub(super) fn create_block_devices(ctx: &mut EngineContext) -> Result<(), TridentError> {
+    trace!("Mount points: {:?}", ctx.spec.storage.internal_mount_points);
 
     debug!("Initializing block devices");
     // Stop verity before RAID, as verity can sit on top of RAID
-    verity::stop_pre_existing_verity_devices(&host_status.spec)
+    verity::stop_pre_existing_verity_devices(&ctx.spec)
         .structured(ServicingError::CleanupVerity)?;
-    raid::stop_pre_existing_raid_arrays(&host_status.spec)
-        .structured(ServicingError::CleanupRaid)?;
-    partitioning::create_partitions(host_status).structured(ServicingError::CreatePartitions)?;
-    raid::create_sw_raid(host_status, &host_status.spec).structured(ServicingError::CreateRaid)?;
-    encryption::provision(host_status, &host_status.spec).message(format!(
+    raid::stop_pre_existing_raid_arrays(&ctx.spec).structured(ServicingError::CleanupRaid)?;
+    partitioning::create_partitions(ctx).structured(ServicingError::CreatePartitions)?;
+    raid::create_sw_raid(ctx, &ctx.spec).structured(ServicingError::CreateRaid)?;
+    encryption::provision(ctx, &ctx.spec).message(format!(
         "Step 'Provision' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
     ))?;
 
@@ -251,20 +241,17 @@ pub(super) fn create_block_devices(host_status: &mut HostStatus) -> Result<(), T
 }
 
 #[tracing::instrument(skip_all)]
-pub(super) fn initialize_block_devices(host_status: &HostStatus) -> Result<(), TridentError> {
-    trace!(
-        "Mount points: {:?}",
-        host_status.spec.storage.internal_mount_points
-    );
+pub(super) fn initialize_block_devices(ctx: &EngineContext) -> Result<(), TridentError> {
+    trace!("Mount points: {:?}", ctx.spec.storage.internal_mount_points);
 
-    image::provision(host_status, &host_status.spec).message(format!(
+    image::provision(ctx, &ctx.spec).message(format!(
         "Step 'Provision' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
     ))?;
-    filesystem::create_filesystems(host_status).structured(ServicingError::CreateFilesystems)?;
+    filesystem::create_filesystems(ctx).structured(ServicingError::CreateFilesystems)?;
 
     // Assumes that images are already in place (data and hash), so that it can
     // assemble the verity devices.
-    verity::setup_verity_devices(host_status).structured(ServicingError::CreateVerity)?;
+    verity::setup_verity_devices(ctx).structured(ServicingError::CreateVerity)?;
 
     Ok(())
 }
@@ -354,12 +341,10 @@ mod tests {
         },
         constants::ROOT_MOUNT_POINT_PATH,
         error::ErrorKind,
-        status::ServicingState,
     };
 
-    fn get_host_status() -> HostStatus {
-        HostStatus {
-            servicing_state: ServicingState::NotProvisioned,
+    fn get_ctx() -> EngineContext {
+        EngineContext {
             servicing_type: ServicingType::CleanInstall,
             ..Default::default()
         }
@@ -459,12 +444,12 @@ mod tests {
     /// Validates Storage subsystem HostConfiguration validation logic.
     #[test]
     fn test_validate_host_config_pass() {
-        let host_status = get_host_status();
+        let ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
         let host_config = get_host_config(&recovery_key_file);
 
         StorageSubsystem
-            .validate_host_config(&host_status, &host_config)
+            .validate_host_config(&ctx, &host_config)
             .unwrap();
     }
 
@@ -472,7 +457,7 @@ mod tests {
     /// Disk device path should start with '/dev'.
     #[test]
     fn test_validate_host_config_invalid_disk_device_path_fail() {
-        let host_status = get_host_status();
+        let ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
         let mut host_config = get_host_config(&recovery_key_file);
 
@@ -480,7 +465,7 @@ mod tests {
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&host_status, &host_config)
+                .validate_host_config(&ctx, &host_config)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
@@ -495,7 +480,7 @@ mod tests {
     // Disk devices must be unique.
     #[test]
     fn tests_validate_host_config_duplicate_disk_path_fail() {
-        let host_status = get_host_status();
+        let ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
         let mut host_config = get_host_config(&recovery_key_file);
 
@@ -503,7 +488,7 @@ mod tests {
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&host_status, &host_config)
+                .validate_host_config(&ctx, &host_config)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
@@ -519,7 +504,7 @@ mod tests {
     // Validating the Storage subsystem include encryption configuration validation.
     #[test]
     fn test_validate_host_config_encryption_invalid_fail() {
-        let host_status = get_host_status();
+        let ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
         let host_config = get_host_config(&recovery_key_file);
 
@@ -528,7 +513,7 @@ mod tests {
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&host_status, &host_config)
+                .validate_host_config(&ctx, &host_config)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
@@ -546,7 +531,7 @@ mod tests {
         // passing dummy file
         assert_eq!(
             generate_fstab(
-                &HostStatus {
+                &EngineContext {
                     spec: get_host_config(&temp_tabfile),
                     ..Default::default()
                 },
@@ -559,7 +544,7 @@ mod tests {
         );
 
         generate_fstab(
-            &HostStatus {
+            &EngineContext {
                 spec: get_host_config(&temp_tabfile),
                 block_device_paths: btreemap! {
                     "part1".into() => PathBuf::from("/part1"),
@@ -588,7 +573,7 @@ mod tests {
         }];
 
         generate_fstab(
-            &HostStatus {
+            &EngineContext {
                 spec: hc,
                 block_device_paths: btreemap! {
                     "part1".into() => PathBuf::from("/part1"),

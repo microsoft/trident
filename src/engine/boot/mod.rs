@@ -5,10 +5,12 @@ use strum::IntoEnumIterator;
 use trident_api::{
     constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX},
     error::{ReportError, ServicingError, TridentError},
-    status::{AbVolumeSelection, HostStatus},
+    status::AbVolumeSelection,
 };
 
 use crate::engine::Subsystem;
+
+use super::EngineContext;
 
 pub(super) mod esp;
 pub(super) mod grub;
@@ -21,26 +23,17 @@ impl Subsystem for BootSubsystem {
     }
 
     #[tracing::instrument(name = "boot_provision", skip_all)]
-    fn provision(
-        &mut self,
-        host_status: &HostStatus,
-        mount_point: &Path,
-    ) -> Result<(), TridentError> {
+    fn provision(&mut self, ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized
-        esp::deploy_esp_images(host_status, mount_point)
-            .structured(ServicingError::DeployESPImages)?;
+        esp::deploy_esp_images(ctx, mount_point).structured(ServicingError::DeployESPImages)?;
 
         Ok(())
     }
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]
-    fn configure(
-        &mut self,
-        host_status: &HostStatus,
-        _exec_root: &Path,
-    ) -> Result<(), TridentError> {
-        grub::update_configs(host_status).structured(ServicingError::UpdateGrubConfigs)?;
+    fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+        grub::update_configs(ctx).structured(ServicingError::UpdateGrubConfigs)?;
 
         Ok(())
     }
@@ -48,13 +41,13 @@ impl Subsystem for BootSubsystem {
 
 /// Returns the ESP directory name of the current install's update volume.
 ///
-/// Internally, calls `HostStatus::make_install_id` with the update volume
-/// returned by `HostStatus::get_ab_update_volume` and the current install
+/// Internally, calls `EngineContext::make_install_id` with the update volume
+/// returned by `EngineContext::get_ab_update_volume` and the current install
 /// index.
-pub fn get_update_esp_dir_name(host_status: &HostStatus) -> Option<String> {
+pub fn get_update_esp_dir_name(ctx: &EngineContext) -> Option<String> {
     Some(make_esp_dir_name(
-        host_status.install_index,
-        host_status.get_ab_update_volume()?,
+        ctx.install_index,
+        ctx.get_ab_update_volume()?,
     ))
 }
 
@@ -116,7 +109,7 @@ pub fn make_esp_dir_name_candidates() -> impl Iterator<Item = (usize, Vec<String
 /// # Example
 ///
 /// ```rust,ignore
-/// use trident_api::status::{AbVolumeSelection, HostStatus};
+/// use trident_api::status::{AbVolumeSelection, };
 ///
 /// let volume = AbVolumeSelection::VolumeA;
 /// let index = 0;
@@ -149,7 +142,7 @@ mod tests {
 
     use const_format::formatcp;
 
-    use trident_api::status::{ServicingState, ServicingType};
+    use trident_api::status::ServicingType;
 
     #[test]
     fn test_make_install_id() {
@@ -218,83 +211,80 @@ mod tests {
     #[test]
     fn test_set_get_install() {
         // Test for clean install
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
-        host_status.install_index = 0;
+        ctx.install_index = 0;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!("{AZURE_LINUX_INSTALL_ID_PREFIX}{AB_VOLUME_A_NAME}"))
         );
-        host_status.install_index = 1;
+        ctx.install_index = 1;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!(
                 "{AZURE_LINUX_INSTALL_ID_PREFIX}2{AB_VOLUME_A_NAME}"
             ))
         );
-        host_status.install_index = 200;
+        ctx.install_index = 200;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!(
                 "{AZURE_LINUX_INSTALL_ID_PREFIX}201{AB_VOLUME_A_NAME}"
             ))
         );
 
         // Test for update to A
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staged,
             ab_active_volume: Some(AbVolumeSelection::VolumeB),
             ..Default::default()
         };
 
-        host_status.install_index = 0;
+        ctx.install_index = 0;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!("{AZURE_LINUX_INSTALL_ID_PREFIX}{AB_VOLUME_A_NAME}"))
         );
-        host_status.install_index = 1;
+        ctx.install_index = 1;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!(
                 "{AZURE_LINUX_INSTALL_ID_PREFIX}2{AB_VOLUME_A_NAME}"
             ))
         );
-        host_status.install_index = 200;
+        ctx.install_index = 200;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!(
                 "{AZURE_LINUX_INSTALL_ID_PREFIX}201{AB_VOLUME_A_NAME}"
             ))
         );
 
         // Test for update to B
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staged,
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
 
-        host_status.install_index = 0;
+        ctx.install_index = 0;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!("{AZURE_LINUX_INSTALL_ID_PREFIX}{AB_VOLUME_B_NAME}"))
         );
-        host_status.install_index = 1;
+        ctx.install_index = 1;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!(
                 "{AZURE_LINUX_INSTALL_ID_PREFIX}2{AB_VOLUME_B_NAME}"
             ))
         );
-        host_status.install_index = 200;
+        ctx.install_index = 200;
         assert_eq!(
-            get_update_esp_dir_name(&host_status),
+            get_update_esp_dir_name(&ctx),
             Some(format!(
                 "{AZURE_LINUX_INSTALL_ID_PREFIX}201{AB_VOLUME_B_NAME}"
             ))

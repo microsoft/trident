@@ -56,12 +56,15 @@ pub mod storage;
 
 // Helper modules
 pub mod bootentries;
+mod context;
 mod etc_overlay;
 mod kexec;
 mod newroot;
 pub mod selinux;
 
 pub use newroot::NewrootMount;
+
+use context::EngineContext;
 
 trait Subsystem: Send {
     fn name(&self) -> &'static str;
@@ -76,7 +79,7 @@ trait Subsystem: Send {
     /// Select the servicing type based on the host status and host config.
     fn select_servicing_type(
         &self,
-        _host_status: &HostStatus,
+        _ctx: &EngineContext,
     ) -> Result<Option<ServicingType>, TridentError> {
         Ok(None)
     }
@@ -84,14 +87,14 @@ trait Subsystem: Send {
     /// Validate the host config.
     fn validate_host_config(
         &self,
-        _host_status: &HostStatus,
+        _ctx: &EngineContext,
         _host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
         Ok(())
     }
 
     /// Perform non-destructive preparations for an update.
-    fn prepare(&mut self, _host_status: &HostStatus) -> Result<(), TridentError> {
+    fn prepare(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 
@@ -100,21 +103,13 @@ trait Subsystem: Send {
     ///
     /// This method is called before the chroot is entered, and is used to perform any
     /// provisioning operations that need to be done before the chroot is entered.
-    fn provision(
-        &mut self,
-        _host_status: &HostStatus,
-        _mount_path: &Path,
-    ) -> Result<(), TridentError> {
+    fn provision(&mut self, _ctx: &EngineContext, _mount_path: &Path) -> Result<(), TridentError> {
         Ok(())
     }
 
     /// Configure the system as specified by the host configuration, and update the host status
     /// accordingly.
-    fn configure(
-        &mut self,
-        _host_status: &HostStatus,
-        _exec_root: &Path,
-    ) -> Result<(), TridentError> {
+    fn configure(&mut self, _ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
         Ok(())
     }
 }
@@ -265,18 +260,16 @@ fn stage_clean_install(
     // Initialize a copy of the host status with the changes that are planned. We make a copy rather
     // than modifying the datastore's version so that we can wait until the clean install is staged
     // before committing the changes.
-    let mut host_status = HostStatus {
+    let mut ctx = EngineContext {
         spec: host_config.clone(),
         spec_old: Default::default(),
         servicing_type: ServicingType::CleanInstall,
-        servicing_state: ServicingState::NotProvisioned,
         ab_active_volume: None,
-        last_error: None,
         block_device_paths: Default::default(), // Will be initialized later
         disks_by_uuid: Default::default(),      // Will be initialized later
         install_index: 0,                       // Will be initialized later
     };
-    validate_host_config(subsystems, &host_status, host_config)?;
+    validate_host_config(subsystems, &ctx, host_config)?;
 
     debug!("Clearing saved host status");
     state.with_host_status(|host_status| {
@@ -287,30 +280,24 @@ fn stage_clean_install(
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    prepare(subsystems, &host_status)?;
+    prepare(subsystems, &ctx)?;
 
     info!("Preparing storage to mount new root");
-    storage::create_block_devices(&mut host_status)?;
-    storage::initialize_block_devices(&host_status)?;
+    storage::create_block_devices(&mut ctx)?;
+    storage::initialize_block_devices(&ctx)?;
     let newroot_mount = NewrootMount::create_and_mount(
         host_config,
-        &host_status.block_device_paths,
+        &ctx.block_device_paths,
         AbVolumeSelection::VolumeA,
     )?;
-    host_status.install_index = boot::esp::next_install_index(newroot_mount.path())?;
+    ctx.install_index = boot::esp::next_install_index(newroot_mount.path())?;
 
-    provision(subsystems, &host_status, newroot_mount.path())?;
+    provision(subsystems, &ctx, newroot_mount.path())?;
 
     info!("Entering '{}' chroot", newroot_mount.path().display());
     let result = chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
-        .execute_and_exit(|| {
-            configure(
-                subsystems,
-                &host_status,
-                newroot_mount.execroot_relative_path(),
-            )
-        });
+        .execute_and_exit(|| configure(subsystems, &ctx, newroot_mount.execroot_relative_path()));
 
     if let Err(original_error) = result {
         if let Err(e) = newroot_mount.unmount_all() {
@@ -325,7 +312,13 @@ fn stage_clean_install(
         *hs = HostStatus {
             servicing_type: ServicingType::CleanInstall,
             servicing_state: ServicingState::Staged,
-            ..host_status
+            spec: host_config.clone(),
+            spec_old: Default::default(),
+            ab_active_volume: None,
+            block_device_paths: ctx.block_device_paths,
+            disks_by_uuid: ctx.disks_by_uuid,
+            install_index: ctx.install_index,
+            last_error: None,
         }
     })?;
     #[cfg(feature = "grpc-dangerous")]
@@ -350,9 +343,20 @@ pub(super) fn finalize_clean_install(
     >,
 ) -> Result<(), TridentError> {
     info!("Finalizing clean install");
+
+    let ctx = EngineContext {
+        spec: state.host_status().spec.clone(),
+        spec_old: state.host_status().spec_old.clone(),
+        servicing_type: state.host_status().servicing_type,
+        ab_active_volume: state.host_status().ab_active_volume,
+        block_device_paths: state.host_status().block_device_paths.clone(),
+        disks_by_uuid: state.host_status().disks_by_uuid.clone(),
+        install_index: state.host_status().install_index,
+    };
+
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
-    bootentries::set_boot_next_and_update_boot_order(state.host_status(), &esp_path)?;
+    bootentries::set_boot_next_and_update_boot_order(&ctx, &esp_path)?;
 
     info!("Updating host's servicing state to Finalized");
     state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
@@ -428,28 +432,27 @@ pub(super) fn update(
         })?;
     }
 
-    // Initialize a copy of the host status with the changes that are planned. We make a copy rather
-    // than modifying the datastore's version so that we can wait until the update is staged before
-    // committing the changes.
-    let mut host_status = HostStatus {
+    let mut ctx = EngineContext {
         spec: command.host_config.clone(),
         spec_old: state.host_status().spec.clone(),
         servicing_type: ServicingType::NoActiveServicing,
-        servicing_state: ServicingState::Provisioned,
-        ..state.host_status().clone()
+        block_device_paths: state.host_status().block_device_paths.clone(),
+        ab_active_volume: state.host_status().ab_active_volume,
+        disks_by_uuid: state.host_status().disks_by_uuid.clone(),
+        install_index: state.host_status().install_index,
     };
-    if host_status.spec.storage.ab_update.is_some() {
+    if ctx.spec.storage.ab_update.is_some() {
         debug!("A/B update is enabled");
         let root_device_path = storage::image::get_root_device_path()
             .structured(InternalError::GetRootBlockDevicePath)?;
-        storage::image::update_active_volume(&mut host_status, root_device_path)
+        storage::image::update_active_volume(&mut ctx, root_device_path)
             .structured(ServicingError::UpdateAbActiveVolume)?;
     }
 
     info!("Determining servicing type");
     let servicing_type = subsystems
         .iter()
-        .map(|m| m.select_servicing_type(&host_status))
+        .map(|m| m.select_servicing_type(&ctx))
         .collect::<Result<Vec<_>, TridentError>>()?
         .into_iter()
         .flatten()
@@ -464,20 +467,20 @@ pub(super) fn update(
         servicing_type
     );
 
-    host_status.servicing_type = servicing_type;
-    validate_host_config(&subsystems, &host_status, host_config)?;
+    ctx.servicing_type = servicing_type;
+    validate_host_config(&subsystems, &ctx, host_config)?;
 
     let update_start_time = Instant::now();
     tracing::info!(
         metric_name = "update_start",
         servicing_type = format!("{:?}", servicing_type),
-        servicing_state = format!("{:?}", host_status.servicing_state)
+        servicing_state = format!("{:?}", state.host_status().servicing_state),
     );
 
     // Stage update
     stage_update(
         &mut subsystems,
-        host_status,
+        ctx,
         state,
         #[cfg(feature = "grpc-dangerous")]
         &mut sender,
@@ -534,16 +537,16 @@ pub(super) fn update(
 /// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
-#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", host_status.servicing_type)))]
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ctx.servicing_type)))]
 fn stage_update(
     subsystems: &mut [Box<dyn Subsystem>],
-    host_status: HostStatus,
+    ctx: EngineContext,
     state: &mut DataStore,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    match host_status.servicing_type {
+    match ctx.servicing_type {
         ServicingType::HotPatch => info!("Performing hot patch update"),
         ServicingType::NormalUpdate => info!("Performing normal update"),
         ServicingType::UpdateAndReboot => info!("Performing update and reboot"),
@@ -556,32 +559,27 @@ fn stage_update(
         ServicingType::NoActiveServicing => unreachable!(),
     }
 
-    prepare(subsystems, &host_status)?;
+    prepare(subsystems, &ctx)?;
 
-    if let ServicingType::AbUpdate = host_status.servicing_type {
+    if let ServicingType::AbUpdate = ctx.servicing_type {
         info!("Preparing storage to mount new root");
-        storage::initialize_block_devices(&host_status)?;
+        storage::initialize_block_devices(&ctx)?;
         let newroot_mount = NewrootMount::create_and_mount(
-            &host_status.spec,
-            &host_status.block_device_paths,
-            host_status
-                .get_ab_update_volume()
+            &ctx.spec,
+            &ctx.block_device_paths,
+            ctx.get_ab_update_volume()
                 .structured(InternalError::Internal(
                     "No update volume despite there being an update in progress",
                 ))?,
         )?;
 
-        provision(subsystems, &host_status, newroot_mount.path())?;
+        provision(subsystems, &ctx, newroot_mount.path())?;
 
         info!("Entering '{}' chroot", newroot_mount.path().display());
         let result = chroot::enter_update_chroot(newroot_mount.path())
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
-                configure(
-                    subsystems,
-                    &host_status,
-                    newroot_mount.execroot_relative_path(),
-                )
+                configure(subsystems, &ctx, newroot_mount.execroot_relative_path())
             });
 
         if let Err(original_error) = result {
@@ -594,25 +592,28 @@ fn stage_update(
         newroot_mount.unmount_all()?;
     } else {
         info!("Running configure");
-        configure(subsystems, &host_status, Path::new(ROOT_MOUNT_POINT_PATH))?;
+        configure(subsystems, &ctx, Path::new(ROOT_MOUNT_POINT_PATH))?;
     };
 
     // At this point, deployment has been staged, so update servicing state
     debug!("Updating host's servicing state to Staged");
     state.with_host_status(|hs| {
         *hs = HostStatus {
+            spec: ctx.spec,
+            spec_old: ctx.spec_old,
             servicing_state: ServicingState::Staged,
-            ab_active_volume: host_status.ab_active_volume,
-            ..host_status
+            servicing_type: ctx.servicing_type,
+            ab_active_volume: ctx.ab_active_volume,
+            block_device_paths: ctx.block_device_paths,
+            disks_by_uuid: ctx.disks_by_uuid,
+            install_index: ctx.install_index,
+            last_error: None,
         };
     })?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
 
-    info!(
-        "Staging of update '{:?}' succeeded",
-        host_status.servicing_type
-    );
+    info!("Staging of update '{:?}' succeeded", ctx.servicing_type);
 
     Ok(())
 }
@@ -629,6 +630,17 @@ pub(super) fn finalize_update(
     >,
 ) -> Result<(), TridentError> {
     info!("Finalizing update");
+
+    let ctx = EngineContext {
+        spec: state.host_status().spec.clone(),
+        spec_old: state.host_status().spec_old.clone(),
+        servicing_type: state.host_status().servicing_type,
+        ab_active_volume: state.host_status().ab_active_volume,
+        block_device_paths: state.host_status().block_device_paths.clone(),
+        disks_by_uuid: state.host_status().disks_by_uuid.clone(),
+        install_index: state.host_status().install_index,
+    };
+
     let esp_path = if container::is_running_in_container()
         .message("Failed to check if Trident is running in a container.")?
     {
@@ -637,7 +649,7 @@ pub(super) fn finalize_update(
     } else {
         PathBuf::from(ESP_MOUNT_POINT_PATH)
     };
-    bootentries::set_boot_next_and_update_boot_order(state.host_status(), &esp_path)?;
+    bootentries::set_boot_next_and_update_boot_order(&ctx, &esp_path)?;
 
     info!("Updating host's servicing state to Finalized");
     state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
@@ -752,12 +764,11 @@ fn send_host_status_state(
 }
 
 /// Using the / mount point, figure out what should be used as a root block device.
-pub(super) fn get_root_block_device_path(host_status: &HostStatus) -> Option<PathBuf> {
-    host_status
-        .spec
+pub(super) fn get_root_block_device_path(ctx: &EngineContext) -> Option<PathBuf> {
+    ctx.spec
         .storage
         .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
-        .and_then(|m| get_block_device_path(host_status, &m.target_id))
+        .and_then(|m| get_block_device_path(ctx, &m.target_id))
 }
 
 /// Returns the path of the block device with id `block_device_id`.
@@ -765,6 +776,70 @@ pub(super) fn get_root_block_device_path(host_status: &HostStatus) -> Option<Pat
 /// If the volume is part of an A/B Volume Pair this returns the update volume (i.e. the one that
 /// isn't active).
 pub(super) fn get_block_device_path(
+    ctx: &EngineContext,
+    block_device_id: &BlockDeviceId,
+) -> Option<PathBuf> {
+    if let Some(partition_path) = ctx.block_device_paths.get(block_device_id) {
+        return Some(partition_path.clone());
+    }
+
+    if let Some(raid) = ctx
+        .spec
+        .storage
+        .raid
+        .software
+        .iter()
+        .find(|r| &r.id == block_device_id)
+    {
+        return Some(raid.device_path());
+    }
+
+    if let Some(encryption) = &ctx.spec.storage.encryption {
+        if let Some(encrypted) = encryption.volumes.iter().find(|e| &e.id == block_device_id) {
+            return Some(encrypted.device_path());
+        }
+    }
+
+    if let Some(verity) = ctx
+        .spec
+        .storage
+        .internal_verity
+        .iter()
+        .find(|v| &v.id == block_device_id)
+    {
+        return Some(verity.device_path());
+    }
+
+    get_ab_volume_block_device_id(ctx, block_device_id)
+        .and_then(|child_block_device_id| get_block_device_path(ctx, &child_block_device_id))
+}
+
+/// Returns a block device id for a volume from the given A/B Volume Pair.
+///
+/// If active is true it returns the active volume, and if active is false it returns the update
+/// volume (i.e. the one that isn't active).
+fn get_ab_volume_block_device_id(
+    ctx: &EngineContext,
+    block_device_id: &BlockDeviceId,
+) -> Option<BlockDeviceId> {
+    if let Some(ab_update) = &ctx.spec.storage.ab_update {
+        let ab_volume = ab_update
+            .volume_pairs
+            .iter()
+            .find(|v| &v.id == block_device_id);
+        if let Some(v) = ab_volume {
+            let selection = ctx.get_ab_update_volume();
+            // Return the appropriate BlockDeviceId based on the selection
+            return selection.map(|sel| match sel {
+                AbVolumeSelection::VolumeA => v.volume_a_id.clone(),
+                AbVolumeSelection::VolumeB => v.volume_b_id.clone(),
+            });
+        };
+    }
+    None
+}
+
+pub(super) fn get_block_device_path_hs(
     host_status: &HostStatus,
     block_device_id: &BlockDeviceId,
 ) -> Option<PathBuf> {
@@ -799,16 +874,12 @@ pub(super) fn get_block_device_path(
         return Some(verity.device_path());
     }
 
-    get_ab_volume_block_device_id(host_status, block_device_id).and_then(|child_block_device_id| {
-        get_block_device_path(host_status, &child_block_device_id)
-    })
+    get_ab_volume_block_device_id_hs(host_status, block_device_id).and_then(
+        |child_block_device_id| get_block_device_path_hs(host_status, &child_block_device_id),
+    )
 }
 
-/// Returns a block device id for a volume from the given A/B Volume Pair.
-///
-/// If active is true it returns the active volume, and if active is false it returns the update
-/// volume (i.e. the one that isn't active).
-fn get_ab_volume_block_device_id(
+fn get_ab_volume_block_device_id_hs(
     host_status: &HostStatus,
     block_device_id: &BlockDeviceId,
 ) -> Option<BlockDeviceId> {
@@ -832,7 +903,7 @@ fn get_ab_volume_block_device_id(
 #[tracing::instrument(skip_all)]
 fn validate_host_config(
     subsystems: &[Box<dyn Subsystem>],
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
     info!("Starting step 'Validate'");
@@ -842,7 +913,7 @@ fn validate_host_config(
             subsystem.name()
         );
         subsystem
-            .validate_host_config(host_status, host_config)
+            .validate_host_config(ctx, host_config)
             .message(format!(
                 "Step 'Validate' failed for subsystem '{}'",
                 subsystem.name()
@@ -852,17 +923,14 @@ fn validate_host_config(
     Ok(())
 }
 
-fn prepare(
-    subsystems: &mut [Box<dyn Subsystem>],
-    host_status: &HostStatus,
-) -> Result<(), TridentError> {
+fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result<(), TridentError> {
     info!("Starting step 'Prepare'");
     for subsystem in subsystems {
         debug!(
             "Starting step 'Prepare' for subsystem '{}'",
             subsystem.name()
         );
-        subsystem.prepare(host_status).message(format!(
+        subsystem.prepare(ctx).message(format!(
             "Step 'Prepare' failed for subsystem '{}'",
             subsystem.name()
         ))?;
@@ -873,13 +941,13 @@ fn prepare(
 
 fn provision(
     subsystems: &mut [Box<dyn Subsystem>],
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     new_root_path: &Path,
 ) -> Result<(), TridentError> {
     // If verity is present, it means that we are currently doing root
     // verity. For now, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
-    let use_overlay = !host_status.spec.storage.internal_verity.is_empty();
+    let use_overlay = !ctx.spec.storage.internal_verity.is_empty();
 
     info!("Starting step 'Provision'");
     for subsystem in subsystems {
@@ -895,12 +963,10 @@ fn provision(
         } else {
             None
         };
-        subsystem
-            .provision(host_status, new_root_path)
-            .message(format!(
-                "Step 'Provision' failed for subsystem '{}'",
-                subsystem.name()
-            ))?;
+        subsystem.provision(ctx, new_root_path).message(format!(
+            "Step 'Provision' failed for subsystem '{}'",
+            subsystem.name()
+        ))?;
     }
     debug!("Finished step 'Provision'");
     Ok(())
@@ -921,15 +987,15 @@ pub(super) fn initialize_new_root(host_status: &HostStatus) -> Result<NewrootMou
 
 fn configure(
     subsystems: &mut [Box<dyn Subsystem>],
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     exec_root: &Path,
 ) -> Result<(), TridentError> {
     // If verity is present, it means that we are currently doing root
     // verity. For now, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
-    let use_overlay = (host_status.servicing_type == ServicingType::CleanInstall
-        || host_status.servicing_type == ServicingType::AbUpdate)
-        && !host_status.spec.storage.internal_verity.is_empty();
+    let use_overlay = (ctx.servicing_type == ServicingType::CleanInstall
+        || ctx.servicing_type == ServicingType::AbUpdate)
+        && !ctx.spec.storage.internal_verity.is_empty();
 
     info!("Starting step 'Configure'");
     for subsystem in subsystems {
@@ -946,12 +1012,10 @@ fn configure(
         } else {
             None
         };
-        subsystem
-            .configure(host_status, exec_root)
-            .message(format!(
-                "Step 'Configure' failed for subsystem '{}'",
-                subsystem.name()
-            ))?;
+        subsystem.configure(ctx, exec_root).message(format!(
+            "Step 'Configure' failed for subsystem '{}'",
+            subsystem.name()
+        ))?;
     }
     debug!("Finished step 'Configure'");
 
@@ -991,7 +1055,7 @@ mod test {
 
     #[test]
     fn test_get_root_block_device_path() {
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -1034,12 +1098,11 @@ mod test {
                 "boot".to_owned() => PathBuf::from("/dev/sda1"),
                 "root".to_owned() => PathBuf::from("/dev/sda2"),
             },
-            servicing_state: ServicingState::Provisioned,
             ..Default::default()
         };
 
         assert_eq!(
-            get_root_block_device_path(&host_status),
+            get_root_block_device_path(&ctx),
             Some(PathBuf::from("/dev/sda2"))
         );
     }
@@ -1048,7 +1111,7 @@ mod test {
     /// disks, partitions and ab volumes.
     #[test]
     fn test_get_block_device_for_update() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![
@@ -1099,69 +1162,61 @@ mod test {
                 "rootb".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
                 "data".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
-            servicing_state: ServicingState::Provisioned,
             servicing_type: ServicingType::NoActiveServicing,
             ..Default::default()
         };
 
         assert_eq!(
-            get_block_device_path(&host_status, &"os".to_owned()).unwrap(),
+            get_block_device_path(&ctx, &"os".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-bus/foobar")
         );
         assert_eq!(
-            get_block_device_path(&host_status, &"efi".to_owned()).unwrap(),
+            get_block_device_path(&ctx, &"efi".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-partlabel/osp1")
         );
         assert_eq!(
-            get_block_device_path(&host_status, &"root".to_owned()).unwrap(),
+            get_block_device_path(&ctx, &"root".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-partlabel/osp2")
         );
+        assert_eq!(get_block_device_path(&ctx, &"foobar".to_owned()), None);
         assert_eq!(
-            get_block_device_path(&host_status, &"foobar".to_owned()),
-            None
-        );
-        assert_eq!(
-            get_block_device_path(&host_status, &"data".to_owned()).unwrap(),
+            get_block_device_path(&ctx, &"data".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-bus/foobar")
         );
 
         // Now, set ab_active_volume to VolumeA.
-        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        assert_eq!(get_block_device_path(&ctx, &"osab".to_owned()), None);
         assert_eq!(
-            get_block_device_path(&host_status, &"osab".to_owned()),
-            None
-        );
-        assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned()),
+            get_ab_volume_block_device_id(&ctx, &"osab".to_owned()),
             None
         );
 
         // Now, set servicing type to AbUpdate; servicing state to Staging.
-        host_status.servicing_type = ServicingType::AbUpdate;
-        host_status.servicing_state = ServicingState::NotProvisioned;
+        ctx.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
-            get_block_device_path(&host_status, &"osab".to_owned()).unwrap(),
+            get_block_device_path(&ctx, &"osab".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-partlabel/osp3")
         );
         assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned()),
+            get_ab_volume_block_device_id(&ctx, &"osab".to_owned()),
             Some("rootb".to_owned())
         );
 
         // When active volume is VolumeB, should return VolumeA
-        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
-            get_block_device_path(&host_status, &"osab".to_owned()).unwrap(),
+            get_block_device_path(&ctx, &"osab".to_owned()).unwrap(),
             PathBuf::from("/dev/disk/by-partlabel/osp2")
         );
         assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"osab".to_owned()),
+            get_ab_volume_block_device_id(&ctx, &"osab".to_owned()),
             Some("root".to_owned())
         );
 
         // If target block device id does not exist, should return None.
         assert_eq!(
-            get_ab_volume_block_device_id(&host_status, &"non-existent".to_owned()),
+            get_ab_volume_block_device_id(&ctx, &"non-existent".to_owned()),
             None
         );
     }

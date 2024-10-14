@@ -10,10 +10,9 @@ use osutils::{
 use trident_api::{
     constants,
     error::{InternalError, ReportError, ServicingError, TridentError},
-    status::HostStatus,
 };
 
-use super::boot;
+use super::{boot, EngineContext};
 
 /// Boot efi executable
 const BOOT64_EFI: &str = "bootx64.efi";
@@ -27,12 +26,12 @@ const BOOT64_EFI: &str = "bootx64.efi";
 /// A/B update, both A and B share a single ESP at /boot/efi.
 #[tracing::instrument(name = "set_boot_order_configuration", skip_all)]
 pub fn set_boot_next_and_update_boot_order(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     esp_path: &Path,
 ) -> Result<(), TridentError> {
     // Get the label and path for the EFI boot loader of the inactive A/B update volume.
     let (entry_label_new, bootloader_path_new) =
-        get_label_and_path(host_status).structured(ServicingError::GetLabelandPath)?;
+        get_label_and_path(ctx).structured(ServicingError::GetLabelandPath)?;
 
     // Check if the boot entry already exists, if so, delete the entry and
     // remove it from the `BootOrder`.
@@ -83,7 +82,7 @@ pub fn set_boot_next_and_update_boot_order(
 
     // Get the disk path of the ESP partition
     let disk_path =
-        get_esp_partition_disk(host_status).structured(InternalError::GetEspPartitionDiskPath)?;
+        get_esp_partition_disk(ctx).structured(InternalError::GetEspPartitionDiskPath)?;
     debug!("Disk path of first ESP partition {:?}", disk_path);
 
     // Create a boot entry for the new OS.
@@ -120,14 +119,14 @@ pub fn set_boot_next_and_update_boot_order(
 /// Returns the path of the disk containing the ESP partition.
 ///
 /// The information is obtained from the filesystem configuration in the host
-/// configuration (`spec` field inside HostStatus). We currently only support
+/// configuration (`spec` field inside EngineContext). We currently only support
 /// one ESP partition per host, so we pick the first one we find.
-fn get_esp_partition_disk(host_status: &HostStatus) -> Result<PathBuf, Error> {
+fn get_esp_partition_disk(ctx: &EngineContext) -> Result<PathBuf, Error> {
     // TODO: What about deployments with multiple ESP partitions? (in multiple disks)
     // This implementation just finds the first ESP filesystem and uses that.
 
     // Find the device ID of the ESP filesystem
-    let esp_device_id = host_status
+    let esp_device_id = ctx
         .spec
         .storage
         .filesystems
@@ -136,12 +135,9 @@ fn get_esp_partition_disk(host_status: &HostStatus) -> Result<PathBuf, Error> {
         .context("Host configuration does not contain any ESP file systems.")?;
 
     // Find the device path of the ESP partition
-    let device_path = host_status
-        .block_device_paths
-        .get(esp_device_id)
-        .with_context(|| {
-            format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'")
-        })?;
+    let device_path = ctx.block_device_paths.get(esp_device_id).with_context(|| {
+        format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'")
+    })?;
 
     debug!(
         "Found ESP partition '{esp_device_id}' with device path '{}'",
@@ -161,12 +157,11 @@ fn get_esp_partition_disk(host_status: &HostStatus) -> Result<PathBuf, Error> {
 
 /// Retrieves the label and path for the EFI boot loader of the inactive A/B update volume.
 ///
-/// This function takes a reference to a `HostStatus` object and returns a tuple containing
+/// This function takes a reference to a `EngineContext` object and returns a tuple containing
 /// the label associated with the inactive A/B update volume and the path to its EFI boot loader.
 ///
-fn get_label_and_path(host_status: &HostStatus) -> Result<(String, PathBuf), Error> {
-    let esp_dir_name =
-        boot::get_update_esp_dir_name(host_status).context("Failed to get install id")?;
+fn get_label_and_path(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
+    let esp_dir_name = boot::get_update_esp_dir_name(ctx).context("Failed to get install id")?;
 
     let path = Path::new(constants::ROOT_MOUNT_POINT_PATH)
         .join(constants::ESP_EFI_DIRECTORY)
@@ -239,13 +234,13 @@ mod tests {
     use osutils::efibootmgr::EfiBootEntry;
     use trident_api::{
         config::{self, AbUpdate, HostConfiguration},
-        status::{AbVolumeSelection, ServicingState, ServicingType},
+        status::{AbVolumeSelection, ServicingType},
     };
 
     /// Validates logic for determining which A/B volume to use for updates
     #[test]
     fn test_get_label_and_path() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     ab_update: Some(AbUpdate {
@@ -256,40 +251,39 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
         // Test that clean-install will always use volume A for updates
         assert_eq!(
-            get_label_and_path(&host_status).unwrap(),
+            get_label_and_path(&ctx).unwrap(),
             (
-                get_update_esp_dir_name(&host_status).unwrap(),
+                get_update_esp_dir_name(&ctx).unwrap(),
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
                     .join(constants::ESP_EFI_DIRECTORY)
-                    .join(get_update_esp_dir_name(&host_status).unwrap())
+                    .join(get_update_esp_dir_name(&ctx).unwrap())
                     .join(BOOT64_EFI)
             )
         );
 
         // Test that servicing types HotPatch, NormalUpdate, UpdateAndReboot will always use the
         // active volume for updates
-        host_status.servicing_type = ServicingType::NormalUpdate;
-        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        ctx.servicing_type = ServicingType::NormalUpdate;
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
-            get_label_and_path(&host_status).unwrap(),
+            get_label_and_path(&ctx).unwrap(),
             (
-                get_update_esp_dir_name(&host_status).unwrap(),
+                get_update_esp_dir_name(&ctx).unwrap(),
                 Path::new(constants::ROOT_MOUNT_POINT_PATH)
                     .join(constants::ESP_EFI_DIRECTORY)
-                    .join(get_update_esp_dir_name(&host_status).unwrap())
+                    .join(get_update_esp_dir_name(&ctx).unwrap())
                     .join(BOOT64_EFI)
             )
         );
 
         // Test that servicing type NoActiveServicing will return None
-        host_status.servicing_type = ServicingType::NoActiveServicing;
-        let error_message = get_label_and_path(&host_status).unwrap_err().to_string();
+        ctx.servicing_type = ServicingType::NoActiveServicing;
+        let error_message = get_label_and_path(&ctx).unwrap_err().to_string();
         assert_eq!(error_message, "Failed to get install id");
     }
 
@@ -431,7 +425,7 @@ mod functional_test {
 
     #[functional_test]
     fn test_get_esp_partition_disk() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     filesystems: vec![config::FileSystem {
@@ -464,9 +458,9 @@ mod functional_test {
             ..Default::default()
         };
 
-        partitioning::create_partitions(&mut host_status).unwrap();
+        partitioning::create_partitions(&mut ctx).unwrap();
 
-        let disk_path = get_esp_partition_disk(&host_status).unwrap();
+        let disk_path = get_esp_partition_disk(&ctx).unwrap();
 
         let canon_path = disk_path.canonicalize().unwrap();
 

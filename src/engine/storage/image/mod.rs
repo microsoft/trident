@@ -21,11 +21,11 @@ use trident_api::{
     },
     constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::{AbVolumeSelection, HostStatus, ServicingType},
+    status::{AbVolumeSelection, ServicingType},
     BlockDeviceId,
 };
 
-use crate::engine::{self, storage::tabfile};
+use crate::engine::{self, storage::tabfile, EngineContext};
 
 pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
@@ -48,24 +48,24 @@ mod systemd_sysupdate;
 ///
 /// This function is called by the provision() function in the image subsystem and returns an error
 /// if the image cannot be downloaded or deployed correctly.
-fn deploy_images(host_status: &HostStatus, host_config: &HostConfiguration) -> Result<(), Error> {
+fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result<(), Error> {
     // 1. During clean install, Trident will deploy images onto all non-ESP block devices here.
     // This includes A/B volume pairs and other standalone block devices that are not ESP.
     // 2. During A/B update, Trident will assume that all A/B volume pair and ESP images have been
     // updated in the host configuration. Here, Trident will deploy images onto the A/B volume
     // pairs.
-    let images_to_deploy = match host_status.servicing_type {
+    let images_to_deploy = match ctx.servicing_type {
         ServicingType::CleanInstall => host_config.storage.get_images(),
         ServicingType::AbUpdate => host_config.storage.get_ab_volume_pair_images(),
         _ => bail!(
             "Servicing type cannot be '{:?}' as images must deployed during clean install or A/B update",
-            host_status.servicing_type
+            ctx.servicing_type
         ),
     };
 
     for (device_id, image) in images_to_deploy {
         // Validate that block device exists
-        let block_device_path = engine::get_block_device_path(host_status, &device_id)
+        let block_device_path = engine::get_block_device_path(ctx, &device_id)
             .context(format!("No block device with id '{}' found", device_id))?;
 
         // Parse the URL to determine the download strategy
@@ -140,7 +140,7 @@ fn deploy_images(host_status: &HostStatus, host_config: &HostConfiguration) -> R
                 // If the image has ext* filesystem and is not to be mounted read-only,
                 // resize the filesystem. For now, we determine the filesystem by looking at
                 // the corresponding mountpoint.
-                let mount_point = host_status
+                let mount_point = ctx
                     .spec
                     .storage
                     .internal_mount_points
@@ -175,7 +175,7 @@ fn deploy_images(host_status: &HostStatus, host_config: &HostConfiguration) -> R
                     systemd_sysupdate::deploy(
                         &image,
                         &device_id,
-                        host_status,
+                        ctx,
                         Some(&directory),
                         Some(&filename),
                     )
@@ -194,9 +194,8 @@ fn deploy_images(host_status: &HostStatus, host_config: &HostConfiguration) -> R
 
                     // Determine if target-id corresponds to an A/B volume pair; if helper
                     // func returns None, then set bool to false
-                    let targets_ab_volume_pair = host_status
-                        .get_ab_update_volume_partition(&device_id)
-                        .is_some();
+                    let targets_ab_volume_pair =
+                        ctx.get_ab_update_volume_partition(&device_id).is_some();
 
                     // If image is of format RawLzma but target-id does NOT
                     // correspond to an A/B volume pair, report an error
@@ -207,11 +206,9 @@ fn deploy_images(host_status: &HostStatus, host_config: &HostConfiguration) -> R
                     // Run helper func systemd_sysupdate::deploy() to execute A/B update; directory and file
                     // name arg-s are None to communicate that update image is published via URL,
                     // not locally
-                    systemd_sysupdate::deploy(&image, &device_id, host_status, None, None)
-                        .context(format!(
-                            "Failed to deploy image {} via sysupdate",
-                            image.url
-                        ))?;
+                    systemd_sysupdate::deploy(&image, &device_id, ctx, None, None).context(
+                        format!("Failed to deploy image {} via sysupdate", image.url),
+                    )?;
                 } else {
                     bail!("Unsupported URL scheme")
                 };
@@ -245,17 +242,17 @@ pub(crate) fn get_root_device_path() -> Result<PathBuf, Error> {
 }
 
 pub(crate) fn update_active_volume(
-    host_status: &mut HostStatus,
+    ctx: &mut EngineContext,
     root_device_path: PathBuf,
 ) -> Result<(), Error> {
-    let ab_update = &host_status
+    let ab_update = &ctx
         .spec
         .storage
         .ab_update
         .as_ref()
         .context("No A/B update found")?;
 
-    let root_device_id = host_status
+    let root_device_id = ctx
         .spec
         .storage
         .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
@@ -263,7 +260,7 @@ pub(crate) fn update_active_volume(
         .context("No mount point for root volume found")?;
     debug!("Root device id: {:?}", root_device_id);
 
-    let root_is_verity = host_status
+    let root_is_verity = ctx
         .spec
         .storage
         .verity_filesystems
@@ -272,16 +269,16 @@ pub(crate) fn update_active_volume(
 
     let ((volume_a_path, volume_b_path), root_device_path) = if root_is_verity {
         debug!("Root is a verity device");
-        get_verity_data_volume_pair_paths(host_status, ab_update, root_device_id)
+        get_verity_data_volume_pair_paths(ctx, ab_update, root_device_id)
             .context("Failed to find root verity data volume pair")?
     } else {
         debug!("Root is not on verity");
-        get_plain_volume_pair_paths(host_status, ab_update, root_device_id, root_device_path)
+        get_plain_volume_pair_paths(ctx, ab_update, root_device_id, root_device_path)
             .context("Failed to find root volume pair")?
     };
 
     // TODO: better error handling if canonicalize fails, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7320/
-    host_status.ab_active_volume = if volume_a_path
+    ctx.ab_active_volume = if volume_a_path
         .canonicalize()
         .context(format!("Failed to find path '{}'", volume_a_path.display()))?
         == root_device_path
@@ -299,7 +296,7 @@ pub(crate) fn update_active_volume(
         debug!("Unrecognized active volume");
         // To prevent data loss, abort if we cannot find the
         // matching root volume outside of clean install
-        if host_status.servicing_type != ServicingType::CleanInstall {
+        if ctx.servicing_type != ServicingType::CleanInstall {
             bail!("No matching root volume found");
         }
         None
@@ -309,7 +306,7 @@ pub(crate) fn update_active_volume(
 }
 
 fn get_plain_volume_pair_paths(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     ab_update: &AbUpdate,
     root_device_id: &BlockDeviceId,
     root_device_path: PathBuf,
@@ -321,16 +318,16 @@ fn get_plain_volume_pair_paths(
         .context("No volume pair for root volume found")?;
     debug!("Root device pair: {:?}", root_device_pair);
 
-    let volume_a_path = engine::get_block_device_path(host_status, &root_device_pair.volume_a_id)
-        .context(format!(
-        "Failed to get block device path for volume A with ID {}",
-        root_device_pair.volume_a_id
-    ))?;
-    let volume_b_path = engine::get_block_device_path(host_status, &root_device_pair.volume_b_id)
-        .context(format!(
-        "Failed to get block device path for volume B with ID {}",
-        root_device_pair.volume_b_id
-    ))?;
+    let volume_a_path =
+        engine::get_block_device_path(ctx, &root_device_pair.volume_a_id).context(format!(
+            "Failed to get block device path for volume A with ID {}",
+            root_device_pair.volume_a_id
+        ))?;
+    let volume_b_path =
+        engine::get_block_device_path(ctx, &root_device_pair.volume_b_id).context(format!(
+            "Failed to get block device path for volume B with ID {}",
+            root_device_pair.volume_b_id
+        ))?;
 
     Ok((
         (volume_a_path.clone(), volume_b_path.clone()),
@@ -339,11 +336,11 @@ fn get_plain_volume_pair_paths(
 }
 
 fn get_verity_data_volume_pair_paths(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     ab_update: &AbUpdate,
     root_device_id: &BlockDeviceId,
 ) -> Result<((PathBuf, PathBuf), PathBuf), Error> {
-    let root_verity_device_config = host_status
+    let root_verity_device_config = ctx
         .spec
         .storage
         .internal_verity
@@ -355,12 +352,10 @@ fn get_verity_data_volume_pair_paths(
         .iter()
         .find(|vp| vp.id == root_verity_device_config.data_target_id)
         .context("No volume pair for root data device found")?;
-    let volume_a_path =
-        engine::get_block_device_path(host_status, &root_data_device_pair.volume_a_id)
-            .context("Failed to get block device for data volume A")?;
-    let volume_b_path =
-        engine::get_block_device_path(host_status, &root_data_device_pair.volume_b_id)
-            .context("Failed to get block device for data volume B")?;
+    let volume_a_path = engine::get_block_device_path(ctx, &root_data_device_pair.volume_a_id)
+        .context("Failed to get block device for data volume A")?;
+    let volume_b_path = engine::get_block_device_path(ctx, &root_data_device_pair.volume_b_id)
+        .context("Failed to get block device for data volume B")?;
     let root_verity_status = veritysetup::status(&root_verity_device_config.device_name)
         .context("Failed to get verity status")?;
 
@@ -371,22 +366,22 @@ fn get_verity_data_volume_pair_paths(
 }
 
 /// Checks if the host needs an A/B update by comparing the images targeting ESP partitions and A/B
-/// volume pairs in the host configuration with those in the host status. Returns true if there is
+/// volume pairs in the host configuration with those in the engine context. Returns true if there is
 /// at least one image that needs to be updated; otherwise, returns false.
-pub(super) fn needs_ab_update(host_status: &HostStatus) -> bool {
-    let old_images = host_status
+pub(super) fn needs_ab_update(ctx: &EngineContext) -> bool {
+    let old_images = ctx
         .spec_old
         .storage
         .get_ab_volume_pair_images()
         .into_iter()
-        .chain(host_status.spec_old.storage.get_esp_images())
+        .chain(ctx.spec_old.storage.get_esp_images())
         .collect();
-    let new_images = host_status
+    let new_images = ctx
         .spec
         .storage
         .get_ab_volume_pair_images()
         .into_iter()
-        .chain(host_status.spec.storage.get_esp_images())
+        .chain(ctx.spec.storage.get_esp_images())
         .collect();
     !get_updated_images(old_images, new_images).is_empty()
 }
@@ -418,18 +413,18 @@ pub(crate) fn get_updated_images(
 /// configuration does not request Trident to re-deploy images on standalone volumes that are
 /// shared between A and B, such as /var/lib/trident.
 pub(super) fn validate_host_config(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     host_config: &HostConfiguration,
     planned_servicing_type: ServicingType,
 ) -> Result<(), TridentError> {
     if planned_servicing_type == ServicingType::AbUpdate {
         // Get lists of all old and new images in the host configuration
-        let old_images = host_status
+        let old_images = ctx
             .spec
             .storage
             .get_images()
             .into_iter()
-            .chain(host_status.spec.storage.get_esp_images())
+            .chain(ctx.spec.storage.get_esp_images())
             .collect();
         let new_images = host_config
             .storage
@@ -438,7 +433,7 @@ pub(super) fn validate_host_config(
             .chain(host_config.storage.get_esp_images())
             .collect();
 
-        // Filter only those images that have been updated, compared to the host status
+        // Filter only those images that have been updated, compared to the engine context
         let updated_images = get_updated_images(old_images, new_images);
 
         // Iterate over the updated images and ensure that they only target A/B volume pairs or ESP
@@ -467,10 +462,10 @@ pub(super) fn validate_host_config(
 
 #[tracing::instrument(name = "image_provision", skip_all)]
 pub(super) fn provision(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
-    deploy_images(host_status, host_config).structured(ServicingError::DeployImages)?;
+    deploy_images(ctx, host_config).structured(ServicingError::DeployImages)?;
 
     Ok(())
 }
@@ -489,16 +484,15 @@ mod tests {
             ImageSha256, MountOptions, MountPoint, Partition, PartitionType,
             Storage as StorageConfig,
         },
-        status::{ServicingState, ServicingType},
+        status::ServicingType,
     };
 
     /// Validates that the logic in validate_host_config() is correct.
     #[test]
     fn test_validate_host_config_image() {
-        // Initialize a host status
-        let mut host_status = HostStatus {
+        // Initialize a engine context
+        let ctx = EngineContext {
             servicing_type: ServicingType::NoActiveServicing,
-            servicing_state: ServicingState::NotProvisioned,
             spec: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
@@ -588,7 +582,7 @@ mod tests {
         };
 
         // Initialize a corresponding host configuration
-        let mut host_config = host_status.spec.clone();
+        let mut host_config = ctx.spec.clone();
         if let FileSystemSource::Image(Image { ref mut sha256, .. }) =
             host_config.storage.filesystems[0].source
         {
@@ -602,13 +596,12 @@ mod tests {
 
         // Test case 0. Running validate_host_config() when the planned servicing type is
         // CleanInstall should always return ((Ok)) since there is no validation logic.
-        validate_host_config(&host_status, &host_config, ServicingType::CleanInstall).unwrap();
+        validate_host_config(&ctx, &host_config, ServicingType::CleanInstall).unwrap();
 
         // Test case 1. Running validate_host_config() when only update of the ESP partition and
         // A/B volume pair images is requested during A/B update should return ((Ok)).
         // Update servicing state to Provisioned for consistency.
-        host_status.servicing_state = ServicingState::Provisioned;
-        validate_host_config(&host_status, &host_config, ServicingType::AbUpdate).unwrap();
+        validate_host_config(&ctx, &host_config, ServicingType::AbUpdate).unwrap();
 
         // Test case 2. Running validate_host_config() when update of a standalone volume 'trident'
         // is requested during A/B update should return an error.
@@ -618,7 +611,7 @@ mod tests {
             sha256: ImageSha256::Checksum("trident_sha256_2".to_string()),
             format: ImageFormat::RawZst,
         });
-        validate_host_config(&host_status, &host_config, ServicingType::AbUpdate).unwrap_err();
+        validate_host_config(&ctx, &host_config, ServicingType::AbUpdate).unwrap_err();
     }
 
     /// Validates that the logic in needs_ab_update() and get_updated_images() is correct.
@@ -704,10 +697,9 @@ mod tests {
             ..Default::default()
         };
 
-        // Initialize a host status with spec matching the host configuration
-        let mut host_status = HostStatus {
+        // Initialize a engine context with spec matching the host configuration
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::NoActiveServicing,
-            servicing_state: ServicingState::Provisioned,
             spec: host_config.clone(),
             spec_old: host_config,
             block_device_paths: btreemap! {
@@ -722,29 +714,29 @@ mod tests {
             ..Default::default()
         };
 
-        // Test case 1. Running needs_ab_update() when images are the same in host status and host
+        // Test case 1. Running needs_ab_update() when images are the same in engine context and host
         // configuration should return false.
-        assert!(!needs_ab_update(&host_status));
+        assert!(!needs_ab_update(&ctx));
         // Running get_updated_images() should return an empty list.
         assert!(get_updated_images(
-            host_status.spec_old.storage.get_images(),
-            host_status.spec.storage.get_images()
+            ctx.spec_old.storage.get_images(),
+            ctx.spec.storage.get_images()
         )
         .is_empty());
 
         // Test case 2. Running needs_ab_update() when the URL of the ESP image in the host
-        // configuration is different from that in the host status should return true.
-        host_status.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
+        // configuration is different from that in the engine context should return true.
+        ctx.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_2.img".to_string(),
             sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&host_status));
+        assert!(needs_ab_update(&ctx));
         // Running get_updated_images() should return the 'esp' image.
         assert_eq!(
             get_updated_images(
-                host_status.spec_old.storage.get_esp_images(),
-                host_status.spec.storage.get_esp_images()
+                ctx.spec_old.storage.get_esp_images(),
+                ctx.spec.storage.get_esp_images()
             ),
             vec![(
                 "esp".to_string(),
@@ -757,18 +749,18 @@ mod tests {
         );
 
         // Test case 3. Running needs_ab_update() when the sha256sum of the ESP image in the host
-        // configuration is different from that in the host status should return true.
-        host_status.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
+        // configuration is different from that in the engine context should return true.
+        ctx.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_1.img".to_string(),
             sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&host_status));
+        assert!(needs_ab_update(&ctx));
         // Running get_updated_images() for ESP only should return the 'esp' image.
         assert_eq!(
             get_updated_images(
-                host_status.spec_old.storage.get_esp_images(),
-                host_status.spec.storage.get_esp_images()
+                ctx.spec_old.storage.get_esp_images(),
+                ctx.spec.storage.get_esp_images()
             ),
             vec![(
                 "esp".to_string(),
@@ -781,24 +773,24 @@ mod tests {
         );
         // But running get_updated_images() for all non-ESP images should return an empty list.
         assert!(get_updated_images(
-            host_status.spec_old.storage.get_images(),
-            host_status.spec.storage.get_images()
+            ctx.spec_old.storage.get_images(),
+            ctx.spec.storage.get_images()
         )
         .is_empty());
 
         // Test case 4. Running needs_ab_update() when the URL of the root image in the host
-        // configuration is different from that in the host status should return true.
-        host_status.spec.storage.filesystems[1].source = FileSystemSource::Image(Image {
+        // configuration is different from that in the engine context should return true.
+        ctx.spec.storage.filesystems[1].source = FileSystemSource::Image(Image {
             url: "http://example.com/root_2.img".to_string(),
             sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&host_status));
+        assert!(needs_ab_update(&ctx));
         // Running get_updated_images() for all non-ESP images should return the 'root' image.
         assert_eq!(
             get_updated_images(
-                host_status.spec_old.storage.get_images(),
-                host_status.spec.storage.get_images()
+                ctx.spec_old.storage.get_images(),
+                ctx.spec.storage.get_images()
             ),
             vec![(
                 "root".to_string(),
@@ -811,32 +803,26 @@ mod tests {
         );
         // But running get_updated_images() for all images should return both the 'esp' and 'root'
         // images.
-        let mut all_images = host_status.spec.storage.get_images();
-        all_images.extend(host_status.spec.storage.get_esp_images());
+        let mut all_images = ctx.spec.storage.get_images();
+        all_images.extend(ctx.spec.storage.get_esp_images());
         // Assert length of the returned list
         assert_eq!(
-            get_updated_images(
-                host_status.spec_old.storage.get_images(),
-                all_images.clone()
-            )
-            .len(),
+            get_updated_images(ctx.spec_old.storage.get_images(), all_images.clone()).len(),
             2
         );
         // Assert it contains both the 'esp' and 'root' images
-        assert!(get_updated_images(
-            host_status.spec_old.storage.get_images(),
-            all_images.clone()
-        )
-        .contains(&(
-            "esp".to_string(),
-            Image {
-                url: "http://example.com/esp_1.img".to_string(),
-                sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
-                format: ImageFormat::RawZst,
-            }
-        )));
         assert!(
-            get_updated_images(host_status.spec_old.storage.get_images(), all_images).contains(&(
+            get_updated_images(ctx.spec_old.storage.get_images(), all_images.clone()).contains(&(
+                "esp".to_string(),
+                Image {
+                    url: "http://example.com/esp_1.img".to_string(),
+                    sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                    format: ImageFormat::RawZst,
+                }
+            ))
+        );
+        assert!(
+            get_updated_images(ctx.spec_old.storage.get_images(), all_images).contains(&(
                 "root".to_string(),
                 Image {
                     url: "http://example.com/root_2.img".to_string(),
@@ -878,7 +864,7 @@ mod functional_test {
 
     #[functional_test]
     fn test_get_plain_volume_pair_paths() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -898,8 +884,8 @@ mod functional_test {
 
         assert_eq!(
             get_plain_volume_pair_paths(
-                &host_status,
-                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &ctx,
+                ctx.spec.storage.ab_update.as_ref().unwrap(),
                 &"root".to_string(),
                 PathBuf::from("/dev/sda")
             )
@@ -909,7 +895,7 @@ mod functional_test {
             "Failed to get block device path for volume A with ID root-a"
         );
 
-        host_status.spec.storage.disks = vec![Disk {
+        ctx.spec.storage.disks = vec![Disk {
             id: "os".to_owned(),
             device: PathBuf::from("/dev/sda"),
             partition_table_type: config::PartitionTableType::Gpt,
@@ -920,14 +906,13 @@ mod functional_test {
                 size: 100.into(),
             }],
         }];
-        host_status
-            .block_device_paths
+        ctx.block_device_paths
             .insert("root-a".to_string(), PathBuf::from("/dev/sda1"));
 
         assert_eq!(
             get_plain_volume_pair_paths(
-                &host_status,
-                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &ctx,
+                ctx.spec.storage.ab_update.as_ref().unwrap(),
                 &"root".to_string(),
                 PathBuf::from("/dev/sda")
             )
@@ -937,8 +922,7 @@ mod functional_test {
             "Failed to get block device path for volume B with ID root-b"
         );
 
-        host_status
-            .spec
+        ctx.spec
             .storage
             .disks
             .iter_mut()
@@ -950,14 +934,13 @@ mod functional_test {
                 partition_type: PartitionType::Root,
                 size: 100.into(),
             });
-        host_status
-            .block_device_paths
+        ctx.block_device_paths
             .insert("root-b".to_string(), PathBuf::from("/dev/sda2"));
 
         assert_eq!(
             get_plain_volume_pair_paths(
-                &host_status,
-                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &ctx,
+                ctx.spec.storage.ab_update.as_ref().unwrap(),
                 &"root".to_string(),
                 PathBuf::from("/dev/sda")
             )
@@ -970,8 +953,8 @@ mod functional_test {
 
         assert_eq!(
             get_plain_volume_pair_paths(
-                &host_status,
-                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &ctx,
+                ctx.spec.storage.ab_update.as_ref().unwrap(),
                 &"root".to_string(),
                 PathBuf::from("/dev/sda1")
             )
@@ -984,8 +967,8 @@ mod functional_test {
 
         assert_eq!(
             get_plain_volume_pair_paths(
-                &host_status,
-                host_status.spec.storage.ab_update.as_ref().unwrap(),
+                &ctx,
+                ctx.spec.storage.ab_update.as_ref().unwrap(),
                 &"root".to_string(),
                 PathBuf::from("/dev/sda2")
             )
@@ -1002,7 +985,7 @@ mod functional_test {
         let mut ab_update = AbUpdate {
             volume_pairs: vec![],
         };
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     ab_update: Some(ab_update.clone()),
@@ -1014,14 +997,14 @@ mod functional_test {
         };
 
         assert_eq!(
-            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned())
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to find root verity device config"
         );
 
-        host_status.spec = HostConfiguration {
+        ctx.spec = HostConfiguration {
             storage: config::Storage {
                 internal_verity: vec![config::InternalVerityDevice {
                     id: "root-id".to_string(),
@@ -1035,7 +1018,7 @@ mod functional_test {
         };
 
         assert_eq!(
-            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned())
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1056,14 +1039,14 @@ mod functional_test {
         ];
 
         assert_eq!(
-            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned())
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to get block device for data volume A"
         );
 
-        host_status.spec.storage.disks = vec![Disk {
+        ctx.spec.storage.disks = vec![Disk {
             id: "os".into(),
             device: PathBuf::from("/dev/sda"),
             partition_table_type: config::PartitionTableType::Gpt,
@@ -1074,32 +1057,28 @@ mod functional_test {
                 size: 100.into(),
             }],
         }];
-        host_status
-            .block_device_paths
+        ctx.block_device_paths
             .insert("root-data-a".to_string(), PathBuf::from("/dev/sda1"));
 
         assert_eq!(
-            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned())
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to get block device for data volume B"
         );
 
-        host_status.spec.storage.disks[0]
-            .partitions
-            .push(Partition {
-                id: "root-data-b".to_owned(),
-                partition_type: PartitionType::Root,
-                size: 100.into(),
-            });
-        host_status
-            .block_device_paths
+        ctx.spec.storage.disks[0].partitions.push(Partition {
+            id: "root-data-b".to_owned(),
+            partition_type: PartitionType::Root,
+            size: 100.into(),
+        });
+        ctx.block_device_paths
             .insert("root-data-b".to_string(), PathBuf::from("/dev/sda2"));
 
         let _ = veritysetup::close("root");
         assert_eq!(
-            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned())
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1114,7 +1093,7 @@ mod functional_test {
             veritysetup::close("root").unwrap();
         }
 
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             block_device_paths: btreemap! {
                 "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
@@ -1142,7 +1121,7 @@ mod functional_test {
         };
 
         assert_eq!(
-            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned())
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1162,8 +1141,7 @@ mod functional_test {
         };
 
         assert_eq!(
-            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
-                .unwrap(),
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned()).unwrap(),
             (
                 (
                     PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
@@ -1178,8 +1156,7 @@ mod functional_test {
         ab_update.volume_pairs[0].volume_b_id = "root-data-a".to_string();
 
         assert_eq!(
-            get_verity_data_volume_pair_paths(&host_status, &ab_update, &"root-id".to_owned())
-                .unwrap(),
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned()).unwrap(),
             (
                 (
                     PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
@@ -1193,11 +1170,11 @@ mod functional_test {
     #[functional_test]
     fn test_update_active_volume() {
         // Missing ab_update
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             ..Default::default()
         };
         assert_eq!(
-            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
+            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1205,8 +1182,8 @@ mod functional_test {
         );
 
         // Missing root mount point
-        host_status.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        host_status.spec.storage.ab_update = Some(AbUpdate {
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        ctx.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![AbVolumePair {
                 id: "rootq".to_string(),
                 volume_a_id: "root-a".to_string(),
@@ -1215,7 +1192,7 @@ mod functional_test {
         });
 
         assert_eq!(
-            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
+            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1223,7 +1200,7 @@ mod functional_test {
         );
 
         // Missing volume pair for root mount point
-        host_status.spec.storage.internal_mount_points = vec![InternalMountPoint {
+        ctx.spec.storage.internal_mount_points = vec![InternalMountPoint {
             target_id: "root".to_string(),
             filesystem: FileSystemType::Ext4,
             options: vec![],
@@ -1231,7 +1208,7 @@ mod functional_test {
         }];
 
         assert_eq!(
-            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
+            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1239,7 +1216,7 @@ mod functional_test {
         );
 
         // Missing block device for volume A
-        host_status.spec.storage.ab_update = Some(AbUpdate {
+        ctx.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![AbVolumePair {
                 id: "root".to_string(),
                 volume_a_id: "root-a".to_string(),
@@ -1248,7 +1225,7 @@ mod functional_test {
         });
 
         assert_eq!(
-            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
+            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1256,81 +1233,57 @@ mod functional_test {
         );
 
         // Missing block device for volume B
-        host_status.block_device_paths = btreemap! {
+        ctx.block_device_paths = btreemap! {
             "root-a".to_owned() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}15")),
         };
 
         assert_eq!(
-            update_active_volume(&mut host_status, PathBuf::from("/dev/sda"))
+            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to get block device path for volume B with ID root-b"
         );
 
-        host_status.block_device_paths.insert(
+        ctx.block_device_paths.insert(
             "root-b".to_owned(),
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
         );
 
         // Volume A path cannot be resolved
         assert_eq!(
-            update_active_volume(
-                &mut host_status,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3"))
-            )
-            .unwrap_err()
-            .root_cause()
-            .to_string(),
+            update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")))
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
             "No such file or directory (os error 2)"
         );
 
         // A or B paths do not match the root volume path
-        *host_status.block_device_paths.get_mut("root-a").unwrap() =
+        *ctx.block_device_paths.get_mut("root-a").unwrap() =
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
 
         assert_eq!(
-            update_active_volume(
-                &mut host_status,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3"))
-            )
-            .unwrap_err()
-            .root_cause()
-            .to_string(),
+            update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")))
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
             "No matching root volume found"
         );
 
         // None when clean install
-        host_status.servicing_type = ServicingType::CleanInstall;
+        ctx.servicing_type = ServicingType::CleanInstall;
 
-        update_active_volume(
-            &mut host_status,
-            PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
-        )
-        .unwrap();
-        assert_eq!(host_status.ab_active_volume, None);
+        update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3"))).unwrap();
+        assert_eq!(ctx.ab_active_volume, None);
 
         // Volume A is the root device path
-        update_active_volume(
-            &mut host_status,
-            PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
-        )
-        .unwrap();
-        assert_eq!(
-            host_status.ab_active_volume,
-            Some(AbVolumeSelection::VolumeA)
-        );
+        update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"))).unwrap();
+        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeA));
 
         // Volume B is the root device path
-        update_active_volume(
-            &mut host_status,
-            PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
-        )
-        .unwrap();
-        assert_eq!(
-            host_status.ab_active_volume,
-            Some(AbVolumeSelection::VolumeB)
-        );
+        update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2"))).unwrap();
+        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeB));
 
         // verity tests
         let expected_root_hash = verity::setup_verity_volumes();
@@ -1350,35 +1303,28 @@ mod functional_test {
             device_name: "root",
         };
 
-        host_status.block_device_paths = btreemap! {
+        ctx.block_device_paths = btreemap! {
             "root-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             "root-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
         };
 
         update_active_volume(
-            &mut host_status,
+            &mut ctx,
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
         )
         .unwrap();
-        assert_eq!(
-            host_status.ab_active_volume,
-            Some(AbVolumeSelection::VolumeA)
-        );
+        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeA));
 
         update_active_volume(
-            &mut host_status,
+            &mut ctx,
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
         )
         .unwrap();
-        assert_eq!(
-            host_status.ab_active_volume,
-            Some(AbVolumeSelection::VolumeB)
-        );
+        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeB));
 
-        host_status
-            .block_device_paths
+        ctx.block_device_paths
             .insert("root".to_string(), PathBuf::from("/dev/mapper/root"));
-        host_status.spec.storage.verity_filesystems = vec![VerityFileSystem {
+        ctx.spec.storage.verity_filesystems = vec![VerityFileSystem {
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
             hash_device_id: "root-hash".to_string(),
@@ -1398,13 +1344,13 @@ mod functional_test {
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             },
         }];
-        host_status.spec.storage.internal_verity = vec![config::InternalVerityDevice {
+        ctx.spec.storage.internal_verity = vec![config::InternalVerityDevice {
             id: "root".to_string(),
             device_name: "root".to_string(),
             data_target_id: "root-data".to_string(),
             hash_target_id: "root-hash".to_string(),
         }];
-        host_status.spec.storage.ab_update = Some(AbUpdate {
+        ctx.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![
                 AbVolumePair {
                     id: "root-data".to_string(),
@@ -1420,13 +1366,10 @@ mod functional_test {
         });
 
         update_active_volume(
-            &mut host_status,
+            &mut ctx,
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
         )
         .unwrap();
-        assert_eq!(
-            host_status.ab_active_volume,
-            Some(AbVolumeSelection::VolumeA)
-        );
+        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeA));
     }
 }

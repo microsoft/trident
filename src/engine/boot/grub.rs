@@ -13,10 +13,9 @@ use trident_api::{
         BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
         GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH,
     },
-    status::HostStatus,
 };
 
-use crate::engine;
+use crate::engine::{self, EngineContext};
 
 /// Updates the boot filesystem UUID on the search command inside the GRUB
 /// config.
@@ -59,16 +58,16 @@ fn update_grub_config_boot(
     grub_config.write()
 }
 
-pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
+pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
     // Get the root block device path
-    let root_device_path = engine::get_root_block_device_path(host_status)
+    let root_device_path = engine::get_root_block_device_path(ctx)
         .context("Cannot find the root block device path")?;
     if root_device_path.as_os_str().is_empty() {
         bail!("Root device path is none");
     }
 
     // Find the block device which holds /boot
-    let boot_mount_point = host_status
+    let boot_mount_point = ctx
         .spec
         .storage
         .path_to_mount_point(Path::new(BOOT_MOUNT_POINT_PATH))
@@ -85,13 +84,13 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     }
 
     let boot_block_device_id = &boot_mount_point.target_id;
-    let boot_block_device_path = engine::get_block_device_path(host_status, boot_block_device_id)
+    let boot_block_device_path = engine::get_block_device_path(ctx, boot_block_device_id)
         .context("Failed to find boot block device")?;
 
     let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_path)?;
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
-    //Get selinux mode from host status
-    let selinux_mode = host_status.spec.os.selinux.mode;
+    //Get selinux mode from engine context
+    let selinux_mode = ctx.spec.os.selinux.mode;
 
     // Update GRUB config on the boot device (volume holding /boot)
     if osrelease::is_azl2().unwrap_or(false) {
@@ -109,7 +108,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
         // For azl 3.0, we need to disable cloud-init's network configuration when trident is
         // configuring the network. This is done by setting the 'network-config' kernel parameter
         // to 'disabled'.
-        if host_status.spec.os.network.is_some() {
+        if ctx.spec.os.network.is_some() {
             info!("Disabling default cloud-init network config");
             let mut disable_default_cloud_init_network = GrubMkConfigScript::new("prefer-netplan");
             disable_default_cloud_init_network.add_kv_param("network-config", "disabled");
@@ -119,7 +118,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
         }
 
         // For AzL 3.0 we need to drop a grub-mkconfig script to manipulate the SELinux policy.
-        if let Some(mode) = host_status.spec.os.selinux.mode {
+        if let Some(mode) = ctx.spec.os.selinux.mode {
             let mut script = GrubMkConfigScript::new("70_selinux_policy");
             for (key, value) in match mode {
                 SelinuxMode::Disabled => vec![("selinux", "0")],
@@ -142,10 +141,7 @@ pub(super) fn update_configs(host_status: &HostStatus) -> Result<(), Error> {
     // Update GRUB config on the ESP
     let bootentry_config_path = Path::new(ESP_MOUNT_POINT_PATH)
         .join(ESP_EFI_DIRECTORY)
-        .join(
-            super::get_update_esp_dir_name(host_status)
-                .context("Failed to get update install ID")?,
-        )
+        .join(super::get_update_esp_dir_name(ctx).context("Failed to get update install ID")?)
         .join(GRUB2_CONFIG_FILENAME);
 
     update_grub_config_esp(&bootentry_config_path, &boot_uuid).context(format!(
@@ -294,7 +290,7 @@ pub(crate) mod functional_test {
             self, AbUpdate, AbVolumePair, Disk, HostConfiguration, InternalMountPoint, Partition,
             PartitionType, RaidLevel, SoftwareRaidArray,
         },
-        status::{ServicingState, ServicingType},
+        status::ServicingType,
     };
 
     pub fn test_execute_and_resulting_layout(is_single_disk_raid: bool, unequal_partitions: bool) {
@@ -473,10 +469,9 @@ pub(crate) mod functional_test {
     fn test_update_grub_root_raided() {
         test_execute_and_resulting_layout(true, false);
 
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -522,10 +517,10 @@ pub(crate) mod functional_test {
             devices: vec!["root1".to_string(), "root2".to_string()],
             level: RaidLevel::Raid1,
         };
-        raid::create_sw_raid_array(&host_status, &raid_array).unwrap();
+        raid::create_sw_raid_array(&ctx, &raid_array).unwrap();
         let root_device_path = raid_array.device_path();
         let result = test_update_grub_root_raided_internal(
-            &mut host_status,
+            &mut ctx,
             &raid_array,
             root_device_path.as_path(),
         );
@@ -535,12 +530,11 @@ pub(crate) mod functional_test {
     }
 
     fn test_update_grub_root_raided_internal(
-        host_status: &mut HostStatus,
+        ctx: &mut EngineContext,
         raid_array: &SoftwareRaidArray,
         root_device_path: &Path,
     ) -> Result<(), Error> {
-        host_status
-            .spec
+        ctx.spec
             .storage
             .internal_mount_points
             .push(InternalMountPoint {
@@ -550,23 +544,21 @@ pub(crate) mod functional_test {
                 options: vec![],
             });
 
-        host_status
-            .block_device_paths
+        ctx.block_device_paths
             .insert(raid_array.id.clone(), root_device_path.to_owned());
 
         mkfs::run(root_device_path, MkfsFileSystemType::Ext4).unwrap();
 
-        update_configs(host_status)
+        update_configs(ctx)
     }
 
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root on a standalone partition.
     fn test_update_grub_root_standalone_partition() {
         test_execute_and_resulting_layout(false, false);
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -618,14 +610,13 @@ pub(crate) mod functional_test {
 
         // fail on unsupported filesystem
         assert_eq!(
-            update_configs(&host_status).unwrap_err().to_string(),
+            update_configs(&ctx).unwrap_err().to_string(),
             "Unsupported filesystem type for block device 'boot': vfat"
         );
 
         // original test
-        host_status.spec.storage.internal_mount_points.remove(0);
-        host_status
-            .spec
+        ctx.spec.storage.internal_mount_points.remove(0);
+        ctx.spec
             .storage
             .internal_mount_points
             .push(InternalMountPoint {
@@ -635,17 +626,16 @@ pub(crate) mod functional_test {
                 options: vec![],
             });
 
-        update_configs(&host_status).unwrap();
+        update_configs(&ctx).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root as an ab volume partition.
     fn test_update_grub_root_abvolume() {
         test_execute_and_resulting_layout(false, false);
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -707,17 +697,16 @@ pub(crate) mod functional_test {
 
         let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
         mkfs::run(&root_device_path, MkfsFileSystemType::Ext4).unwrap();
-        update_configs(&host_status).unwrap();
+        update_configs(&ctx).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
     /// This functions tests update_grub by setting up root on a standalone partition and setting root uuid empty so that the function bails on root_uuid being empty.
     fn test_update_grub_root_uuid_empty() {
         test_execute_and_resulting_layout(false, false);
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -756,7 +745,7 @@ pub(crate) mod functional_test {
             ..Default::default()
         };
 
-        let result = update_configs(&host_status);
+        let result = update_configs(&ctx);
         assert_eq!(
             result.unwrap_err().to_string(),
             "Failed to get UUID for path '/dev/sdb2', received ''"
@@ -767,10 +756,9 @@ pub(crate) mod functional_test {
     /// This functions tests update_grub by setting up root path empty so that the function bails on root path being None.
     fn test_update_grub_root_path_empty() {
         test_execute_and_resulting_layout(false, false);
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             // These are required to get the update install ID
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
 
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -809,7 +797,7 @@ pub(crate) mod functional_test {
             ..Default::default()
         };
 
-        let result = update_configs(&host_status);
+        let result = update_configs(&ctx);
 
         assert_eq!(result.unwrap_err().to_string(), "Root device path is none");
     }

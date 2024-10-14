@@ -7,10 +7,12 @@ use osutils::path;
 use trident_api::{
     config::{HostConfiguration, ManagementOs, Os, SshMode},
     error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
-    status::{HostStatus, ServicingType},
+    status::ServicingType,
 };
 
 use crate::{engine::Subsystem, OS_MODIFIER_BINARY_PATH};
+
+use super::EngineContext;
 
 mod hostname;
 mod users;
@@ -34,7 +36,7 @@ impl Subsystem for OsConfigSubsystem {
 
     fn validate_host_config(
         &self,
-        _host_status: &HostStatus,
+        _ctx: &EngineContext,
         host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
@@ -52,22 +54,18 @@ impl Subsystem for OsConfigSubsystem {
     }
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
-    fn configure(
-        &mut self,
-        host_status: &HostStatus,
-        exec_root: &Path,
-    ) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
         // TODO: When we switch to MIC, figure out a strategy for handling
         // other kinds of updates. Limit operation to:
         // 1. ServicingType::CleanInstall,
         // 2. ServicingType::AbUpdate, to be able to do E2E A/B update testing.
-        if host_status.servicing_type != ServicingType::CleanInstall
-            && host_status.servicing_type != ServicingType::AbUpdate
+        if ctx.servicing_type != ServicingType::CleanInstall
+            && ctx.servicing_type != ServicingType::AbUpdate
         {
             debug!(
                 "Skipping step 'Configure' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
-                host_status.servicing_type
+                ctx.servicing_type
             );
             return Ok(());
         }
@@ -76,12 +74,12 @@ impl Subsystem for OsConfigSubsystem {
         // it exists when required in 'validate_host_config'.
         let os_modifier_path = path::join_relative(exec_root, OS_MODIFIER_BINARY_PATH);
 
-        if !host_status.spec.os.users.is_empty() {
-            users::set_up_users(&host_status.spec.os.users, &os_modifier_path)
+        if !ctx.spec.os.users.is_empty() {
+            users::set_up_users(&ctx.spec.os.users, &os_modifier_path)
                 .structured(ServicingError::SetUpUsers)?;
         }
 
-        if let Some(ref hostname) = host_status.spec.os.hostname {
+        if let Some(ref hostname) = ctx.spec.os.hostname {
             hostname::set_up_hostname(hostname, &os_modifier_path)
                 .structured(ServicingError::SetUpHostname)?;
         }
@@ -99,14 +97,14 @@ impl Subsystem for MosConfigSubsystem {
 
     fn validate_host_config(
         &self,
-        host_status: &HostStatus,
+        ctx: &EngineContext,
         host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
-        if host_status.servicing_type != ServicingType::CleanInstall {
+        if ctx.servicing_type != ServicingType::CleanInstall {
             debug!(
                 "Skipping step 'Validate' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
-                host_status.servicing_type
+                ctx.servicing_type
             );
             return Ok(());
         }
@@ -126,12 +124,12 @@ impl Subsystem for MosConfigSubsystem {
         Ok(())
     }
 
-    fn prepare(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
-        if host_status.servicing_type != ServicingType::CleanInstall {
+    fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.servicing_type != ServicingType::CleanInstall {
             debug!(
                 "Skipping step 'Prepare' for subsystem '{}' during servicing type '{:?}'",
                 self.name(),
-                host_status.servicing_type
+                ctx.servicing_type
             );
             return Ok(());
         }
@@ -140,14 +138,14 @@ impl Subsystem for MosConfigSubsystem {
         // it exists when required in 'validate_host_config'.
         let os_modifier_path = Path::new(OS_MODIFIER_BINARY_PATH);
 
-        if !host_status.spec.management_os.users.is_empty() {
+        if !ctx.spec.management_os.users.is_empty() {
             info!("Setting up users for management OS");
-            users::set_up_users(&host_status.spec.management_os.users, os_modifier_path)
+            users::set_up_users(&ctx.spec.management_os.users, os_modifier_path)
                 .structured(ServicingError::SetUpUsers)?;
 
             // If the config enables SSH for any MOS user, then we changed the
             // SSHD config, meaning we need to restart SSHD.
-            if host_status
+            if ctx
                 .spec
                 .management_os
                 .users

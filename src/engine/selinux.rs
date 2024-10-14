@@ -12,10 +12,10 @@ use trident_api::{
     config::FileSystemType,
     constants::SELINUX_CONFIG,
     error::{ReportError, ServicingError, TridentError},
-    status::{HostStatus, ServicingType},
+    status::ServicingType,
 };
 
-use super::Subsystem;
+use super::{EngineContext, Subsystem};
 
 /// Gets the seinux type from the selinux config file.
 fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Error> {
@@ -43,15 +43,11 @@ impl Subsystem for SelinuxSubsystem {
     }
 
     #[tracing::instrument(name = "selinux_configuration", skip_all)]
-    fn configure(
-        &mut self,
-        host_status: &HostStatus,
-        _exec_root: &Path,
-    ) -> Result<(), TridentError> {
-        if let ServicingType::CleanInstall | ServicingType::AbUpdate = host_status.servicing_type {
+    fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+        if let ServicingType::CleanInstall | ServicingType::AbUpdate = ctx.servicing_type {
             // Get the mount points for the filesystems that are not of type vfat as setfiles does
             // not support vfat
-            let mount_paths: Vec<&trident_api::config::MountPoint> = host_status
+            let mount_paths: Vec<&trident_api::config::MountPoint> = ctx
                 .spec
                 .storage
                 .filesystems

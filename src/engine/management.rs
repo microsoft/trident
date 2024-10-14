@@ -12,10 +12,12 @@ use osutils::path;
 use trident_api::{
     config::{HostConfiguration, HostConfigurationDynamicValidationError, LocalConfigFile},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
-    status::{HostStatus, ServicingType},
+    status::ServicingType,
 };
 
 use crate::{engine::Subsystem, TRIDENT_BINARY_PATH, TRIDENT_LOCAL_CONFIG_PATH};
+
+use super::EngineContext;
 
 #[derive(Default, Debug)]
 pub struct ManagementSubsystem;
@@ -26,7 +28,7 @@ impl Subsystem for ManagementSubsystem {
 
     fn validate_host_config(
         &self,
-        host_status: &HostStatus,
+        ctx: &EngineContext,
         host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
         if host_config.trident.disable {
@@ -34,8 +36,8 @@ impl Subsystem for ManagementSubsystem {
         }
 
         // Changing the datastore path is only allowed in clean installs.
-        if host_status.servicing_type != ServicingType::CleanInstall {
-            let current_path = &host_status.spec.trident.datastore_path;
+        if ctx.servicing_type != ServicingType::CleanInstall {
+            let current_path = &ctx.spec.trident.datastore_path;
             let new_path = &host_config.trident.datastore_path;
             if current_path != new_path {
                 return Err(TridentError::new(InvalidInputError::from(
@@ -51,16 +53,12 @@ impl Subsystem for ManagementSubsystem {
     }
 
     #[tracing::instrument(name = "management_configuration", skip_all)]
-    fn configure(
-        &mut self,
-        host_status: &HostStatus,
-        exec_root: &Path,
-    ) -> Result<(), TridentError> {
-        if host_status.spec.trident.disable {
+    fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
+        if ctx.spec.trident.disable {
             return Ok(());
         }
 
-        if host_status.spec.trident.self_upgrade {
+        if ctx.spec.trident.self_upgrade {
             info!("Copying Trident binary to runtime OS");
             fs::copy(
                 path::join_relative(exec_root, TRIDENT_BINARY_PATH),
@@ -73,8 +71,8 @@ impl Subsystem for ManagementSubsystem {
             .structured(ServicingError::CreateTridentConfigDirectory)?;
 
         create_trident_config(
-            &host_status.spec.trident.datastore_path,
-            &host_status.spec,
+            &ctx.spec.trident.datastore_path,
+            &ctx.spec,
             Path::new(TRIDENT_LOCAL_CONFIG_PATH),
         )
         .structured(ServicingError::CreateTridentConfig)?;
@@ -117,36 +115,30 @@ mod tests {
     fn test_validate_host_config() {
         let mgmt_mod = ManagementSubsystem;
 
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
             ..Default::default()
         };
         let mut host_config = HostConfiguration::default();
 
         // Initial validation with default values should pass
-        mgmt_mod
-            .validate_host_config(&host_status, &host_config)
-            .unwrap();
+        mgmt_mod.validate_host_config(&ctx, &host_config).unwrap();
 
         // Setting the datastore path should pass
-        host_status.spec.trident.datastore_path = Path::new("/foo").into();
+        ctx.spec.trident.datastore_path = Path::new("/foo").into();
         host_config.trident.datastore_path = Path::new("/foo").to_path_buf();
-        mgmt_mod
-            .validate_host_config(&host_status, &host_config)
-            .unwrap();
+        mgmt_mod.validate_host_config(&ctx, &host_config).unwrap();
 
         // Default pathbuf (happens on clean install)
         host_config.trident.datastore_path = Default::default();
-        mgmt_mod
-            .validate_host_config(&host_status, &host_config)
-            .unwrap();
+        mgmt_mod.validate_host_config(&ctx, &host_config).unwrap();
 
         // Different paths
         host_config.trident.datastore_path = Path::new("/bar").to_path_buf();
-        host_status.servicing_type = ServicingType::AbUpdate;
+        ctx.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
             mgmt_mod
-                .validate_host_config(&host_status, &host_config)
+                .validate_host_config(&ctx, &host_config)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
@@ -159,9 +151,7 @@ mod tests {
 
         // When disabled, should pass
         host_config.trident.disable = true;
-        host_status.servicing_type = ServicingType::CleanInstall;
-        mgmt_mod
-            .validate_host_config(&host_status, &host_config)
-            .unwrap();
+        ctx.servicing_type = ServicingType::CleanInstall;
+        mgmt_mod.validate_host_config(&ctx, &host_config).unwrap();
     }
 }

@@ -21,7 +21,6 @@ use trident_api::{
     config::{Image, ImageFormat, ImageSha256},
     constants::internal_params::DISABLE_GRUB_NOPREFIX_CHECK,
     error::{ReportError, TridentError, TridentResultExt, UnsupportedConfigurationError},
-    status::HostStatus,
 };
 
 use crate::engine::{
@@ -30,6 +29,7 @@ use crate::engine::{
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     storage::image::stream_image::{self, GET_MAX_RETRIES, GET_TIMEOUT_SECS},
+    EngineContext,
 };
 
 /// Performs file-based update of stand-alone ESP volume by copying three boot files into the
@@ -42,7 +42,7 @@ use crate::engine::{
 /// 1. image_url: &Url, which is the URL of the image to be downloaded,
 /// 2. image: &Image, which is the Image object from HostConfig,
 /// 3. device_id: &BlockDeviceId, which is the ID of the ESP volume,
-/// 4. host_status: &mut HostStatus, which is the HostStatus object,
+/// 4. ctx: &mut EngineContext, which is the EngineContext object,
 /// 5. is_local: bool, which is a boolean indicating whether the image is a local file or not.
 /// 6. mount_point: &Path, which is the path to the mount point of the ESP volume.
 ///
@@ -51,7 +51,7 @@ use crate::engine::{
 fn copy_file_artifacts(
     image_url: &Url,
     image: &Image,
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     is_local: bool,
     mount_point: &Path,
 ) -> Result<(), Error> {
@@ -122,7 +122,7 @@ fn copy_file_artifacts(
     };
 
     // Determine which ESP dir to copy boot files into
-    let esp_dir_path = generate_efi_bin_base_dir_path(host_status, mount_point)?;
+    let esp_dir_path = generate_efi_bin_base_dir_path(ctx, mount_point)?;
 
     // Call helper func to copy files from mounted img dir to esp_dir_path
     info!("Writing boot files to directory {}", esp_dir_path.display());
@@ -158,7 +158,7 @@ fn copy_file_artifacts(
 
     // Bail if grub_noprefix.efi is not found on Azure Linux images.
     if !grub_noprefix
-        && !host_status
+        && !ctx
             .spec
             .internal_params
             .get_flag(DISABLE_GRUB_NOPREFIX_CHECK)
@@ -344,12 +344,12 @@ pub fn next_install_index(mount_point: &Path) -> Result<usize, TridentError> {
 /// to.
 ///
 /// Path will be in the form of /boot/efi/EFI/<ID>, where <ID> is the install ID
-/// as determined by host_status.
+/// as determined by ctx.
 ///
 /// The function will find the next available install ID for this install and
-/// update the install index in the host status.
+/// update the install index in the engine context.
 pub fn generate_efi_bin_base_dir_path(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     mount_point: &Path,
 ) -> Result<PathBuf, Error> {
     // Compose the path to the ESP directory
@@ -359,8 +359,8 @@ pub fn generate_efi_bin_base_dir_path(
 
     // Return the path to the ESP directory with the ESP dir name
     Ok(
-        esp_efi_path.join(super::get_update_esp_dir_name(host_status).context(
-            "Failed to get ESP directory name for the new OS. Host status is in an invalid state.",
+        esp_efi_path.join(super::get_update_esp_dir_name(ctx).context(
+            "Failed to get ESP directory name for the new OS. Engine context is in an invalid state.",
         )?),
     )
 }
@@ -387,9 +387,9 @@ fn find_first_available_install_index(esp_efi_path: &Path) -> Result<usize, Trid
 }
 
 /// Performs file-based deployment of ESP images.
-pub(super) fn deploy_esp_images(host_status: &HostStatus, mount_point: &Path) -> Result<(), Error> {
+pub(super) fn deploy_esp_images(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
     // Fetch the list of ESP images that need to be deployed onto ESP partitions
-    for (device_id, image) in &host_status.spec.storage.get_esp_images() {
+    for (device_id, image) in &ctx.spec.storage.get_esp_images() {
         debug!(
             "Deploying ESP image onto ESP partition with ID '{}'",
             &device_id
@@ -418,7 +418,7 @@ pub(super) fn deploy_esp_images(host_status: &HostStatus, mount_point: &Path) ->
                 copy_file_artifacts(
                     &image_url,
                     image,
-                    host_status,
+                    ctx,
                     true,
                     mount_point,
                 )
@@ -432,7 +432,7 @@ pub(super) fn deploy_esp_images(host_status: &HostStatus, mount_point: &Path) ->
                 copy_file_artifacts(
                     &image_url,
                     image,
-                    host_status,
+                    ctx,
                     false,
                     mount_point,
                 )
@@ -464,7 +464,7 @@ mod tests {
 
     use trident_api::{
         constants::GRUB2_RELATIVE_PATH,
-        status::{AbVolumeSelection, ServicingState, ServicingType},
+        status::{AbVolumeSelection, ServicingType},
     };
 
     use crate::engine::boot::{get_update_esp_dir_name, make_esp_dir_name_candidates};
@@ -613,10 +613,9 @@ mod tests {
 
     #[test]
     fn test_generate_efi_bin_base_dir_path_clean_install() {
-        // Clean install HostStatus
-        let mut host_status = HostStatus {
+        // Clean install EngineContext
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
@@ -636,19 +635,18 @@ mod tests {
                 idx,
                 test_dir.path().display()
             );
-            host_status.install_index = next_install_index(test_dir.path()).unwrap();
-            assert_eq!(idx, host_status.install_index);
+            ctx.install_index = next_install_index(test_dir.path()).unwrap();
+            assert_eq!(idx, ctx.install_index);
 
-            let esp_dir_path =
-                generate_efi_bin_base_dir_path(&host_status, test_dir.path()).unwrap();
+            let esp_dir_path = generate_efi_bin_base_dir_path(&ctx, test_dir.path()).unwrap();
             println!("Returned ESP directory path: {:?}", esp_dir_path);
             assert!(
                 !esp_dir_path.exists(),
                 "ESP directory returned should not exist yet"
             );
             assert_eq!(
-                idx, host_status.install_index,
-                "Expected install index does not match the one in HostStatus",
+                idx, ctx.install_index,
+                "Expected install index does not match the one in EngineContext",
             );
             assert_eq!(
                 esp_dir_path,
@@ -665,10 +663,10 @@ mod tests {
 
     #[test]
     fn test_generate_efi_bin_base_dir_path_ab_update() {
-        fn test_generate_efi_bin_base_dir_path(host_status: &mut HostStatus) {
+        fn test_generate_efi_bin_base_dir_path(ctx: &mut EngineContext) {
             println!(
                 "Checking AB update to {}",
-                match host_status.ab_active_volume {
+                match ctx.ab_active_volume {
                     Some(AbVolumeSelection::VolumeA) => "A",
                     Some(AbVolumeSelection::VolumeB) => "B",
                     None => "unknown",
@@ -676,10 +674,10 @@ mod tests {
             );
 
             // Record the expected install index
-            let expected = host_status.install_index;
+            let expected = ctx.install_index;
             // Expected ESP dir name
             let expected_dir_name =
-                get_update_esp_dir_name(host_status).expect("Failed to get ESP dir name");
+                get_update_esp_dir_name(ctx).expect("Failed to get ESP dir name");
 
             // Set up temp dirs.
             let test_dir = TempDir::new().unwrap();
@@ -689,16 +687,15 @@ mod tests {
                 .join(ESP_EFI_DIRECTORY);
 
             // On a clean state, generate the ESP directory path.
-            let esp_dir_path =
-                generate_efi_bin_base_dir_path(host_status, test_dir.path()).unwrap();
+            let esp_dir_path = generate_efi_bin_base_dir_path(ctx, test_dir.path()).unwrap();
             assert_eq!(
                 esp_dir_path,
                 test_esp_dir.join(&expected_dir_name),
                 "ESP directory path does not match expected value"
             );
             assert_eq!(
-                host_status.install_index, expected,
-                "Install index in HostStatus does not match expected value"
+                ctx.install_index, expected,
+                "Install index in EngineContext does not match expected value"
             );
 
             // Create all directories for the expected index + 50 to ensure they are ignored
@@ -710,42 +707,38 @@ mod tests {
                 });
 
             // Generate the ESP directory path again.
-            let esp_dir_path =
-                generate_efi_bin_base_dir_path(host_status, test_dir.path()).unwrap();
+            let esp_dir_path = generate_efi_bin_base_dir_path(ctx, test_dir.path()).unwrap();
             assert_eq!(
                 esp_dir_path,
                 test_esp_dir.join(&expected_dir_name),
                 "ESP directory path does not match expected value"
             );
             assert_eq!(
-                host_status.install_index, expected,
-                "Install index in HostStatus does not match expected value"
+                ctx.install_index, expected,
+                "Install index in EngineContext does not match expected value"
             );
         }
 
         // Test AB update to B
         println!("Checking AB update to B");
-        test_generate_efi_bin_base_dir_path(&mut HostStatus {
+        test_generate_efi_bin_base_dir_path(&mut EngineContext {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staged,
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         });
 
         // Test AB update to A
         println!("Checking AB update to A");
-        test_generate_efi_bin_base_dir_path(&mut HostStatus {
+        test_generate_efi_bin_base_dir_path(&mut EngineContext {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staged,
             ab_active_volume: Some(AbVolumeSelection::VolumeB),
             ..Default::default()
         });
 
         // Test AB update with no active volume
         println!("Checking AB update with no active volume");
-        test_generate_efi_bin_base_dir_path(&mut HostStatus {
+        test_generate_efi_bin_base_dir_path(&mut EngineContext {
             servicing_type: ServicingType::AbUpdate,
-            servicing_state: ServicingState::Staged,
             // Set to None to trigger default behavior
             ab_active_volume: None,
             ..Default::default()

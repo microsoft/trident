@@ -2,12 +2,11 @@ use std::path::Path;
 
 use log::info;
 
-use trident_api::{
-    error::{ReportError, ServicingError, TridentError},
-    status::HostStatus,
-};
+use trident_api::error::{ReportError, ServicingError, TridentError};
 
 use crate::engine::Subsystem;
+
+use super::EngineContext;
 
 mod netplan;
 pub mod provisioning;
@@ -20,12 +19,8 @@ impl Subsystem for NetworkSubsystem {
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
-    fn configure(
-        &mut self,
-        host_status: &HostStatus,
-        _exec_root: &Path,
-    ) -> Result<(), TridentError> {
-        match host_status.spec.os.network.as_ref() {
+    fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+        match ctx.spec.os.network.as_ref() {
             Some(config) => {
                 info!("Configuring network");
                 let config = netplan::render_netplan_yaml(config)

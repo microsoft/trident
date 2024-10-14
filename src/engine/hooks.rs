@@ -17,10 +17,12 @@ use trident_api::{
     },
     constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
-    status::{HostStatus, ServicingType},
+    status::ServicingType,
 };
 
 use crate::engine::Subsystem;
+
+use super::EngineContext;
 
 #[derive(Debug)]
 struct StagedFile {
@@ -43,7 +45,7 @@ impl Subsystem for HooksSubsystem {
 
     fn validate_host_config(
         &self,
-        host_status: &HostStatus,
+        ctx: &EngineContext,
         host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
         // Ensure that all scripts that should be run and have a path actually exist
@@ -52,7 +54,7 @@ impl Subsystem for HooksSubsystem {
             .post_configure
             .iter()
             .chain(&host_config.scripts.post_provision)
-            .filter(|script| script.should_run(host_status.servicing_type))
+            .filter(|script| script.should_run(ctx.servicing_type))
             .filter_map(|script| {
                 script.path.as_ref().and_then(|path| {
                     (path.exists() && path.is_file())
@@ -70,16 +72,16 @@ impl Subsystem for HooksSubsystem {
         Ok(())
     }
 
-    fn prepare(&mut self, host_status: &HostStatus) -> Result<(), TridentError> {
-        for script in host_status
+    fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        for script in ctx
             .spec
             .scripts
             .post_configure
             .iter()
-            .chain(&host_status.spec.scripts.post_provision)
+            .chain(&ctx.spec.scripts.post_provision)
         {
             if let Some(ref path) = script.path {
-                if script.should_run(host_status.servicing_type) {
+                if script.should_run(ctx.servicing_type) {
                     self.stage_file(path.to_owned())
                         .structured(InvalidInputError::from(
                             HostConfigurationDynamicValidationError::LoadScript {
@@ -91,7 +93,7 @@ impl Subsystem for HooksSubsystem {
             }
         }
 
-        for file in &host_status.spec.os.additional_files {
+        for file in &ctx.spec.os.additional_files {
             if let Some(ref path) = file.path {
                 self.stage_file(path.to_owned())
                     .structured(InvalidInputError::from(
@@ -107,21 +109,16 @@ impl Subsystem for HooksSubsystem {
     }
 
     #[tracing::instrument(name = "hooks_provision", skip_all)]
-    fn provision(
-        &mut self,
-        host_status: &HostStatus,
-        mount_path: &Path,
-    ) -> Result<(), TridentError> {
+    fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         info!("Running post-provision scripts");
-        host_status
-            .spec
+        ctx.spec
             .scripts
             .post_provision
             .iter()
             .try_for_each(|script| {
                 self.run_script(
                     script,
-                    host_status.servicing_type,
+                    ctx.servicing_type,
                     mount_path,
                     Path::new(ROOT_MOUNT_POINT_PATH),
                 )
@@ -134,13 +131,9 @@ impl Subsystem for HooksSubsystem {
     }
 
     #[tracing::instrument(name = "hooks_configuration", skip_all)]
-    fn configure(
-        &mut self,
-        host_status: &HostStatus,
-        exec_root: &Path,
-    ) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
         info!("Adding additional files");
-        for file in &host_status.spec.os.additional_files {
+        for file in &ctx.spec.os.additional_files {
             let (content, original_mode) = if let Some(ref content) = file.content {
                 (content.as_bytes().to_vec(), None)
             } else if let Some(ref path) = file.path {
@@ -184,15 +177,14 @@ impl Subsystem for HooksSubsystem {
         }
 
         info!("Running post-configure scripts");
-        host_status
-            .spec
+        ctx.spec
             .scripts
             .post_configure
             .iter()
             .try_for_each(|script| {
                 self.run_script(
                     script,
-                    host_status.servicing_type,
+                    ctx.servicing_type,
                     Path::new(ROOT_MOUNT_POINT_PATH),
                     exec_root,
                 )
@@ -302,7 +294,7 @@ fn set_env_vars(
     for (key, value) in env_vars {
         script_runner.env_vars.insert(key.into(), value.into());
     }
-    // Add default environment variables from host status that can be used
+    // Add default environment variables from engine context that can be used
     script_runner.env_vars.insert(
         "SERVICING_TYPE".into(),
         match_servicing_type_env_var(&servicing_type),
@@ -342,7 +334,7 @@ mod tests {
         config::{Scripts, ServicingTypeSelection},
         constants::ROOT_MOUNT_POINT_PATH,
         error::ErrorKind,
-        status::{ServicingState, ServicingType},
+        status::ServicingType,
     };
 
     #[test]
@@ -411,7 +403,7 @@ mod tests {
         )
         .unwrap();
 
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 scripts: Scripts {
                     post_provision: vec![Script {
@@ -429,14 +421,13 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
         let mut subsystem = HooksSubsystem::default();
-        subsystem.prepare(&host_status).unwrap();
+        subsystem.prepare(&ctx).unwrap();
         subsystem
-            .provision(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+            .provision(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
 
         assert!(test_dir.exists());
@@ -448,7 +439,7 @@ mod tests {
     fn test_run_script_from_nonexistent_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_dir = temp_dir.path().join("test-directory");
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 scripts: Scripts {
                     post_provision: vec![Script {
@@ -466,13 +457,12 @@ mod tests {
                 ..Default::default()
             },
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             ..Default::default()
         };
 
         let mut subsystem = HooksSubsystem::default();
         assert_eq!(
-            subsystem.prepare(&host_status).unwrap_err().kind(),
+            subsystem.prepare(&ctx).unwrap_err().kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
                 inner: HostConfigurationDynamicValidationError::LoadScript {
                     name: "test-script".into(),
@@ -612,7 +602,7 @@ mod tests {
 
         // Content
         let mut subsystem = HooksSubsystem::default();
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -626,9 +616,9 @@ mod tests {
             },
             ..Default::default()
         };
-        subsystem.prepare(&host_status).unwrap();
+        subsystem.prepare(&ctx).unwrap();
         subsystem
-            .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+            .configure(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
@@ -638,7 +628,7 @@ mod tests {
 
         // Content + permissions
         let mut subsystem = HooksSubsystem::default();
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -653,9 +643,9 @@ mod tests {
             },
             ..Default::default()
         };
-        subsystem.prepare(&host_status).unwrap();
+        subsystem.prepare(&ctx).unwrap();
         subsystem
-            .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+            .configure(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
@@ -667,7 +657,7 @@ mod tests {
         let source_file = temp_dir.path().join("source-file");
         fs::write(&source_file, "\u{2603}").unwrap();
         let mut subsystem = HooksSubsystem::default();
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
@@ -681,9 +671,9 @@ mod tests {
             },
             ..Default::default()
         };
-        subsystem.prepare(&host_status).unwrap();
+        subsystem.prepare(&ctx).unwrap();
         subsystem
-            .configure(&host_status, Path::new(ROOT_MOUNT_POINT_PATH))
+            .configure(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
             .unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), "\u{2603}");
         assert_eq!(

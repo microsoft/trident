@@ -19,11 +19,10 @@ use trident_api::{
         HostConfigurationStaticValidationError, Partition, PartitionType,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
-    status::HostStatus,
     BlockDeviceId,
 };
 
-use crate::engine;
+use crate::engine::{self, EngineContext};
 
 const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
@@ -95,7 +94,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 /// This function provisions all configured encrypted volumes.
 #[tracing::instrument(name = "encryption_provision", skip_all)]
 pub(super) fn provision(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
     if let Some(encryption) = &host_config.storage.encryption {
@@ -144,7 +143,7 @@ pub(super) fn provision(
             // Get the block device indicated by device_id if it is a partition, or the first
             // partition of device_id if it is a RAID array. Or return an error if device_id is
             // neither a partition nor a RAID array.
-            let partition = get_first_backing_partition(host_status, &ev.device_id).structured(
+            let partition = get_first_backing_partition(ctx, &ev.device_id).structured(
                 InvalidInputError::from(
                     HostConfigurationStaticValidationError::EncryptedVolumeNotPartitionOrRaid {
                         encrypted_volume: ev.id.clone(),
@@ -159,11 +158,12 @@ pub(super) fn provision(
                 partition.partition_type.to_sdrepart_part_type()
             );
 
-            let device_path = engine::get_block_device_path(host_status, &ev.device_id)
-                .structured(ServicingError::FindEncryptedVolumeBlockDevice {
+            let device_path = engine::get_block_device_path(ctx, &ev.device_id).structured(
+                ServicingError::FindEncryptedVolumeBlockDevice {
                     device_id: ev.device_id.clone(),
                     encrypted_volume: ev.id.clone(),
-                })?;
+                },
+            )?;
 
             encrypt_and_open_device(&device_path, &ev.device_name, &key_file_path).structured(
                 ServicingError::EncryptBlockDevice {
@@ -308,22 +308,22 @@ struct LuksDumpSegment {
 }
 
 #[tracing::instrument(name = "encryption_configuration", skip_all)]
-pub fn configure(host_status: &HostStatus) -> Result<(), TridentError> {
+pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
     let path: PathBuf = PathBuf::from(CRYPTTAB_PATH);
     let mut contents: String = String::new();
 
-    let Some(ref encryption) = host_status.spec.storage.encryption else {
+    let Some(ref encryption) = ctx.spec.storage.encryption else {
         return Ok(());
     };
 
     for ev in encryption.volumes.iter() {
-        let backing_partition = get_first_backing_partition(host_status, &ev.device_id)
-            .structured(InvalidInputError::from(
+        let backing_partition =
+            get_first_backing_partition(ctx, &ev.device_id).structured(InvalidInputError::from(
                 HostConfigurationStaticValidationError::EncryptedVolumeNotPartitionOrRaid {
                     encrypted_volume: ev.id.clone(),
                 },
             ))?;
-        let device_path = &engine::get_block_device_path(host_status, &ev.device_id).structured(
+        let device_path = &engine::get_block_device_path(ctx, &ev.device_id).structured(
             ServicingError::FindEncryptedVolumeBlockDevice {
                 device_id: ev.device_id.clone(),
                 encrypted_volume: ev.id.clone(),
@@ -382,12 +382,12 @@ pub fn configure(host_status: &HostStatus) -> Result<(), TridentError> {
 /// Returns the first partition that backs the given block device, or Err if the block device ID
 /// does not correspond to a partition or software RAID array.
 fn get_first_backing_partition<'a>(
-    host_status: &'a HostStatus,
+    ctx: &'a EngineContext,
     block_device_id: &BlockDeviceId,
 ) -> Result<&'a Partition, Error> {
-    if let Some(partition) = host_status.spec.storage.get_partition(block_device_id) {
+    if let Some(partition) = ctx.spec.storage.get_partition(block_device_id) {
         Ok(partition)
-    } else if let Some(array) = host_status
+    } else if let Some(array) = ctx
         .spec
         .storage
         .raid
@@ -400,8 +400,7 @@ fn get_first_backing_partition<'a>(
             .first()
             .context(format!("RAID array '{}' has no partitions", array.id))?;
 
-        host_status
-            .spec
+        ctx.spec
             .storage
             .get_partition(partition_id)
             .context(format!(
@@ -434,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_get_first_backing_partition() {
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -475,23 +474,23 @@ mod tests {
         };
 
         assert_eq!(
-            get_first_backing_partition(&host_status, &"esp".to_owned()).unwrap(),
-            &host_status.spec.storage.disks[0].partitions[0]
+            get_first_backing_partition(&ctx, &"esp".to_owned()).unwrap(),
+            &ctx.spec.storage.disks[0].partitions[0]
         );
         assert_eq!(
-            get_first_backing_partition(&host_status, &"root".to_owned()).unwrap(),
-            &host_status.spec.storage.disks[0].partitions[1]
+            get_first_backing_partition(&ctx, &"root".to_owned()).unwrap(),
+            &ctx.spec.storage.disks[0].partitions[1]
         );
         assert_eq!(
-            get_first_backing_partition(&host_status, &"rootb".to_owned()).unwrap(),
-            &host_status.spec.storage.disks[0].partitions[2]
+            get_first_backing_partition(&ctx, &"rootb".to_owned()).unwrap(),
+            &ctx.spec.storage.disks[0].partitions[2]
         );
         assert_eq!(
-            get_first_backing_partition(&host_status, &"root-raid1".to_owned()).unwrap(),
-            &host_status.spec.storage.disks[0].partitions[1]
+            get_first_backing_partition(&ctx, &"root-raid1".to_owned()).unwrap(),
+            &ctx.spec.storage.disks[0].partitions[1]
         );
-        get_first_backing_partition(&host_status, &"os".to_owned()).unwrap_err();
-        get_first_backing_partition(&host_status, &"non-existant".to_owned()).unwrap_err();
+        get_first_backing_partition(&ctx, &"os".to_owned()).unwrap_err();
+        get_first_backing_partition(&ctx, &"non-existant".to_owned()).unwrap_err();
     }
 
     fn get_storage(recovery_key_file: &tempfile::NamedTempFile) -> Storage {

@@ -19,17 +19,18 @@ use osutils::{
 };
 use trident_api::{
     config::{AdoptedPartition, Disk, HostConfiguration, PartitionSize, PartitionType, Storage},
-    status::HostStatus,
     BlockDeviceId,
 };
 use uuid::Uuid;
 
+use crate::engine::EngineContext;
+
 /// Given a host configuration, adopt and create partitions on the disks.
 #[tracing::instrument(name = "partitions_creation", skip_all)]
-pub fn create_partitions(host_status: &mut HostStatus) -> Result<(), Error> {
+pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
     // Resolve the disk paths to ensure that all disks in the configuration exist.
-    let resolved_disks = block_devices::get_resolved_disks(&host_status.spec)
-        .context("Failed to resolve disk paths")?;
+    let resolved_disks =
+        block_devices::get_resolved_disks(&ctx.spec).context("Failed to resolve disk paths")?;
 
     // Do a non-destructive first pass of adoption to detect any issues before
     // we start making changes.
@@ -37,10 +38,10 @@ pub fn create_partitions(host_status: &mut HostStatus) -> Result<(), Error> {
 
     for disk in &resolved_disks {
         create_partitions_on_disk(
-            &host_status.spec,
+            &ctx.spec,
             disk,
-            &mut host_status.block_device_paths,
-            &mut host_status.disks_by_uuid,
+            &mut ctx.block_device_paths,
+            &mut ctx.disks_by_uuid,
         )
         .with_context(|| format!("Failed to create partitions for disk '{}'", disk.id))?;
     }
@@ -122,7 +123,7 @@ pub fn create_partitions_on_disk(
     // Get disk UUID from osuuid
     match disk_information.id.as_uuid() {
         Some(disk_uuid) => {
-            // Update the host status with disk UUID to disk ID mapping
+            // Update the engine context with disk UUID to disk ID mapping
             disks_by_uuid.insert(disk_uuid, disk.id.clone());
         }
         None => {
@@ -143,9 +144,9 @@ pub fn create_partitions_on_disk(
             )
         })?;
 
-        // Update host status with the partition metadata.
+        // Update engine context with the partition metadata.
         trace!(
-            "Updating host status with partition '{}':\n{:#?}",
+            "Updating engine context with partition '{}':\n{:#?}",
             repart_partition.id,
             repart_partition
         );
@@ -254,7 +255,7 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
 /// This function will attempt to match the partitions on the disk with the
 /// adopted partitions. If a partition is matched, it will be kept. If a
 /// partition is not matched, it will be deleted. Matched partitions are saved
-/// to host status.
+/// to engine context.
 fn adopt_partitions(disk: &ResolvedDisk, repart: &mut SystemdRepartInvoker) -> Result<(), Error> {
     if disk.spec.adopted_partitions.is_empty() {
         // Nothing to do :)
@@ -401,7 +402,7 @@ fn generate_sysupdate_partlabels(storage: &Storage) -> HashMap<BlockDeviceId, St
     // PARTLABELs, if required by the users. Related ADO task:
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6125.
 
-    // Iterate through host_status.storage.ab_update.volume_pairs. For each
+    // Iterate through ctx.storage.ab_update.volume_pairs. For each
     // volume_pair, add each partition_id to the hash map, where value for
     // volume-a-id (active) is "a" and value for volume-b-id (inactive) is
     // "_empty". On next run of sysupdate, "_empty" will be updated.
@@ -838,18 +839,17 @@ mod functional_test {
             ..Default::default()
         };
 
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: host_config.clone(),
             ..Default::default()
         };
 
-        create_partitions(&mut host_status).unwrap();
+        create_partitions(&mut ctx).unwrap();
 
-        assert_eq!(host_status.block_device_paths.len(), 3);
+        assert_eq!(ctx.block_device_paths.len(), 3);
 
         let check_part = |name: &str| {
-            host_status
-                .block_device_paths
+            ctx.block_device_paths
                 .get(name)
                 .unwrap_or_else(|| panic!("Failed to find block device '{}' in status", name));
         };
@@ -925,24 +925,21 @@ mod functional_test {
             ..Default::default()
         };
 
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: host_config.clone(),
             ..Default::default()
         };
 
-        create_partitions(&mut host_status).unwrap();
+        create_partitions(&mut ctx).unwrap();
 
-        assert_eq!(host_status.block_device_paths.len(), 2);
+        assert_eq!(ctx.block_device_paths.len(), 2);
         assert!(
-            host_status.block_device_paths.contains_key("part1"),
+            ctx.block_device_paths.contains_key("part1"),
             "part1 not found"
         );
+        assert!(!ctx.block_device_paths.contains_key("part2"), "part2 found");
         assert!(
-            !host_status.block_device_paths.contains_key("part2"),
-            "part2 found"
-        );
-        assert!(
-            host_status.block_device_paths.contains_key("part3"),
+            ctx.block_device_paths.contains_key("part3"),
             "part3 not found"
         );
 
@@ -975,12 +972,12 @@ mod functional_test {
             ..Default::default()
         };
 
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: host_config.clone(),
             ..Default::default()
         };
 
-        create_partitions(&mut host_status).unwrap_err();
+        create_partitions(&mut ctx).unwrap_err();
 
         osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
     }

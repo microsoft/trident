@@ -15,11 +15,10 @@ use strum_macros::{Display, EnumString};
 use osutils::{block_devices, exe::OutputChecker, mdadm, udevadm};
 use trident_api::{
     config::{HostConfiguration, PartitionType, RaidLevel, SoftwareRaidArray},
-    status::HostStatus,
     BlockDeviceId,
 };
 
-use crate::engine;
+use crate::engine::{self, EngineContext};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
 #[serde(rename_all = "kebab-case")]
@@ -36,10 +35,9 @@ pub(super) enum RaidState {
     Inactive,
 }
 
-fn create(config: SoftwareRaidArray, host_status: &HostStatus) -> Result<(), Error> {
+fn create(config: SoftwareRaidArray, ctx: &EngineContext) -> Result<(), Error> {
     let devices = &config.devices;
-    let device_paths =
-        get_device_paths(host_status, devices).context("Failed to get device paths")?;
+    let device_paths = get_device_paths(ctx, devices).context("Failed to get device paths")?;
 
     mdadm::create(&config.device_path(), &config.level, device_paths)
         .context("Failed to create RAID array")?;
@@ -72,14 +70,11 @@ fn get_raid_device_name(raid_device: &Path) -> Result<String, Error> {
     Ok(device_name.to_string())
 }
 
-fn get_device_paths(
-    host_status: &HostStatus,
-    devices: &[BlockDeviceId],
-) -> Result<Vec<PathBuf>, Error> {
+fn get_device_paths(ctx: &EngineContext, devices: &[BlockDeviceId]) -> Result<Vec<PathBuf>, Error> {
     devices
         .iter()
         .map(|device_id| {
-            engine::get_block_device_path(host_status, device_id).context(format!(
+            engine::get_block_device_path(ctx, device_id).context(format!(
                 "Failed to get block device path for '{}'",
                 device_id
             ))
@@ -88,8 +83,8 @@ fn get_device_paths(
 }
 
 #[tracing::instrument(name = "raid_configuration", skip_all)]
-pub(super) fn configure(host_status: &HostStatus) -> Result<(), Error> {
-    if !host_status.spec.storage.raid.software.is_empty() {
+pub(super) fn configure(ctx: &EngineContext) -> Result<(), Error> {
+    if !ctx.spec.storage.raid.software.is_empty() {
         let output = mdadm::examine().context("Failed to examine RAID arrays")?;
         let mdadm_config_file_path = "/etc/mdadm/mdadm.conf";
         info!("Creating mdadm config file '{}'", mdadm_config_file_path);
@@ -230,22 +225,21 @@ pub fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
 
 #[tracing::instrument(name = "raid_creation", skip_all)]
 pub(super) fn create_sw_raid(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     if !host_config.storage.raid.software.is_empty() {
         check_if_mdadm_present()
             .context("Failed to create software RAID. Mdadm is required for RAID")?;
         for software_raid_config in &host_config.storage.raid.software {
-            create_sw_raid_array(host_status, software_raid_config).context(format!(
+            create_sw_raid_array(ctx, software_raid_config).context(format!(
                 "RAID creation failed for '{}'",
                 software_raid_config.name
             ))?;
         }
 
         if let Some(sync_timeout) = host_config.storage.raid.sync_timeout {
-            wait_for_raid_sync(host_status, sync_timeout)
-                .context("Failed to wait for RAID sync")?;
+            wait_for_raid_sync(ctx, sync_timeout).context("Failed to wait for RAID sync")?;
         }
 
         udevadm::trigger().context("Udev failed while scanning for new devices")?;
@@ -255,10 +249,10 @@ pub(super) fn create_sw_raid(
 }
 
 pub fn create_sw_raid_array(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     raid_array: &SoftwareRaidArray,
 ) -> Result<(), Error> {
-    create(raid_array.clone(), host_status)
+    create(raid_array.clone(), ctx)
         .context(format!("Failed to create RAID array '{}'", raid_array.name))?;
 
     let raid_device = raid_array.device_path();
@@ -280,7 +274,7 @@ pub fn create_sw_raid_array(
 /// devices, and waits for all RAID devices to sync within the given timeout. If
 /// the RAID arrays have not finished their sync within the timeout, an error is
 /// returned.
-fn wait_for_raid_sync(host_status: &HostStatus, sync_timeout: u64) -> Result<(), Error> {
+fn wait_for_raid_sync(ctx: &EngineContext, sync_timeout: u64) -> Result<(), Error> {
     info!("Waiting for RAID arrays to sync");
 
     let start_time = Instant::now();
@@ -290,7 +284,7 @@ fn wait_for_raid_sync(host_status: &HostStatus, sync_timeout: u64) -> Result<(),
     let mut sleep_duration = Duration::from_secs(5);
     let max_sleep_duration = Duration::from_secs(60);
 
-    let raid_device_ids: Vec<String> = host_status
+    let raid_device_ids: Vec<String> = ctx
         .spec
         .storage
         .raid
@@ -299,7 +293,7 @@ fn wait_for_raid_sync(host_status: &HostStatus, sync_timeout: u64) -> Result<(),
         .map(|raid_array| raid_array.id.clone())
         .collect();
 
-    let mut raid_devices: Vec<(String, String)> = get_device_paths(host_status, &raid_device_ids)
+    let mut raid_devices: Vec<(String, String)> = get_device_paths(ctx, &raid_device_ids)
         .context("Failed to get RAID device paths")?
         .iter()
         .map(|raid_path| {
@@ -366,14 +360,13 @@ mod tests {
 
     use trident_api::{
         config::{Disk, Partition, PartitionSize, PartitionType, Storage},
-        status::{ServicingState, ServicingType},
+        status::ServicingType,
     };
 
     #[test]
     fn test_get_device_paths() {
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -412,7 +405,7 @@ mod tests {
         };
 
         let result: Result<Vec<PathBuf>, Error> =
-            get_device_paths(&host_status, &["boot".to_string(), "root".to_string()]);
+            get_device_paths(&ctx, &["boot".to_string(), "root".to_string()]);
 
         assert!(result.is_ok());
 
@@ -424,7 +417,7 @@ mod tests {
         assert_eq!(device_paths, expected_paths);
 
         let result: Result<Vec<PathBuf>, Error> =
-            get_device_paths(&host_status, &["boot2".to_string(), "root2".to_string()]);
+            get_device_paths(&ctx, &["boot2".to_string(), "root2".to_string()]);
         assert!(result.is_err());
     }
 
@@ -470,7 +463,7 @@ mod functional_test {
     const RAID_PATH: &str = "/dev/md/some-raid";
 
     fn raid_cleanup_and_create_partitions() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -506,11 +499,11 @@ mod functional_test {
             ..Default::default()
         };
 
-        let spec = &host_status.spec.clone();
+        let spec = &ctx.spec.clone();
         let err = storage::raid::stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status);
+        let err = storage::partitioning::create_partitions(&mut ctx);
         assert!(err.is_ok());
     }
 
@@ -562,7 +555,7 @@ mod functional_test {
 
     #[functional_test]
     fn test_raid_creation_without_sync_timeout() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -598,15 +591,15 @@ mod functional_test {
             ..Default::default()
         };
 
-        let spec = &host_status.spec.clone();
+        let spec = &ctx.spec.clone();
 
         let err = stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status);
+        let err = storage::partitioning::create_partitions(&mut ctx);
         assert!(err.is_ok());
 
-        create_sw_raid(&host_status, spec).unwrap();
+        create_sw_raid(&ctx, spec).unwrap();
 
         // cleanup the RAID array
         let err = stop_pre_existing_raid_arrays(spec);
@@ -615,7 +608,7 @@ mod functional_test {
 
     #[functional_test]
     fn test_raid_creation_with_sync_timeout() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -651,14 +644,14 @@ mod functional_test {
             ..Default::default()
         };
 
-        let spec = &host_status.spec.clone();
+        let spec = &ctx.spec.clone();
         let err = stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status);
+        let err = storage::partitioning::create_partitions(&mut ctx);
         assert!(err.is_ok());
 
-        create_sw_raid(&host_status, spec).unwrap();
+        create_sw_raid(&ctx, spec).unwrap();
 
         // cleanup the RAID array
         let err = stop_pre_existing_raid_arrays(spec);
@@ -667,7 +660,7 @@ mod functional_test {
 
     #[functional_test(negative = true)]
     fn test_raid_creation_with_sync_timeout_failing() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -703,15 +696,15 @@ mod functional_test {
             ..Default::default()
         };
 
-        let spec = &host_status.spec.clone();
+        let spec = &ctx.spec.clone();
         let err = stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status);
+        let err = storage::partitioning::create_partitions(&mut ctx);
         assert!(err.is_ok());
 
         assert_eq!(
-            create_sw_raid(&host_status, spec).unwrap_err().to_string(),
+            create_sw_raid(&ctx, spec).unwrap_err().to_string(),
             "Failed to wait for RAID sync"
         );
 
@@ -722,7 +715,7 @@ mod functional_test {
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_raid_creation_failure_unequal_partitions() {
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -762,15 +755,15 @@ mod functional_test {
             level: RaidLevel::Raid1,
         };
 
-        let spec = &host_status.spec.clone();
+        let spec = &ctx.spec.clone();
         let err = stop_pre_existing_raid_arrays(spec);
         assert!(err.is_ok());
 
-        let err = storage::partitioning::create_partitions(&mut host_status);
+        let err = storage::partitioning::create_partitions(&mut ctx);
         assert!(err.is_ok());
 
         assert_eq!(
-            create_sw_raid_array(&host_status, &raid_array)
+            create_sw_raid_array(&ctx, &raid_array)
                 .unwrap_err()
                 .to_string(),
             "Failed to create RAID array 'md0'"

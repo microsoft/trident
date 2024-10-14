@@ -89,7 +89,7 @@ impl NewrootMount {
         }
     }
 
-    /// Given a host status, create all the required mount points for newroot
+    /// Given a engine context, create all the required mount points for newroot
     /// and return a NewrootMount object.
     #[tracing::instrument(name = "initialize_new_root", skip_all)]
     pub fn create_and_mount(
@@ -596,6 +596,8 @@ mod test {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
+    use crate::engine::EngineContext;
+
     use super::*;
 
     use std::{
@@ -620,7 +622,6 @@ mod functional_test {
         config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
         constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
-        status::HostStatus,
     };
 
     #[functional_test(feature = "engine")]
@@ -637,7 +638,7 @@ mod functional_test {
         // Create the mount point directory if it doesn't exist yet
         fs::create_dir_all(mount_point).unwrap();
 
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -670,8 +671,8 @@ mod functional_test {
         let mut newroot_mount = NewrootMount::new(mount_point.to_owned());
         newroot_mount
             .mount_newroot_partitions(
-                &host_status.spec,
-                &host_status.block_device_paths,
+                &ctx.spec,
+                &ctx.block_device_paths,
                 AbVolumeSelection::VolumeA,
             )
             .unwrap();
@@ -692,7 +693,7 @@ mod functional_test {
 
         let root_mount_dir = tempfile::tempdir().unwrap();
 
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -772,8 +773,8 @@ mod functional_test {
         let mut newroot_mount2 = NewrootMount::new(root_mount_dir.path().to_owned());
         newroot_mount2
             .mount_newroot_partitions(
-                &host_status.spec,
-                &host_status.block_device_paths,
+                &ctx.spec,
+                &ctx.block_device_paths,
                 AbVolumeSelection::VolumeA,
             )
             .unwrap();
@@ -840,7 +841,7 @@ mod functional_test {
         let temp_mount_dir = TempDir::new().unwrap();
 
         // bad mount path
-        let mut host_status = HostStatus {
+        let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -875,8 +876,8 @@ mod functional_test {
         assert_eq!(
             newroot_mount
                 .mount_newroot_partitions(
-                    &host_status.spec,
-                    &host_status.block_device_paths,
+                    &ctx.spec,
+                    &ctx.block_device_paths,
                     AbVolumeSelection::VolumeA
                 )
                 .unwrap_err()
@@ -885,9 +886,9 @@ mod functional_test {
         );
 
         // bad root path
-        let mut value = host_status.spec.storage.internal_mount_points.remove(0);
+        let mut value = ctx.spec.storage.internal_mount_points.remove(0);
         value.path = PathBuf::from("/");
-        host_status.spec.storage.internal_mount_points.push(value);
+        ctx.spec.storage.internal_mount_points.push(value);
         let temp_file = NamedTempFile::new().unwrap();
 
         let mut newroot_mount = NewrootMount::new(temp_file.path().to_owned());
@@ -895,8 +896,8 @@ mod functional_test {
         assert_eq!(
             newroot_mount
                 .mount_newroot_partitions(
-                    &host_status.spec,
-                    &host_status.block_device_paths,
+                    &ctx.spec,
+                    &ctx.block_device_paths,
                     AbVolumeSelection::VolumeA
                 )
                 .unwrap_err()
@@ -942,7 +943,7 @@ mod functional_test {
         // Mount point
         let temp_mount_dir = TempDir::new().unwrap();
 
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
                     disks: vec![Disk {
@@ -983,8 +984,8 @@ mod functional_test {
         assert_eq!(
             newroot_mount
                 .mount_newroot_partitions(
-                    &host_status.spec,
-                    &host_status.block_device_paths,
+                    &ctx.spec,
+                    &ctx.block_device_paths,
                     AbVolumeSelection::VolumeA
                 )
                 .expect_err(

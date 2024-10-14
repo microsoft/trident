@@ -12,29 +12,29 @@ use osutils::{
     filesystems::TabFileSystemType,
     tabfile::{TabFile, TabFileEntry},
 };
-use trident_api::{
-    config::{FileSystemType, InternalMountPoint},
-    status::HostStatus,
-};
+use trident_api::config::{FileSystemType, InternalMountPoint};
 
-use crate::engine;
+use crate::engine::{self, EngineContext};
 
 pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
 pub(crate) fn from_mountpoints(
-    host_status: &HostStatus,
+    ctx: &EngineContext,
     mount_points: &[InternalMountPoint],
 ) -> Result<TabFile, Error> {
     // Generate a list of entries for the tab file
     let entries = mount_points
         .iter()
-        .map(|mp| entry_from_mountpoint(host_status, mp))
+        .map(|mp| entry_from_mountpoint(ctx, mp))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(TabFile { entries })
 }
 
-fn entry_from_mountpoint(hs: &HostStatus, mp: &InternalMountPoint) -> Result<TabFileEntry, Error> {
+fn entry_from_mountpoint(
+    hs: &EngineContext,
+    mp: &InternalMountPoint,
+) -> Result<TabFileEntry, Error> {
     Ok(match mp.filesystem {
         // First, check the types that do not depend on a block device
         FileSystemType::Overlay => TabFileEntry::new_overlay(&mp.path),
@@ -139,13 +139,12 @@ mod tests {
             PartitionType, Storage,
         },
         constants::{self, MOUNT_OPTION_READ_ONLY, SWAP_MOUNT_POINT},
-        status::{HostStatus, ServicingState, ServicingType},
+        status::ServicingType,
     };
 
-    fn get_host_status() -> HostStatus {
-        HostStatus {
+    fn get_ctx() -> EngineContext {
+        EngineContext {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             spec: HostConfiguration {
                 storage: Storage {
                     disks: vec![Disk {
@@ -193,11 +192,11 @@ mod tests {
 
     #[test]
     fn test_entry_from_mountpoint_regular() {
-        let host_status = get_host_status();
+        let ctx = get_ctx();
 
         assert_eq!(
             entry_from_mountpoint(
-                &host_status,
+                &ctx,
                 &InternalMountPoint {
                     path: PathBuf::from("/boot/efi"),
                     filesystem: FileSystemType::Vfat,
@@ -217,11 +216,11 @@ mod tests {
 
     #[test]
     fn test_entry_from_mountpoint_swap() {
-        let host_status = get_host_status();
+        let ctx = get_ctx();
 
         assert_eq!(
             entry_from_mountpoint(
-                &host_status,
+                &ctx,
                 &InternalMountPoint {
                     path: PathBuf::from(SWAP_MOUNT_POINT),
                     filesystem: FileSystemType::Swap,
@@ -237,11 +236,11 @@ mod tests {
 
     #[test]
     fn test_entry_from_mountpoint_tmpfs() {
-        let host_status = get_host_status();
+        let ctx = get_ctx();
 
         assert_eq!(
             entry_from_mountpoint(
-                &host_status,
+                &ctx,
                 &InternalMountPoint {
                     path: PathBuf::from("/tmp"),
                     filesystem: FileSystemType::Tmpfs,
@@ -256,11 +255,11 @@ mod tests {
 
     #[test]
     fn test_entry_from_mountpoint_overlay() {
-        let host_status = get_host_status();
+        let ctx = get_ctx();
 
         assert_eq!(
             entry_from_mountpoint(
-                &host_status,
+                &ctx,
                 &InternalMountPoint {
                     path: PathBuf::from("/etc"),
                     filesystem: FileSystemType::Overlay,
@@ -353,9 +352,8 @@ mod tests {
             ..Default::default()
         };
 
-        let host_status = HostStatus {
+        let ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
             spec: host_config.clone(),
             block_device_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
@@ -368,7 +366,7 @@ mod tests {
         };
 
         assert_eq!(
-            from_mountpoints(&host_status, &host_config.storage.internal_mount_points)
+            from_mountpoints(&ctx, &host_config.storage.internal_mount_points)
                 .unwrap()
                 .render(),
             expected_fstab
@@ -386,7 +384,7 @@ mod tests {
             target_id: "".to_owned(),
         });
         assert_eq!(
-            from_mountpoints(&host_status, &mount_points)
+            from_mountpoints(&ctx, &mount_points)
                 .unwrap()
                 .render(),
             format!("{expected_fstab}overlay /foo overlay lowerdir=/mnt,upperdir=/mnt/newroot,workdir=/mnt/work 0 2\n")

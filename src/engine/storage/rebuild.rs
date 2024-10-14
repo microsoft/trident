@@ -16,7 +16,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::{self, storage::partitioning};
+use crate::engine::storage::partitioning;
 
 /// Rebuilds the RAID array i.e adds the new disks partitions for the
 /// given RAID array.
@@ -93,10 +93,17 @@ fn rebuild_raid_array(
     );
 
     // Get the RAID path
-    let raid_path = engine::get_block_device_path(host_status, raid_id).context(format!(
-        "Failed to find block device path for RAID array'{}'",
-        raid_id
-    ))?;
+    let raid_path = host_status
+        .spec
+        .storage
+        .raid
+        .software
+        .iter()
+        .find(|&r| &r.id == raid_id)
+        .context(format!(
+            "Failed to find block device path for RAID array'{raid_id}'",
+        ))?
+        .device_path();
 
     // Add the new disk partitions in the RAID array
     for partition_path in rebuild_partition_paths {
@@ -856,8 +863,7 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-
-    use engine::storage;
+    use crate::engine::{storage, EngineContext};
 
     use super::*;
     use pytest_gen::functional_test;
@@ -974,14 +980,19 @@ mod functional_test {
     #[functional_test]
     fn test_validate_and_rebuild_raid_success() {
         let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
+        let mut ctx = EngineContext {
+            spec: host_status.spec.clone(),
+            ..Default::default()
+        };
 
         // Stop any pre-existing RAID arrays.
         let err = storage::raid::stop_pre_existing_raid_arrays(&host_config);
         assert!(err.is_ok());
 
         // Create partitions on the test disks.
-        let err = storage::partitioning::create_partitions(&mut host_status);
-        assert!(err.is_ok());
+        storage::partitioning::create_partitions(&mut ctx).unwrap();
+        host_status.block_device_paths = ctx.block_device_paths;
+        host_status.disks_by_uuid = ctx.disks_by_uuid;
         udevadm::settle().unwrap();
 
         // Create a raid array raid1.
