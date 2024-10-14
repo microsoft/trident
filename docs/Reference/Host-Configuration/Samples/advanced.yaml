@@ -45,13 +45,7 @@ storage:
     - id: var-a1
       type: linux-generic
       size: 1G
-    - id: run-a1
-      type: linux-generic
-      size: 1G
     - id: var-b1
-      type: linux-generic
-      size: 1G
-    - id: run-b1
       type: linux-generic
       size: 1G
     - id: enc-home1
@@ -97,13 +91,7 @@ storage:
     - id: var-a2
       type: linux-generic
       size: 1G
-    - id: run-a2
-      type: linux-generic
-      size: 1G
     - id: var-b2
-      type: linux-generic
-      size: 1G
-    - id: run-b2
       type: linux-generic
       size: 1G
     - id: enc-home2
@@ -177,24 +165,12 @@ storage:
       devices:
       - var-a1
       - var-a2
-    - id: run-a
-      name: run-a
-      level: raid1
-      devices:
-      - run-a1
-      - run-a2
     - id: var-b
       name: var-b
       level: raid1
       devices:
       - var-b1
       - var-b2
-    - id: run-b
-      name: run-b
-      level: raid1
-      devices:
-      - run-b1
-      - run-b2
     - id: enc-home
       name: home
       level: raid1
@@ -219,9 +195,6 @@ storage:
     - id: var
       volumeAId: var-a
       volumeBId: var-b
-    - id: run
-      volumeAId: run-a
-      volumeBId: run-b
   filesystems:
   - deviceId: esp1
     type: vfat
@@ -273,11 +246,6 @@ storage:
       format: raw-zst
     mountPoint:
       path: /var
-      options: defaults
-  - deviceId: run
-    type: ext4
-    mountPoint:
-      path: /run
       options: defaults
   - deviceId: home
     type: ext4

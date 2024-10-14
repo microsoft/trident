@@ -30,9 +30,6 @@ storage:
     - id: var
       type: linux-generic
       size: 1G
-    - id: run
-      type: linux-generic
-      size: 1G
     - id: home
       type: linux-generic
       size: 1G
@@ -76,11 +73,6 @@ storage:
       format: raw-zst
     mountPoint:
       path: /var
-      options: defaults
-  - deviceId: run
-    type: ext4
-    mountPoint:
-      path: /run
       options: defaults
   - deviceId: home
     type: ext4

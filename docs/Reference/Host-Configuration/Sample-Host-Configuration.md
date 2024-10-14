@@ -126,4 +126,5 @@ os:
   additionalFiles:
   - destination: /var/config-script.sh
     content: 'echo ''Running from newly deployed chroot: $SAMPLE_VARIABLE'''
+    permissions: '0755'
 ```

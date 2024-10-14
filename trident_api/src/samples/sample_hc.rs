@@ -174,6 +174,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     content: Some(
                         "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
                     ),
+                    permissions: Some("0755".into()),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -379,6 +380,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     content: Some(
                         "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
                     ),
+                    permissions: Some("0755".into()),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -447,11 +449,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         },
                         Partition {
                             id: "var".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x40000000.into(), // 1GiB
-                        },
-                        Partition {
-                            id: "run".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: 0x40000000.into(), // 1GiB
                         },
@@ -527,15 +524,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         }),
                         mount_point: Some(MountPoint {
                             path: "/var".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("run".into()),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
-                        mount_point: Some(MountPoint {
-                            path: "/run".into(),
                             options: MountOptions::defaults(),
                         }),
                     },
@@ -697,17 +685,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
-                                id: "run-a1".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
-                            },
-                            Partition {
                                 id: "var-b1".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
-                            },
-                            Partition {
-                                id: "run-b1".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
                                 size: 0x40000000.into(), // 1GiB
                             },
@@ -785,17 +763,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 size: 0x40000000.into(), // 1GiB
                             },
                             Partition {
-                                id: "run-a2".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
-                            },
-                            Partition {
                                 id: "var-b2".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
-                            },
-                            Partition {
-                                id: "run-b2".to_string(),
                                 partition_type: PartitionType::LinuxGeneric,
                                 size: 0x40000000.into(), // 1GiB
                             },
@@ -879,22 +847,10 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             devices: vec!["var-a1".to_string(), "var-a2".to_string()],
                         },
                         SoftwareRaidArray {
-                            id: "run-a".to_string(),
-                            name: "run-a".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["run-a1".to_string(), "run-a2".to_string()],
-                        },
-                        SoftwareRaidArray {
                             id: "var-b".to_string(),
                             name: "var-b".to_string(),
                             level: RaidLevel::Raid1,
                             devices: vec!["var-b1".to_string(), "var-b2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "run-b".to_string(),
-                            name: "run-b".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["run-b1".to_string(), "run-b2".to_string()],
                         },
                         SoftwareRaidArray {
                             id: "enc-home".to_string(),
@@ -938,11 +894,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             id: "var".into(),
                             volume_a_id: "var-a".into(),
                             volume_b_id: "var-b".into(),
-                        },
-                        AbVolumePair {
-                            id: "run".into(),
-                            volume_a_id: "run-a".into(),
-                            volume_b_id: "run-b".into(),
                         },
                     ],
                 }),
@@ -1035,15 +986,6 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         }),
                         mount_point: Some(MountPoint {
                             path: "/var".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("run".into()),
-                        fs_type: FileSystemType::Ext4,
-                        source: FileSystemSource::Create,
-                        mount_point: Some(MountPoint {
-                            path: "/run".into(),
                             options: MountOptions::defaults(),
                         }),
                     },
@@ -1206,7 +1148,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::EspImage(Image {
-                                url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
+                                url: "file:///trident_cdrom/data/esp.rawzst".into(),
                                 sha256: ImageSha256::Checksum(
                                     "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
                                         .into(),
@@ -1219,7 +1161,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             fs_type: FileSystemType::Vfat,
                             mount_point: None,
                             source: FileSystemSource::EspImage(Image {
-                                url: "file:///trident_cdrom/data/verity_esp.rawzst".into(),
+                                url: "file:///trident_cdrom/data/esp.rawzst".into(),
                                 sha256: ImageSha256::Checksum(
                                     "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
                                         .into(),
@@ -1235,7 +1177,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::Image(Image {
-                                url: "file:///trident_cdrom/data/verity_root.rawzst".into(),
+                                url: "file:///trident_cdrom/data/root.rawzst".into(),
                                 sha256: ImageSha256::Checksum(
                                     "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
                                         .into(),
@@ -1367,7 +1309,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::EspImage(Image {
-                                url: "file:///trident_cdrom/data/verity.rawzst".into(),
+                                url: "file:///trident_cdrom/data/esp.rawzst".into(),
                                 sha256: ImageSha256::Checksum(
                                     "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
                                         .into(),
@@ -1473,6 +1415,7 @@ mod tests {
     #[test]
     fn test_build_basic_host_configuration() {
         let (_, host_configuration) = sample_host_configuration("basic").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 1);
         assert!(&host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
@@ -1486,6 +1429,7 @@ mod tests {
     #[test]
     fn test_build_simple_host_configuration() {
         let (_, host_configuration) = sample_host_configuration("simple").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 1);
         assert!(&host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
@@ -1499,6 +1443,7 @@ mod tests {
     #[test]
     fn test_build_base_host_configuration() {
         let (_, host_configuration) = sample_host_configuration("base").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 1);
 
         assert!(host_configuration.storage.encryption.is_some());
@@ -1517,10 +1462,11 @@ mod tests {
     #[test]
     fn test_build_verity_host_configuration() {
         let (_, host_configuration) = sample_host_configuration("verity").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 1);
         assert!(host_configuration.storage.encryption.is_none());
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
-        assert_eq!(host_configuration.storage.filesystems.len(), 7);
+        assert_eq!(host_configuration.storage.filesystems.len(), 6);
         assert_eq!(host_configuration.storage.verity_filesystems.len(), 1);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());
@@ -1530,6 +1476,7 @@ mod tests {
     #[test]
     fn test_build_advanced_host_configuration() {
         let (_, host_configuration) = sample_host_configuration("advanced").unwrap();
+        host_configuration.validate().unwrap();
         assert_eq!(host_configuration.storage.disks.len(), 2);
 
         assert!(host_configuration.storage.encryption.is_some());
@@ -1537,8 +1484,8 @@ mod tests {
             assert_eq!(encryption.volumes.len(), 1);
         }
 
-        assert_eq!(host_configuration.storage.raid.software.len(), 14);
-        assert_eq!(host_configuration.storage.filesystems.len(), 10);
+        assert_eq!(host_configuration.storage.raid.software.len(), 12);
+        assert_eq!(host_configuration.storage.filesystems.len(), 9);
         assert_eq!(host_configuration.storage.verity_filesystems.len(), 1);
         assert!(host_configuration.storage.ab_update.is_some());
         assert!(host_configuration.os.network.is_some());
