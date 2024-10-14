@@ -1,14 +1,29 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 
-pub fn check_is_mountpoint(path: impl AsRef<Path>) -> Result<bool, Error> {
-    let output = Command::new("mountpoint")
-        .arg(path.as_ref())
-        .output()
-        .context("Failed to execute mountpoint")?;
+use crate::dependencies::{Dependency, DependencyError};
 
-    Ok(output.status.success())
+pub fn check_is_mountpoint(path: impl AsRef<Path>) -> Result<bool, Error> {
+    let output = Dependency::Mountpoint
+        .cmd()
+        .arg(path.as_ref())
+        .run_and_check();
+    match output {
+        Ok(()) => Ok(true),
+        Err(e) => {
+            if let DependencyError::ExecutionFailed { .. } = *e {
+                Ok(false)
+            } else {
+                Err(e).with_context(|| {
+                    format!(
+                        "Failed to determine if '{}' is a mount point.",
+                        path.as_ref().display()
+                    )
+                })
+            }
+        }
+    }
 }
 
 #[cfg(feature = "functional-test")]

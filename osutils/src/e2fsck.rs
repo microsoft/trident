@@ -1,12 +1,13 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 /// Runs e2fsck on the file system on the block device to fix errors.
 pub fn fix(block_device_path: &Path) -> Result<(), Error> {
-    Command::new("e2fsck")
+    Dependency::E2fsck
+        .cmd()
         .arg("-f")
         .arg("-y")
         .arg(block_device_path)
@@ -16,7 +17,8 @@ pub fn fix(block_device_path: &Path) -> Result<(), Error> {
 
 /// Runs e2fsck on the file system on the block device to check for errors.
 pub fn check(block_device_path: &Path) -> Result<(), Error> {
-    Command::new("e2fsck")
+    Dependency::E2fsck
+        .cmd()
         .arg("-n")
         .arg(block_device_path)
         .run_and_check()

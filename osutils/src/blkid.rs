@@ -1,12 +1,13 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 use uuid::Uuid;
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 fn run(device_path: impl AsRef<Path>, tag: &str) -> Result<String, Error> {
-    let output = Command::new("blkid")
+    let output = Dependency::Blkid
+        .cmd()
         .arg("-o") // output format
         .arg("value") // single value
         .arg("-s") // tag
@@ -61,24 +62,20 @@ mod functional_test {
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_run_fail_on_non_block_file() {
-        assert_eq!(
-            super::run(Path::new("/dev/null"), "PARTLABEL")
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "(No output was captured)"
-        );
+        assert!(super::run(Path::new("/dev/null"), "PARTLABEL")
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Dependency 'blkid' finished unsuccessfully"));
     }
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_run_fail_on_missing_file() {
-        assert_eq!(
-            super::run(Path::new("/dev/does-not-exist"), "PARTLABEL")
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "(No output was captured)"
-        );
+        assert!(super::run(Path::new("/dev/does-not-exist"), "PARTLABEL")
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Dependency 'blkid' finished unsuccessfully"));
     }
 
     #[functional_test(feature = "helpers")]
@@ -90,12 +87,12 @@ mod functional_test {
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_get_filesystem_uuid_raw_fail_on_missing_file() {
-        assert_eq!(
+        assert!(
             super::get_filesystem_uuid_raw(Path::new("/dev/does-not-exist"))
                 .unwrap_err()
                 .root_cause()
-                .to_string(),
-            "(No output was captured)"
+                .to_string()
+                .contains("Dependency 'blkid' finished unsuccessfully")
         );
     }
 
@@ -110,13 +107,11 @@ mod functional_test {
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_get_filesystem_uuid_fail_on_missing_file() {
-        assert_eq!(
-            super::get_filesystem_uuid(Path::new("/dev/does-not-exist"))
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "(No output was captured)"
-        );
+        assert!(super::get_filesystem_uuid(Path::new("/dev/does-not-exist"))
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Dependency 'blkid' finished unsuccessfully"));
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -138,12 +133,10 @@ mod functional_test {
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_get_partition_label_fail_on_missing_file() {
-        assert_eq!(
-            super::get_partition_label(Path::new("/dev/does-not-exist"))
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "(No output was captured)"
-        );
+        assert!(super::get_partition_label(Path::new("/dev/does-not-exist"))
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Dependency 'blkid' finished unsuccessfully"));
     }
 }

@@ -1,12 +1,9 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use tempfile::TempDir;
 
-use crate::{exe::RunAndCheck, files};
+use crate::{dependencies::Dependency, files};
 
 /// Mounts an overlayfs on top of the provided path. The overlay is removed when
 /// exit() is called. The overlay temporary files are stored in a temporary
@@ -26,7 +23,8 @@ impl EphemeralOverlay {
         let overlay_upper_path = dir.path().join("upper");
         files::create_dirs(&overlay_work_path).context("Failed to create overlay work dir")?;
         files::create_dirs(&overlay_upper_path).context("Failed to create overlay upper dir")?;
-        Command::new("mount")
+        Dependency::Mount
+            .cmd()
             .arg("-t")
             .arg("overlay")
             .arg("overlay")
@@ -57,7 +55,8 @@ impl EphemeralOverlay {
 
     /// Unmounts the overlay and removes the temporary files.
     pub fn unmount(self) -> Result<(), Error> {
-        Command::new("umount")
+        Dependency::Umount
+            .cmd()
             .arg(self.target_path)
             .run_and_check()
             .context("Overlay unmount command failed")?;
@@ -104,9 +103,7 @@ mod functional_test {
             .root_cause()
             .to_string();
         assert!(
-            error_string.contains(
-                "Process output:\nstderr:\nmount: /does-not-exist: mount point does not exist.\n"
-            ),
+            error_string.contains("stderr:\nmount: /does-not-exist: mount point does not exist.\n"),
             "Unexpected error message: {error_string}",
         );
     }

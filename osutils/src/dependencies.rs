@@ -1,6 +1,3 @@
-// Remove this line after integrating Command into the rest of osutils (#9296)
-#![allow(dead_code)]
-
 use std::{
     ffi::{OsStr, OsString},
     os::unix::process::ExitStatusExt,
@@ -26,9 +23,7 @@ pub enum DependencyError {
         inner: String,
     },
 
-    #[error(
-        "Failed to execute dependency '{dependency}': {explanation}\nCmdline: {rendered_command}\n{output}"
-    )]
+    #[error("Dependency '{dependency}' finished unsuccessfully: {explanation}\nCmdline: {rendered_command}\n{output}")]
     ExecutionFailed {
         dependency: Dependency,
         rendered_command: String,
@@ -170,15 +165,15 @@ impl Command {
         self
     }
 
-    fn run_and_check(&self) -> Result<(), Box<DependencyError>> {
+    pub fn run_and_check(&self) -> Result<(), Box<DependencyError>> {
         self.output()?.check()
     }
 
-    fn output_and_check(&self) -> Result<String, Box<DependencyError>> {
+    pub fn output_and_check(&self) -> Result<String, Box<DependencyError>> {
         self.output()?.check_output()
     }
 
-    fn raw_output_and_check(&self) -> Result<Output, Box<DependencyError>> {
+    pub fn raw_output_and_check(&self) -> Result<Output, Box<DependencyError>> {
         self.output()?.check_raw_output()
     }
 
@@ -203,7 +198,7 @@ impl Command {
         }
     }
 
-    fn output(&self) -> Result<CommandOutput, Box<DependencyError>> {
+    pub fn output(&self) -> Result<CommandOutput, Box<DependencyError>> {
         let mut cmd = StdCommand::new(self.dependency.path()?);
         cmd.args(&self.args);
         let rendered_command = self.render_command();
@@ -235,7 +230,7 @@ pub struct CommandOutput {
 
 impl CommandOutput {
     /// Checks if the process exited successfully
-    fn success(&self) -> bool {
+    pub fn success(&self) -> bool {
         self.inner.status.success()
     }
 
@@ -250,17 +245,17 @@ impl CommandOutput {
     }
 
     /// Gets stderr
-    fn error_output(&self) -> String {
+    pub fn error_output(&self) -> String {
         String::from_utf8_lossy(&self.inner.stderr).into()
     }
 
     /// Gets stdout
-    fn output(&self) -> String {
+    pub fn output(&self) -> String {
         String::from_utf8_lossy(&self.inner.stdout).into()
     }
 
     /// Gets all available output, useful for reporting or debugging
-    fn output_report(&self) -> String {
+    pub fn output_report(&self) -> String {
         let stdout = self.output();
         let stderr = self.error_output();
 
@@ -281,7 +276,7 @@ impl CommandOutput {
     }
 
     /// Checks if the process exited successfully, otherwise produces an error
-    fn check(&self) -> Result<(), Box<DependencyError>> {
+    pub fn check(&self) -> Result<(), Box<DependencyError>> {
         if self.success() {
             return Ok(());
         }
@@ -303,14 +298,14 @@ impl CommandOutput {
 
     /// Checks if the process exited successfully and returns the output,
     /// otherwise produces an error with the output
-    fn check_output(&self) -> Result<String, Box<DependencyError>> {
+    pub fn check_output(&self) -> Result<String, Box<DependencyError>> {
         self.check()?;
         Ok(self.output())
     }
 
-    fn check_raw_output(self) -> Result<Output, Box<DependencyError>> {
+    pub fn check_raw_output(self) -> Result<Output, Box<DependencyError>> {
         self.check()?;
-        Ok(self.inner.clone())
+        Ok(self.inner)
     }
 
     /// Produces a string explaining the exit status of the process

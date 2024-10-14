@@ -1,9 +1,9 @@
-use std::{ffi::OsStr, path::Path, process::Command};
+use std::{ffi::OsStr, path::Path};
 
 use anyhow::{bail, Context, Error};
 use regex::Regex;
 
-use crate::{exe::RunAndCheck, path::join_relative};
+use crate::{dependencies::Dependency, path::join_relative};
 
 /// Represents an entry in the EFI Boot Manager.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -142,7 +142,8 @@ impl EfiBootManagerOutput {
 
 /// Lists boot entries using efibootmgr
 pub fn list_bootmgr_entries() -> Result<String, Error> {
-    Command::new("efibootmgr")
+    Dependency::Efibootmgr
+        .cmd()
         .output_and_check()
         .context("Efibootmgr exited with an error")
 }
@@ -190,7 +191,8 @@ pub fn create_boot_entry(
             entry_label.as_ref().to_string_lossy()
         );
     }
-    Command::new("efibootmgr")
+    Dependency::Efibootmgr
+        .cmd()
         .arg("--create-only")
         .arg("--disk")
         .arg(disk_path.as_ref())
@@ -209,7 +211,8 @@ pub fn create_boot_entry(
 
 /// Sets `BootNext` variable using efibootmgr.
 pub fn set_boot_next(entry_number: &str) -> Result<(), Error> {
-    Command::new("efibootmgr")
+    Dependency::Efibootmgr
+        .cmd()
         .arg("--bootnext")
         .arg(entry_number)
         .run_and_check()
@@ -218,7 +221,8 @@ pub fn set_boot_next(entry_number: &str) -> Result<(), Error> {
 
 /// Delete `BootNext` variable using efibootmgr.
 pub fn delete_boot_next() -> Result<(), Error> {
-    Command::new("efibootmgr")
+    Dependency::Efibootmgr
+        .cmd()
         .arg("--delete-bootnext")
         .run_and_check()
         .context("Failed to delete bootnext through efibootmgr")
@@ -226,7 +230,8 @@ pub fn delete_boot_next() -> Result<(), Error> {
 
 /// Modifies the `BootOrder` variable of efibootmgr.
 pub fn modify_boot_order(new_boot_order: &str) -> Result<(), Error> {
-    Command::new("efibootmgr")
+    Dependency::Efibootmgr
+        .cmd()
         .arg("--bootorder")
         .arg(new_boot_order)
         .run_and_check()
@@ -235,7 +240,8 @@ pub fn modify_boot_order(new_boot_order: &str) -> Result<(), Error> {
 
 /// Delete the bootentry using efibootmgr.
 pub fn delete_boot_entry(entry_number: &str) -> Result<(), Error> {
-    Command::new("efibootmgr")
+    Dependency::Efibootmgr
+        .cmd()
         .arg("--bootnum")
         .arg(entry_number)
         .arg("--delete-bootnum")
@@ -527,9 +533,12 @@ mod functional_test {
         assert!(bootmgr_output3.boot_next.is_empty());
 
         // Delete bootnext again should fail
-        assert_eq!(
-            delete_boot_next().unwrap_err().root_cause().to_string(),
-            "Process output:\nstderr:\nCould not delete BootNext: No such file or directory\n\n",
+        assert!(
+            delete_boot_next()
+                .unwrap_err()
+                .root_cause()
+                .to_string()
+                .contains("Could not delete BootNext: No such file or directory\n\n"),
             "Unexpected error message for deleting bootnext"
         );
     }
@@ -608,7 +617,8 @@ mod functional_test {
         disk_path: impl AsRef<Path>,
         bootloader_path: impl AsRef<Path>,
     ) {
-        Command::new("efibootmgr")
+        Dependency::Efibootmgr
+            .cmd()
             .arg("--create-only")
             .arg("--disk")
             .arg(disk_path.as_ref())

@@ -65,7 +65,6 @@
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::Context;
@@ -73,7 +72,7 @@ use serde::Deserialize;
 
 use trident_api::{config::MountOptions, constants::ROOT_MOUNT_POINT_PATH};
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::{Command, Dependency};
 
 /// String representation of the unbindable propagation type.
 pub const PROPAGATION_UNBINDABLE: &str = "unbindable";
@@ -135,7 +134,7 @@ impl FindMnt {
 
     /// Builds a `Command` to run `findmnt` with the common arguments.
     fn build_command() -> Command {
-        let mut cmd = Command::new("findmnt");
+        let mut cmd = Dependency::Findmnt.cmd();
 
         // Output in JSON format
         cmd.arg("--json");
@@ -152,7 +151,7 @@ impl FindMnt {
     }
 
     /// Runs a `Command` and parses the output into a `FindMnt` structure.
-    fn run_internal(mut cmd: Command) -> Result<Self, anyhow::Error> {
+    fn run_internal(cmd: Command) -> Result<Self, anyhow::Error> {
         Self::from_json(&cmd.output_and_check().context("Failed to run findmnt")?)
             .context("Failed to deserialize output of findmnt")
     }

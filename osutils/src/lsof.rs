@@ -1,10 +1,9 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use serde::{Deserialize, Serialize};
+
+use crate::dependencies::Dependency;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct ProcessFiles {
@@ -13,7 +12,8 @@ pub struct ProcessFiles {
 }
 
 pub fn run(directory_path: impl AsRef<Path>) -> Result<Vec<ProcessFiles>, Error> {
-    let result = Command::new("lsof")
+    let result = Dependency::Lsof
+        .cmd()
         .arg("-V") // report what could not be found
         .arg("-x") // controls handling of cross-over processing for symlinks and mounts
         .arg("f") // follow volume mounts (but not symlinks)
@@ -25,7 +25,7 @@ pub fn run(directory_path: impl AsRef<Path>) -> Result<Vec<ProcessFiles>, Error>
         .context("Failed to list opened files")?;
     // ignoring exit code, as lsof returns 1 if no open files are found for any
     // file in the subtree that is searched
-    parse_lsof_output(&String::from_utf8_lossy(&result.stdout))
+    parse_lsof_output(&result.output())
 }
 
 fn parse_lsof_output(output: &str) -> Result<Vec<ProcessFiles>, Error> {

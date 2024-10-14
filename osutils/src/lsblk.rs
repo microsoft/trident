@@ -1,14 +1,11 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Error};
 use serde::{Deserialize, Serialize};
 
 use trident_api::primitives::bytes::ByteCount;
 
-use crate::{exe::RunAndCheck, osuuid::OsUuid};
+use crate::{dependencies::Dependency, osuuid::OsUuid};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct LsBlkOutput {
@@ -135,7 +132,8 @@ pub enum PartitionTableType {
 }
 
 pub fn run(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
-    let result = Command::new("lsblk")
+    let result = Dependency::Lsblk
+        .cmd()
         .arg("--json")
         .arg("--path")
         .arg(device_path.as_ref())
@@ -897,11 +895,11 @@ mod functional_test {
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_run_fail_on_non_block_file() {
-        assert_eq!(super::run(Path::new("/dev/null")).unwrap_err().root_cause().to_string(), "Process output:\nstdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/null: not a block device\n\n");
+        assert!(super::run(Path::new("/dev/null")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/null: not a block device\n\n"));
     }
 
     #[functional_test(feature = "helpers", negative = true)]
     fn test_run_fail_on_missing_file() {
-        assert_eq!(super::run(Path::new("/dev/does-not-exist")).unwrap_err().root_cause().to_string(), "Process output:\nstdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/does-not-exist: not a block device\n\n");
+        assert!(super::run(Path::new("/dev/does-not-exist")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/does-not-exist: not a block device\n\n"));
     }
 }
