@@ -1,11 +1,12 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 pub fn run(device_path: &Path) -> Result<(), Error> {
-    Command::new("mkswap")
+    Dependency::Mkswap
+        .cmd()
         .arg("--verbose")
         .arg(device_path)
         .run_and_check()
@@ -31,7 +32,7 @@ mod functional_test {
         // Just zero-out the metadata so this is a fast operation.
         repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
         if !Path::new("/mnt").exists() {
-            Command::new("mkdir").arg("/mnt").run_and_check().unwrap();
+            Dependency::Mkdir.cmd().arg("/mnt").run_and_check().unwrap();
         }
     }
 
@@ -43,7 +44,8 @@ mod functional_test {
         // should be mountable and writable.
         super::run(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
         assert_eq!(
-            Command::new("lsblk")
+            Dependency::Lsblk
+                .cmd()
                 .arg("-no")
                 .arg("FSTYPE")
                 .arg(TEST_DISK_DEVICE_PATH)
@@ -51,30 +53,31 @@ mod functional_test {
                 .unwrap(),
             "swap\n"
         );
-        Command::new("swapon")
+        Dependency::Swapon
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .run_and_check()
             .unwrap();
-        Command::new("swapoff")
+        Dependency::Swapoff
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .run_and_check()
             .unwrap();
 
-        assert_eq!(
-            Command::new("swapoff")
-                .arg(TEST_DISK_DEVICE_PATH)
-                .run_and_check()
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            "Process output:\nstderr:\nswapoff: /dev/sdb: swapoff failed: Invalid argument\n\n"
-        );
+        assert!(Dependency::Swapoff
+            .cmd()
+            .arg(TEST_DISK_DEVICE_PATH)
+            .run_and_check()
+            .unwrap_err()
+            .to_string()
+            .contains("stderr:\nswapoff: /dev/sdb: swapoff failed: Invalid argument\n\n"));
 
         // run() on a formatted block device with a different filesystem
         // should reformat it as a swap.
         mkfs::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext3).unwrap();
         assert_eq!(
-            Command::new("lsblk")
+            Dependency::Lsblk
+                .cmd()
                 .arg("-no")
                 .arg("FSTYPE")
                 .arg(TEST_DISK_DEVICE_PATH)
@@ -84,7 +87,8 @@ mod functional_test {
         );
         super::run(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
         assert_eq!(
-            Command::new("lsblk")
+            Dependency::Lsblk
+                .cmd()
                 .arg("-no")
                 .arg("FSTYPE")
                 .arg(TEST_DISK_DEVICE_PATH)
@@ -92,11 +96,13 @@ mod functional_test {
                 .unwrap(),
             "swap\n"
         );
-        Command::new("swapon")
+        Dependency::Swapon
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .run_and_check()
             .unwrap();
-        Command::new("swapoff")
+        Dependency::Swapoff
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .run_and_check()
             .unwrap();

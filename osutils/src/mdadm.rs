@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use log::{debug, error, info};
@@ -10,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use trident_api::config::RaidLevel;
 
-use crate::{exe::RunAndCheck, lsblk};
+use crate::{dependencies::Dependency, lsblk};
 
 pub const METADATA_VERSION: &str = "1.0";
 
@@ -21,7 +18,7 @@ pub fn create(
 ) -> Result<(), Error> {
     info!("Creating RAID array '{}'", &raid_path.display());
 
-    let mut mdadm_command = Command::new("mdadm");
+    let mut mdadm_command = Dependency::Mdadm.cmd();
     mdadm_command
         .arg("--create")
         .arg(raid_path)
@@ -38,7 +35,7 @@ pub fn create(
 pub fn examine() -> Result<String, Error> {
     info!("Examining RAID arrays");
 
-    let mut mdadm_command = Command::new("mdadm");
+    let mut mdadm_command = Dependency::Mdadm.cmd();
     mdadm_command.arg("--examine").arg("--scan");
 
     mdadm_command
@@ -52,7 +49,8 @@ pub fn stop(raid_array_name: impl AsRef<Path>) -> Result<(), Error> {
         raid_array_name.as_ref().display()
     );
 
-    if let Err(e) = Command::new("mdadm")
+    if let Err(e) = Dependency::Mdadm
+        .cmd()
         .arg("--stop")
         .arg(raid_array_name.as_ref())
         .run_and_check()
@@ -91,7 +89,8 @@ pub fn add(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(), 
         raid_path.as_ref().display()
     );
 
-    Command::new("mdadm")
+    Dependency::Mdadm
+        .cmd()
         .arg(raid_path.as_ref())
         .arg("--add")
         .arg(device.as_ref())
@@ -111,7 +110,8 @@ pub fn fail(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(),
         raid_path.as_ref().display()
     );
 
-    Command::new("mdadm")
+    Dependency::Mdadm
+        .cmd()
         .arg(raid_path.as_ref())
         .arg("--fail")
         .arg(device.as_ref())
@@ -131,7 +131,8 @@ pub fn remove(raid_path: impl AsRef<Path>, device: impl AsRef<Path>) -> Result<(
         raid_path.as_ref().display()
     );
 
-    Command::new("mdadm")
+    Dependency::Mdadm
+        .cmd()
         .arg(raid_path.as_ref())
         .arg("--remove")
         .arg(device.as_ref())
@@ -150,7 +151,7 @@ pub struct MdadmDetail {
 pub fn details() -> Result<Vec<MdadmDetail>, Error> {
     debug!("Getting details for all RAID arrays");
 
-    let mut mdadm_command = Command::new("mdadm");
+    let mut mdadm_command = Dependency::Mdadm.cmd();
     mdadm_command.arg("--detail").arg("--scan").arg("--verbose");
 
     let output = mdadm_command
@@ -163,7 +164,7 @@ pub fn details() -> Result<Vec<MdadmDetail>, Error> {
 pub fn detail(raid_array: &Path) -> Result<MdadmDetail, Error> {
     debug!("Getting RAID array details for '{}'", raid_array.display());
 
-    let mut mdadm_command = Command::new("mdadm");
+    let mut mdadm_command = Dependency::Mdadm.cmd();
     mdadm_command
         .arg("--detail")
         .arg("--scan")

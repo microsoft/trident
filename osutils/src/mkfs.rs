@@ -1,11 +1,12 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 
-use crate::{exe::RunAndCheck, filesystems::MkfsFileSystemType};
+use crate::{dependencies::Dependency, filesystems::MkfsFileSystemType};
 
 pub fn run(device_path: &Path, filesystem: MkfsFileSystemType) -> Result<(), Error> {
-    Command::new("mkfs")
+    Dependency::Mkfs
+        .cmd()
         .arg("--type")
         .arg(filesystem.name())
         .arg(device_path)
@@ -21,7 +22,8 @@ pub(super) fn run_blocks(
     filesystem: MkfsFileSystemType,
     blocks: u64,
 ) -> Result<(), Error> {
-    Command::new("mkfs")
+    Dependency::Mkfs
+        .cmd()
         .arg("--type")
         .arg(filesystem.name())
         .arg(device_path)
@@ -52,7 +54,7 @@ mod functional_test {
         // Just zero-out the metadata so this is a fast operation.
         repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
         if !Path::new("/mnt").exists() {
-            Command::new("mkdir").arg("/mnt").run_and_check().unwrap();
+            Dependency::Mkdir.cmd().arg("/mnt").run_and_check().unwrap();
         }
     }
 
@@ -85,7 +87,8 @@ mod functional_test {
         // specified filesystem. It should be mountable and writable.
         super::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext4).unwrap();
         assert_eq!(
-            Command::new("lsblk")
+            Dependency::Lsblk
+                .cmd()
                 .arg("-no")
                 .arg("FSTYPE")
                 .arg(TEST_DISK_DEVICE_PATH)
@@ -93,23 +96,30 @@ mod functional_test {
                 .unwrap(),
             "ext4\n"
         );
-        Command::new("mount")
+        Dependency::Mount
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
-        Command::new("touch")
+        Dependency::Touch
+            .cmd()
             .arg("/mnt/test")
             .run_and_check()
             .unwrap();
-        Command::new("umount").arg("/mnt").run_and_check().unwrap();
+        Dependency::Umount
+            .cmd()
+            .arg("/mnt")
+            .run_and_check()
+            .unwrap();
 
         // run() on a formatted block device with a different filesystem
         // should format it with the new filesystem and clear the device
         // contents.
         super::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext3).unwrap();
         assert_eq!(
-            Command::new("lsblk")
+            Dependency::Lsblk
+                .cmd()
                 .arg("-no")
                 .arg("FSTYPE")
                 .arg(TEST_DISK_DEVICE_PATH)
@@ -117,24 +127,31 @@ mod functional_test {
                 .unwrap(),
             "ext3\n"
         );
-        Command::new("mount")
+        Dependency::Mount
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
         assert!(!Path::new("/mnt/test").exists());
-        Command::new("touch")
+        Dependency::Touch
+            .cmd()
             .arg("/mnt/test")
             .run_and_check()
             .unwrap();
-        Command::new("umount").arg("/mnt").run_and_check().unwrap();
+        Dependency::Umount
+            .cmd()
+            .arg("/mnt")
+            .run_and_check()
+            .unwrap();
 
         // run() on a formatted block device with the same filesystem
         // should not change the filesystem but should again clear the
         // device contents.
         super::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext3).unwrap();
         assert_eq!(
-            Command::new("lsblk")
+            Dependency::Lsblk
+                .cmd()
                 .arg("-no")
                 .arg("FSTYPE")
                 .arg(TEST_DISK_DEVICE_PATH)
@@ -142,17 +159,23 @@ mod functional_test {
                 .unwrap(),
             "ext3\n"
         );
-        Command::new("mount")
+        Dependency::Mount
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
         assert!(!Path::new("/mnt/test").exists());
-        Command::new("touch")
+        Dependency::Touch
+            .cmd()
             .arg("/mnt/test")
             .run_and_check()
             .unwrap();
-        Command::new("umount").arg("/mnt").run_and_check().unwrap();
+        Dependency::Umount
+            .cmd()
+            .arg("/mnt")
+            .run_and_check()
+            .unwrap();
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -161,27 +184,38 @@ mod functional_test {
 
         // Create a file on the block device to ensure it's not empty.
         super::run(Path::new(TEST_DISK_DEVICE_PATH), MkfsFileSystemType::Ext4).unwrap();
-        Command::new("mount")
+        Dependency::Mount
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
-        Command::new("touch")
+        Dependency::Touch
+            .cmd()
             .arg("/mnt/test")
             .run_and_check()
             .unwrap();
-        Command::new("umount").arg("/mnt").run_and_check().unwrap();
+        Dependency::Umount
+            .cmd()
+            .arg("/mnt")
+            .run_and_check()
+            .unwrap();
 
         // run() using device '/dev/foo' that doesn't exist should also
         // fail and again not clear the device contents.
         assert!(super::run(Path::new("/dev/foo"), MkfsFileSystemType::Ext3).is_err());
-        Command::new("mount")
+        Dependency::Mount
+            .cmd()
             .arg(TEST_DISK_DEVICE_PATH)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
         assert!(Path::new("/mnt/test").exists());
-        Command::new("umount").arg("/mnt").run_and_check().unwrap();
+        Dependency::Umount
+            .cmd()
+            .arg("/mnt")
+            .run_and_check()
+            .unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -205,15 +239,21 @@ mod functional_test {
 
         // Create a NTFS filesystem on the partition.
         super::run(&partition1.node, MkfsFileSystemType::Ntfs).unwrap();
-        Command::new("mount")
+        Dependency::Mount
+            .cmd()
             .arg(&partition1.node)
             .arg("/mnt")
             .run_and_check()
             .unwrap();
-        Command::new("touch")
+        Dependency::Touch
+            .cmd()
             .arg("/mnt/test")
             .run_and_check()
             .unwrap();
-        Command::new("umount").arg("/mnt").run_and_check().unwrap();
+        Dependency::Umount
+            .cmd()
+            .arg("/mnt")
+            .run_and_check()
+            .unwrap();
     }
 }

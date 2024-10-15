@@ -1,10 +1,10 @@
-use std::{io::Write, os::unix::fs::PermissionsExt, path::Path, process::Command};
+use std::{io::Write, os::unix::fs::PermissionsExt, path::Path};
 
 use anyhow::{Context, Error};
 use tempfile::NamedTempFile;
 use trident_api::error::{ReportError, ServicingError, TridentError};
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 /// Verity workaround script
 ///
@@ -45,7 +45,8 @@ fi
 /// used instead.
 pub fn execute() -> Result<(), TridentError> {
     if Path::new("/usr/bin/mkinitrd").exists() {
-        Command::new("mkinitrd")
+        Dependency::Mkinitrd
+            .cmd()
             .run_and_check()
             .structured(ServicingError::RegenerateInitrd)
     } else {
@@ -69,7 +70,8 @@ fn run_darcut() -> Result<(), Error> {
     std::fs::set_permissions(script.path(), std::fs::Permissions::from_mode(0o755))
         .context("Failed to set permissions of temporary file")?;
 
-    Command::new("dracut")
+    Dependency::Dracut
+        .cmd()
         .arg("--force")
         .arg("--regenerate-all")
         .arg("--zstd")

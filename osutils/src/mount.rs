@@ -1,9 +1,9 @@
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 use anyhow::{bail, Context, Error};
 use log::{error, info};
 
-use crate::{exe::RunAndCheck, files, filesystems::MountFileSystemType, lsof};
+use crate::{dependencies::Dependency, files, filesystems::MountFileSystemType, lsof};
 
 /// Mounts file or block device in path to a dir mount_dir.
 pub fn mount(
@@ -13,7 +13,7 @@ pub fn mount(
     options: &[String],
 ) -> Result<(), Error> {
     let mut options = options.to_owned();
-    let mut command = Command::new("mount");
+    let mut command = Dependency::Mount.cmd();
 
     // Check if file_path is a regular file and not a block device
     if path.as_ref().is_file() {
@@ -43,7 +43,7 @@ pub fn mount(
 
 /// Unmounts given directory mount_dir.
 pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error> {
-    let mut cmd = Command::new("umount");
+    let mut cmd = Dependency::Umount.cmd();
     if recursive {
         cmd.arg("-R");
     }
@@ -61,10 +61,10 @@ pub fn umount(mount_dir: impl AsRef<Path>, recursive: bool) -> Result<(), Error>
         }
 
         // Propagate the original unmount error
-        return Err(e.context(format!(
+        return Err(e).context(format!(
             "Failed to unmount directory {}",
             mount_dir.as_ref().display()
-        )));
+        ));
     }
 
     Ok(())
@@ -276,14 +276,14 @@ mod functional_test {
     /// Identifies the loop device associated with a given file
     #[cfg(test)]
     fn find_loop_device(file_path: &Path) -> Result<String, Error> {
-        let output = Command::new("losetup")
+        let output = Dependency::Losetup
+            .cmd()
             .arg("-j")
             .arg(file_path)
             .output()
             .context("Failed to execute losetup command")?;
 
-        let output_str =
-            String::from_utf8(output.stdout.clone()).context("Failed to parse losetup output")?;
+        let output_str = output.output().clone();
 
         // Extract the loop device name from the losetup output
         output_str
@@ -340,20 +340,28 @@ mod functional_test {
         // Test case 1: Attempt to unmount an existing directory that isn't mounted and assert that
         // it fails
         let umount_result_1 = umount(temp_mount_dir.path(), false);
-        assert_eq!(
-            umount_result_1.unwrap_err().root_cause().to_string(),
-            format!(
-                "Process output:\nstderr:\numount: {}: not mounted.\n\n",
-                temp_mount_dir.path().display()
-            ),
+        assert!(
+            umount_result_1
+                .unwrap_err()
+                .root_cause()
+                .to_string()
+                .contains(&format!(
+                    "stderr:\numount: {}: not mounted.\n\n",
+                    temp_mount_dir.path().display()
+                )),
             "Unmounting a non-existent directory should fail"
         );
 
         // Test case 2: Attempt to unmount a directory that does not exist
         let umount_result_2 = umount("/path/to/non/existent/directory", false);
-        assert_eq!(
-            umount_result_2.unwrap_err().root_cause().to_string(),
-            "Process output:\nstderr:\numount: /path/to/non/existent/directory: no mount point specified.\n\n",
+        assert!(
+            umount_result_2
+                .unwrap_err()
+                .root_cause()
+                .to_string()
+                .contains(
+                "stderr:\numount: /path/to/non/existent/directory: no mount point specified.\n\n"
+            ),
             "Unmounting a non-existent directory should fail"
         );
     }
