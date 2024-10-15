@@ -61,7 +61,6 @@ impl Subsystem for SelinuxSubsystem {
 
             Command::new("setfiles")
                 .arg("-m")
-                .arg("-v")
                 .arg(
                     Path::new("/etc/selinux")
                         .join(selinux_type)
