@@ -50,6 +50,10 @@ impl Visit for TraceEntryVisitor {
         self.fields.insert(field.name().to_string(), json!(value));
     }
 
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.fields.insert(field.name().to_string(), json!(value));
+    }
+
     fn record_bool(&mut self, field: &Field, value: bool) {
         self.fields.insert(field.name().to_string(), json!(value));
     }
@@ -288,6 +292,22 @@ where
 
             if let Err(e) = self.client.post(target).body(body).send() {
                 trace!("Failed to send trace entry: {}", e);
+            }
+        }
+    }
+
+    /// When a field wants to be recorded at any time during an active span, this
+    /// function is called to handle storing the field with the visitor pattern.
+    fn on_record(
+        &self,
+        id: &span::Id,
+        values: &span::Record<'_>,
+        ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        if let Some(span) = ctx.span(id) {
+            // Get the visitor from the span's extensions that was added during span creation
+            if let Some(visitor) = span.extensions_mut().get_mut::<TraceEntryVisitor>() {
+                values.record(visitor);
             }
         }
     }

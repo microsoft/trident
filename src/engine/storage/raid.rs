@@ -14,7 +14,7 @@ use strum_macros::{Display, EnumString};
 
 use osutils::{block_devices, exe::OutputChecker, mdadm, udevadm};
 use trident_api::{
-    config::{HostConfiguration, PartitionType, RaidLevel, SoftwareRaidArray},
+    config::{HostConfiguration, SoftwareRaidArray},
     BlockDeviceId,
 };
 
@@ -42,23 +42,6 @@ fn create(config: SoftwareRaidArray, ctx: &EngineContext) -> Result<(), Error> {
     mdadm::create(&config.device_path(), &config.level, device_paths)
         .context("Failed to create RAID array")?;
     Ok(())
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-#[serde(deny_unknown_fields)]
-pub(super) struct RaidDetail {
-    pub id: BlockDeviceId,
-    pub name: String,
-    pub path: PathBuf,
-    pub devices: Vec<PathBuf>,
-    pub partition_type: PartitionType,
-    pub uuid: String,
-    pub level: RaidLevel,
-    pub state: RaidState,
-    pub num_devices: u32,
-    pub metadata_version: String,
-    pub size: u64,
 }
 
 fn get_raid_device_name(raid_device: &Path) -> Result<String, Error> {
@@ -193,14 +176,6 @@ fn check_if_mdadm_present() -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Default)]
-struct MdadmDetail {
-    raid_path: PathBuf,
-    level: String,
-    uuid: String,
-    devices: Vec<PathBuf>,
-}
-
 pub fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
     debug!("Unmounting RAID array: {:?}", raid_path);
     let mut umount_command = Command::new("umount");
@@ -223,7 +198,7 @@ pub fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-#[tracing::instrument(name = "raid_creation", skip_all)]
+#[tracing::instrument(name = "raid_creation", fields(num_raid_arrays = host_config.storage.raid.software.len()), skip_all)]
 pub(super) fn create_sw_raid(
     ctx: &EngineContext,
     host_config: &HostConfiguration,

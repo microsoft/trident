@@ -16,7 +16,7 @@ use osutils::exe::RunAndCheck;
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
-        HostConfigurationStaticValidationError, Partition, PartitionType,
+        HostConfigurationStaticValidationError, Partition, PartitionSize, PartitionType,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     BlockDeviceId,
@@ -92,7 +92,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 }
 
 /// This function provisions all configured encrypted volumes.
-#[tracing::instrument(name = "encryption_provision", skip_all)]
+#[tracing::instrument(name = "encryption_provision", fields(total_partition_size_bytes = tracing::field::Empty), skip_all)]
 pub(super) fn provision(
     ctx: &EngineContext,
     host_config: &HostConfiguration,
@@ -139,6 +139,7 @@ pub(super) fn provision(
             .run_and_check()
             .structured(ServicingError::ClearTpm2Device)?;
 
+        let mut total_partition_size_bytes: u64 = 0;
         for ev in encryption.volumes.iter() {
             // Get the block device indicated by device_id if it is a partition, or the first
             // partition of device_id if it is a RAID array. Or return an error if device_id is
@@ -150,6 +151,9 @@ pub(super) fn provision(
                     },
                 ),
             )?;
+            if let PartitionSize::Fixed(byte_count) = partition.size {
+                total_partition_size_bytes += byte_count.bytes();
+            }
             // TODO: Print the kind of block device that device_id points to. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7323/
             info!(
                 "Encrypting underlying device '{}' of encrypted volume '{}' of type '{}'",
@@ -174,6 +178,7 @@ pub(super) fn provision(
                 },
             )?;
         }
+        tracing::Span::current().record("total_partition_size_bytes", total_partition_size_bytes);
     }
 
     Ok(())
