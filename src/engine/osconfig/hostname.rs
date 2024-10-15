@@ -1,16 +1,10 @@
-use std::{io::Write, path::Path, process::Command};
+use std::{io::Write, path::Path};
 
 use anyhow::{Context, Error};
 use log::debug;
-use serde::{Deserialize, Serialize};
+use osutils::osmodifier;
+use osutils::osmodifier::MICHostname;
 use tempfile::NamedTempFile;
-
-use osutils::exe::RunAndCheck;
-
-#[derive(Serialize, Deserialize)]
-struct MICHostname {
-    hostname: String,
-}
 
 pub(super) fn set_up_hostname(hostname: &str, os_modifier_path: &Path) -> Result<(), Error> {
     debug!("Setting up hostname");
@@ -27,12 +21,8 @@ pub(super) fn set_up_hostname(hostname: &str, os_modifier_path: &Path) -> Result
     tmpfile.flush().context("Failed to flush temporary file")?;
 
     // Invoke os modifier with the hostname config file
-    Command::new(os_modifier_path)
-        .arg("--config-file")
-        .arg(tmpfile.path())
-        .arg("--log-level=debug")
-        .run_and_check()
-        .context("Failed to run OS modifier")?;
+    osmodifier::run(os_modifier_path, tmpfile.path())
+        .context("Failed to run OS modifier to set up hostname")?;
 
     Ok(())
 }

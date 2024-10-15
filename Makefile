@@ -82,7 +82,7 @@ EMU_PACKAGE_NAME ?= osmodifier_preview
 print-var-emu-package-name:
 	@echo $(EMU_PACKAGE_NAME)
 
-EMU_PACKAGE_VERSION ?= 0.2.0-preview.551433
+EMU_PACKAGE_VERSION ?= 0.7.0-preview.650313
 
 .PHONY: print-var-emu-package-version
 print-var-emu-package-version:

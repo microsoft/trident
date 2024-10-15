@@ -1,82 +1,17 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::{bail, Context, Error};
 use log::{debug, warn};
-use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-use osutils::exe::RunAndCheck;
+use osutils::osmodifier::{self, MICPassword, MICUser, MICUsers, PasswordType};
 use trident_api::config::{Password, SshMode, User};
 
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";
 const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
-
-/// A helper struct to convert user into MIC's user format
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct MICUser {
-    pub name: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub uid: Option<i32>,
-
-    #[serde(default)]
-    pub password_hashed: Option<bool>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-
-    #[cfg(feature = "dangerous-options")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub password_expires_days: Option<u64>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ssh_public_keys: Vec<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub primary_group: Option<String>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub secondary_groups: Vec<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub startup_command: Option<String>,
-}
-
-impl MICUser {
-    pub fn new(name: String, user: User) -> Self {
-        let (password, password_hashed) = match user.password {
-            #[cfg(feature = "dangerous-options")]
-            Password::DangerousPlainText(s) => (s, false),
-            #[cfg(feature = "dangerous-options")]
-            Password::DangerousHashed(s) => (s, true),
-            Password::Locked => (String::new(), true),
-        };
-
-        MICUser {
-            name,
-            uid: user.uid,
-            password: Some(password),
-            password_hashed: Some(password_hashed),
-            #[cfg(feature = "dangerous-options")]
-            password_expires_days: user.dangerous_password_expires_days,
-            ssh_public_keys: user.ssh_public_keys,
-            primary_group: user.primary_group,
-            secondary_groups: user.secondary_groups,
-            startup_command: user.startup_command,
-        }
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MICOSConfig {
-    users: Vec<MICUser>,
-}
 
 pub(super) fn set_up_users(users: &[User], os_modifier_path: &Path) -> Result<(), Error> {
     if Path::new(SSHD_CONFIG_FILE).exists() {
@@ -152,10 +87,10 @@ pub(super) fn set_up_users(users: &[User], os_modifier_path: &Path) -> Result<()
 
     debug!("Setting up users");
 
-    let mic_users_yaml = serde_yaml::to_string(&MICOSConfig {
+    let mic_users_yaml = serde_yaml::to_string(&MICUsers {
         users: users
             .iter()
-            .map(|user| MICUser::new(user.name.clone(), user.clone()))
+            .map(|user| create_mic_user(user.clone()))
             .collect(),
     })
     .context("Failed to serialize MIC configuration")?;
@@ -167,12 +102,8 @@ pub(super) fn set_up_users(users: &[User], os_modifier_path: &Path) -> Result<()
     tmpfile.flush().context("Failed to flush temporary file")?;
 
     // Invoke os modifier with the user config file
-    Command::new(os_modifier_path)
-        .arg("--config-file")
-        .arg(tmpfile.path())
-        .arg("--log-level=debug")
-        .run_and_check()
-        .context("Failed to run OS modifier")?;
+    osmodifier::run(os_modifier_path, tmpfile.path())
+        .context("Failed to run OS modifier to set up users")?;
 
     Ok(())
 }
@@ -236,4 +167,44 @@ fn ssh_global_config(users: &[User]) -> Result<(), Error> {
         .context("Failed to create sshd config file for global config")?
         .write_all(buffer.join("\n").as_bytes())
         .context("Failed to write global user sshd config")
+}
+
+fn create_mic_user(user: User) -> MICUser {
+    let (password_type, password_text) = match user.password {
+        #[cfg(feature = "dangerous-options")]
+        Password::DangerousPlainText(ref s) => (PasswordType::PlainText, Some(s.as_str())),
+
+        #[cfg(feature = "dangerous-options")]
+        Password::DangerousHashed(ref s) => (PasswordType::Hashed, Some(s.as_str())),
+
+        Password::Locked => (PasswordType::Locked, None::<&str>),
+    };
+
+    let password_expires_days = {
+        #[cfg(feature = "dangerous-options")]
+        {
+            user.dangerous_password_expires_days
+        }
+
+        #[cfg(not(feature = "dangerous-options"))]
+        {
+            None // Do not populate if dangerous-options is not enabled
+        }
+    };
+
+    let mic_password = password_text.map(|password_text| MICPassword {
+        password_type,
+        value: password_text.to_string(),
+    });
+
+    MICUser {
+        name: user.name,
+        uid: user.uid,
+        password: mic_password,
+        password_expires_days,
+        ssh_public_keys: user.ssh_public_keys,
+        primary_group: user.primary_group,
+        secondary_groups: user.secondary_groups,
+        startup_command: user.startup_command,
+    }
 }
