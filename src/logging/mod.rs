@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub(super) mod background_log;
@@ -13,6 +14,7 @@ struct LogEntry {
     pub module: String,
     pub file: String,
     pub line: u32,
+    pub timestamp: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq)]
@@ -46,6 +48,7 @@ impl From<&log::Record<'_>> for LogEntry {
             module: value.module_path().unwrap_or_default().to_string(),
             file: value.file().unwrap_or_default().to_string(),
             line: value.line().unwrap_or_default(),
+            timestamp: Utc::now(),
         }
     }
 }
