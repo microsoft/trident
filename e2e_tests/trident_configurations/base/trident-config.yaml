@@ -5,15 +5,15 @@ hostConfiguration:
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
         partitionTableType: gpt
         partitions:
-          - id: esp
-            type: esp
-            size: 1G
           - id: root-a
             type: root
             size: 8G
           - id: root-b
             type: root
             size: 8G
+          - id: esp
+            type: esp
+            size: 1G  
           - id: swap
             type: swap
             size: 2G

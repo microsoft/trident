@@ -4,16 +4,16 @@ hostConfiguration:
       - id: os
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
         partitionTableType: gpt
-        partitions:
-          - id: esp
-            type: esp
-            size: 1G
+        partitions: 
           - id: root
             type: root
             size: 8G
           - id: swap-e
             type: swap
             size: 1G
+          - id: esp
+            type: esp
+            size: 1G  
       - id: disk2
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt

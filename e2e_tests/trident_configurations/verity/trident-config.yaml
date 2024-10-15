@@ -5,9 +5,6 @@ hostConfiguration:
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
         partitionTableType: gpt
         partitions:
-          - id: esp
-            type: esp
-            size: 1G
           - id: boot
             type: xbootldr
             size: 200M
@@ -17,6 +14,9 @@ hostConfiguration:
           - id: root-hash
             type: root-verity
             size: 1G
+          - id: esp
+            type: esp
+            size: 1G  
           - id: trident
             type: linux-generic
             size: 100M
