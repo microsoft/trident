@@ -1,4 +1,31 @@
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      maxSize: 4G
+      partitions:
+        - id: esp
+          type: esp
+          start: 1M
+          end: 9M
+
+        - id: rootfs
+          start: 9M
+  fileSystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+
 os:
+  resetBootLoaderType: hard-reset
   hostname: trident-containerhost-mos-testimage
 
   packages:
