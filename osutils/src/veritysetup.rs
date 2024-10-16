@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::{bail, Context, Error};
@@ -9,7 +8,7 @@ use log::error;
 
 use trident_api::constants::DEV_MAPPER_PATH;
 
-use crate::{exe::RunAndCheck, lsblk};
+use crate::{dependencies::Dependency, lsblk};
 
 pub fn open(
     data_device_path: impl AsRef<Path>,
@@ -17,7 +16,8 @@ pub fn open(
     hash_device_name: impl AsRef<Path>,
     root_hash: &str,
 ) -> Result<(), Error> {
-    Command::new("veritysetup")
+    Dependency::Veritysetup
+        .cmd()
         .arg("open")
         .arg(data_device_path.as_ref())
         .arg(device_name)
@@ -38,7 +38,8 @@ pub fn open(
 }
 
 pub fn is_present() -> Result<(), Error> {
-    Command::new("veritysetup")
+    Dependency::Veritysetup
+        .cmd()
         .arg("--version")
         .run_and_check()
         .context("Failed to check veritysetup presence")
@@ -166,7 +167,8 @@ fn parse_veritysetup_status_output(output: &str) -> Result<VeritySetupStatus, Er
 }
 
 pub fn status(device_name: &str) -> Result<VeritySetupStatus, Error> {
-    let output = Command::new("veritysetup")
+    let output = Dependency::Veritysetup
+        .cmd()
         .arg("status")
         .arg(device_name)
         .output_and_check()
@@ -178,7 +180,8 @@ pub fn status(device_name: &str) -> Result<VeritySetupStatus, Error> {
 }
 
 pub fn close(device_name: &str) -> Result<(), Error> {
-    let res = Command::new("veritysetup")
+    let res = Dependency::Veritysetup
+        .cmd()
         .arg("close")
         .arg(device_name)
         .arg("--verbose")
@@ -520,7 +523,7 @@ mod functional_test {
         image::stream_zstd(verity_hash_path, verity_hash_block_device_path).unwrap();
 
         // bad hash
-        assert_eq!(
+        assert!(
             open(
                 verity_data_block_device_path,
                 "verity-test",
@@ -529,8 +532,7 @@ mod functional_test {
             )
             .unwrap_err()
             .root_cause()
-            .to_string(),
-            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nInvalid root hash string specified.\n\n"
+            .to_string().contains("stdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nInvalid root hash string specified.\n\n")
         );
 
         let mut expected_status = VeritySetupStatus {
@@ -664,7 +666,7 @@ mod functional_test {
     #[functional_test(feature = "helpers", negative = true)]
     fn test_fail_on_missing_or_malformed_devices() {
         // hash device does not contain verity hash tree
-        assert_eq!(
+        assert!(
             open(
                 Path::new("/dev/sda1"),
                 "foobar",
@@ -673,12 +675,11 @@ mod functional_test {
             )
             .unwrap_err()
             .root_cause()
-            .to_string(),
-            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /dev/sda is not a valid VERITY device.\n\n"
+            .to_string().contains("stdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /dev/sda is not a valid VERITY device.\n\n")
         );
 
         // hash device is not a block device
-        assert_eq!(
+        assert!(
             open(
                 Path::new("/dev/sda1"),
                 "foobar",
@@ -687,8 +688,8 @@ mod functional_test {
             )
             .unwrap_err()
             .root_cause()
-            .to_string(),
-            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /etc/passwd is not a valid VERITY device.\n\n"
+            .to_string()
+            .contains("stdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nDevice /etc/passwd is not a valid VERITY device.\n\n")
         );
 
         verity::check_verity_images();
@@ -699,7 +700,7 @@ mod functional_test {
         .unwrap();
 
         // data device is not a block device
-        assert_eq!(
+        assert!(
             open(
                 Path::new("/etc/passwd"),
                 "foobar",
@@ -708,12 +709,12 @@ mod functional_test {
             )
             .unwrap_err()
             .root_cause()
-            .to_string(),
-            "Process output:\nstdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nInvalid root hash string specified.\n\n"
+            .to_string()
+            .contains("stdout:\nCommand failed with code -1 (wrong or missing parameters).\n\n\nstderr:\nInvalid root hash string specified.\n\n")
         );
 
         // data device does not exist
-        assert_eq!(
+        assert!(
             open(
                 Path::new("/dev/does-not-exist"),
                 "foobar",
@@ -722,12 +723,12 @@ mod functional_test {
             )
             .unwrap_err()
             .root_cause()
-            .to_string(),
-            "Process output:\nstdout:\nCommand failed with code -4 (wrong device or file specified).\n\n\nstderr:\nDevice /dev/does-not-exist does not exist or access denied.\n\n"
+            .to_string()
+            .contains("stdout:\nCommand failed with code -4 (wrong device or file specified).\n\n\nstderr:\nDevice /dev/does-not-exist does not exist or access denied.\n\n")
         );
 
         // hash device does not exist
-        assert_eq!(
+        assert!(
             open(
                 Path::new("/dev/sda1"),
                 "foobar",
@@ -736,8 +737,8 @@ mod functional_test {
             )
             .unwrap_err()
             .root_cause()
-            .to_string(),
-            "Process output:\nstdout:\nCommand failed with code -4 (wrong device or file specified).\n\n\nstderr:\nDevice /etc/does-not-exist does not exist or access denied.\n\n"
+            .to_string()
+            .contains("stdout:\nCommand failed with code -4 (wrong device or file specified).\n\n\nstderr:\nDevice /etc/does-not-exist does not exist or access denied.\n\n")
         );
     }
 

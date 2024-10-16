@@ -1,8 +1,8 @@
 use anyhow::{Context, Error};
-use std::{path::Path, process::Command};
+use std::path::Path;
 use uuid::Uuid;
 
-use crate::{e2fsck, exe::RunAndCheck};
+use crate::{dependencies::Dependency, e2fsck};
 
 /// Assign filesystem UUID to the filesystem at block_device_path.
 pub fn run(fs_uuid: &Uuid, block_device_path: &Path) -> Result<(), Error> {
@@ -10,7 +10,8 @@ pub fn run(fs_uuid: &Uuid, block_device_path: &Path) -> Result<(), Error> {
     e2fsck::fix(block_device_path)?;
 
     // Run tune2fs to assign a new randomized FS UUID to the updated volume
-    Command::new("tune2fs")
+    Dependency::Tune2fs
+        .cmd()
         .arg("-U")
         .arg(fs_uuid.to_string())
         .arg(block_device_path)
@@ -40,7 +41,8 @@ mod functional_test {
 
         // Validate that the UUID was assigned correctly by running blkid command to fetch block
         // devices
-        let output = Command::new("blkid")
+        let output = Dependency::Blkid
+            .cmd()
             .arg("-o")
             .arg("value")
             .arg("-s")
@@ -82,7 +84,8 @@ mod functional_test {
         // Test case 2: Run tune2fs on a valid block device that does not have a filesystem.
         // Create a new loop device
         // Create a file to act as a loopback device
-        Command::new("dd")
+        Dependency::Dd
+            .cmd()
             .arg("if=/dev/zero")
             .arg("of=/tmp/loopback.img")
             .arg("bs=1M")
@@ -90,7 +93,8 @@ mod functional_test {
             .output_and_check()
             .unwrap();
         // Set up a loop device
-        let loop_device_output = Command::new("losetup")
+        let loop_device_output = Dependency::Losetup
+            .cmd()
             .arg("--find")
             .arg("--show")
             .arg("/tmp/loopback.img")
@@ -99,7 +103,8 @@ mod functional_test {
         // The output is already a string containing the loop device path
         let loop_device_path = loop_device_output.trim().to_string();
         // Zero out the metadata of the loop device
-        Command::new("wipefs")
+        Dependency::Wipefs
+            .cmd()
             .arg("--all")
             .arg(&loop_device_path)
             .output_and_check()

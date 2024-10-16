@@ -1,25 +1,28 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 pub fn settle() -> Result<(), Error> {
-    Command::new("udevadm")
+    Dependency::Udevadm
+        .cmd()
         .arg("settle")
         .run_and_check()
         .context("Failed settle udev setup")
 }
 
 pub fn trigger() -> Result<(), Error> {
-    Command::new("udevadm")
+    Dependency::Udevadm
+        .cmd()
         .arg("trigger")
         .run_and_check()
         .context("Failed trigger udev")
 }
 
 pub fn wait(path: &Path) -> Result<(), Error> {
-    Command::new("udevadm")
+    Dependency::Udevadm
+        .cmd()
         .arg("wait")
         .arg("--settle")
         .arg("--timeout=120")

@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, process::Command};
+use std::net::SocketAddr;
 
 use anyhow::{Context, Error};
 use log::info;
@@ -9,7 +9,7 @@ use tokio::{
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-use osutils::exe::RunAndCheck;
+use osutils::dependencies::Dependency;
 use trident_api::{
     config::{GrpcConfiguration, Operations},
     error::{InternalError, ReportError, ServicingError, TridentError},
@@ -93,7 +93,8 @@ pub(crate) fn start(
 }
 
 fn open_firewall_for_grpc() -> Result<(), Error> {
-    Command::new("iptables")
+    Dependency::Iptables
+        .cmd()
         .arg("-A")
         .arg("INPUT")
         .arg("-p")

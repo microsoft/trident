@@ -1,12 +1,11 @@
-use std::process::Command;
-
 use anyhow::{Context, Error};
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 // Grab the kernel version using the `uname` command
 pub fn kernel_release() -> Result<String, Error> {
-    Command::new("uname")
+    Dependency::Uname
+        .cmd()
         .arg("-r")
         .output_and_check()
         .context("Failed to run uname -r")

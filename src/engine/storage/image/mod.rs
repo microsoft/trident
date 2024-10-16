@@ -1077,12 +1077,12 @@ mod functional_test {
             .insert("root-data-b".to_string(), PathBuf::from("/dev/sda2"));
 
         let _ = veritysetup::close("root");
-        assert_eq!(
+        assert!(
             get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned())
                 .unwrap_err()
                 .root_cause()
-                .to_string(),
-            "Process output:\nstdout:\n/dev/mapper/root is inactive.\n\n"
+                .to_string()
+                .contains("stdout:\n/dev/mapper/root is inactive.\n\n")
         );
 
         // now try the same, against actual verity volumes
@@ -1120,12 +1120,12 @@ mod functional_test {
             ..Default::default()
         };
 
-        assert_eq!(
+        assert!(
             get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned())
                 .unwrap_err()
                 .root_cause()
-                .to_string(),
-            "Process output:\nstdout:\n/dev/mapper/root is inactive.\n\n"
+                .to_string()
+                .contains("stdout:\n/dev/mapper/root is inactive.\n\n")
         );
 
         // now open the verity and we should get further

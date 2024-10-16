@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::{bail, ensure, Context, Error, Ok};
@@ -9,7 +8,7 @@ use configparser::ini::Ini;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{exe::RunAndCheck, partition_types::DiscoverablePartitionType};
+use crate::{dependencies::Dependency, partition_types::DiscoverablePartitionType};
 
 /// Representation of a partition created by `systemd-repart`.
 #[derive(Debug, Deserialize)]
@@ -256,7 +255,8 @@ impl SystemdRepartInvoker {
         // hash a unique PTUUID for each disk/partition table.
         let seed = Uuid::new_v4();
 
-        let repart_output_json = Command::new("systemd-repart")
+        let repart_output_json = Dependency::SystemdRepart
+            .cmd()
             .arg(self.disk.as_os_str())
             .arg("--dry-run=no")
             .arg(format!("--empty={}", self.mode.to_str()))
@@ -794,7 +794,7 @@ mod functional_test {
         // Test that we can repartition /dev/null
         let repart = SystemdRepartInvoker::new("/dev/null", RepartEmptyMode::Force)
             .with_partition_entries(repart::generate_partition_definition_esp_generic());
-        assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/null: Block device required\n\n");
+        assert!(repart.execute().unwrap_err().root_cause().to_string().contains("stderr:\nFailed to open file or determine backing device of /dev/null: Block device required\n\n"));
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -802,7 +802,7 @@ mod functional_test {
         // Test that we can repartition a non-existing device
         let repart = SystemdRepartInvoker::new("/dev/does-not-exist", RepartEmptyMode::Force)
             .with_partition_entries(repart::generate_partition_definition_esp_generic());
-        assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nFailed to open file or determine backing device of /dev/does-not-exist: No such file or directory\n\n");
+        assert!(repart.execute().unwrap_err().root_cause().to_string().contains("stderr:\nFailed to open file or determine backing device of /dev/does-not-exist: No such file or directory\n\n"));
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -815,7 +815,7 @@ mod functional_test {
         let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
         let repart = SystemdRepartInvoker::new(disk_bus_path, RepartEmptyMode::Force)
             .with_partition_entries(partition_definition);
-        assert_eq!(repart.execute().unwrap_err().root_cause().to_string(), "Process output:\nstderr:\nCan't fit requested partitions into available free space (15.9G), refusing.\nAutomatically determined minimal disk image size as 16.0G, current image size is 16.0G.\n\n");
+        assert!(repart.execute().unwrap_err().root_cause().to_string().contains("stderr:\nCan't fit requested partitions into available free space (15.9G), refusing.\nAutomatically determined minimal disk image size as 16.0G, current image size is 16.0G.\n\n"));
     }
 
     #[functional_test(feature = "helpers")]

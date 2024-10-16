@@ -1,12 +1,9 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use serde::Deserialize;
 
-use crate::{exe::RunAndCheck, osuuid::OsUuid, partition_types::DiscoverablePartitionType};
+use crate::{dependencies::Dependency, osuuid::OsUuid, partition_types::DiscoverablePartitionType};
 
 #[derive(Debug, PartialEq, Deserialize)]
 struct SfdiskOutput {
@@ -109,7 +106,8 @@ impl SfDisk {
     where
         S: AsRef<Path>,
     {
-        let sfdisk_output_json = Command::new("sfdisk")
+        let sfdisk_output_json = Dependency::Sfdisk
+            .cmd()
             .arg("-J")
             .arg(disk_bus_path.as_ref())
             .output_and_check()
@@ -162,7 +160,8 @@ impl SfPartition {
     }
 
     pub fn delete(&self) -> Result<(), Error> {
-        Command::new("sfdisk")
+        Dependency::Sfdisk
+            .cmd()
             .arg("--delete")
             .arg(&self.parent)
             .arg(self.number.to_string())
@@ -178,13 +177,14 @@ impl SfPartition {
 /// Gets the UUID of the disk using sfdisk, returns None if the disk has no UUID
 /// set.
 pub fn get_disk_uuid(disk: &Path) -> Result<Option<OsUuid>, Error> {
-    let output = Command::new("sfdisk")
+    let output = Dependency::Sfdisk
+        .cmd()
         .arg("--disk-id")
         .arg(disk)
         .output()
         .context("Failed to execute sfdisk command")?;
 
-    let output_str = String::from_utf8(output.stdout).context("Failed to parse sfdisk output")?;
+    let output_str = output.output();
 
     if output_str.trim().is_empty() {
         return Ok(None);

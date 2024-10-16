@@ -1,13 +1,14 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 /// Resize ext* filesystem on the specified block devices to fill the entire device.
 pub fn run(block_device_path: &Path) -> Result<(), Error> {
     // Perform resize
-    Command::new("resize2fs")
+    Dependency::Resize2fs
+        .cmd()
         .arg(block_device_path)
         .run_and_check()
         .context("Failed to execute resize2fs")
@@ -119,7 +120,8 @@ mod functional_test {
         // Test case 2: Run resize2fs on a valid block device that does not have a filesystem.
         // Create a new loop device
         // Create a file to act as a loopback device
-        Command::new("dd")
+        Dependency::Dd
+            .cmd()
             .arg("if=/dev/zero")
             .arg("of=/tmp/loopback.img")
             .arg("bs=1M")
@@ -127,7 +129,8 @@ mod functional_test {
             .output_and_check()
             .unwrap();
         // Set up a loop device
-        let loop_device_output = Command::new("losetup")
+        let loop_device_output = Dependency::Losetup
+            .cmd()
             .arg("--find")
             .arg("--show")
             .arg("/tmp/loopback.img")
@@ -136,7 +139,8 @@ mod functional_test {
         // The output is already a string containing the loop device path
         let loop_device_path = loop_device_output.trim().to_string();
         // Zero out the metadata of the loop device
-        Command::new("wipefs")
+        Dependency::Wipefs
+            .cmd()
             .arg("--all")
             .arg(&loop_device_path)
             .output_and_check()
@@ -147,14 +151,14 @@ mod functional_test {
             .root_cause()
             .to_string();
         assert!(
-            error_string.starts_with(
-                "Process output:\nstdout:\nCouldn't find valid filesystem superblock.\n\n\nstderr:\nresize2fs "
+            error_string.contains(
+                "stdout:\nCouldn't find valid filesystem superblock.\n\n\nstderr:\nresize2fs "
             ),
             "Unexpected output: {error_string}"
         );
         assert!(
             error_string.contains(
-                "\nresize2fs: Bad magic number in super-block while trying to open /dev/loop"
+                "resize2fs: Bad magic number in super-block while trying to open /dev/loop"
             ),
             "Unexpected output: {error_string}"
         );
@@ -166,14 +170,14 @@ mod functional_test {
             .root_cause()
             .to_string();
         assert!(
-            error_string.starts_with(
-                "Process output:\nstdout:\nCouldn't find valid filesystem superblock.\n\n\nstderr:\nresize2fs "
+            error_string.contains(
+                "stdout:\nCouldn't find valid filesystem superblock.\n\n\nstderr:\nresize2fs "
             ),
             "Unexpected output: {error_string}"
         );
         assert!(
             error_string.contains(
-                "\nresize2fs: Bad magic number in super-block while trying to open /dev/loop"
+                "resize2fs: Bad magic number in super-block while trying to open /dev/loop"
             ),
             "Unexpected output: {error_string}"
         );

@@ -542,10 +542,9 @@ mod functional_test {
         // Test case where get_partition_number() fails to get the disk information
         let doesnotexist = Path::new("/dev/doesnotexist");
         let part_num = block_devices::get_partition_number(doesnotexist, esp_partition_path);
-        debug_assert_eq!(
-                   part_num.unwrap_err().root_cause().to_string(),
-                    "Process output:\nstderr:\nsfdisk: cannot open /dev/doesnotexist: No such file or directory\n\n"
-               );
+        debug_assert!(part_num.unwrap_err().root_cause().to_string().contains(
+            "stderr:\nsfdisk: cannot open /dev/doesnotexist: No such file or directory\n\n"
+        ));
     }
 
     #[functional_test(feature = "helpers")]

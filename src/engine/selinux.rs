@@ -2,12 +2,11 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
-    process::Command,
 };
 
 use anyhow::{bail, Error};
 
-use osutils::exe::RunAndCheck;
+use osutils::dependencies::Dependency;
 use trident_api::{
     config::FileSystemType,
     constants::SELINUX_CONFIG,
@@ -59,7 +58,8 @@ impl Subsystem for SelinuxSubsystem {
             let selinux_type =
                 get_selinux_type(SELINUX_CONFIG).structured(ServicingError::GetSelinuxType)?;
 
-            Command::new("setfiles")
+            Dependency::Setfiles
+                .cmd()
                 .arg("-m")
                 .arg(
                     Path::new("/etc/selinux")

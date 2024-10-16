@@ -4,7 +4,6 @@ use std::{
     io::Read,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::{bail, Context, Error};
@@ -12,7 +11,7 @@ use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-use osutils::exe::RunAndCheck;
+use osutils::dependencies::Dependency;
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
@@ -127,7 +126,8 @@ pub(super) fn provision(
         );
 
         // Check that the TPM 2.0 device is accessible.
-        Command::new("tpm2_pcrread")
+        Dependency::Tpm2Pcrread
+            .cmd()
             .run_and_check()
             .structured(ServicingError::Tpm2DeviceAccessible)?;
 
@@ -135,7 +135,8 @@ pub(super) fn provision(
         // By clearing the lockout value, this prevents the TPM 2.0 device
         // from being placed into DA lockout mode due to repeated
         // successive provisioning attempts.
-        Command::new("tpm2_clear")
+        Dependency::Tpm2Clear
+            .cmd()
             .run_and_check()
             .structured(ServicingError::ClearTpm2Device)?;
 
@@ -194,7 +195,8 @@ fn encrypt_and_open_device(
     key_file: &Path,
 ) -> Result<(), Error> {
     // TODO: move to osutils
-    Command::new("cryptsetup")
+    Dependency::Cryptsetup
+        .cmd()
         .arg("reencrypt")
         .arg("--encrypt")
         .arg("--batch-mode")
@@ -229,7 +231,8 @@ fn encrypt_and_open_device(
         device_path.display()
     );
 
-    Command::new("systemd-cryptenroll")
+    Dependency::SystemdCryptenroll
+        .cmd()
         .arg("--tpm2-device=auto")
         .arg("--tpm2-pcrs=7")
         .arg("--unlock-key-file")
@@ -248,7 +251,8 @@ fn encrypt_and_open_device(
         device_name
     );
 
-    Command::new("cryptsetup")
+    Dependency::Cryptsetup
+        .cmd()
         .arg("luksOpen")
         .arg("--key-file")
         .arg(key_file.as_os_str())

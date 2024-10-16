@@ -1,12 +1,9 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use duct::cmd;
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 pub const MOUNT_UNIT_SUFFIX: &str = "mount";
 
@@ -37,7 +34,8 @@ pub fn restart_unit<S>(unit: S) -> Result<(), Error>
 where
     S: AsRef<str>,
 {
-    Command::new("systemctl")
+    Dependency::Systemctl
+        .cmd()
         .arg("restart")
         .arg(unit.as_ref())
         .run_and_check()
