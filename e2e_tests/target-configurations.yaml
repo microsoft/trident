@@ -63,8 +63,6 @@ virtualMachine:
     pullrequest:
       - abupdate-on-encrypted-raid
       - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
-      - encrypted-partition
       - raid-resync-small
       - rerun
       - simple
@@ -100,32 +98,12 @@ virtualMachine:
       - verity-raid
     post_merge:
       - base
-      - abupdate-on-encrypted-raid
       - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
-      - encrypted-partition
-      - encrypted-raid
-      - encrypted-swap
-      - raid-small
       - raid-resync-small
       - rerun
-      - simple
-      - verity
-      - verity-raid
     pullrequest:
-      - base
       - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
-      - encrypted-partition
-      - encrypted-raid
-      - encrypted-swap
-      - raid-small
-      - raid-resync-small
       - rerun
-      - simple
-      - verity
-      - verity-raid
     validation:
       - base
       - abupdate-on-encrypted-raid
