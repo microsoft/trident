@@ -13,7 +13,23 @@ parameters:
   - name: tridentSourceDirectory
     type: string  
 
+  - name: tridentConfigPath
+    type: string 
+
 steps:
+
+  - bash: |
+        set -eu
+        raidExists=$(sudo yq e '.hostConfiguration.storage.raid != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+        if [ "$raidExists" == "true" ]; then
+          echo "Trident config requires Rebuild testing"
+          echo "##vso[task.setvariable variable=TEST_REBUILD_RAID]True"
+        else
+          echo "Trident config does not require Rebuild testing"
+          echo "##vso[task.setvariable variable=TEST_REBUILD_RAID]False"
+        fi
+    displayName: "Check if Trident config requires rebuild-raid testing"
+
   - bash: |
       set -eux
       echo "Efibootmgr entries in the VM."
@@ -22,6 +38,7 @@ steps:
       sudo rm -f /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-1-volume.qcow2
       sudo qemu-img create -f qcow2 /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-1-volume.qcow2 16G
     displayName: "Replace the test disk with a new disk"
+    condition: eq(variables['TEST_REBUILD_RAID'], 'True')
 
   - bash: |
       set -eux
@@ -38,6 +55,7 @@ steps:
           sleep 0.1
       done
     displayName: "Change boot order"
+    condition: eq(variables['TEST_REBUILD_RAID'], 'True')
 
   - bash: |
       set -eux
@@ -67,6 +85,7 @@ steps:
       echo "The domain did not shut down after 30 attempts."
 
     displayName: "Restart the VM"
+    condition: eq(variables['TEST_REBUILD_RAID'], 'True')
 
   - bash: |
       set -eux
@@ -95,7 +114,8 @@ steps:
 
       # Exit with the captured exit code
       exit $WAIT_FOR_LOGIN_EXITCODE 
-    displayName: "Collect Serial Log of the VM"  
+    displayName: "Collect Serial Log of the VM"
+    condition: eq(variables['TEST_REBUILD_RAID'], 'True')  
 
   - bash: |
       $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh \
@@ -103,6 +123,7 @@ steps:
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}"
     displayName: "Check SSH connection after restarting the VM"
+    condition: eq(variables['TEST_REBUILD_RAID'], 'True')
 
   - bash: |
       set -eu
@@ -116,3 +137,4 @@ steps:
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Test Trident rebuild-raid"
+    condition: eq(variables['TEST_REBUILD_RAID'], 'True')

@@ -192,6 +192,7 @@ stages:
               sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
               userName: testing-user
               tridentSourceDirectory: $(tridentSourceDirectory)
+              tridentConfigPath: $(tridentConfigPath)
 
           - bash: |
               set -eux
