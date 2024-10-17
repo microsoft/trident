@@ -3,8 +3,19 @@ import math
 import pytest
 import re
 import yaml
+from enum import Enum
 
 pytestmark = [pytest.mark.base]
+
+
+# Size units
+class SizeUnit(Enum):
+    B = math.pow(1024, 0)
+    K = math.pow(1024, 1)
+    M = math.pow(1024, 2)
+    G = math.pow(1024, 3)
+    T = math.pow(1024, 4)
+    P = math.pow(1024, 5)
 
 
 class HostStatusSafeLoader(yaml.SafeLoader):
@@ -27,9 +38,12 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
 
     for disk_elements in hostConfiguration["storage"]["disks"]:
         for partition in disk_elements["partitions"]:
+            # Extract size in bytes
+            size_number = partition["size"][:-1]
+            unit = partition["size"][-1] if partition["size"][-1].isalpha() else "B"
+            size = float(size_number) * SizeUnit[unit].value
+            # Update the expected partitions dictionary
             expected_partitions[partition["id"]] = partition
-            size = int(partition["size"][:-1]) * math.pow(1024, 2)
-            size = size * 1024 if partition["size"][-1] == "G" else size
             expected_partitions[partition["id"]]["size"] = size
 
     # Check partitions type
@@ -62,7 +76,7 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
 
     # Check partitions size
     partitions_system_info = dict()
-    result = connection.run("lsblk -J")
+    result = connection.run("lsblk -J -b")
     lsblk_info = json.loads(result.stdout)
     # Expected output example:
     # {
@@ -149,16 +163,6 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
             partitions_system_info[partitions_blkid[system_name]["PARTLABEL"]] = (
                 partitions_blkid[system_name]
             )
-            # Define size of the partitions:
-            size = int(partitions_blkid[system_name]["size"][:-1]) * math.pow(1024, 2)
-            size = (
-                size * 1024
-                if partitions_blkid[system_name]["size"][-1] == "G"
-                else size
-            )
-            partitions_system_info[partitions_blkid[system_name]["PARTLABEL"]][
-                "size"
-            ] = size
 
     # Check hostStatus
     result = connection.run("sudo /usr/bin/trident get")
