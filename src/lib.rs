@@ -271,6 +271,10 @@ impl Trident {
 
         info!("Running Trident version: {}", TRIDENT_VERSION);
 
+        if container::is_running_in_container().unwrap_or(false) {
+            info!("Running Trident in a container");
+        }
+
         if !Uid::effective().is_root() {
             return Err(TridentError::new(
                 ExecutionEnvironmentMisconfigurationError::CheckRootPrivileges,
