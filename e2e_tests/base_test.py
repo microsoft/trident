@@ -31,7 +31,7 @@ def test_connection(connection):
     assert output == "Successful connection"
 
 
-def test_partitions(connection, tridentConfiguration, abActiveVolume):
+def test_partitions(connection, tridentConfiguration, tridentCommand, abActiveVolume):
     # Structure hostConfiguration information
     hostConfiguration = tridentConfiguration["hostConfiguration"]
     expected_partitions = dict()
@@ -165,7 +165,8 @@ def test_partitions(connection, tridentConfiguration, abActiveVolume):
             )
 
     # Check hostStatus
-    result = connection.run("sudo /usr/bin/trident get")
+    trident_get_command = tridentCommand + "get"
+    result = connection.run(trident_get_command)
 
     # Structure output
     host_status_output = result.stdout.strip()

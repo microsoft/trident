@@ -10,9 +10,12 @@ class HostStatusSafeLoader(yaml.SafeLoader):
         return self.construct_mapping(node)
 
 
-def test_ab_update_staged(connection, tridentConfiguration, abActiveVolume):
+def test_ab_update_staged(
+    connection, tridentConfiguration, tridentCommand, abActiveVolume
+):
     # Check host status.
-    res_host_status = connection.run("sudo /usr/bin/trident get")
+    trident_get_command = tridentCommand + "get"
+    res_host_status = connection.run(trident_get_command)
     output_host_status = res_host_status.stdout.strip()
 
     HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)

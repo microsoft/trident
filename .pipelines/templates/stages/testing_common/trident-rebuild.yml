@@ -10,6 +10,14 @@ parameters:
   - name: hostIp
     type: string
 
+  - name: runtimeEnv
+    displayName: "Runtime environment (host vs container)"
+    type: string
+    default: "host"
+    values:
+      - host
+      - container
+
   - name: tridentSourceDirectory
     type: string  
 
@@ -133,6 +141,7 @@ steps:
           --ip-address ${{ parameters.hostIp }} \
           --user-name ${{ parameters.userName }} \
           --keys-file-path ${{ parameters.sshKeyPath }} \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --trident-config $tridentRebuildRaidConfigFile \
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)

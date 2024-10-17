@@ -55,6 +55,7 @@ ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" "$USER_NAME"@"$HOST_IP" "sudo
 # SCP the entire directory to the host
 echo "Transferring local temp directory to the host"
 scp -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" -r "$LOCAL_TEMP_DIR"/* "$USER_NAME"@"$HOST_IP":"$DESTINATION_DIR/"
+ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" "$USER_NAME"@"$HOST_IP" "sudo ls -la $DESTINATION_DIR/"
 
 # Remove the local temp directory
 rm -rf "$LOCAL_TEMP_DIR"

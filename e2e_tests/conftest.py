@@ -44,6 +44,15 @@ def pytest_addoption(parser):
         default=KEY_PATH,
         help="Path to the rsa key needed for SSH connection, default path to ./keys/key.",
     )
+    parser.addoption(
+        "-R",
+        "--runtime-env",
+        action="store",
+        type=str,
+        choices=["host", "container"],
+        default="host",
+        help="Runtime environment for trident: 'host' or 'container'. Default is 'host'.",
+    )
 
 
 @pytest.fixture
@@ -61,6 +70,27 @@ def connection(request):
 
     yield ssh_connection
     ssh_connection.close()
+
+
+@pytest.fixture
+def tridentCommand(request):
+    RUNTIME_ENV = request.config.getoption("--runtime-env")
+
+    trident_command = "sudo "
+    if RUNTIME_ENV == "container":
+        # Start the Docker container
+        run_container = (
+            "docker run --pull=never --rm --privileged "
+            "-v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident "
+            "-v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys -v /var/log:/var/log "
+            "--pid host trident/trident:latest"
+        )
+        trident_command += run_container + " "
+    else:
+        TRIDENT_EXECUTABLE_PATH = "/usr/bin/trident"
+        trident_command += TRIDENT_EXECUTABLE_PATH + " "
+
+    return trident_command
 
 
 @pytest.fixture

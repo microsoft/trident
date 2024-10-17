@@ -7,11 +7,12 @@ from ssh_utilities import (
     run_ssh_command,
     OutputWatcher,
     TRIDENT_EXECUTABLE_PATH,
+    EXECUTE_TRIDENT_CONTAINER,
     LOCAL_TRIDENT_CONFIG_PATH,
 )
 
 
-def trident_rebuild_raid(connection, trident_config):
+def trident_rebuild_raid(connection, trident_config, runtime_env):
     """
     Runs "trident rebuild-raid" to trigger rebuilding RAID and checks if RAID was rebuilt successfully.
 
@@ -25,11 +26,14 @@ def trident_rebuild_raid(connection, trident_config):
     # Initialize stdout and stderr streams
     out_stream = StringIO()
     err_stream = StringIO()
+    trident_command = (
+        TRIDENT_EXECUTABLE_PATH if runtime_env == "host" else EXECUTE_TRIDENT_CONTAINER
+    )
     try:
         # Set warn=True to continue execution even if the command has a non-zero exit code.
         # Provide -c arg, the full path to the RW Trident config.
         result = connection.run(
-            f"sudo {TRIDENT_EXECUTABLE_PATH} rebuild-raid -v trace -c {trident_config}",
+            f"sudo {trident_command} rebuild-raid -v trace -c {trident_config}",
             warn=True,
             out_stream=out_stream,
             err_stream=err_stream,
@@ -91,6 +95,7 @@ def trigger_rebuild_raid(
     ip_address,
     user_name,
     keys_file_path,
+    runtime_env,
     trident_config,
 ):
     """Connects to the host via SSH, copies the Trident config to the host, and runs Trident rebuild-raid.
@@ -110,7 +115,7 @@ def trigger_rebuild_raid(
 
     # Re-build Trident and capture logs
     print("Re-building Trident", flush=True)
-    trident_rebuild_raid(connection, trident_config)
+    trident_rebuild_raid(connection, trident_config, runtime_env)
     connection.close()
 
 
@@ -138,7 +143,15 @@ def main():
         type=str,
         help="Full path to the file containing the host ssh keys.",
     )
-
+    parser.add_argument(
+        "-e",
+        "--runtime-env",
+        action="store",
+        type=str,
+        choices=["host", "container"],
+        default="host",
+        help="Runtime environment for trident: 'host' or 'container'. Default is 'host'.",
+    )
     parser.add_argument(
         "-c",
         "--trident-config",
@@ -153,6 +166,7 @@ def main():
         args.ip_address,
         args.user_name,
         args.keys_file_path,
+        args.runtime_env,
         args.trident_config,
     )
 

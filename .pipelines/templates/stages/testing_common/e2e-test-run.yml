@@ -16,6 +16,14 @@ parameters:
     type: string
     default: virtualMachine
 
+  - name: runtimeEnv
+    displayName: "Runtime environment (host vs container)"
+    type: string
+    default: "host"
+    values:
+      - host
+      - container
+
   - name: hostIp
     type: string
     default: ""
@@ -103,6 +111,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_clean_install_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }}
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
@@ -145,6 +154,7 @@ steps:
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
           --version $(version) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --stage-ab-update \
           --finalize-ab-update
 
@@ -192,6 +202,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_B_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
@@ -233,6 +244,7 @@ steps:
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
           --version $(version) \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --stage-ab-update \
           --finalize-ab-update
 
@@ -279,6 +291,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
+          --runtime-env ${{ parameters.runtimeEnv }} \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
@@ -303,6 +316,7 @@ steps:
           buildPurpose: ${{ parameters.buildPurpose }}
           tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
           hostIp: ${{ parameters.hostIp }}
+          runtimeEnv: ${{ parameters.runtimeEnv }}
           tridentConfigPath: ${{ parameters.tridentConfigPath }}
           sshKeyPath: ${{ parameters.sshKeyPath }}
           userName: ${{ parameters.userName }}

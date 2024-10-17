@@ -9,6 +9,7 @@ from ssh_utilities import (
     run_ssh_command,
     OutputWatcher,
     TRIDENT_EXECUTABLE_PATH,
+    EXECUTE_TRIDENT_CONTAINER,
     LOCAL_TRIDENT_CONFIG_PATH,
 )
 from io import StringIO
@@ -22,7 +23,9 @@ class YamlSafeLoader(yaml.SafeLoader):
         return self.construct_mapping(node)
 
 
-def trident_run(connection, keys_file_path, ip_address, user_name, trident_config):
+def trident_run(
+    connection, keys_file_path, ip_address, user_name, runtime_env, trident_config
+):
     """
     Runs "trident run" to trigger A/B update on the host and ensure that the
     host completed staging or staging and finalizing of A/B update successfully.
@@ -32,11 +35,14 @@ def trident_run(connection, keys_file_path, ip_address, user_name, trident_confi
     # Initialize stdout and stderr streams
     out_stream = StringIO()
     err_stream = StringIO()
+    trident_command = (
+        TRIDENT_EXECUTABLE_PATH if runtime_env == "host" else EXECUTE_TRIDENT_CONTAINER
+    )
     try:
         # Set warn=True to continue execution even if the command has a non-zero exit code.
         # Provide -c arg, the full path to the RW Trident config.
         result = connection.run(
-            f"sudo {TRIDENT_EXECUTABLE_PATH} run -v trace -c {trident_config}",
+            f"sudo {trident_command} run -v trace -c {trident_config}",
             warn=True,
             out_stream=out_stream,
             err_stream=err_stream,
@@ -120,7 +126,7 @@ def trident_run(connection, keys_file_path, ip_address, user_name, trident_confi
 
 
 def update_host_config_images(
-    connection, destination_directory, trident_config, version
+    connection, runtime_env, destination_directory, trident_config, version
 ):
     """Updates the images in the host configuration in the RW Trident config via sed command."""
     # If file at path trident_config does not exist, copy it over from LOCAL_TRIDENT_CONFIG_PATH
@@ -141,10 +147,11 @@ def update_host_config_images(
 
     # Get a list of images to be updated
     images_to_update = get_images_to_update(trident_config_output)
+    host_directory = "/" if runtime_env == "host" else "/host/"
     destination_directory = destination_directory.strip("/")
 
     for old_url, image_name in images_to_update:
-        new_url = f"file:///{destination_directory}/{image_name}_v{version}.rawzst"
+        new_url = f"file://{host_directory}{destination_directory}/{image_name}_v{version}.rawzst"
         print(f"Updating URL {old_url} to new URL {new_url}")
         sed_command = f"sudo sed -i 's#{old_url}#{new_url}#g' {trident_config}"
         run_ssh_command(connection, sed_command)
@@ -300,6 +307,7 @@ def trigger_ab_update(
     destination_directory,
     trident_config,
     version,
+    runtime_env,
     stage_ab_update,
     finalize_ab_update,
 ):
@@ -311,7 +319,7 @@ def trigger_ab_update(
     # If staging of A/B update is required, update the images
     if stage_ab_update:
         update_host_config_images(
-            connection, destination_directory, trident_config, version
+            connection, runtime_env, destination_directory, trident_config, version
         )
 
     # Update allowed operations in the Trident config
@@ -327,7 +335,9 @@ def trigger_ab_update(
 
     # Re-run Trident and capture logs
     print("Re-running Trident to trigger A/B update", flush=True)
-    trident_run(connection, keys_file_path, ip_address, user_name, trident_config)
+    trident_run(
+        connection, keys_file_path, ip_address, user_name, runtime_env, trident_config
+    )
     connection.close()
 
 
@@ -374,6 +384,15 @@ def main():
         help="Version of runtime OS images for the A/B update.",
     )
     parser.add_argument(
+        "-e",
+        "--runtime-env",
+        action="store",
+        type=str,
+        choices=["host", "container"],
+        default="host",
+        help="Runtime environment for trident: 'host' or 'container'. Default is 'host'.",
+    )
+    parser.add_argument(
         "-s",
         "--stage-ab-update",
         action="store_true",
@@ -400,6 +419,7 @@ def main():
         args.destination_directory,
         args.trident_config,
         args.version,
+        args.runtime_env,
         stage_ab_update,
         finalize_ab_update,
     )

@@ -2,6 +2,12 @@ from invoke.watchers import StreamWatcher
 
 LOCAL_TRIDENT_CONFIG_PATH = "/etc/trident/config.yaml"
 TRIDENT_EXECUTABLE_PATH = "/usr/bin/trident"
+EXECUTE_TRIDENT_CONTAINER = (
+    "docker run --pull=never --rm --privileged "
+    "-v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident "
+    "-v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys -v /var/log:/var/log "
+    "--pid host trident/trident:latest"
+)
 
 
 class OutputWatcher(StreamWatcher):

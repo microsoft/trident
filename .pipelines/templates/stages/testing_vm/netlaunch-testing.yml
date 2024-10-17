@@ -162,6 +162,16 @@ stages:
             condition: succeededOrFailed()
             displayName: "Check Runtime OS deployment"
 
+          - bash: |
+              set -eux
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
+                'sudo journalctl -u docker.service'
+              ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
+                'sudo journalctl -u trident-container.service'
+            condition: and(succeeded(), eq('${{ parameters.runtimeEnv }}', 'container'))
+            displayName: "Display Container logs"
+
           - template: ../testing_common/trident-metrics.yml
             parameters:
               tridentSourceDirectory: $(tridentSourceDirectory)
@@ -180,6 +190,7 @@ stages:
               deploymentEnvironment: virtualMachine
               tridentConfigurationName: $(tridentConfigurationName)
               hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
+              runtimeEnv: ${{ parameters.runtimeEnv }}
               tridentConfigPath: $(tridentConfigPath)
               sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
               userName: testing-user
@@ -191,6 +202,7 @@ stages:
               hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
               sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
               userName: testing-user
+              runtimeEnv: ${{ parameters.runtimeEnv }}
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
 
