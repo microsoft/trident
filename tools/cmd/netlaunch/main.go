@@ -58,16 +58,18 @@ type NetLaunchConfig struct {
 	}
 }
 
-var netlaunchConfigFile string
-var tridentConfigFile string
-var iso string
-var logstream bool
-var listenPort uint16
-var remoteAddressFile string
-var serveFolder string
-var maxFailures uint
-var traceFile string
-var forceColor bool
+var (
+	netlaunchConfigFile string
+	tridentConfigFile   string
+	iso                 string
+	logstream           bool
+	listenPort          uint16
+	remoteAddressFile   string
+	serveFolder         string
+	maxFailures         uint
+	traceFile           string
+	forceColor          bool
+)
 
 var backgroundLogstreamFull string
 

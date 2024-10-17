@@ -98,7 +98,7 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
             }
             Self::EncryptedVolume => BlkDevKindFlag::Partition | BlkDevKindFlag::RaidArray,
-            Self::FileSystem => {
+            Self::FileSystem | Self::FileSystemOsImage => {
                 BlkDevKindFlag::Partition
                     | BlkDevKindFlag::RaidArray
                     | BlkDevKindFlag::EncryptedVolume
@@ -126,11 +126,12 @@ impl BlkDevReferrerKind {
             // These are not really used, but we define them for
             // completeness
             Self::FileSystem => ValidCardinality::new_at_most(1),
-            Self::FileSystemEsp => ValidCardinality::new_exact(1),
-            Self::FileSystemAdopted => ValidCardinality::new_exact(1),
-            Self::FileSystemSysupdate => ValidCardinality::new_exact(1),
-            Self::VerityFileSystemData => ValidCardinality::new_exact(1),
-            Self::VerityFileSystemHash => ValidCardinality::new_exact(1),
+            Self::FileSystemOsImage
+            | Self::FileSystemEsp
+            | Self::FileSystemAdopted
+            | Self::FileSystemSysupdate
+            | Self::VerityFileSystemData
+            | Self::VerityFileSystemHash => ValidCardinality::new_exact(1),
         }
     }
 
@@ -166,6 +167,7 @@ impl BlkDevReferrerKind {
             Self::ABVolume => BlkDevReferrerKindFlag::empty(),
             Self::EncryptedVolume => BlkDevReferrerKindFlag::empty(),
             Self::FileSystem
+            | Self::FileSystemOsImage
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemSysupdate
@@ -198,14 +200,19 @@ impl FileSystemType {
                 FileSystemSourceKind::Create,
                 FileSystemSourceKind::Image,
                 FileSystemSourceKind::Adopted,
+                FileSystemSourceKind::OsImage,
             ]),
             Self::Vfat => FileSystemSourceKindList(vec![
                 FileSystemSourceKind::Create,
                 FileSystemSourceKind::Image,
                 FileSystemSourceKind::Adopted,
                 FileSystemSourceKind::EspBundle,
+                FileSystemSourceKind::OsImage,
             ]),
-            Self::Other => FileSystemSourceKindList(vec![FileSystemSourceKind::Image]),
+            Self::Other => FileSystemSourceKindList(vec![
+                FileSystemSourceKind::Image,
+                FileSystemSourceKind::OsImage,
+            ]),
             Self::Iso9660 | Self::Auto => {
                 FileSystemSourceKindList(vec![FileSystemSourceKind::Adopted])
             }
@@ -347,6 +354,7 @@ impl BlkDevReferrerKind {
 
             // These only have one target, so enforcing this is meaningless.
             Self::FileSystem
+            | Self::FileSystemOsImage
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemSysupdate => false,
@@ -372,6 +380,7 @@ impl BlkDevReferrerKind {
             // Filesystems are special referrers because they are not nodes.
             // These rules are not checked, but included here for completeness.
             Self::FileSystem
+            | Self::FileSystemOsImage
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemSysupdate
@@ -392,6 +401,7 @@ impl BlkDevReferrerKind {
             Self::None | Self::EncryptedVolume => false,
             // Filesystems should always have homogeneous partition types.
             Self::FileSystem
+            | Self::FileSystemOsImage
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemSysupdate
@@ -414,6 +424,7 @@ impl BlkDevReferrerKind {
             Self::FileSystem | Self::FileSystemAdopted | Self::FileSystemSysupdate => {
                 AllowedPartitionTypes::Block(vec![PartitionType::Esp])
             }
+            Self::FileSystemOsImage => AllowedPartitionTypes::Any,
             Self::FileSystemEsp => AllowedPartitionTypes::Allow(vec![PartitionType::Esp]),
             Self::VerityFileSystemData => {
                 // TODO: add Usr when it's supported
@@ -459,6 +470,7 @@ impl BlkDevReferrerKind {
             // Because of that, they have their own set of rules that are not
             // covered here, and this section is unreachable.
             Self::FileSystem
+            | Self::FileSystemOsImage
             | Self::FileSystemEsp
             | Self::FileSystemAdopted
             | Self::FileSystemSysupdate

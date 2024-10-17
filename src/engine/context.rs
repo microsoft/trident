@@ -6,6 +6,8 @@ use trident_api::{
     BlockDeviceId,
 };
 
+use crate::osimage::OsImage;
+
 #[cfg_attr(any(test, feature = "functional-test"), derive(Clone, Default))]
 pub struct EngineContext {
     pub spec: HostConfiguration,
@@ -35,6 +37,10 @@ pub struct EngineContext {
     /// Trident will determine the next available index and use it for the new
     /// install.
     pub install_index: usize,
+
+    /// The OS image that Trident is using to service the host.
+    #[allow(dead_code)]
+    pub os_image: Option<OsImage>,
 }
 impl EngineContext {
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one

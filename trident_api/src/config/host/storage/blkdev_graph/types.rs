@@ -105,6 +105,9 @@ pub enum BlkDevReferrerKind {
     /// An encrypted volume
     EncryptedVolume,
 
+    /// A filesystem from an OS Image
+    FileSystemOsImage,
+
     /// A regular filesystem
     FileSystem,
 
@@ -135,11 +138,12 @@ bitflags::bitflags! {
         const ABVolume = 1 << 1;
         const EncryptedVolume = 1 << 2;
         const FileSystem = 1 << 3;
-        const FileSystemEsp = 1 << 4;
-        const FileSystemAdopted = 1 << 5;
-        const FileSystemSysupdate = 1 << 6;
-        const VerityFileSystemData = 1 << 7;
-        const VerityFileSystemHash = 1 << 8;
+        const FileSystemOsImage = 1 << 4;
+        const FileSystemEsp = 1 << 5;
+        const FileSystemAdopted = 1 << 6;
+        const FileSystemSysupdate = 1 << 7;
+        const VerityFileSystemData = 1 << 8;
+        const VerityFileSystemHash = 1 << 9;
 
         // Groups:
         // Example:
@@ -183,7 +187,9 @@ impl<'a> NodeFileSystem<'a> {
         match self {
             NodeFileSystem::Regular(fs) => matches!(
                 fs.source,
-                FileSystemSource::Image(_) | FileSystemSource::EspImage(_)
+                FileSystemSource::Image(_)
+                    | FileSystemSource::EspImage(_)
+                    | FileSystemSource::OsImage
             ),
             // Verity filesystems are always image backed
             // This code should break if this ever changes :)
@@ -373,6 +379,7 @@ impl BlkDevReferrerKind {
             Self::ABVolume => BlkDevReferrerKindFlag::ABVolume,
             Self::EncryptedVolume => BlkDevReferrerKindFlag::EncryptedVolume,
             Self::FileSystem => BlkDevReferrerKindFlag::FileSystem,
+            Self::FileSystemOsImage => BlkDevReferrerKindFlag::FileSystemOsImage,
             Self::FileSystemEsp => BlkDevReferrerKindFlag::FileSystemEsp,
             Self::FileSystemAdopted => BlkDevReferrerKindFlag::FileSystemAdopted,
             Self::FileSystemSysupdate => BlkDevReferrerKindFlag::FileSystemSysupdate,
@@ -431,6 +438,9 @@ pub enum FileSystemSourceKind {
 
     /// Use an existing file system from an ESP image.
     EspBundle,
+
+    /// Use an existing file system from an OS Image.
+    OsImage,
 }
 
 /// Wrapper for a list of FileSystemSourceKind
@@ -440,6 +450,10 @@ pub struct FileSystemSourceKindList(pub Vec<FileSystemSourceKind>);
 impl FileSystemSourceKindList {
     pub(crate) fn contains(&self, fs_src_kind: FileSystemSourceKind) -> bool {
         self.0.contains(&fs_src_kind)
+    }
+
+    pub fn filter(&self, f: impl Fn(&FileSystemSourceKind) -> bool) -> Self {
+        Self(self.0.iter().filter(|kind| f(kind)).cloned().collect())
     }
 }
 
@@ -454,6 +468,7 @@ impl Display for FileSystemSourceKind {
             FileSystemSourceKind::Image => write!(f, "image"),
             FileSystemSourceKind::Adopted => write!(f, "adopted"),
             FileSystemSourceKind::EspBundle => write!(f, "esp-image"),
+            FileSystemSourceKind::OsImage => write!(f, "os-image"),
         }
     }
 }
@@ -493,6 +508,7 @@ impl Display for BlkDevReferrerKind {
             BlkDevReferrerKind::ABVolume => write!(f, "ab-volume"),
             BlkDevReferrerKind::EncryptedVolume => write!(f, "encrypted-volume"),
             BlkDevReferrerKind::FileSystem => write!(f, "filesystem"),
+            BlkDevReferrerKind::FileSystemOsImage => write!(f, "filesystem-os-image"),
             BlkDevReferrerKind::FileSystemEsp => write!(f, "filesystem-esp"),
             BlkDevReferrerKind::FileSystemAdopted => write!(f, "filesystem-adopted"),
             BlkDevReferrerKind::FileSystemSysupdate => write!(f, "filesystem-sysupdate"),
@@ -555,6 +571,7 @@ impl BitFlagsBackingEnumVec<BlkDevReferrerKind> for BlkDevReferrerKindFlag {
                 BlkDevReferrerKindFlag::ABVolume => BlkDevReferrerKind::ABVolume,
                 BlkDevReferrerKindFlag::EncryptedVolume => BlkDevReferrerKind::EncryptedVolume,
                 BlkDevReferrerKindFlag::FileSystem => BlkDevReferrerKind::FileSystem,
+                BlkDevReferrerKindFlag::FileSystemOsImage => BlkDevReferrerKind::FileSystemOsImage,
                 BlkDevReferrerKindFlag::FileSystemEsp => BlkDevReferrerKind::FileSystemEsp,
                 BlkDevReferrerKindFlag::FileSystemAdopted => BlkDevReferrerKind::FileSystemAdopted,
                 BlkDevReferrerKindFlag::FileSystemSysupdate => {
@@ -586,7 +603,7 @@ impl Display for BlkDevReferrerKindFlag {
 
 #[cfg(feature = "documentation")]
 mod documentation {
-    use super::{BlkDevKind, BlkDevReferrerKind};
+    use super::{BlkDevKind, BlkDevReferrerKind, FileSystemSourceKind};
 
     impl BlkDevReferrerKind {
         /// Returns whether a referrer kind should be included in the public
@@ -594,7 +611,23 @@ mod documentation {
         pub fn document(&self) -> bool {
             !matches!(
                 self,
-                BlkDevReferrerKind::None | BlkDevReferrerKind::FileSystemSysupdate
+                // None is a 'null' referrer and should not be documented
+                BlkDevReferrerKind::None
+                    // These are internal and should not be documented
+                    | BlkDevReferrerKind::FileSystemSysupdate
+                    | BlkDevReferrerKind::FileSystemOsImage
+            )
+        }
+    }
+
+    impl FileSystemSourceKind {
+        /// Returns whether a file system source kind should be included in the public
+        /// documentation
+        pub fn document(&self) -> bool {
+            !matches!(
+                self,
+                // These are internal and should not be documented
+                FileSystemSourceKind::OsImage
             )
         }
     }

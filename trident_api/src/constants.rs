@@ -154,4 +154,7 @@ pub mod internal_params {
 
     /// Run extra partition and filesystem checks before reboot
     pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
+
+    /// Enable support for cosi files
+    pub const ENABLE_COSI_SUPPORT: &str = "cosi";
 }

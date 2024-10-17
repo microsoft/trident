@@ -20,6 +20,7 @@ require github.com/vishvananda/netns v0.0.4 // indirect
 require (
 	github.com/VictorLowther/simplexml v0.0.0-20180716164440-0bff93621230 // indirect
 	github.com/VictorLowther/soap v0.0.0-20150314151524-8e36fca84b22 // indirect
+	github.com/alecthomas/kong v1.2.1
 	github.com/bmc-toolbox/common v0.0.0-20240806132831-ba8adc6a35e3 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -29,6 +30,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jacobweinstock/iamt v0.0.0-20230502042727-d7cdbe67d9ef // indirect
 	github.com/jacobweinstock/registrar v0.4.7 // indirect
+	github.com/klauspost/compress v1.17.10
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

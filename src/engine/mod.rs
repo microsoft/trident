@@ -52,6 +52,7 @@ pub mod initrd;
 pub mod management;
 pub mod network;
 pub mod osconfig;
+mod osimage;
 pub mod storage;
 
 // Helper modules
@@ -268,7 +269,9 @@ fn stage_clean_install(
         block_device_paths: Default::default(), // Will be initialized later
         disks_by_uuid: Default::default(),      // Will be initialized later
         install_index: 0,                       // Will be initialized later
+        os_image: osimage::load_os_image(host_config)?,
     };
+
     validate_host_config(subsystems, &ctx, host_config)?;
 
     debug!("Clearing saved host status");
@@ -352,6 +355,7 @@ pub(super) fn finalize_clean_install(
         block_device_paths: state.host_status().block_device_paths.clone(),
         disks_by_uuid: state.host_status().disks_by_uuid.clone(),
         install_index: state.host_status().install_index,
+        os_image: None, // Not used in finalize_clean_install
     };
 
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
@@ -440,7 +444,9 @@ pub(super) fn update(
         ab_active_volume: state.host_status().ab_active_volume,
         disks_by_uuid: state.host_status().disks_by_uuid.clone(),
         install_index: state.host_status().install_index,
+        os_image: osimage::load_os_image(&command.host_config)?,
     };
+
     if ctx.spec.storage.ab_update.is_some() {
         debug!("A/B update is enabled");
         let root_device_path = storage::image::get_root_device_path()
@@ -639,6 +645,7 @@ pub(super) fn finalize_update(
         block_device_paths: state.host_status().block_device_paths.clone(),
         disks_by_uuid: state.host_status().disks_by_uuid.clone(),
         install_index: state.host_status().install_index,
+        os_image: None, // Not used in finalize_update
     };
 
     let esp_path = if container::is_running_in_container()

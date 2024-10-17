@@ -26,7 +26,10 @@ pub(super) fn requires_block_device() -> RuleDefinition {
 pub(super) fn sources() -> RuleDefinition {
     let mut table = MdTable::new(vec!["File System Type", "Valid Source Type"]);
     for fs in get_filesystems() {
-        table.add_row(vec![fs.to_string(), fs.valid_sources().to_string()]);
+        table.add_row(vec![
+            fs.to_string(),
+            fs.valid_sources().filter(|s| s.document()).to_string(),
+        ]);
     }
 
     RuleDefinition {

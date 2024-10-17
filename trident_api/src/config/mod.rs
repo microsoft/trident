@@ -3,6 +3,7 @@ pub(crate) mod local;
 
 pub use host::{
     error::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
+    image::{CosiFile, OsImage},
     os::{
         additional_files::AdditionalFile,
         users::{Password, SshMode, User},

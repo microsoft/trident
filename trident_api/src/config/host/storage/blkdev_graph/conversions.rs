@@ -114,6 +114,8 @@ impl From<&FileSystem> for BlkDevReferrerKind {
                     #[cfg(feature = "sysupdate")]
                     ImageFormat::RawLzma => BlkDevReferrerKind::FileSystemSysupdate,
                 },
+
+                FileSystemSource::OsImage => BlkDevReferrerKind::FileSystemOsImage,
             }
         } else {
             // Filesystems that do not require a block device are not referrers.
@@ -130,6 +132,7 @@ impl From<&FileSystemSource> for FileSystemSourceKind {
             FileSystemSource::Image(_) => FileSystemSourceKind::Image,
             FileSystemSource::Adopted => FileSystemSourceKind::Adopted,
             FileSystemSource::EspImage(_) => FileSystemSourceKind::EspBundle,
+            FileSystemSource::OsImage => FileSystemSourceKind::OsImage,
         }
     }
 }

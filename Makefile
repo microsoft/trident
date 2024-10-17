@@ -306,6 +306,9 @@ $(abspath dev-docs/diagrams/state-diagrams)/%.png: dev-docs/diagrams/state-diagr
 go.sum: go.mod
 	go mod tidy
 
+.PHONY: go-tools
+go-tools: bin/netlaunch bin/netlisten bin/miniproxy
+
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/phonehome/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
@@ -317,6 +320,10 @@ bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/phonehome/*
 bin/miniproxy: tools/cmd/miniproxy/* tools/go.sum
 	mkdir -p bin
 	cd tools && go build -o ../bin/miniproxy ./cmd/miniproxy
+
+bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/variants/*
+	@mkdir -p bin
+	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident

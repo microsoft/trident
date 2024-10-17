@@ -11,12 +11,14 @@ use crate::{
 };
 
 pub(crate) mod error;
+pub(crate) mod image;
 pub(crate) mod internal_params;
 pub(crate) mod os;
 pub(crate) mod scripts;
 pub(crate) mod storage;
 pub(crate) mod trident;
 
+use image::OsImage;
 use internal_params::InternalParams;
 use os::Os;
 use scripts::Scripts;
@@ -62,6 +64,11 @@ pub struct HostConfiguration {
     #[serde(default, skip_serializing_if = "is_default")]
     #[cfg_attr(feature = "schemars", schemars(skip))]
     pub internal_params: InternalParams,
+
+    /// OS Image
+    #[serde(default, skip_serializing_if = "is_default")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub os_image: Option<OsImage>,
 }
 
 impl HostConfiguration {

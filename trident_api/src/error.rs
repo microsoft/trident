@@ -6,6 +6,7 @@ use std::{
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
+use url::Url;
 
 use crate::config::{
     HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
@@ -146,6 +147,12 @@ pub enum InvalidInputError {
 
     #[error("Failed to translate kickstart")]
     TranslateKickstart,
+
+    #[error("An OS image must be provided.")]
+    MissingOsImage,
+
+    #[error("Failed to load COSI file from '{url}'")]
+    LoadCosi { url: Url },
 }
 
 /// Identifies errors that occur during servicing and require further user investigation, to

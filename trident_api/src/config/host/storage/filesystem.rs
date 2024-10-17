@@ -90,6 +90,12 @@ pub enum FileSystemSource {
     ///
     /// Use an existing file system from an adopted partition.
     Adopted,
+
+    /// # OS Image
+    ///
+    /// Not officially part of the API yet.
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    OsImage,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -278,6 +284,7 @@ impl FileSystem {
                         FileSystemSource::Adopted => "adopted",
                         FileSystemSource::Image(_) => "image",
                         FileSystemSource::EspImage(_) => "esp-image",
+                        FileSystemSource::OsImage => "os-image",
                     }
                     .to_owned(),
                 ),
