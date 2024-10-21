@@ -1,5 +1,7 @@
 use std::{
+    borrow::Cow,
     ffi::{OsStr, OsString},
+    io,
     os::unix::process::ExitStatusExt,
     path::PathBuf,
     process::{Command as StdCommand, Output},
@@ -7,8 +9,11 @@ use std::{
 
 use log::trace;
 use strum_macros::IntoStaticStr;
+use trident_api::error::{
+    ExecutionEnvironmentMisconfigurationError, ServicingError, TridentError, TridentResultExt,
+};
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum DependencyError {
     #[error("Failed to find dependency '{dependency}': {source}")]
     NotFound {
@@ -20,7 +25,8 @@ pub enum DependencyError {
     #[error("Failed to execute dependency '{dependency}': {inner}")]
     CouldNotExecute {
         dependency: Dependency,
-        inner: String,
+        #[source]
+        inner: io::Error,
     },
 
     #[error("Dependency '{dependency}' finished unsuccessfully: {explanation}\nCmdline: {rendered_command}\n{output}")]
@@ -34,6 +40,47 @@ pub enum DependencyError {
         explanation: String,
         output: String,
     },
+}
+
+impl From<DependencyError> for TridentError {
+    #[track_caller]
+    fn from(value: DependencyError) -> Self {
+        match value {
+            DependencyError::NotFound { dependency, source } => TridentError::with_source(
+                ExecutionEnvironmentMisconfigurationError::MissingBinary {
+                    binary: dependency.name(),
+                },
+                source.into(),
+            ),
+            DependencyError::CouldNotExecute { dependency, inner } => TridentError::with_source(
+                ServicingError::CommandCouldNotExecute {
+                    binary: dependency.name(),
+                },
+                inner.into(),
+            ),
+            DependencyError::ExecutionFailed {
+                dependency,
+                explanation,
+                ..
+            } => TridentError::new(ServicingError::CommandFailed {
+                binary: dependency.name(),
+                explanation,
+            }),
+        }
+    }
+}
+
+pub trait DependencyResultExt<T> {
+    /// Attach a context message to the error.
+    fn message(self, context: impl Into<Cow<'static, str>>) -> Result<T, TridentError>;
+}
+
+impl<T> DependencyResultExt<T> for Result<T, Box<DependencyError>> {
+    #[track_caller]
+    fn message(self, context: impl Into<Cow<'static, str>>) -> Result<T, TridentError> {
+        let result: Result<T, TridentError> = self.map_err(|e| (*e).into());
+        result.message(context)
+    }
 }
 
 /// Enum of runtime and test dependencies used in the code base.
@@ -229,10 +276,12 @@ impl Command {
         cmd.envs(self.envs.clone());
         let rendered_command = self.render_command();
         trace!("Executing '{rendered_command}'");
-        let output = cmd.output().map_err(|e| DependencyError::CouldNotExecute {
-            dependency: self.dependency,
-            inner: e.to_string(),
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|inner| DependencyError::CouldNotExecute {
+                dependency: self.dependency,
+                inner,
+            })?;
         let output = CommandOutput {
             rendered_command: rendered_command.clone(),
             dependency: self.dependency,

@@ -22,6 +22,9 @@ pub enum ExecutionEnvironmentMisconfigurationError {
 
     #[error("Failed to find OS Modifier binary at '{binary_path}' required by '{config}'")]
     FindOSModifierBinary { binary_path: String, config: String },
+
+    #[error("Failed to find required binary '{binary}'")]
+    MissingBinary { binary: &'static str },
 }
 
 /// Identifies errors that occur when Trident fails to initialize.
@@ -199,6 +202,15 @@ pub enum ServicingError {
 
     #[error("Failed to clear TPM 2.0 device")]
     ClearTpm2Device,
+
+    #[error("Failed to execute command")]
+    CommandCouldNotExecute { binary: &'static str },
+
+    #[error("Command '{binary}' failed: {explanation}")]
+    CommandFailed {
+        binary: &'static str,
+        explanation: String,
+    },
 
     #[error("Failed to configure device names for verity devices")]
     ConfigureVerityDeviceNames,
@@ -503,6 +515,16 @@ impl TridentError {
             kind: kind.into(),
             location: Location::caller(),
             source: None,
+            context: Vec::new(),
+        }))
+    }
+
+    #[track_caller]
+    pub fn with_source(kind: impl Into<ErrorKind>, source: anyhow::Error) -> Self {
+        TridentError(Box::new(TridentErrorInner {
+            kind: kind.into(),
+            location: Location::caller(),
+            source: Some(source),
             context: Vec::new(),
         }))
     }
