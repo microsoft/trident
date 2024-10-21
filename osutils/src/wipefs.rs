@@ -1,11 +1,12 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 
-use crate::exe::RunAndCheck;
+use crate::dependencies::Dependency;
 
 pub fn all(device: impl AsRef<Path>) -> Result<(), Error> {
-    Command::new("wipefs")
+    Dependency::Wipefs
+        .cmd()
         .arg("--all")
         .arg(device.as_ref())
         .run_and_check()

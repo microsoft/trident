@@ -816,16 +816,16 @@ mod functional_test {
     /// Identifies the loop device associated with a given file
     #[cfg(test)]
     fn find_loop_device(file_path: &Path) -> Result<String, Error> {
-        use std::process::Command;
+        use osutils::dependencies::Dependency;
 
-        let output = Command::new("losetup")
+        let output = Dependency::Losetup
+            .cmd()
             .arg("-j")
             .arg(file_path)
             .output()
             .context("Failed to execute losetup command")?;
 
-        let output_str =
-            String::from_utf8(output.stdout.clone()).context("Failed to parse losetup output")?;
+        let output_str = output.output().clone();
 
         // Extract the loop device name from the losetup output
         output_str

@@ -1,9 +1,10 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::Error;
 
 use crate::{
-    exe::RunAndCheck, partition_types::DiscoverablePartitionType, repart::RepartPartitionEntry,
+    dependencies::Dependency, partition_types::DiscoverablePartitionType,
+    repart::RepartPartitionEntry,
 };
 
 pub const DISK_SIZE: u64 = 16 * 1024 * 1024 * 1024; // 16 GiB
@@ -160,10 +161,12 @@ pub fn generate_partition_definition_esp_root_raid_single_disk_unequal() -> Vec<
 }
 
 pub fn clear_disk(disk_path: &Path) -> Result<(), Error> {
-    Command::new("dd")
+    Dependency::Dd
+        .cmd()
         .arg("if=/dev/zero")
         .arg(format!("of={}", disk_path.to_string_lossy()))
         .arg("bs=1M")
         .arg("count=1")
-        .run_and_check()
+        .run_and_check()?;
+    Ok(())
 }

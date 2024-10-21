@@ -5,7 +5,7 @@ use log::{debug, info};
 use uuid::Uuid;
 
 use osutils::{
-    blkid, exe::RunAndCheck, grub::GrubConfig, grub_mkconfig::GrubMkConfigScript, osrelease,
+    blkid, dependencies::Dependency, grub::GrubConfig, grub_mkconfig::GrubMkConfigScript, osrelease,
 };
 use trident_api::{
     config::{FileSystemType, SelinuxMode},
@@ -131,7 +131,7 @@ pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
             script.write().context("Failed to set SELinux policy")?;
         }
 
-        std::process::Command::new("bash")
+        Dependency::Bash.cmd()
             .arg("-c")
             .arg(format!("grub2-mkconfig > /{GRUB2_CONFIG_RELATIVE_PATH}"))
             .run_and_check()

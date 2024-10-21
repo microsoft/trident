@@ -869,10 +869,11 @@ mod functional_test {
     use pytest_gen::functional_test;
 
     use osutils::{
+        dependencies::Dependency,
         testutils::{raid, repart::TEST_DISK_DEVICE_PATH},
         udevadm,
     };
-    use std::{process::Command, str::FromStr};
+    use std::str::FromStr;
     use trident_api::config::{
         AdoptedPartition, Disk, HostConfiguration, Partition, PartitionSize, PartitionTableType,
         PartitionType, RaidLevel, Storage,
@@ -968,7 +969,8 @@ mod functional_test {
         // Delete the partition.
         partition_info.delete().unwrap();
         // Run partx --delete on /dev/sda6 to delete the partition.
-        Command::new("partx")
+        Dependency::Partx
+            .cmd()
             .arg("--delete")
             .arg("/dev/sda6")
             .output()

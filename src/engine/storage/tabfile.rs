@@ -1,14 +1,13 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::{bail, Context, Error};
 use serde_json::Value;
 
 use osutils::{
-    exe::RunAndCheck,
+    dependencies::Dependency,
     filesystems::TabFileSystemType,
     tabfile::{TabFile, TabFileEntry},
 };
@@ -65,7 +64,8 @@ fn entry_from_mountpoint(
 
 /// Based on the given tab file, get the device path for the partition with mount point `path`.
 pub(crate) fn get_device_path(tab_file_path: &Path, path: &Path) -> Result<PathBuf, Error> {
-    let findmnt_output_json = Command::new("findmnt")
+    let findmnt_output_json = Dependency::Findmnt
+        .cmd()
         .arg("--tab-file")
         .arg(tab_file_path)
         .arg("--json")

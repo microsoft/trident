@@ -26,6 +26,7 @@ use reqwest::Url;
 use tempfile;
 
 use osutils::{
+    dependencies::Dependency,
     exe::{OutputChecker, RunAndCheck},
     hashing_reader::HashingReader,
     udevadm,
@@ -693,7 +694,8 @@ fn get_partlabel_from_path(partition_path: &str) -> Result<String, Error> {
     let canonical_path = fs::canonicalize(partition_path)
         .with_context(|| format!("Failed to canonicalize the path '{partition_path}'"))?;
     // Run the blkid command to fetch block devices
-    let output = Command::new("blkid")
+    let output = Dependency::Blkid
+        .cmd()
         .arg("-o")
         .arg("value") // Entire file name is [VERSION] option
         .arg("-s")

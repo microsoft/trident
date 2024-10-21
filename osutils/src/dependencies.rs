@@ -134,6 +134,7 @@ impl Dependency {
         Command {
             dependency: *self,
             args: vec![],
+            envs: vec![],
         }
     }
 }
@@ -141,6 +142,7 @@ impl Dependency {
 pub struct Command {
     dependency: Dependency,
     args: Vec<OsString>,
+    envs: Vec<(OsString, OsString)>,
 }
 
 impl Command {
@@ -161,6 +163,29 @@ impl Command {
     {
         for arg in args {
             self.arg(arg.as_ref());
+        }
+        self
+    }
+
+    pub fn env<K, V>(&mut self, key: K, val: V) -> &mut Command
+    where
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
+        self.envs
+            .push((key.as_ref().to_os_string(), val.as_ref().to_os_string()));
+        self
+    }
+
+    pub fn envs<I, K, V>(&mut self, vars: I) -> &mut Command
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
+        for (ref key, ref val) in vars {
+            self.envs
+                .push((key.as_ref().to_os_string(), val.as_ref().to_os_string()));
         }
         self
     }
@@ -201,6 +226,7 @@ impl Command {
     pub fn output(&self) -> Result<CommandOutput, Box<DependencyError>> {
         let mut cmd = StdCommand::new(self.dependency.path()?);
         cmd.args(&self.args);
+        cmd.envs(self.envs.clone());
         let rendered_command = self.render_command();
         trace!("Executing '{rendered_command}'");
         let output = cmd.output().map_err(|e| DependencyError::CouldNotExecute {
@@ -235,7 +261,7 @@ impl CommandOutput {
     }
 
     /// Gets the exit code of the process, if it exited normally
-    fn code(&self) -> Option<i32> {
+    pub fn code(&self) -> Option<i32> {
         self.inner.status.code()
     }
 

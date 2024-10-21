@@ -1,7 +1,6 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::{Mutex, MutexGuard},
     thread,
     time::{Duration, Instant},
@@ -13,7 +12,7 @@ use tokio::sync::mpsc;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 
-use osutils::{chroot, container, exe::RunAndCheck, path::join_relative};
+use osutils::{chroot, container, dependencies::Dependency, path::join_relative};
 use trident_api::{
     config::HostConfiguration,
     constants::{
@@ -1038,7 +1037,8 @@ pub fn reboot() -> Result<(), TridentError> {
     // total time taken for the reboot
     tracing::info!(metric_name = "trident_system_reboot");
     info!("Rebooting system");
-    Command::new("systemctl")
+    Dependency::Systemctl
+        .cmd()
         .env("SYSTEMD_IGNORE_CHROOT", "true")
         .arg("reboot")
         .run_and_check()

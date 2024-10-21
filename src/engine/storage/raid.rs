@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    process::Command,
     thread::sleep,
     time::{Duration, Instant},
 };
@@ -12,7 +11,7 @@ use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
-use osutils::{block_devices, exe::OutputChecker, mdadm, udevadm};
+use osutils::{block_devices, dependencies::Dependency, mdadm, udevadm};
 use trident_api::{
     config::{HostConfiguration, SoftwareRaidArray},
     BlockDeviceId,
@@ -88,9 +87,9 @@ pub(super) fn get_raid_disks(raid_array: &Path) -> Result<HashSet<PathBuf>, Erro
     }
 
     // Check if mdadm is present, we need it to stop RAID arrays.
-    check_if_mdadm_present().context(
-        "Failed to clean up pre-existing RAID arrays. Mdadm is required for RAID operations",
-    )?;
+    if !Dependency::Mdadm.exists() {
+        bail!("Failed to clean up pre-existing RAID arrays. Mdadm is required for RAID operations");
+    }
 
     let mdadm_detail = mdadm::detail(raid_array).context("Failed to get existing RAID details")?;
     get_raid_disks_internal(&mdadm_detail)
@@ -124,9 +123,9 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
     }
 
     // Check if mdadm is present, we need it to stop RAID arrays.
-    check_if_mdadm_present().context(
-        "Failed to clean up pre-existing RAID arrays. Mdadm is required for RAID operations",
-    )?;
+    if !Dependency::Mdadm.exists() {
+        bail!("Failed to clean up pre-existing RAID arrays. Mdadm is required for RAID operations");
+    }
 
     debug!("Attempting to stop pre-existing RAID arrays");
 
@@ -165,31 +164,20 @@ pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> 
     Ok(())
 }
 
-fn check_if_mdadm_present() -> Result<(), Error> {
-    let mut mdadm_command = Command::new("mdadm");
-    mdadm_command.arg("--version");
-
-    mdadm_command
-        .output()
-        .context("Failed to run mdadm command. Mdadm is required for RAID operations")?;
-
-    Ok(())
-}
-
 pub fn unmount_and_stop(raid_path: &Path) -> Result<(), Error> {
     debug!("Unmounting RAID array: {:?}", raid_path);
-    let mut umount_command = Command::new("umount");
+    let mut umount_command = Dependency::Umount.cmd();
     umount_command.arg(raid_path);
 
     let output = umount_command
         .output()
         .context("Failed to unmount RAID array")?;
 
-    if !output.stderr.is_empty() {
-        let stderr_str = String::from_utf8_lossy(&output.stderr);
+    if !output.error_output().is_empty() {
+        let stderr_str = output.error_output();
 
         // Error code 32 means there was a mount faliure (device not mounted)
-        if !stderr_str.contains("not mounted") || output.exit_code() != Some(32) {
+        if !stderr_str.contains("not mounted") || output.code() != Some(32) {
             bail!("Failed to unmount: {:?}", raid_path);
         }
     }
@@ -204,8 +192,9 @@ pub(super) fn create_sw_raid(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
     if !host_config.storage.raid.software.is_empty() {
-        check_if_mdadm_present()
-            .context("Failed to create software RAID. Mdadm is required for RAID")?;
+        if !Dependency::Mdadm.exists() {
+            bail!("Failed to create software RAID. Mdadm is required for RAID");
+        }
         for software_raid_config in &host_config.storage.raid.software {
             create_sw_raid_array(ctx, software_raid_config).context(format!(
                 "RAID creation failed for '{}'",

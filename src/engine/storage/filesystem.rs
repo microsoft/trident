@@ -447,12 +447,10 @@ mod test {
 mod functional_test {
     use super::*;
 
-    use std::process::Command;
-
     use const_format::formatcp;
 
     use osutils::{
-        exe::RunAndCheck,
+        dependencies::Dependency,
         filesystems::MountFileSystemType,
         lsblk, mount,
         testutils::repart::{self, TEST_DISK_DEVICE_PATH},
@@ -483,7 +481,8 @@ mod functional_test {
         );
 
         // Create /mnt/sdb if does not exist and confirm that /dev/sdb can be mounted
-        Command::new("mkdir")
+        Dependency::Mkdir
+            .cmd()
             .arg("-p")
             .arg("/mnt/sdb")
             .output_and_check()

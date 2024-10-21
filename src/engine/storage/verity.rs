@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::{bail, Context, Error};
@@ -13,7 +12,7 @@ use tempfile::TempDir;
 
 use osutils::{
     block_devices,
-    exe::RunAndCheck,
+    dependencies::Dependency,
     filesystems::MountFileSystemType,
     grub::GrubConfig,
     grub_mkconfig::GrubMkConfigScript,
@@ -106,7 +105,8 @@ pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
             machine_id_path.display()
         ))?;
     }
-    Command::new("systemd-firstboot")
+    Dependency::SystemdFirstboot
+        .cmd()
         .arg("--root")
         .arg(new_root_path)
         .arg("--setup-machine-id")

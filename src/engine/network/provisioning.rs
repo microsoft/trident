@@ -1,10 +1,8 @@
-use std::process::Command;
-
 use anyhow::{Context, Error};
 use log::{info, warn};
 use netplan_types::NetworkConfig;
 
-use osutils::exe::OutputChecker;
+use osutils::dependencies::Dependency;
 use trident_api::config::HostConfiguration;
 
 use super::netplan;
@@ -54,7 +52,8 @@ fn start_provisioning_network(config: &NetworkConfig, wait_on_network: bool) -> 
 
     if wait_on_network {
         warn!("Enabling systemd-networkd-wait-online");
-        Command::new("systemctl")
+        Dependency::Systemctl
+            .cmd()
             .arg("start")
             .arg("systemd-networkd-wait-online")
             .arg("--no-block")
