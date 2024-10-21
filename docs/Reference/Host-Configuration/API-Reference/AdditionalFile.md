@@ -24,21 +24,21 @@ The contents of the script. Conflicts with path.
 | -------------- | -------- |
 | Type           | `string` |
 
-### `path` (optional)
-
-Path to the script file. Conflicts with content.
-
-The file must be located on the host's filesystem.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
 ### `permissions` (optional)
 
 Permissions to set on the file.
 
 If not specified, this will default to the permissions of the source file when `path` is used and to 0644 when `content` is used.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
+### `source` (optional)
+
+Path to the script file. Conflicts with content.
+
+The file must be located on the host's filesystem.
 
 | Characteristic | Value    |
 | -------------- | -------- |

@@ -106,13 +106,13 @@
           "description": "Location on the target image to place the file.",
           "type": "string"
         },
-        "path": {
-          "description": "Path to the script file. Conflicts with content.\n\nThe file must be located on the host's filesystem.",
+        "permissions": {
+          "description": "Permissions to set on the file.\n\nIf not specified, this will default to the permissions of the source file when `path` is used and to 0644 when `content` is used.",
           "type": "string",
           "nullable": true
         },
-        "permissions": {
-          "description": "Permissions to set on the file.\n\nIf not specified, this will default to the permissions of the source file when `path` is used and to 0644 when `content` is used.",
+        "source": {
+          "description": "Path to the script file. Conflicts with content.\n\nThe file must be located on the host's filesystem.",
           "type": "string",
           "nullable": true
         }

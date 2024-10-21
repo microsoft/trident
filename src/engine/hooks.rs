@@ -94,7 +94,7 @@ impl Subsystem for HooksSubsystem {
         }
 
         for file in &ctx.spec.os.additional_files {
-            if let Some(ref path) = file.path {
+            if let Some(ref path) = file.source {
                 self.stage_file(path.to_owned())
                     .structured(InvalidInputError::from(
                         HostConfigurationDynamicValidationError::LoadAdditionalFile {
@@ -136,7 +136,7 @@ impl Subsystem for HooksSubsystem {
         for file in &ctx.spec.os.additional_files {
             let (content, original_mode) = if let Some(ref content) = file.content {
                 (content.as_bytes().to_vec(), None)
-            } else if let Some(ref path) = file.path {
+            } else if let Some(ref path) = file.source {
                 let staged_file =
                     self.staged_files
                         .get(path)
@@ -662,7 +662,7 @@ mod tests {
                 os: trident_api::config::Os {
                     additional_files: vec![trident_api::config::AdditionalFile {
                         destination: test_file.clone(),
-                        path: Some(source_file.clone()),
+                        source: Some(source_file.clone()),
                         ..Default::default()
                     }],
                     ..Default::default()

@@ -22,7 +22,7 @@ pub struct AdditionalFile {
     ///
     /// The file must be located on the host's filesystem.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<PathBuf>,
+    pub source: Option<PathBuf>,
 
     /// Permissions to set on the file.
     ///
@@ -59,7 +59,7 @@ impl AdditionalFile {
             }
         }
 
-        match (&self.content, &self.path) {
+        match (&self.content, &self.source) {
             (Some(_), Some(_)) => Err(
                 HostConfigurationStaticValidationError::AdditionalFileBothContentAndPath {
                     additional_file: self.destination.display().to_string(),
@@ -84,7 +84,7 @@ mod tests {
         let mut file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: Some("...".to_string()),
-            path: None,
+            source: None,
             permissions: Some("0777".to_string()),
         };
         assert!(file.validate().is_ok());
@@ -96,7 +96,7 @@ mod tests {
         file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: None,
-            path: Some(PathBuf::from("/test")),
+            source: Some(PathBuf::from("/test")),
             permissions: None,
         };
         assert!(file.validate().is_ok());
@@ -107,7 +107,7 @@ mod tests {
         let mut file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: Some("...".to_string()),
-            path: None,
+            source: None,
             permissions: Some("invalid".to_string()),
         };
         assert_eq!(
@@ -142,7 +142,7 @@ mod tests {
         let file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: Some("test".to_string()),
-            path: Some(PathBuf::from("/test")),
+            source: Some(PathBuf::from("/test")),
             permissions: None,
         };
         assert_eq!(
@@ -158,7 +158,7 @@ mod tests {
         let file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: None,
-            path: None,
+            source: None,
             permissions: None,
         };
         assert_eq!(
