@@ -863,22 +863,25 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use crate::engine::{storage, EngineContext};
-
     use super::*;
-    use pytest_gen::functional_test;
+
+    use std::str::FromStr;
 
     use osutils::{
         dependencies::Dependency,
         testutils::{raid, repart::TEST_DISK_DEVICE_PATH},
         udevadm,
     };
-    use std::str::FromStr;
-    use trident_api::config::{
-        AdoptedPartition, Disk, HostConfiguration, Partition, PartitionSize, PartitionTableType,
-        PartitionType, RaidLevel, Storage,
+    use pytest_gen::functional_test;
+    use trident_api::{
+        config::{
+            AdoptedPartition, Disk, HostConfiguration, Partition, PartitionSize,
+            PartitionTableType, PartitionType, RaidLevel, Storage,
+        },
+        status::ServicingState::Provisioned,
     };
-    use trident_api::status::ServicingState::Provisioned;
+
+    use crate::engine::{storage, EngineContext};
 
     /// Returns the host configuration and host status.
     fn get_hostconfig_and_hoststatus() -> (HostConfiguration, trident_api::status::HostStatus) {
