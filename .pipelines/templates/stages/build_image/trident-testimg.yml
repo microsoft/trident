@@ -5,10 +5,22 @@ parameters:
 - name: outputArtifactName
   type: string
 
+- name: runtimeEnv
+  displayName: "Runtime environment (host vs container)"
+  type: string
+  default: "host"
+  values:
+    - host
+    - container
+
 stages:
 - stage: TridentTestImg_${{ replace(parameters.outputArtifactName, '-', '_') }}
   displayName: Build ${{ parameters.outputArtifactName }}
-  dependsOn: Trident
+  dependsOn:
+    - ${{ if eq(parameters.runtimeEnv, 'host') }}:
+        - Trident
+    - ${{ else }}:
+        []
 
   jobs:
   - job: BuildTridentTestImg
@@ -33,6 +45,7 @@ stages:
         artifactName: trident-binaries
         targetPath: "$(Build.ArtifactStagingDirectory)/trident"
       displayName: Download Trident RPMs
+      condition: eq('${{ parameters.runtimeEnv }}', 'host')
 
     - template: .pipelines/templates/trident-testimg-template.yml@test-images
       parameters:        

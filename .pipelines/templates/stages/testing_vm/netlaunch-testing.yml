@@ -101,6 +101,7 @@ stages:
           - bash: |
               set -eux
               mv $(System.ArtifactsDirectory)/container/trident-container.tar.gz $(tridentSourceDirectory)/artifacts/test-image/
+              ls -la $(tridentSourceDirectory)/artifacts/test-image/
             condition: and(succeeded(), eq('${{ parameters.runtimeEnv }}', 'container'))
             displayName: "Move container image to the serveFolder for netlaunch"
 
@@ -212,6 +213,8 @@ stages:
               mkdir -p $(ob_outputDirectory)
               sudo cp /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-0-volume.qcow2 $(ob_outputDirectory)/
               sudo zstd -T0 $(ob_outputDirectory)/virtdeploy-vm-0-0-volume.qcow2
+              sudo cp $(tridentSourceDirectory)/e2e_tests/helpers/key $(ob_outputDirectory)
+              sudo chmod 777 $(ob_outputDirectory)/key
             workingDirectory: $(tridentSourceDirectory)
             condition: failed()
             displayName: "Publish OS disk"

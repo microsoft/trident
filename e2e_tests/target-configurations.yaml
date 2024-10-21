@@ -101,9 +101,11 @@ virtualMachine:
       - abupdate-on-encrypted-partitions
       - raid-resync-small
       - rerun
+      - simple
     pullrequest:
       - abupdate-on-encrypted-raid
       - rerun
+      - simple
     validation:
       - base
       - abupdate-on-encrypted-raid

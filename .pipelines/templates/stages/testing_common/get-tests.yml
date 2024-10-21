@@ -31,6 +31,7 @@ jobs:
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/build
+      ob_artifactBaseName: select_tests_${{ parameters.runtimeEnv }}_$(System.JobAttempt)
 
     steps:
       - bash: |

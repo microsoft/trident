@@ -43,6 +43,7 @@ stages:
     parameters:
       imageName: build/trident-container-installer-testimage.iso
       outputArtifactName: trident-container-installer-testimage
+      runtimeEnv: "container"
 
   # Build Trident test image (regular)
   - template: stages/build_image/trident-testimg.yml
@@ -55,6 +56,7 @@ stages:
     parameters:
       imageName: trident-container-testimage
       outputArtifactName: trident-container-testimage
+      runtimeEnv: "container"
 
   # Build Trident test image (verity)
   - template: stages/build_image/trident-testimg.yml
