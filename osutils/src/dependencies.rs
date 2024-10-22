@@ -9,6 +9,7 @@ use std::{
 
 use log::trace;
 use strum_macros::IntoStaticStr;
+
 use trident_api::error::{
     ExecutionEnvironmentMisconfigurationError, ServicingError, TridentError, TridentResultExt,
 };
@@ -122,7 +123,7 @@ pub enum Dependency {
     SystemdFirstboot,
     #[strum(serialize = "systemd-repart")]
     SystemdRepart,
-    #[strum(serialize = "systemd-sysusers")]
+    #[strum(serialize = "systemd-sysupdate")]
     SystemdSysupdate,
     Touch,
     #[strum(serialize = "tpm2_clear")]
@@ -153,6 +154,15 @@ impl std::fmt::Display for Dependency {
 }
 
 impl Dependency {
+    /// Gets the path for a dependency not in $PATH
+    fn path_override(&self) -> Option<PathBuf> {
+        Some(PathBuf::from(match self {
+            Self::SystemdSysupdate => "/lib/systemd/systemd-sysupdate",
+            Self::Netplan => "/usr/sbin/netplan",
+            _ => return None,
+        }))
+    }
+
     /// Gets the name of the dependency
     ///
     /// For example, Dependency::Mdadm => "mdadm"
@@ -167,7 +177,11 @@ impl Dependency {
 
     /// Gets the path of the dependency
     pub fn path(&self) -> Result<PathBuf, Box<DependencyError>> {
-        which::which(self.name()).map_err(|source| {
+        which::which(match self.path_override() {
+            Some(path) => path,
+            None => self.name().into(),
+        })
+        .map_err(|source| {
             Box::new(DependencyError::NotFound {
                 dependency: *self,
                 source,

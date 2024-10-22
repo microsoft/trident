@@ -15,7 +15,6 @@ use std::{
     io::Read,
     option::Option,
     path::{self, PathBuf},
-    process::Command,
 };
 
 use anyhow::{bail, Context, Error};
@@ -26,10 +25,7 @@ use reqwest::Url;
 use tempfile;
 
 use osutils::{
-    dependencies::Dependency,
-    exe::{OutputChecker, RunAndCheck},
-    hashing_reader::HashingReader,
-    udevadm,
+    dependencies::Dependency, exe::OutputChecker, hashing_reader::HashingReader, udevadm,
 };
 use trident_api::{
     config::{Image, ImageSha256, PartitionType},
@@ -373,7 +369,7 @@ impl ImageDeployment {
         // where transfer config file is located
         info!("Running systemd-sysupdate...");
 
-        let res = Command::new("/lib/systemd/systemd-sysupdate")
+        let res = Dependency::SystemdSysupdate.cmd()
             .arg("update")
             .arg(&self.version)
             .arg("--definitions")
