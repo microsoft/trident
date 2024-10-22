@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum HostConfigurationStaticValidationError {
-    #[error("Additional file '{additional_file}' has both content and path, but only one must be specified")]
-    AdditionalFileBothContentAndPath { additional_file: String },
+    #[error("Additional file '{additional_file}' has both content and source, but only one must be specified")]
+    AdditionalFileBothContentAndSource { additional_file: String },
 
     #[error("Additional file '{additional_file}' has invalid permissions '{permissions}'")]
     AdditionalFileInvalidPermissions {
@@ -18,9 +18,9 @@ pub enum HostConfigurationStaticValidationError {
     },
 
     #[error(
-        "Additional file '{additional_file}' has no content or path, but one must be specified"
+        "Additional file '{additional_file}' has no content or source, but one must be specified"
     )]
-    AdditionalFileNoContentOrPath { additional_file: String },
+    AdditionalFileNoContentOrSource { additional_file: String },
 
     #[error("Datastore path '{datastore_path}' cannot be in A/B update volume '{volume_id}'")]
     DatastorePathInABUpdateVolume {

@@ -146,7 +146,7 @@ impl Subsystem for HooksSubsystem {
                 (staged_file.contents.clone(), Some(staged_file.mode))
             } else {
                 return Err(TridentError::new(InvalidInputError::from(
-                    HostConfigurationStaticValidationError::AdditionalFileNoContentOrPath {
+                    HostConfigurationStaticValidationError::AdditionalFileNoContentOrSource {
                         additional_file: file.destination.to_string_lossy().to_string(),
                     },
                 )))?;

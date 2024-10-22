@@ -14,7 +14,7 @@ pub struct AdditionalFile {
     /// Location on the target image to place the file.
     pub destination: PathBuf,
 
-    /// The contents of the script. Conflicts with path.
+    /// The contents of the script. Conflicts with `source`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
 
@@ -26,7 +26,7 @@ pub struct AdditionalFile {
 
     /// Permissions to set on the file.
     ///
-    /// If not specified, this will default to the permissions of the source file when `path` is
+    /// If not specified, this will default to the permissions of the source file when `source` is
     /// used and to 0644 when `content` is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions: Option<String>,
@@ -61,12 +61,12 @@ impl AdditionalFile {
 
         match (&self.content, &self.source) {
             (Some(_), Some(_)) => Err(
-                HostConfigurationStaticValidationError::AdditionalFileBothContentAndPath {
+                HostConfigurationStaticValidationError::AdditionalFileBothContentAndSource {
                     additional_file: self.destination.display().to_string(),
                 },
             ),
             (None, None) => Err(
-                HostConfigurationStaticValidationError::AdditionalFileNoContentOrPath {
+                HostConfigurationStaticValidationError::AdditionalFileNoContentOrSource {
                     additional_file: self.destination.display().to_string(),
                 },
             ),
@@ -92,7 +92,7 @@ mod tests {
         file.permissions = None;
         assert!(file.validate().is_ok());
 
-        // Providing path and setting content to None is also valid
+        // Providing source and setting content to None is also valid
         file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: None,
@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_fail_both_content_path() {
+    fn test_validate_fail_both_content_source() {
         let file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: Some("test".to_string()),
@@ -147,14 +147,14 @@ mod tests {
         };
         assert_eq!(
             file.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::AdditionalFileBothContentAndPath {
+            HostConfigurationStaticValidationError::AdditionalFileBothContentAndSource {
                 additional_file: "/test".to_string()
             }
         );
     }
 
     #[test]
-    fn test_validate_fail_no_content_or_path() {
+    fn test_validate_fail_no_content_or_source() {
         let file = AdditionalFile {
             destination: PathBuf::from("/test"),
             content: None,
@@ -163,7 +163,7 @@ mod tests {
         };
         assert_eq!(
             file.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::AdditionalFileNoContentOrPath {
+            HostConfigurationStaticValidationError::AdditionalFileNoContentOrSource {
                 additional_file: "/test".to_string()
             }
         );

@@ -18,7 +18,7 @@ Location on the target image to place the file.
 
 ### `content` (optional)
 
-The contents of the script. Conflicts with path.
+The contents of the script. Conflicts with `source`.
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -28,7 +28,7 @@ The contents of the script. Conflicts with path.
 
 Permissions to set on the file.
 
-If not specified, this will default to the permissions of the source file when `path` is used and to 0644 when `content` is used.
+If not specified, this will default to the permissions of the source file when `source` is used and to 0644 when `content` is used.
 
 | Characteristic | Value    |
 | -------------- | -------- |
