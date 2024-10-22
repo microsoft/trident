@@ -200,9 +200,6 @@ pub enum ServicingError {
     #[error("Failed to clean up pre-existing verity devices")]
     CleanupVerity,
 
-    #[error("Failed to clear TPM 2.0 device")]
-    ClearTpm2Device,
-
     #[error("Failed to execute command")]
     CommandCouldNotExecute { binary: &'static str },
 
@@ -211,9 +208,6 @@ pub enum ServicingError {
         binary: &'static str,
         explanation: String,
     },
-
-    #[error("Failed to configure device names for verity devices")]
-    ConfigureVerityDeviceNames,
 
     #[error("Failed to copy Trident binary to runtime OS")]
     CopyTridentBinary,
@@ -262,9 +256,6 @@ pub enum ServicingError {
         #[from]
         inner: DatastoreError,
     },
-
-    #[error("Failed to delete boot entries with label '{boot_entry}' via efibootmgr")]
-    DeleteEntries { boot_entry: String },
 
     #[error("Failed to perform file-based deployment of ESP images")]
     DeployESPImages,
@@ -325,9 +316,6 @@ pub enum ServicingError {
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
 
-    #[error("Failed to modify boot order via efibootmgr")]
-    ModifyBootOrder,
-
     #[error("Failed to mount execroot")]
     MountExecroot,
 
@@ -373,17 +361,8 @@ pub enum ServicingError {
     #[error("Failed to run post-provision script '{script_name}'")]
     RunPostProvisionScript { script_name: String },
 
-    #[error("Failed to run setfiles command")]
-    RunSetFiles,
-
-    #[error("Failed to set the 'BootNext' UEFI variable")]
-    SetBootNext,
-
     #[error("Failed to set the `BootOrder` via efibootmgr by checking for boot entry '{boot_entry_number}'")]
     SetBootOrder { boot_entry_number: String },
-
-    #[error("Failed to set the kernel cmdline")]
-    SetKernelCmdline,
 
     #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
     SetRecoveryKeyFilePermissions { key_file: String },
@@ -399,9 +378,6 @@ pub enum ServicingError {
 
     #[error("Failed to validate and rebuild RAID")]
     ValidateAndRebuildRaid,
-
-    #[error("Encryption requires access to a TPM 2.0 device but one is not accessible")]
-    Tpm2DeviceAccessible,
 
     #[error("Failed to unmount newroot, unable to unmount '{dir}'")]
     UnmountNewroot { dir: String },

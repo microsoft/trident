@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{bail, Error};
 
-use osutils::dependencies::Dependency;
+use osutils::dependencies::{Dependency, DependencyResultExt};
 use trident_api::{
     config::FileSystemType,
     constants::SELINUX_CONFIG,
@@ -72,7 +72,7 @@ impl Subsystem for SelinuxSubsystem {
                         .map(|mount_point| mount_point.path.as_os_str()),
                 )
                 .run_and_check()
-                .structured(ServicingError::RunSetFiles)?;
+                .message("Failed to run setfiles command")?;
         }
 
         Ok(())

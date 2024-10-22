@@ -11,7 +11,7 @@ use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-use osutils::dependencies::Dependency;
+use osutils::dependencies::{Dependency, DependencyResultExt};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
@@ -129,7 +129,7 @@ pub(super) fn provision(
         Dependency::Tpm2Pcrread
             .cmd()
             .run_and_check()
-            .structured(ServicingError::Tpm2DeviceAccessible)?;
+            .message("Encryption requires access to a TPM 2.0 device but one is not accessible")?;
 
         // Clear the TPM 2.0 device to ensure that it is in a known state.
         // By clearing the lockout value, this prevents the TPM 2.0 device
@@ -138,7 +138,7 @@ pub(super) fn provision(
         Dependency::Tpm2Clear
             .cmd()
             .run_and_check()
-            .structured(ServicingError::ClearTpm2Device)?;
+            .message("Failed to clear TPM 2.0 device")?;
 
         let mut total_partition_size_bytes: u64 = 0;
         for ev in encryption.volumes.iter() {

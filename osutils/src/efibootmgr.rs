@@ -2,8 +2,12 @@ use std::{ffi::OsStr, path::Path};
 
 use anyhow::{bail, Context, Error};
 use regex::Regex;
+use trident_api::error::{TridentError, TridentResultExt};
 
-use crate::{dependencies::Dependency, path::join_relative};
+use crate::{
+    dependencies::{Dependency, DependencyResultExt},
+    path::join_relative,
+};
 
 /// Represents an entry in the EFI Boot Manager.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -113,27 +117,25 @@ impl EfiBootManagerOutput {
     }
 
     /// Gets the `BootOrder` variable of efibootmgr.
-    pub fn get_boot_order(&self) -> Result<Vec<String>, Error> {
-        Ok(self.boot_order.clone())
+    pub fn get_boot_order(&self) -> Vec<String> {
+        self.boot_order.clone()
     }
 
     /// Gets the boot entries with the same label.
-    pub fn get_entries_with_label(&self, entry_label: &str) -> Result<Vec<String>, Error> {
-        Ok(self
-            .boot_entries
+    pub fn get_entries_with_label(&self, entry_label: &str) -> Vec<String> {
+        self.boot_entries
             .iter()
             .filter(|entry| entry.label == entry_label)
             .map(|entry| entry.id.clone())
-            .collect::<Vec<String>>())
+            .collect::<Vec<String>>()
     }
 
     /// Deletes boot entries with the same label.
-    pub fn delete_entries_with_label(&self, entry_label: &str) -> Result<(), Error> {
-        let boot_entries = self.get_entries_with_label(entry_label)?;
+    pub fn delete_entries_with_label(&self, entry_label: &str) -> Result<(), TridentError> {
+        let boot_entries = self.get_entries_with_label(entry_label);
         for entry_number in boot_entries {
-            delete_boot_entry(&entry_number).context(format!(
-                "Failed to delete boot entry {} through efibootmgr",
-                entry_number
+            delete_boot_entry(&entry_number).message(format!(
+                "Failed to delete boot entry {entry_number} through efibootmgr",
             ))?;
         }
         Ok(())
@@ -212,13 +214,13 @@ pub fn create_boot_entry(
 }
 
 /// Sets `BootNext` variable using efibootmgr.
-pub fn set_boot_next(entry_number: &str) -> Result<(), Error> {
+pub fn set_boot_next(entry_number: &str) -> Result<(), TridentError> {
     Dependency::Efibootmgr
         .cmd()
         .arg("--bootnext")
         .arg(entry_number)
         .run_and_check()
-        .context("Failed to add temporary next boot entry through efibootmgr")
+        .message("Failed to add temporary next boot entry through efibootmgr")
 }
 
 /// Delete `BootNext` variable using efibootmgr.
@@ -231,24 +233,24 @@ pub fn delete_boot_next() -> Result<(), Error> {
 }
 
 /// Modifies the `BootOrder` variable of efibootmgr.
-pub fn modify_boot_order(new_boot_order: &str) -> Result<(), Error> {
+pub fn modify_boot_order(new_boot_order: &str) -> Result<(), TridentError> {
     Dependency::Efibootmgr
         .cmd()
         .arg("--bootorder")
         .arg(new_boot_order)
         .run_and_check()
-        .context("Failed to set boot order through efibootmgr")
+        .message("Failed to set boot order through efibootmgr")
 }
 
 /// Delete the bootentry using efibootmgr.
-pub fn delete_boot_entry(entry_number: &str) -> Result<(), Error> {
+pub fn delete_boot_entry(entry_number: &str) -> Result<(), TridentError> {
     Dependency::Efibootmgr
         .cmd()
         .arg("--bootnum")
         .arg(entry_number)
         .arg("--delete-bootnum")
         .run_and_check()
-        .context("Failed to delete boot entry through efibootmgr")
+        .message("Failed to delete boot entry through efibootmgr")
 }
 
 fn is_valid_bootloader_path(esp_path: &Path, bootloader_path: &Path) -> bool {
@@ -328,10 +330,7 @@ mod tests {
 
         assert!(!bootmgr_output.check_current_boot_entry("0002").unwrap());
         let expected_boot_order = ["0001", "0000", "0002", "000A"];
-        assert_eq!(
-            bootmgr_output.get_boot_order().unwrap(),
-            &expected_boot_order
-        );
+        assert_eq!(bootmgr_output.get_boot_order(), &expected_boot_order);
         assert_eq!(
             bootmgr_output
                 .get_boot_entry_number("Windows Boot Manager")
@@ -396,21 +395,19 @@ mod tests {
 
         let expected_boot_entries = vec!["0001", "000A"];
         assert_eq!(
-            bootmgr_output.get_entries_with_label("Mariner").unwrap(),
+            bootmgr_output.get_entries_with_label("Mariner"),
             expected_boot_entries
         );
 
         let expected_boot_entries = vec!["0002"];
         assert_eq!(
-            bootmgr_output
-                .get_entries_with_label("UEFI: Built-in EFI Shell")
-                .unwrap(),
+            bootmgr_output.get_entries_with_label("UEFI: Built-in EFI Shell"),
             expected_boot_entries
         );
 
         let expected_boot_entries = Vec::<String>::new();
         assert_eq!(
-            bootmgr_output.get_entries_with_label("TestBoot").unwrap(),
+            bootmgr_output.get_entries_with_label("TestBoot"),
             expected_boot_entries
         );
     }
@@ -452,7 +449,7 @@ mod functional_test {
         // Get the initial boot order
         let bootmgr_output_initial = list_and_parse_bootmgr_entries().unwrap();
 
-        let boot_order_initial = bootmgr_output_initial.get_boot_order().unwrap();
+        let boot_order_initial = bootmgr_output_initial.get_boot_order();
 
         // Create a boot entry
         let tempdir = tempfile::tempdir().unwrap();
@@ -662,7 +659,7 @@ mod functional_test {
         let bootmgr_output2 = list_and_parse_bootmgr_entries().unwrap();
 
         // Get Boot entries vector
-        let boot_entries = bootmgr_output2.get_entries_with_label(entry_label).unwrap();
+        let boot_entries = bootmgr_output2.get_entries_with_label(entry_label);
         assert_eq!(boot_entries.len(), 2);
 
         // Delete the boot entry thats created above
@@ -703,14 +700,14 @@ mod functional_test {
 
         // Get Boot entries vector for TestBoot1
         let bootmgr_output2 = list_and_parse_bootmgr_entries().unwrap();
-        let boot_entries = bootmgr_output2.get_entries_with_label(entry_label).unwrap();
+        let boot_entries = bootmgr_output2.get_entries_with_label(entry_label);
         assert_eq!(boot_entries.len(), 2);
 
         // Get Boot entry number for TestBoot2
         let bootentry_number2 = bootmgr_output2.get_boot_entry_number(entry_label2).unwrap();
 
         // Set Bootorder to append TestBoot2 and TestBoot1 entries
-        let boot_order = bootmgr_output2.get_boot_order().unwrap();
+        let boot_order = bootmgr_output2.get_boot_order();
         let new_boot_order_str =
             boot_order.join(",") + "," + &bootentry_number2 + "," + &boot_entries.join(",");
         modify_boot_order(&new_boot_order_str).unwrap();
@@ -725,7 +722,7 @@ mod functional_test {
 
         assert!(!bootentry_exists);
 
-        let updated_boot_order = bootmgr_output3.get_boot_order().unwrap();
+        let updated_boot_order = bootmgr_output3.get_boot_order();
         let modified_boot_order: Vec<String> = new_boot_order_str
             .split(',')
             .map(|x| x.to_string())

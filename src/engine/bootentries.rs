@@ -9,7 +9,7 @@ use osutils::{
 };
 use trident_api::{
     constants,
-    error::{InternalError, ReportError, ServicingError, TridentError},
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     BlockDeviceId,
 };
 
@@ -50,18 +50,13 @@ pub fn set_boot_next_and_update_boot_order(
         );
         bootmgr_output
             .delete_entries_with_label(&entry_label_new)
-            .structured(ServicingError::DeleteEntries {
-                boot_entry: entry_label_new.clone(),
-            })?;
+            .message(format!(
+                "Failed to delete boot entries with label '{entry_label_new}' via efibootmgr",
+            ))?;
         // Get boot entry numbers for the entries with label '{entry_label_new}'
-        let entry_numbers = bootmgr_output
-            .get_entries_with_label(&entry_label_new)
-            .structured(ServicingError::ReadEfibootmgr)?;
+        let entry_numbers = bootmgr_output.get_entries_with_label(&entry_label_new);
         // Get the current `BootOrder`
-        let current_boot_order = bootmgr_output
-            .get_boot_order()
-            .structured(ServicingError::ReadEfibootmgr)?;
-        // Get the modified `BootOrder` after removing the entries with label '{entry_label_new}'
+        let current_boot_order = bootmgr_output.get_boot_order(); // Get the modified `BootOrder` after removing the entries with label '{entry_label_new}'
         let new_boot_order: Vec<String> = current_boot_order
             .iter()
             .filter(|&x| !entry_numbers.contains(x))
@@ -71,13 +66,11 @@ pub fn set_boot_next_and_update_boot_order(
         // Get the updated `BootOrder`
         let new_boot_order_after_deletion = efibootmgr::list_and_parse_bootmgr_entries()
             .structured(ServicingError::ListAndParseBootEntries)?
-            .get_boot_order()
-            .structured(ServicingError::ReadEfibootmgr)?;
-
+            .get_boot_order();
         // If the `BootOrder` has changed, update the `BootOrder`
         if current_boot_order != new_boot_order && new_boot_order_after_deletion != new_boot_order {
             efibootmgr::modify_boot_order(new_boot_order.join(",").as_str())
-                .structured(ServicingError::ModifyBootOrder)?;
+                .message("Failed to modify boot order via efibootmgr")?;
         }
     }
 
@@ -130,7 +123,8 @@ pub fn set_boot_next_and_update_boot_order(
     );
 
     // Set the `BootNext` variable to boot from the newly added entry on next boot.
-    efibootmgr::set_boot_next(&added_entry_number).structured(ServicingError::SetBootNext)?;
+    efibootmgr::set_boot_next(&added_entry_number)
+        .message("Failed to set the 'BootNext' UEFI variable")?;
     debug!("Set `BootNext` to newly added entry '{added_entry_number}'");
 
     // HACK: detect if we're inside qemu to avoid modifying `BootOrder`
@@ -239,7 +233,7 @@ pub fn first_boot_order(boot_entry: &String) -> Result<(), Error> {
     if let Some(new_boot_order) = new_boot_order {
         debug!("Modifying `BootOrder` to {}", new_boot_order);
         efibootmgr::modify_boot_order(&new_boot_order)
-            .context(format!("Failed to modify `BootOrder` to {new_boot_order}"))?;
+            .unstructured(format!("Failed to modify `BootOrder` to {new_boot_order}"))?;
     } else {
         debug!("Skipping `BootOrder` modification as it is already up-to-date");
     }
