@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use url::Url;
 
 pub(crate) mod cosi;
@@ -37,6 +39,17 @@ impl OsImage {
     pub(crate) fn available_mount_points(&self) -> impl Iterator<Item = &std::path::PathBuf> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.available_mount_points(),
+        }
+    }
+
+    /// Returns a reader for the entry associated with the given mount point.
+    #[allow(dead_code)]
+    pub(crate) fn entry_reader_for_mount_point(
+        &self,
+        mount_point: &std::path::Path,
+    ) -> Option<Result<Box<dyn Read>, anyhow::Error>> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.entry_reader_for_mount_point(mount_point),
         }
     }
 }

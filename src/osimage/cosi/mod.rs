@@ -24,17 +24,32 @@ const ACCEPTED_COSI_VERSIONS: [(u32, u32); 1] = [(1, 0)];
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(super) struct Cosi {
-    entries: HashMap<PathBuf, (u64, u64)>,
-    metadata: CosiMetadata,
     source: Url,
+    entries: HashMap<PathBuf, CosiEntry>,
+    metadata: CosiMetadata,
+    reader_factory: CosiReader,
+}
+
+#[derive(Debug, Clone)]
+struct CosiEntry {
+    offset: u64,
+    size: u64,
 }
 
 impl Cosi {
     /// Creates a new COSI file instance from the given source URL.
     pub(super) fn new(source: &Url) -> Result<Self, Error> {
         trace!("Scanning COSI file from '{}'", source);
-        let mut tar_reader = tar::Archive::new(CosiReader::new(source)?);
 
+        // Create a new COSI reader factory. THis will let us cleverly build
+        // readers for the cosi file regardless of its location.
+        let reader_factory =
+            CosiReader::new(source).context("Failed to create COSI reader factory.")?;
+
+        // Create a new reader over the entire COSI file and pass it to a new tar reader.
+        let mut tar_reader = tar::Archive::new(reader_factory.reader()?);
+
+        // Scan all entries in the COSI file by seeking to all headers in the file.
         let entries = tar_reader
             .entries_with_seek()
             .context("Failed to read COSI file")?
@@ -59,48 +74,67 @@ impl Cosi {
             .context("Failed to read COSI file entries")?
             .into_iter()
             .map(|entry| {
-                Ok((
+                let entry = (
                     {
                         let path = entry.path().context("Failed to read entry path")?;
                         let path = path.strip_prefix("./").unwrap_or(&path).to_path_buf();
-                        trace!("Found COSI entry: {}", path.display());
                         path
                     },
-                    (entry.raw_file_position(), entry.size()),
-                ))
+                    CosiEntry {
+                        offset: entry.raw_file_position(),
+                        size: entry.size(),
+                    },
+                );
+
+                trace!(
+                    "Found COSI entry '{}' at {} [{} bytes]",
+                    entry.0.display(),
+                    entry.1.offset,
+                    entry.1.size
+                );
+                Ok(entry)
             })
             .collect::<Result<HashMap<_, _>, Error>>()
             .context("Failed to process COSI entries")?;
 
         trace!("Collected {} COSI entries", entries.len());
 
-        // Return image reader to us
-        let mut reader = tar_reader.into_inner();
-
         trace!("Reading COSI metadata from '{}'", COSI_METADATA_PATH);
-        let raw_metadata = String::from_utf8(
-            reader
-                .read_range(
-                    *entries
-                        .get(Path::new(COSI_METADATA_PATH))
-                        .context("COSI metadata not found")?,
-                )
-                .context("Failed to read COSI metadata")?,
-        )
-        .context("Failed to parse COSI metadata as utf8")?;
+        let metadata: CosiMetadata = {
+            let metadata_location = entries
+                .get(Path::new(COSI_METADATA_PATH))
+                .context("COSI metadata not found")?;
 
-        trace!("Raw COSI metadata:\n{}", raw_metadata);
+            trace!(
+                "Reading COSI metadata from '{}' at {} [{} bytes]",
+                COSI_METADATA_PATH,
+                metadata_location.offset,
+                metadata_location.size
+            );
 
-        let metadata =
-            serde_json::from_str(&raw_metadata).context("Failed to parse COSI metadata")?;
+            let mut metadata_reader = reader_factory
+                .section_reader(metadata_location.offset, metadata_location.size)
+                .context("Failed to create COSI metadata reader")?;
+
+            let mut raw_metadata = String::new();
+            metadata_reader
+                .read_to_string(&mut raw_metadata)
+                .context("Failed to read COSI metadata")?;
+            trace!("Raw COSI metadata:\n{}", raw_metadata);
+            serde_json::from_str(&raw_metadata).context("Failed to parse COSI metadata")?
+        };
 
         trace!("Successfully parsed COSI metadata");
+
+        // Create a new COSI instance.
         let cosi = Cosi {
             entries,
             metadata,
             source: source.clone(),
+            reader_factory,
         };
 
+        // Validate metadata and actual contents.
         cosi.validate_metadata()?;
 
         Ok(cosi)
@@ -119,14 +153,20 @@ impl Cosi {
 
     /// Returns a reader for the given COSI entry.
     #[allow(dead_code)]
-    pub(super) fn entry_reader(&self, path: impl AsRef<Path>) -> Result<impl Read, Error> {
+    pub(super) fn entry_reader(&self, path: impl AsRef<Path>) -> Result<Box<dyn Read>, Error> {
+        trace!(
+            "Creating COSI entry reader for '{}'",
+            path.as_ref().display()
+        );
         let range = self
             .entries
             .get(path.as_ref())
             .with_context(|| format!("COSI entry not found: {}", path.as_ref().display()))?;
-        self.reader()?
-            .section_reader(*range)
-            .context("Failed to create COSI section reader")
+        let section_reader = self
+            .reader_factory
+            .section_reader(range.offset, range.size)?;
+
+        Ok(Box::new(section_reader))
     }
 
     /// Returns an iterator over the available mount points provided by the COSI file.
@@ -149,15 +189,9 @@ impl Cosi {
     pub(super) fn entry_reader_for_mount_point(
         &self,
         mount_point: impl AsRef<Path>,
-    ) -> Option<Result<impl Read + '_, Error>> {
+    ) -> Option<Result<Box<dyn Read>, Error>> {
         self.entry_for_mount_point(mount_point.as_ref())
             .map(|path| self.entry_reader(path))
-    }
-
-    /// Returns a COSI reader for the COSI file.
-    fn reader(&self) -> Result<CosiReader, Error> {
-        CosiReader::new(&self.source)
-            .with_context(|| format!("Failed to create COSI reader for '{}'", self.source))
     }
 
     /// Validates the COSI metadata.
