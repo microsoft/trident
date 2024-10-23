@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
+};
 
 use anyhow::Context;
 use log::{info, Log};
@@ -63,6 +66,7 @@ pub struct LogSender {
     max_level: log::LevelFilter,
     server: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
+    send_failed: AtomicBool,
 }
 
 impl LogSender {
@@ -71,6 +75,7 @@ impl LogSender {
             server,
             max_level,
             client: reqwest::blocking::Client::new(),
+            send_failed: AtomicBool::new(false),
         }
     }
 
@@ -103,13 +108,15 @@ impl Log for LogSender {
             let body = match serde_json::to_string(&LogEntry::from(record)) {
                 Ok(b) => b,
                 Err(e) => {
-                    eprintln!("Failed to serialize log entry: {}", e);
+                    eprintln!("Failed to serialize log entry: {e}");
                     return;
                 }
             };
 
             if let Err(e) = self.client.post(target).body(body).send() {
-                eprintln!("Failed to send log entry: {}", e);
+                if !self.send_failed.swap(true, Ordering::Relaxed) {
+                    eprintln!("Failed to send log entry: {e}");
+                }
             }
         }
     }
