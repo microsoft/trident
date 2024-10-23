@@ -135,11 +135,15 @@ bin/trident-rpms.tar.gz: bin/trident-rpms-azl3.tar.gz
 
 .PHONY: docker-build
 docker-build: Dockerfile.runtime bin/trident-rpms-azl3.tar.gz
-	docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
+	@docker build --quiet -f Dockerfile.runtime -t trident/trident:latest .
 
 artifacts/test-image/trident-container.tar.gz: docker-build
-	mkdir -p artifacts/test-image
-	docker save trident/trident:latest | gzip > $@
+	@mkdir -p artifacts/test-image
+	@CONTAINER_ID=$$(docker inspect --format='{{index .Id}}' trident/trident:latest); \
+	if [ ! -f $@ ] || [ ! -f bin/container-id ] || [ $CONTAINER_ID != "$$(cat bin/container-id)" ]; then \
+		docker save trident/trident:latest | zstd > $@ && \
+		echo $CONTAINER_ID > bin/container-id; \
+	fi
 
 .PHONY: clean
 clean:
