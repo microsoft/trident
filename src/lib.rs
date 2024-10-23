@@ -39,6 +39,7 @@ mod logging;
 pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
+mod subsystems;
 
 #[cfg(feature = "grpc-dangerous")]
 mod grpc;

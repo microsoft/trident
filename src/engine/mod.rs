@@ -35,12 +35,12 @@ use crate::{
         boot::BootSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
-        management::ManagementSubsystem,
         network::NetworkSubsystem,
         osconfig::{MosConfigSubsystem, OsConfigSubsystem},
         selinux::SelinuxSubsystem,
         storage::StorageSubsystem,
     },
+    subsystems::management::ManagementSubsystem,
     HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH, TRIDENT_BACKGROUND_LOG_PATH,
 };
 
@@ -48,7 +48,6 @@ use crate::{
 pub mod boot;
 pub mod hooks;
 pub mod initrd;
-pub mod management;
 pub mod network;
 pub mod osconfig;
 mod osimage;
@@ -64,9 +63,9 @@ pub mod selinux;
 
 pub use newroot::NewrootMount;
 
-use context::EngineContext;
+pub(crate) use context::EngineContext;
 
-trait Subsystem: Send {
+pub(crate) trait Subsystem: Send {
     fn name(&self) -> &'static str;
 
     fn writable_etc_overlay(&self) -> bool {

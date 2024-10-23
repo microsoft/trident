@@ -15,9 +15,10 @@ use trident_api::{
     status::ServicingType,
 };
 
-use crate::{engine::Subsystem, TRIDENT_BINARY_PATH, TRIDENT_LOCAL_CONFIG_PATH};
-
-use super::EngineContext;
+use crate::{
+    engine::{EngineContext, Subsystem},
+    TRIDENT_BINARY_PATH, TRIDENT_LOCAL_CONFIG_PATH,
+};
 
 #[derive(Default, Debug)]
 pub struct ManagementSubsystem;
