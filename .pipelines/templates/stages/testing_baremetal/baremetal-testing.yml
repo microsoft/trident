@@ -231,6 +231,7 @@ stages:
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
               deploymentEnvironment: bareMetal
+              runtimeEnvironment: ${{ parameters.runtimeEnv }}
               tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
               metricsFile: $(TRIDENT_SOURCE_DIR)/trident-metrics.jsonl
               ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:

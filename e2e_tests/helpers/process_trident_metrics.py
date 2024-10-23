@@ -55,6 +55,9 @@ def process_metrics(metrics_file, fields_status):
             metric["platform_info"]["machine_type"] = os.environ.get(
                 "MACHINE_TYPE", "Unknown"
             )
+            metric["platform_info"]["runtime_env"] = os.environ.get(
+                "RUNTIME_ENVIRONMENT", "Unknown"
+            )
             metric["additional_fields"]["trident_config_name"] = os.environ.get(
                 "TRIDENT_CONFIGURATION_NAME", "Unknown"
             )

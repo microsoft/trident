@@ -9,6 +9,9 @@ parameters:
   - name: deploymentEnvironment
     type: string
 
+  - name: runtimeEnvironment
+    type: string
+
   - name: tridentConfigurationName
     type: string
 
@@ -55,6 +58,7 @@ steps:
       TRIDENT_CONFIGURATION_NAME: ${{ parameters.tridentConfigurationName }}
       SOURCE_BRANCH_NAME: $(Build.SourceBranchName)
       MACHINE_TYPE: ${{ parameters.deploymentEnvironment }}
+      RUNTIME_ENVIRONMENT: ${{ parameters.runtimeEnvironment }}
       PIPELINE_NAME: $(Build.DefinitionName)
 
   - template: pipelines/templates/upload-metrics-step.yaml@platform-telemetry

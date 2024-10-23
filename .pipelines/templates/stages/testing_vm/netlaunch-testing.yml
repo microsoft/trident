@@ -178,6 +178,7 @@ stages:
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
               deploymentEnvironment: virtualMachine
+              runtimeEnvironment: ${{ parameters.runtimeEnv }}
               tridentConfigurationName: $(tridentConfigurationName)
               metricsFile: $(tridentSourceDirectory)/trident-metrics.jsonl
               ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:

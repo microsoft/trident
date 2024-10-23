@@ -109,6 +109,7 @@ steps:
       tridentSourceDirectory: $(Build.SourcesDirectory)
       tridentConfigPath: ${{ parameters.tridentConfigPath }}
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
@@ -159,6 +160,7 @@ steps:
       tridentSourceDirectory: $(Build.SourcesDirectory)
       tridentConfigPath: ${{ parameters.tridentConfigPath }}
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
+      runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
