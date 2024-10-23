@@ -2,11 +2,9 @@ bareMetal:
   host:
     daily:
       - base
+      - combined
       - raid-big
       - raid-resync-small
-      - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -16,11 +14,9 @@ bareMetal:
       - verity-raid
     validation:
       - base
+      - combined
       - raid-big
       - raid-resync-small
-      - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -32,9 +28,7 @@ virtualMachine:
   host:
     daily:
       - base
-      - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -47,9 +41,7 @@ virtualMachine:
       - verity-raid
     post_merge:
       - base
-      - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -61,17 +53,14 @@ virtualMachine:
       - verity
       - verity-raid
     pullrequest:
-      - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
+      - combined
       - raid-resync-small
       - rerun
       - simple
       - verity-raid
     validation:
       - base
-      - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -84,9 +73,7 @@ virtualMachine:
   container:
     daily:
       - base
-      - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
@@ -98,19 +85,17 @@ virtualMachine:
       - verity-raid
     post_merge:
       - base
-      - abupdate-on-encrypted-partitions
+      - combined
       - raid-resync-small
       - rerun
       - simple
     pullrequest:
-      - abupdate-on-encrypted-raid
+      - combined
       - rerun
       - simple
     validation:
       - base
-      - abupdate-on-encrypted-raid
-      - abupdate-on-encrypted-partitions
-      - abupdate-with-verity
+      - combined
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap

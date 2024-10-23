@@ -38,16 +38,19 @@ hostConfiguration:
           - id: root-hash-b-2
             type: root-verity
             size: 1G
-          - id: home-a-e-1
+          - id: web-a-e-1
             type: linux-generic
-            size: 100M
-          - id: home-a-e-2
+            size: 1G
+          - id: web-a-e-2
             type: linux-generic
-            size: 100M
-          - id: home-b-e-1
+            size: 1G
+          - id: web-b-e-1
             type: linux-generic
-            size: 100M
-          - id: home-b-e-2
+            size: 1G
+          - id: web-b-e-2
+            type: linux-generic
+            size: 1G
+          - id: home
             type: linux-generic
             size: 100M
           - id: trident-overlay-a-1
@@ -72,20 +75,28 @@ hostConfiguration:
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
         partitions: []
+    encryption:
+      volumes:
+        - id: web-a
+          deviceName: web-a
+          deviceId: web-a-e
+        - id: web-b
+          deviceName: web-b
+          deviceId: web-b-e
     raid:
       software:
-        - id: home-a-e
-          name: home-a-e
+        - id: web-a-e
+          name: web-a-e
           level: raid1
           devices:
-            - home-a-e-1
-            - home-a-e-2
-        - id: home-b-e
-          name: home-b-e
+            - web-a-e-1
+            - web-a-e-2
+        - id: web-b-e
+          name: web-b-e
           level: raid1
           devices:
-            - home-b-e-1
-            - home-b-e-2
+            - web-b-e-1
+            - web-b-e-2
         - id: root-a
           name: root-a
           level: raid1
@@ -136,10 +147,15 @@ hostConfiguration:
         - id: trident-overlay
           volumeAId: trident-overlay-a
           volumeBId: trident-overlay-b
-        - id: home
-          volumeAId: home-a-e
-          volumeBId: home-b-e
+        - id: web
+          volumeAId: web-a
+          volumeBId: web-b
     filesystems:
+      - deviceId: web
+        type: ext4
+        mountPoint:
+          path: /web
+          options: defaults
       - deviceId: home
         type: ext4
         mountPoint:
