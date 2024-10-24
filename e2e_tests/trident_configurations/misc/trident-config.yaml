@@ -26,9 +26,7 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
       - deviceId: esp
         type: vfat
         source:
@@ -41,9 +39,7 @@ hostConfiguration:
           options: umask=0077
       - deviceId: ntfs-partition
         type: ntfs
-        mountPoint:
-          path: /mnt/ntfs-partition
-          options: defaults
+        mountPoint: /mnt/ntfs-partition
   scripts:
     postConfigure:
       - name: testing-privilege

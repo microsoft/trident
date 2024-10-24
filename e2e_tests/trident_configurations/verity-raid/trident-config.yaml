@@ -68,14 +68,10 @@ hostConfiguration:
     filesystems:
       - deviceId: trident-overlay
         type: ext4
-        mountPoint:
-          path: /var/lib/trident-overlay
-          options: defaults
+        mountPoint: /var/lib/trident-overlay
       - deviceId: home
         type: ext4
-        mountPoint:
-          path: /home
-          options: defaults
+        mountPoint: /home
       - deviceId: var
         type: ext4
         source:
@@ -83,9 +79,7 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /var
-          options: defaults
+        mountPoint: /var
       - deviceId: boot
         type: ext4
         source:
@@ -93,19 +87,13 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /boot
-          options: defaults
+        mountPoint: /boot
       - deviceId: trident
         type: ext4
-        mountPoint:
-          path: /var/lib/trident
-          options: defaults
+        mountPoint: /var/lib/trident
       - deviceId: run
         type: ext4
-        mountPoint:
-          path: /run
-          options: defaults
+        mountPoint: /run
       - deviceId: esp
         type: vfat
         source:

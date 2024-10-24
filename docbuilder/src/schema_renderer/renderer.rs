@@ -344,6 +344,9 @@ impl NodeRenderer {
             NodeKind::WrapperEnum(_) => {
                 self.section_customize_wrapper_enum(node, context, characteristics)
             }
+            NodeKind::RefWithStringShortcut => {
+                self.section_customize_ref_with_string_shortcut(node, context, characteristics)
+            }
             NodeKind::Enum | NodeKind::SimpleEnum(_) => {
                 bail!(
                     "Node cannot be rendered as attribute. It is not a simple type: {:?}",
@@ -653,6 +656,17 @@ impl NodeRenderer {
             ),
         );
 
+        Ok(())
+    }
+
+    fn section_customize_ref_with_string_shortcut(
+        &self,
+        node: SchemaNodeModel,
+        ctx: &mut TeraCxt,
+        characteristics: &mut Characteristics,
+    ) -> Result<(), Error> {
+        self.section_customize_reference(node, ctx, characteristics)?;
+        characteristics.push("Shorthand", "string");
         Ok(())
     }
 }

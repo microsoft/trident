@@ -23,9 +23,7 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
       - deviceId: esp
         type: vfat
         source:

@@ -1,8 +1,11 @@
+use std::collections::HashSet;
+
 use anyhow::{bail, ensure, Context, Error};
 
 use serde_json::Value;
-use trident_api::schemars::schema::{
-    InstanceType, ObjectValidation, Schema, SchemaObject, SingleOrVec,
+use trident_api::{
+    primitives::shortcuts::STRING_SHORTCUT_EXTENSION,
+    schemars::schema::{InstanceType, ObjectValidation, Schema, SchemaObject, SingleOrVec},
 };
 
 use super::characteristics::Characteristics;
@@ -81,6 +84,11 @@ pub(crate) enum NodeKind {
     /// schemars uses `oneOf` with a list of enum values to represent this case.
     Enum,
 
+    /// The node is an object reference with a string shortcut.
+    ///
+    /// This node is really the referenced type, but the deserializer can populate it from just a string.
+    RefWithStringShortcut,
+
     // * * * * * * * * *
     // * Simple types  *
     // * * * * * * * * *
@@ -156,6 +164,7 @@ impl NodeKind {
                 .collect::<Vec<_>>()
                 .join("/"),
             Self::WrapperEnum(s) => instance_type_name(*s).into(),
+            Self::RefWithStringShortcut => "string/map".into(),
         }
     }
 }
@@ -283,8 +292,55 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
                                 // represent a reference to a definition.
                                 NodeKind::DefinitionReference
                             } else if subschemas.one_of.as_ref().is_some_and(|l| !l.is_empty()) {
-                                // Schemars uses `oneOf` with a list of objects to represent an enum.
-                                NodeKind::Enum
+                                // Check for a custom extension that indicates a map with a string shortcut.
+                                if schema
+                                    .extensions
+                                    .get(STRING_SHORTCUT_EXTENSION)
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or_default()
+                                {
+                                    let one_of = subschemas.one_of.as_ref().unwrap();
+                                    ensure!(
+                                        (2..=3).contains(&one_of.len()),
+                                        "Expected 2 or 3 oneOf subschemas"
+                                    );
+
+                                    ensure!(
+                                        one_of.iter().filter(|s| s.is_ref()).count() == 1,
+                                        "Expected one reference"
+                                    );
+
+                                    let mut options = one_of
+                                        .iter()
+                                        .map(|s| {
+                                            get_schema_instance_type(s)
+                                                .context("Failed to get instance type")
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()
+                                        .context("Failed to get instance types")?
+                                        .into_iter()
+                                        .flatten()
+                                        .collect::<HashSet<_>>();
+
+                                    // Drain expected options with instance types.
+                                    ensure!(
+                                        options.remove(&InstanceType::String),
+                                        "String not found"
+                                    );
+
+                                    // We may have a third null option.
+                                    if !options.is_empty() {
+                                        ensure!(
+                                            options.remove(&InstanceType::Null),
+                                            "Null not found"
+                                        );
+                                    }
+
+                                    NodeKind::RefWithStringShortcut
+                                } else {
+                                    // Schemars uses `oneOf` with a list of objects to represent an enum.
+                                    NodeKind::Enum
+                                }
                             } else {
                                 // If we don't know what it is, we can't render it.
                                 bail!("Unsupported subschema type:\n{:#?}", subschemas);
@@ -317,7 +373,9 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
 impl SchemaNodeModel {
     pub(super) fn type_name(&self) -> Result<String, Error> {
         Ok(match &self.kind {
-            NodeKind::DefinitionReference | NodeKind::Reference => {
+            NodeKind::DefinitionReference
+            | NodeKind::Reference
+            | NodeKind::RefWithStringShortcut => {
                 self.get_reference().context("Failed to get reference")?
             }
             s => s.name(),
@@ -327,20 +385,15 @@ impl SchemaNodeModel {
     pub(super) fn get_reference(&self) -> Result<String, Error> {
         Ok(match self.kind {
             NodeKind::DefinitionReference => {
-                let ref_obj = self
+                let ref_schema: &Schema = self
                     .object
                     .subschemas
                     .as_ref()
-                    .and_then(|t| t.all_of.as_ref().map(|l| l[0].clone().into_object()))
+                    .and_then(|t| t.all_of.iter().flatten().find(|s| s.is_ref()))
                     .context("Node is not a definition reference")?;
-                ensure!(ref_obj.is_ref(), "Node is not a definition reference");
 
-                ref_obj
-                    .reference
-                    .as_ref()
-                    .context("Reference node has no reference")?
-                    .as_str()
-                    .trim_start_matches("#/definitions/")
+                get_reference_name(ref_schema)
+                    .context("Failed to get reference name")?
                     .to_owned()
             }
             NodeKind::Reference => self
@@ -351,6 +404,18 @@ impl SchemaNodeModel {
                 .as_str()
                 .trim_start_matches("#/definitions/")
                 .to_owned(),
+            NodeKind::RefWithStringShortcut => {
+                let ref_schema = self
+                    .object
+                    .subschemas
+                    .as_ref()
+                    .and_then(|t| t.one_of.iter().flatten().find(|s| s.is_ref()))
+                    .context("Node is not a reference with string shortcut")?;
+
+                get_reference_name(ref_schema)
+                    .context("Failed to get reference name")?
+                    .to_owned()
+            }
             _ => bail!("Node is not a reference"),
         })
     }
@@ -428,5 +493,17 @@ fn instance_type_name(it: InstanceType) -> &'static str {
         InstanceType::String => "string",
         InstanceType::Integer => "integer",
         InstanceType::Object => "object",
+    }
+}
+
+/// Gets the name of the reference contained in a given schema, when available.
+fn get_reference_name(schema: &Schema) -> Result<&str, Error> {
+    match schema {
+        Schema::Bool(_) => bail!("Boolean schema has no reference"),
+        Schema::Object(obj) => obj
+            .reference
+            .as_ref()
+            .map(|r| r.as_str().trim_start_matches("#/definitions/"))
+            .context("Object schema has no reference"),
     }
 }

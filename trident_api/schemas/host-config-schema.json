@@ -250,13 +250,20 @@
           "nullable": true
         },
         "mountPoint": {
-          "description": "The mount point of the file system.",
-          "allOf": [
+          "description": "The mount point of the file system.\n\nIt can be provided as an object for more control over the mount options, or as a just a string when `defaults` is sufficient.",
+          "oneOf": [
             {
               "$ref": "#/definitions/MountPoint"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
             }
           ],
-          "nullable": true
+          "nullable": true,
+          "string_shortcut": true
         },
         "source": {
           "description": "The source of the file system.\n\nIf not specified, a new filesystem will be created.\n\nWhen making a `swap` filesystem the field must be skipped.",

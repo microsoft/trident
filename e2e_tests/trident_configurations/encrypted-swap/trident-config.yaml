@@ -4,7 +4,7 @@ hostConfiguration:
       - id: os
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
         partitionTableType: gpt
-        partitions: 
+        partitions:
           - id: root
             type: root
             size: 8G
@@ -13,7 +13,7 @@ hostConfiguration:
             size: 1G
           - id: esp
             type: esp
-            size: 1G  
+            size: 1G
       - id: disk2
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
@@ -43,9 +43,7 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
   scripts:
     postConfigure:
       - name: testing-privilege

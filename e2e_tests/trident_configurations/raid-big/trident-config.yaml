@@ -37,9 +37,7 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
       - deviceId: esp1
         type: vfat
         source:
@@ -52,9 +50,7 @@ hostConfiguration:
           options: umask=0077
       - deviceId: trident
         type: ext4
-        mountPoint:
-          path: /var/lib/trident
-          options: defaults
+        mountPoint: /var/lib/trident
   scripts:
     postConfigure:
       - name: testing-privilege

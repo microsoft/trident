@@ -52,14 +52,10 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
       - deviceId: web
         type: ext4
-        mountPoint:
-          path: /web
-          options: defaults
+        mountPoint: /web
   scripts:
     postConfigure:
       - name: testing-privilege
@@ -68,7 +64,7 @@ hostConfiguration:
         content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
   os:
     selinux:
-      mode: enforcing  
+      mode: enforcing
     network:
       version: 2
       ethernets:

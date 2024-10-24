@@ -10,7 +10,7 @@ hostConfiguration:
           dhcp4: true
       version: 2
     selinux:
-      mode: permissive  
+      mode: permissive
     users:
       - name: testuser
         secondaryGroups:
@@ -78,13 +78,9 @@ hostConfiguration:
           format: raw-zst
           sha256: ignored
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
       - type: ext4
         deviceId: trident
-        mountPoint:
-          path: /var/lib/trident
-          options: defaults
+        mountPoint: /var/lib/trident
       - type: swap
         deviceId: swap

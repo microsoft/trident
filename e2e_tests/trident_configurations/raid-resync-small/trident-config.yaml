@@ -77,9 +77,7 @@ hostConfiguration:
     filesystems:
       - deviceId: trident
         type: ext4
-        mountPoint:
-          path: /var/lib/trident
-          options: defaults
+        mountPoint: /var/lib/trident
       - deviceId: root
         type: ext4
         source:
@@ -87,14 +85,10 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
       - deviceId: home
         type: ext4
-        mountPoint:
-          path: /home
-          options: defaults
+        mountPoint: /home
       - deviceId: swap1
         type: swap
       - deviceId: esp1

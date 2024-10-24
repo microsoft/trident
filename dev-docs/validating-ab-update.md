@@ -50,14 +50,10 @@ running the A/B update flow with Trident.
                   type: swap
                - deviceId: trident
                   type: ext4
-                  mountPoint:
-                     path: /var/lib/trident
-                     options: defaults
+                  mountPoint: /var/lib/trident
                - deviceId: home
                   type: ext4
-                  mountPoint:
-                     path: /home
-                     options: defaults
+                  mountPoint: /home
                - deviceId: esp
                   type: vfat
                   source:
@@ -75,9 +71,7 @@ running the A/B update flow with Trident.
                      url: file:///trident_cdrom/data/root.rawzst
                      sha256: ignored
                      format: raw-zst
-                  mountPoint:
-                     path: /
-                     options: defaults
+                  mountPoint: /
             scripts:
                postConfigure:
                - name: testing-privilege

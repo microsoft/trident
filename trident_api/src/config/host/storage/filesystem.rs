@@ -1,6 +1,7 @@
 use std::{
     fmt::{Display, Formatter},
     path::PathBuf,
+    str::FromStr,
 };
 
 use serde::{Deserialize, Serialize};
@@ -33,7 +34,20 @@ pub struct FileSystem {
     pub source: FileSystemSource,
 
     /// The mount point of the file system.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ///
+    /// It can be provided as an object for more control over the mount options,
+    /// or as a just a string when `defaults` is sufficient.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::primitives::shortcuts::opt_string_or_struct"
+    )]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(
+            schema_with = "crate::primitives::shortcuts::opt_string_or_struct_schema::<MountPoint>"
+        )
+    )]
     pub mount_point: Option<MountPoint>,
 }
 
@@ -107,6 +121,17 @@ pub struct MountPoint {
 
     /// The mount options.
     pub options: MountOptions,
+}
+
+impl FromStr for MountPoint {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(MountPoint {
+            path: PathBuf::from(s),
+            options: MountOptions::defaults(),
+        })
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

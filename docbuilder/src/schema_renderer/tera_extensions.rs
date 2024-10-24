@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use serde_json::{Map, Value};
 use tera::Error;
 
+use crate::markdown::table::MdTable;
+
 pub(super) fn header_level(value: &Value, _: &HashMap<String, Value>) -> Result<Value, Error> {
     Ok(Value::String(if let Value::Number(num) = value {
         let num = num.as_u64().ok_or(Error::msg("Expected u64"))?;
@@ -31,57 +33,20 @@ pub(super) fn render_characteristics_table(
         return Err(Error::msg("Function can only be used on an array"));
     }
 
-    let mut table_data: Vec<(String, String)> = Vec::new();
+    let mut table = MdTable::new([CHARACTERISTIC_NAME_TITLE, CHARACTERISTIC_VALUE_TITLE]);
+
     for characteristic in value.as_array().unwrap() {
         if !characteristic.is_object() {
             return Err(Error::msg("Expected array to contain objects"));
         }
-        table_data.push(render_characteristic(characteristic.as_object().unwrap())?);
+
+        table.add_row(render_characteristic(characteristic.as_object().unwrap())?);
     }
 
-    let name_max_len = table_data
-        .iter()
-        .map(|(name, _)| name.len())
-        .max()
-        .ok_or(Error::msg("Expected at least one characteristic"))?
-        .max(CHARACTERISTIC_NAME_TITLE.len());
-
-    let value_max_len = table_data
-        .iter()
-        .map(|(_, value)| value.len())
-        .max()
-        .ok_or(Error::msg("Expected at least one characteristic"))?
-        .max(CHARACTERISTIC_VALUE_TITLE.len());
-
-    let mut table: Vec<String> = vec![
-        format!(
-            "| {name:<name_max_len$} | {value:<value_max_len$} |",
-            name = CHARACTERISTIC_NAME_TITLE,
-            value = CHARACTERISTIC_VALUE_TITLE,
-            name_max_len = name_max_len,
-            value_max_len = value_max_len,
-        ),
-        format!(
-            "| {} | {} |",
-            "-".repeat(name_max_len),
-            "-".repeat(value_max_len),
-        ),
-    ];
-
-    for (name, value) in table_data {
-        table.push(format!(
-            "| {name:<name_max_len$} | {value:<value_max_len$} |",
-            name = name,
-            value = value,
-            name_max_len = name_max_len,
-            value_max_len = value_max_len,
-        ));
-    }
-
-    Ok(Value::String(table.join("\n")))
+    Ok(Value::String(table.render()))
 }
 
-fn render_characteristic(obj: &Map<String, Value>) -> Result<(String, String), Error> {
+fn render_characteristic(obj: &Map<String, Value>) -> Result<[String; 2], Error> {
     Ok(match (
         obj.get("name").ok_or(Error::msg("Expected 'name'"))?,
         obj.get("value").ok_or(Error::msg("Expected 'value'"))?,
@@ -89,10 +54,10 @@ fn render_characteristic(obj: &Map<String, Value>) -> Result<(String, String), E
     ) {
         (Value::String(name), Value::String(value), None)
         | (Value::String(name), Value::String(value), Some(Value::Bool(false))) => {
-            (name.clone(), format!("`{}`", value))
+            [name.clone(), format!("`{}`", value)]
         }
         (Value::String(name), Value::String(value), Some(Value::Bool(true))) => {
-            (name.clone(), value.clone())
+            [name.clone(), value.clone()]
         }
         _ => return Err(Error::msg(
             "Expected 'name' and 'value' to be strings and 'is_markdown', if present, to be a bool",

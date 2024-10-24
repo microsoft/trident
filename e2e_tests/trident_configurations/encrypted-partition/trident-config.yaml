@@ -26,9 +26,7 @@ hostConfiguration:
     filesystems:
       - deviceId: web
         type: ext4
-        mountPoint:
-          path: /web
-          options: defaults
+        mountPoint: /web
       - deviceId: esp
         type: vfat
         source:
@@ -46,9 +44,7 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
   scripts:
     postConfigure:
       - name: testing-privilege

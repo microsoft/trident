@@ -13,7 +13,7 @@ hostConfiguration:
             size: 8G
           - id: esp
             type: esp
-            size: 1G  
+            size: 1G
           - id: swap
             type: swap
             size: 2G
@@ -37,14 +37,10 @@ hostConfiguration:
         type: swap
       - deviceId: trident
         type: ext4
-        mountPoint:
-          path: /var/lib/trident
-          options: defaults
+        mountPoint: /var/lib/trident
       - deviceId: home
         type: ext4
-        mountPoint:
-          path: /home
-          options: defaults
+        mountPoint: /home
       - deviceId: esp
         type: vfat
         source:
@@ -62,9 +58,7 @@ hostConfiguration:
           url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
           sha256: ignored
           format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
+        mountPoint: /
   scripts:
     postConfigure:
       - name: testing-privilege
