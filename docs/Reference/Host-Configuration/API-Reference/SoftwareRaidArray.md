@@ -50,7 +50,7 @@ This is a user defined string that allows to link the RAID array to the mount po
 
 RAID level.
 
-Supported and tested values are `raid0`, `raid1`. Other possible values yet to be tested are: `raid5`, `raid6`, `raid10`.
+`raid1` is supported and tested. Other possible values yet to be tested are: `raid0`, `raid5`, `raid6`, `raid10`.
 
 | Characteristic | Value                       |
 | -------------- | --------------------------- |
