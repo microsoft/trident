@@ -2332,6 +2332,88 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_host_configuration_esp_on_raid1() {
+        let storage = Storage {
+            filesystems: vec![
+                FileSystem {
+                    source: FileSystemSource::EspImage(Image {
+                        url: "http://example.com/esp.img".to_string(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    device_id: Some("esp".to_string()),
+                    fs_type: FileSystemType::Vfat,
+                    mount_point: Some(MountPoint {
+                        path: ESP_MOUNT_POINT_PATH.into(),
+                        options: MountOptions::defaults(),
+                    }),
+                },
+                FileSystem {
+                    device_id: Some("root".into()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Image(Image {
+                        url: "file:///root.raw.zst".to_owned(),
+                        sha256: ImageSha256::Ignored,
+                        format: ImageFormat::RawZst,
+                    }),
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                        options: MountOptions::empty(),
+                    }),
+                },
+                FileSystem {
+                    device_id: Some("var".into()),
+                    fs_type: FileSystemType::Ext4,
+                    source: FileSystemSource::Create,
+                    mount_point: Some(MountPoint {
+                        path: PathBuf::from("/var"),
+                        options: MountOptions::empty(),
+                    }),
+                },
+            ],
+            disks: vec![Disk {
+                id: "disk1".into(),
+                device: "/dev/sdb".into(),
+                partitions: vec![
+                    Partition {
+                        id: "esp1".into(),
+                        size: PartitionSize::from_str("512M").unwrap(),
+                        partition_type: PartitionType::Esp,
+                    },
+                    Partition {
+                        id: "esp2".into(),
+                        size: PartitionSize::from_str("512M").unwrap(),
+                        partition_type: PartitionType::Esp,
+                    },
+                    Partition {
+                        id: "var".to_owned(),
+                        partition_type: PartitionType::LinuxGeneric,
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                    Partition {
+                        id: "root".to_owned(),
+                        partition_type: PartitionType::Root,
+                        size: PartitionSize::from_str("1G").unwrap(),
+                    },
+                ],
+                ..Default::default()
+            }],
+            raid: Raid {
+                software: vec![SoftwareRaidArray {
+                    id: "esp".into(),
+                    name: "esp".to_string(),
+                    level: RaidLevel::Raid1,
+                    devices: vec!["esp1".into(), "esp2".into()],
+                }],
+                sync_timeout: Some(180),
+            },
+            ..Default::default()
+        };
+
+        storage.validate(true).unwrap();
+    }
+
+    #[test]
     fn test_path_to_mount_point() {
         let mut host_config = HostConfiguration {
             storage: Storage {

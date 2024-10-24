@@ -104,7 +104,11 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::EncryptedVolume
                     | BlkDevKindFlag::ABVolume
             }
-            Self::FileSystemEsp => BlkDevKindFlag::Partition | BlkDevKindFlag::AdoptedPartition,
+            Self::FileSystemEsp => {
+                BlkDevKindFlag::Partition
+                    | BlkDevKindFlag::AdoptedPartition
+                    | BlkDevKindFlag::RaidArray
+            }
             Self::FileSystemAdopted => BlkDevKindFlag::AdoptedPartition,
             Self::FileSystemSysupdate => BlkDevKindFlag::ABVolume,
             Self::VerityFileSystemData | Self::VerityFileSystemHash => {
