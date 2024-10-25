@@ -65,6 +65,9 @@ hostConfiguration:
           - id: trident
             type: linux-generic
             size: 100M
+          - id: srv-e
+            type: linux-generic
+            size: 1G
           - id: var
             type: linux-generic
             size: 1G
@@ -122,6 +125,17 @@ hostConfiguration:
           devices:
             - trident-overlay-b-1
             - trident-overlay-b-2
+    encryption:
+      volumes:
+        - id: srv
+          deviceName: srv
+          deviceId: srv-e
+        - id: home-a
+          deviceName: home-a
+          deviceId: home-a-e
+        - id: home-b
+          deviceName: home-b
+          deviceId: home-b-e
     abUpdate:
       volumePairs:
         - id: boot
@@ -137,12 +151,19 @@ hostConfiguration:
           volumeAId: trident-overlay-a
           volumeBId: trident-overlay-b
         - id: home
-          volumeAId: home-a-e
-          volumeBId: home-b-e
+          volumeAId: home-a
+          volumeBId: home-b
     filesystems:
       - deviceId: trident
         type: ext4
-        mountPoint: /var/lib/trident
+        mountPoint:
+          path: /var/lib/trident
+          options: defaults
+      - deviceId: srv
+        type: ext4
+        mountPoint:
+          path: /srv
+          options: defaults
       - deviceId: var
         type: ext4
         source:

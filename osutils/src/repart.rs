@@ -705,7 +705,7 @@ mod functional_test {
     #[functional_test(feature = "helpers")]
     fn test_execute_and_resulting_layout() {
         let unchanged_disk_bus_path = PathBuf::from(OS_DISK_DEVICE_PATH);
-        let unchanged_block_device_list = lsblk::run(&unchanged_disk_bus_path).unwrap();
+        let unchanged_block_device_list = lsblk::get(&unchanged_disk_bus_path).unwrap();
 
         let partition_definition = repart::generate_partition_definition_esp_generic();
 
@@ -732,13 +732,13 @@ mod functional_test {
 
         udevadm::settle().unwrap();
 
-        let unchanged_block_device_list_after = lsblk::run(&unchanged_disk_bus_path).unwrap();
+        let unchanged_block_device_list_after = lsblk::get(&unchanged_disk_bus_path).unwrap();
         assert_eq!(
             unchanged_block_device_list,
             unchanged_block_device_list_after
         );
 
-        let block_device = lsblk::run(&disk_bus_path).unwrap();
+        let block_device = lsblk::get(&disk_bus_path).unwrap();
         let expected_block_device = BlockDevice {
             name: TEST_DISK_DEVICE_PATH.into(),
             fstype: None,
@@ -828,7 +828,7 @@ mod functional_test {
         repart.execute().unwrap();
         udevadm::settle().unwrap();
         // Run lsblk and extract PTUUID of the disk/partition table
-        let block_device = lsblk::run(&disk_bus_path).unwrap();
+        let block_device = lsblk::get(&disk_bus_path).unwrap();
         let ptuuid = block_device.ptuuid.unwrap();
 
         // Run execute() again on the same disk
@@ -837,7 +837,7 @@ mod functional_test {
         repart.execute().unwrap();
         udevadm::settle().unwrap();
         // Run lsblk and extract PTUUID of the disk/partition table after the repartitioning
-        let block_device = lsblk::run(&disk_bus_path).unwrap();
+        let block_device = lsblk::get(&disk_bus_path).unwrap();
         let ptuuid_after = block_device.ptuuid.unwrap();
 
         // Ensure that the two PTUUIDs are unique

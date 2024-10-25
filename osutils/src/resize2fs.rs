@@ -46,7 +46,7 @@ mod functional_test {
                 .mount_autodrop(block_device_path, mount_point.path(), UnmountFlags::DETACH);
 
             // Confirm initialize size
-            let block_device = lsblk::run(block_device_path).unwrap();
+            let block_device = lsblk::get(block_device_path).unwrap();
             assert_eq!(block_device.fssize.unwrap().0.to_string(), before_blocks);
         }
 
@@ -63,7 +63,7 @@ mod functional_test {
                 .mount_autodrop(block_device_path, mount_point.path(), UnmountFlags::DETACH);
 
             // Validate resize
-            let block_device = lsblk::run(block_device_path).unwrap();
+            let block_device = lsblk::get(block_device_path).unwrap();
             assert_eq!(block_device.fssize.unwrap().0.to_string(), after_blocks);
         }
     }

@@ -471,7 +471,7 @@ mod functional_test {
             .unwrap();
 
         // Confirm that /dev/sdb has been reformatted to ext4
-        let block_device = lsblk::run(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
+        let block_device = lsblk::get(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
 
         // Find the current FS on /dev/sdb
         assert_eq!(

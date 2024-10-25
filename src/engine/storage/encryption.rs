@@ -11,7 +11,11 @@ use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-use osutils::dependencies::{Dependency, DependencyResultExt};
+use osutils::{
+    dependencies::{Dependency, DependencyResultExt},
+    lsblk,
+    lsblk::BlockDeviceType,
+};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
@@ -85,6 +89,30 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
                 )));
             }
         }
+    }
+
+    Ok(())
+}
+
+// close_pre_existing_encrypted_volumes closes all open LUKS2-encrypted volumes founds on the system.
+pub(super) fn close_pre_existing_encrypted_volumes() -> Result<(), Error> {
+    let crypt_block_devices = lsblk::find(|blkdev| blkdev.blkdev_type == BlockDeviceType::Crypt)
+        .context("Failed to find crypt block devices")?;
+    for crypt_block_device in crypt_block_devices {
+        debug!(
+            "Closing pre-existing encrypted volume '{}'",
+            crypt_block_device.name
+        );
+
+        Dependency::Cryptsetup
+            .cmd()
+            .arg("luksClose")
+            .arg(crypt_block_device.name.as_str())
+            .run_and_check()
+            .context(format!(
+                "Failed to close pre-existing encrypted volume '{}'",
+                crypt_block_device.name
+            ))?;
     }
 
     Ok(())

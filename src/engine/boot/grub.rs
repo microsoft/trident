@@ -346,7 +346,7 @@ pub(crate) mod functional_test {
                     - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
             );
 
-            let block_device = lsblk::run(&disk_bus_path).unwrap();
+            let block_device = lsblk::get(&disk_bus_path).unwrap();
             let expected_block_device = BlockDevice {
                 name: TEST_DISK_DEVICE_PATH.into(),
                 ptuuid: block_device.ptuuid.clone(),
@@ -414,7 +414,7 @@ pub(crate) mod functional_test {
 
             udevadm::settle().unwrap();
 
-            let block_device = lsblk::run(&disk_bus_path).unwrap();
+            let block_device = lsblk::get(&disk_bus_path).unwrap();
             let expected_block_device = BlockDevice {
                 name: TEST_DISK_DEVICE_PATH.into(),
                 ptuuid: block_device.ptuuid.clone(),

@@ -168,7 +168,7 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
         debug!("Running partitioning safety check for disk '{}'", disk.id);
 
         let blkdev_info =
-            lsblk::run(&disk.bus_path).context("Failed to retrieve partition table information")?;
+            lsblk::get(&disk.bus_path).context("Failed to retrieve partition table information")?;
 
         // Figure out if anything in the disk is mounted.
         if blkdev_info.get_all_mountpoints_recursive().is_empty() {
@@ -223,7 +223,7 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
                     disk.id
                 );
 
-                let part_info = osutils::lsblk::run(&part.node).with_context(|| {
+                let part_info = osutils::lsblk::get(&part.node).with_context(|| {
                     format!(
                         "Failed to retrieve information for partition '{}' on disk '{}'.",
                         part.node.display(),

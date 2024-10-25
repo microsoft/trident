@@ -418,7 +418,7 @@ pub(super) fn stop_pre_existing_verity_devices(
         "Failed to stop verity device '{}'",
         root_verity_device_path.display()
     ))? {
-        let block_device = lsblk::run(&root_verity_device_path)?;
+        let block_device = lsblk::get(&root_verity_device_path)?;
         debug!(
             "Unmounting any mounted partitions on verity device '{}'",
             root_verity_device_path.display()

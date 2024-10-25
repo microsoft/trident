@@ -194,6 +194,9 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
+    #[error("Failed to clean up pre-existing LUKS2-encrypted volumes")]
+    CleanupEncryption,
+
     #[error("Failed to clean up pre-existing RAID arrays")]
     CleanupRaid,
 

@@ -58,7 +58,7 @@ pub fn stop(raid_array_name: impl AsRef<Path>) -> Result<(), Error> {
     {
         // If stop returns an error, do best effort to log what is holding the
         // block device
-        let block_device = lsblk::run(raid_array_name.as_ref());
+        let block_device = lsblk::get(raid_array_name.as_ref());
         if let Ok(block_device) = block_device {
             error!(
                 "Failed to stop {}: active children: {:?}, active mount points: {:?}",

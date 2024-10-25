@@ -122,7 +122,7 @@ impl Subsystem for StorageSubsystem {
             // If we are adopting partitions on a disk, ensure that the disk is GPT partitioned.
             if !disk.adopted_partitions.is_empty() {
                 let disk_data =
-                    lsblk::run(device_path.as_path()).structured(InvalidInputError::from(
+                    lsblk::get(device_path.as_path()).structured(InvalidInputError::from(
                         HostConfigurationDynamicValidationError::GetBlockDeviceInfoForDisk {
                             disk_id: disk.id.clone(),
                         },
@@ -227,10 +227,15 @@ pub(super) fn create_block_devices(ctx: &mut EngineContext) -> Result<(), Triden
     trace!("Mount points: {:?}", ctx.spec.storage.internal_mount_points);
 
     debug!("Initializing block devices");
-    // Stop verity before RAID, as verity can sit on top of RAID
+
+    // Close verity devices and encrypted volumes before stopping RAID
+    // arrays, as both can sit on top of RAID arrays.
     verity::stop_pre_existing_verity_devices(&ctx.spec)
         .structured(ServicingError::CleanupVerity)?;
+    encryption::close_pre_existing_encrypted_volumes()
+        .structured(ServicingError::CleanupEncryption)?;
     raid::stop_pre_existing_raid_arrays(&ctx.spec).structured(ServicingError::CleanupRaid)?;
+
     partitioning::create_partitions(ctx).structured(ServicingError::CreatePartitions)?;
     raid::create_sw_raid(ctx, &ctx.spec).structured(ServicingError::CreateRaid)?;
     encryption::provision(ctx, &ctx.spec).message(format!(

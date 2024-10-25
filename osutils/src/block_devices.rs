@@ -103,7 +103,7 @@ pub fn find_symlink_for_target(
 
 /// Get the canonicalized path of a disk for a given partition.
 pub fn get_disk_for_partition(partition: impl AsRef<Path>) -> Result<PathBuf, Error> {
-    let partition_block_device = lsblk::run(partition.as_ref()).with_context(|| {
+    let partition_block_device = lsblk::get(partition.as_ref()).with_context(|| {
         format!(
             "Failed to get partition metadata for '{}'",
             partition.as_ref().display(),

@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Error};
 use serde::{Deserialize, Serialize};
@@ -131,7 +134,108 @@ pub enum PartitionTableType {
     Mbr,
 }
 
-pub fn run(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
+/// Returns a list of all block devices on the system.
+///
+/// This function executes the `lsblk` command to retrieve detailed
+/// information about all available block devices in JSON format. It
+/// parses the command's output and returns a `Vec` of `BlockDevice`
+/// structs.
+///
+pub fn list() -> Result<Vec<BlockDevice>, Error> {
+    let result = Dependency::Lsblk
+        .cmd()
+        .arg("--json")
+        .arg("--output-all")
+        .arg("--bytes")
+        .output_and_check()
+        .context("Failed to execute lsblk")?;
+
+    let parsed: Vec<BlockDevice> = parse_lsblk_output(result.as_str())?;
+
+    Ok(parsed)
+}
+
+/// Finds and returns all block devices (and their children) that match a
+/// given predicate.
+///
+/// This function filters the list of block devices obtained from `list()`
+/// based on a provided predicate function. It returns a `Vec` of
+/// `BlockDevice` structs that satisfy the predicate, including their
+/// child devices.
+///
+/// # Parameters
+///
+/// - `predicate`: A closure or function that takes a reference to a
+///   `BlockDevice` and returns `true` if the device matches the desired
+///   criteria, or `false` otherwise.
+///
+pub fn find(predicate: impl Fn(&BlockDevice) -> bool) -> Result<Vec<BlockDevice>, Error> {
+    let block_devices = list().context("Failed to list block devices")?;
+    let mut device_names_seen = HashSet::new();
+    let mut matching_block_devices = Vec::new();
+
+    find_recursive(
+        &block_devices,
+        &predicate,
+        &mut device_names_seen,
+        &mut matching_block_devices,
+    );
+
+    Ok(matching_block_devices)
+}
+
+/// Recursively searches for block devices that match the given predicate.
+///
+/// This helper function traverses a list of `BlockDevice` objects and
+/// their children recursively, applying the provided predicate to each
+/// device. Matching devices are added to the `matching_block_devices`
+/// vector, ensuring that each device is only added once by using
+/// `device_names_seen` to track already-seen device names.
+///
+/// # Parameters
+///
+/// - `block_devices`: A reference to the list of `BlockDevice` structs to
+///   search through.
+/// - `predicate`: A closure or function that takes a reference to a
+///   `BlockDevice` and returns `true` if the device matches the desired
+///   criteria, or `false` otherwise.
+/// - `device_names_seen`: A mutable reference to a `HashSet` that keeps
+///   track of device names that have already been processed.
+/// - `matching_block_devices`: A mutable reference to a `Vec` that stores
+///   the devices that match the predicate.
+fn find_recursive(
+    block_devices: &Vec<BlockDevice>,
+    predicate: &impl Fn(&BlockDevice) -> bool,
+    device_names_seen: &mut HashSet<String>,
+    matching_block_devices: &mut Vec<BlockDevice>,
+) {
+    for block_device in block_devices {
+        if predicate(block_device) && device_names_seen.insert(block_device.name.clone()) {
+            matching_block_devices.push(block_device.clone());
+        }
+
+        find_recursive(
+            &block_device.children,
+            predicate,
+            device_names_seen,
+            matching_block_devices,
+        );
+    }
+}
+
+/// Retrieves detailed information about a specific block device at a
+/// given path.
+///
+/// This function executes the `lsblk` command to get detailed information
+/// about a single block device specified by its `device_path`. It returns
+/// the corresponding `BlockDevice` struct with all available details,
+/// such as size, type, and any child devices.
+///
+/// The function expects exactly one block device to match the given path.
+/// If the output contains more than one or no devices, it returns an
+/// error.
+///
+pub fn get(device_path: impl AsRef<Path>) -> Result<BlockDevice, Error> {
     let result = Dependency::Lsblk
         .cmd()
         .arg("--json")
@@ -563,6 +667,94 @@ mod tests {
     };
 
     #[test]
+    fn test_find_recursive_single_match() {
+        let block_devices = vec![
+            BlockDevice {
+                name: "sda".to_string(),
+                children: vec![],
+                ..Default::default()
+            },
+            BlockDevice {
+                name: "sdb".to_string(),
+                children: vec![],
+                ..Default::default()
+            },
+        ];
+
+        let mut device_names_seen = HashSet::new();
+        let mut matching_block_devices = Vec::new();
+
+        find_recursive(
+            &block_devices,
+            &|device: &BlockDevice| device.name == "sdb",
+            &mut device_names_seen,
+            &mut matching_block_devices,
+        );
+
+        assert_eq!(matching_block_devices.len(), 1);
+        assert_eq!(matching_block_devices[0].name, "sdb");
+    }
+
+    #[test]
+    fn test_find_recursive_nested_match() {
+        let block_devices = vec![BlockDevice {
+            name: "sda".to_string(),
+            children: vec![BlockDevice {
+                name: "sda1".to_string(),
+                children: vec![],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+
+        let mut device_names_seen = HashSet::new();
+        let mut matching_block_devices = Vec::new();
+
+        find_recursive(
+            &block_devices,
+            &|device: &BlockDevice| device.name == "sda1",
+            &mut device_names_seen,
+            &mut matching_block_devices,
+        );
+
+        assert_eq!(matching_block_devices.len(), 1);
+        assert_eq!(matching_block_devices[0].name, "sda1");
+    }
+
+    #[test]
+    fn test_find_recursive_no_duplicates() {
+        let block_devices = vec![
+            BlockDevice {
+                name: "sda".to_string(),
+                children: vec![BlockDevice {
+                    name: "sda1".to_string(),
+                    children: vec![],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            BlockDevice {
+                name: "sda".to_string(),
+                children: vec![],
+                ..Default::default()
+            },
+        ];
+
+        let mut device_names_seen = HashSet::new();
+        let mut matching_block_devices = Vec::new();
+
+        find_recursive(
+            &block_devices,
+            &|device: &BlockDevice| device.name == "sda",
+            &mut device_names_seen,
+            &mut matching_block_devices,
+        );
+
+        assert_eq!(matching_block_devices.len(), 1); // "sda" should only appear once.
+        assert_eq!(matching_block_devices[0].name, "sda");
+    }
+
+    #[test]
     fn test_parse_lsblk_output() {
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/sda".into(),
@@ -886,20 +1078,56 @@ mod functional_test {
     use super::*;
 
     #[functional_test(feature = "helpers")]
-    fn test_run_success() {
-        let block_device = super::run(Path::new("/dev/sda")).unwrap();
+    fn test_find_disk_success() {
+        let block_devices = super::find(|b| b.blkdev_type == BlockDeviceType::Disk).unwrap();
+
+        assert_eq!(block_devices.len(), 2);
+        assert_eq!(block_devices[0].name, "sda");
+        assert_eq!(block_devices[0].children.len(), 5);
+        assert_eq!(block_devices[1].name, "sdb");
+        assert_eq!(block_devices[1].children.len(), 0);
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_find_partitions_success() {
+        let block_devices = super::find(|b| b.blkdev_type == BlockDeviceType::Partition).unwrap();
+
+        assert_eq!(block_devices.len(), 5);
+        assert_eq!(block_devices[0].name, "sda1");
+        assert_eq!(block_devices[0].children.len(), 0);
+        assert_eq!(block_devices[1].name, "sda2");
+        assert_eq!(block_devices[1].children.len(), 0);
+        assert_eq!(block_devices[2].name, "sda3");
+        assert_eq!(block_devices[2].children.len(), 0);
+        assert_eq!(block_devices[3].name, "sda4");
+        assert_eq!(block_devices[3].children.len(), 0);
+        assert_eq!(block_devices[4].name, "sda5");
+        assert_eq!(block_devices[4].children.len(), 0);
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_list_success() {
+        let block_devices = super::list().unwrap();
+
+        assert_ne!(block_devices.len(), 0);
+        assert_ne!(block_devices[0].name, "");
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_get_success() {
+        let block_device = super::get(Path::new("/dev/sda")).unwrap();
 
         assert_eq!(block_device.name, "/dev/sda");
         assert_eq!(block_device.children.len(), 5);
     }
 
     #[functional_test(feature = "helpers", negative = true)]
-    fn test_run_fail_on_non_block_file() {
-        assert!(super::run(Path::new("/dev/null")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/null: not a block device\n\n"));
+    fn test_get_fail_on_non_block_file() {
+        assert!(super::get(Path::new("/dev/null")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/null: not a block device\n\n"));
     }
 
     #[functional_test(feature = "helpers", negative = true)]
-    fn test_run_fail_on_missing_file() {
-        assert!(super::run(Path::new("/dev/does-not-exist")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/does-not-exist: not a block device\n\n"));
+    fn test_get_fail_on_missing_file() {
+        assert!(super::get(Path::new("/dev/does-not-exist")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/does-not-exist: not a block device\n\n"));
     }
 }

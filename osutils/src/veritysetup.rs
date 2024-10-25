@@ -191,7 +191,7 @@ pub fn close(device_name: &str) -> Result<(), Error> {
     if let Err(e) = res {
         // If close returns an error, do best effort to log what is holding the
         // block device
-        let block_device = lsblk::run(Path::new(DEV_MAPPER_PATH).join(device_name));
+        let block_device = lsblk::get(Path::new(DEV_MAPPER_PATH).join(device_name));
         if let Ok(block_device) = block_device {
             error!(
                 "Failed to close {}: active children: {:?}, active mount points: {:?}",
