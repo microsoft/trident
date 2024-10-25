@@ -21,6 +21,7 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, Partition, PartitionSize, PartitionType,
     },
+    constants::internal_params::NO_CLOSE_ENCYRPTED_VOLUMES,
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     BlockDeviceId,
 };
@@ -95,7 +96,16 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
 }
 
 // close_pre_existing_encrypted_volumes closes all open LUKS2-encrypted volumes founds on the system.
-pub(super) fn close_pre_existing_encrypted_volumes() -> Result<(), Error> {
+pub(super) fn close_pre_existing_encrypted_volumes(
+    host_config: &HostConfiguration,
+) -> Result<(), Error> {
+    if host_config
+        .internal_params
+        .get_flag(NO_CLOSE_ENCYRPTED_VOLUMES)
+    {
+        return Ok(());
+    }
+
     let crypt_block_devices = lsblk::find(|blkdev| blkdev.blkdev_type == BlockDeviceType::Crypt)
         .context("Failed to find crypt block devices")?;
     for crypt_block_device in crypt_block_devices {

@@ -146,15 +146,18 @@ pub mod internal_params {
     /// Disable check for grub-noprefix
     pub const DISABLE_GRUB_NOPREFIX_CHECK: &str = "disableGrubNoprefixCheck";
 
+    /// Enable support for cosi files
+    pub const ENABLE_COSI_SUPPORT: &str = "cosi";
+
     /// Execroot deny-list extension parameter name
     pub const EXECROOT_DENYLIST_EXTENSION: &str = "execrootDenyList";
+
+    /// Block trident from closing encrypted volumes at the start of provisioning
+    pub const NO_CLOSE_ENCYRPTED_VOLUMES: &str = "noCloseEncryptedVolumes";
 
     /// Block trident from transitioning to the new OS after finalizing
     pub const NO_TRANSITION: &str = "noTransition";
 
     /// Run extra partition and filesystem checks before reboot
     pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
-
-    /// Enable support for cosi files
-    pub const ENABLE_COSI_SUPPORT: &str = "cosi";
 }

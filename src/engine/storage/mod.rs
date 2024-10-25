@@ -232,7 +232,7 @@ pub(super) fn create_block_devices(ctx: &mut EngineContext) -> Result<(), Triden
     // arrays, as both can sit on top of RAID arrays.
     verity::stop_pre_existing_verity_devices(&ctx.spec)
         .structured(ServicingError::CleanupVerity)?;
-    encryption::close_pre_existing_encrypted_volumes()
+    encryption::close_pre_existing_encrypted_volumes(&ctx.spec)
         .structured(ServicingError::CleanupEncryption)?;
     raid::stop_pre_existing_raid_arrays(&ctx.spec).structured(ServicingError::CleanupRaid)?;
 
