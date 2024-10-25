@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
 use osutils::{
@@ -99,7 +99,7 @@ impl NewrootMount {
     ) -> Result<Self, TridentError> {
         // Get the path where the newroot should be mounted
         let new_root_path = get_new_root_path();
-        info!(
+        debug!(
             "Attempting to mount newroot at '{}'",
             new_root_path.display()
         );
@@ -182,7 +182,7 @@ impl NewrootMount {
     /// Unmount all registered mounts in the correct order.
     #[tracing::instrument(name = "newroot_unmount", skip_all)]
     pub fn unmount_all(mut self) -> Result<(), TridentError> {
-        info!("Unmounting newroot at '{}'", self.path().display());
+        debug!("Unmounting newroot at '{}'", self.path().display());
         self.unmount_all_impl()
     }
 
@@ -317,7 +317,7 @@ impl NewrootMount {
             self.execroot_path().display()
         ))?;
 
-        info!("Mounting execroot to '{}'", self.execroot_path().display());
+        debug!("Mounting execroot to '{}'", self.execroot_path().display());
 
         let mut mounts = FindMnt::run()
             .context("Failed to get current mount points")?

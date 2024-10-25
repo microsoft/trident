@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info};
+use log::{debug, info, warn};
 use reqwest::Url;
 use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
 
@@ -109,13 +109,12 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
         match image.format {
             ImageFormat::RawZst => {
                 info!(
-                    "Deploying image from URL '{}' to block device '{}'",
-                    image.url, device_id
+                    "Initializing '{device_id}': writing image from '{}'",
+                    image.url
                 );
 
                 // Initialize HashingReader instance on stream
                 let stream = HashingReader::new(stream);
-                info!("Writing image to block device");
 
                 let computed_sha256 = image_streamer::stream_zstd(stream, &block_device_path)?;
 
@@ -123,7 +122,7 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
                 // SHA256 matches SHA256 in HostConfig
                 match image.sha256 {
                     ImageSha256::Ignored => {
-                        info!("Ignoring SHA256 for image from '{}'", image_url);
+                        warn!("Ignoring SHA256 for image from '{}'", image_url);
                     }
                     ImageSha256::Checksum(ref expected_sha256) => {
                         if computed_sha256 != *expected_sha256 {
@@ -151,12 +150,12 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
                         && !mount_point.options.contains(&MOUNT_OPTION_READ_ONLY.into())
                     {
                         // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
-                        info!("Checking filesystem on block device '{}'", &device_id);
+                        debug!("Checking filesystem on block device '{}'", &device_id);
                         e2fsck::fix(&block_device_path).context(format!(
                             "Failed to check filesystem on block device '{}'",
                             &device_id
                         ))?;
-                        info!("Resizing filesystem on block device '{}'", &device_id);
+                        debug!("Resizing filesystem on block device '{}'", &device_id);
                         resize_ext_fs(&block_device_path).context(format!(
                             "Failed to resize filesystem on block device '{}'",
                             &device_id
@@ -215,6 +214,7 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
             }
         }
     }
+
     Ok(())
 }
 

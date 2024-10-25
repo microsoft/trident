@@ -224,7 +224,7 @@ impl Trident {
             ),
         };
 
-        debug!(
+        info!(
             "Host config:\n{}",
             serde_yaml::to_string(&host_config).unwrap_or("Failed to serialize host config".into())
         );
@@ -291,7 +291,7 @@ impl Trident {
         // If we have a host config source, load it and dispatch it as the first
         // command.
         if let Some(host_config) = Self::get_host_configuration(&self.config)? {
-            info!("Applying host configuration from local config");
+            debug!("Applying host configuration from local config");
             sender
                 .blocking_send(HostUpdateCommand {
                     allowed_operations: self.config.allowed_operations.clone(),
@@ -377,7 +377,6 @@ impl Trident {
         orchestrator: &Option<OrchestratorConnection>,
         datastore: &mut DataStore,
     ) -> Result<(), TridentError> {
-        info!("Handling commands");
         debug!(
             "Current servicing type: {:?}",
             datastore.host_status().servicing_type
@@ -537,7 +536,7 @@ impl Trident {
         mut cmd: HostUpdateCommand,
     ) -> Result<(), TridentError> {
         if self.config.phonehome.is_some() && cmd.host_config.trident.phonehome.is_none() {
-            info!("Injecting phonehome into host configuration");
+            debug!("Injecting phonehome into host configuration");
             cmd.host_config.trident.phonehome = self.config.phonehome.clone();
         }
 
@@ -556,7 +555,6 @@ impl Trident {
         // container and /host is not mounted.
         container::is_running_in_container().message("Running in container check failed")?;
 
-        debug!("Allowed operations: {:?}", cmd.allowed_operations);
         // If Trident loads from a persistent datastore, firmware is booted from runtime OS
         if datastore.is_persistent() {
             // If HS.spec in the datastore is different from the new HC, need to both stage and
@@ -666,13 +664,13 @@ impl Trident {
 
     pub fn retrieve_host_status(&mut self, output_path: &Option<PathBuf>) -> Result<(), Error> {
         let host_status = if let Some(ref datastore_path) = self.config.datastore {
-            info!("Opening persistent datastore");
+            debug!("Opening persistent datastore");
             DataStore::open(datastore_path)
                 .unstructured("Failed to open persistent datastore")?
                 .host_status()
                 .clone()
         } else if Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH).exists() {
-            info!("Opening temporary datastore");
+            debug!("Opening temporary datastore");
             DataStore::open(Path::new(TRIDENT_TEMPORARY_DATASTORE_PATH))
                 .unstructured("Failed to open temporary datastore")?
                 .host_status()

@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -85,7 +85,7 @@ fn copy_file_artifacts(
     // SHA256 matches SHA256 in HostConfig
     match image.sha256 {
         ImageSha256::Ignored => {
-            info!("Ignoring SHA256 for image from '{}'", image_url);
+            warn!("Ignoring SHA256 for image from '{}'", image_url);
         }
         ImageSha256::Checksum(ref expected_sha256) => {
             if computed_sha256 != *expected_sha256 {
@@ -125,7 +125,7 @@ fn copy_file_artifacts(
     let esp_dir_path = generate_efi_bin_base_dir_path(ctx, mount_point)?;
 
     // Call helper func to copy files from mounted img dir to esp_dir_path
-    info!("Writing boot files to directory {}", esp_dir_path.display());
+    debug!("Writing boot files to directory {}", esp_dir_path.display());
 
     // Generate list of filepaths to the boot files. Pass in the temp dir path where the image is
     // mounted to as an argument
@@ -134,14 +134,14 @@ fn copy_file_artifacts(
 
     // Clear esp_dir_path if it exists
     if esp_dir_path.exists() {
-        info!("Clearing directory {}", esp_dir_path.display());
+        debug!("Clearing directory {}", esp_dir_path.display());
         osutils::files::clean_directory(esp_dir_path.clone()).context(format!(
             "Failed to clean directory {}",
             esp_dir_path.display()
         ))?;
     } else {
         // Create esp_dir_path if it doesn't exist
-        info!("Creating directory {}", esp_dir_path.display());
+        debug!("Creating directory {}", esp_dir_path.display());
         fs::create_dir_all(esp_dir_path.clone()).context(format!(
             "Failed to create directory {}",
             esp_dir_path.display()
@@ -198,7 +198,7 @@ fn copy_boot_files(
                 .context(format!("Failed to create directory {}", parent.display()))?;
         }
 
-        info!(
+        debug!(
             "Copying file {} to {}",
             source_path.display(),
             destination_path.display()
@@ -403,12 +403,12 @@ pub(super) fn deploy_esp_images(ctx: &EngineContext, mount_point: &Path) -> Resu
         // RawLzma requires a normal (block-based) deployment of ESP
         if image.format == ImageFormat::RawZst {
             info!(
-                "Performing file-based deployment of ESP image onto ESP partition with ID '{}'",
+                "Performing file-based deployment of ESP image onto ESP partition '{}'",
                 &device_id
             );
 
-            info!(
-                "Deploying ESP image at URL '{}' onto ESP partition with ID '{}'",
+            debug!(
+                "Deploying ESP image at URL '{}' onto ESP partition '{}'",
                 image.url, device_id
             );
 

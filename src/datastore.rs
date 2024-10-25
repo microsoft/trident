@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use log::info;
+use log::debug;
 
 use trident_api::{
     error::{DatastoreError, InternalError, ReportError, ServicingError, TridentError},
@@ -26,7 +26,7 @@ impl DataStore {
             });
         }
 
-        info!("Creating temporary datastore at {}", path.display());
+        debug!("Creating temporary datastore at {}", path.display());
         Ok(Self {
             db: Some(Self::make_datastore(path)?),
             host_status: HostStatus::default(),
@@ -35,7 +35,7 @@ impl DataStore {
     }
 
     pub(crate) fn open(path: &Path) -> Result<Self, TridentError> {
-        info!("Loading datastore from {}", path.display());
+        debug!("Loading datastore from {}", path.display());
         let db = sqlite::open(path).structured(ServicingError::Datastore {
             inner: DatastoreError::LoadDatastore {
                 path: path.to_string_lossy().into(),

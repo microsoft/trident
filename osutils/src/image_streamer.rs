@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::info;
+use log::debug;
 
 use crate::hashing_reader::HashingReader;
 
@@ -30,7 +30,7 @@ pub fn stream_zstd(
     // Decompress the image and write it to the block device
     let bytes_copied = io::copy(&mut decoder, &mut file).context("Failed to copy image")?;
 
-    info!(
+    debug!(
         "Copied {} bytes to {} in {:.2} seconds",
         bytes_copied,
         destination_path.display(),

@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-use log::{info, warn};
+use log::{debug, warn};
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 
 use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
@@ -30,7 +30,7 @@ impl Chroot {
         }
 
         // Mount special dirs.
-        info!("Mounting special directories");
+        debug!("Mounting special directories");
         let mounts = vec![
             Mount::builder()
                 .fstype("devtmpfs")
@@ -59,7 +59,7 @@ impl Chroot {
         ];
 
         // Enter the chroot.
-        info!("Entering chroot");
+        debug!("Entering chroot");
         let rootfd = fs::File::open("/")
             .structured(ServicingError::EnterChroot)?
             .into_raw_fd();
@@ -95,9 +95,8 @@ impl Chroot {
         // Exit the chroot.
         nix::unistd::fchdir(self.rootfd).structured(ServicingError::ExitChroot)?;
         unix::fs::chroot(".").structured(ServicingError::ExitChroot)?;
-        info!("Exited chroot");
+        debug!("Exited chroot. Unmounting special directories");
 
-        info!("Unmounting special directories");
         for mount in self.mounts {
             mount
                 .unmount(UnmountFlags::empty())

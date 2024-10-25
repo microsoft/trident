@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info};
+use log::{debug, info, trace};
 
 use osutils::{exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
@@ -110,7 +110,9 @@ impl Subsystem for HooksSubsystem {
 
     #[tracing::instrument(name = "hooks_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        info!("Running post-provision scripts");
+        if !ctx.spec.scripts.post_provision.is_empty() {
+            debug!("Running post-provision scripts");
+        }
         ctx.spec
             .scripts
             .post_provision
@@ -132,7 +134,9 @@ impl Subsystem for HooksSubsystem {
 
     #[tracing::instrument(name = "hooks_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
-        info!("Adding additional files");
+        if !ctx.spec.os.additional_files.is_empty() {
+            debug!("Adding additional files");
+        }
         for file in &ctx.spec.os.additional_files {
             let (content, original_mode) = if let Some(ref content) = file.content {
                 (content.as_bytes().to_vec(), None)
@@ -176,7 +180,9 @@ impl Subsystem for HooksSubsystem {
             )?;
         }
 
-        info!("Running post-configure scripts");
+        if !ctx.spec.scripts.post_configure.is_empty() {
+            debug!("Running post-configure scripts");
+        }
         ctx.spec
             .scripts
             .post_configure
@@ -222,9 +228,10 @@ impl HooksSubsystem {
         exec_root: &Path,
     ) -> Result<(), Error> {
         if !script.should_run(servicing_type) {
-            debug!(
+            trace!(
                 "Skipping script '{}' for servicing type '{:?}'",
-                script.name, servicing_type
+                script.name,
+                servicing_type
             );
             return Ok(());
         }
@@ -271,13 +278,11 @@ impl HooksSubsystem {
             .with_context(|| format!("Script '{}' failed", script.name))?
             .output_report();
 
+        info!("Script '{}' executed successfully", script.name);
         if output.trim().is_empty() {
-            info!(
-                "Script '{}' executed. (no output was captured)",
-                script.name
-            );
+            debug!("Script '{}' produced no output", script.name);
         } else {
-            info!("Script '{}' executed:\n{}", script.name, output);
+            debug!("Script '{}':\n{}", script.name, output);
         }
 
         Ok(())

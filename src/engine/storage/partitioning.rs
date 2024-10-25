@@ -67,7 +67,7 @@ pub fn create_partitions_on_disk(
         &mut repart,
     );
 
-    info!("Creating partitions for disk '{}'", disk.id);
+    info!("Initializing '{}': creating disk partitions", disk.id);
 
     // Invoke repart to create the partitions.
     let repart_partitions = repart.execute().context(format!(
@@ -162,7 +162,7 @@ pub fn create_partitions_on_disk(
 fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
     // Validation has already verified that any disk with adopted partitions will have
     // a GPT partition table, so we can safely assume that here.
-    info!("Running partitioning safety check...");
+    debug!("Running partitioning safety check");
 
     for disk in disks {
         debug!("Running partitioning safety check for disk '{}'", disk.id);
@@ -246,7 +246,7 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
             .context("Currently mounted partitions would be deleted by re-partitioning.")?;
     }
 
-    info!("Partitioning safety check passed!");
+    info!("Partitioning safety check passed");
     Ok(())
 }
 
@@ -262,7 +262,7 @@ fn adopt_partitions(disk: &ResolvedDisk, repart: &mut SystemdRepartInvoker) -> R
         return Ok(());
     }
 
-    info!(
+    debug!(
         "Trying to adopt {} partitions on disk '{}'",
         disk.spec.adopted_partitions.len(),
         disk.id

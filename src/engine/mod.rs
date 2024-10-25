@@ -139,7 +139,7 @@ pub(super) fn clean_install(
         mut sender,
     } = command;
 
-    info!("Starting clean install!");
+    info!("Starting clean install");
     tracing::info!(metric_name = "clean_install_start", value = true);
     let clean_install_start_time = Instant::now();
 
@@ -158,9 +158,9 @@ pub(super) fn clean_install(
 
     // This is a safety check so that nobody accidentally formats their dev
     // machine.
-    info!("Performing safety check for clean install.");
+    debug!("Performing safety check for clean install");
     clean_install_safety_check(&command.host_config)?;
-    info!("Safety check passed, continuing with clean install.");
+    info!("Safety check passed");
 
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
@@ -177,7 +177,7 @@ pub(super) fn clean_install(
         info!("Finalizing of clean install not requested, skipping finalizing and reboot");
         state.close();
 
-        info!("Unmounting '{}'", root_mount.path().display());
+        debug!("Unmounting '{}'", root_mount.path().display());
         root_mount.unmount_all()?;
     } else {
         finalize_clean_install(
@@ -198,11 +198,11 @@ fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), Tri
     let cmdline =
         fs::read_to_string("/proc/cmdline").structured(InitializationError::ReadCmdline)?;
     if cmdline.contains("root=/dev/ram0") || cmdline.contains("root=live:LABEL=CDROM") {
-        info!("Trident is running from a live image.");
+        debug!("Trident is running from a live image.");
         return Ok(());
     }
 
-    warn!("Trident is running from an OS installed on persistent storage.");
+    warn!("Trident is running from an OS installed on persistent storage");
 
     // Check if we have adopted partitions in the host config
     if host_config
@@ -211,11 +211,11 @@ fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), Tri
         .iter()
         .any(|d| !d.adopted_partitions.is_empty())
     {
-        info!("Partitions are marked for adoption.");
+        debug!("Partitions are marked for adoption");
         return Ok(());
     }
 
-    warn!("No partitions are marked for adoption.");
+    warn!("No partitions are marked for adoption");
 
     // Check if we are running in a container and if so, adjust the path to the safety
     // override file accordingly.
@@ -230,11 +230,11 @@ fn clean_install_safety_check(host_config: &HostConfiguration) -> Result<(), Tri
     };
 
     if safety_override_path.exists() {
-        info!("Safety override file is present.");
+        debug!("Safety check override file is present");
         return Ok(());
     }
 
-    error!("Safety override file is not present, aborting clean install.");
+    error!("Safety override file is not present, aborting clean install");
     Err(TridentError::new(
         InitializationError::CleanInstallSafetyCheck,
     ))
@@ -283,7 +283,7 @@ fn stage_clean_install(
 
     prepare(subsystems, &ctx)?;
 
-    info!("Preparing storage to mount new root");
+    debug!("Preparing storage to mount new root");
     storage::create_block_devices(&mut ctx)?;
     storage::initialize_block_devices(&ctx)?;
     let newroot_mount = NewrootMount::create_and_mount(
@@ -295,7 +295,7 @@ fn stage_clean_install(
 
     provision(subsystems, &ctx, newroot_mount.path())?;
 
-    info!("Entering '{}' chroot", newroot_mount.path().display());
+    debug!("Entering '{}' chroot", newroot_mount.path().display());
     let result = chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
         .execute_and_exit(|| configure(subsystems, &ctx, newroot_mount.execroot_relative_path()));
@@ -360,7 +360,7 @@ pub(super) fn finalize_clean_install(
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
     bootentries::set_boot_next_and_update_boot_order(&ctx, &esp_path)?;
 
-    info!("Updating host's servicing state to Finalized");
+    debug!("Updating host's servicing state to Finalized");
     state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
@@ -421,11 +421,11 @@ pub(super) fn update(
         mut sender,
     } = command;
 
-    info!("Starting update()");
+    info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
     if state.host_status().servicing_type == ServicingType::AbUpdate {
-        info!("Resetting A/B update state");
+        debug!("Resetting A/B update state");
         state.with_host_status(|host_status| {
             host_status.spec = host_status.spec_old.clone();
             host_status.spec_old = Default::default();
@@ -453,7 +453,7 @@ pub(super) fn update(
             .structured(ServicingError::UpdateAbActiveVolume)?;
     }
 
-    info!("Determining servicing type");
+    debug!("Determining servicing type");
     let servicing_type = subsystems
         .iter()
         .map(|m| m.select_servicing_type(&ctx))
@@ -466,7 +466,7 @@ pub(super) fn update(
         info!("No updates required");
         return Ok(());
     }
-    info!(
+    debug!(
         "Selected servicing type for the required update: {:?}",
         servicing_type
     );
@@ -566,7 +566,7 @@ fn stage_update(
     prepare(subsystems, &ctx)?;
 
     if let ServicingType::AbUpdate = ctx.servicing_type {
-        info!("Preparing storage to mount new root");
+        debug!("Preparing storage to mount new root");
         storage::initialize_block_devices(&ctx)?;
         let newroot_mount = NewrootMount::create_and_mount(
             &ctx.spec,
@@ -579,7 +579,7 @@ fn stage_update(
 
         provision(subsystems, &ctx, newroot_mount.path())?;
 
-        info!("Entering '{}' chroot", newroot_mount.path().display());
+        debug!("Entering '{}' chroot", newroot_mount.path().display());
         let result = chroot::enter_update_chroot(newroot_mount.path())
             .message("Failed to enter chroot")?
             .execute_and_exit(|| {
@@ -595,7 +595,6 @@ fn stage_update(
 
         newroot_mount.unmount_all()?;
     } else {
-        info!("Running configure");
         configure(subsystems, &ctx, Path::new(ROOT_MOUNT_POINT_PATH))?;
     };
 

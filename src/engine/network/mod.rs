@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use log::info;
+use log::debug;
 
 use trident_api::error::{ReportError, ServicingError, TridentError};
 
@@ -22,14 +22,14 @@ impl Subsystem for NetworkSubsystem {
     fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
         match ctx.spec.os.network.as_ref() {
             Some(config) => {
-                info!("Configuring network");
+                debug!("Configuring network");
                 let config = netplan::render_netplan_yaml(config)
                     .structured(ServicingError::RenderNetworkNetplanYaml)?;
                 netplan::write(&config).structured(ServicingError::WriteNetplanConfig)?;
                 netplan::generate().structured(ServicingError::GenerateNetplanConfig)?;
             }
             None => {
-                info!("Network config not provided");
+                debug!("Network config not provided");
             }
         }
         Ok(())

@@ -38,6 +38,7 @@ fn create(config: SoftwareRaidArray, ctx: &EngineContext) -> Result<(), Error> {
     let devices = &config.devices;
     let device_paths = get_device_paths(ctx, devices).context("Failed to get device paths")?;
 
+    info!("Initializing '{}': creating raid array", config.id);
     mdadm::create(&config.device_path(), &config.level, device_paths)
         .context("Failed to create RAID array")?;
     Ok(())
@@ -69,8 +70,8 @@ pub(super) fn configure(ctx: &EngineContext) -> Result<(), Error> {
     if !ctx.spec.storage.raid.software.is_empty() {
         let output = mdadm::examine().context("Failed to examine RAID arrays")?;
         let mdadm_config_file_path = "/etc/mdadm/mdadm.conf";
-        info!("Creating mdadm config file '{}'", mdadm_config_file_path);
-        debug!("Contents:\n{}", output);
+        debug!("Creating mdadm config file '{}'", mdadm_config_file_path);
+        trace!("Contents:\n{}", output);
         osutils::files::create_file(mdadm_config_file_path)
             .context("Failed to create mdadm config file")?;
         fs::write(Path::new(mdadm_config_file_path), output)
@@ -309,9 +310,9 @@ fn wait_for_raid_sync(ctx: &EngineContext, sync_timeout: u64) -> Result<(), Erro
         );
         sleep(sleep_duration);
     }
-    info!(
-        "All RAID arrays have finished syncing! Total wait time: {:?} seconds",
-        start_time.elapsed().as_secs()
+    debug!(
+        "All RAID arrays have finished syncing. Total wait time: {:.1} seconds",
+        start_time.elapsed().as_secs_f32()
     );
     Ok(())
 }

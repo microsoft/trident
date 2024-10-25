@@ -22,10 +22,7 @@ pub(super) fn create_filesystems(ctx: &EngineContext) -> Result<(), Error> {
     block_devices_needing_fs_creation(ctx)
         .par_iter()
         .map(|(block_device_id, device_path, filesystem)| {
-            info!(
-                "Creating '{}' filesystem on block device '{}'",
-                filesystem, block_device_id
-            );
+            info!("Initializing '{block_device_id}': creating filesystem of type '{filesystem}'");
             create_filesystem_on_block_device(device_path, *filesystem).context(format!(
                 "Failed to create filesystem '{}' on block device '{}'",
                 filesystem, block_device_id

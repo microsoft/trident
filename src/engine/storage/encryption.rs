@@ -195,8 +195,7 @@ pub(super) fn provision(
             }
             // TODO: Print the kind of block device that device_id points to. https://dev.azure.com/mariner-org/ECF/_workitems/edit/7323/
             info!(
-                "Encrypting underlying device '{}' of encrypted volume '{}' of type '{}'",
-                ev.device_id,
+                "Initializing '{}': creating encrypted volume of type '{}'",
                 ev.id,
                 partition.partition_type.to_sdrepart_part_type()
             );

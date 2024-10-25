@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -22,7 +22,7 @@ pub struct OrchestratorConnection {
 impl OrchestratorConnection {
     /// Attempt to connect to the orchestrator, and return a connection if successful.
     pub fn new(url: String) -> Option<Self> {
-        info!("Reporting status to orchestrator at {}", url);
+        debug!("Reporting status to orchestrator at {}", url);
         for (i, sleep) in [100, 200, 400, 800, 1000, 1000, 1000, 0]
             .into_iter()
             .enumerate()
@@ -41,7 +41,7 @@ impl OrchestratorConnection {
                 .map(|r| r.status().is_success())
                 .unwrap_or(false)
             {
-                info!("Connected to orchestrator");
+                debug!("Connected to orchestrator");
                 return Some(Self { url });
             }
             std::thread::sleep(std::time::Duration::from_millis(sleep));
@@ -70,7 +70,7 @@ impl OrchestratorConnection {
     }
 
     pub fn report_success(&self, host_status: Option<String>) {
-        info!("Reporting provisioning succeeded");
+        debug!("Reporting provisioning succeeded");
         self.send_message(Message {
             state: State::Succeeded,
             message: "provisioning succeeded".to_string(),
