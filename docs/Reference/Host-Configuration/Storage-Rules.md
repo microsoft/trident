@@ -67,7 +67,7 @@ reference a block device of a certain type.
 | ab-volume              | No   | Yes       | No                | Yes        | No        | Yes              |
 | encrypted-volume       | No   | Yes       | No                | Yes        | No        | No               |
 | filesystem             | No   | Yes       | No                | Yes        | Yes       | Yes              |
-| filesystem-esp         | No   | Yes       | Yes               | No         | No        | No               |
+| filesystem-esp         | No   | Yes       | Yes               | Yes        | No        | No               |
 | filesystem-adopted     | No   | No        | Yes               | No         | No        | No               |
 | verity-filesystem-data | No   | Yes       | No                | Yes        | Yes       | No               |
 | verity-filesystem-hash | No   | Yes       | No                | Yes        | Yes       | No               |
