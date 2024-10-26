@@ -1,14 +1,14 @@
 use std::{
     collections::HashMap,
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
+    os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
     process::{Command, ExitStatus},
 };
 
 use anyhow::{Context, Error};
-use log::debug;
 use tempfile::NamedTempFile;
 
 use crate::{crate_private::Sealed, exe::OutputChecker};
@@ -31,7 +31,7 @@ pub struct ScriptResult {
     pub status: ExitStatus,
 
     /// Output of the script
-    pub output: ScriptOutput,
+    pub output: String,
 }
 
 impl Sealed for ScriptResult {}
@@ -54,42 +54,12 @@ impl OutputChecker for ScriptResult {
         "script"
     }
 
-    /// Get the error output of the script
-    ///
-    /// - When output is merged, return empty string, since there is no separate stderr.
-    /// - When output is separate, return stderr.
-    /// - When output is none, return an empty string.
-    fn error_output(&self) -> String {
-        match self.output {
-            ScriptOutput::Combined(_) => "".into(),
-            ScriptOutput::Separate { ref stderr, .. } => stderr.clone(),
-            ScriptOutput::None => "".into(),
-        }
-    }
-
     /// Get the output of the script
     ///
-    /// - When output is merged, return the merged output
-    /// - When output is separate, return stdout
-    /// - When output is none, return an empty string
+    /// Since output is merged, return both stderr and stdout output
     fn output(&self) -> String {
-        match self.output {
-            ScriptOutput::Combined(ref s) => s.clone(),
-            ScriptOutput::Separate { ref stdout, .. } => stdout.clone(),
-            ScriptOutput::None => "".into(),
-        }
+        self.output.clone()
     }
-}
-
-/// Output of a script
-#[derive(Debug)]
-pub enum ScriptOutput {
-    /// No output was captured
-    None,
-    /// Combined stdout and stderr
-    Combined(String),
-    /// Separate stdout and stderr
-    Separate { stdout: String, stderr: String },
 }
 
 /// A flexible helper for running scripts
@@ -101,12 +71,10 @@ pub struct ScriptRunner<'a> {
     pub interpreter: PathBuf,
     /// The script file. We need to keep this around so that it doesn't get deleted.
     pub script: &'a [u8],
-    /// The path to the logfile
-    pub logfile: Option<PathBuf>,
-    /// Merge stderr into stdout
-    pub merge_stderr: bool,
     /// Environment variables to set for the script
     pub env_vars: HashMap<OsString, OsString>,
+    /// Arguments to pass to the script
+    pub args: Vec<&'a OsStr>,
 }
 
 impl<'a> ScriptRunner<'a> {
@@ -115,9 +83,8 @@ impl<'a> ScriptRunner<'a> {
         Self {
             interpreter: interpreter.as_ref().to_path_buf(),
             script,
-            logfile: None,
-            merge_stderr: false,
             env_vars: HashMap::new(),
+            args: Vec::new(),
         }
     }
 
@@ -136,23 +103,13 @@ impl<'a> ScriptRunner<'a> {
         Self::new(interpreter, script)
     }
 
-    /// Set the logfile to use for the script
-    /// If `logfile_path` is `None`, it's the same as not setting a logfile.
-    /// If `logfile_path` is `Some`, the logfile will be created at the given path.
-    /// The logfile will contain both stdout and stderr.
-    pub fn with_logfile<S: AsRef<Path>>(mut self, logfile_path: Option<S>) -> Self {
-        self.logfile = logfile_path.map(|p| p.as_ref().to_path_buf());
+    pub fn with_args(mut self, args: Vec<&'a OsStr>) -> Self {
+        self.args = args;
         self
     }
 
     pub fn with_env_vars(mut self, env_vars: HashMap<OsString, OsString>) -> Self {
         self.env_vars = env_vars;
-        self
-    }
-
-    /// Merge stderr into stdout
-    pub fn merge_stderr(mut self) -> Self {
-        self.merge_stderr = true;
         self
     }
 
@@ -165,9 +122,16 @@ impl<'a> ScriptRunner<'a> {
             self.interpreter.display()
         ))?;
 
+        // Add arguments to the script
+        let mut full_script = self.script.to_vec();
+        for arg in &self.args {
+            full_script.push(b' ');
+            full_script.extend(arg.as_bytes());
+        }
+
         // Write the script to a file
         let script_file =
-            write_script_to_named_file(self.script).context("Failed to write script to file")?;
+            write_script_to_named_file(&full_script).context("Failed to write script to file")?;
 
         // Create command and set up the script file
         let mut cmd = Command::new(&self.interpreter);
@@ -176,44 +140,22 @@ impl<'a> ScriptRunner<'a> {
         // Set environment variables
         cmd.envs(&self.env_vars);
 
-        let to_file = self.merge_stderr || self.logfile.is_some();
-
         // Create logfile
         let mut file = tempfile::tempfile().context("Failed to create log file")?;
 
-        if to_file {
-            // Set the command to output to the logfile
-            debug!("Writing logfile to temp file");
-            cmd.stdout(file.try_clone().context("Failed to redirect stdout")?);
-            cmd.stderr(file.try_clone().context("Failed to redirect stderr")?);
-        }
+        // Set the command to output to the logfile
+        cmd.stdout(file.try_clone().context("Failed to redirect stdout")?);
+        cmd.stderr(file.try_clone().context("Failed to redirect stderr")?);
 
         let cmd_output = cmd.output().context("Failed to start script")?;
 
-        let output = if to_file {
-            file.flush().context("Failed to flush logfile")?;
-            file.seek(SeekFrom::Start(0))
-                .context("Failed to seek to start of logfile")?;
-            let mut buf = Vec::new();
-            file.read_to_end(&mut buf)
-                .context("Failed to read logfile")?;
-
-            // Write the logfile to the given path when requested
-            if let Some(ref logfile) = self.logfile {
-                log::debug!("Writing logfile to {}", logfile.display());
-                crate::files::create_file(logfile)
-                    .context("Failed to create persistent logfile")?
-                    .write_all(&buf)
-                    .context("Failed to write persistent logfile")?;
-            }
-
-            ScriptOutput::Combined(String::from_utf8_lossy(&buf).into())
-        } else {
-            ScriptOutput::Separate {
-                stdout: String::from_utf8_lossy(&cmd_output.stdout).into(),
-                stderr: String::from_utf8_lossy(&cmd_output.stderr).into(),
-            }
-        };
+        file.flush().context("Failed to flush logfile")?;
+        file.seek(SeekFrom::Start(0))
+            .context("Failed to seek to start of logfile")?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)
+            .context("Failed to read logfile")?;
+        let output = String::from_utf8_lossy(&buf).into();
 
         Ok(ScriptResult {
             status: cmd_output.status,

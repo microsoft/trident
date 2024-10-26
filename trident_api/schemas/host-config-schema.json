@@ -838,15 +838,43 @@
     "Script": {
       "description": "A script that can be run on the host during Trident stages.",
       "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "content"
+          ],
+          "properties": {
+            "content": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
       "required": [
         "name",
         "runOn"
       ],
       "properties": {
-        "content": {
-          "description": "The contents of the script. Conflicts with path.",
-          "type": "string",
-          "nullable": true
+        "arguments": {
+          "description": "Arguments to pass to the script.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "environmentVariables": {
           "description": "Environment variables that are needed by the script. These will be set before running the script. UPDATE_KIND and TARGET_ROOT values are set by default to use.",
@@ -860,19 +888,9 @@
           "type": "string",
           "nullable": true
         },
-        "logFilePath": {
-          "description": "Path of a file to write the script's output to.\n\nThis includes both stdout and stderr. The path and file will be created if they don't exist. If the file already exists, it will be truncated.",
-          "type": "string",
-          "nullable": true
-        },
         "name": {
           "description": "Name of the script.",
           "type": "string"
-        },
-        "path": {
-          "description": "Path to the script file. Conflicts with content.\n\nThe file must be located in the host's filesystem.",
-          "type": "string",
-          "nullable": true
         },
         "runOn": {
           "description": "List of servicing types that the script should run on.",

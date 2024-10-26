@@ -89,12 +89,6 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Root verity device name '{device_name}' is invalid, must be 'root'")]
     RootVerityDeviceNameInvalid { device_name: String },
 
-    #[error("Script '{script_name}' has both content and path, but only one must be specified")]
-    ScriptBothContentAndPath { script_name: String },
-
-    #[error("Script '{script_name}' has no content or path, but one must be specified")]
-    ScriptNoContentOrPath { script_name: String },
-
     #[error("Cannot request self-upgrade of Trident when a read-only verity filesystem is mounted at '/'")]
     SelfUpgradeOnReadOnlyRootVerityFs,
 

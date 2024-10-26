@@ -14,8 +14,8 @@ use crate::{
         AbUpdate, AbVolumePair, AdditionalFile, Disk, EncryptedVolume, Encryption, FileSystem,
         FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256,
         MountOptions, MountPoint, Os, Partition, PartitionTableType, PartitionType, Raid,
-        RaidLevel, Script, Scripts, ServicingTypeSelection, SoftwareRaidArray, SshMode, Storage,
-        User, VerityFileSystem,
+        RaidLevel, Script, ScriptSource, Scripts, ServicingTypeSelection, SoftwareRaidArray,
+        SshMode, Storage, User, VerityFileSystem,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY},
 };
@@ -183,19 +183,18 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 post_provision: vec![Script {
                     name: "sample-provision-script".into(),
                     run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                    content: Some("ls $TARGET_ROOT".into()),
-                    log_file_path: Some("/var/log/sample-provision-script.log".into()),
+                    source: ScriptSource::Content("ls".into()),
+                    arguments: vec!["$TARGET_ROOT".into(), "-l".into()],
                     ..Default::default()
                 }],
                 post_configure: vec![Script {
                     name: "sample-configure-script".into(),
                     run_on: vec![ServicingTypeSelection::All],
-                    content: Some("/var/config-script.sh".into()),
+                    source: ScriptSource::Content("/var/config-script.sh".into()),
                     environment_variables: HashMap::from([(
                         "SAMPLE_VARIABLE".into(),
                         "sample-variable-value".into(),
                     )]),
-                    log_file_path: Some("/var/log/sample-configure-script.log".into()),
                     ..Default::default()
                 }],
             },
@@ -389,19 +388,17 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 post_provision: vec![Script {
                     name: "sample-provision-script".into(),
                     run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                    content: Some("ls $TARGET_ROOT".into()),
-                    log_file_path: Some("/var/log/sample-provision-script.log".into()),
+                    source: ScriptSource::Content("ls $TARGET_ROOT".into()),
                     ..Default::default()
                 }],
                 post_configure: vec![Script {
                     name: "sample-configure-script".into(),
                     run_on: vec![ServicingTypeSelection::All],
-                    content: Some("/var/config-script.sh".into()),
+                    source: ScriptSource::Content("/var/config-script.sh".into()),
                     environment_variables: HashMap::from([(
                         "SAMPLE_VARIABLE".into(),
                         "sample-variable-value".into(),
                     )]),
-                    log_file_path: Some("/var/log/sample-configure-script.log".into()),
                     ..Default::default()
                 }],
             },
@@ -606,7 +603,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 post_configure: vec![Script {
                     name: "rw-overlay".into(),
                     run_on: vec![ServicingTypeSelection::All],
-                    content: Some("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
+                    source: ScriptSource::Content("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -1068,7 +1065,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 post_configure: vec![Script {
                     name: "rw-overlay".into(),
                     run_on: vec![ServicingTypeSelection::All],
-                    content: Some("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
+                    source: ScriptSource::Content("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -1238,7 +1235,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     post_configure: vec![Script {
                         name: "wheel".into(),
                         run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                        content: Some(
+                        source: ScriptSource::Content(
                             "echo \"%wheel ALL=(ALL:ALL) NOPASSWD: ALL\" > /etc/sudoers.d/wheel"
                                 .into(),
                         ),
@@ -1389,7 +1386,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     post_configure: vec![Script {
                         name: "wheel".into(),
                         run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                        content: Some(
+                        source: ScriptSource::Content(
                             "echo \"%wheel ALL=(ALL:ALL) NOPASSWD: ALL\" > /etc/sudoers.d/wheel"
                                 .into(),
                         ),

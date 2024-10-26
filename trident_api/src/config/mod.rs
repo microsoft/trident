@@ -9,7 +9,7 @@ pub use host::{
         users::{Password, SshMode, User},
         ManagementOs, Os, Selinux, SelinuxMode,
     },
-    scripts::{Script, Scripts, ServicingTypeSelection},
+    scripts::{Script, ScriptSource, Scripts, ServicingTypeSelection},
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},
     storage::{
         disks::{Disk, PartitionTableType},

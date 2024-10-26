@@ -33,13 +33,19 @@ List of servicing types that the script should run on.
    | Type           | `ServicingTypeSelection`                              |
    | Link           | [ServicingTypeSelection](./ServicingTypeSelection.md) |
 
-### `content` (optional)
+### `arguments` (optional)
 
-The contents of the script. Conflicts with path.
+Arguments to pass to the script.
 
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value    |
+   | -------------- | -------- |
+   | Type           | `string` |
 
 ### `environmentVariables` (optional)
 
@@ -58,26 +64,6 @@ Environment variables that are needed by the script. These will be set before ru
 ### `interpreter` (optional)
 
 Binary to run the script with. The default is `/bin/sh`.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
-### `logFilePath` (optional)
-
-Path of a file to write the script's output to.
-
-This includes both stdout and stderr. The path and file will be created if they don't exist. If the file already exists, it will be truncated.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
-### `path` (optional)
-
-Path to the script file. Conflicts with content.
-
-The file must be located in the host's filesystem.
 
 | Characteristic | Value    |
 | -------------- | -------- |

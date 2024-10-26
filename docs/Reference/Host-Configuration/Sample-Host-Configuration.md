@@ -99,13 +99,11 @@ scripts:
     - clean-install
     - ab-update
     content: ls $TARGET_ROOT
-    logFilePath: /var/log/sample-provision-script.log
   postConfigure:
   - name: sample-configure-script
     runOn:
     - all
     content: /var/config-script.sh
-    logFilePath: /var/log/sample-configure-script.log
     environmentVariables:
       SAMPLE_VARIABLE: sample-variable-value
 os:

@@ -1,19 +1,18 @@
 use std::{
     collections::HashMap,
-    ffi::OsString,
-    ops::Not,
+    ffi::{OsStr, OsString},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
 use log::{debug, info, trace};
 
 use osutils::{exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationDynamicValidationError,
-        HostConfigurationStaticValidationError, Script,
+        HostConfigurationStaticValidationError, Script, ScriptSource,
     },
     constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
@@ -49,26 +48,24 @@ impl Subsystem for HooksSubsystem {
         host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
         // Ensure that all scripts that should be run and have a path actually exist
-        host_config
+        for script in host_config
             .scripts
             .post_configure
             .iter()
             .chain(&host_config.scripts.post_provision)
             .filter(|script| script.should_run(ctx.servicing_type))
-            .filter_map(|script| {
-                script.path.as_ref().and_then(|path| {
-                    (path.exists() && path.is_file())
-                        .not()
-                        .then_some(Err(TridentError::new(InvalidInputError::from(
-                            HostConfigurationDynamicValidationError::InvalidScriptPath {
-                                name: script.name.clone(),
-                                path: path.to_string_lossy().to_string(),
-                            },
-                        ))))
-                })
-            })
-            .collect::<Result<(), _>>()?;
-
+        {
+            if let ScriptSource::Path(ref path) = script.source {
+                if !path.exists() || !path.is_file() {
+                    return Err(TridentError::new(InvalidInputError::from(
+                        HostConfigurationDynamicValidationError::InvalidScriptPath {
+                            name: script.name.clone(),
+                            path: path.to_string_lossy().to_string(),
+                        },
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -80,7 +77,7 @@ impl Subsystem for HooksSubsystem {
             .iter()
             .chain(&ctx.spec.scripts.post_provision)
         {
-            if let Some(ref path) = script.path {
+            if let ScriptSource::Path(path) = &script.source {
                 if script.should_run(ctx.servicing_type) {
                     self.stage_file(path.to_owned())
                         .structured(InvalidInputError::from(
@@ -248,19 +245,21 @@ impl HooksSubsystem {
             interpreter.display()
         );
 
-        let content = if let Some(ref content) = script.content {
-            content.as_bytes()
-        } else if let Some(ref path) = script.path {
-            &self
-                .staged_files
-                .get(path)
-                .context(format!("Failed to find staged file '{}'", path.display()))?
-                .contents
-        } else {
-            bail!("Script '{}' has no content or path", script.name);
+        let content = match &script.source {
+            ScriptSource::Content(content) => content.as_bytes(),
+            ScriptSource::Path(path) => {
+                &self
+                    .staged_files
+                    .get(path)
+                    .context(format!("Failed to find staged file '{}'", path.display()))?
+                    .contents
+            }
         };
 
         let mut script_runner = ScriptRunner::new_interpreter(interpreter, content);
+        script_runner
+            .args
+            .extend(script.arguments.iter().map(OsStr::new));
         set_env_vars(
             &mut script_runner,
             &script.environment_variables,
@@ -273,7 +272,6 @@ impl HooksSubsystem {
             script.name
         ))?;
         let output = script_runner
-            .with_logfile(script.log_file_path.as_ref())
             .output_check()
             .with_context(|| format!("Script '{}' failed", script.name))?
             .output_report();
@@ -377,7 +375,7 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: Some("mkdir $TEST_DIR".into()),
+            source: ScriptSource::Content("mkdir $TEST_DIR".into()),
             environment_variables,
             ..Default::default()
         };
@@ -415,7 +413,7 @@ mod tests {
                         name: "test-script".into(),
                         run_on: vec![ServicingTypeSelection::CleanInstall],
                         interpreter: Some("/bin/bash".into()),
-                        path: Some(script_path),
+                        source: ScriptSource::Path(script_path),
                         environment_variables: hashmap! {
                             "TEST_DIR".into() => test_dir.to_str().unwrap().into()
                         },
@@ -451,7 +449,7 @@ mod tests {
                         name: "test-script".into(),
                         run_on: vec![ServicingTypeSelection::CleanInstall],
                         interpreter: Some("/bin/bash".into()),
-                        path: Some("nonexistent-file".into()),
+                        source: ScriptSource::Path("nonexistent-file".into()),
                         environment_variables: hashmap! {
                             "TEST_DIR".into() => test_dir.to_str().unwrap().into()
                         },
@@ -485,7 +483,7 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: Some("cat nonexisting.txt".into()),
+            source: ScriptSource::Content("cat nonexisting.txt".into()),
             ..Default::default()
         };
         assert!(HooksSubsystem::default()
@@ -504,7 +502,7 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/nonexisting".into()),
-            content: Some("mkdir test-directory".into()),
+            source: ScriptSource::Content("mkdir test-directory".into()),
             ..Default::default()
         };
         assert!(HooksSubsystem::default()
@@ -528,7 +526,7 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::NormalUpdate],
             interpreter: Some("/bin/bash".into()),
-            content: Some("mkdir $TEST_DIR_NAME".into()),
+            source: ScriptSource::Content("mkdir $TEST_DIR_NAME".into()),
             environment_variables,
             ..Default::default()
         };
@@ -571,6 +569,34 @@ mod tests {
     }
 
     #[test]
+    fn test_use_args() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_dir = temp_dir.path().join("test-directory");
+
+        let mut environment_variables = HashMap::new();
+        environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
+        let script = Script {
+            name: "test-script".into(),
+            run_on: vec![ServicingTypeSelection::CleanInstall],
+            interpreter: Some("/bin/bash".into()),
+            source: ScriptSource::Content("mkdir".into()),
+            environment_variables,
+            arguments: vec!["$TEST_DIR".into()],
+        };
+        HooksSubsystem::default()
+            .run_script(
+                &script,
+                ServicingType::CleanInstall,
+                Path::new("/mnt/newroot"),
+                Path::new("/"),
+            )
+            .unwrap();
+        assert!(test_dir.exists());
+        // Cleanup
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
     fn test_paths_set() {
         let target_root = tempfile::tempdir().unwrap();
         let exec_root = tempfile::tempdir().unwrap();
@@ -579,7 +605,7 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: Some("touch $TARGET_ROOT/a && touch $EXEC_ROOT/b".into()),
+            source: ScriptSource::Content("touch $TARGET_ROOT/a && touch $EXEC_ROOT/b".into()),
             ..Default::default()
         };
         HooksSubsystem::default()

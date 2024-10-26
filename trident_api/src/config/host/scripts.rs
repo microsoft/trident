@@ -36,6 +36,20 @@ pub struct Scripts {
     pub post_configure: Vec<Script>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub enum ScriptSource {
+    Content(String),
+    Path(PathBuf),
+}
+
+impl Default for ScriptSource {
+    fn default() -> Self {
+        ScriptSource::Content(String::new())
+    }
+}
+
 /// A script that can be run on the host during Trident stages.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -53,23 +67,17 @@ pub struct Script {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interpreter: Option<PathBuf>,
 
-    /// The contents of the script. Conflicts with path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-
-    /// Path to the script file. Conflicts with content.
+    /// The source of the script.
     ///
-    /// The file must be located in the host's filesystem.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<PathBuf>,
+    /// This is either specified by `Content` (String of the contents
+    /// of the script) or `Path` (PathBuf of the path to the script
+    /// file).
+    #[serde(flatten)]
+    pub source: ScriptSource,
 
-    /// Path of a file to write the script's output to.
-    ///
-    /// This includes both stdout and stderr. The path and file
-    /// will be created if they don't exist. If the file already
-    /// exists, it will be truncated.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub log_file_path: Option<PathBuf>,
+    /// Arguments to pass to the script.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<String>,
 
     /// Environment variables that are needed by the script.
     /// These will be set before running the script.
@@ -147,18 +155,8 @@ impl Scripts {
 
 impl Script {
     pub(crate) fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
-        match (&self.content, &self.path) {
-            (Some(_), Some(_)) => Err(
-                HostConfigurationStaticValidationError::ScriptBothContentAndPath {
-                    script_name: self.name.clone(),
-                },
-            ),
-            (None, None) => Err(
-                HostConfigurationStaticValidationError::ScriptNoContentOrPath {
-                    script_name: self.name.clone(),
-                },
-            ),
-            (None, Some(path)) => {
+        match &self.source {
+            ScriptSource::Path(path) => {
                 if !path.is_absolute() {
                     return Err(HostConfigurationStaticValidationError::PathNotAbsolute {
                         path: path.clone().to_string_lossy().to_string(),
@@ -182,10 +180,9 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: Some("echo test".into()),
+            source: ScriptSource::Content("echo test".into()),
             environment_variables: HashMap::new(),
-            log_file_path: None,
-            path: None,
+            arguments: vec![],
         };
         assert!(script.should_run(ServicingType::CleanInstall));
     }
@@ -196,10 +193,9 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: Some("echo test".into()),
+            source: ScriptSource::Content("echo test".into()),
             environment_variables: HashMap::new(),
-            log_file_path: None,
-            path: None,
+            arguments: vec![],
         };
         assert!(!script.should_run(ServicingType::NormalUpdate));
     }
@@ -210,50 +206,11 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::All],
             interpreter: Some("/bin/bash".into()),
-            content: Some("echo test".into()),
+            source: ScriptSource::Content("echo test".into()),
             environment_variables: HashMap::new(),
-            log_file_path: None,
-            path: None,
+            arguments: vec![],
         };
         assert!(script.should_run(ServicingType::AbUpdate));
-    }
-
-    #[test]
-    fn test_invalid_script_with_no_content_or_path() {
-        let script = Script {
-            name: "test-script".into(),
-            run_on: vec![ServicingTypeSelection::CleanInstall],
-            interpreter: Some("/bin/bash".into()),
-            content: None,
-            environment_variables: HashMap::new(),
-            log_file_path: None,
-            path: None,
-        };
-        assert_eq!(
-            script.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::ScriptNoContentOrPath {
-                script_name: script.name
-            }
-        );
-    }
-
-    #[test]
-    fn test_invalid_script_with_both_content_and_path() {
-        let script = Script {
-            name: "test-script".into(),
-            run_on: vec![ServicingTypeSelection::CleanInstall],
-            interpreter: Some("/bin/bash".into()),
-            content: Some("echo test".into()),
-            environment_variables: HashMap::new(),
-            log_file_path: None,
-            path: Some("/path/to/script".into()),
-        };
-        assert_eq!(
-            script.validate().unwrap_err(),
-            HostConfigurationStaticValidationError::ScriptBothContentAndPath {
-                script_name: script.name
-            }
-        );
     }
 
     #[test]
@@ -262,10 +219,22 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: None,
             environment_variables: HashMap::new(),
-            log_file_path: None,
-            path: Some("/path/to/script".into()),
+            source: ScriptSource::Path("/path/to/script".into()),
+            arguments: vec![],
+        };
+        assert!(script.validate().is_ok());
+    }
+
+    #[test]
+    fn test_valid_script_with_arguments() {
+        let script = Script {
+            name: "test-script".into(),
+            run_on: vec![ServicingTypeSelection::CleanInstall],
+            interpreter: Some("/bin/bash".into()),
+            environment_variables: HashMap::new(),
+            source: ScriptSource::Content("echo".into()),
+            arguments: vec!["test".into()],
         };
         assert!(script.validate().is_ok());
     }
@@ -276,10 +245,9 @@ mod tests {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            content: None,
             environment_variables: HashMap::new(),
-            log_file_path: None,
-            path: Some("path/to/script".into()),
+            source: ScriptSource::Path("path/to/script".into()),
+            arguments: vec![],
         };
         assert_eq!(
             script.validate().unwrap_err(),

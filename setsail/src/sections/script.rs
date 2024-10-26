@@ -32,12 +32,6 @@ pub struct Script {
     /// lol
     #[arg(long, default_value = "/bin/sh")]
     pub interpreter: PathBuf,
-
-    /// The path to a file to log the script's output to.
-    ///
-    ///
-    #[arg(long, alias = "logfile")]
-    pub log: Option<PathBuf>,
     // Disabled for now. Trident does not support escaping the
     // chroot when running post-install scripts.
     // /// If set, the script will be run outside of the chroot.
@@ -53,7 +47,6 @@ impl Script {
 
     pub fn run(&self) -> Result<(), SetsailError> {
         ScriptRunner::new_interpreter(&self.interpreter, self.body.as_bytes())
-            .with_logfile(self.log.as_ref())
             .run_check()
             .context(format!("{} script failed", self.script_type))
             .map_err(|e| {

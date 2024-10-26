@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use trident_api::config::{HostConfiguration, Script, ServicingTypeSelection};
+use trident_api::config::{HostConfiguration, Script, ScriptSource, ServicingTypeSelection};
 
 use crate::{data::ParsedData, sections::script::ScriptType};
 
@@ -14,10 +14,9 @@ pub fn translate(input: &ParsedData, hc: &mut HostConfiguration) {
             name: format!("kickstart-script-{}", index),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some(script.interpreter.clone()),
-            content: Some(script.body.clone()),
-            log_file_path: script.log.clone(),
+            source: ScriptSource::Content(script.body.clone()),
             environment_variables: HashMap::new(),
-            path: None,
+            arguments: vec![],
         })
         .collect();
 }
