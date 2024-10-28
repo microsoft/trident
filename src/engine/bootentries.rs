@@ -18,6 +18,18 @@ use super::{boot, EngineContext};
 /// Boot efi executable
 const BOOT64_EFI: &str = "bootx64.efi";
 
+/// ESP device metadata
+struct EspDeviceMetadata {
+    id: BlockDeviceId,
+    path: PathBuf,
+}
+
+/// ESP device enum which can be either a standalone partition or a RAID device
+enum EspDevice {
+    Partition(EspDeviceMetadata),
+    Raid(Vec<EspDeviceMetadata>),
+}
+
 /// Creates a boot entry for the A/B update volume and sets the `BootNext`
 /// variable to boot from the updated partition on next boot. Also updates the
 /// `BootOrder` for non-qemu targets.
@@ -74,13 +86,30 @@ pub fn set_boot_next_and_update_boot_order(
         }
     }
 
-    let (esp_device_id, disk_path) =
-        get_esp_device_info(ctx).structured(InternalError::GetEspDeviceInfo)?;
-
-    // Get the uuid path of the ESP partition from ctx
+    let esp_device_info = get_esp_device_info(ctx).structured(InternalError::GetEspDeviceInfo)?;
+    // For now, we only honour the first found ESP partition.
+    // We need to handle when ESP is on RAID1.
+    // TODO: https://dev.azure.com/mariner-org/ECF/_workitems/edit/9600/
+    let (esp_device_id, disk_path) = match esp_device_info {
+        EspDevice::Partition(esp_device_metadata) => {
+            (esp_device_metadata.id, esp_device_metadata.path)
+        }
+        EspDevice::Raid(esp_device_metadata) => {
+            let esp_device_metadata =
+                esp_device_metadata
+                    .first()
+                    .structured(InternalError::Internal(
+                        "Failed to get ESP device metadata for the first ESP Device in RAID",
+                    ))?;
+            (
+                esp_device_metadata.id.clone(),
+                esp_device_metadata.path.clone(),
+            )
+        }
+    };
     let esp_uuid_path = ctx.block_device_paths.get(&esp_device_id).structured(
         ServicingError::GetBlockDevicePath {
-            device_id: esp_device_id,
+            device_id: esp_device_id.to_string(),
         },
     )?;
 
@@ -90,12 +119,11 @@ pub fn set_boot_next_and_update_boot_order(
     );
 
     // Get partition number of the ESP partition
-    let part_num = block_devices::get_partition_number(&disk_path, esp_uuid_path).structured(
-        ServicingError::GetPartitionNumber {
+    let part_num = block_devices::get_partition_number(disk_path.clone(), esp_uuid_path)
+        .structured(ServicingError::GetPartitionNumber {
             disk_path: disk_path.to_string_lossy().to_string(),
             part_uuid_path: esp_uuid_path.to_string_lossy().to_string(),
-        },
-    )?;
+        })?;
 
     debug!("ESP partition number: {}", part_num);
 
@@ -149,12 +177,16 @@ fn get_esp_device_id(ctx: &EngineContext) -> Result<BlockDeviceId, Error> {
     Ok(esp_device_id.to_string())
 }
 
-/// Gets the EFI System Partition (ESP) device ID and the path of the disk containing the ESP
-/// partition.
+/// Gets the EFI System Partition (ESP) device IDs and the path of the disks containing the ESP
+/// partitions.
 ///
-/// This information is retrieved from the filesystem configuration in the host configuration
-/// (`spec` field inside `EngineContext`). Currently, only one ESP partition is supported per host, so
-/// the first one found is returned.
+/// This information is extracted from the filesystem configuration within the `EngineContext`.
+/// If the ESP partition is not on RAID, the information for the first encountered ESP will be
+/// returned.
+/// Currently, we only copy the bootloader to the first ESP partition found.
+/// TODO: https://dev.azure.com/mariner-org/ECF/_workitems/edit/9622
+/// TODO: https://dev.azure.com/mariner-org/ECF/_workitems/edit/9411
+/// If the ESP partition is on RAID1, the information for the RAID1 partitions will be returned.
 ///
 /// # Arguments
 ///
@@ -162,28 +194,44 @@ fn get_esp_device_id(ctx: &EngineContext) -> Result<BlockDeviceId, Error> {
 ///
 /// # Returns
 ///
-/// * `Result<(String, PathBuf), Error>` - On success, returns a tuple containing the ESP device ID
-///   as a `String` and the path of the disk containing the ESP partition as a `PathBuf`. On
-///   failure, returns an `Error`.
+/// * `Result<EspDevice, Error>` - On success, returns an EspDevice enum containing the ESP device
+///   information. On failure, returns an `Error`.
 ///
-fn get_esp_device_info(ctx: &EngineContext) -> Result<(String, PathBuf), Error> {
+fn get_esp_device_info(ctx: &EngineContext) -> Result<EspDevice, Error> {
     // TODO: What about deployments with multiple ESP partitions? (in multiple disks)
     // This implementation just finds the first ESP filesystem and uses that.
 
     // Find the device ID of the ESP filesystem
     let esp_device_id = get_esp_device_id(ctx)?;
-    // Find the device path of the ESP partition
-    let device_path = ctx
-        .block_device_paths
-        .get(&esp_device_id)
-        .with_context(|| {
-            format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'")
-        })?;
 
-    debug!(
-        "Found ESP partition '{esp_device_id}' with device path '{}'",
-        device_path.display()
-    );
+    if let Some(raid) = ctx
+        .spec
+        .storage
+        .raid
+        .software
+        .iter()
+        .find(|r| r.id == esp_device_id)
+    {
+        Ok(EspDevice::Raid(
+            raid.devices
+                .iter()
+                .map(|id| get_esp_metadata(id, ctx))
+                .collect::<Result<_, _>>()?,
+        ))
+    } else {
+        // ESP is a standalone partition, not on RAID
+        Ok(EspDevice::Partition(get_esp_metadata(&esp_device_id, ctx)?))
+    }
+}
+
+/// Retrieves the metadata for the ESP partition device.
+fn get_esp_metadata(
+    esp_device_id: &BlockDeviceId,
+    ctx: &EngineContext,
+) -> Result<EspDeviceMetadata, Error> {
+    let device_path = ctx.block_device_paths.get(esp_device_id).with_context(|| {
+        format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'",)
+    })?;
 
     let esp_disk_path = block_devices::block_device_by_path(
         block_devices::get_disk_for_partition(device_path.as_path()).with_context(|| {
@@ -194,13 +242,15 @@ fn get_esp_device_info(ctx: &EngineContext) -> Result<(String, PathBuf), Error> 
         })?,
     )
     .context("Failed to get by-path symlink for disk")?;
-
     debug!(
         "Found disk for ESP partition '{esp_device_id}' with device path '{}'",
         esp_disk_path.display()
     );
 
-    Ok((esp_device_id, esp_disk_path))
+    Ok(EspDeviceMetadata {
+        id: esp_device_id.clone(),
+        path: esp_disk_path,
+    })
 }
 
 /// Retrieves the label and path for the EFI boot loader of the inactive A/B update volume.
@@ -475,7 +525,7 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_get_esp_partition_disk() {
+    fn test_get_esp_device_info() {
         let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -511,7 +561,15 @@ mod functional_test {
 
         partitioning::create_partitions(&mut ctx).unwrap();
 
-        let (esp_id, disk_path) = get_esp_device_info(&ctx).unwrap();
+        let esp_device_info = get_esp_device_info(&ctx).unwrap();
+
+        let (esp_id, disk_path) = match &esp_device_info {
+            EspDevice::Partition(esp_device_metadata) => (
+                esp_device_metadata.id.clone(),
+                esp_device_metadata.path.clone(),
+            ),
+            _ => panic!("ESP device info is not of type Partition"),
+        };
         let canon_path = disk_path.canonicalize().unwrap();
         assert_eq!(
             canon_path.as_path(),
@@ -531,6 +589,115 @@ mod functional_test {
             format!(
                 "Failed to find the partition '/dev/sda1' in disk '{}'",
                 disk_path.display()
+            )
+        );
+        // Test case where get_partition_number() fails to get the disk information
+        let doesnotexist = Path::new("/dev/doesnotexist");
+        let part_num = block_devices::get_partition_number(doesnotexist, esp_partition_path);
+        debug_assert!(part_num.unwrap_err().root_cause().to_string().contains(
+            "stderr:\nsfdisk: cannot open /dev/doesnotexist: No such file or directory\n\n"
+        ));
+    }
+
+    #[functional_test]
+    fn test_get_esp_device_info_raided_esp() {
+        let mut ctx = EngineContext {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    filesystems: vec![config::FileSystem {
+                        source: config::FileSystemSource::EspImage(config::Image {
+                            url: "http://example.com/esp.img".to_string(),
+                            sha256: config::ImageSha256::Ignored,
+                            format: config::ImageFormat::RawZst,
+                        }),
+                        device_id: Some("esp".to_string()),
+                        fs_type: FileSystemType::Vfat,
+                        mount_point: Some(MountPoint {
+                            path: ESP_MOUNT_POINT_PATH.into(),
+                            options: MountOptions::defaults(),
+                        }),
+                    }],
+                    disks: vec![Disk {
+                        id: "disk1".into(),
+                        device: TEST_DISK_DEVICE_PATH.into(),
+                        partitions: vec![
+                            Partition {
+                                id: "esp1".into(),
+                                size: PartitionSize::from_str("512M").unwrap(),
+                                partition_type: PartitionType::Esp,
+                            },
+                            Partition {
+                                id: "esp2".into(),
+                                size: PartitionSize::from_str("512M").unwrap(),
+                                partition_type: PartitionType::Esp,
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    raid: config::Raid {
+                        software: vec![config::SoftwareRaidArray {
+                            id: "esp".into(),
+                            name: "esp".to_string(),
+                            level: config::RaidLevel::Raid1,
+                            devices: vec!["esp1".into(), "esp2".into()],
+                        }],
+                        sync_timeout: Some(180),
+                    },
+
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        partitioning::create_partitions(&mut ctx).unwrap();
+
+        let esp_device_info = get_esp_device_info(&ctx).unwrap();
+
+        let (esp_id1, disk_path1) = match &esp_device_info {
+            EspDevice::Raid(esp_device_metadata) => (
+                esp_device_metadata[0].id.clone(),
+                esp_device_metadata[0].path.clone(),
+            ),
+            _ => panic!("ESP device info is not of type Raid"),
+        };
+        assert_eq!(esp_id1, "esp1", "ESP device id mismatch");
+        let canon_path = disk_path1.canonicalize().unwrap();
+        assert_eq!(
+            canon_path.as_path(),
+            Path::new(TEST_DISK_DEVICE_PATH),
+            "Disk path mismatch"
+        );
+
+        let (esp_id2, disk_path2) = match &esp_device_info {
+            EspDevice::Raid(esp_device_metadata) => (
+                esp_device_metadata[1].id.clone(),
+                esp_device_metadata[1].path.clone(),
+            ),
+            _ => panic!("ESP device info is not of type Raid"),
+        };
+        assert_eq!(esp_id2, "esp2", "ESP device id mismatch");
+        let canon_path = disk_path2.canonicalize().unwrap();
+        assert_eq!(
+            canon_path.as_path(),
+            Path::new(TEST_DISK_DEVICE_PATH),
+            "Disk path mismatch"
+        );
+
+        // Test case where get_partition_number() finds the ESP partition number
+        let esp_partition_path = ctx.block_device_paths.get(&esp_id1).unwrap();
+        let part_num =
+            block_devices::get_partition_number(&disk_path1, esp_partition_path).unwrap();
+        assert_eq!(part_num, 1, "Partition number mismatch");
+        // Test case where get_partition_number() fails to find the ESP partition number
+        let esp_partition_path1 = Path::new("/dev/sda1");
+        let part_num = block_devices::get_partition_number(&disk_path1, esp_partition_path1);
+        debug_assert_eq!(
+            part_num.unwrap_err().root_cause().to_string(),
+            format!(
+                "Failed to find the partition '/dev/sda1' in disk '{}'",
+                disk_path1.display()
             )
         );
         // Test case where get_partition_number() fails to get the disk information
