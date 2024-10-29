@@ -19,9 +19,7 @@ use trident_api::{
     status::ServicingType,
 };
 
-use crate::engine::Subsystem;
-
-use super::EngineContext;
+use crate::engine::{EngineContext, Subsystem};
 
 #[derive(Debug)]
 struct StagedFile {

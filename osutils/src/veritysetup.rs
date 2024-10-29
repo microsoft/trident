@@ -207,7 +207,7 @@ pub fn close(device_name: &str) -> Result<(), Error> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

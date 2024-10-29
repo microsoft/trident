@@ -336,7 +336,7 @@ impl<'de> Deserialize<'de> for DiscoverablePartitionType {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use strum::IntoEnumIterator;
 
     use super::*;

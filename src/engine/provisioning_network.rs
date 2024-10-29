@@ -5,7 +5,7 @@ use netplan_types::NetworkConfig;
 use osutils::dependencies::Dependency;
 use trident_api::config::HostConfiguration;
 
-use super::netplan;
+use osutils::netplan;
 
 pub fn start(
     override_network: Option<NetworkConfig>,
@@ -36,9 +36,7 @@ pub fn start(
 }
 
 fn start_provisioning_network(config: &NetworkConfig, wait_on_network: bool) -> Result<(), Error> {
-    let config = netplan::render_netplan_yaml(config)
-        .context("Failed to render provisioning network netplan yaml")?;
-    netplan::write(&config).context("Failed to write provisioning netplan config")?;
+    netplan::write(config).context("Failed to write provisioning netplan config")?;
 
     if wait_on_network {
         // We want to be sure we're only waiting on the interfaces we care about, so

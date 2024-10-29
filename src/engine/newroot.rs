@@ -510,7 +510,7 @@ fn do_bind_mount(source: &Path, target: &Path, flags: MountFlags) -> Result<(), 
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use std::path::PathBuf;

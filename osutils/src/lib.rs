@@ -22,6 +22,7 @@ pub mod mkinitrd;
 pub mod mkswap;
 pub mod mount;
 pub mod mountpoint;
+pub mod netplan;
 pub mod osmodifier;
 pub mod osrelease;
 pub mod osuuid;

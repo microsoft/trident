@@ -46,7 +46,7 @@ pub fn compute_file_hash(path: &Path) -> io::Result<(u64, String)> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use std::io::Cursor;

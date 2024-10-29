@@ -153,7 +153,7 @@ fn make_markers(item: &TestCaseMetadata) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

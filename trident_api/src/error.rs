@@ -352,9 +352,6 @@ pub enum ServicingError {
     #[error("Failed to remove crypttab at path '{crypttab_path}'")]
     RemoveCrypttab { crypttab_path: String },
 
-    #[error("Failed to render runtime network Netplan YAML")]
-    RenderNetworkNetplanYaml,
-
     #[error("Failed to fetch device path for root from '{mountinfo_file}'")]
     RootMountPointDevPath { mountinfo_file: String },
 

@@ -122,7 +122,7 @@ fn create_filesystem_on_block_device(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use std::path::PathBuf;

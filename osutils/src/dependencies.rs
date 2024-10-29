@@ -410,7 +410,7 @@ impl CommandOutput {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

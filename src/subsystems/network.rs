@@ -2,14 +2,10 @@ use std::path::Path;
 
 use log::debug;
 
+use osutils::netplan;
 use trident_api::error::{ReportError, ServicingError, TridentError};
 
-use crate::engine::Subsystem;
-
-use super::EngineContext;
-
-mod netplan;
-pub mod provisioning;
+use crate::engine::{EngineContext, Subsystem};
 
 #[derive(Default, Debug)]
 pub struct NetworkSubsystem;
@@ -23,9 +19,7 @@ impl Subsystem for NetworkSubsystem {
         match ctx.spec.os.network.as_ref() {
             Some(config) => {
                 debug!("Configuring network");
-                let config = netplan::render_netplan_yaml(config)
-                    .structured(ServicingError::RenderNetworkNetplanYaml)?;
-                netplan::write(&config).structured(ServicingError::WriteNetplanConfig)?;
+                netplan::write(config).structured(ServicingError::WriteNetplanConfig)?;
                 netplan::generate().structured(ServicingError::GenerateNetplanConfig)?;
             }
             None => {

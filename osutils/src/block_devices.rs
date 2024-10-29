@@ -200,7 +200,7 @@ pub fn get_partition_number(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

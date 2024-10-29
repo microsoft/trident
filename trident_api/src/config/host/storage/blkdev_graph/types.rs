@@ -642,7 +642,7 @@ mod documentation {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::str::FromStr;
 
     use anyhow::Context;

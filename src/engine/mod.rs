@@ -31,35 +31,32 @@ use trident_api::{
 use crate::grpc::{self, protobufs::HostStatusState};
 use crate::{
     datastore::DataStore,
-    engine::{
-        boot::BootSubsystem,
+    engine::{boot::BootSubsystem, storage::StorageSubsystem},
+    subsystems::{
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
+        management::ManagementSubsystem,
         network::NetworkSubsystem,
         osconfig::{MosConfigSubsystem, OsConfigSubsystem},
         selinux::SelinuxSubsystem,
-        storage::StorageSubsystem,
     },
-    subsystems::management::ManagementSubsystem,
     HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH, TRIDENT_BACKGROUND_LOG_PATH,
 };
 
+// Engine functionality
+pub mod bootentries;
+mod context;
+mod kexec;
+mod newroot;
+mod osimage;
+pub mod provisioning_network;
+
 // Trident Subsystems
 pub mod boot;
-pub mod hooks;
-pub mod initrd;
-pub mod network;
-pub mod osconfig;
-mod osimage;
 pub mod storage;
 
 // Helper modules
-pub mod bootentries;
-mod context;
 mod etc_overlay;
-mod kexec;
-mod newroot;
-pub mod selinux;
 
 pub use newroot::NewrootMount;
 
@@ -1049,7 +1046,7 @@ pub fn reboot() -> Result<(), TridentError> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use maplit::btreemap;

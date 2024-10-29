@@ -479,7 +479,7 @@ pub(super) fn validate_compatibility(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use std::{fs, path::PathBuf, str::FromStr};

@@ -273,7 +273,7 @@ impl RunAndCheck for Command {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use std::process::Command;

@@ -5,10 +5,10 @@ use log::info;
 use osutils::mkinitrd;
 use trident_api::error::TridentError;
 
-use super::{EngineContext, Subsystem};
+use crate::engine::{EngineContext, Subsystem};
 
 #[derive(Default)]
-pub(super) struct InitrdSubsystem;
+pub struct InitrdSubsystem;
 impl Subsystem for InitrdSubsystem {
     fn name(&self) -> &'static str {
         "initrd"

@@ -14,7 +14,7 @@ use trident_api::{
     status::ServicingType,
 };
 
-use super::{EngineContext, Subsystem};
+use crate::engine::{EngineContext, Subsystem};
 
 /// Gets the seinux type from the selinux config file.
 fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Error> {
@@ -80,7 +80,7 @@ impl Subsystem for SelinuxSubsystem {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use std::io::Write;

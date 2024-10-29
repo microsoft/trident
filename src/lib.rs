@@ -44,7 +44,7 @@ mod subsystems;
 #[cfg(feature = "grpc-dangerous")]
 mod grpc;
 
-pub use engine::network::provisioning as network_provisioning;
+pub use engine::provisioning_network;
 pub use logging::{
     background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
     tracestream::TraceStream,
@@ -254,7 +254,7 @@ impl Trident {
         let host_config = Self::get_host_configuration(&self.config)?;
 
         info!("Starting network");
-        network_provisioning::start(
+        provisioning_network::start(
             self.config.network_override.clone(),
             host_config.as_deref(),
             self.config.wait_for_provisioning_network,

@@ -10,9 +10,10 @@ use trident_api::{
     status::ServicingType,
 };
 
-use crate::{engine::Subsystem, OS_MODIFIER_BINARY_PATH};
-
-use super::EngineContext;
+use crate::{
+    engine::{EngineContext, Subsystem},
+    OS_MODIFIER_BINARY_PATH,
+};
 
 mod hostname;
 mod users;

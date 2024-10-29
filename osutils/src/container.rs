@@ -68,7 +68,7 @@ pub fn get_host_root_path() -> Result<PathBuf, TridentError> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use trident_api::error::{ContainerConfigurationError, ErrorKind};

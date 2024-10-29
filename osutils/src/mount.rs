@@ -110,7 +110,7 @@ pub fn ensure_mount_directory(target_path: &Path) -> Result<(), Error> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use std::fs::File;

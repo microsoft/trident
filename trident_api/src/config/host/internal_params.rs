@@ -45,7 +45,7 @@ impl InternalParams {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]
