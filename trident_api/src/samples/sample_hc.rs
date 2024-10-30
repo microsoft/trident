@@ -180,6 +180,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 ..Default::default()
             },
             scripts: Scripts {
+                pre_servicing: vec![Script {
+                    name: "sample-pre-servicing-script".into(),
+                    run_on: vec![ServicingTypeSelection::All],
+                    source: ScriptSource::Content("echo 'Running before Trident servicing'".into()),
+                    ..Default::default()
+                }],
                 post_provision: vec![Script {
                     name: "sample-provision-script".into(),
                     run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
@@ -385,6 +391,12 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 ..Default::default()
             },
             scripts: Scripts {
+                pre_servicing: vec![Script {
+                    name: "sample-pre-servicing-script".into(),
+                    run_on: vec![ServicingTypeSelection::All],
+                    source: ScriptSource::Content("echo 'Running before Trident servicing'".into()),
+                    ..Default::default()
+                }],
                 post_provision: vec![Script {
                     name: "sample-provision-script".into(),
                     run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],

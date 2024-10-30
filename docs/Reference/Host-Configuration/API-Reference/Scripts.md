@@ -44,3 +44,18 @@ These scripts are run with the root filesystem of the target OS mounted at *$TAR
    | Type           | `Script`              |
    | Link           | [Script](./Script.md) |
 
+### `preServicing` (optional)
+
+Scripts to be run before Trident begins servicing the host.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                 |
+   | -------------- | --------------------- |
+   | Type           | `Script`              |
+   | Link           | [Script](./Script.md) |
+

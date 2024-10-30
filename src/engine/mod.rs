@@ -267,6 +267,9 @@ fn stage_clean_install(
         os_image: osimage::load_os_image(host_config)?,
     };
 
+    // Execute pre-servicing scripts
+    HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
+
     validate_host_config(subsystems, &ctx, host_config)?;
 
     debug!("Clearing saved host status");
@@ -469,6 +472,10 @@ pub(super) fn update(
     );
 
     ctx.servicing_type = servicing_type;
+
+    // Execute pre-servicing scripts
+    HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
+
     validate_host_config(&subsystems, &ctx, host_config)?;
 
     let update_start_time = Instant::now();

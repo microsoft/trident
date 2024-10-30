@@ -283,6 +283,33 @@ impl HooksSubsystem {
 
         Ok(())
     }
+
+    /// This function will be called outside the standard subsystem flow
+    /// before Trident starts a servicing operation.
+    pub fn execute_pre_servicing_scripts(
+        &mut self,
+        ctx: &EngineContext,
+    ) -> Result<(), TridentError> {
+        if !ctx.spec.scripts.pre_servicing.is_empty() {
+            debug!("Running pre-servicing scripts");
+        }
+        ctx.spec
+            .scripts
+            .pre_servicing
+            .iter()
+            .try_for_each(|script| {
+                self.run_script(
+                    script,
+                    ctx.servicing_type,
+                    Path::new(ROOT_MOUNT_POINT_PATH),
+                    Path::new(ROOT_MOUNT_POINT_PATH),
+                )
+                .structured(ServicingError::RunPreServicingScript {
+                    script_name: script.name.clone(),
+                })
+            })?;
+        Ok(())
+    }
 }
 
 fn set_env_vars(
@@ -712,5 +739,66 @@ mod tests {
 
         // Cleanup
         temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_execute_pre_servicing_scripts_success() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_dir = temp_dir.path().join("test-directory");
+
+        let mut environment_variables = HashMap::new();
+        environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
+        let ctx = EngineContext {
+            spec: HostConfiguration {
+                scripts: Scripts {
+                    pre_servicing: vec![Script {
+                        name: "test-script".into(),
+                        run_on: vec![ServicingTypeSelection::CleanInstall],
+                        interpreter: Some("/bin/bash".into()),
+                        source: ScriptSource::Content("mkdir $TEST_DIR".into()),
+                        environment_variables,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            servicing_type: ServicingType::CleanInstall,
+            ..Default::default()
+        };
+        let mut subsystem = HooksSubsystem::default();
+        subsystem.execute_pre_servicing_scripts(&ctx).unwrap();
+        assert!(test_dir.exists());
+        // Cleanup
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_execute_pre_servicing_scripts_failure() {
+        let ctx = EngineContext {
+            spec: HostConfiguration {
+                scripts: Scripts {
+                    pre_servicing: vec![Script {
+                        name: "test-script".into(),
+                        run_on: vec![ServicingTypeSelection::CleanInstall],
+                        interpreter: Some("/bin/bash".into()),
+                        source: ScriptSource::Content("cat nonexisting.txt".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            servicing_type: ServicingType::CleanInstall,
+            ..Default::default()
+        };
+        let result = HooksSubsystem::default().execute_pre_servicing_scripts(&ctx);
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &ErrorKind::Servicing(ServicingError::RunPreServicingScript {
+                script_name: "test-script".into()
+            })
+        );
     }
 }

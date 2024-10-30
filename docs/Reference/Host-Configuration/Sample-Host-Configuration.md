@@ -93,6 +93,11 @@ storage:
       path: /mnt/raid
       options: defaults
 scripts:
+  preServicing:
+  - name: sample-pre-servicing-script
+    runOn:
+    - all
+    content: echo 'Running before Trident servicing'
   postProvision:
   - name: sample-provision-script
     runOn:

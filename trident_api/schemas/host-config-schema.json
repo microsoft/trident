@@ -919,6 +919,13 @@
           "items": {
             "$ref": "#/definitions/Script"
           }
+        },
+        "preServicing": {
+          "description": "Scripts to be run before Trident begins servicing the host.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Script"
+          }
         }
       },
       "additionalProperties": false

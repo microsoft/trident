@@ -16,6 +16,11 @@ use super::error::HostConfigurationStaticValidationError;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Scripts {
+    /// Scripts to be run before Trident begins servicing the host.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pre_servicing: Vec<Script>,
+
     /// Scripts to be run after step 'Provision' in Trident is complete.
     ///
     /// These scripts are run with the root filesystem of the target OS mounted at *$TARGET_ROOT*

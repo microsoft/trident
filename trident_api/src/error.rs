@@ -355,6 +355,9 @@ pub enum ServicingError {
     #[error("Failed to fetch device path for root from '{mountinfo_file}'")]
     RootMountPointDevPath { mountinfo_file: String },
 
+    #[error("Failed to run pre-servicing script '{script_name}'")]
+    RunPreServicingScript { script_name: String },
+
     #[error("Failed to run post-configure script '{script_name}'")]
     RunPostConfigureScript { script_name: String },
 
