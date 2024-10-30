@@ -1194,7 +1194,7 @@ mod tests {
             None
         );
 
-        // Now, set servicing type to AbUpdate; servicing state to Staging.
+        // Now, set servicing type to AbUpdate.
         ctx.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
             get_block_device_path(&ctx, &"osab".to_owned()).unwrap(),

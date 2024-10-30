@@ -1,11 +1,10 @@
 graph TD
-A[NotProvisioned] --> |Received a valid HC & 'stage' in 'allowedOperations'|B[Staging]
-B --> |Staging succeeded|C[Staged]
-B --> |Staging failed|B
-C --> |Received 'finalize' in 'allowedOperations'|E[Finalizing]
-C --> |Received a new valid HC & 'stage' in 'allowedOperations'|B
-E --> |Finalizing failed|B
-E --> |Finalizing succeeded|F[Finalized]
-F --> |Reboot into runtime OS image succeeded|G[Provisioned]
-F --> |Failed to reboot into the updated runtime OS image|D[CleanInstallFailed]
-D --> |Received a new valid HC & 'stage' in 'allowedOperations'|B
+A[servicingType: no-active-servicing\nservicingState: not-provisioned] --> |'stage' in 'allowedOperations'.\nReceived a valid HC|B[servicingType: clean-install\nservicingState: not-provisioned]
+B --> |Staging failed|A
+B --> |Staging succeeded|C[servicingType: clean-install\nservicingState: staged]
+C --> |'finalize' in 'allowedOperations'.\nFinalizing succeeded|E[servicingType: clean-install\nservicingState: finalized]
+C --> |'finalize' in 'allowedOperations'.\nFinalizing failed|A
+C --> |'stage' in 'allowedOperations'.\nReceived a valid updated HC|B
+E --> |Successfully rebooted into the runtime OS image|G[servicingType: no-active-servicing\nservicingState: provisioned]
+E --> |Failed to reboot into the runtime OS image|D[servicingType: no-active-servicing\nservicingState: clean-install-failed]
+D --> |'stage' in 'allowedOperations'.\nReceived a valid updated HC|B

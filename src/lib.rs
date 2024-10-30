@@ -575,13 +575,11 @@ impl Trident {
                 // user to update HC and re-run
                 if datastore.host_status().servicing_state == ServicingState::AbUpdateFailed {
                     error!("Previous A/B update failed with current host config. Update host config and re-run");
-                    return Err(TridentError::new(
+                    Err(TridentError::new(
                         InvalidInputError::RerunAbUpdateWithFailedHostConfiguration,
-                    ));
-                }
-
-                // If an update has been previously staged, only need to finalize the update
-                if datastore.host_status().servicing_state == ServicingState::Staged {
+                    ))
+                } else if datastore.host_status().servicing_state == ServicingState::Staged {
+                    // If an update has been previously staged, only need to finalize the update
                     debug!("There is an update staged on the host");
                     if cmd.allowed_operations.has_finalize() {
                         engine::finalize_update(
@@ -596,11 +594,9 @@ impl Trident {
                         Ok(())
                     }
                 } else {
-                    // If servicing state is Provisioned, need to refresh host status. If servicing
-                    // state is Staging, need to re-do update.
-                    //
-                    // State cannot be NotProvisioned or Finalized here; Staged and AbUpdateFailed
-                    // were addressed above
+                    // Otherwise, if servicing state is Provisioned, need to inform the user that
+                    // no new servicing has been requested. Servicing state cannot be
+                    // NotProvisioned or Finalized here.
                     engine::update(cmd, datastore).message("Failed to run update()")
                 }
             }
@@ -622,17 +618,17 @@ impl Trident {
             } else {
                 debug!("Host config has not been updated");
 
-                // If host config has not been updated and the previous clean install attempt
+                // If host config has not been updated and the previous clean install servicing has
                 // failed, ask the user to update HC and re-run
                 if datastore.host_status().servicing_state == ServicingState::CleanInstallFailed {
                     error!("Previous clean install attempt failed with current host config. Update host config and re-run");
-                    return Err(TridentError::new(
+                    Err(TridentError::new(
                         InvalidInputError::RerunCleanInstallWithFailedHostConfiguration,
-                    ));
-                }
-
-                // If HS.spec matches the new HS, only need to finalize the clean install
-                if datastore.host_status().servicing_state == ServicingState::Staged {
+                    ))
+                } else {
+                    // Otherwise, if servicing state is 'Staged', i.e. a clean install has been
+                    // staged, only need to finalize the clean install, if requested. No other
+                    // servicing state is possible here.
                     debug!("There is a clean install staged on the host");
                     if cmd.allowed_operations.has_finalize() {
                         // Remount new root and custom mounts if we're finalizing a clean install
@@ -651,12 +647,6 @@ impl Trident {
                         debug!("Allowed operations do not include 'finalize'. Skipping finalizing of clean install");
                         Ok(())
                     }
-                } else {
-                    // If servicing state is Staging, need to re-do update.
-                    //
-                    // State cannot be NotProvisioned, Provisioned, AbUpdateFailed, or
-                    // Finalized here; Staged and CleanInstallFailed were addressed above.
-                    engine::clean_install(cmd, datastore).message("Failed to run clean_install()")
                 }
             }
         }

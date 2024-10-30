@@ -41,8 +41,8 @@ impl Cosi {
     pub(super) fn new(source: &Url) -> Result<Self, Error> {
         trace!("Scanning COSI file from '{}'", source);
 
-        // Create a new COSI reader factory. THis will let us cleverly build
-        // readers for the cosi file regardless of its location.
+        // Create a new COSI reader factory. This will let us cleverly build
+        // readers for the COSI file regardless of its location.
         let reader_factory =
             CosiReader::new(source).context("Failed to create COSI reader factory.")?;
 

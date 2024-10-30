@@ -93,9 +93,9 @@ pub enum ServicingState {
     /// Servicing has been finalized, i.e., UEFI variables have been set, so that firmware boots
     /// from the updated runtime OS image after reboot.
     Finalized,
-    /// Servicing of type CleanInstall has failed.
+    /// Servicing of type `CleanInstall` has failed.
     CleanInstallFailed,
-    /// Servicing of type AbUpdate has failed.
+    /// Servicing of type `AbUpdate` has failed.
     AbUpdateFailed,
     /// Servicing has been completed, and the host succesfully booted from the updated runtime OS
     /// image. Trident is ready to begin a new servicing.

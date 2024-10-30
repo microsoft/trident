@@ -52,7 +52,6 @@ executing. In the host status, `servicingState` describes the progress of the
    the host is still running in the provisioning OS and has not yet been
    provisioned by Trident.
    - `CleanInstallFailed`: Servicing of type CleanInstall has failed.
-   - `Staging`: Trident is finalizing the ongoing servicing.
    - `Staged`: Servicing has been staged, i.e., the updated runtime OS image has
    been deployed onto block devices.
    - `Finalized`: Servicing has been finalized i.e., UEFI variables have been set,
