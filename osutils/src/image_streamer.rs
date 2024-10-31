@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::debug;
+use log::{debug, trace};
 
 use crate::hashing_reader::HashingReader;
 
@@ -30,17 +30,7 @@ pub fn stream_zstd(
     // Decompress the image and write it to the block device
     let bytes_copied = io::copy(&mut decoder, &mut file).context("Failed to copy image")?;
 
-    debug!(
-        "Copied {} bytes to {} in {:.2} seconds",
-        bytes_copied,
-        destination_path.display(),
-        t.elapsed().as_secs_f32()
-    );
-
-    file.into_inner()
-        .context("Failed to flush")?
-        .sync_all()
-        .context("Failed to sync")?;
+    trace!("Decompressed {} bytes.", bytes_copied);
 
     // Attempt to read an additional byte from the stream to see whether the whole image was
     // consumed.
@@ -48,6 +38,23 @@ pub fn stream_zstd(
         bail!("Image is larger than destination ({} bytes already copied, however additional bytes remaining)", bytes_copied);
     }
 
-    let computed_sha256 = reader.hash();
-    Ok(computed_sha256)
+    trace!(
+        "Syncing '{}' to finish writing image.",
+        destination_path.display()
+    );
+
+    // Flush and sync the file to ensure all data is written to disk.
+    file.into_inner()
+        .context("Failed to flush")?
+        .sync_all()
+        .context("Failed to sync")?;
+
+    debug!(
+        "Copied {} bytes to '{}' in {:.2} seconds",
+        bytes_copied,
+        destination_path.display(),
+        t.elapsed().as_secs_f32()
+    );
+
+    Ok(reader.hash())
 }
