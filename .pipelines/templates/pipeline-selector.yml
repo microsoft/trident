@@ -14,6 +14,14 @@ parameters:
       - "ci"
       - "pre"
     displayName: "Stage to run"
+  
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
 
   - name: blockPublishing
     type: boolean
@@ -28,3 +36,4 @@ stages:
         parameters:
           stageType: ${{ parameters.targetStage }}
           blockPublishing: ${{ parameters.blockPublishing }}
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}

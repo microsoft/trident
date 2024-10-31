@@ -5,6 +5,14 @@ parameters:
 - name: outputArtifactName
   type: string
 
+- name: baseimgBuildType
+  displayName: Base Image build type
+  type: string
+  values:
+    - preview
+    - release
+  default: "release"
+
 - name: runtimeEnv
   displayName: "Runtime environment (host vs container)"
   type: string
@@ -32,11 +40,10 @@ stages:
     variables:
       ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
       ob_artifactBaseName: ${{ parameters.outputArtifactName }}
-      micBuildType: "release"
-      micVersion: "*.*.*"
-      baseimgBuildType: "release"
-      baseimgVersion: "*.*.*"
-      baseimgAzureLinuxVersion: "3.0"
+      MIC_BUILD_TYPE: "release"
+      MIC_VERSION: "*.*.*"
+      BASEIMG_VERSION: "*.*.*"
+      BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
     steps:
     - task: DownloadPipelineArtifact@2
@@ -52,10 +59,10 @@ stages:
         target: ${{ parameters.imageName }}
         outputDirectory: ${{ variables.ob_outputDirectory }}
         testImagesRepo: test-images
-        micBuildType: ${{ variables.micBuildType }}
-        micVersion: ${{ variables.micVersion }}
-        baseimgBuildType: ${{ variables.baseimgBuildType }}
-        baseimgVersion: ${{ variables.baseimgVersion }}
-        baseimgAzureLinuxVersion: ${{ variables.baseimgAzureLinuxVersion }}
+        micBuildType: ${{ variables.MIC_BUILD_TYPE }}
+        micVersion: ${{ variables.MIC_VERSION }}
+        baseimgBuildType: ${{ parameters.baseimgBuildType }}
+        baseimgVersion: ${{ variables.BASEIMG_VERSION }}
+        baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
         downloadTrident: false
    

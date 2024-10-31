@@ -8,6 +8,15 @@
 # Support:        https://aka.ms/onebranchsup                                   #
 #################################################################################
 
+parameters:
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
 trigger:
   batch: true
   branches:
@@ -68,3 +77,4 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: ci
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}

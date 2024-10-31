@@ -1,4 +1,12 @@
 parameters:
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
   - name: "debug"
     displayName: "Enable debug output"
     type: boolean
@@ -82,3 +90,4 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: pre
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}

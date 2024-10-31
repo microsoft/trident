@@ -4,6 +4,14 @@ parameters:
     type: boolean
     default: false
 
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
 stages:
   - stage: ServicingTesting
     displayName: Servicing Testing
@@ -24,12 +32,11 @@ stages:
         variables:
           tridentSourceDirectory: $(Build.SourcesDirectory)
           ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs
-          micBuildType: "release"
-          micVersion: "*.*.*"
-          baseimgBuildType: "release"
-          baseimgVersion: "*.*.*"
-          baseimgAzureLinuxVersion: "3.0"
-          vmname: vmtrident
+          MIC_BUILD_TYPE: "release"
+          MIC_VERSION: "*.*.*"
+          BASEIMG_VERSION: "*.*.*"
+          BASEIMG_AZURE_LINUX_VERSION: "3.0"
+          VM_NAME: vmtrident
 
         steps:
           - task: DownloadPipelineArtifact@2
@@ -54,18 +61,18 @@ stages:
               target: build/trident-vm-verity-testimage.qcow2
               outputDirectory: ${{ variables.tridentSourceDirectory }}
               testImagesRepo: test-images
-              micBuildType: ${{ variables.micBuildType }}
-              micVersion: ${{ variables.micVersion }}
-              baseimgBuildType: ${{ variables.baseimgBuildType }}
-              baseimgVersion: ${{ variables.baseimgVersion }}
-              baseimgAzureLinuxVersion: ${{ variables.baseimgAzureLinuxVersion }}
+              micBuildType: ${{ variables.MIC_BUILD_TYPE }}
+              micVersion: ${{ variables.MIC_VERSION }}
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              baseimgVersion: ${{ variables.BASEIMG_VERSION }}
+              baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               downloadTrident: false
 
           - bash: |
               set -ux
 
               sudo virt-install \
-                --name ${{ variables.vmname }} \
+                --name ${{ variables.VM_NAME }} \
                 --memory 2048 \
                 --vcpus 2 \
                 --os-variant generic \
@@ -74,8 +81,8 @@ stages:
                 --network default \
                 --boot uefi,loader=/usr/share/OVMF/OVMF_CODE_4M.fd,loader_secure=no \
                 --noautoconsole
-              until sudo virsh dumpxml ${{ variables.vmname }}; do sudo virsh list; sleep 0.1; done
-              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.vmname }} | grep -A 1 console | grep source | cut -d"'" -f2`
+              until sudo virsh dumpxml ${{ variables.VM_NAME }}; do sudo virsh list; sleep 0.1; done
+              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.VM_NAME }} | grep -A 1 console | grep source | cut -d"'" -f2`
 
               until [ -c "$VM_SERIAL_LOG" ]
               do
@@ -102,9 +109,9 @@ stages:
           - bash: |
               set -eu
 
-              while [ `sudo virsh domifaddr ${{ variables.vmname }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
-              sudo virsh domifaddr ${{ variables.vmname }}
-              VM_IP=`sudo virsh domifaddr ${{ variables.vmname }} | grep ipv4 | awk '{print $4}' | cut -d'/' -f1`
+              while [ `sudo virsh domifaddr ${{ variables.VM_NAME }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
+              sudo virsh domifaddr ${{ variables.VM_NAME }}
+              VM_IP=`sudo virsh domifaddr ${{ variables.VM_NAME }} | grep ipv4 | awk '{print $4}' | cut -d'/' -f1`
               echo "##vso[task.setvariable variable=vmip]$VM_IP"
               echo "VM IP: $VM_IP"
             displayName: "Get VM IP"
@@ -137,11 +144,11 @@ stages:
               target: trident-vm-verity-testimage
               outputDirectory: ${{ variables.tridentSourceDirectory }}/update
               testImagesRepo: test-images
-              micBuildType: ${{ variables.micBuildType }}
-              micVersion: ${{ variables.micVersion }}
-              baseimgBuildType: ${{ variables.baseimgBuildType }}
-              baseimgVersion: ${{ variables.baseimgVersion }}
-              baseimgAzureLinuxVersion: ${{ variables.baseimgAzureLinuxVersion }}
+              micBuildType: ${{ variables.MIC_BUILD_TYPE }}
+              micVersion: ${{ variables.MIC_VERSION }}
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              baseimgVersion: ${{ variables.BASEIMG_VERSION }}
+              baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               downloadTrident: false
 
           - bash: |
@@ -155,7 +162,7 @@ stages:
 
               set -e
 
-              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.vmname }} | grep -A 1 console | grep source | cut -d"'" -f2`
+              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.VM_NAME }} | grep -A 1 console | grep source | cut -d"'" -f2`
 
               until [ -c "$VM_SERIAL_LOG" ]
               do
@@ -182,8 +189,8 @@ stages:
           - bash: |
               set -eux
 
-              while [ `sudo virsh domifaddr ${{ variables.vmname }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
-              VM_IP=`sudo virsh domifaddr ${{ variables.vmname }} | grep ipv4 | awk '{print $4}' | cut -d'/' -f1`
+              while [ `sudo virsh domifaddr ${{ variables.VM_NAME }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
+              VM_IP=`sudo virsh domifaddr ${{ variables.VM_NAME }} | grep ipv4 | awk '{print $4}' | cut -d'/' -f1`
               ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$VM_IP \
                 "sudo trident get"
 

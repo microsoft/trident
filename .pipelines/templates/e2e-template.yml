@@ -9,6 +9,14 @@ parameters:
       - pre
       - rel
 
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+ 
   - name: blockPublishing
     displayName: "Block publishing to artifact feed."
     type: boolean
@@ -37,12 +45,14 @@ stages:
     parameters:
       imageName: build/trident-installer-testimage.iso
       outputArtifactName: trident-installer-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
 
   # Build Trident installer ISO (container)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: build/trident-container-installer-testimage.iso
       outputArtifactName: trident-container-installer-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
       runtimeEnv: "container"
 
   # Build Trident test image (regular)
@@ -50,12 +60,14 @@ stages:
     parameters:
       imageName: trident-testimage
       outputArtifactName: trident-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
 
   # Build Trident test image (container)
   - template: stages/build_image/trident-testimg.yml
     parameters:
       imageName: trident-container-testimage
       outputArtifactName: trident-container-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
       runtimeEnv: "container"
 
   # Build Trident test image (verity)
@@ -63,9 +75,12 @@ stages:
     parameters:
       imageName: trident-verity-testimage
       outputArtifactName: trident-verity-testimage
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
+    parameters:
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
