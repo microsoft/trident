@@ -42,6 +42,10 @@ stages:
           - checkout: platform-tests
             fetchDepth: 1
 
+          - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              action: override
+
           - template: ../testing_vm/netlaunch-prep.yml
 
           - bash: |

@@ -23,6 +23,11 @@ stages:
             displayName: Install native dependencies
             retryCountOnTaskFailure: 3
 
+          - task: CargoAuthenticate@0
+            displayName: "Authenticate with Cargo"
+            inputs:
+              configFile: .cargo/config.toml
+
           - template: ../common_tasks/rustup.yml
 
           - bash: |

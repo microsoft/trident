@@ -1,2 +1,8 @@
 [net]
 git-fetch-with-cli = true
+
+[registries]
+BMP_PublicPackages = { index = "sparse+https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/BMP_PublicPackages/Cargo/index/" }
+
+[source.crates-io]
+replace-with = "BMP_PublicPackages"

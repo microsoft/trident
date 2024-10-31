@@ -38,8 +38,14 @@ endif
 	./scripts/test-pipeline testing -q $(BRANCH_FLAG)
 	./scripts/test-pipeline tester -q $(BRANCH_FLAG)
 
+# Local override of the cargo config to avoid having to go through the registry
+.cargo/config: .cargo/config.toml
+	@cp $< $@
+	@sed -i 's|replace-with = "BMP_PublicPackages"|# &|' $@
+	@echo "NOTICE: Created local .cargo/config file."
+
 .PHONY: build
-build:
+build: .cargo/config
 	$(eval TRIDENT_CARGO_VERSION := $(shell cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "trident") | .version'))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
 	@OPENSSL_STATIC=1 \
@@ -55,16 +61,16 @@ format:
 	python3 -m black .
 
 .PHONY: test
-test:
+test: .cargo/config
 	cargo test --all --no-fail-fast
 
 .PHONY: ut-coverage
-ut-coverage:
+ut-coverage: .cargo/config
 	mkdir -p target/coverage/profraw
 	CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE='target/coverage/profraw/cargo-test-%p-%m.profraw' cargo test --target-dir target/coverage --all --no-fail-fast
 
 .PHONY: coverage-report
-coverage-report:
+coverage-report: .cargo/config
 	# cargo install grcov
 	grcov . --binary-path ./target/coverage/debug/deps/ -s . -t html,covdir,cobertura --branch --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "docbuilder/*" --ignore "target/*" -o target/coverage
 	jq .coveragePercent target/coverage/covdir
@@ -166,7 +172,7 @@ else
 endif
 
 .PHONY: docbuilder
-docbuilder:
+docbuilder: .cargo/config
 	cargo build --package docbuilder $(DOCS_CARGO_ARGS)
 	$(eval DOCBUILDER_BIN := $(DOCS_BIN_DIR)/docbuilder)
 
@@ -227,7 +233,7 @@ validate-api-schema: build-api-schema docbuilder
 	@echo "Trident API Schema is OK!"
 
 .PHONY: build-functional-tests
-build-functional-test:
+build-functional-test: .cargo/config
 	cargo build --tests --features functional-test --all
 
 FUNCTIONAL_TEST_DIR := /tmp/trident-test
@@ -236,7 +242,7 @@ TRIDENT_COVERAGE_TARGET := target/coverage
 BUILD_OUTPUT := $(shell mktemp)
 
 .PHONY: build-functional-tests-cc
-build-functional-test-cc:
+build-functional-test-cc: .cargo/config
 	# Redirect output to get to the test binaries; needs to be in sync with below
 	-@OPENSSL_STATIC=1 \
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
@@ -280,17 +286,16 @@ patch-functional-test: build-functional-test-cc generate-functional-test-manifes
 	ARGUS_TOOLKIT_PATH=$(ARGUS_TOOLKIT_PATH) python3 -u -m pytest functional_tests/$(FILTER) -v -o junit_logging=all --junitxml $(FUNCTIONAL_TEST_JUNIT_XML) ${FUNCTIONAL_TEST_EXTRA_PARAMS} --keep-environment --test-dir $(FUNCTIONAL_TEST_DIR) --build-output $(BUILD_OUTPUT) --reuse-environment
 
 .PHONY: generate-functional-test-manifest
-generate-functional-test-manifest:
+generate-functional-test-manifest: .cargo/config
 	cargo build --features=pytest-generator,functional-test
 	target/debug/trident pytest
 
 .PHONY: validate-configs
-validate-configs:
-	@cargo build
+validate-configs: bin/trident
 	$(eval DETECTED_HC_FILES := $(shell grep -R 'hostConfiguration:' . --include '*.yaml' --exclude-dir=target --exclude-dir=dev -l))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
-		./target/debug/trident validate -c $$file; \
+		$< validate -c $$file; \
 	done
 
 .PHONY: generate-mermaid-diagrams

@@ -8,6 +8,7 @@ developing and testing with Trident in your local dev environment.
 
 - Please ensure you have completed the necessary steps from the
   [Prerequisites](prerequisites.md) guide.
+- You *may* need to [log in to the private Cargo registry](cargo-auth.md).
 
 ## Environment Setup
 

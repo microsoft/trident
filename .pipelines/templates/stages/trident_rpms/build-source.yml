@@ -33,6 +33,9 @@ stages:
             value: "$(Build.SourcesDirectory)/trident/out"
 
         steps:
+          - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              action: override
           - template: unit-test.yml
 
       - job: Coverage
@@ -45,6 +48,9 @@ stages:
           ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
 
         steps:
+          - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              action: override
           - template: ../common_tasks/coverage.yml
             parameters:
               codeCoverageBaseline: 70 # Unit tests
@@ -64,6 +70,7 @@ stages:
               buildType: auto
 
         steps:
+          - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/download-emu.yml
           - template: release.yml
 
@@ -82,5 +89,8 @@ stages:
               buildType: auto
 
         steps:
+          - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              action: override
           - template: ../common_tasks/download-emu.yml
           - template: release2.yml

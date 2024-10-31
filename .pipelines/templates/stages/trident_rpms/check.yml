@@ -3,6 +3,10 @@ steps:
     displayName: Install native dependencies
     retryCountOnTaskFailure: 3
 
+  - template: ../common_tasks/cargo-auth.yml
+    parameters:
+      action: override
+
   - script: |
       set -eux
       python3 --version

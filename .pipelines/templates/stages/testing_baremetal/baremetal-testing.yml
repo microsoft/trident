@@ -155,11 +155,6 @@ stages:
             displayName: "Update Trident Config to inject static IP for OAM interface"
 
           - bash: |
-              set -xe
-              cargo run -- validate --config $(TRIDENT_CONFIG_FILE)
-            displayName: "Validate the modified HostConfig by running Trident validate"
-
-          - bash: |
               set -eux
 
               cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml

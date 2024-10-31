@@ -24,7 +24,10 @@ steps:
       version=$(echo $full_version | cut -d'-' -f1)
       prerelease=$(echo $full_version | cut -d'-' -f2-)
 
+      # Run docker build to create the RPMs
+      # CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN is populated by the CargoAuthenticate task
       docker build -f Dockerfile.full -t trident/trident-build:latest \
+        --secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
         --build-arg TRIDENT_VERSION="$full_version" \
         --build-arg RPM_VER="$version"\
         --build-arg RPM_REL="$prerelease"\

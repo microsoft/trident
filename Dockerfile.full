@@ -9,6 +9,7 @@ COPY systemd ./systemd
 COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
 COPY trident-selinuxpolicies.cil /usr/src/azl/SOURCES/trident-selinuxpolicies.cil
 
+COPY .cargo/config.toml ./.cargo/config.toml
 COPY build.rs .
 COPY Cargo.toml .
 COPY Cargo.lock .
@@ -24,7 +25,12 @@ ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0
 ARG RPM_REL=1
 
-RUN \
+# This entry needs to exist in the config.toml file to allow cargo to use the
+# token from the environment variable.
+# RUN printf '[registry]\nglobal-credential-providers = ["cargo:token"]\n' >> ./.cargo/config.toml
+
+RUN --mount=type=secret,id=registry_token \
+    export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN=$(cat /run/secrets/registry_token) && \
     rpmbuild -bb --build-in-place trident.spec \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \

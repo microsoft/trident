@@ -356,3 +356,6 @@ trident-metrics.jsonl
 
 # Baremetal serial log
 baremetal-serial.log
+
+# Local cargo config
+.cargo/config
