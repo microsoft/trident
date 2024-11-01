@@ -1,11 +1,5 @@
 //! Helper structs for partition details
 
-use std::fmt::Display;
-
-use serde::{Deserialize, Serialize};
-
-use crate::config::PartitionType;
-
 /// A list of partition attributes
 pub(crate) struct PartitionAttributeList<'a, T>(pub(crate) Vec<PartitionAttribute<'a, T>>);
 
@@ -69,57 +63,6 @@ impl<'a, T> IntoIterator for PartitionAttributeList<'a, T> {
 impl<'a, T> FromIterator<PartitionAttribute<'a, T>> for PartitionAttributeList<'a, T> {
     fn from_iter<I: IntoIterator<Item = PartitionAttribute<'a, T>>>(iter: I) -> Self {
         Self(iter.into_iter().collect())
-    }
-}
-
-/// Wrapper for a list of PartitionType
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub enum AllowedPartitionTypes {
-    None,
-    Any,
-    Allow(Vec<PartitionType>),
-    Block(Vec<PartitionType>),
-}
-
-impl AllowedPartitionTypes {
-    pub(crate) fn contains(&self, part_type: PartitionType) -> bool {
-        match self {
-            AllowedPartitionTypes::None => false,
-            AllowedPartitionTypes::Any => true,
-            AllowedPartitionTypes::Allow(types) => types.iter().any(|t| t == &part_type),
-            AllowedPartitionTypes::Block(types) => types.iter().all(|t| t != &part_type),
-        }
-    }
-}
-
-impl Display for AllowedPartitionTypes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AllowedPartitionTypes::None => write!(f, "none"),
-            AllowedPartitionTypes::Any => write!(f, "any"),
-            AllowedPartitionTypes::Allow(types) => {
-                write!(
-                    f,
-                    "{}",
-                    types
-                        .iter()
-                        .map(|t| format!("'{t}'"))
-                        .collect::<Vec<String>>()
-                        .join(" or ")
-                )
-            }
-            AllowedPartitionTypes::Block(types) => {
-                write!(
-                    f,
-                    "any type except {}",
-                    types
-                        .iter()
-                        .map(|t| format!("'{t}'"))
-                        .collect::<Vec<String>>()
-                        .join(" or ")
-                )
-            }
-        }
     }
 }
 

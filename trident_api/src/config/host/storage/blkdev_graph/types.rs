@@ -641,6 +641,57 @@ mod documentation {
     }
 }
 
+/// A list to only allow or block certain types of objects in rules.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum AllowBlockList<T> {
+    None,
+    Any,
+    Allow(Vec<T>),
+    Block(Vec<T>),
+}
+
+impl<T: PartialEq> AllowBlockList<T> {
+    pub(crate) fn contains(&self, part_type: T) -> bool {
+        match self {
+            AllowBlockList::None => false,
+            AllowBlockList::Any => true,
+            AllowBlockList::Allow(types) => types.iter().any(|t| t == &part_type),
+            AllowBlockList::Block(types) => types.iter().all(|t| t != &part_type),
+        }
+    }
+}
+
+impl<T: Display> Display for AllowBlockList<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AllowBlockList::None => write!(f, "none"),
+            AllowBlockList::Any => write!(f, "any"),
+            AllowBlockList::Allow(types) => {
+                write!(
+                    f,
+                    "{}",
+                    types
+                        .iter()
+                        .map(|t| format!("'{t}'"))
+                        .collect::<Vec<String>>()
+                        .join(" or ")
+                )
+            }
+            AllowBlockList::Block(types) => {
+                write!(
+                    f,
+                    "any type except {}",
+                    types
+                        .iter()
+                        .map(|t| format!("'{t}'"))
+                        .collect::<Vec<String>>()
+                        .join(" or ")
+                )
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

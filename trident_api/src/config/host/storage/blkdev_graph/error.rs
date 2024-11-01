@@ -7,9 +7,8 @@ use crate::{
 
 use super::{
     cardinality::ValidCardinality,
-    partitions::AllowedPartitionTypes,
     types::{
-        BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag,
+        AllowBlockList, BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag,
         FileSystemSourceKind, FileSystemSourceKindList,
     },
 };
@@ -59,7 +58,7 @@ pub enum BlockDeviceGraphBuildError {
         referrer: BlkDevReferrerKind,
         fs_desc: String,
         partition_type: PartitionType,
-        compatible_types: AllowedPartitionTypes,
+        compatible_types: AllowBlockList<PartitionType>,
     },
 
     #[error(
@@ -136,7 +135,7 @@ pub enum BlockDeviceGraphBuildError {
         kind: BlkDevKind,
         partition_id: BlockDeviceId,
         partition_type: PartitionType,
-        valid_types: AllowedPartitionTypes,
+        valid_types: AllowBlockList<PartitionType>,
     },
 
     #[error(

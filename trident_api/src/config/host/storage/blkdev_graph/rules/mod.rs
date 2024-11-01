@@ -30,10 +30,10 @@ use super::{
     cardinality::ValidCardinality,
     graph::BlockDeviceGraph,
     mountpoints::ValidMountpoints,
-    partitions::AllowedPartitionTypes,
     types::{
-        BlkDevKind, BlkDevKindFlag, BlkDevNode, BlkDevReferrerKind, BlkDevReferrerKindFlag,
-        FileSystemSourceKind, FileSystemSourceKindList, HostConfigBlockDevice,
+        AllowBlockList, BlkDevKind, BlkDevKindFlag, BlkDevNode, BlkDevReferrerKind,
+        BlkDevReferrerKindFlag, FileSystemSourceKind, FileSystemSourceKindList,
+        HostConfigBlockDevice,
     },
 };
 
@@ -415,28 +415,28 @@ impl BlkDevReferrerKind {
     }
 
     /// Returns the valid partition types for a given referrer kind.
-    pub fn allowed_partition_types(&self) -> AllowedPartitionTypes {
+    pub fn allowed_partition_types(&self) -> AllowBlockList<PartitionType> {
         match self {
-            Self::None => AllowedPartitionTypes::Any,
-            Self::RaidArray => AllowedPartitionTypes::Any,
-            Self::ABVolume => AllowedPartitionTypes::Any,
-            Self::EncryptedVolume => AllowedPartitionTypes::Block(vec![
+            Self::None => AllowBlockList::Any,
+            Self::RaidArray => AllowBlockList::Any,
+            Self::ABVolume => AllowBlockList::Any,
+            Self::EncryptedVolume => AllowBlockList::Block(vec![
                 PartitionType::Esp,
                 PartitionType::Root,
                 PartitionType::RootVerity,
             ]),
             Self::FileSystem | Self::FileSystemAdopted | Self::FileSystemSysupdate => {
-                AllowedPartitionTypes::Block(vec![PartitionType::Esp])
+                AllowBlockList::Block(vec![PartitionType::Esp])
             }
-            Self::FileSystemOsImage => AllowedPartitionTypes::Any,
-            Self::FileSystemEsp => AllowedPartitionTypes::Allow(vec![PartitionType::Esp]),
+            Self::FileSystemOsImage => AllowBlockList::Any,
+            Self::FileSystemEsp => AllowBlockList::Allow(vec![PartitionType::Esp]),
             Self::VerityFileSystemData => {
                 // TODO: add Usr when it's supported
-                AllowedPartitionTypes::Allow(vec![PartitionType::Root])
+                AllowBlockList::Allow(vec![PartitionType::Root])
             }
             Self::VerityFileSystemHash => {
                 // TODO: add UsrVerity when it's supported
-                AllowedPartitionTypes::Allow(vec![PartitionType::RootVerity])
+                AllowBlockList::Allow(vec![PartitionType::RootVerity])
             }
         }
     }
