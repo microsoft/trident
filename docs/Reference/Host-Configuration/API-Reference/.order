@@ -3,6 +3,7 @@ AbUpdate
 AbVolumePair
 AdditionalFile
 AdoptedPartition
+ByteCount
 Disk
 EncryptedVolume
 Encryption
@@ -11,6 +12,7 @@ FileSystemSource
 FileSystemType
 Image
 ImageFormat
+ImageSha256
 ManagementOs
 MountPoint
 Os

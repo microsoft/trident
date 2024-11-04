@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::BlockDeviceId;
+use crate::{primitives::hash::Sha256Hash, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::block_device_id_schema;
+use crate::schema_helpers::{block_device_id_schema, unit_enum_with_untagged_variant};
 
 /// Per image configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -23,13 +23,10 @@ pub struct Image {
     /// The hash is computed over the compressed contents of the image, not the uncompressed output
     /// that will be written to the block device. This value is used to verify the integrity of the
     /// image.
-    ///
-    /// Accepted values:
-    ///
-    /// - 64-character hexadecimal string (case insensitive)
-    ///
-    /// - `ignored` to skip the checksum verification
-    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(schema_with = "unit_enum_with_untagged_variant::<ImageSha256, Sha256Hash>")
+    )]
     pub sha256: ImageSha256,
 
     /// The format of the image.
@@ -37,17 +34,29 @@ pub struct Image {
 }
 
 /// Image SHA256 checksum.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum ImageSha256 {
-    /// The SHA256 checksum of the image.
+    /// # Ignored
     ///
-    /// This is used to verify the integrity of the image.
-    /// The checksum is a 64 character hexadecimal string.
-    Checksum(String),
-
     /// You can pass `ignored` to skip the checksum verification.
     Ignored,
+
+    /// # Checksum
+    ///
+    /// The SHA256 checksum of the image.
+    #[serde(untagged)]
+    Checksum(Sha256Hash),
+}
+
+impl std::fmt::Display for ImageSha256 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImageSha256::Ignored => write!(f, "ignored"),
+            ImageSha256::Checksum(hash) => write!(f, "{}", hash),
+        }
+    }
 }
 
 /// Image format.

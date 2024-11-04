@@ -25,15 +25,10 @@ The SHA256 checksum of the compressed image.
 
 The hash is computed over the compressed contents of the image, not the uncompressed output that will be written to the block device. This value is used to verify the integrity of the image.
 
-Accepted values:
-
-- 64-character hexadecimal string (case insensitive)
-
-- `ignored` to skip the checksum verification
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
+| Characteristic | Value                           |
+| -------------- | ------------------------------- |
+| Type           | `ImageSha256`                   |
+| Link           | [ImageSha256](./ImageSha256.md) |
 
 ### `url` **<span style="color:orange;">(required)</span>**
 

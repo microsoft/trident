@@ -125,7 +125,7 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
                         warn!("Ignoring SHA256 for image from '{}'", image_url);
                     }
                     ImageSha256::Checksum(ref expected_sha256) => {
-                        if computed_sha256 != *expected_sha256 {
+                        if computed_sha256 != expected_sha256.as_str() {
                             bail!(
                                 "SHA256 mismatch for disk image {}: expected {}, got {}",
                                 image_url,
@@ -528,7 +528,7 @@ mod tests {
                             fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::EspImage(Image {
                                 url: "http://example.com/esp_2.img".to_string(),
-                                sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                                sha256: ImageSha256::Checksum("esp_sha256_2".into()),
                                 format: ImageFormat::RawZst,
                             }),
                             mount_point: Some(MountPoint {
@@ -541,7 +541,7 @@ mod tests {
                             fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::Image(Image {
                                 url: "http://example.com/root_2.img".to_string(),
-                                sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+                                sha256: ImageSha256::Checksum("root_sha256_2".into()),
                                 format: ImageFormat::RawZst,
                             }),
                             mount_point: Some(MountPoint {
@@ -554,7 +554,7 @@ mod tests {
                             fs_type: FileSystemType::Vfat,
                             source: FileSystemSource::Image(Image {
                                 url: "http://example.com/trident_1.img".to_string(),
-                                sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+                                sha256: ImageSha256::Checksum("trident_sha256_1".into()),
                                 format: ImageFormat::RawZst,
                             }),
                             mount_point: None,
@@ -586,12 +586,12 @@ mod tests {
         if let FileSystemSource::Image(Image { ref mut sha256, .. }) =
             host_config.storage.filesystems[0].source
         {
-            *sha256 = ImageSha256::Checksum("new_sha256".to_string());
+            *sha256 = ImageSha256::Checksum("new_sha256".into());
         }
         if let FileSystemSource::Image(Image { ref mut sha256, .. }) =
             host_config.storage.filesystems[1].source
         {
-            *sha256 = ImageSha256::Checksum("new_sha256".to_string());
+            *sha256 = ImageSha256::Checksum("new_sha256".into());
         }
 
         // Test case 0. Running validate_host_config() when the planned servicing type is
@@ -608,7 +608,7 @@ mod tests {
         // Update URL and sha256sum of 'trident' image in host configuration.
         host_config.storage.filesystems[2].source = FileSystemSource::Image(Image {
             url: "http://example.com/trident_2.img".to_string(),
-            sha256: ImageSha256::Checksum("trident_sha256_2".to_string()),
+            sha256: ImageSha256::Checksum("trident_sha256_2".into()),
             format: ImageFormat::RawZst,
         });
         validate_host_config(&ctx, &host_config, ServicingType::AbUpdate).unwrap_err();
@@ -653,7 +653,7 @@ mod tests {
                         fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::EspImage(Image {
                             url: "http://example.com/esp_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                            sha256: ImageSha256::Checksum("esp_sha256_1".into()),
                             format: ImageFormat::RawZst,
                         }),
                         mount_point: Some(MountPoint {
@@ -666,7 +666,7 @@ mod tests {
                         fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image(Image {
                             url: "http://example.com/root_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+                            sha256: ImageSha256::Checksum("root_sha256_1".into()),
                             format: ImageFormat::RawZst,
                         }),
                         mount_point: Some(MountPoint {
@@ -679,7 +679,7 @@ mod tests {
                         fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image(Image {
                             url: "http://example.com/trident_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+                            sha256: ImageSha256::Checksum("trident_sha256_1".into()),
                             format: ImageFormat::RawZst,
                         }),
                         mount_point: None,
@@ -728,7 +728,7 @@ mod tests {
         // configuration is different from that in the engine context should return true.
         ctx.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_2.img".to_string(),
-            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+            sha256: ImageSha256::Checksum("esp_sha256_1".into()),
             format: ImageFormat::RawZst,
         });
         assert!(needs_ab_update(&ctx));
@@ -742,7 +742,7 @@ mod tests {
                 "esp".to_string(),
                 Image {
                     url: "http://example.com/esp_2.img".to_string(),
-                    sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                    sha256: ImageSha256::Checksum("esp_sha256_1".into()),
                     format: ImageFormat::RawZst,
                 }
             )]
@@ -752,7 +752,7 @@ mod tests {
         // configuration is different from that in the engine context should return true.
         ctx.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_1.img".to_string(),
-            sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+            sha256: ImageSha256::Checksum("esp_sha256_2".into()),
             format: ImageFormat::RawZst,
         });
         assert!(needs_ab_update(&ctx));
@@ -766,7 +766,7 @@ mod tests {
                 "esp".to_string(),
                 Image {
                     url: "http://example.com/esp_1.img".to_string(),
-                    sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                    sha256: ImageSha256::Checksum("esp_sha256_2".into()),
                     format: ImageFormat::RawZst,
                 }
             )]
@@ -782,7 +782,7 @@ mod tests {
         // configuration is different from that in the engine context should return true.
         ctx.spec.storage.filesystems[1].source = FileSystemSource::Image(Image {
             url: "http://example.com/root_2.img".to_string(),
-            sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+            sha256: ImageSha256::Checksum("root_sha256_2".into()),
             format: ImageFormat::RawZst,
         });
         assert!(needs_ab_update(&ctx));
@@ -796,7 +796,7 @@ mod tests {
                 "root".to_string(),
                 Image {
                     url: "http://example.com/root_2.img".to_string(),
-                    sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+                    sha256: ImageSha256::Checksum("root_sha256_2".into()),
                     format: ImageFormat::RawZst,
                 }
             )]
@@ -816,7 +816,7 @@ mod tests {
                 "esp".to_string(),
                 Image {
                     url: "http://example.com/esp_1.img".to_string(),
-                    sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                    sha256: ImageSha256::Checksum("esp_sha256_2".into()),
                     format: ImageFormat::RawZst,
                 }
             ))
@@ -826,7 +826,7 @@ mod tests {
                 "root".to_string(),
                 Image {
                     url: "http://example.com/root_2.img".to_string(),
-                    sha256: ImageSha256::Checksum("root_sha256_2".to_string()),
+                    sha256: ImageSha256::Checksum("root_sha256_2".into()),
                     format: ImageFormat::RawZst,
                 }
             ))

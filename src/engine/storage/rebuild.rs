@@ -765,7 +765,7 @@ mod tests {
                 fs_type: FileSystemType::Ext4,
                 source: FileSystemSource::Image(Image {
                     url: "http://example.com/root_1.img".to_string(),
-                    sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+                    sha256: ImageSha256::Checksum("root_sha256_1".into()),
                     format: ImageFormat::RawZst,
                 }),
                 mount_point: Some(MountPoint {
@@ -829,7 +829,7 @@ mod tests {
                 fs_type: FileSystemType::Vfat,
                 source: FileSystemSource::EspImage(Image {
                     url: "http://example.com/esp_2.img".to_string(),
-                    sha256: ImageSha256::Checksum("esp_sha256_2".to_string()),
+                    sha256: ImageSha256::Checksum("esp_sha256_2".into()),
                     format: ImageFormat::RawZst,
                 }),
                 mount_point: Some(MountPoint {

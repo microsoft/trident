@@ -27,7 +27,6 @@ pub mod imaging;
 pub mod internal;
 pub mod partitions;
 pub mod raid;
-mod serde_hash;
 
 use self::{
     blkdev_graph::{
@@ -2574,7 +2573,7 @@ mod tests {
                         fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::EspImage(Image {
                             url: "http://example.com/esp_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("esp_sha256_1".to_string()),
+                            sha256: ImageSha256::Checksum("esp_sha256_1".into()),
                             format: ImageFormat::RawZst,
                         }),
                         mount_point: Some(MountPoint {
@@ -2587,7 +2586,7 @@ mod tests {
                         fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image(Image {
                             url: "http://example.com/root_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("root_sha256_1".to_string()),
+                            sha256: ImageSha256::Checksum("root_sha256_1".into()),
                             format: ImageFormat::RawZst,
                         }),
                         mount_point: Some(MountPoint {
@@ -2600,7 +2599,7 @@ mod tests {
                         fs_type: FileSystemType::Vfat,
                         source: FileSystemSource::Image(Image {
                             url: "http://example.com/trident_1.img".to_string(),
-                            sha256: ImageSha256::Checksum("trident_sha256_1".to_string()),
+                            sha256: ImageSha256::Checksum("trident_sha256_1".into()),
                             format: ImageFormat::RawZst,
                         }),
                         mount_point: None,

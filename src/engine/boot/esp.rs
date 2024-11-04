@@ -88,7 +88,7 @@ fn copy_file_artifacts(
             warn!("Ignoring SHA256 for image from '{}'", image_url);
         }
         ImageSha256::Checksum(ref expected_sha256) => {
-            if computed_sha256 != *expected_sha256 {
+            if computed_sha256 != expected_sha256.as_str() {
                 bail!(
                     "SHA256 mismatch for disk image {}: expected {}, got {}",
                     image_url,

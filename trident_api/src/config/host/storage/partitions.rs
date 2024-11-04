@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use crate::{constants::PARTITION_SIZE_GROW, primitives::bytes::ByteCount, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::block_device_id_schema;
+use crate::schema_helpers::{block_device_id_schema, unit_enum_with_untagged_variant};
 
 /// Per partition configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -31,6 +31,10 @@ pub struct Partition {
     pub partition_type: PartitionType,
 
     /// Size of the partition.
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(schema_with = "unit_enum_with_untagged_variant::<PartitionSize, ByteCount>")
+    )]
     pub size: PartitionSize,
 }
 
@@ -170,6 +174,7 @@ impl Display for PartitionType {
 /// Partition size enum.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
 #[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum PartitionSize {
     /// # Grow
     ///
@@ -178,72 +183,9 @@ pub enum PartitionSize {
 
     /// # Fixed
     ///
-    /// Fixed size in bytes. Must be a multiple of 4096 bytes.
+    /// Fixed size in bytes. Must be a non-zero multiple of 4096 bytes.
     #[serde(untagged)]
     Fixed(ByteCount),
-}
-
-/// schemars does not yet support the `untagged` attribute on variants, so we
-/// need to implement the JsonSchema trait manually.
-///
-/// https://github.com/GREsau/schemars/issues/222
-#[cfg(feature = "schemars")]
-mod schemars_impl {
-    use std::borrow::Cow;
-
-    use schemars::gen::SchemaGenerator;
-    use schemars::schema::{InstanceType, Metadata, Schema, SchemaObject, SubschemaValidation};
-
-    use super::*;
-
-    impl JsonSchema for PartitionSize {
-        fn schema_name() -> String {
-            "PartitionSize".to_string()
-        }
-
-        fn schema_id() -> std::borrow::Cow<'static, str> {
-            Cow::Borrowed(concat!(module_path!(), "::", "PartitionSize"))
-        }
-
-        fn json_schema(gen: &mut SchemaGenerator) -> Schema {
-            Schema::Object(SchemaObject {
-                metadata: Some(Box::new(Metadata {
-                    description: Some(
-                        "Partition size. Fixed or grow to use all available space.".to_string(),
-                    ),
-                    ..Default::default()
-                })),
-                subschemas: Some(Box::new(SubschemaValidation {
-                    one_of: Some(vec![
-                        Schema::Object(SchemaObject {
-                            metadata: Some(Box::new(Metadata {
-                                title: Some("Grow".to_string()),
-                                description: Some(
-                                    "Grow a partition to use all available space..".to_string(),
-                                ),
-                                ..Default::default()
-                            })),
-                            instance_type: Some(InstanceType::String.into()),
-                            enum_values: Some(vec![serde_json::Value::String(
-                                PARTITION_SIZE_GROW.to_string(),
-                            )]),
-                            ..Default::default()
-                        }),
-                        {
-                            let mut schema = ByteCount::json_schema(gen).into_object();
-                            schema.metadata().title = Some("Fixed".to_string());
-                            if let Some(ref mut description) = schema.metadata().description {
-                                description.push_str(" Must be a non-zero multiple of 4096 bytes.");
-                            }
-                            schema.into()
-                        },
-                    ]),
-                    ..Default::default()
-                })),
-                ..Default::default()
-            })
-        }
-    }
 }
 
 impl FromStr for PartitionSize {
