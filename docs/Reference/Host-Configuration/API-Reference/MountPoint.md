@@ -8,14 +8,6 @@
 
 ## Properties
 
-### `options` **<span style="color:orange;">(required)</span>**
-
-The mount options.
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
 ### `path` **<span style="color:orange;">(required)</span>**
 
 The path to mount the file system.
@@ -23,4 +15,13 @@ The path to mount the file system.
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `string` |
+
+### `options` (optional)
+
+The mount options.
+
+| Characteristic | Value        |
+| -------------- | ------------ |
+| Type           | `string`     |
+| Default        | `"defaults"` |
 

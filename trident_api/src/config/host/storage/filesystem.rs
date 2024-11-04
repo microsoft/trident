@@ -120,6 +120,7 @@ pub struct MountPoint {
     pub path: PathBuf,
 
     /// The mount options.
+    #[serde(default)]
     pub options: MountOptions,
 }
 

@@ -523,12 +523,12 @@
     "MountPoint": {
       "type": "object",
       "required": [
-        "options",
         "path"
       ],
       "properties": {
         "options": {
           "description": "The mount options.",
+          "default": "defaults",
           "type": "string"
         },
         "path": {
