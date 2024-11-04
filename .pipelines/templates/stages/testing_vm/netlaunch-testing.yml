@@ -170,7 +170,7 @@ stages:
                 'sudo journalctl -u docker.service'
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/e2e_tests/helpers/key testing-user@$HOST_IP \
                 'sudo journalctl -u trident-container.service'
-            condition: and(succeeded(), eq('${{ parameters.runtimeEnv }}', 'container'))
+            condition: eq('${{ parameters.runtimeEnv }}', 'container')
             displayName: "Display Container logs"
 
           - template: ../testing_common/trident-metrics.yml

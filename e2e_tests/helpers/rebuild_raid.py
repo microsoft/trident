@@ -4,11 +4,11 @@ from fabric import Connection, Config
 from invoke.watchers import StreamWatcher
 from io import StringIO
 from ssh_utilities import (
-    run_ssh_command,
-    OutputWatcher,
-    TRIDENT_EXECUTABLE_PATH,
-    EXECUTE_TRIDENT_CONTAINER,
+    check_file_exists,
+    create_ssh_connection,
     LOCAL_TRIDENT_CONFIG_PATH,
+    run_ssh_command,
+    trident_run,
 )
 
 
@@ -21,44 +21,20 @@ def trident_rebuild_raid(connection, trident_config, runtime_env):
         trident_config : The full path to the Trident config on the host.
 
     """
-    # Initialize a watcher to return output live
-    watcher = OutputWatcher()
-    # Initialize stdout and stderr streams
-    out_stream = StringIO()
-    err_stream = StringIO()
-    trident_command = (
-        TRIDENT_EXECUTABLE_PATH if runtime_env == "host" else EXECUTE_TRIDENT_CONTAINER
+    # Provide -c arg, the full path to the RW Trident config.
+    trident_return_code, trident_output = trident_run(
+        connection, f"rebuild-raid -v trace -c {trident_config}", runtime_env
     )
-    try:
-        # Set warn=True to continue execution even if the command has a non-zero exit code.
-        # Provide -c arg, the full path to the RW Trident config.
-        result = connection.run(
-            f"sudo {trident_command} rebuild-raid -v trace -c {trident_config}",
-            warn=True,
-            out_stream=out_stream,
-            err_stream=err_stream,
-            timeout=180,
-            watchers=[watcher],
-        )
-
-    except Exception as e:
-        print(f"An unexpected error occurred:\n")
-        raise
-
-    finally:
-        connection.close()
-
-    output = result.stdout + result.stderr
-    print("Trident rebuild-raid output {}".format(output))
+    print("Trident rebuild-raid output {}".format(trident_output))
 
     # Check the exit code: if 0, Trident rebuild-raid succeeded.
-    if result.return_code == 0:
+    if trident_return_code == 0:
         print(
             "Received expected output with exit code 0. Trident rebuild-raid succeeded."
         )
     else:
         raise Exception(
-            f"Command unexpectedly returned with exit code {result.return_code} and output {output}"
+            f"Command unexpectedly returned with exit code {trident_return_code} and output {trident_output}"
         )
 
     return
@@ -73,20 +49,21 @@ def copy_host_config(connection, trident_config):
         trident_config : The full path to the Trident config on the host.
 
     """
-
     # If file at path trident_config does not exist, copy it over from LOCAL_TRIDENT_CONFIG_PATH
-    result = connection.run(f"test -f {trident_config}", warn=True, hide="both")
-    if not result.ok:
+    if not check_file_exists(connection, trident_config):
         print(
             f"File {trident_config} does not exist. Copying from {LOCAL_TRIDENT_CONFIG_PATH}"
         )
         run_ssh_command(
             connection,
-            f"sudo cp {LOCAL_TRIDENT_CONFIG_PATH} {trident_config}",
+            f"cp {LOCAL_TRIDENT_CONFIG_PATH} {trident_config}",
+            use_sudo=True,
         )
 
     trident_config_output = run_ssh_command(
-        connection, f"sudo cat {trident_config}"
+        connection,
+        f"cat {trident_config}",
+        use_sudo=True,
     ).strip()
     print("Trident configuration:\n", trident_config_output)
 
@@ -107,8 +84,7 @@ def trigger_rebuild_raid(
         trident_config : The full path to the Trident config on the host.
     """
     # Set up SSH client
-    config = Config(overrides={"connect_kwargs": {"key_filename": keys_file_path}})
-    connection = Connection(host=ip_address, user=user_name, config=config)
+    connection = create_ssh_connection(ip_address, user_name, keys_file_path)
 
     # Copy the Trident config to the host
     copy_host_config(connection, trident_config)

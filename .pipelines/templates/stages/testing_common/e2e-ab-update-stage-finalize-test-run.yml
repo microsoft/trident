@@ -77,7 +77,7 @@ steps:
           --keys-file-path ${{ parameters.sshKeyPath }} \
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
-          --runtime-env ${{ parameters.runtimeEnv }} \
+          --runtime-env $(runtimeEnv) \
           --version $(version) \
           --stage-ab-update
     timeoutInMinutes: 5
@@ -96,7 +96,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
-          --runtime-env ${{ parameters.runtimeEnv }} \
+          --runtime-env $(runtimeEnv) \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 10
@@ -127,7 +127,7 @@ steps:
           --keys-file-path ${{ parameters.sshKeyPath }} \
           --destination-directory $(destinationDirectory) \
           --trident-config $(tridentConfigFile) \
-          --runtime-env ${{ parameters.runtimeEnv }} \
+          --runtime-env $(runtimeEnv) \
           --version $(version) \
           --finalize-ab-update
 
@@ -175,7 +175,7 @@ steps:
           --capture=no \
           --junit-xml=${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_stage_finalize_ab_update_B_$(System.JobAttempt).junit.xml \
           --host ${{ parameters.hostIp }} \
-          --runtime-env ${{ parameters.runtimeEnv }} \
+          --runtime-env $(runtimeEnv) \
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5

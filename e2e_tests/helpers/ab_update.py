@@ -2,17 +2,15 @@
 import argparse
 import time
 from typing import Dict, List, Tuple
-from fabric import Connection, Config
 import yaml
 from invoke.exceptions import CommandTimedOut
 from ssh_utilities import (
-    run_ssh_command,
-    OutputWatcher,
-    TRIDENT_EXECUTABLE_PATH,
-    EXECUTE_TRIDENT_CONTAINER,
+    check_file_exists,
+    create_ssh_connection,
     LOCAL_TRIDENT_CONFIG_PATH,
+    run_ssh_command,
+    trident_run,
 )
-from io import StringIO
 
 RETRY_INTERVAL = 60
 MAX_RETRIES = 5
@@ -23,73 +21,49 @@ class YamlSafeLoader(yaml.SafeLoader):
         return self.construct_mapping(node)
 
 
-def trident_run(
+def trident_run_command(
     connection, keys_file_path, ip_address, user_name, runtime_env, trident_config
 ):
     """
     Runs "trident run" to trigger A/B update on the host and ensure that the
     host completed staging or staging and finalizing of A/B update successfully.
     """
-    # Initialize a watcher to return output live
-    watcher = OutputWatcher()
-    # Initialize stdout and stderr streams
-    out_stream = StringIO()
-    err_stream = StringIO()
-    trident_command = (
-        TRIDENT_EXECUTABLE_PATH if runtime_env == "host" else EXECUTE_TRIDENT_CONTAINER
-    )
     try:
-        # Set warn=True to continue execution even if the command has a non-zero exit code.
         # Provide -c arg, the full path to the RW Trident config.
-        result = connection.run(
-            f"sudo {trident_command} run -v trace -c {trident_config}",
-            warn=True,
-            out_stream=out_stream,
-            err_stream=err_stream,
-            timeout=240,
-            watchers=[watcher],
+        trident_return_code, trident_output = trident_run(
+            connection, f"run -v trace -c {trident_config}", runtime_env
         )
-
     except CommandTimedOut as timeout_exception:
-        output = out_stream.getvalue() + err_stream.getvalue()
-        # Handle the case where the command times out
-        output_lines = output.strip().split("\n")
-        if "[INFO  trident::engine] Rebooting system" in output_lines:
-            print("Timeout occurred. Host rebooted successfully.")
+        # Access the output from the exception and look for reboot information in Trident output.
+        timeout_trident_output = "".join(timeout_exception.args)
+        trident_output_lines = timeout_trident_output.strip().split("\n")
+        if "[INFO  trident::engine] Rebooting system" in trident_output_lines:
+            print("Host rebooted successfully. Timeout occurred.")
             return
         else:
             raise Exception("Trident run timed out") from timeout_exception
 
-    except Exception as e:
-        print(f"An unexpected error occurred:\n")
-        raise
-
-    finally:
-        connection.close()
-
-    output = result.stdout + result.stderr
-    output_lines = output.strip().split("\n")
-
     # Check the exit code: if 0, staging of A/B update succeeded.
+    trident_output_lines = trident_output.strip().split("\n")
     if (
-        result.return_code == 0
+        trident_return_code == 0
         and "[INFO  trident::engine] Staging of update 'AbUpdate' succeeded"
-        in output_lines
+        in trident_output_lines
     ):
         print(
             "Received expected output with exit code 0. Staging of A/B update succeeded."
         )
     # If exit code is -1, host rebooted.
     elif (
-        result.return_code == -1
-        and "[INFO  trident::engine] Rebooting system" in output_lines
+        trident_return_code == -1
+        and "[INFO  trident::engine] Rebooting system" in trident_output_lines
     ):
         print("Received expected output with exit code -1. Host rebooted successfully.")
     # If exit code is non 0 but host was running the rerun script, keep reconnecting.
     elif (
-        result.return_code != 0
+        trident_return_code != 0
         and "[DEBUG trident::engine::hooks] Running script fail-on-the-first-run-to-force-rerun with interpreter /usr/bin/python3"
-        in output_lines
+        in trident_output_lines
     ):
         print("Detected an intentional Trident run failure. Attempting to reconnect...")
         for attempt in range(MAX_RETRIES):
@@ -99,15 +73,13 @@ def trident_run(
                 # Re-establish connection
                 print(f"Attempt {attempt + 1}: Reconnecting to the host...")
 
-                config = Config(
-                    overrides={"connect_kwargs": {"key_filename": keys_file_path}}
+                connection = create_ssh_connection(
+                    ip_address, user_name, keys_file_path
                 )
-                connection = Connection(host=ip_address, user=user_name, config=config)
 
                 # Check if the host is reachable
                 run_ssh_command(
-                    connection,
-                    "sudo echo 'Successfully reconnected after A/B update'",
+                    connection, "echo 'Successfully reconnected after A/B update'"
                 )
                 break
             except Exception as e:
@@ -118,7 +90,7 @@ def trident_run(
             raise Exception("Maximum reconnection attempts exceeded.")
     else:
         raise Exception(
-            f"Command unexpectedly returned with exit code {result.return_code} and output {output}"
+            f"Command unexpectedly returned with exit code {trident_return_code} and output {output}"
         )
 
     # Return
@@ -130,18 +102,20 @@ def update_host_config_images(
 ):
     """Updates the images in the host configuration in the RW Trident config via sed command."""
     # If file at path trident_config does not exist, copy it over from LOCAL_TRIDENT_CONFIG_PATH
-    result = connection.run(f"test -f {trident_config}", warn=True, hide="both")
-    if not result.ok:
+    if not check_file_exists(connection, trident_config):
         print(
             f"File {trident_config} does not exist. Copying from {LOCAL_TRIDENT_CONFIG_PATH}"
         )
         run_ssh_command(
             connection,
-            f"sudo cp {LOCAL_TRIDENT_CONFIG_PATH} {trident_config}",
+            f"cp {LOCAL_TRIDENT_CONFIG_PATH} {trident_config}",
+            use_sudo=True,
         )
 
     trident_config_output = run_ssh_command(
-        connection, f"sudo cat {trident_config}"
+        connection,
+        f"cat {trident_config}",
+        use_sudo=True,
     ).strip()
     print("Original Trident configuration:\n", trident_config_output)
 
@@ -153,17 +127,20 @@ def update_host_config_images(
     for old_url, image_name in images_to_update:
         new_url = f"file://{host_directory}{destination_directory}/{image_name}_v{version}.rawzst"
         print(f"Updating URL {old_url} to new URL {new_url}")
-        sed_command = f"sudo sed -i 's#{old_url}#{new_url}#g' {trident_config}"
-        run_ssh_command(connection, sed_command)
+        sed_command = f"sed -i 's#{old_url}#{new_url}#g' {trident_config}"
+        run_ssh_command(connection, sed_command, use_sudo=True)
 
     # Remove selfUpgrade field from the Trident config
     run_ssh_command(
         connection,
-        f"sudo sed -i 's#selfUpgrade: true#selfUpgrade: false#g' {trident_config}",
+        f"sed -i 's#selfUpgrade: true#selfUpgrade: false#g' {trident_config}",
+        use_sudo=True,
     )
 
     updated_trident_config_output = run_ssh_command(
-        connection, f"sudo cat {trident_config}"
+        connection,
+        f"cat {trident_config}",
+        use_sudo=True,
     ).strip()
     print("Updated Trident configuration:\n", updated_trident_config_output)
 
@@ -257,14 +234,16 @@ def update_allowed_operations(
     # Create the allowed operations string for the sed command
     allowed_operations_str = "\\n".join(f"- {op}" for op in allowed_operations)
     # Construct the sed command to update the allowed operations
-    sed_command = f"sudo sed -i '/allowedOperations:/,/hostConfiguration:/c\\allowedOperations:\\n{allowed_operations_str}\\nhostConfiguration:' {trident_config}"
+    sed_command = f"sed -i '/allowedOperations:/,/hostConfiguration:/c\\allowedOperations:\\n{allowed_operations_str}\\nhostConfiguration:' {trident_config}"
 
     # Run the sed command to update the configuration
-    run_ssh_command(connection, sed_command)
+    run_ssh_command(connection, sed_command, use_sudo=True)
 
     # Print out updated Trident configuration
     updated_host_config_output = run_ssh_command(
-        connection, f"sudo cat {trident_config}"
+        connection,
+        f"cat {trident_config}",
+        use_sudo=True,
     ).strip()
     print("Updated allowed operations in Trident config:\n", updated_host_config_output)
 
@@ -275,7 +254,9 @@ def add_logstream(connection, trident_config):
     """
     # Grab the current Trident config from the host
     trident_config_output = run_ssh_command(
-        connection, f"sudo cat {trident_config}"
+        connection,
+        f"cat {trident_config}",
+        use_sudo=True,
     ).strip()
     # Grab the phonehome string from the current Trident config
     trident_config_dict = yaml.load(trident_config_output, Loader=yaml.SafeLoader)
@@ -286,14 +267,14 @@ def add_logstream(connection, trident_config):
         # Create the logstream string to add to the Trident config
         logstream_str = f"logstream: {logstream_url}"
         # Insert the logstream entry after the phonehome entry in the Trident config
-        sed_command = (
-            f"sudo sed -i '0,/phonehome:/a\\{logstream_str}\n' {trident_config}"
-        )
+        sed_command = f"sed -i '0,/phonehome:/a\\{logstream_str}\n' {trident_config}"
         run_ssh_command(connection, sed_command)
         print("Added logstream in Trident config:\n")
 
         updated_host_config_output = run_ssh_command(
-            connection, f"sudo cat {trident_config}"
+            connection,
+            f"cat {trident_config}",
+            use_sudo=True,
         ).strip()
         print(updated_host_config_output)
     else:
@@ -313,8 +294,7 @@ def trigger_ab_update(
 ):
     """Connects to the host via SSH, updates the local Trident config, and re-runs Trident"""
     # Set up SSH client
-    config = Config(overrides={"connect_kwargs": {"key_filename": keys_file_path}})
-    connection = Connection(host=ip_address, user=user_name, config=config)
+    connection = create_ssh_connection(ip_address, user_name, keys_file_path)
 
     # If staging of A/B update is required, update the images
     if stage_ab_update:
@@ -335,10 +315,41 @@ def trigger_ab_update(
 
     # Re-run Trident and capture logs
     print("Re-running Trident to trigger A/B update", flush=True)
-    trident_run(
+    trident_run_command(
         connection, keys_file_path, ip_address, user_name, runtime_env, trident_config
     )
     connection.close()
+
+    # For container testing, manually trigger Trident run on the updated Runtime OS.
+    if runtime_env == "container":
+        for attempt in range(MAX_RETRIES):
+            try:
+                time.sleep(RETRY_INTERVAL)
+                # Re-establish connection
+                print(f"Attempt {attempt + 1}: Run Trident after A/B update")
+
+                connection = create_ssh_connection(
+                    ip_address, user_name, keys_file_path
+                )
+
+                trident_return_code, trident_output = trident_run(
+                    connection, f"run", runtime_env
+                )
+
+                if trident_return_code == 0:
+                    break
+                else:
+                    raise Exception(trident_output)
+            except Exception as e:
+                print(f"Trident run attempt {attempt + 1} failed: {e}")
+            finally:
+                connection.close()
+        else:
+            raise Exception(
+                "Maximum attempts exceeded. Trident was unable to successfully run after A/B update."
+            )
+
+    return
 
 
 def main():

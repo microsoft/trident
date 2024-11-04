@@ -4,11 +4,19 @@ import os
 import pytest
 import yaml
 
-
 # A key in the following path and the user name in the hostConfiguration are expected
-FILE_DIRECTORY_PATH = os.path.dirname(os.path.realpath(__file__))
-KEY_PATH = os.path.join(FILE_DIRECTORY_PATH, "helpers/key")
+file_directory_path = os.path.dirname(os.path.realpath(__file__))
+key_path = os.path.join(file_directory_path, "helpers/key")
 USERNAME = "testing-user"
+TRIDENT_EXECUTABLE_PATH = "/usr/bin/trident"
+# Expected location of Docker image:
+DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
+EXECUTE_TRIDENT_CONTAINER = (
+    "docker run --pull=never --rm --privileged "
+    "-v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident "
+    "-v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys -v /var/log:/var/log "
+    "--pid host --ipc host trident/trident:latest"
+)
 
 
 def pytest_addoption(parser):
@@ -41,7 +49,7 @@ def pytest_addoption(parser):
         "--keypath",
         action="store",
         type=str,
-        default=KEY_PATH,
+        default=key_path,
         help="Path to the rsa key needed for SSH connection, default path to ./keys/key.",
     )
     parser.addoption(
@@ -55,18 +63,28 @@ def pytest_addoption(parser):
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def connection(request):
-    HOST = request.config.getoption("--host")
-    RSA_KEY = os.path.expanduser(request.config.getoption("--keypath"))
+    host = request.config.getoption("--host")
+    rsa_key = os.path.expanduser(request.config.getoption("--keypath"))
+    runtime_env = request.config.getoption("--runtime-env")
 
-    config = Config(overrides={"connect_kwargs": {"key_filename": RSA_KEY}})
-
-    ssh_connection = Connection(host=HOST, user=USERNAME, config=config)
+    config = Config(overrides={"connect_kwargs": {"key_filename": rsa_key}})
+    ssh_connection = Connection(host=host, user=USERNAME, config=config)
 
     # Ensure that we can connect
     ssh_connection.open()
     ssh_connection.run("hostname")
+
+    if runtime_env == "container":
+        # Disable SELinux:
+        docker_permission = "setenforce 0"
+        ssh_connection.run(
+            f"sudo {docker_permission}"
+        )  # TODO: Re-enable SELinx (#9508).
+        # Load Docker Image
+        load_container = f"docker load --input {DOCKER_IMAGE_PATH}"
+        ssh_connection.run(f"sudo {docker_permission}")
 
     yield ssh_connection
     ssh_connection.close()
@@ -74,21 +92,13 @@ def connection(request):
 
 @pytest.fixture
 def tridentCommand(request):
-    RUNTIME_ENV = request.config.getoption("--runtime-env")
+    runtime_env = request.config.getoption("--runtime-env")
 
-    trident_command = "sudo "
-    if RUNTIME_ENV == "container":
-        # Start the Docker container
-        run_container = (
-            "docker run --pull=never --rm --privileged "
-            "-v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident "
-            "-v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys -v /var/log:/var/log "
-            "--pid host trident/trident:latest"
-        )
-        trident_command += run_container + " "
-    else:
-        TRIDENT_EXECUTABLE_PATH = "/usr/bin/trident"
-        trident_command += TRIDENT_EXECUTABLE_PATH + " "
+    trident_command = (
+        f"sudo {EXECUTE_TRIDENT_CONTAINER} "
+        if runtime_env == "container"
+        else f"sudo {TRIDENT_EXECUTABLE_PATH} "
+    )
 
     return trident_command
 
