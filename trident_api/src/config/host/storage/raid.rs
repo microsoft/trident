@@ -83,26 +83,22 @@ pub struct SoftwareRaidArray {
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[strum(serialize_all = "kebab-case")]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum RaidLevel {
     /// # Striping
-    #[strum(serialize = "0")]
     Raid0,
 
     /// # Mirroring
-    #[strum(serialize = "1")]
     Raid1,
 
     /// # Striping with parity
-    #[strum(serialize = "5")]
     Raid5,
 
     /// # Striping with double parity
-    #[strum(serialize = "6")]
     Raid6,
 
     /// # Stripe of mirrors
-    #[strum(serialize = "10")]
     Raid10,
 }
 

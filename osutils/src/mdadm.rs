@@ -19,10 +19,19 @@ pub fn create(
     info!("Creating RAID array '{}'", &raid_path.display());
 
     let mut mdadm_command = Dependency::Mdadm.cmd();
+
+    let raid_level_numeric = match level {
+        RaidLevel::Raid0 => 0,
+        RaidLevel::Raid1 => 1,
+        RaidLevel::Raid5 => 5,
+        RaidLevel::Raid6 => 6,
+        RaidLevel::Raid10 => 10,
+    };
+
     mdadm_command
         .arg("--create")
         .arg(raid_path)
-        .arg(format!("--level={}", &level))
+        .arg(format!("--level={}", raid_level_numeric))
         .arg(format!("--raid-devices={}", &device_paths.len()))
         .args(&device_paths)
         .arg(format!("--metadata={METADATA_VERSION}"));
