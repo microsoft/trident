@@ -29,6 +29,8 @@ use trident_api::{
 use crate::engine::{self, EngineContext};
 
 const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
+const CIPHER: &str = "aes-xts-plain64";
+const KEY_SIZE: &str = "512";
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
@@ -238,7 +240,7 @@ fn encrypt_and_open_device(
         .arg("--encrypt")
         .arg("--batch-mode")
         .arg("--cipher")
-        .arg("aes-xts-plain64")
+        .arg(CIPHER)
         .arg("--force-password")
         .arg("--hash")
         .arg("sha512")
@@ -247,7 +249,7 @@ fn encrypt_and_open_device(
         .arg("--key-file")
         .arg(key_file.as_os_str())
         .arg("--key-size")
-        .arg("512")
+        .arg(KEY_SIZE)
         .arg("--key-slot")
         .arg("0")
         .arg("--pbkdf")
@@ -378,23 +380,28 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
 
         // An encrypted swap device is special-cased in the crypttab due
         // to the unique nature and requirements of swap spaces in a Linux
-        // system. It often contains sensitive data temporarily stored in
-        // RAM, so encrypting it is crucial for security, and unlike
-        // regular partitions, which uses a TPM2.0 device for passwordless
-        // startup, the swap device is completely wiped and formatted on
-        // each system startup. For systemd to do this, it needs a key,
-        // and here in the crypttab the swap device is configured with a
-        // randomly generated key from `/dev/random`. This is the most
-        // reliable way to generated a truly random key on Linux systems.
-        // Since the key that is used to open the swap deivce is
-        // immediately discarded, this process also ensures that data left
-        // in swap isn't recoverable after a reboot, enhancing security.
+        // system. Since it often contains sensitive data temporarily
+        // stored in RAM, encrypting it is crucial for security, but
+        // unlike regular partitions, which uses a TPM2.0 device for
+        // passwordless startup, systemd completely wipes the swap device
+        // and formats it on each system startup.
+        //
+        // For systemd to do this, it needs a key, and here in the
+        // crypttab the swap device is configured with a randomly
+        // generated key from `/dev/random`. This is the most reliable way
+        // to generated a truly random key on Linux systems.
+        //
+        // The default cipher (aes-cbc-essiv:sha256) and key size (256) is
+        // not used here in order to enhance the security posture of the
+        // swap space and align it with the rest of the encrypted devices.
         if backing_partition.partition_type == PartitionType::Swap {
             contents.push_str(&format!(
-                "{}\t{}\t{}\tluks,swap\n",
+                "{}\t{}\t{}\tluks,swap,cipher={},size={}\n",
                 ev.device_name,
                 device_path.display(),
-                "/dev/random"
+                "/dev/random",
+                CIPHER,
+                KEY_SIZE
             ));
         } else {
             contents.push_str(&format!(

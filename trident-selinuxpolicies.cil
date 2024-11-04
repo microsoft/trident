@@ -35,6 +35,8 @@
 (allow lvm_t cgroup_t (dir (search)))
 (allow lvm_t cgroup_t (filesystem (getattr)))
 (allow lvm_t init_t (key (search)))
+(allow lvm_t initrc_runtime_t (dir (add_name open read write search)))
+(allow lvm_t initrc_runtime_t (file (create open read write lock getattr)))
 (allow lvm_t initrc_t (sem (associate read unix_read unix_write write)))
 (allow lvm_t kernel_t (key (search)))
 (allow lvm_t proc_t (filesystem (getattr)))
