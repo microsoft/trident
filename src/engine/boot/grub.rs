@@ -1,21 +1,33 @@
-use std::path::Path;
+use std::{io::Write, path::Path};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
+use tempfile::NamedTempFile;
 use uuid::Uuid;
 
 use osutils::{
-    blkid, dependencies::Dependency, grub::GrubConfig, grub_mkconfig::GrubMkConfigScript, osrelease,
+    blkid,
+    grub::GrubConfig,
+    grub_mkconfig::GrubMkConfigScript,
+    osmodifier::{self, BootConfig, IdentifiedPartition, Overlay, Verity},
+    osrelease, path,
 };
 use trident_api::{
-    config::{FileSystemType, SelinuxMode},
+    config::{FileSystemType, Selinux, SelinuxMode},
     constants::{
         BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
-        GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH,
+        GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
+        TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
 };
 
-use crate::engine::{self, EngineContext};
+use crate::{
+    engine::{
+        self, constants::TRIDENT_OVERLAY_PATH, storage::verity::get_verity_related_device_paths,
+        EngineContext,
+    },
+    OS_MODIFIER_BINARY_PATH,
+};
 
 /// Updates the boot filesystem UUID on the search command inside the GRUB
 /// config.
@@ -58,7 +70,7 @@ fn update_grub_config_boot(
     grub_config.write()
 }
 
-pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
+pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<(), Error> {
     // Get the root block device path
     let root_device_path = engine::get_root_block_device_path(ctx)
         .context("Cannot find the root block device path")?;
@@ -117,25 +129,125 @@ pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
                 .context("Failed to disable default cloud-init network config")?;
         }
 
-        // For AzL 3.0 we need to drop a grub-mkconfig script to manipulate the SELinux policy.
-        if let Some(mode) = ctx.spec.os.selinux.mode {
-            let mut script = GrubMkConfigScript::new("70_selinux_policy");
-            for (key, value) in match mode {
-                SelinuxMode::Disabled => vec![("selinux", "0")],
-                SelinuxMode::Permissive => vec![("selinux", "1"), ("enforcing", "0")],
-                SelinuxMode::Enforcing => vec![("selinux", "1"), ("enforcing", "1")],
-            } {
-                script.add_kv_param(key, value);
-            }
+        debug!("Updating GRUB config for Azure Linux 3.0 with OS modifier");
+        let os_modifier_path = path::join_relative(exec_root, OS_MODIFIER_BINARY_PATH);
 
-            script.write().context("Failed to set SELinux policy")?;
-        }
+        // OS modifier will read values of verity, selinux, root device, and overlay from original GRUB config
+        // stamp them into /etc/default/grub and regenerate the GRUB config using grub-mkconfig.
+        osmodifier::update_grub(&os_modifier_path)?;
 
-        Dependency::Bash.cmd()
-            .arg("-c")
-            .arg(format!("grub2-mkconfig > /{GRUB2_CONFIG_RELATIVE_PATH}"))
-            .run_and_check()
-            .context(format!("Failed to update GRUB config at path '/{GRUB2_CONFIG_RELATIVE_PATH}' with mkconfig"))?;
+        // If selinux is provided in engine context, overwrite selinux in GRUB config
+        let selinux_config = selinux_mode.map(|mode| Selinux { mode: Some(mode) });
+
+        // If root verity is provided in engine context, overwrite it in GRUB config
+        let root_device_id = ctx
+            .spec
+            .storage
+            .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
+            .map(|m| &m.target_id)
+            .context("Failed to find mount point for root block device")?;
+
+        let verity = ctx
+            .spec
+            .storage
+            .internal_verity
+            .iter()
+            .find(|device| device.id == *root_device_id)
+            .map(|verity_device| {
+                let (verity_data_path, verity_hash_path, _) =
+                    get_verity_related_device_paths(ctx, verity_device)
+                        .context("Failed to get verity-related device paths")?;
+
+                let verity_data_path_str = verity_data_path
+                    .to_str()
+                    .context("Failed to convert verity_data_path to string")?;
+
+                let verity_hash_path_str = verity_hash_path
+                    .to_str()
+                    .context("Failed to convert verity_hash_path to string")?;
+
+                Ok::<Verity, anyhow::Error>(Verity {
+                    id: verity_device.id.clone(),
+                    name: verity_device.device_name.to_string(),
+                    data_device_id: verity_data_path_str.to_string(),
+                    hash_device_id: verity_hash_path_str.to_string(),
+                    corruption_option: None,
+                })
+            })
+            .transpose()?;
+
+        // If overlay is provided in engine context, overwrite overlay in GRUB config
+        let overlays = ctx
+            .spec
+            .storage
+            .mount_points_by_path()
+            .get(Path::new(TRIDENT_OVERLAY_PATH))
+            .map(|overlay_mount_point| {
+                overlay_mount_point
+                    .device_id
+                    .as_ref()
+                    .map(|device_id| {
+                        let overlay_device_path = engine::get_block_device_path(ctx, device_id)
+                            .context(format!("Failed to find overlay device {}", device_id))?;
+
+                        let volume_value = overlay_device_path.to_str().context(format!(
+                            "Failed to convert mount device path '{}' to string",
+                            overlay_device_path.display()
+                        ))?;
+
+                        let partition = IdentifiedPartition {
+                            id: volume_value.to_string(),
+                        };
+
+                        Ok::<Overlay, anyhow::Error>(Overlay {
+                            lower_dir: TRIDENT_OVERLAY_LOWER_RELATIVE_PATH.into(),
+                            upper_dir: TRIDENT_OVERLAY_UPPER_RELATIVE_PATH.into(),
+                            work_dir: TRIDENT_OVERLAY_WORK_RELATIVE_PATH.into(),
+                            partition,
+                        })
+                    })
+                    .transpose()
+            })
+            .transpose()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let root_device_str = root_device_path
+            .to_str()
+            .context("Failed to convert root device path to string")?;
+
+        let config: BootConfig = BootConfig {
+            selinux: selinux_config,
+            overlays,
+            verity,
+            root_device: Some(root_device_str.to_string()),
+        };
+
+        let boot_config_yaml =
+            serde_yaml::to_string(&config).context("Failed to serialize to YAML")?;
+
+        // Create a temporary file and write the config to it
+        let mut tmpfile = NamedTempFile::new().context("Failed to create a temporary file")?;
+        tmpfile
+            .write_all(boot_config_yaml.as_bytes())
+            .context(format!(
+                "Failed to write boot config to temporary file at {:?}",
+                tmpfile.path()
+            ))?;
+        tmpfile.flush().context(format!(
+            "Failed to flush temporary file at {:?}",
+            tmpfile.path()
+        ))?;
+
+        osmodifier::run(&os_modifier_path, tmpfile.path()).with_context(|| {
+            format!(
+            "Failed to run OS modifier to update GRUB config with temporary config file at {:?}",
+            tmpfile.path()
+        )
+        })?;
+
+        debug!("Finished updating GRUB config for Azure Linux 3.0 with OS modifier");
     }
 
     // Update GRUB config on the ESP
@@ -549,7 +661,7 @@ pub(crate) mod functional_test {
 
         mkfs::run(root_device_path, MkfsFileSystemType::Ext4).unwrap();
 
-        update_configs(ctx)
+        update_configs(ctx, Path::new(ROOT_MOUNT_POINT_PATH))
     }
 
     #[functional_test(feature = "helpers")]
@@ -610,7 +722,9 @@ pub(crate) mod functional_test {
 
         // fail on unsupported filesystem
         assert_eq!(
-            update_configs(&ctx).unwrap_err().to_string(),
+            update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+                .unwrap_err()
+                .to_string(),
             "Unsupported filesystem type for block device 'boot': vfat"
         );
 
@@ -626,7 +740,7 @@ pub(crate) mod functional_test {
                 options: vec![],
             });
 
-        update_configs(&ctx).unwrap();
+        update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH)).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -697,7 +811,7 @@ pub(crate) mod functional_test {
 
         let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
         mkfs::run(&root_device_path, MkfsFileSystemType::Ext4).unwrap();
-        update_configs(&ctx).unwrap();
+        update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH)).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -745,7 +859,7 @@ pub(crate) mod functional_test {
             ..Default::default()
         };
 
-        let result = update_configs(&ctx);
+        let result = update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH));
         assert_eq!(
             result.unwrap_err().to_string(),
             "Failed to get UUID for path '/dev/sdb2', received ''"
@@ -797,7 +911,7 @@ pub(crate) mod functional_test {
             ..Default::default()
         };
 
-        let result = update_configs(&ctx);
+        let result = update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH));
 
         assert_eq!(result.unwrap_err().to_string(), "Root device path is none");
     }

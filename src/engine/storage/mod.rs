@@ -27,7 +27,7 @@ pub mod partitioning;
 pub mod raid;
 pub mod rebuild;
 pub mod tabfile;
-mod verity;
+pub mod verity;
 
 use tabfile::DEFAULT_FSTAB_PATH;
 

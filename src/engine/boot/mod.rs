@@ -32,8 +32,8 @@ impl Subsystem for BootSubsystem {
     }
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
-        grub::update_configs(ctx).structured(ServicingError::UpdateGrubConfigs)?;
+    fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
+        grub::update_configs(ctx, exec_root).structured(ServicingError::UpdateGrubConfigs)?;
 
         Ok(())
     }

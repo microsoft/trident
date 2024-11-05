@@ -124,7 +124,7 @@ stages:
                   --force-color \
                   --full-logstream logstream-full.log \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
-            timeoutInMinutes: 11
+            timeoutInMinutes: 13
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Run netlaunch for testing"
 

@@ -3,6 +3,8 @@ use std::{path::Path, process::Command};
 use anyhow::{Context, Error};
 use serde::{Deserialize, Serialize};
 
+use trident_api::config::Selinux;
+
 use crate::exe::RunAndCheck;
 
 #[derive(Serialize, Deserialize)]
@@ -60,6 +62,63 @@ pub struct MICUsers {
     pub users: Vec<MICUser>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Overlay {
+    pub lower_dir: String,
+    pub upper_dir: String,
+    pub work_dir: String,
+    pub partition: IdentifiedPartition,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdentifiedPartition {
+    pub id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Verity {
+    pub id: String,
+    pub name: String,
+    pub data_device_id: String,
+    pub hash_device_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub corruption_option: Option<CorruptionOption>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+/// Specifies the behavior in case of detected corruption.
+pub enum CorruptionOption {
+    /// Default setting. Fails the I/O operation with an I/O error.
+    IoError,
+
+    /// Ignores the corruption and continues operation.
+    Ignore,
+
+    /// Causes the system to panic. This will print errors and try restarting the system
+    /// upon detecting corruption.
+    Panic,
+
+    /// Attempts to restart the system upon detecting corruption.
+    Restart,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BootConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selinux: Option<Selinux>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overlays: Vec<Overlay>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verity: Option<Verity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_device: Option<String>,
+}
+
 pub fn run(os_modifier_path: &Path, config_file: &Path) -> Result<(), Error> {
     // Run the OS modifier with the configuration file
     Command::new(os_modifier_path)
@@ -73,4 +132,12 @@ pub fn run(os_modifier_path: &Path, config_file: &Path) -> Result<(), Error> {
         ))?;
 
     Ok(())
+}
+
+pub fn update_grub(os_modifier_path: &Path) -> Result<(), Error> {
+    Command::new(os_modifier_path.to_str().unwrap())
+        .arg("--update-grub")
+        .arg("--log-level=debug")
+        .run_and_check()
+        .context("Failed to run OS modifier to update GRUB config")
 }

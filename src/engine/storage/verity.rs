@@ -15,7 +15,6 @@ use osutils::{
     dependencies::Dependency,
     filesystems::MountFileSystemType,
     grub::GrubConfig,
-    grub_mkconfig::GrubMkConfigScript,
     lsblk, mount,
     osrelease::{AzureLinuxRelease, Distro, OsRelease},
     veritysetup,
@@ -39,7 +38,7 @@ const GRUB_CONFIG_PATH: &str = formatcp!("{}/{}", GRUB2_DIRECTORY, GRUB2_CONFIG_
 
 /// Informs the kernel of the hash to be used for verity on the root filesystem.
 /// The value is provided as a hex string.
-const KARG_VERITY_ROOT_HASH: &str = "roothash";
+pub const KARG_VERITY_ROOT_HASH: &str = "roothash";
 
 /// Indicates to dracut whether to activate verity. This is a boolean value.
 const KARG_VERITY_ENABLED: &str = "rd.systemd.verity";
@@ -50,14 +49,8 @@ const KARG_VERITY_ROOT_DATA_DEV: &str = "systemd.verity_root_data";
 /// Points to a block device with root volume dm-verity hash tree.
 const KARG_VERITY_ROOT_HASH_DEV: &str = "systemd.verity_root_hash";
 
-/// Advanced verity options.
-const KARG_VERITY_OPTIONS: &str = "systemd.verity_root_options";
-
 /// Holds a comma-separated list of overlayfs paths.
 const KARG_OVERLAYS: &str = "rd.overlayfs";
-
-/// grub-mkconfig script name for Azure Linux 3.0.
-const GRUB_MKCONFIG_SCRIPT_NAME: &str = "90_verity";
 
 /// Checks if verity is enabled in the GRUB config.
 pub(super) fn check_verity_enabled(grub_config_path: &Path) -> Result<bool, Error> {
@@ -221,7 +214,7 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
 ///
 /// Verity data and hash devices are fetched from the engine context, and the
 /// overlay is curently hardcoded to TRIDENT_OVERLAY_PATH (/var/lib/trident-overlay).
-fn get_verity_related_device_paths(
+pub fn get_verity_related_device_paths(
     ctx: &EngineContext,
     verity_device: &config::InternalVerityDevice,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), Error> {
@@ -329,26 +322,7 @@ pub(super) fn configure(ctx: &EngineContext, root_mount_path: &Path) -> Result<(
                 .write()
                 .context("Failed to update GRUB config")?;
         }
-        Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
-            info!("Updating GRUB config for Azure Linux 3.0");
-            // Get the verity root hash from the GRUB config
-            let root_hash = grub_config.read_linux_command_line_argument(KARG_VERITY_ROOT_HASH)?;
-
-            let mut script =
-                GrubMkConfigScript::new(GRUB_MKCONFIG_SCRIPT_NAME).with_root(root_mount_path);
-            script.add_kv_param(KARG_VERITY_ENABLED, "1");
-            script.add_kv_param(KARG_VERITY_ROOT_HASH, root_hash);
-            script.add_kv_param(KARG_VERITY_ROOT_DATA_DEV, verity_data_path);
-            script.add_kv_param(KARG_VERITY_ROOT_HASH_DEV, verity_hash_path);
-            script.add_kv_param(KARG_OVERLAYS, overlays_value);
-            script.add_kv_param(KARG_VERITY_OPTIONS, "");
-
-            script.set_boot_device("/dev/mapper/root");
-
-            script
-                .write()
-                .context("Failed to write verity grub-mkconfig script")?;
-        }
+        Distro::AzureLinux(AzureLinuxRelease::AzL3) => {}
         distro => {
             bail!("Unsupported Linux distribution for verity setup: '{distro:?}'")
         }
@@ -737,7 +711,6 @@ mod functional_test {
     use std::{fs, path::PathBuf};
 
     use maplit::btreemap;
-    use regex::Regex;
 
     use osutils::{
         files,
@@ -1214,7 +1187,7 @@ mod functional_test {
             .try_init();
         info!("Set up logging in tests!");
 
-        let expected_root_hash = verity::setup_verity_volumes();
+        let _expected_root_hash = verity::setup_verity_volumes();
 
         // no change
         {
@@ -1353,98 +1326,6 @@ mod functional_test {
                     .read_linux_command_line_argument("rd.overlayfs")
                     .unwrap(),
                 format!("etc,etc/upper,etc/work,{TEST_DISK_DEVICE_PATH}4")
-            );
-        }
-
-        // Azl 3.0
-        {
-            let mount_dir = tempfile::tempdir().unwrap();
-            let boot_path = mount_dir.path().join("boot");
-            files::create_dirs(&boot_path).unwrap();
-            mount::mount(
-                Path::new(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
-                &boot_path,
-                MountFileSystemType::Ext4,
-                &["defaults".into()],
-            )
-            .unwrap();
-            // Create a mount guard that will automatically unmount when it goes out of scope
-            let _mount_guard = MountGuard {
-                mount_dir: &boot_path,
-            };
-
-            testutils::osrelease::make_mock_os_release(mount_dir.path(), AzureLinuxRelease::AzL3)
-                .expect("Create mock os-release file");
-
-            // Path to the mkgrub-config script file
-            let mkgrub_config_path = GrubMkConfigScript::new(GRUB_MKCONFIG_SCRIPT_NAME)
-                .with_root(mount_dir.path())
-                .file_path();
-
-            // Perform the call to update the grub-mkconfig script
-            configure(&ctx, mount_dir.path()).unwrap();
-
-            // Expected verity options to be found in the grub config
-            let new_opts = vec![
-                (KARG_VERITY_ENABLED, "1".into()),
-                (KARG_VERITY_ROOT_HASH, expected_root_hash),
-                (
-                    KARG_VERITY_ROOT_DATA_DEV,
-                    format!("{TEST_DISK_DEVICE_PATH}3"),
-                ),
-                (
-                    KARG_VERITY_ROOT_HASH_DEV,
-                    format!("{TEST_DISK_DEVICE_PATH}2"),
-                ),
-                (
-                    KARG_OVERLAYS,
-                    format!("etc,etc/upper,etc/work,{TEST_DISK_DEVICE_PATH}4"),
-                ),
-                (KARG_VERITY_OPTIONS, "".into()),
-            ]
-            .into_iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>();
-
-            // Read the mkgrub-config file and filter out empty lines and comments, save the rest
-            // as a vector of strings
-            let mkgrub_config = fs::read_to_string(&mkgrub_config_path)
-                .unwrap_or_else(|_| panic!("Failed to read '{}'", mkgrub_config_path.display()))
-                .lines()
-                .filter_map(|l| {
-                    let trimmed = l.trim();
-                    if trimmed.is_empty() || trimmed.starts_with('#') {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            // Find the GRUB_CMDLINE_LINUX line in the mkgrub-config file
-            let cmdline_config = mkgrub_config
-                .iter()
-                .find(|l| l.starts_with("GRUB_CMDLINE_LINUX="))
-                .expect("Failed to find GRUB_CMDLINE_LINUX in mkgrub config");
-
-            // Parse the GRUB_CMDLINE_LINUX line to extract the existing kernel arguments
-            let parameters = Regex::new(r#"GRUB_CMDLINE_LINUX="\$GRUB_CMDLINE_LINUX (.*)""#)
-                .unwrap()
-                .captures(cmdline_config)
-                .expect("Failed to parse GRUB_CMDLINE_LINUX")
-                .get(1)
-                .expect("Failed to get CMDLINE args")
-                .as_str()
-                .to_owned();
-
-            for opt in new_opts {
-                assert!(parameters.contains(&opt), "Missing option: {}", opt);
-            }
-
-            // Check that the device name is set correctly
-            assert!(
-                mkgrub_config.contains(&"GRUB_DEVICE=\"/dev/mapper/root\"".to_string()),
-                "Grub device not set correctly"
             );
         }
 

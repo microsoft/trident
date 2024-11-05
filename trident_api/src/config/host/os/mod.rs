@@ -81,6 +81,17 @@ pub enum SelinuxMode {
     Enforcing,
 }
 
+impl std::fmt::Display for SelinuxMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mode_str = match self {
+            SelinuxMode::Disabled => "disabled",
+            SelinuxMode::Permissive => "permissive",
+            SelinuxMode::Enforcing => "enforcing",
+        };
+        write!(f, "{}", mode_str)
+    }
+}
+
 /// Configuration for the management OS.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
