@@ -320,8 +320,9 @@ def trigger_ab_update(
     )
     connection.close()
 
-    # For container testing, manually trigger Trident run on the updated Runtime OS.
-    if runtime_env == "container":
+    # For container testing, finalize the A/B update by manually triggering
+    # a Trident run on the updated Runtime OS.
+    if finalize_ab_update and runtime_env == "container":
         for attempt in range(MAX_RETRIES):
             try:
                 time.sleep(RETRY_INTERVAL)
