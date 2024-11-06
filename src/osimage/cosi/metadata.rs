@@ -1,17 +1,26 @@
 use std::path::PathBuf;
 
-use osutils::osuuid::OsUuid;
 use serde::{Deserialize, Deserializer};
+use uuid::Uuid;
+
+use osutils::{
+    arch::SystemArchitecture, osrelease::OsRelease, osuuid::OsUuid,
+    partition_types::DiscoverablePartitionType,
+};
+use trident_api::primitives::hash::Sha384Hash;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct CosiMetadata {
     pub version: MetadataVersion,
-    pub os_release: String,
+    pub os_arch: SystemArchitecture,
+    pub os_release: OsRelease,
     pub images: Vec<Image>,
     #[serde(default)]
     pub os_packages: Vec<OsPackage>,
+    #[serde(default)]
+    pub id: Option<Uuid>,
 }
 
 #[allow(dead_code)]
@@ -29,7 +38,7 @@ pub(super) struct Image {
     pub mount_point: PathBuf,
     pub fs_type: String,
     pub fs_uuid: OsUuid,
-    pub part_type: String,
+    pub part_type: DiscoverablePartitionType,
     pub verity: Option<VerityMetadata>,
 }
 
@@ -40,7 +49,7 @@ pub(super) struct ImageFile {
     pub path: PathBuf,
     pub compressed_size: u64,
     pub uncompressed_size: u64,
-    pub sha384: String,
+    pub sha384: Sha384Hash,
 }
 
 #[allow(dead_code)]

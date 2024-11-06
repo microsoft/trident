@@ -1,3 +1,5 @@
+use serde::{Deserialize, Deserializer};
+
 /// System architecture
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemArchitecture {
@@ -31,5 +33,28 @@ impl SystemArchitecture {
         } else {
             SystemArchitecture::Other
         }
+    }
+}
+
+impl From<&str> for SystemArchitecture {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "x86" | "i386" => SystemArchitecture::X86,
+            "x64" | "amd64" | "x86_64" => SystemArchitecture::Amd64,
+            "arm" | "aarch32" => SystemArchitecture::Arm,
+            "arm64" | "aarch64" => SystemArchitecture::Aarch64,
+            _ => SystemArchitecture::Other,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SystemArchitecture {
+    fn deserialize<D>(deserializer: D) -> Result<SystemArchitecture, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(SystemArchitecture::from(
+            String::deserialize(deserializer)?.as_str(),
+        ))
     }
 }

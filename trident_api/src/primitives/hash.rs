@@ -91,6 +91,12 @@ macro_rules! impl_common_sha2 {
 pub struct Sha256Hash(String);
 impl_common_sha2!(Sha256Hash, 64);
 
+/// The SHA384 checksum is a 96 character hexadecimal string.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct Sha384Hash(String);
+impl_common_sha2!(Sha384Hash, 96);
+
 #[cfg(test)]
 mod tests {
     use super::*;

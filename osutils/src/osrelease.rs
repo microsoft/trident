@@ -3,6 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Error};
 use const_format::formatcp;
 use log::trace;
+use serde::{Deserialize, Deserializer};
 
 use crate::path;
 
@@ -11,16 +12,16 @@ pub const OS_RELEASE_PATH: &str = "/etc/os-release";
 
 /// Returns whether the host is running Azure Linux 2.
 pub fn is_azl2() -> Result<bool, Error> {
-    Ok(OsRelease::read()?.get_distro() == Distro::AzureLinux(AzureLinuxRelease::AzL2))
+    Ok(OsRelease::read()?.get_distro().is_azl2())
 }
 
 /// Returns whether the host is running Azure Linux 3.
 pub fn is_azl3() -> Result<bool, Error> {
-    Ok(OsRelease::read()?.get_distro() == Distro::AzureLinux(AzureLinuxRelease::AzL3))
+    Ok(OsRelease::read()?.get_distro().is_azl3())
 }
 
 /// Represents the contents of the /etc/os-release file.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct OsRelease {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -107,11 +108,30 @@ impl OsRelease {
     }
 }
 
+impl<'de> Deserialize<'de> for OsRelease {
+    fn deserialize<D>(deserializer: D) -> Result<OsRelease, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(OsRelease::parse(&String::deserialize(deserializer)?))
+    }
+}
+
 /// Represents the distribution of the host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Distro {
     AzureLinux(AzureLinuxRelease),
     Other,
+}
+
+impl Distro {
+    pub fn is_azl2(&self) -> bool {
+        self == &Distro::AzureLinux(AzureLinuxRelease::AzL2)
+    }
+
+    pub fn is_azl3(&self) -> bool {
+        self == &Distro::AzureLinux(AzureLinuxRelease::AzL3)
+    }
 }
 
 /// Represents the Azure Linux release.
