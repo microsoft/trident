@@ -14,6 +14,8 @@ Partition types as defined by The Discoverable Partitions Specification (<https:
 
 `C12A7328-F81F-11D2-BA4B-00A0C93EC93B`
 
+If ESP is not on `raid1`, Trident will use the first partition of this type found in the Host Configuration.
+
 | Characteristic | Value    |
 | -------------- | -------- |
 | Type           | `string` |
