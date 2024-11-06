@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -255,20 +255,30 @@ impl HooksSubsystem {
         };
 
         let mut script_runner = ScriptRunner::new_interpreter(interpreter, content);
+
+        // Set arguments
         script_runner
             .args
             .extend(script.arguments.iter().map(OsStr::new));
-        set_env_vars(
-            &mut script_runner,
-            &script.environment_variables,
-            servicing_type,
-            target_root,
-            exec_root,
-        )
-        .context(format!(
-            "Failed to set environment variables for script '{}'",
-            script.name
-        ))?;
+
+        // Set environment variables
+        for (key, value) in &script.environment_variables {
+            script_runner
+                .env_vars
+                .insert(OsStr::new(key), OsStr::new(value));
+        }
+        // Add default environment variables from engine context that can be used for the script
+        script_runner.env_vars.insert(
+            OsStr::new("SERVICING_TYPE"),
+            match_servicing_type_env_var(&servicing_type),
+        );
+        script_runner
+            .env_vars
+            .insert(OsStr::new("TARGET_ROOT"), target_root.as_os_str());
+        script_runner
+            .env_vars
+            .insert(OsStr::new("EXEC_ROOT"), exec_root.as_os_str());
+
         let output = script_runner
             .output_check()
             .with_context(|| format!("Script '{}' failed", script.name))?
@@ -312,40 +322,15 @@ impl HooksSubsystem {
     }
 }
 
-fn set_env_vars(
-    script_runner: &mut ScriptRunner,
-    env_vars: &HashMap<String, String>,
-    servicing_type: ServicingType,
-    target_root: &Path,
-    exec_root: &Path,
-) -> Result<(), Error> {
-    for (key, value) in env_vars {
-        script_runner.env_vars.insert(key.into(), value.into());
-    }
-    // Add default environment variables from engine context that can be used
-    script_runner.env_vars.insert(
-        "SERVICING_TYPE".into(),
-        match_servicing_type_env_var(&servicing_type),
-    );
-    script_runner
-        .env_vars
-        .insert("TARGET_ROOT".into(), target_root.into());
-    script_runner
-        .env_vars
-        .insert("EXEC_ROOT".into(), exec_root.into());
-    Ok(())
-}
-
-fn match_servicing_type_env_var(servicing_type: &ServicingType) -> OsString {
+fn match_servicing_type_env_var(servicing_type: &ServicingType) -> &OsStr {
     match servicing_type {
-        ServicingType::HotPatch => "hot_patch",
-        ServicingType::NormalUpdate => "normal_update",
-        ServicingType::UpdateAndReboot => "update_and_reboot",
-        ServicingType::AbUpdate => "ab_update",
-        ServicingType::CleanInstall => "clean_install",
-        ServicingType::NoActiveServicing => "none",
+        ServicingType::HotPatch => OsStr::new("hot_patch"),
+        ServicingType::NormalUpdate => OsStr::new("normal_update"),
+        ServicingType::UpdateAndReboot => OsStr::new("update_and_reboot"),
+        ServicingType::AbUpdate => OsStr::new("ab_update"),
+        ServicingType::CleanInstall => OsStr::new("clean_install"),
+        ServicingType::NoActiveServicing => OsStr::new("none"),
     }
-    .into()
 }
 
 #[cfg(test)]
@@ -567,30 +552,6 @@ mod tests {
         assert!(!test_dir.exists());
         // Cleanup
         temp_dir.close().unwrap();
-    }
-
-    #[test]
-    fn test_set_env_vars() {
-        let mut script_runner =
-            ScriptRunner::new_interpreter(PathBuf::from("/bin/bash"), "echo $TEST_VAR".as_bytes());
-        let mut env_vars = HashMap::new();
-        env_vars.insert("TEST_VAR".into(), "test-value".into());
-        set_env_vars(
-            &mut script_runner,
-            &env_vars,
-            ServicingType::CleanInstall,
-            Path::new("/mnt/newroot"),
-            Path::new("/"),
-        )
-        .unwrap();
-        // Check that the environment variables are set in script_runner after the function call
-        let expected_env_vars = hashmap! {
-            "TEST_VAR".into() => "test-value".into(),
-            "SERVICING_TYPE".into() => "clean_install".into(),
-            "TARGET_ROOT".into() => "/mnt/newroot".into(),
-            "EXEC_ROOT".into() => "/".into()
-        };
-        assert_eq!(script_runner.env_vars, expected_env_vars);
     }
 
     #[test]

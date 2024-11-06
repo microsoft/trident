@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
     os::unix::ffi::OsStrExt,
@@ -72,7 +72,7 @@ pub struct ScriptRunner<'a> {
     /// The script file. We need to keep this around so that it doesn't get deleted.
     pub script: &'a [u8],
     /// Environment variables to set for the script
-    pub env_vars: HashMap<OsString, OsString>,
+    pub env_vars: HashMap<&'a OsStr, &'a OsStr>,
     /// Arguments to pass to the script
     pub args: Vec<&'a OsStr>,
 }
@@ -108,7 +108,7 @@ impl<'a> ScriptRunner<'a> {
         self
     }
 
-    pub fn with_env_vars(mut self, env_vars: HashMap<OsString, OsString>) -> Self {
+    pub fn with_env_vars(mut self, env_vars: HashMap<&'a OsStr, &'a OsStr>) -> Self {
         self.env_vars = env_vars;
         self
     }
