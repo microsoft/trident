@@ -241,6 +241,7 @@ defined in the [Discoverable Partition Specification
 | linux-generic | Any path                         |
 | srv           | `/srv`                           |
 | xbootldr      | `/boot`                          |
+| unknown       | Any path                         |
 
 ## Partition Type Matching Hash Partition
 

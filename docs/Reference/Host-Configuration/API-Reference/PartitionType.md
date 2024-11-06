@@ -113,3 +113,12 @@ To use this partition type on the disk with the root volume, make sure to not ha
 | Type           | `string`   |
 | Value          | `xbootldr` |
 
+### Other
+
+Use a partition type UUID not covered by the predefined options.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Format         | `uuid`   |
+

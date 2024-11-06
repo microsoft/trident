@@ -433,6 +433,7 @@ fn config_part_type_into_discoverable(part_type: PartitionType) -> DiscoverableP
         PartitionType::Usr => DiscoverablePartitionType::Usr,
         PartitionType::Var => DiscoverablePartitionType::Var,
         PartitionType::Xbootldr => DiscoverablePartitionType::Xbootldr,
+        PartitionType::Unknown(uuid) => DiscoverablePartitionType::from_uuid(&uuid),
     }
 }
 
@@ -647,6 +648,52 @@ mod tests {
         assert_eq!(part3.label, Some("part3".to_string()));
         assert_eq!(part3.size_max_bytes, None);
         assert_eq!(part3.size_min_bytes, None);
+    }
+
+    #[test]
+    fn test_partitioning_using_uuid() {
+        let mut repart = SystemdRepartInvoker::new("/dev/sda", RepartEmptyMode::Force);
+
+        let disk = Disk {
+            id: "disk".to_string(),
+            device: PathBuf::from("/dev/sda"),
+            partitions: vec![
+                Partition {
+                    id: "part1".to_string(),
+                    // UUID for ESP Partition
+                    partition_type: PartitionType::Unknown(
+                        Uuid::parse_str("c12a7328f81f11d2ba4b00a0c93ec93b").unwrap(),
+                    ),
+                    size: 1024.into(),
+                },
+                Partition {
+                    id: "part2".to_string(),
+                    // UUID for LinuxGeneric Partition
+                    partition_type: PartitionType::Unknown(
+                        Uuid::parse_str("0fc63daf848347728e793d69d8477de4").unwrap(),
+                    ),
+                    size: PartitionSize::Grow,
+                },
+            ],
+            adopted_partitions: vec![],
+            partition_table_type: PartitionTableType::Gpt,
+        };
+
+        let partlabels = maplit::hashmap! {};
+
+        add_repart_entries(&disk, &partlabels, &mut repart);
+
+        let entries = repart.partition_entries();
+        assert_eq!(entries.len(), 2);
+
+        let part1 = entries.first().unwrap();
+        assert_eq!(part1.partition_type, DiscoverablePartitionType::Esp);
+
+        let part2 = entries.get(1).unwrap();
+        assert_eq!(
+            part2.partition_type,
+            DiscoverablePartitionType::LinuxGeneric
+        );
     }
 
     #[test]

@@ -102,6 +102,9 @@ pub enum DiscoverablePartitionType {
     UsrArm64Verity,
     /// Verity signature data for the /usr/ file system partition in ARM64
     UsrArm64VeritySig,
+
+    /// Unknown type not contained in the Discoverable Partition Specification
+    Unknown(Uuid),
 }
 
 impl DiscoverablePartitionType {
@@ -164,6 +167,9 @@ impl DiscoverablePartitionType {
             DiscoverablePartitionType::UsrArm64 => "usr-arm64",
             DiscoverablePartitionType::UsrArm64Verity => "usr-arm64-verity",
             DiscoverablePartitionType::UsrArm64VeritySig => "usr-arm64-verity-sig",
+
+            // Unknown type
+            DiscoverablePartitionType::Unknown(_) => "unknown",
         }
     }
 
@@ -254,11 +260,14 @@ impl DiscoverablePartitionType {
             DiscoverablePartitionType::Usr => unreachable!(),
             DiscoverablePartitionType::UsrVerity => unreachable!(),
             DiscoverablePartitionType::UsrVeritySig => unreachable!(),
+
+            // Unknown type
+            DiscoverablePartitionType::Unknown(uuid) => return uuid,
         })
     }
 
-    fn try_from_uuid(val: &Uuid) -> Result<Self, Error> {
-        Ok(match val.as_u128() {
+    pub fn from_uuid(val: &Uuid) -> Self {
+        match val.as_u128() {
             0xc12a7328_f81f_11d2_ba4b_00a0c93ec93bu128 => DiscoverablePartitionType::Esp,
             0xbc13c2ff_59e6_4262_a352_b275fd6f7172u128 => DiscoverablePartitionType::Xbootldr,
             0x0657fd6d_a4ab_43c4_84e5_0933c84b4f4fu128 => DiscoverablePartitionType::Swap,
@@ -297,22 +306,13 @@ impl DiscoverablePartitionType {
             0xc23ce4ff_44bd_4b00_b2d4_b41b3419e02au128 => {
                 DiscoverablePartitionType::UsrArm64VeritySig
             }
-            _ => bail!("Unknown partition type UUID: {}", val),
-        })
+
+            _ => DiscoverablePartitionType::Unknown(*val),
+        }
     }
-}
 
-impl From<DiscoverablePartitionType> for Uuid {
-    fn from(partition_type: DiscoverablePartitionType) -> Self {
-        partition_type.to_uuid()
-    }
-}
-
-impl TryFrom<&Uuid> for DiscoverablePartitionType {
-    type Error = Error;
-
-    fn try_from(val: &Uuid) -> Result<Self, Self::Error> {
-        Self::try_from_uuid(val)
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown(_))
     }
 }
 
@@ -327,7 +327,7 @@ impl<'de> Deserialize<'de> for DiscoverablePartitionType {
         // Attempt to parse the string as a UUID
         if let Ok(parsed_uuid) = Uuid::from_str(&value) {
             // If we succeed, try to convert the UUID to a partition type
-            DiscoverablePartitionType::try_from_uuid(&parsed_uuid).map_err(serde::de::Error::custom)
+            Ok(DiscoverablePartitionType::from_uuid(&parsed_uuid))
         } else {
             // Otherwise, try to parse the string as a partition type name
             DiscoverablePartitionType::try_from_str(&value).map_err(serde::de::Error::custom)
@@ -342,10 +342,10 @@ mod tests {
     use super::*;
     #[test]
     fn test_repart_types() {
-        // Iterate over al partition types and check that the round-trip is ok
-        for partition_type in DiscoverablePartitionType::iter() {
+        // Iterate over all partition types and check that the round-trip is ok
+        for partition_type in DiscoverablePartitionType::iter().filter(|pt| !pt.is_unknown()) {
             let uuid = partition_type.to_uuid();
-            let partition_type_from_uuid = DiscoverablePartitionType::try_from(&uuid).unwrap();
+            let partition_type_from_uuid = DiscoverablePartitionType::from_uuid(&uuid);
             assert_eq!(
                 partition_type.resolve(), // We need to resolve aliases
                 partition_type_from_uuid,
@@ -353,16 +353,23 @@ mod tests {
                 partition_type.to_str()
             );
         }
+    }
 
-        // Known bad UUIDs
-        DiscoverablePartitionType::try_from(&Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128)).expect_err(
-            "Expected to fail to convert UUID 00000000-0000-0000-0000-000000000000 to partition type",
+    #[test]
+    fn test_bad_uuid() {
+        // Check that known bad UUID will map to Unknown type
+        let bad_uuid = Uuid::from_u128(0x00000000_0000_0000_0000_000000000000u128);
+        let partition_type_from_uuid = DiscoverablePartitionType::from_uuid(&bad_uuid);
+        let expected_partition_type = DiscoverablePartitionType::Unknown(bad_uuid);
+        assert_eq!(
+            expected_partition_type, partition_type_from_uuid,
+            "Round-trip failed for bad UUID"
         );
     }
 
     #[test]
     fn test_name_roundtrip() {
-        for partition_type in DiscoverablePartitionType::iter() {
+        for partition_type in DiscoverablePartitionType::iter().filter(|pt| !pt.is_unknown()) {
             let name = partition_type.to_str();
             let partition_type_from_name = DiscoverablePartitionType::try_from_str(name).unwrap();
             assert_eq!(

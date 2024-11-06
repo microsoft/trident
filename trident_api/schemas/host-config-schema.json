@@ -799,6 +799,12 @@
           "enum": [
             "xbootldr"
           ]
+        },
+        {
+          "title": "Other",
+          "description": "Use a partition type UUID not covered by the predefined options.",
+          "type": "string",
+          "format": "uuid"
         }
       ]
     },

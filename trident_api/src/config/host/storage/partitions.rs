@@ -28,6 +28,10 @@ pub struct Partition {
     ///
     /// As defined by the [Discoverable Partitions Specification](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/).
     #[serde(rename = "type")]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(schema_with = "unit_enum_with_untagged_variant::<PartitionType, Uuid>")
+    )]
     pub partition_type: PartitionType,
 
     /// Size of the partition.
@@ -61,7 +65,7 @@ pub struct AdoptedPartition {
 }
 
 /// Partition types as defined by The Discoverable Partitions Specification (<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[cfg_attr(feature = "documentation", derive(strum_macros::EnumIter))]
@@ -112,6 +116,7 @@ pub enum PartitionType {
     /// # Generic Linux partition
     ///
     /// `0fc63daf-8483-4772-8e79-3d69d8477de4`
+    #[default]
     LinuxGeneric,
 
     /// # Server Data partition
@@ -127,6 +132,12 @@ pub enum PartitionType {
     ///
     /// `bc13c2ff-59e6-4262-a352-b275fd6f7172`
     Xbootldr,
+
+    /// # Other
+    ///
+    /// Use a partition type UUID not covered by the predefined options.
+    #[serde(untagged)]
+    Unknown(Uuid),
 }
 
 impl PartitionType {
@@ -147,6 +158,7 @@ impl PartitionType {
             PartitionType::LinuxGeneric => "linux-generic",
             PartitionType::Srv => "srv",
             PartitionType::Xbootldr => "xbootldr",
+            PartitionType::Unknown(_) => "unknown",
         }
     }
 
@@ -163,7 +175,8 @@ impl PartitionType {
             | Self::Tmp
             | Self::LinuxGeneric
             | Self::Srv
-            | Self::Xbootldr => None,
+            | Self::Xbootldr
+            | Self::Unknown(_) => None,
         }
     }
 }

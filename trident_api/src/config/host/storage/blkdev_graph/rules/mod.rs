@@ -501,6 +501,7 @@ impl PartitionType {
             Self::Usr => ValidMountpoints::new(&["/usr"]),
             Self::Var => ValidMountpoints::new(&["/var"]),
             Self::Xbootldr => ValidMountpoints::new(&["/boot"]),
+            Self::Unknown(_) => ValidMountpoints::Any,
         }
     }
 }
