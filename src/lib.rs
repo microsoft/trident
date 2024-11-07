@@ -9,11 +9,7 @@ use log::{debug, error, info, warn};
 use nix::unistd::Uid;
 use tokio::sync::mpsc::{self};
 
-use osutils::{
-    container,
-    efibootmgr::{self, EfiBootManagerOutput},
-    path,
-};
+use osutils::{container, path};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationSource, LocalConfigFile, Operations},
     status::AbVolumeSelection,
@@ -435,21 +431,11 @@ impl Trident {
                 info!("Host correctly booted into the updated runtime OS image");
 
                 // If it's QEMU, after confirming that we have booted into the
-                // correct image, we set the `BootCurrent` entry as the first
-                // entry in `BootOrder`.
+                // correct image, we need to update the `BootOrder` to boot from
+                // the correct image next time.
                 if osutils::virt::is_qemu() {
-                    // Get `BootCurrent` from the boot manager output.
-                    let bootmgr_output: EfiBootManagerOutput =
-                        efibootmgr::list_and_parse_bootmgr_entries()
-                            .structured(ServicingError::ListAndParseBootEntries)?;
-                    let boot_current = &bootmgr_output.boot_current;
-
-                    // Modify `BootOrder` to have `BootCurrent` as the first entry.
-                    bootentries::first_boot_order(boot_current).structured(
-                        ServicingError::SetBootOrder {
-                            boot_entry_number: boot_current.to_string(),
-                        },
-                    )?;
+                    bootentries::set_bootentries_after_reboot_for_qemu()
+                        .message("Failed to set boot entries after reboot")?;
                 }
             } else if datastore.host_status().servicing_type == ServicingType::CleanInstall {
                 datastore.with_host_status(|host_status| {

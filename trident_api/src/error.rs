@@ -364,9 +364,6 @@ pub enum ServicingError {
     #[error("Failed to run post-provision script '{script_name}'")]
     RunPostProvisionScript { script_name: String },
 
-    #[error("Failed to set the `BootOrder` via efibootmgr by checking for boot entry '{boot_entry_number}'")]
-    SetBootOrder { boot_entry_number: String },
-
     #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
     SetRecoveryKeyFilePermissions { key_file: String },
 
@@ -384,6 +381,9 @@ pub enum ServicingError {
 
     #[error("Failed to unmount newroot, unable to unmount '{dir}'")]
     UnmountNewroot { dir: String },
+
+    #[error("Failed to update `BootOrder` via efibootmgr")]
+    UpdateBootOrder,
 
     #[error("Failed to update A/B active volume in host status")]
     UpdateAbActiveVolume,

@@ -98,11 +98,12 @@ impl EfiBootManagerOutput {
             .any(|entry| entry.label == entry_label))
     }
 
-    /// Gets entry number of the boot entry with given entry label.
+    /// Gets entry number of the latest boot entry with the given label.
     pub fn get_boot_entry_number(&self, entry_label: &str) -> Result<String, Error> {
         let boot_number: String = self
             .boot_entries
             .iter()
+            .rev()
             .find(|&entry| entry.label == entry_label)
             .context(format!("Cant find boot entry for '{entry_label}'"))?
             .id
@@ -140,6 +141,19 @@ impl EfiBootManagerOutput {
         }
         Ok(())
     }
+
+    /// Gets the boot entry label from the boot entry number.
+    pub fn get_boot_entry_label(&self, entry_number: &str) -> Result<String, Error> {
+        Ok(self
+            .boot_entries
+            .iter()
+            .find(|&entry| entry.id == entry_number)
+            .with_context(|| {
+                format!("Failed to find the boot entry label for entry number '{entry_number}'")
+            })?
+            .label
+            .to_string())
+    }
 }
 
 /// Lists boot entries using efibootmgr
@@ -150,13 +164,23 @@ pub fn list_bootmgr_entries() -> Result<String, Error> {
         .context("Efibootmgr exited with an error")
 }
 
-/// Adds a boot entry using efibootmgr.
+/// Adds a boot entry using `efibootmgr`.
+///
+/// # Parameters
+/// - `entry_label`: The label of the boot entry.
+/// - `disk_path`: The path to the disk where the boot entry should be created.
+/// - `bootloader_path`: The path to the bootloader file.
+/// - `esp_path`: The path to the EFI System Partition (ESP) where the bootloader file is located.
+/// - `partition_number`: The partition number within the `esp_path` where the bootloader file resides.
+/// - `skip_duplicate_check`: A flag to skip the check for duplicate boot entries. This may be useful
+///   when creating boot entries for RAID1 devices.
 pub fn create_boot_entry(
     entry_label: impl AsRef<OsStr>,
     disk_path: impl AsRef<Path>,
     bootloader_path: impl AsRef<Path>,
     esp_path: impl AsRef<Path>,
     partition_number: u32,
+    skip_duplicate_check: bool,
 ) -> Result<(), Error> {
     // Check if disk path is valid
     if !disk_path.as_ref().exists() {
@@ -181,18 +205,20 @@ pub fn create_boot_entry(
 
     let bootmgr_output =
         list_and_parse_bootmgr_entries().context("Failed to list and parse efibootmgr output")?;
-    // Create only if there is no entry with the same label
-    if bootmgr_output
-        .boot_entry_exists(entry_label.as_ref().to_str().context(format!(
-            "Failed to convert entry label {} to str",
-            entry_label.as_ref().to_string_lossy()
-        ))?)
-        .context("Failed to check if boot entry exists")?
-    {
-        bail!(
-            "Bootentry with the same label '{}' already exists in efibootmgr",
-            entry_label.as_ref().to_string_lossy()
-        );
+    if !skip_duplicate_check {
+        // Create only if there is no entry with the same label
+        if bootmgr_output
+            .boot_entry_exists(entry_label.as_ref().to_str().context(format!(
+                "Failed to convert entry label {} to str",
+                entry_label.as_ref().to_string_lossy()
+            ))?)
+            .context("Failed to check if boot entry exists")?
+        {
+            bail!(
+                "Bootentry with the same label '{}' already exists in efibootmgr",
+                entry_label.as_ref().to_string_lossy()
+            );
+        }
     }
     Dependency::Efibootmgr
         .cmd()
@@ -341,6 +367,20 @@ mod tests {
             .boot_entry_exists("Windows Boot Manager")
             .unwrap());
         assert_eq!(bootmgr_output.boot_next, "0000");
+
+        // test get_boot_entry_label
+        assert_eq!(
+            bootmgr_output.get_boot_entry_label("0001").unwrap(),
+            "ubuntu"
+        );
+
+        assert_eq!(
+            bootmgr_output
+                .get_boot_entry_label("0003")
+                .unwrap_err()
+                .to_string(),
+            "Failed to find the boot entry label for entry number '0003'"
+        );
     }
 
     #[test]
@@ -459,7 +499,15 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 2).unwrap();
+        create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            2,
+            false,
+        )
+        .unwrap();
         let bootmgr_output1 = list_and_parse_bootmgr_entries().unwrap();
 
         // Get the boot entry number of the boot entry that is created above
@@ -511,7 +559,15 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 2).unwrap();
+        create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            2,
+            false,
+        )
+        .unwrap();
         let bootmgr_output1 = list_and_parse_bootmgr_entries().unwrap();
 
         // Get the boot entry number of the boot entry that is created above
@@ -558,10 +614,25 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 2).unwrap();
+        create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            2,
+            false,
+        )
+        .unwrap();
 
         // Creating a boot entry with the same label should fail
-        let result = create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 3);
+        let result = create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            3,
+            false,
+        );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
             format!(
@@ -580,6 +651,7 @@ mod functional_test {
             bootloader_path_invalid,
             tempdir.path(),
             4,
+            false,
         );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
@@ -599,6 +671,7 @@ mod functional_test {
             bootloader_path,
             tempdir.path(),
             5,
+            false,
         );
         assert_eq!(
             result.unwrap_err().root_cause().to_string(),
@@ -611,29 +684,6 @@ mod functional_test {
         let bootentry_number = bootmgr_output1.get_boot_entry_number(entry_label).unwrap();
         // Delete the boot entry thats created above
         delete_boot_entry(&bootentry_number).unwrap();
-    }
-
-    fn create_boot_entry_duplicate(
-        entry_label: impl AsRef<OsStr>,
-        disk_path: impl AsRef<Path>,
-        bootloader_path: impl AsRef<Path>,
-    ) {
-        Dependency::Efibootmgr
-            .cmd()
-            .arg("--create-only")
-            .arg("--disk")
-            .arg(disk_path.as_ref())
-            .arg("--label")
-            .arg(entry_label.as_ref())
-            .arg("--loader")
-            .arg(bootloader_path.as_ref())
-            .run_and_check()
-            .context(format!(
-                "Failed to add boot entry {} at disk path {} through efibootmgr ",
-                entry_label.as_ref().to_string_lossy(),
-                disk_path.as_ref().display()
-            ))
-            .unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -652,10 +702,26 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 1).unwrap();
+        create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            1,
+            false,
+        )
+        .unwrap();
 
-        // Create another boot entry with the same label using duplicate function
-        create_boot_entry_duplicate(entry_label, disk_path, bootloader_path);
+        // Create another boot entry with the same label
+        create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            1,
+            true,
+        )
+        .unwrap();
         let bootmgr_output2 = list_and_parse_bootmgr_entries().unwrap();
 
         // Get Boot entries vector
@@ -689,14 +755,38 @@ mod functional_test {
         let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
         create_file(bootloader_file_path).unwrap();
 
-        create_boot_entry(entry_label, disk_path, bootloader_path, tempdir.path(), 1).unwrap();
+        create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            1,
+            false,
+        )
+        .unwrap();
 
-        // Create another boot entry with the same label using duplicate function
-        create_boot_entry_duplicate(entry_label, disk_path, bootloader_path);
+        // Create another boot entry with the same label
+        create_boot_entry(
+            entry_label,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            1,
+            true,
+        )
+        .unwrap();
 
         // Create a boot entry TestBoot2
         let entry_label2 = "TestBoot2";
-        create_boot_entry(entry_label2, disk_path, bootloader_path, tempdir.path(), 2).unwrap();
+        create_boot_entry(
+            entry_label2,
+            disk_path,
+            bootloader_path,
+            tempdir.path(),
+            2,
+            false,
+        )
+        .unwrap();
 
         // Get Boot entries vector for TestBoot1
         let bootmgr_output2 = list_and_parse_bootmgr_entries().unwrap();
