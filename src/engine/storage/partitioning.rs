@@ -71,7 +71,7 @@ pub fn create_partitions_on_disk(
 
     // Invoke repart to create the partitions.
     let repart_partitions = repart.execute().context(format!(
-        "Failed to create partitions for disk '{}'",
+        "Failed to execute systemd-repart to create partitions for disk '{}'",
         disk.id
     ))?;
 

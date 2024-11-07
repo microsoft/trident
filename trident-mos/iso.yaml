@@ -12,7 +12,7 @@ storage:
 
         - id: rootfs
           start: 9M
-  fileSystems:
+  filesystems:
     - deviceId: esp
       type: fat32
       mountPoint:
@@ -55,16 +55,16 @@ os:
       - vim
 
   additionalFiles:
-    files/getty@.service:
-      - path: /usr/lib/systemd/system/getty@.service
-    files/serial-getty@.service:
-      - path: /usr/lib/systemd/system/serial-getty@.service
-    files/root.profile:
-      - path: /root/.profile
-    ../systemd/trident.service:
-      - path: /usr/lib/systemd/system/trident.service
-    files/download-trident.service:
-      - path: /usr/lib/systemd/system/download-trident.service
+    - source: files/getty@.service
+      destination: /usr/lib/systemd/system/getty@.service
+    - source: files/serial-getty@.service
+      destination: /usr/lib/systemd/system/serial-getty@.service
+    - source: files/root.profile
+      destination: /root/.profile
+    - source: ../systemd/trident.service
+      destination: /usr/lib/systemd/system/trident.service
+    - source: files/download-trident.service
+      destination: /usr/lib/systemd/system/download-trident.service
 
   services:
     enable:
@@ -77,9 +77,9 @@ scripts:
 
 iso:
   additionalFiles:
-    files/config-placeholder.yaml:
-      - path: /trident-config.yaml
-    files/pre-trident-script.sh:
-      - path: /pre-trident-script.sh
+    - source: files/config-placeholder.yaml
+      destination: /trident-config.yaml
+    - source: files/pre-trident-script.sh
+      destination: /pre-trident-script.sh
   kernelCommandLine:
     extraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
