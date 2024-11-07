@@ -71,6 +71,7 @@ stages:
           - bash: |
               set -ux
 
+              VM_SERIAL_LOG=/tmp/${{ variables.VM_NAME }}.log
               sudo virt-install \
                 --name ${{ variables.VM_NAME }} \
                 --memory 2048 \
@@ -80,11 +81,10 @@ stages:
                 --disk ${{ variables.tridentSourceDirectory }}/trident-vm-verity-testimage.qcow2,bus=sata \
                 --network default \
                 --boot uefi,loader=/usr/share/OVMF/OVMF_CODE_4M.fd,loader_secure=no \
-                --noautoconsole
-              until sudo virsh dumpxml ${{ variables.VM_NAME }}; do sudo virsh list; sleep 0.1; done
-              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.VM_NAME }} | grep -A 1 console | grep source | cut -d"'" -f2`
+                --noautoconsole \
+                --serial "file,path=$VM_SERIAL_LOG"
 
-              until [ -c "$VM_SERIAL_LOG" ]
+              until [ -f "$VM_SERIAL_LOG" ]
               do
                   sleep 0.1
               done
@@ -157,19 +157,14 @@ stages:
               cd $(tridentSourceDirectory)/update
               python3 -m http.server &
 
+              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.VM_NAME }} | grep -A 1 console | grep source | cut -d"'" -f2`
+              sudo truncate -s 0 "$VM_SERIAL_LOG"
+
               ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$(vmip) \
                 "sudo trident run -c /var/lib/trident/update-config.yaml"
 
               set -e
 
-              VM_SERIAL_LOG=`sudo virsh dumpxml ${{ variables.VM_NAME }} | grep -A 1 console | grep source | cut -d"'" -f2`
-
-              until [ -c "$VM_SERIAL_LOG" ]
-              do
-                  sleep 0.1
-              done
-
-              echo "Found VM serial log file: $VM_SERIAL_LOG"
               echo "VM serial log:"
 
               sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
