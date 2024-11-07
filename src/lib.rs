@@ -420,15 +420,10 @@ impl Trident {
             // Get device path of root mount point. Contents of '/host/proc/self/mountinfo' and
             // '/proc/self/mountinfo' are identical, so we use the latter by default.
             let root_dev_path =
-                match tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &root_mount_path) {
-                    Ok(path) => path,
-                    Err(e) => {
-                        error!("Failed to get device path of root mount point: {e}");
-                        return Err(TridentError::new(ServicingError::RootMountPointDevPath {
-                            mountinfo_file: PROC_MOUNTINFO_PATH.to_string(),
-                        }));
-                    }
-                };
+                tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &root_mount_path)
+                    .structured(ServicingError::RootMountPointDevPath {
+                        mountinfo_file: PROC_MOUNTINFO_PATH.to_string(),
+                    })?;
 
             // Get expected device path of root mount point
             let expected_root_dev_path = get_expected_root_device_path(datastore.host_status())?;
@@ -479,12 +474,12 @@ impl Trident {
             }
 
             if datastore.host_status().servicing_type == ServicingType::CleanInstall {
-                info!(
-                    "Clean install of runtime OS succeeded. Setting servicing state to Provisioned"
-                );
+                info!("Clean install of runtime OS succeeded");
+                debug!("Updating host's servicing state to Provisioned");
                 tracing::info!(metric_name = "clean_install_success", value = true);
             } else {
-                info!("A/B update succeeded. Setting servicing state to Provisioned");
+                info!("A/B update succeeded");
+                debug!("Updating host's servicing state to Provisioned");
                 tracing::info!(metric_name = "ab_update_success", value = true);
             }
             datastore.with_host_status(|host_status| {

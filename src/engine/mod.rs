@@ -659,7 +659,7 @@ pub(super) fn finalize_update(
     };
     bootentries::set_boot_next_and_update_boot_order(&ctx, &esp_path)?;
 
-    info!("Updating host's servicing state to Finalized");
+    debug!("Updating host's servicing state to Finalized");
     state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;

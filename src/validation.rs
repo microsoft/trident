@@ -3,13 +3,14 @@ use std::path::Path;
 use anyhow::{Context, Error};
 use log::{debug, info};
 
-#[cfg(feature = "setsail")]
-use setsail::KsTranslator;
-
 use trident_api::config::{HostConfiguration, HostConfigurationSource, LocalConfigFile};
 
 #[cfg(feature = "setsail")]
 pub fn validate_setsail(conents: impl AsRef<str>) -> Result<(), Error> {
+    use anyhow::bail;
+    use log::error;
+    use setsail::KsTranslator;
+
     info!("Validating embedded kickstart.");
     let translator = KsTranslator::new().include_fail_is_error(false);
     match translator.translate(setsail::load_kickstart_string(conents.as_ref())) {
@@ -18,11 +19,11 @@ pub fn validate_setsail(conents: impl AsRef<str>) -> Result<(), Error> {
             println!("{}", serde_yaml::to_string(&hc)?);
         }
         Err(e) => {
-            log::error!(
+            error!(
                 "Failed to translate kickstart:\n{}",
                 serde_json::to_string_pretty(&e.0)?
             );
-            anyhow::bail!("Failed to translate kickstart");
+            bail!("Failed to translate kickstart");
         }
     };
 
@@ -31,6 +32,10 @@ pub fn validate_setsail(conents: impl AsRef<str>) -> Result<(), Error> {
 
 #[cfg(feature = "setsail")]
 pub fn validate_setsail_file(path: impl AsRef<Path>) -> Result<(), Error> {
+    use anyhow::bail;
+    use log::error;
+    use setsail::KsTranslator;
+
     info!("Validating kickstart file: {}", path.as_ref().display());
     let translator = KsTranslator::new().include_fail_is_error(false);
     match translator.translate(
@@ -42,11 +47,11 @@ pub fn validate_setsail_file(path: impl AsRef<Path>) -> Result<(), Error> {
             println!("{}", serde_yaml::to_string(&hc)?);
         }
         Err(e) => {
-            log::error!(
+            error!(
                 "Failed to translate kickstart:\n{}",
                 serde_json::to_string_pretty(&e.0)?
             );
-            anyhow::bail!("Failed to translate kickstart");
+            bail!("Failed to translate kickstart");
         }
     };
 

@@ -1,3 +1,5 @@
+use log::trace;
+
 use trident_api::config::HostConfiguration;
 
 use crate::data::ParsedData;
@@ -10,7 +12,7 @@ mod scripts;
 mod users;
 
 pub fn translate(input: ParsedData) -> Result<HostConfiguration, Vec<SetsailError>> {
-    log::trace!("Translating: {:#?}", input);
+    trace!("Translating: {:#?}", input);
     let mut hc = HostConfiguration::default();
     let mut errors: Vec<SetsailError> = Vec::new();
 

@@ -38,7 +38,7 @@ fn create(config: SoftwareRaidArray, ctx: &EngineContext) -> Result<(), Error> {
     let devices = &config.devices;
     let device_paths = get_device_paths(ctx, devices).context("Failed to get device paths")?;
 
-    info!("Initializing '{}': creating raid array", config.id);
+    info!("Initializing '{}': creating RAID array", config.id);
     mdadm::create(&config.device_path(), &config.level, device_paths)
         .context("Failed to create RAID array")?;
     Ok(())

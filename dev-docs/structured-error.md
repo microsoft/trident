@@ -3,10 +3,15 @@
 In Trident, structured error is crucial since it allows to communicate the
 failures to the user in a more organized way, as well as to understand within
 Trident itself why a certain failure occurred and how it can be resolved.
-Structured error in Trident is built around a struct called **TridentError**,
-which references the inner ErrorKind. In turn, ErrorKind is an enum that
-contains multiple values that describe different categories of potential errors
-that might occur on a host and/or in Trident:
+Structured error in Trident is built around a struct called **`TridentError`**.
+
+In the runtime, `TridentError` will be automatically printed by Trident as
+`error!(...)`. Moreover, the host status provided to the customer will also
+include the contents of `TridentError` under the `lastError` section.
+
+`TridentError` references the inner `ErrorKind`. In turn, `ErrorKind` is an
+enum that contains multiple values that describe different categories of
+potential errors that might occur on a host and/or in Trident:
 
 1.  `ExecutionEnvironmentMisconfiguration` identifies errors that occur when
     the execution environment is misconfigured. E.g. when Trident is run on the

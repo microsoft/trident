@@ -38,3 +38,13 @@ represents a full log line, with the following fields:
 | `module`  | String | Rust module path.                                 |
 | `file`    | String | Source file where the log was generated.          |
 | `line`    | u32    | Line number where the log was generated.          |
+
+## Logs from Past Servicing
+In addition to the full Trident log file from the current servicing, the user
+can also view the logs from any **past** servicing executed by Trident. These
+logs are persisted from the MOS or old runtime OS to **the directory adjacent**
+**to the datastore** in the updated runtime OS.
+
+After each servicing, the full Trident log is persisted to a file named
+`trident-<servicing_type>-<timestamp>.log`, where the timestamp corresponds to
+the time when the log was persisted to the updated runtime OS. 

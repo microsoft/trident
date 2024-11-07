@@ -805,8 +805,8 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                     let valid = partition_type.valid_mountpoints();
                     if !valid.contains(&mount_point.path) {
                         warn!(
-                            "Mount point '{}' may not valid for partition type '{}', partitions of \
-                                this type will generally be mounted at {}.",
+                            "Mount point '{}' may not be valid for partition type '{}', partitions \
+                                of this type will generally be mounted at {}.",
                             mount_point.path.display(),
                             partition_type,
                             valid,

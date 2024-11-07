@@ -155,7 +155,7 @@ impl Subsystem for MosConfigSubsystem {
             {
                 // Try to restart sshd. If it fails, log the error but don't
                 // break the deployment.
-                warn!("Users with SSH access were added to MOS, restarting sshd.");
+                debug!("Users with SSH access were added to MOS, restarting sshd.");
                 if let Err(err) =
                     osutils::systemd::restart_unit("sshd").context("Failed to restart sshd in MOS")
                 {

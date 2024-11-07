@@ -115,26 +115,25 @@ unsupported SystemD package:
 ## Running Trident
 
 Trident can be automatically started using SystemD (see the [service
-definitions](systemd)) or directly started manually. Trident support the
-following commands (input as a command line parameter):
+definitions](systemd)) or directly started manually. Trident supports the
+following commands, which can be provided as command line parameters:
 
 - `run`: Runs Trident in the current OS. This is the main command to use to
   start Trident. Trident will load its configuration from
-  `/etc/trident/config.yaml` and start applying the desired HostConfiguration.
-  If you in addition pass `--status <path-to-output-file>`, Trident will write
+  `/etc/trident/config.yaml` and start applying the desired Host Configuration.
+  In addition, if you pass `--status <path-to-output-file>`, Trident will write
   the resulting Host Status to the specified file.
-- `get`: At any point in time, you can request to get the current Host Status
-  using this command. This will print the HostStatus to standard output. If you
-  in addition pass `--status <path-to-output-file>`, Trident will write the Host
-  Status into the specified file instead.
+- `get`: Fetches the current Host Status, which then gets printed to the
+  standard output. In addition, if you pass `--status <path-to-output-file>`,
+  Trident will write the Host Status into the specified file instead.
 - `start-network`: Uses the `network` or `networkOverride` configuration (see
   below for details, loaded from `/etc/trident/config.yaml`) to configure
-  networking in the currently running OS. This is mainly used to startup
-  networking during initial provisioning when the default DHCP configuration is
-  not sufficient.
-- `rebuild-raid`: Trident can rebuild RAID arrays when a disk failure occurs and
-  a disk is replaced. After running the `trident rebuild-raid` command, the
-  rebuild process begins.  
+  networking in the currently running OS. This is mainly used to start up
+  networking during the initial provisioning, when the default DHCP
+  configuration is not sufficient.
+- `rebuild-raid`: Requests Trident to rebuild RAID arrays when a disk failure
+  occurs and a disk is replaced. After running the `trident rebuild-raid`
+  command, the rebuild process begins.  
   Refer to [Rebuild RAID](./docs/Explanation/Rebuild-RAID.md) for more details.
 
 For any of the commands, you can change logging verbosity from the default
@@ -193,14 +192,14 @@ The desired state of the machine is described by passing one of the following:
 - **hostConfiguration**: describes the host configuration. This is the
   configuration that Trident will apply to the host (same payload as
   `hostConfigurationFile`, but directly embedded in the Trident configuration).
-- **hostConfigurationFile**: path to the host configuration file. This is a YAML
+- **hostConfigurationFile**: path to the Host Configuration file. This is a YAML
   file that describes the host configuration in the Host Configuration format.
 - **kickstart**: describes the host configuration in the kickstart format. This
   is the configuration that Trident will apply to the host (same payload as
   `kickstartFile`, but directly embedded in the Trident configuration). WIP,
   early preview only.
 - **kickstartFile**: path to the kickstart file. This is a kickstart file that
-  describes the host configuration in the kickstart format. WIP, early preview
+  describes the Host Configuration in the kickstart format. WIP, early preview
   only. TODO: document what is supported.
 
 For more details on the Host Configuration format:
@@ -222,7 +221,7 @@ For more details on the Host Configuration format:
   This is a set of operations that Trident is allowed to perform on the host.
   Supported flags are:
   - **stage**: Trident will stage a new runtime OS as required by the updated
-    host configuration. However, Trident will not reboot the host into the newly
+    Host Configuration. However, Trident will not reboot the host into the newly
     stage runtime OS. This is useful if you want to drive additional operations
     on the host outside of Trident or delay the reboot until a later point in
     time. After the new runtime OS image has been staged, Trident will update
@@ -313,7 +312,7 @@ actions are permitted/desired, into `stage` and `finalize`.
 
 First, the OS image payload needs to be made available for Trident to operate
 on as a local file. For example, the OS image can be bundled with the installer
-OS and referenced from the initial host configuration as follows:
+OS and referenced from the initial Host Configuration as follows:
 
 ```yaml
 hostConfiguration:
@@ -404,7 +403,7 @@ hostConfiguration:
         sshMode: key-only
 ```
 
-In the sample host configuration above, we're requesting Trident to create
+In the sample Host Configuration above, we're requesting Trident to create
 **two copies of the root** partition, i.e., a volume pair with id `root` that
 contains two partitions `root-a` and `root-b`, and to place an image in the raw
 zstd format onto `root`. However, as mentioned, the user can create volume pairs
@@ -425,7 +424,7 @@ command, for example:
     sed -i 's|file:///trident_cdrom/data/root.rawzst|<local_url>/root_v2.rawzst|' /etc/trident/config.yaml
     ```
 
-- After overwriting the host configuration, the user needs to apply the new
+- After overwriting the Host Configuration, the user needs to apply the new
 host config by restarting Trident with the following command:
 
     ```bash

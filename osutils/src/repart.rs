@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{bail, ensure, Context, Error, Ok};
 use configparser::ini::Ini;
+use log::trace;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -328,7 +329,7 @@ impl SystemdRepartInvoker {
                         )
                     })?;
 
-                log::trace!("Generated systemd-repart config for partition #{}:\n {}", index,
+                trace!("Generated systemd-repart config for partition #{}:\n {}", index,
                     std::fs::read_to_string(path).unwrap_or("(error)".to_string())
                 );
                 Ok(())
