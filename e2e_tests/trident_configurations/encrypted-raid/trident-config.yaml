@@ -14,13 +14,13 @@ hostConfiguration:
           - id: web-e-1
             type: linux-generic
             size: 1G
-          - id: web-e-2
-            type: linux-generic
-            size: 1G
       - id: disk2
         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
         partitionTableType: gpt
-        partitions: []
+        partitions: 
+          - id: web-e-2
+            type: linux-generic
+            size: 1G
     encryption:
       volumes:
         - id: web

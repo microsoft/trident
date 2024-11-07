@@ -23,14 +23,18 @@ hostConfiguration:
           - id: trident1
             type: linux-generic
             size: 100M
+          - id: swap2
+            type: swap
+            size: 1G    
+      - id: disk2
+        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+        partitionTableType: gpt
+        partitions: 
           - id: root-a2
             type: root
             size: 4G
           - id: root-b2
             type: root
-            size: 1G
-          - id: swap2
-            type: swap
             size: 1G
           - id: home2
             type: home
@@ -38,10 +42,6 @@ hostConfiguration:
           - id: trident2
             type: linux-generic
             size: 100M
-      - id: disk2
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-        partitionTableType: gpt
-        partitions: []
     raid:
       software:
         - id: root-a

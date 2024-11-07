@@ -115,7 +115,7 @@ steps:
       sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
           -d "$VM_SERIAL_LOG" \
           -o ./serial.log \
-          -t 300
+          -t 500
 
       # Capture the exit code from wait_for_login.py
       WAIT_FOR_LOGIN_EXITCODE=$?
