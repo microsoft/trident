@@ -185,6 +185,7 @@ stages:
               exit $WAIT_FOR_LOGIN_EXITCODE
 
             displayName: "Check that Trident can perform the update"
+            timeoutInMinutes: 5
 
           - bash: |
               set -eux
