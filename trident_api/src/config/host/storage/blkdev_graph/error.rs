@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{FileSystemType, PartitionType},
+    config::{FileSystemType, PartitionType, RaidLevel},
     BlockDeviceId,
 };
 
@@ -82,6 +82,19 @@ pub enum BlockDeviceGraphBuildError {
         fs_compatible_sources: FileSystemSourceKindList,
     },
 
+    #[error(
+        "Filesystem [{fs_desc}] references block device '{target_id}' \
+            of kind '{target_kind}' with invalid level '{raid_level}', acceptable \
+            levels are: {valid_levels}"
+    )]
+    FilesystemInvalidRaidlevel {
+        fs_desc: String,
+        target_id: BlockDeviceId,
+        target_kind: BlkDevKind,
+        raid_level: RaidLevel,
+        valid_levels: AllowBlockList<RaidLevel>,
+    },
+
     #[error("Filesystem of type '{0}' requires a reference to a block device")]
     FilesystemMissingBlockDeviceId(FileSystemType),
 
@@ -136,6 +149,19 @@ pub enum BlockDeviceGraphBuildError {
         partition_id: BlockDeviceId,
         partition_type: PartitionType,
         valid_types: AllowBlockList<PartitionType>,
+    },
+
+    #[error(
+        "Block device '{node_id}' of kind '{kind}' references RAID array \
+            '{raid_id}' of invalid level '{raid_level}', acceptable \
+            levels are: {valid_levels}"
+    )]
+    InvalidRaidlevel {
+        node_id: BlockDeviceId,
+        kind: BlkDevKind,
+        raid_id: BlockDeviceId,
+        raid_level: RaidLevel,
+        valid_levels: AllowBlockList<RaidLevel>,
     },
 
     #[error(

@@ -135,6 +135,9 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
         // Check that underlying partitions are of valid types
         Self::check_valid_partition_types(&graph)?;
 
+        // Check that all nodes have valid RAID levels
+        Self::check_valid_raid_levels(&graph)?;
+
         // Check targets for each node
         Self::check_targets(&graph)?;
 
@@ -870,6 +873,106 @@ impl<'a> BlockDeviceGraphBuilder<'a> {
                         );
                     }
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// This function validates the RAID levels for all nodes in the graph.
+    /// It checks if a node refers to a RAID array and verifies that the RAID array's level is permitted for that node.
+    /// Additionally, if the RAID array refers to a filesystem, it ensures that the filesystem is in a valid level.
+    ///
+    fn check_valid_raid_levels(
+        graph: &BlockDeviceGraph<'a>,
+    ) -> Result<(), BlockDeviceGraphBuildError> {
+        // Iterate over all nodes that have valid raid levels on their targets.
+        for (node, valid_raid_target_raid_levels) in graph.nodes.values().filter_map(|node| {
+            node.kind()
+                .as_blkdev_referrer()
+                .allowed_raid_levels()
+                .map(|allowed_levels| (node, allowed_levels))
+        }) {
+            // Iterate over all targets of this node.
+            for target in node.targets.iter() {
+                // Get the target node from the graph.
+                let target_node =
+                    graph
+                        .get(target)
+                        .ok_or(BlockDeviceGraphBuildError::InternalError {
+                            body: format!(
+                                "Failed to get known node '{}' from map of nodes",
+                                target
+                            ),
+                        })?;
+
+                // If the target is not a RAID array, skip it.
+                if target_node.kind() != BlkDevKind::RaidArray {
+                    continue;
+                }
+
+                let raid_array = target_node
+                    .host_config_ref
+                    .unwrap_raid_array()
+                    // Map the error to an internal error, this should never happen.
+                    .map_err(|err| BlockDeviceGraphBuildError::InternalError {
+                        body: format!(
+                            "Failed to get RAID array from node '{}': {:?}",
+                            target_node.id, err
+                        ),
+                    })?;
+
+                if !valid_raid_target_raid_levels.contains(raid_array.level) {
+                    return Err(BlockDeviceGraphBuildError::InvalidRaidlevel {
+                        node_id: node.id.clone(),
+                        kind: node.kind(),
+                        raid_id: target_node.id.clone(),
+                        raid_level: raid_array.level,
+                        valid_levels: valid_raid_target_raid_levels,
+                    });
+                }
+            }
+        }
+
+        // Iterate over all nodes that are RAID arrays and have filesystems to check their RAID
+        // levels.
+        for (node, fs, valid_levels_for_fs) in graph
+            .nodes
+            .values()
+            .filter(|n| n.kind() == BlkDevKind::RaidArray)
+            .filter_map(|n| {
+                n.filesystem
+                    .map(|fs| (n, fs, BlkDevReferrerKind::from(fs).allowed_raid_levels()))
+            })
+        {
+            let Some(valid_levels) = valid_levels_for_fs else {
+                return Err(BlockDeviceGraphBuildError::InternalError {
+                 body: format!(
+                     "Node '{}' is a RAID array with a filesystem, but the filesystem does not have any valid RAID levels",
+                     node.id
+                 ),
+             });
+            };
+
+            let raid_array = node
+                .host_config_ref
+                .unwrap_raid_array()
+                // Map the error to an internal error, this should never happen.
+                .map_err(|err| BlockDeviceGraphBuildError::InternalError {
+                    body: format!(
+                        "Failed to get RAID array from node '{}': {:?}",
+                        node.id, err
+                    ),
+                })?;
+
+            if !valid_levels.contains(raid_array.level) {
+                return Err(BlockDeviceGraphBuildError::FilesystemInvalidRaidlevel {
+                    target_id: node.id.clone(),
+                    target_kind: node.kind(),
+                    fs_desc: fs.description(),
+                    raid_level: raid_array.level,
+                    valid_levels,
+                });
             }
         }
 

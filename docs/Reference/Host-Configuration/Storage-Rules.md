@@ -18,6 +18,7 @@ Documentation about the rules used to validate the storage configuration.
 - [Homogeneous Partition Types](#homogeneous-partition-types)
 - [Homogeneous Partition Sizes](#homogeneous-partition-sizes)
 - [Allowed Partition Types](#allowed-partition-types)
+- [Allowed RAID Levels](#allowed-raid-levels)
 - [Partition Type Valid Mounting Paths](#partition-type-valid-mounting-paths)
 - [Partition Type Matching Hash Partition](#partition-type-matching-hash-partition)
 
@@ -215,6 +216,21 @@ Some referrers only support specific underlying partitions types.
 | filesystem-adopted     | any type except 'esp'                            |
 | verity-filesystem-data | 'root'                                           |
 | verity-filesystem-hash | 'root-verity'                                    |
+
+## Allowed RAID Levels
+
+Some referrers are limited to specific RAID levels within the available supported RAID options.
+
+| Referrer type          | Allowed RAID levels    |
+| ---------------------- | ---------------------- |
+| raid-array             | No allowed RAID levels |
+| ab-volume              | any                    |
+| encrypted-volume       | any                    |
+| filesystem             | any                    |
+| filesystem-esp         | 'raid1'                |
+| filesystem-adopted     | No allowed RAID levels |
+| verity-filesystem-data | any                    |
+| verity-filesystem-hash | any                    |
 
 ## Partition Type Valid Mounting Paths
 

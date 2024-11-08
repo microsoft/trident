@@ -566,6 +566,7 @@ impl Storage {
 mod tests {
     use std::{path::PathBuf, str::FromStr};
 
+    use blkdev_graph::types::AllowBlockList;
     use url::Url;
 
     use crate::{
@@ -2331,8 +2332,8 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_host_configuration_esp_on_raid1() {
-        let storage = Storage {
+    fn test_validate_host_configuration_esp_on_raid() {
+        let mut storage = Storage {
             filesystems: vec![
                 FileSystem {
                     source: FileSystemSource::EspImage(Image {
@@ -2410,6 +2411,37 @@ mod tests {
         };
 
         storage.validate(true).unwrap();
+
+        // Change the RAID level to RAID0
+        storage.raid.software[0].level = RaidLevel::Raid0;
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::FilesystemInvalidRaidlevel {
+                    target_id: "esp".into(),
+                    target_kind: BlkDevKind::RaidArray,
+                    raid_level: RaidLevel::Raid0,
+                    valid_levels: AllowBlockList::Allow(vec![RaidLevel::Raid1]),
+                    fs_desc: storage.filesystems[0].description()
+                }
+            )
+        );
+
+        // Change the RAID level to RAID5
+        storage.raid.software[0].level = RaidLevel::Raid5;
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::FilesystemInvalidRaidlevel {
+                    target_id: "esp".into(),
+                    target_kind: BlkDevKind::RaidArray,
+                    raid_level: RaidLevel::Raid5,
+                    valid_levels: AllowBlockList::Allow(vec![RaidLevel::Raid1]),
+                    fs_desc: storage.filesystems[0].description()
+                }
+            )
+        );
     }
 
     #[test]

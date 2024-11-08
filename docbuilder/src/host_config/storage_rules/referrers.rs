@@ -160,3 +160,24 @@ pub(super) fn allowed_partition_types() -> RuleDefinition {
         body: table.render(),
     }
 }
+
+pub(super) fn allowed_raid_levels() -> RuleDefinition {
+    let mut table = MdTable::new(vec!["Referrer type", "Allowed RAID levels"]);
+
+    for referrer_kind in get_referrers() {
+        table.add_row(vec![
+            referrer_kind.to_string(),
+            referrer_kind
+                .allowed_raid_levels()
+                .map_or("No allowed RAID levels".to_string(), |levels| {
+                    levels.to_string()
+                }),
+        ]);
+    }
+
+    RuleDefinition {
+        name: "Allowed RAID Levels",
+        template: "allowed_raid_levels",
+        body: table.render(),
+    }
+}

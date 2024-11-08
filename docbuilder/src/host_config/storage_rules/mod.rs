@@ -80,6 +80,7 @@ pub(crate) fn write(dest: Option<impl AsRef<Path>>) -> Result<(), Error> {
         referrers::homogeneous_partition_types(),
         referrers::homogeneous_partition_sizes(),
         referrers::allowed_partition_types(),
+        referrers::allowed_raid_levels(),
         partitions::valid_mount_paths(),
         partitions::matching_hash_partition(),
     ];
