@@ -569,7 +569,7 @@ impl Trident {
                             #[cfg(feature = "grpc-dangerous")]
                             &mut cmd.sender,
                         )
-                        .message("Failed to run finalize_update()")
+                        .message("Failed to finalize update")
                     } else {
                         debug!("Allowed operations do not include 'finalize'. Skipping finalizing of update");
                         Ok(())

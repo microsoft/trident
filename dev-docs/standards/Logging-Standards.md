@@ -7,22 +7,34 @@
 | 1.0      | 2024-10-31 | Initial version. |
 
 ## Table of Contents
+
 - [Logging Standards](#logging-standards)
-    - [Revision Summary](#revision-summary)
-    - [Table of Contents](#table-of-contents)
-    - [Background](#background)
-    - [Goals](#goals)
-    - [Overview](#overview)
-        - [Background Log](#background-log)
-        - [Log Levels](#log-levels)
-            - [`ERROR`](#error)
-            - [`WARN`](#warn)
-            - [`INFO`](#info)
-            - [`DEBUG`](#debug)
-            - [`TRACE`](#trace)
-        - [Log Structure and Contents](#log-structure-and-contents)
+  - [Revision Summary](#revision-summary)
+  - [Table of Contents](#table-of-contents)
+  - [Background](#background)
+  - [Goals](#goals)
+  - [Overview](#overview)
+    - [Background Log](#background-log)
+    - [Log Levels](#log-levels)
+      - [`ERROR`](#error)
+        - [`ERROR` Guidelines](#error-guidelines)
+        - [Fatal vs Non-Fatal Errors](#fatal-vs-non-fatal-errors)
+        - [`ERROR` Examples](#error-examples)
+      - [`WARN`](#warn)
+        - [`WARN` Guidelines](#warn-guidelines)
+        - [`WARN` Examples](#warn-examples)
+      - [`INFO`](#info)
+        - [`INFO` Examples](#info-examples)
+      - [`DEBUG`](#debug)
+        - [`DEBUG` Guidelines](#debug-guidelines)
+        - [`DEBUG` Examples](#debug-examples)
+      - [`TRACE`](#trace)
+        - [`TRACE` Guidelines](#trace-guidelines)
+        - [`TRACE` Examples](#trace-examples)
+    - [Log Structure and Contents](#log-structure-and-contents)
 
 ## Background
+
 Besides the Host Status, logging is the fundamental way for Trident to
 communicate the state of the host and the progress of the ongoing servicing to
 the customer.
@@ -34,6 +46,7 @@ structured and what information should be logged, and finally, provides
 examples for developers to use while adding new logs.
 
 ## Goals
+
 This document outlines the standards for logging in Trident, to accomplish the
 following goals:
 
@@ -48,6 +61,7 @@ following goals:
 ## Overview
 
 ### Background Log
+
 In addition to the output, Trident logs all its updates to a log file, which
 can be used both by developers and customers for debugging and troubleshooting.
 This log file has similar contents to the output, with the exception that this
@@ -61,6 +75,7 @@ Refer to [Viewing Trident's Background Log](/docs/How-To-Guides/View-Trident's-B
 for more detailed guidelines on how to use the background log file.
 
 ### Log Levels
+
 For each command that can be run with Trident, the customer can adjust the log
 level, i.e. the verbosity level, to one of the following six values: `OFF`,
 `ERROR`, the **default** `WARN`, `INFO`, `DEBUG`, and `TRACE`.
@@ -68,7 +83,7 @@ level, i.e. the verbosity level, to one of the following six values: `OFF`,
 The last five correspond to the actual functions in the `log` crate that the
 developers can use to write logs in Trident:
 
-```
+```rust
 error!("...");
 warn!("...");
 info!("...");
@@ -81,6 +96,7 @@ context. Below, the document outlines the role of each log level and provides
 example scenarios in which it can be used.
 
 #### `ERROR`
+
 As the name suggests, the log level `ERROR` is used when an error has occurred
 in the system. When something doesn't go as expected by Trident, it could
 either be:
@@ -89,7 +105,7 @@ either be:
 2. A non-fatal error that Trident can recover from, but that the customer
   should still be aware of.
 
-**Guidelines**
+##### `ERROR` Guidelines
 
 The primary audience of the `ERROR` logs is **the customers**. This means that
 every `ERROR` log should try to address (1) what went wrong, (2) why it might
@@ -104,16 +120,16 @@ system, so that the customer can address it themselves.
 
 If possible, an `ERROR` log should follow the following structure:
 
-```
+```rust
 error!("Failed to <PERFORM SOME ACTION> due to <POTENTIAL CAUSE THAT CAN BE ADDRESSED>");
 ```
 
-**Fatal vs Non-Fatal Errors**
+##### Fatal vs Non-Fatal Errors
 
 `ERROR` logs can be used in case of both **fatal** and **non-fatal** errors. In
 the former scenario, Trident has encountered a serious failure that interrups
 the ongoing servicing; otherwise, if we can recover from the failure, then the
-error is non-fatal. Another type of non-fatal errors is when the failure 
+error is non-fatal. Another type of non-fatal errors is when the failure
 *would be* fatal but another failure error has already occurred, so we're
 reporting any subsequent errors as non-fatal.
 
@@ -128,7 +144,7 @@ additional context that must be shared with the customer. Refer to
 In case of **a non-fatal error**, no `TridentError` is returned, hence, an
 `ERROR` log must be printed.
 
-**Examples**
+##### `ERROR` Examples
 
 *Example 1.*
 
@@ -140,7 +156,7 @@ the servicing, and so a `TridentError` is returned. In this case, since the
 contents of the `RootMountPointDevPath` error already summarize the error, an
 `ERROR` log is not needed.
 
-```
+```rust
 Err(e) => {
     return Err(TridentError::new(ServicingError::RootMountPointDevPath {
         mountinfo_file: PROC_MOUNTINFO_PATH.to_string(),
@@ -158,7 +174,7 @@ the customer and then moves on to the next step, without returning a
 still want to surface the original error to the customer, so that they can
 address it themselves.
 
-```
+```rust
 if let Err(err) =
     osutils::systemd::restart_unit("sshd").context("Failed to restart sshd in MOS")
 {
@@ -167,12 +183,13 @@ if let Err(err) =
 ```
 
 #### `WARN`
+
 `WARN` is used to warn the customer about a potential issue that might break
 the servicing in the future. In other words, `WARN` is reserved for scenarios
 where some non-critical expectation is not being met. In this case, no error is
 returned, and so Trident will continue the servicing.
 
-**Guidelines**
+##### `WARN` Guidelines
 
 Similarly to `ERROR`, `WARN` logs are primarily addressed at **the customer**.
 The goal of `WARN` is to warn the user about flows that:
@@ -192,7 +209,7 @@ intentional, although we find it unsafe or unusual. On the other hand, when we
 know that the problematic flow is most likely not what the customer intended
 and should probably address, we issue a non-fatal error with an `ERROR` log.
 
-**Examples**
+##### `WARN` Examples
 
 *Example 1.*
 
@@ -201,7 +218,7 @@ ignore the hash of an image in the Host Configuration. Before deploying the
 image onto the block device, Trident produces a `WARN` log because streaming an
 unverified payload onto a block device is a potential security concern.
 
-```
+```rust
 match image.sha256 {
     ImageSha256::Ignored => {
         warn!("Ignoring SHA256 for image from '{}'", image_url);
@@ -220,9 +237,9 @@ cause an error, Trident suspects that the customer might have forgotten to
 update `allowedOperations` and hence, it issues a `WARN` log. This is not a
 failure but a no-action scenario, so we cannot return an `ERROR` log.
 
-```
+```rust
 if cmd.allowed_operations.has_stage() {
-    engine::update(cmd, datastore).message("Failed to run update()")
+    engine::update(cmd, datastore).message("Failed to run update")
 } else {
     warn!("Host config has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run");
     Ok(())
@@ -230,12 +247,13 @@ if cmd.allowed_operations.has_stage() {
 ```
 
 #### `INFO`
+
 `INFO` is reserved for the most high-level updates, such as announcing the
 kickoff or successful completion of the next step in the servicing process.
 The `INFO` logs are written primarily for **the developers** and some
 **savvy customers** who want to understand how the servicing is progressing.
 
-**Examples**
+##### `INFO` Examples
 
 *Example 1.*
 
@@ -243,7 +261,7 @@ Creating a RAID array is a major operation within the process of initializing
 block devices. Thus, we use an `INFO` log to inform the user that a RAID array
 requested in the Host Configuration is being created.
 
-```
+```rust
 info!("Initializing '{}': creating RAID array", config.id);
 mdadm::create(&config.device_path(), &config.level, device_paths)
     .context("Failed to create RAID array")?;
@@ -252,7 +270,7 @@ mdadm::create(&config.device_path(), &config.level, device_paths)
 *Note:* Whenever a device is being initialized, Trident formats the log
 message in the same way, to maintain consistency:
 
-```
+```rust
 "Initializing '<BLOCK DEVICE ID>': ..."
 ```
 
@@ -269,7 +287,7 @@ Trident uses **two** different levels of logging:
   to the developer rather than the customer. *Note:* More information about
   `DEBUG` logs will be shared in the next section.
 
-```
+```rust
 if datastore.host_status().servicing_type == ServicingType::CleanInstall {
     info!(
         "Clean install of runtime OS succeeded"
@@ -284,12 +302,13 @@ if datastore.host_status().servicing_type == ServicingType::CleanInstall {
 ```
 
 #### `DEBUG`
+
 `DEBUG` logs are the primary logs, meaning that they report the individual
 actions that Trident is completing during the servicing. Unlike the `ERROR` and
 `WARN` logs, `DEBUG` logs are aimed at **the developers**, who can use them to
 debug the code.
 
-**Guidelines**
+##### `DEBUG` Guidelines
 
 Conceptually, `DEBUG` logs are the "normal" logs, which provide more details
 than `INFO` but fewer details than `TRACE`.
@@ -308,7 +327,7 @@ details. Finally, if the operation has completed successfully, we can issue
 another `INFO` log, to confirm that the operation succeeded. (The confirmation
 is optional since Trident logging the next step is a confrmation in itself.)
 
-**Examples**
+##### `DEBUG` Examples
 
 *Example 1.*
 
@@ -320,7 +339,7 @@ the same time, it's definitely relevant to the developer. On the other hand,
 seeing the contents of the script is rarely needed even by the developer, and
 so we're using a `TRACE` log in this case.
 
-```
+```rust
 debug!("Writing grub-mkconfig script to '{}'", path.display());
 
 let content = self.render();
@@ -339,7 +358,7 @@ what subsystem is currently being prepared is more granular and would be
 helpful to the developers rather than to the customers. Thus, this info is
 recorded via a `DEBUG` log.
 
-```
+```rust
 fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result<(), TridentError> {
     info!("Starting step 'Prepare'");
     for subsystem in subsystems {
@@ -358,35 +377,39 @@ fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result
 ```
 
 #### `TRACE`
+
 `TRACE` is used for logging the most granular info, which could only be useful
 to the developers as they are going through the source code. Whatever actions
 seem too granular for the `DEBUG` logs should be logged at the `TRACE` level.
 The section below attempts to provide a guide on how to decide whether a log is
 `TRACE` or `DEBUG`.
 
-**Guidelines**
+##### `TRACE` Guidelines
 
 When trying to decide whether a piece of information should be logged at the
 `TRACE` vs `DEBUG` levels, consider the following questions:
 
 1. Are you logging an operation executed by Trident OR a generic step/"a side
-  effect" of an operation? If yes, it's a `DEBUG`; if no, it's a `TRACE`.
-  - E.g. announcing that Trident is creating a new mdadm config file at a path
+   effect" of an operation? If yes, it's a `DEBUG`; if no, it's a `TRACE`.
+
+   - E.g. announcing that Trident is creating a new mdadm config file at a path
     is a `DEBUG` log because it describes a particular operation done by
     Trident. On the other hand, printing out the contents of the config is
     showing an intermediate outcome of this operation. So, `TRACE` makes more
     sense here.
+
 2. Does the code have any concept of the bigger picture? If yes, it's a `DEBUG`;
-  if no, it's a `TRACE`.
-  - E.g. the most common use case of `TRACE` is logging every sub-command that
+   if no, it's a `TRACE`.
+   - E.g. the most common use case of `TRACE` is logging every sub-command that
     Trident executes. In this case, the low-level logic has no idea what
     exactly Trident is trying to achieve; it just logs that a certain command,
     with some arguments, is being executed and then prints out its output. But
     it does not have an understanding of why it is being run.
+
 3. Is the log produced in **osutils**? If yes, it should most likely be a
   `TRACE`, unless it is a specific warning/error.
- 
-**Examples**
+
+##### `TRACE` Examples
 
 *Example 1.*
 
@@ -396,7 +419,7 @@ is a pretty fundamental piece of info for the developers, the content of the
 file is a less relevant outcome of that operation, so it should be reported
 with a `TRACE` log.
 
-```
+```rust
 debug!("Creating mdadm config file '{}'", mdadm_config_file_path);
 trace!("Contents:\n{}", output);
 ```
@@ -409,7 +432,7 @@ These logs allow the developers to see what command is being run at the lowest
 level, while other logs, such as `DEBUG` will provide more context on why this
 command was executed in the first place.
 
-```
+```rust
 fn run_and_check(&mut self) -> Result<(), Error> {
     let rendered_command = self.render_command();
     trace!("Executing '{rendered_command}'");
@@ -426,6 +449,7 @@ fn run_and_check(&mut self) -> Result<(), Error> {
 ```
 
 ### Log Structure and Contents
+
 - The log message should concisely summarize the update or error that needs to
   be communicated to the user. If possible, summarize the info in a single
   phrase or a sentence.
