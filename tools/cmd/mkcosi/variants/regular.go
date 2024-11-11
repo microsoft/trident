@@ -1,5 +1,7 @@
 package variants
 
+import "argus_toolkit/pkg/ref"
+
 type BuildRegular struct {
 	Common CommonOpts `embed:""`
 }
@@ -12,6 +14,10 @@ func (b *BuildRegular) CommonOpts() CommonOpts {
 	return b.Common
 }
 
+func (b *BuildRegular) IsVerity() bool {
+	return false
+}
+
 func (b *BuildRegular) ExpectedImages() []ExpectedImage {
 	return []ExpectedImage{
 		{
@@ -20,9 +26,12 @@ func (b *BuildRegular) ExpectedImages() []ExpectedImage {
 			MountPoint: "/boot/efi",
 		},
 		{
-			Name:       "root.rawzst",
-			PartType:   PartitionTypeRoot,
-			MountPoint: "/",
+			Name:                "root.rawzst",
+			PartType:            PartitionTypeRoot,
+			MountPoint:          "/",
+			OsReleasePath:       ref.Of("etc/os-release"),
+			GrubCfgPath:         ref.Of("boot/grub2/grub.cfg"),
+			ContainsRpmDatabase: true,
 		},
 	}
 }
