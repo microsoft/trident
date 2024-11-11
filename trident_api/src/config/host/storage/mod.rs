@@ -27,6 +27,7 @@ pub mod imaging;
 pub mod internal;
 pub mod partitions;
 pub mod raid;
+pub mod verity;
 
 use self::{
     blkdev_graph::{
@@ -41,6 +42,7 @@ use self::{
     internal::{InternalMountPoint, InternalVerityDevice},
     partitions::Partition,
     raid::Raid,
+    verity::VerityDevice,
 };
 
 /// Storage configuration describes the disks of the host that will be used to
@@ -73,6 +75,11 @@ pub struct Storage {
     /// Verity filesystems in this host.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub verity_filesystems: Vec<VerityFileSystem>,
+
+    /// New API for Verity block devices.
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub verity: VerityDevice,
 
     /// Old API for mount points.
     ///
