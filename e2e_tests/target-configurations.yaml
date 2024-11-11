@@ -8,6 +8,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - memory-constraint-combined
       - rerun
       - simple
       - verity
@@ -20,6 +21,7 @@ bareMetal:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - memory-constraint-combined
       - rerun
       - simple
       - verity
@@ -32,6 +34,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - memory-constraint-combined
       - misc
       - raid-small
       - raid-resync-small
@@ -45,6 +48,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - memory-constraint-combined
       - misc
       - raid-small
       - raid-resync-small
@@ -64,6 +68,7 @@ virtualMachine:
       - encrypted-partition
       - encrypted-raid
       - encrypted-swap
+      - memory-constraint-combined
       - raid-small
       - raid-resync-small
       - rerun

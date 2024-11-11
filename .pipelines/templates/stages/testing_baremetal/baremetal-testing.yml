@@ -174,10 +174,18 @@ stages:
 
           - bash: |
               set -eux
+              MAX_FAILURES_FLAG=""
 
               # rerun is expected to fail ONCE
-              MAX_FAILURES_FLAG=""
-              if [ ${{ variables['TRIDENT_CONFIGURATION_NAME'] }} == 'rerun' ]; then
+              if [ ${{ variables['TRIDENT_CONFIGURATION_NAME'] }} == 'rerun' ]; then 
+                MAX_FAILURES_FLAG="--max-failures 1"
+              fi
+
+              # memory-constraint-combined is meant to produce ONE failure
+              # because the first run modifies the service file and exits
+              # prematurely, so that the second run will have the memory
+              # constraints applied.
+              if [ ${{ variables['TRIDENT_CONFIGURATION_NAME'] }} == 'memory-constraint-combined' ]; then 
                 MAX_FAILURES_FLAG="--max-failures 1"
               fi
 

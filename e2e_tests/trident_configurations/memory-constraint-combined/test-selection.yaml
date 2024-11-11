@@ -1,0 +1,4 @@
+compatible:
+  - base
+  - verity
+  - encryption
