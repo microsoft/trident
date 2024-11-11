@@ -45,6 +45,11 @@ pub struct User {
     /// Command to be executed at startup, providing a way to run custom scripts or applications on user login.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub startup_command: Option<String>,
+
+    /// Home directory for the user.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub home_directory: Option<String>,
 }
 
 /// Password configuration for a user.

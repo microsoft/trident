@@ -170,7 +170,7 @@ impl Subsystem for MosConfigSubsystem {
 
 #[cfg(test)]
 mod tests {
-    use trident_api::config::{Password, User};
+    use trident_api::config::{KernelCommandLine, Module, Password, Services, User};
 
     #[test]
     fn test_requires_os_modifier_os() {
@@ -186,6 +186,7 @@ mod tests {
             users: vec![],
             additional_files: vec![],
             hostname: None,
+            ..Default::default()
         };
         let mut os = mk_os();
         assert!(!requires_os_modifier_os(&os));
@@ -200,6 +201,26 @@ mod tests {
         os = mk_os();
         os.hostname = Some("test".to_string());
         assert!(requires_os_modifier_os(&os));
+
+        os = mk_os();
+        os.modules.push(Module {
+            name: "test".to_string(),
+            ..Default::default()
+        });
+        assert!(!requires_os_modifier_os(&os));
+
+        os = mk_os();
+        os.services = Services {
+            enable: vec!["enabled-test".to_string()],
+            disable: vec!["disabled-test".to_string()],
+        };
+        assert!(!requires_os_modifier_os(&os));
+
+        os = mk_os();
+        os.kernel_command_line = KernelCommandLine {
+            extra_command_line: vec!["test".to_string()],
+        };
+        assert!(!requires_os_modifier_os(&os));
     }
 
     #[test]

@@ -10,12 +10,12 @@ use netplan_types::{
 
 use crate::{
     config::{
-        host::os::{Selinux, SelinuxMode},
+        host::os::{KernelCommandLine, Selinux, SelinuxMode},
         AbUpdate, AbVolumePair, AdditionalFile, Disk, EncryptedVolume, Encryption, FileSystem,
         FileSystemSource, FileSystemType, HostConfiguration, Image, ImageFormat, ImageSha256,
         MountOptions, MountPoint, Os, Partition, PartitionTableType, PartitionType, Raid,
-        RaidLevel, Script, ScriptSource, Scripts, ServicingTypeSelection, SoftwareRaidArray,
-        SshMode, Storage, User, VerityFileSystem,
+        RaidLevel, Script, ScriptSource, Scripts, Services, ServicingTypeSelection,
+        SoftwareRaidArray, SshMode, Storage, User, VerityFileSystem,
     },
     constants::{self, MOUNT_OPTION_READ_ONLY},
 };
@@ -1242,6 +1242,14 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     }),
                     additional_files: vec![],
                     hostname: None,
+                    modules: vec![],
+                    services: Services {
+                        enable: vec![],
+                        disable: vec![],
+                    },
+                    kernel_command_line: KernelCommandLine {
+                        extra_command_line: vec![],
+                    },
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {
@@ -1393,6 +1401,14 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     }),
                     additional_files: vec![],
                     hostname: None,
+                    modules: vec![],
+                    services: Services {
+                        enable: vec![],
+                        disable: vec![],
+                    },
+                    kernel_command_line: KernelCommandLine {
+                        extra_command_line: vec![],
+                    },
                 },
                 scripts: Scripts {
                     post_configure: vec![Script {

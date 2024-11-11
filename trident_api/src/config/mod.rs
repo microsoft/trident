@@ -6,8 +6,10 @@ pub use host::{
     image::{CosiFile, OsImage},
     os::{
         additional_files::AdditionalFile,
+        modules::Module,
+        services::Services,
         users::{Password, SshMode, User},
-        ManagementOs, Os, Selinux, SelinuxMode,
+        KernelCommandLine, ManagementOs, Os, Selinux, SelinuxMode,
     },
     scripts::{Script, ScriptSource, Scripts, ServicingTypeSelection},
     storage::imaging::{AbUpdate, AbVolumePair, Image, ImageFormat, ImageSha256},

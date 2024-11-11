@@ -6,13 +6,19 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
+use crate::is_default;
+
 use super::error::HostConfigurationStaticValidationError;
 
 pub mod additional_files;
+pub mod modules;
 mod network;
+pub mod services;
 pub mod users;
 
 use additional_files::AdditionalFile;
+use modules::Module;
+use services::Services;
 use users::User;
 
 /// Configuration for the host OS.
@@ -45,6 +51,29 @@ pub struct Os {
     /// Hostname of the system.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
+
+    /// Kernel modules to configure.
+    #[serde(default, skip_serializing_if = "is_default")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub modules: Vec<Module>,
+
+    /// Options for configuring systemd services.
+    #[serde(default, skip_serializing_if = "is_default")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub services: Services,
+
+    /// Options for configuring the kernel.
+    #[serde(default, skip_serializing_if = "is_default")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub kernel_command_line: KernelCommandLine,
+}
+
+/// Additional kernel command line options to add to the image.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+pub struct KernelCommandLine {
+    pub extra_command_line: Vec<String>,
 }
 
 /// Configuration for selinux mode
