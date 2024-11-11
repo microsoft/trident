@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use anyhow::Context;
 use log::{debug, error, info, warn};
@@ -17,6 +17,9 @@ use crate::{
 
 mod hostname;
 mod users;
+
+/// Path to the machine-id file, as expected by SystemD.
+const MACHINE_ID_PATH: &str = "/etc/machine-id";
 
 /// Returns whether the given OS configuration requires the os-modifier binary to be present.
 fn requires_os_modifier_os(os_config: &Os) -> bool {
@@ -49,6 +52,19 @@ impl Subsystem for OsConfigSubsystem {
                     config: self.name().to_string(),
                 },
             ));
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "osconfig_provision", skip_all)]
+    fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        if ctx.servicing_type == ServicingType::AbUpdate {
+            // Copy the current machine-id to the target root mount point to
+            // preserve machine identity across servicing.
+            let dest_machine_id_path = path::join_relative(mount_path, MACHINE_ID_PATH);
+            fs::copy(MACHINE_ID_PATH, dest_machine_id_path)
+                .structured(ServicingError::CopyMachineId)?;
         }
 
         Ok(())

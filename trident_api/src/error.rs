@@ -212,6 +212,9 @@ pub enum ServicingError {
         explanation: String,
     },
 
+    #[error("Failed to stage machine-id file")]
+    CopyMachineId,
+
     #[error("Failed to copy Trident binary to runtime OS")]
     CopyTridentBinary,
 
