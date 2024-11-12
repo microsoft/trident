@@ -58,10 +58,16 @@ steps:
       sudo pip3 install fabric
     displayName: "Installing dependencies for E2E tests"
 
+  # Check if Trident config requires A/B update testing. Skip A/B update testing
+  # if config is 'rerun' or 'memory-constraint-combined'. This is because those
+  # two scenarios trigger another systemd service run of Trident, which is not
+  # possible in the current A/B update testing script.
   - bash: |
       set -eu
       abUpdateExists=$(sudo yq e '.hostConfiguration.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      if [ "$abUpdateExists" == "true" ] && [ ${{ parameters.tridentConfigurationName }} != "rerun" ]; then
+      if [ "$abUpdateExists" == "true" ] && \
+       [ "${{ parameters.tridentConfigurationName }}" != "rerun" ] && \
+       [ "${{ parameters.tridentConfigurationName }}" != "memory-constraint-combined" ]; then
         echo "Trident config requires A/B update testing"
         echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
         echo "##vso[task.setvariable variable=version]2"
@@ -95,7 +101,7 @@ steps:
     displayName: "Check if Trident config requires verity runtime OS images"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
-  # TODO: Remove after trident-container-verity-testimage is being used for E2E tests (Task #9652). 
+  # TODO: Remove after trident-container-verity-testimage is being used for E2E tests (Task #9652).
   - bash: |
       set -eu
       verityRequired=$(sudo yq e '.hostConfiguration.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
