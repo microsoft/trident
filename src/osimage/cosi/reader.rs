@@ -429,4 +429,156 @@ mod tests {
         check_section(3, 6); // llo, W
         check_section(0, 13); // Hello, World!
     }
+
+    #[test]
+    fn test_http_file() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+        // Sample body of data that will be served
+        let body = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. \
+            Mauris dolor massa, ultrices vitae urna et, volutpat euismod dui. Cras \
+            nisi ipsum, tristique eu nibh eu, varius feugiat mi. Sed id urna aliquam, \
+            sollicitudin lorem quis, imperdiet sem. Vestibulum in mauris quis velit \
+            suscipit bibendum. Phasellus faucibus eros sed gravida pulvinar.";
+
+        // Request a new server from the pool
+        let mut server = mockito::Server::new();
+
+        let file_name = "/file.cosi";
+
+        // Mock the HEAD request to get the file size.
+        let size_mock = server
+            .mock("HEAD", file_name)
+            .with_status(200)
+            .with_header("Content-Length", &body.len().to_string())
+            .with_header("Accept-Ranges", "bytes")
+            // We expect this to be called exactly once
+            .expect(1)
+            .create();
+
+        // Mock the GET request for the full content without range.
+        let mock_full = server
+            .mock("GET", file_name)
+            .match_header("Range", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_body(body)
+            .expect(1)
+            .create();
+
+        // Mock the GET request to get the file content.
+        let mock_range = server
+            .mock("GET", file_name)
+            .match_header(
+                "Range",
+                mockito::Matcher::Regex(r"^bytes=\d*-\d*$".to_string()),
+            )
+            .with_status(200)
+            .with_body_from_request(|req| {
+                let ranges = req.header("Range")[0]
+                    .to_str()
+                    .unwrap()
+                    .strip_prefix("bytes=")
+                    .unwrap()
+                    .split('-')
+                    .collect::<Vec<&str>>();
+                let start = ranges[0]
+                    .is_empty()
+                    .then_some(0)
+                    .unwrap_or_else(|| ranges[0].parse::<usize>().expect("Failed to parse start"));
+                let end = ranges[1]
+                    .is_empty()
+                    .then_some(body.len())
+                    .unwrap_or_else(|| ranges[1].parse::<usize>().expect("Failed to parse end"))
+                    .min(body.len() - 1);
+                trace!("Mocking range {} to {}", start, end);
+                body[start..=end].as_bytes().to_vec()
+            })
+            .expect(9)
+            .create();
+
+        let file_url = Url::parse(&server.url()).unwrap().join(file_name).unwrap();
+
+        // Create a new HTTP Cosi reader.
+        let cosi_reader = CosiReader::new(&file_url).unwrap();
+
+        // Get a reference to the inner HTTP file reader
+        let CosiReader::Http(ref http_file) = cosi_reader else {
+            panic!("Expected a HTTP file reader, got {:?}", cosi_reader);
+        };
+
+        // Clone the file to test that the server is only called once.
+        let _ = http_file.clone();
+        // This function also just clones the http_file.
+        let _ = cosi_reader.reader().unwrap();
+
+        // Check that size_mock was called exactly once
+        size_mock.assert();
+
+        // Test read the whole thing, do not specify a range.
+        let mut buf = String::new();
+        let read = http_file
+            .reader(None, None)
+            .unwrap()
+            .read_to_string(&mut buf)
+            .unwrap();
+        assert_eq!(read, body.len(), "Did not read expected number of bytes");
+        assert_eq!(buf, body, "Did not read expected data");
+        mock_full.assert();
+
+        // Test reading a specific section
+        let test_section = |start: usize, size: usize| {
+            trace!(
+                "Testing section {} to {} (inclusive)",
+                start,
+                start + size - 1
+            );
+            let expected_slice = &body[start..start + size];
+            let mut buf = String::new();
+            let read = http_file
+                .section_reader(start as u64, size as u64)
+                .unwrap()
+                .read_to_string(&mut buf)
+                .unwrap();
+            trace!("Read: '{}' ({} bytes)", buf, read);
+            assert_eq!(read, size, "Did not read expected number of bytes");
+            assert_eq!(buf, expected_slice, "Did not read expected data");
+        };
+
+        test_section(0, 5); // Lorem
+        test_section(7, 5); // ipsum
+        test_section(3, 5); // em ip
+        test_section(0, 13); // Lorem ipsum d
+        test_section(45, 10); // scing elit
+        test_section(0, body.len()); // Whole file
+
+        // Test Read trait
+        // Clone into a mutable variable to test the Read trait
+        let mut http_file = http_file.clone();
+
+        // read_to_end
+        let mut buf = Vec::new();
+        http_file.seek(SeekFrom::Start(0)).unwrap();
+        let read = http_file.read_to_end(&mut buf).unwrap();
+        assert_eq!(read, body.len(), "Did not read expected number of bytes");
+        assert_eq!(buf, body.as_bytes(), "Did not read expected data");
+
+        // read_exact
+        let mut buf = vec![0; body.len()];
+        http_file.seek(SeekFrom::Start(0)).unwrap();
+        http_file.read_exact(&mut buf).unwrap();
+        assert_eq!(buf, body.as_bytes(), "Did not read expected data");
+
+        // read
+        let mut buf = vec![0; body.len()];
+        http_file.seek(SeekFrom::Start(0)).unwrap();
+        let read = http_file.read(&mut buf).unwrap();
+        assert_eq!(read, body.len(), "Did not read expected number of bytes");
+        assert_eq!(buf, body.as_bytes(), "Did not read expected data");
+
+        // Check that we made the exact number of requests we expected
+        mock_range.assert();
+    }
 }
