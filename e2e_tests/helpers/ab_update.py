@@ -90,7 +90,7 @@ def trident_run_command(
             raise Exception("Maximum reconnection attempts exceeded.")
     else:
         raise Exception(
-            f"Command unexpectedly returned with exit code {trident_return_code} and output {output}"
+            f"Command unexpectedly returned with exit code {trident_return_code} and output {trident_output}"
         )
 
     # Return
