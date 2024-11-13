@@ -113,15 +113,10 @@ impl Subsystem for HooksSubsystem {
             .post_provision
             .iter()
             .try_for_each(|script| {
-                self.run_script(
-                    script,
-                    ctx.servicing_type,
-                    mount_path,
-                    Path::new(ROOT_MOUNT_POINT_PATH),
-                )
-                .structured(ServicingError::RunPostProvisionScript {
-                    script_name: script.name.clone(),
-                })
+                self.run_script(script, ctx, mount_path, Path::new(ROOT_MOUNT_POINT_PATH))
+                    .structured(ServicingError::RunPostProvisionScript {
+                        script_name: script.name.clone(),
+                    })
             })?;
 
         Ok(())
@@ -183,15 +178,10 @@ impl Subsystem for HooksSubsystem {
             .post_configure
             .iter()
             .try_for_each(|script| {
-                self.run_script(
-                    script,
-                    ctx.servicing_type,
-                    Path::new(ROOT_MOUNT_POINT_PATH),
-                    exec_root,
-                )
-                .structured(ServicingError::RunPostConfigureScript {
-                    script_name: script.name.clone(),
-                })
+                self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH), exec_root)
+                    .structured(ServicingError::RunPostConfigureScript {
+                        script_name: script.name.clone(),
+                    })
             })?;
 
         Ok(())
@@ -218,15 +208,15 @@ impl HooksSubsystem {
     fn run_script(
         &self,
         script: &Script,
-        servicing_type: ServicingType,
+        ctx: &EngineContext,
         target_root: &Path,
         exec_root: &Path,
     ) -> Result<(), Error> {
-        if !script.should_run(servicing_type) {
+        if !script.should_run(ctx.servicing_type) {
             trace!(
                 "Skipping script '{}' for servicing type '{:?}'",
                 script.name,
-                servicing_type
+                ctx.servicing_type
             );
             return Ok(());
         }
@@ -270,7 +260,7 @@ impl HooksSubsystem {
         // Add default environment variables from engine context that can be used for the script
         script_runner.env_vars.insert(
             OsStr::new("SERVICING_TYPE"),
-            match_servicing_type_env_var(&servicing_type),
+            match_servicing_type_env_var(&ctx.servicing_type),
         );
         script_runner
             .env_vars
@@ -278,6 +268,11 @@ impl HooksSubsystem {
         script_runner
             .env_vars
             .insert(OsStr::new("EXEC_ROOT"), exec_root.as_os_str());
+        if let Some(ref phonehome_url) = ctx.spec.trident.phonehome {
+            script_runner
+                .env_vars
+                .insert(OsStr::new("PHONEHOME_URL"), OsStr::new(phonehome_url));
+        }
 
         let output = script_runner
             .output_check()
@@ -310,7 +305,7 @@ impl HooksSubsystem {
             .try_for_each(|script| {
                 self.run_script(
                     script,
-                    ctx.servicing_type,
+                    ctx,
                     Path::new(ROOT_MOUNT_POINT_PATH),
                     Path::new(ROOT_MOUNT_POINT_PATH),
                 )
@@ -392,7 +387,10 @@ mod tests {
         HooksSubsystem::default()
             .run_script(
                 &script,
-                ServicingType::CleanInstall,
+                &EngineContext {
+                    servicing_type: ServicingType::CleanInstall,
+                    ..Default::default()
+                },
                 Path::new("/mnt/newroot"),
                 Path::new("/"),
             )
@@ -499,7 +497,10 @@ mod tests {
         assert!(HooksSubsystem::default()
             .run_script(
                 &script,
-                ServicingType::CleanInstall,
+                &EngineContext {
+                    servicing_type: ServicingType::CleanInstall,
+                    ..Default::default()
+                },
                 Path::new("/mnt/newroot"),
                 Path::new("/")
             )
@@ -518,7 +519,10 @@ mod tests {
         assert!(HooksSubsystem::default()
             .run_script(
                 &script,
-                ServicingType::CleanInstall,
+                &EngineContext {
+                    servicing_type: ServicingType::CleanInstall,
+                    ..Default::default()
+                },
                 Path::new("/mnt/newroot"),
                 Path::new("/")
             )
@@ -544,7 +548,10 @@ mod tests {
         HooksSubsystem::default()
             .run_script(
                 &script,
-                ServicingType::CleanInstall,
+                &EngineContext {
+                    servicing_type: ServicingType::CleanInstall,
+                    ..Default::default()
+                },
                 Path::new("/mnt/newroot"),
                 Path::new("/"),
             )
@@ -572,7 +579,10 @@ mod tests {
         HooksSubsystem::default()
             .run_script(
                 &script,
-                ServicingType::CleanInstall,
+                &EngineContext {
+                    servicing_type: ServicingType::CleanInstall,
+                    ..Default::default()
+                },
                 Path::new("/mnt/newroot"),
                 Path::new("/"),
             )
@@ -597,7 +607,10 @@ mod tests {
         HooksSubsystem::default()
             .run_script(
                 &script,
-                ServicingType::CleanInstall,
+                &EngineContext {
+                    servicing_type: ServicingType::CleanInstall,
+                    ..Default::default()
+                },
                 target_root.path(),
                 exec_root.path(),
             )
