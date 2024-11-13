@@ -94,3 +94,31 @@ stages:
               action: override
           - template: ../common_tasks/download-emu.yml
           - template: release2.yml
+
+      # Build trident RPMs for dom0.  The dom0 image requires
+      # systemd version 250.  This allows trident-service to
+      # be deployed and phonehome, but using systemd 250 leads
+      # to an issue with a partitioning feature.  When dom0 is
+      # migrated to azl3, this needs to be removed.
+      - job: BuildTrident2forDom0
+        displayName: Build Trident 2.0 RPMs for dom0
+        pool:
+          type: linux
+
+        variables:
+          - name: ob_artifactBaseName
+            value: ${{ parameters.tridentArtifactName }}2-dom0
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/out"
+          - template: common/setup-registries-vars-template.yaml@platform-pipelines
+            parameters:
+              buildType: auto
+
+        steps:
+          - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              action: override
+          - template: ../common_tasks/download-emu.yml
+          - template: release2.yml
+            parameters:
+              minimumSystemdVersion: 250

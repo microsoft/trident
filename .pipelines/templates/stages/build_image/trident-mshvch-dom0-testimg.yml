@@ -1,0 +1,44 @@
+parameters:
+- name: outputArtifactName
+  type: string
+  default: mshvch-dom0-testimg
+
+stages:
+- stage: TridentTestImg_${{ replace(parameters.outputArtifactName, '-', '_') }}
+  displayName: Build ${{ parameters.outputArtifactName }}
+  dependsOn: Trident
+
+  jobs:
+  - job: BuildTridentTestImg
+    displayName: Build
+    timeoutInMinutes: 30
+    pool:
+      type: linux
+      name: ecf-ado-agent-linux-pool
+
+    variables:
+      - name: ob_outputDirectory
+        value: $(Build.SourcesDirectory)/output
+      - name: ob_artifactBaseName
+        value: ${{ parameters.outputArtifactName }}
+      - name: mic_package
+        value: DEFAULT
+      - name: mic_version
+        value: DEFAULT
+      - name: mic_commit
+        value: DEFAULT
+      - name: baseimg_package
+        value: baremetal_vhdx-2.0-stable
+      - name: baseimg_version
+        value: DEFAULT
+      - group: coreos_mariner_hci_staging_lisa_kva_functional_tests_service_principal
+      - name: TEST_IMAGES_DIR
+        value: $(Pipeline.Workspace)/s/test-images
+
+    steps:
+    - template: .pipelines/templates/mshvch-dom0-image-build-template.yml@test-images
+      parameters:
+        outputDirectory: $(ob_outputDirectory)
+        artifactBaseName: $(ob_artifactBaseName)
+        localTrident2ArtifactName: 'trident-binaries2-dom0'
+        testImagesRepo: test-images

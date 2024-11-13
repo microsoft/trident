@@ -1,3 +1,8 @@
+parameters:
+  - name: minimumSystemdVersion
+    type: string
+    default: '254'
+
 steps:
   - script: |
       set -eux
@@ -39,7 +44,7 @@ steps:
       prerelease=$(echo $full_version | cut -d'-' -f2-)
 
       # Edit the trident.spec file to not require 3.0 dependencies
-      sed -i 's/systemd >= 255/systemd >= 254/g' trident.spec
+      sed -i 's/systemd >= 255/systemd >= ${{ parameters.minimumSystemdVersion }}/g' trident.spec
       sed -i 's/Requires:[[:blank:]]*systemd-udev//g' trident.spec
 
       rpmbuild -bb --build-in-place trident.spec \
