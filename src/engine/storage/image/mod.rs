@@ -7,12 +7,13 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 use reqwest::Url;
 use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
 
 use osutils::{
-    container, e2fsck, hashing_reader::HashingReader, image_streamer, lsblk, resize2fs, veritysetup,
+    container, dependencies::Dependency, e2fsck, hashing_reader::HashingReader, image_streamer,
+    lsblk, resize2fs, veritysetup,
 };
 
 use trident_api::{
@@ -268,7 +269,7 @@ pub(crate) fn update_active_volume(
         .iter()
         .any(|fs| fs.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH));
 
-    let ((volume_a_path, volume_b_path), root_device_path) = if root_is_verity {
+    let (volume_pair_paths, root_data_device_path) = if root_is_verity {
         debug!("Root is a verity device");
         get_verity_data_volume_pair_paths(ctx, ab_update, root_device_id)
             .context("Failed to find root verity data volume pair")?
@@ -278,19 +279,54 @@ pub(crate) fn update_active_volume(
             .context("Failed to find root volume pair")?
     };
 
-    // TODO: better error handling if canonicalize fails, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7320/
-    ctx.ab_active_volume = if volume_a_path
-        .canonicalize()
-        .context(format!("Failed to find path '{}'", volume_a_path.display()))?
-        == root_device_path
-    {
+    debug!(
+        "Root volume A path: {} (device ID: {})",
+        volume_pair_paths.volume_a_path.display(),
+        volume_pair_paths.volume_a_id
+    );
+    debug!(
+        "Root volume B path: {} (device ID: {})",
+        volume_pair_paths.volume_b_path.display(),
+        volume_pair_paths.volume_b_id
+    );
+
+    let volume_a_path_canonical =
+        volume_pair_paths
+            .volume_a_path
+            .canonicalize()
+            .context(format!(
+                "Failed to find canonical path for '{}' (device ID: {})",
+                volume_pair_paths.volume_a_path.display(),
+                volume_pair_paths.volume_a_id,
+            ))?;
+    let volume_b_path_canonical =
+        volume_pair_paths
+            .volume_b_path
+            .canonicalize()
+            .context(format!(
+                "Failed to find canonical path '{}' (device ID: {})",
+                volume_pair_paths.volume_b_path.display(),
+                volume_pair_paths.volume_b_id,
+            ))?;
+
+    debug!(
+        "Root volume A path (canonical): {}",
+        volume_a_path_canonical.display()
+    );
+    debug!(
+        "Root volume B path (canonical): {}",
+        volume_b_path_canonical.display()
+    );
+
+    trace!(
+        "Available devices: {}",
+        Dependency::Blkid.cmd().output_and_check().unwrap()
+    );
+
+    ctx.ab_active_volume = if volume_a_path_canonical == root_data_device_path {
         debug!("Active volume is A");
         Some(AbVolumeSelection::VolumeA)
-    } else if volume_b_path
-        .canonicalize()
-        .context(format!("Failed to find path '{}'", volume_a_path.display()))?
-        == root_device_path
-    {
+    } else if volume_b_path_canonical == root_data_device_path {
         debug!("Active volume is B");
         Some(AbVolumeSelection::VolumeB)
     } else {
@@ -298,7 +334,12 @@ pub(crate) fn update_active_volume(
         // To prevent data loss, abort if we cannot find the
         // matching root volume outside of clean install
         if ctx.servicing_type != ServicingType::CleanInstall {
-            bail!("No matching root volume found");
+            bail!(
+                "Failed to match current root device path '{}' to either volume A path '{}' or volume B path '{}'",
+                root_data_device_path.display(),
+                volume_a_path_canonical.display(),
+                volume_b_path_canonical.display()
+            );
         }
         None
     };
@@ -306,12 +347,20 @@ pub(crate) fn update_active_volume(
     Ok(())
 }
 
+#[derive(Debug, PartialEq)]
+struct VolumePairPaths {
+    volume_a_path: PathBuf,
+    volume_b_path: PathBuf,
+    volume_a_id: BlockDeviceId,
+    volume_b_id: BlockDeviceId,
+}
+
 fn get_plain_volume_pair_paths(
     ctx: &EngineContext,
     ab_update: &AbUpdate,
     root_device_id: &BlockDeviceId,
     root_device_path: PathBuf,
-) -> Result<((PathBuf, PathBuf), PathBuf), Error> {
+) -> Result<(VolumePairPaths, PathBuf), Error> {
     let root_device_pair = ab_update
         .volume_pairs
         .iter()
@@ -331,7 +380,12 @@ fn get_plain_volume_pair_paths(
         ))?;
 
     Ok((
-        (volume_a_path.clone(), volume_b_path.clone()),
+        VolumePairPaths {
+            volume_a_path: volume_a_path.clone(),
+            volume_b_path: volume_b_path.clone(),
+            volume_a_id: root_device_pair.volume_a_id.clone(),
+            volume_b_id: root_device_pair.volume_b_id.clone(),
+        },
         root_device_path,
     ))
 }
@@ -340,7 +394,7 @@ fn get_verity_data_volume_pair_paths(
     ctx: &EngineContext,
     ab_update: &AbUpdate,
     root_device_id: &BlockDeviceId,
-) -> Result<((PathBuf, PathBuf), PathBuf), Error> {
+) -> Result<(VolumePairPaths, PathBuf), Error> {
     let root_verity_device_config = ctx
         .spec
         .storage
@@ -348,20 +402,31 @@ fn get_verity_data_volume_pair_paths(
         .iter()
         .find(|vd| &vd.id == root_device_id)
         .context("Failed to find root verity device config")?;
+    trace!("Root verity device config: {:?}", root_verity_device_config);
+
     let root_data_device_pair = ab_update
         .volume_pairs
         .iter()
         .find(|vp| vp.id == root_verity_device_config.data_target_id)
         .context("No volume pair for root data device found")?;
+    debug!("Root data device pair: {:?}", root_data_device_pair);
+
     let volume_a_path = engine::get_block_device_path(ctx, &root_data_device_pair.volume_a_id)
         .context("Failed to get block device for data volume A")?;
     let volume_b_path = engine::get_block_device_path(ctx, &root_data_device_pair.volume_b_id)
         .context("Failed to get block device for data volume B")?;
+
     let root_verity_status = veritysetup::status(&root_verity_device_config.device_name)
         .context("Failed to get verity status")?;
+    trace!("Root verity status: {:?}", root_verity_status);
 
     Ok((
-        (volume_a_path, volume_b_path),
+        VolumePairPaths {
+            volume_a_path,
+            volume_b_path,
+            volume_a_id: root_data_device_pair.volume_a_id.clone(),
+            volume_b_id: root_data_device_pair.volume_b_id.clone(),
+        },
         root_verity_status.data_device_path,
     ))
 }
@@ -1072,7 +1137,12 @@ mod functional_test {
             )
             .unwrap(),
             (
-                (PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")),
+                VolumePairPaths {
+                    volume_a_path: PathBuf::from("/dev/sda1"),
+                    volume_b_path: PathBuf::from("/dev/sda2"),
+                    volume_a_id: "root-a".to_string(),
+                    volume_b_id: "root-b".to_string(),
+                },
                 PathBuf::from("/dev/sda")
             )
         );
@@ -1086,7 +1156,12 @@ mod functional_test {
             )
             .unwrap(),
             (
-                (PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")),
+                VolumePairPaths {
+                    volume_a_path: PathBuf::from("/dev/sda1"),
+                    volume_b_path: PathBuf::from("/dev/sda2"),
+                    volume_a_id: "root-a".to_string(),
+                    volume_b_id: "root-b".to_string(),
+                },
                 PathBuf::from("/dev/sda1")
             )
         );
@@ -1100,7 +1175,12 @@ mod functional_test {
             )
             .unwrap(),
             (
-                (PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")),
+                VolumePairPaths {
+                    volume_a_path: PathBuf::from("/dev/sda1"),
+                    volume_b_path: PathBuf::from("/dev/sda2"),
+                    volume_a_id: "root-a".to_string(),
+                    volume_b_id: "root-b".to_string(),
+                },
                 PathBuf::from("/dev/sda2")
             )
         );
@@ -1269,10 +1349,12 @@ mod functional_test {
         assert_eq!(
             get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned()).unwrap(),
             (
-                (
-                    PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                    PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
-                ),
+                VolumePairPaths {
+                    volume_a_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                    volume_b_path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                    volume_a_id: "root-data-a".to_string(),
+                    volume_b_id: "root-data-b".to_string(),
+                },
                 PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
             )
         );
@@ -1284,10 +1366,12 @@ mod functional_test {
         assert_eq!(
             get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root-id".to_owned()).unwrap(),
             (
-                (
-                    PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
-                    PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-                ),
+                VolumePairPaths {
+                    volume_a_path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                    volume_b_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+                    volume_a_id: "root-data-b".to_string(),
+                    volume_b_id: "root-data-a".to_string(),
+                },
                 PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
             )
         );
@@ -1394,7 +1478,7 @@ mod functional_test {
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
-            "No matching root volume found"
+            "Failed to match current root device path '/dev/sda3' to either volume A path '/dev/sda1' or volume B path '/dev/sda2'"
         );
 
         // None when clean install
