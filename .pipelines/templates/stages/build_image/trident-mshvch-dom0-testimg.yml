@@ -40,5 +40,4 @@ stages:
       parameters:
         outputDirectory: $(ob_outputDirectory)
         artifactBaseName: $(ob_artifactBaseName)
-        localTrident2ArtifactName: 'trident-binaries2-dom0'
         testImagesRepo: test-images
