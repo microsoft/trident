@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
-use log::{debug, info};
+use log::{debug, info, trace};
 use rayon::prelude::*;
 
 use osutils::{filesystems::MkfsFileSystemType, mkfs, mkswap};
 use trident_api::{
     config::{FileSystemSource, FileSystemType},
+    constants::ESP_MOUNT_POINT_PATH,
     status::ServicingType,
     BlockDeviceId,
 };
@@ -20,6 +21,7 @@ use crate::engine::{self, EngineContext};
 pub(super) fn create_filesystems(ctx: &EngineContext) -> Result<(), Error> {
     debug!("Creating filesystems on block devices");
     block_devices_needing_fs_creation(ctx)
+        .context("Failed to obtain list of block devices needing filesystem creation.")?
         .par_iter()
         .map(|(block_device_id, device_path, filesystem)| {
             info!("Initializing '{block_device_id}': creating filesystem of type '{filesystem}'");
@@ -36,68 +38,98 @@ pub(super) fn create_filesystems(ctx: &EngineContext) -> Result<(), Error> {
 /// to have clean filesystems created on them.
 fn block_devices_needing_fs_creation(
     ctx: &EngineContext,
-) -> Vec<(BlockDeviceId, PathBuf, FileSystemType)> {
-    // Fetch the IDs of A/B volume pairs for filtering
+) -> Result<Vec<(&BlockDeviceId, PathBuf, FileSystemType)>, Error> {
+    debug!("Determining block devices needing filesystem creation");
+    // Fetch the IDs of A/B volume pairs for filtering.
     let ab_volume_pair_ids = ctx.spec.storage.get_ab_volume_pair_ids();
 
     // Iterate through all filesystems and filter out the ones that need to be created, composing
-    // a list of block device IDs and filesystem types
-    ctx.spec
-        .storage
-        .filesystems
-        .iter()
-        .filter_map(|fs| {
-            // Filter to filesystems that need to be created
-            match (&fs.source, ctx.servicing_type, &fs.device_id) {
-                // If: the filesystem source is 'Create' AND device_id is present
-                (FileSystemSource::Create, _, Some(device_id))
+    // a list of block device IDs and filesystem types.
+    let mut block_devices = Vec::new();
 
-                // OR: the filesystem source is 'EspImage' AND servicing type
-                // is CleanInstall AND device_id is present AND the ESP
-                // partition is NOT an adopted partition
-                | (
-                    FileSystemSource::EspImage(_),
-                    ServicingType::CleanInstall,
-                    Some(device_id),
-                ) if !ctx.spec.storage.is_adopted_partition(device_id) => {
-                    // Get the block device info for the device_id
-                    engine::get_block_device_path(ctx, device_id)
-                    .map(|bd_info| (device_id.clone(), bd_info, fs.fs_type))
-                },
+    for fs in ctx.spec.storage.filesystems.iter() {
+        // Filter to only filesystems with a block deviceid.
+        let Some(device_id) = fs.device_id.as_ref() else {
+            continue;
+        };
 
-                // Otherwise, ignore the filesystem
-                _ => None,
-            }
-        })
-        .filter_map(|(device_id, bd_path, fs_type)| {
-            // If the block device is an A/B volume pair and we're doing an A/B update, resolve
-            // device_id to the device_id of the actual update volume
-            if ab_volume_pair_ids.contains(&device_id)
-                && ctx.servicing_type == ServicingType::AbUpdate
-            {
-                debug!(
-                    "Servicing type is A/B update and A/B volume pair detected: {:?}",
+        // Filter out any filesystem targeting an adopted partition.
+        if ctx.spec.storage.is_adopted_partition(device_id) {
+            continue;
+        }
+
+        // Filter to the filesystems matching any of the specified criteria:
+        if !match (&fs.source, ctx.servicing_type) {
+            // The filesystem source is 'Create'.
+            (FileSystemSource::Create, _) => true,
+
+            // The filesystem source is 'EspImage' AND servicing type is
+            // CleanInstall.
+            (FileSystemSource::EspImage(_), ServicingType::CleanInstall) => true,
+
+            // The filesystem source is `OsImage` AND servicing type is
+            // CleanInstall AND the mount point is the ESP location.
+            (FileSystemSource::OsImage, ServicingType::CleanInstall) => fs
+                .mount_point
+                .as_ref()
+                .is_some_and(|mp| mp.path == Path::new(ESP_MOUNT_POINT_PATH)),
+
+            // Otherwise, ignore the filesystem
+            _ => false,
+        } {
+            // No criteria matched, skip this filesystem.
+            continue;
+        }
+
+        // Get the block device info for the device_id
+        let bd_path = engine::get_block_device_path(ctx, device_id).with_context(|| {
+            format!("Block device path not found for device ID: {:?}", device_id)
+        })?;
+
+        let effective_device_id = if ab_volume_pair_ids.contains(device_id)
+            && ctx.servicing_type == ServicingType::AbUpdate
+        {
+            // If the block device is an A/B volume pair and we're doing an A/B
+            // update, resolve device_id to the device_id of the actual update
+            // volume.
+            trace!(
+                "Servicing type is A/B update and A/B volume pair detected: {:?}",
+                device_id
+            );
+
+            engine::get_ab_volume_block_device_id(ctx, device_id).with_context(|| {
+                format!(
+                    "Failed to resolve A/B volume pair ID to update volume ID: {:?}",
                     device_id
-                );
-                engine::get_ab_volume_block_device_id(ctx, &device_id)
-                    .map(|ab_volume_bdi| (ab_volume_bdi, bd_path, fs_type))
-            // If the block device is NOT an A/B volume pair, only add it to block_devices if
-            // a filesystem has not been previously created, i.e. we're doing a clean install
-            } else if ctx.servicing_type == ServicingType::CleanInstall {
-                debug!(
-                    "Servicing type is clean install and a standalone volume detected: {:?}",
-                    device_id
-                );
-                Some((device_id, bd_path, fs_type))
-            } else {
-                debug!(
-                    "Volume is neither standalone nor A/B volume pair: {:?}",
-                    device_id
-                );
-                None
-            }
-        })
-        .collect()
+                )
+            })?
+        } else if ctx.servicing_type == ServicingType::CleanInstall {
+            // If the block device is NOT an A/B volume pair, only add it to
+            // block_devices if a filesystem has not been previously created,
+            // i.e. we're doing a clean install.
+            trace!(
+                "Servicing type is clean install and a standalone volume detected: {:?}",
+                device_id
+            );
+            device_id
+        } else {
+            trace!(
+                "Volume is neither standalone nor A/B volume pair: {:?}",
+                device_id
+            );
+            continue;
+        };
+
+        block_devices.push((effective_device_id, bd_path, fs.fs_type));
+    }
+
+    debug!(
+        "Found {} block device{} needing filesystem creation",
+        block_devices.len(),
+        if block_devices.len() == 1 { "" } else { "s" }
+    );
+
+    Ok(block_devices)
 }
 
 /// Initialize a filesystem on the block device.
@@ -233,15 +265,15 @@ mod tests {
 
         // Test case 1: On clean install, need to initialize the ESP partition and the standalone
         // volume 'trident'.
-        let block_devices = block_devices_needing_fs_creation(&ctx_clean_install);
+        let block_devices = block_devices_needing_fs_creation(&ctx_clean_install).unwrap();
         assert_eq!(block_devices.len(), 2);
         assert!(block_devices.contains(&(
-            "esp".into(),
+            &"esp".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp1"),
             FileSystemType::Vfat
         )));
         assert!(block_devices.contains(&(
-            "trident".into(),
+            &"trident".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp4"),
             FileSystemType::Ext4
         )));
@@ -337,7 +369,9 @@ mod tests {
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
-        assert!(block_devices_needing_fs_creation(&ctx_ab_update).is_empty());
+        assert!(block_devices_needing_fs_creation(&ctx_ab_update)
+            .unwrap()
+            .is_empty());
 
         // Test case 3: If the A/B volume pair now does not have an image requested for it, we need
         // to initialize the filesystem on the A/B volume pair.
@@ -351,10 +385,10 @@ mod tests {
                 options: MountOptions::empty(),
             }),
         };
-        let block_devices = block_devices_needing_fs_creation(&ctx_ab_update);
+        let block_devices = block_devices_needing_fs_creation(&ctx_ab_update).unwrap();
         assert_eq!(block_devices.len(), 1);
         assert!(block_devices.contains(&(
-            "root-b".into(),
+            &"root-b".into(),
             PathBuf::from("/dev/disk/by-partlabel/osp3"),
             FileSystemType::Ext4
         )));
@@ -431,9 +465,8 @@ mod tests {
             ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
-        assert_eq!(
-            block_devices_needing_fs_creation(&ctx),
-            vec![],
+        assert!(
+            block_devices_needing_fs_creation(&ctx).unwrap().is_empty(),
             "No filesystems should be created for adopted partitions"
         );
     }

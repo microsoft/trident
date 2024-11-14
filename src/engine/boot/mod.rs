@@ -3,6 +3,7 @@ use std::path::Path;
 use strum::IntoEnumIterator;
 
 use trident_api::{
+    config::FileSystemSource,
     constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX},
     error::{ReportError, ServicingError, TridentError},
     status::AbVolumeSelection,
@@ -26,7 +27,22 @@ impl Subsystem for BootSubsystem {
     fn provision(&mut self, ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized
-        esp::deploy_esp_images(ctx, mount_point).structured(ServicingError::DeployESPImages)?;
+        let esp_fs = ctx
+            .spec
+            .storage
+            .esp_filesystem()
+            .ok_or_else(|| TridentError::internal("No ESP filesystem information found"))?
+            .1;
+
+        // Deploy ESP images based on the source
+        match esp_fs.source {
+            FileSystemSource::EspImage(_) => esp::deploy_esp_images(ctx, mount_point),
+            FileSystemSource::OsImage => esp::deploy_esp_from_os_image(ctx, mount_point),
+
+            // Everything else is invalid and should have been caught in static validation.
+            _ => return Err(TridentError::internal("Invalid ESP filesystem source")),
+        }
+        .structured(ServicingError::DeployESPImages)?;
 
         Ok(())
     }

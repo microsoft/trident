@@ -489,10 +489,10 @@ impl Storage {
     }
 
     /// Returns a list of block device IDs that correspond to the A/B volume pairs.
-    pub fn get_ab_volume_pair_ids(&self) -> HashSet<BlockDeviceId> {
+    pub fn get_ab_volume_pair_ids(&self) -> HashSet<&BlockDeviceId> {
         self.ab_update
             .as_ref()
-            .map(|ab| ab.volume_pairs.iter().map(|p| p.id.clone()).collect())
+            .map(|ab| ab.volume_pairs.iter().map(|p| &p.id).collect())
             .unwrap_or_default()
     }
 
@@ -566,6 +566,25 @@ impl Storage {
         self.disks
             .iter()
             .any(|d| d.adopted_partitions.iter().any(|p| &p.id == device_id))
+    }
+
+    /// Returns a reference to the ESP's device ID and filesystem, when
+    /// available.
+    ///
+    /// The ESP filesystem is defined as having a block device and being mounted
+    /// at ESP_MOUNT_POINT_PATH.
+    pub fn esp_filesystem(&self) -> Option<(&BlockDeviceId, &FileSystem)> {
+        self.filesystems.iter().find_map(|fs| {
+            if fs
+                .mount_point
+                .as_ref()
+                .is_some_and(|mp| mp.path.as_path() == Path::new(ESP_MOUNT_POINT_PATH))
+            {
+                fs.device_id.as_ref().map(|id| (id, fs))
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -2944,7 +2963,7 @@ mod tests {
         assert_eq!(ab_volume_pair_ids.len(), 1);
         assert_eq!(
             ab_volume_pair_ids,
-            HashSet::from_iter(vec!["root".to_string()])
+            HashSet::from_iter(vec![&"root".to_string()])
         );
 
         // Test case #5: Validates that when ab_update is None, get_ab_volume_pair_images() and

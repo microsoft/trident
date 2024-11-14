@@ -819,17 +819,14 @@ pub(super) fn get_block_device_path(
     }
 
     get_ab_volume_block_device_id(ctx, block_device_id)
-        .and_then(|child_block_device_id| get_block_device_path(ctx, &child_block_device_id))
+        .and_then(|child_block_device_id| get_block_device_path(ctx, child_block_device_id))
 }
 
-/// Returns a block device id for a volume from the given A/B Volume Pair.
-///
-/// If active is true it returns the active volume, and if active is false it returns the update
-/// volume (i.e. the one that isn't active).
-fn get_ab_volume_block_device_id(
-    ctx: &EngineContext,
+/// Returns the block device id for the update volume from the given A/B Volume Pair.
+fn get_ab_volume_block_device_id<'a>(
+    ctx: &'a EngineContext,
     block_device_id: &BlockDeviceId,
-) -> Option<BlockDeviceId> {
+) -> Option<&'a BlockDeviceId> {
     if let Some(ab_update) = &ctx.spec.storage.ab_update {
         let ab_volume = ab_update
             .volume_pairs
@@ -839,8 +836,8 @@ fn get_ab_volume_block_device_id(
             let selection = ctx.get_ab_update_volume();
             // Return the appropriate BlockDeviceId based on the selection
             return selection.map(|sel| match sel {
-                AbVolumeSelection::VolumeA => v.volume_a_id.clone(),
-                AbVolumeSelection::VolumeB => v.volume_b_id.clone(),
+                AbVolumeSelection::VolumeA => &v.volume_a_id,
+                AbVolumeSelection::VolumeB => &v.volume_b_id,
             });
         };
     }
@@ -1209,7 +1206,7 @@ mod tests {
         );
         assert_eq!(
             get_ab_volume_block_device_id(&ctx, &"osab".to_owned()),
-            Some("rootb".to_owned())
+            Some(&"rootb".to_owned())
         );
 
         // When active volume is VolumeB, should return VolumeA
@@ -1220,7 +1217,7 @@ mod tests {
         );
         assert_eq!(
             get_ab_volume_block_device_id(&ctx, &"osab".to_owned()),
-            Some("root".to_owned())
+            Some(&"root".to_owned())
         );
 
         // If target block device id does not exist, should return None.

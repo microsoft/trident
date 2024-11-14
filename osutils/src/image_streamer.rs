@@ -9,10 +9,13 @@ use log::{debug, trace};
 
 use crate::hashing_reader::HashingReader;
 
-pub fn stream_zstd(
-    mut reader: HashingReader<Box<dyn Read>>,
+pub fn stream_zstd<R>(
+    mut reader: HashingReader<R>,
     destination_path: &Path,
-) -> Result<String, Error> {
+) -> Result<String, Error>
+where
+    R: Read,
+{
     // Instantiate decoder for ZSTD stream
     let mut decoder = zstd::stream::read::Decoder::new(&mut reader)?;
 

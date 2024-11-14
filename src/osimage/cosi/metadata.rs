@@ -1,5 +1,7 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
+use anyhow::{bail, ensure, Error};
+use log::trace;
 use serde::{Deserialize, Deserializer};
 use uuid::Uuid;
 
@@ -9,63 +11,168 @@ use osutils::{
 };
 use trident_api::primitives::hash::Sha384Hash;
 
-#[allow(dead_code)]
+use super::CosiEntry;
+
+/// COSI metadata version reader.
+///
+/// This struct only attempts to parse the COSI metadata version to ensure that
+/// the version is supported by the current implementation.
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct CosiMetadata {
+pub(super) struct CosiMetadataVersion {
+    /// The spec version of this COSI file.
     pub version: MetadataVersion,
+}
+
+/// COSI metadata as defined by the COSI specification.
+///
+/// [COSI Specification](/dev-docs/specs/Composable-OS-Image.md)
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CosiMetadata {
+    /// The spec version of this COSI file.
+    pub version: MetadataVersion,
+
+    /// The architecture of the OS.
     pub os_arch: SystemArchitecture,
+
+    /// The release of the OS.
+    #[allow(dead_code)]
     pub os_release: OsRelease,
+
+    /// The images that make up the OS.
     pub images: Vec<Image>,
+
+    /// The list of OS packages that are part of the OS.
+    ///
+    /// The option is important to know if the list is present and empty or not
+    /// present at all.
+    #[allow(dead_code)]
     #[serde(default)]
-    pub os_packages: Vec<OsPackage>,
+    pub os_packages: Option<Vec<OsPackage>>,
+
+    /// The unique ID of this COSI file.
+    #[allow(dead_code)]
     #[serde(default)]
     pub id: Option<Uuid>,
 }
 
-#[allow(dead_code)]
+impl CosiMetadata {
+    /// Validates the COSI metadata.
+    pub(super) fn validate(&self) -> Result<(), Error> {
+        // Ensure that all mount points are unique.
+        let mut mount_points = HashSet::new();
+        for image in &self.images {
+            if !mount_points.insert(&image.mount_point) {
+                bail!("Duplicate mount point: '{}'", image.mount_point.display());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns the ESP filesystem image.
+    pub(super) fn get_esp_filesystem(&self) -> Result<&Image, Error> {
+        let matches = self
+            .images
+            .iter()
+            .filter(|image| image.is_esp())
+            .collect::<Vec<_>>();
+
+        ensure!(
+            matches.len() == 1,
+            "Expected exactly one ESP filesystem image, found {}",
+            matches.len()
+        );
+
+        let esp_image = matches[0];
+
+        trace!(
+            "Found ESP filesystem image at '{}': {:#?}",
+            esp_image.mount_point.display(),
+            esp_image
+        );
+
+        Ok(esp_image)
+    }
+
+    /// Returns an iterator over all images that are NOT the ESP filesystem image.
+    pub(super) fn get_regular_filesystems(&self) -> impl Iterator<Item = &Image> {
+        self.images.iter().filter(|image| !image.is_esp())
+    }
+}
+
 #[derive(Debug, Clone)]
-pub(super) struct MetadataVersion {
+pub(crate) struct MetadataVersion {
     pub major: u32,
     pub minor: u32,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct Image {
-    pub image: ImageFile,
+pub(crate) struct Image {
+    #[serde(rename = "image")]
+    pub file: ImageFile,
+
     pub mount_point: PathBuf,
+
     pub fs_type: String,
+
+    #[allow(dead_code)]
     pub fs_uuid: OsUuid,
+
     pub part_type: DiscoverablePartitionType,
+
     pub verity: Option<VerityMetadata>,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct ImageFile {
-    pub path: PathBuf,
-    pub compressed_size: u64,
-    pub uncompressed_size: u64,
-    pub sha384: Sha384Hash,
+impl Image {
+    pub fn is_esp(&self) -> bool {
+        self.part_type == DiscoverablePartitionType::Esp
+    }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct VerityMetadata {
-    pub image: ImageFile,
+pub(crate) struct ImageFile {
+    pub path: PathBuf,
+
+    pub compressed_size: u64,
+
+    pub uncompressed_size: u64,
+
+    pub sha384: Sha384Hash,
+
+    #[serde(skip)]
+    pub(super) entry: CosiEntry,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct VerityMetadata {
+    #[serde(rename = "image")]
+    pub file: ImageFile,
+
     pub roothash: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct OsPackage {
+pub(crate) struct OsPackage {
+    #[allow(dead_code)]
     pub name: String,
+
+    #[allow(dead_code)]
     pub version: String,
+
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub release: Option<String>,
+
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub arch: Option<SystemArchitecture>,
 }
 
 impl<'de> Deserialize<'de> for MetadataVersion {
@@ -84,5 +191,36 @@ impl<'de> Deserialize<'de> for MetadataVersion {
             .parse::<u32>()
             .map_err(|_| serde::de::Error::custom("minor version must be a valid u32"))?;
         Ok(MetadataVersion { major, minor })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_metadata_version_deserialization() {
+        fn parse_version(version_str: &str, expected_major: u32, expected_minor: u32) {
+            let version: MetadataVersion = serde_json::from_str(version_str).unwrap();
+            assert_eq!(version.major, expected_major);
+            assert_eq!(version.minor, expected_minor);
+        }
+
+        parse_version(r#""1.0""#, 1, 0);
+        parse_version(r#""1.1""#, 1, 1);
+        parse_version(r#""2.0""#, 2, 0);
+        parse_version(r#""2.1""#, 2, 1);
+    }
+
+    #[test]
+    fn test_metadata_version_deserialization_invalid() {
+        fn assert_invalid_version(version_str: &str) {
+            serde_json::from_str::<MetadataVersion>(version_str).unwrap_err();
+        }
+
+        assert_invalid_version(r#""1""#);
+        assert_invalid_version(r#""1.0.0""#);
+        assert_invalid_version(r#""abcd.efgh""#);
+        assert_invalid_version(r#""hello there""#);
     }
 }

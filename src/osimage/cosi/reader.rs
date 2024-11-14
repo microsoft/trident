@@ -16,6 +16,10 @@ impl ReadSeek for File {}
 
 /// An abstraction over a COSI file reader that can be either a local file or an
 /// HTTP request.
+///
+/// This abstraction contains the minimum required information to open a COSI
+/// file, it does not carry any complex types and can be safely and
+/// inexpensively cloned.
 #[derive(Debug, Clone)]
 pub(super) enum CosiReader {
     File(PathBuf),

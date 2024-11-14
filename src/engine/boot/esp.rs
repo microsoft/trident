@@ -48,7 +48,7 @@ use crate::engine::{
 ///
 /// Local image and dir it's mounted to are temp, so they're automatically removed from the FS
 /// after function returns.
-fn copy_file_artifacts(
+fn copy_file_artifacts_from_api_image(
     image_url: &Url,
     image: &Image,
     ctx: &EngineContext,
@@ -69,17 +69,8 @@ fn copy_file_artifacts(
         .context("Failed to fetch image for ESP volume")?
     };
 
-    // Initialize HashingReader instance on stream
-    let reader = HashingReader::new(stream);
-    // Create a temporary file to download ESP image
-    let temp_image = NamedTempFile::new().context("Failed to create a temporary file")?;
-    let temp_image_path = temp_image.path().to_path_buf();
-
-    debug!("Extracting ESP image to {}", temp_image_path.display());
-
-    // Stream image to the temporary file.
-    let computed_sha256 = image_streamer::stream_zstd(reader, &temp_image_path)
-        .context(format!("Failed to stream ESP image from {}", image_url))?;
+    let (temp_file, computed_sha256) =
+        load_raw_image(image_url, stream).context("Failed to load raw image")?;
 
     // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
     // SHA256 matches SHA256 in HostConfig
@@ -99,13 +90,46 @@ fn copy_file_artifacts(
         }
     }
 
+    copy_file_artifacts(temp_file.path(), ctx, mount_point)
+}
+
+/// Takes in a reader to the raw zstd-compressed ESP image and decompressed it
+/// into a temporary file. Returns a tuple containing the temporary file and the
+/// computed SHA256 hash of the image.
+///
+/// It also takes in the URL of the image to be shown in case of errors.
+fn load_raw_image<R>(source: &Url, reader: R) -> Result<(NamedTempFile, String), Error>
+where
+    R: Read,
+{
+    // Initialize HashingReader instance on stream
+    let reader = HashingReader::new(reader);
+    // Create a temporary file to download ESP image
+    let temp_image = NamedTempFile::new().context("Failed to create a temporary file")?;
+    let temp_image_path = temp_image.path().to_path_buf();
+
+    debug!("Extracting ESP image to {}", temp_image_path.display());
+
+    // Stream image to the temporary file.
+    let computed_sha256 = image_streamer::stream_zstd(reader, &temp_image_path)
+        .context(format!("Failed to stream ESP image from {}", source))?;
+
+    Ok((temp_image, computed_sha256))
+}
+
+/// Performs file-based update of stand-alone ESP volume by copying boot files.
+fn copy_file_artifacts(
+    temp_image_path: &Path,
+    ctx: &EngineContext,
+    mount_point: &Path,
+) -> Result<(), Error> {
     // Create a temporary directory to mount ESP image
     let temp_dir = TempDir::new().context("Failed to create a temporary mount directory")?;
     let temp_mount_dir = temp_dir.path();
 
     // Mount image to temp dir
     mount::mount(
-        &temp_image_path,
+        temp_image_path,
         temp_mount_dir,
         MountFileSystemType::Vfat,
         &["umask=0077".into()],
@@ -415,7 +439,7 @@ pub(super) fn deploy_esp_images(ctx: &EngineContext, mount_point: &Path) -> Resu
             if image_url.scheme() == "file" {
                 // 5th arg is true to communicate that image is a local file, i.e.,  is_local
                 // will be set to true
-                copy_file_artifacts(
+                copy_file_artifacts_from_api_image(
                     &image_url,
                     image,
                     ctx,
@@ -429,7 +453,7 @@ pub(super) fn deploy_esp_images(ctx: &EngineContext, mount_point: &Path) -> Resu
             } else if image_url.scheme() == "http" || image_url.scheme() == "https" {
                 // 5th arg is false to communicate that image is a local file, i.e., is_local will
                 // be set to false
-                copy_file_artifacts(
+                copy_file_artifacts_from_api_image(
                     &image_url,
                     image,
                     ctx,
@@ -454,6 +478,34 @@ pub(super) fn deploy_esp_images(ctx: &EngineContext, mount_point: &Path) -> Resu
         }
     }
     Ok(())
+}
+
+/// Performs file-based deployment of ESP images from the OS image.
+pub(super) fn deploy_esp_from_os_image(
+    ctx: &EngineContext,
+    mount_point: &Path,
+) -> Result<(), Error> {
+    trace!("Deploying ESP from OS image");
+
+    let os_image = ctx
+        .os_image
+        .as_ref()
+        .context("OS image is required to deploy ESP from OS image")?;
+
+    let esp_img = os_image
+        .esp_filesystem()
+        .context("Failed to get ESP image from OS image")?;
+
+    let temp_file = load_raw_image(
+        os_image.source(),
+        esp_img
+            .reader()
+            .context("Failed to get reader for ESP image from OS image")?,
+    )
+    .context("Failed to load raw image")?
+    .0;
+
+    copy_file_artifacts(temp_file.path(), ctx, mount_point)
 }
 
 #[cfg(test)]

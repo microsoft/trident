@@ -1,17 +1,19 @@
 use std::{
-    collections::{HashMap, HashSet},
-    io::Read,
+    collections::HashMap,
+    io::{Read, Seek},
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
-use log::trace;
+use anyhow::{bail, ensure, Context, Error};
+use log::{debug, trace};
+use osutils::arch::SystemArchitecture;
+use tar::Archive;
 use url::Url;
 
 mod metadata;
 mod reader;
 
-use metadata::CosiMetadata;
+use metadata::{CosiMetadata, CosiMetadataVersion, Image, ImageFile, MetadataVersion};
 use reader::CosiReader;
 
 /// Path to the COSI metadata file. Part of the COSI specification.
@@ -27,13 +29,53 @@ pub(super) struct Cosi {
     source: Url,
     entries: HashMap<PathBuf, CosiEntry>,
     metadata: CosiMetadata,
-    reader_factory: CosiReader,
+    reader: CosiReader,
 }
 
-#[derive(Debug, Clone)]
+/// Entry inside the COSI file.
+#[derive(Debug, Clone, Copy, Default)]
 struct CosiEntry {
     offset: u64,
     size: u64,
+}
+
+/// A wrapper over a specific filesystem image with logic to read the image from
+/// the COSI file.
+#[derive(Debug, Clone)]
+pub(super) struct CosiFileSystemImage<'a> {
+    pub(super) image: &'a Image,
+    reader: CosiReader,
+}
+
+impl CosiFileSystemImage<'_> {
+    /// Returns a reader for the filesystem image.
+    pub(super) fn reader(&self) -> Result<Box<dyn Read>, Error> {
+        self.reader
+            .section_reader(self.image.file.entry.offset, self.image.file.entry.size)
+            .with_context(|| {
+                format!(
+                    "Failed to create COSI section reader for filesystem at '{}'",
+                    self.image.mount_point.display(),
+                )
+            })
+    }
+
+    /// Returns a reader for the verity hash of the filesystem image, when available.
+    pub(super) fn reader_verity(&self) -> Option<Result<Box<dyn Read>, Error>> {
+        self.image
+            .verity
+            .as_ref()
+            .map(|verity| {
+                self.reader
+                    .section_reader(verity.file.entry.offset, verity.file.entry.size)
+                    .with_context(|| {
+                        format!(
+                            "Failed to create COSI section reader for verity hash of filesystem at '{}'",
+                            self.image.mount_point.display(),
+                        )
+                    })
+            })
+    }
 }
 
 impl Cosi {
@@ -43,101 +85,20 @@ impl Cosi {
 
         // Create a new COSI reader factory. This will let us cleverly build
         // readers for the COSI file regardless of its location.
-        let reader_factory =
-            CosiReader::new(source).context("Failed to create COSI reader factory.")?;
-
-        // Create a new reader over the entire COSI file and pass it to a new tar reader.
-        let mut tar_reader = tar::Archive::new(reader_factory.reader()?);
+        let cosi_reader = CosiReader::new(source).context("Failed to create COSI reader.")?;
 
         // Scan all entries in the COSI file by seeking to all headers in the file.
-        let entries = tar_reader
-            .entries_with_seek()
-            .context("Failed to read COSI file")?
-            .inspect(|entry| {
-                trace!("Reading COSI file entry");
-                match entry {
-                    Ok(entry) => {
-                        trace!(
-                            "Successfully read COSI file entry: {}",
-                            match entry.path() {
-                                Ok(path) => path.display().to_string(),
-                                Err(err) => format!("Failed to read entry path: {}", err),
-                            }
-                        );
-                    }
-                    Err(err) => {
-                        trace!("Failed to read COSI file entry: {}", err);
-                    }
-                };
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .context("Failed to read COSI file entries")?
-            .into_iter()
-            .map(|entry| {
-                let entry = (
-                    {
-                        let path = entry.path().context("Failed to read entry path")?;
-                        let path = path.strip_prefix("./").unwrap_or(&path).to_path_buf();
-                        path
-                    },
-                    CosiEntry {
-                        offset: entry.raw_file_position(),
-                        size: entry.size(),
-                    },
-                );
-
-                trace!(
-                    "Found COSI entry '{}' at {} [{} bytes]",
-                    entry.0.display(),
-                    entry.1.offset,
-                    entry.1.size
-                );
-                Ok(entry)
-            })
-            .collect::<Result<HashMap<_, _>, Error>>()
-            .context("Failed to process COSI entries")?;
-
+        let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
         trace!("Collected {} COSI entries", entries.len());
 
-        trace!("Reading COSI metadata from '{}'", COSI_METADATA_PATH);
-        let metadata: CosiMetadata = {
-            let metadata_location = entries
-                .get(Path::new(COSI_METADATA_PATH))
-                .context("COSI metadata not found")?;
-
-            trace!(
-                "Reading COSI metadata from '{}' at {} [{} bytes]",
-                COSI_METADATA_PATH,
-                metadata_location.offset,
-                metadata_location.size
-            );
-
-            let mut metadata_reader = reader_factory
-                .section_reader(metadata_location.offset, metadata_location.size)
-                .context("Failed to create COSI metadata reader")?;
-
-            let mut raw_metadata = String::new();
-            metadata_reader
-                .read_to_string(&mut raw_metadata)
-                .context("Failed to read COSI metadata")?;
-            trace!("Raw COSI metadata:\n{}", raw_metadata);
-            serde_json::from_str(&raw_metadata).context("Failed to parse COSI metadata")?
-        };
-
-        trace!("Successfully parsed COSI metadata");
-
         // Create a new COSI instance.
-        let cosi = Cosi {
+        Ok(Cosi {
+            metadata: read_cosi_metadata(&cosi_reader, &entries)
+                .context("Failed to read COSI file metadata.")?,
             entries,
-            metadata,
             source: source.clone(),
-            reader_factory,
-        };
-
-        // Validate metadata and actual contents.
-        cosi.validate_metadata()?;
-
-        Ok(cosi)
+            reader: cosi_reader,
+        })
     }
 
     /// Returns the source URL of the COSI file.
@@ -145,77 +106,507 @@ impl Cosi {
         &self.source
     }
 
-    /// Returns a list of all entries in the COSI file.
-    #[allow(dead_code)]
-    pub(super) fn entries(&self) -> impl Iterator<Item = &PathBuf> {
-        self.entries.keys()
-    }
-
-    /// Returns a reader for the given COSI entry.
-    #[allow(dead_code)]
-    pub(super) fn entry_reader(&self, path: impl AsRef<Path>) -> Result<Box<dyn Read>, Error> {
-        trace!(
-            "Creating COSI entry reader for '{}'",
-            path.as_ref().display()
-        );
-        let range = self
-            .entries
-            .get(path.as_ref())
-            .with_context(|| format!("COSI entry not found: {}", path.as_ref().display()))?;
-        let section_reader = self
-            .reader_factory
-            .section_reader(range.offset, range.size)?;
-
-        Ok(Box::new(section_reader))
-    }
-
-    /// Returns an iterator over the available mount points provided by the COSI file.
-    pub(super) fn available_mount_points(&self) -> impl Iterator<Item = &PathBuf> {
-        self.metadata.images.iter().map(|image| &image.mount_point)
-    }
-
-    /// Returns the entry path for the given mount point.
-    #[allow(dead_code)]
-    pub(super) fn entry_for_mount_point(&self, mount_point: &Path) -> Option<&PathBuf> {
+    /// Returns the ESP filesystem image.
+    pub(super) fn esp_filesystem(&self) -> Result<CosiFileSystemImage<'_>, Error> {
         self.metadata
-            .images
-            .iter()
-            .find(|image| image.mount_point == mount_point)
-            .map(|image| &image.image.path)
+            .get_esp_filesystem()
+            .map(|image| CosiFileSystemImage {
+                image,
+                // Cloning the reader is cheap, as it only clones the URL/path.
+                reader: self.reader.clone(),
+            })
     }
 
-    /// Returns a reader for the entry associated with the given mount point.
-    #[allow(dead_code)]
-    pub(super) fn entry_reader_for_mount_point(
-        &self,
-        mount_point: impl AsRef<Path>,
-    ) -> Option<Result<Box<dyn Read>, Error>> {
-        self.entry_for_mount_point(mount_point.as_ref())
-            .map(|path| self.entry_reader(path))
+    /// Returns an iterator over all images that are NOT the ESP filesystem image.
+    pub(super) fn filesystems(&self) -> impl Iterator<Item = CosiFileSystemImage<'_>> {
+        self.metadata
+            .get_regular_filesystems()
+            .map(|image| CosiFileSystemImage {
+                image,
+                // Cloning the reader is cheap, as it only clones the URL/path.
+                reader: self.reader.clone(),
+            })
     }
 
-    /// Validates the COSI metadata.
-    fn validate_metadata(&self) -> Result<(), Error> {
-        trace!("Validating COSI metadata");
-        if !ACCEPTED_COSI_VERSIONS.iter().any(|(major, minor)| {
-            self.metadata.version.major == *major && self.metadata.version.minor == *minor
-        }) {
+    /// Returns the architecture of the OS contained in the COSI file.
+    pub(super) fn architecture(&self) -> SystemArchitecture {
+        self.metadata.os_arch
+    }
+}
+
+/// Reads all entries from the given COSI tar archive.
+fn read_entries_from_tar_archive<R: Read + Seek>(
+    cosi_reader: R,
+) -> Result<HashMap<PathBuf, CosiEntry>, Error> {
+    Archive::new(cosi_reader)
+        .entries_with_seek()
+        .context("Failed to read COSI file")?
+        .inspect(|entry| {
+            trace!("Reading COSI file entry");
+            match entry {
+                Ok(entry) => {
+                    trace!(
+                        "Successfully read COSI file entry: {}",
+                        match entry.path() {
+                            Ok(path) => path.display().to_string(),
+                            Err(err) => format!("Failed to read entry path: {}", err),
+                        }
+                    );
+                }
+                Err(err) => {
+                    trace!("Failed to read COSI file entry: {}", err);
+                }
+            };
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .context("Failed to read COSI file entries")?
+        .into_iter()
+        .map(|entry| {
+            let entry = (
+                {
+                    let path = entry.path().context("Failed to read entry path")?;
+                    let path = path.strip_prefix("./").unwrap_or(&path).to_path_buf();
+                    path
+                },
+                CosiEntry {
+                    offset: entry.raw_file_position(),
+                    size: entry.size(),
+                },
+            );
+
+            trace!(
+                "Found COSI entry '{}' at {} [{} bytes]",
+                entry.0.display(),
+                entry.1.offset,
+                entry.1.size
+            );
+            Ok(entry)
+        })
+        .collect::<Result<HashMap<_, _>, Error>>()
+        .context("Failed to process COSI entries")
+}
+
+/// Retrieves the COSI metadata from the given COSI file.
+///
+/// It also:
+/// - Validates the metadata version.
+/// - Ensures that all images defined in the metadata are present in the COSI file.
+/// - Populates metadata with the actual content location of the images.
+fn read_cosi_metadata(
+    cosi_reader: &CosiReader,
+    entries: &HashMap<PathBuf, CosiEntry>,
+) -> Result<CosiMetadata, Error> {
+    trace!(
+        "Retrieving metadata from COSI file from '{}'",
+        COSI_METADATA_PATH
+    );
+    let metadata_location = entries
+        .get(Path::new(COSI_METADATA_PATH))
+        .context("COSI metadata not found")?;
+    trace!(
+        "Found COSI metadata in '{}' at {} [{} bytes]",
+        COSI_METADATA_PATH,
+        metadata_location.offset,
+        metadata_location.size
+    );
+
+    let mut metadata_reader = cosi_reader
+        .section_reader(metadata_location.offset, metadata_location.size)
+        .context("Failed to create COSI metadata reader")?;
+
+    let mut raw_metadata = String::new();
+    metadata_reader
+        .read_to_string(&mut raw_metadata)
+        .context("Failed to read COSI metadata")?;
+    trace!("Raw COSI metadata:\n{}", raw_metadata);
+
+    // First, attempt to ONLY parse the metadata version to ensure we can read the rest.
+    validate_cosi_metadata_version(
+        &serde_json::from_str::<CosiMetadataVersion>(&raw_metadata)
+            .context("Failed to parse COSI metadata version")?
+            .version,
+    )?;
+
+    // Now, parse the full metadata.
+    let mut metadata: CosiMetadata =
+        serde_json::from_str(&raw_metadata).context("Failed to parse COSI metadata")?;
+
+    // Validate the metadata.
+    metadata.validate()?;
+
+    // Populate the metadata with the actual content location of the images.
+    populate_cosi_metadata_content_location(entries, &mut metadata)?;
+
+    debug!(
+        "Successfully read COSI metadata [v{}.{}]",
+        metadata.version.major, metadata.version.minor
+    );
+
+    Ok(metadata)
+}
+
+/// Validates the COSI metadata version.
+fn validate_cosi_metadata_version(version: &MetadataVersion) -> Result<(), Error> {
+    trace!(
+        "Validating COSI metadata version: {}.{}",
+        version.major,
+        version.minor
+    );
+
+    if !ACCEPTED_COSI_VERSIONS
+        .iter()
+        .any(|(major, minor)| version.major == *major && version.minor == *minor)
+    {
+        bail!(
+            "Unsupported COSI version: {}.{}",
+            version.major,
+            version.minor
+        );
+    }
+
+    Ok(())
+}
+
+/// Populates the metadata with the actual content location of the images.
+/// As a side effect, this function also validates that all images defined in the
+/// metadata are present in the COSI file, and that their basic properties match.
+fn populate_cosi_metadata_content_location(
+    entries: &HashMap<PathBuf, CosiEntry>,
+    metadata: &mut CosiMetadata,
+) -> Result<(), Error> {
+    let find_entry = |img: &ImageFile| {
+        let Some(entry) = entries.get(&img.path) else {
             bail!(
-                "Unsupported COSI version: {}.{}",
-                self.metadata.version.major,
-                self.metadata.version.minor
+                "COSI metadata contains an entry for a filesystem image at '{}', but the entry was not found in the COSI file",
+                img.path.display()
+            );
+        };
+
+        ensure!(entry.size == img.compressed_size,
+                "COSI metadata specifies a compressed size of {} bytes for the filesystem image at '{}', but the actual entry size is {} bytes",
+                img.compressed_size,
+                img.path.display(),
+                entry.size
+        );
+
+        Ok(*entry)
+    };
+
+    // Ensure that all images defined in the metadata are present in the COSI file.
+    for image in metadata.images.iter_mut() {
+        trace!(
+            "Looking for entry for image mounted at '{}'",
+            image.mount_point.display()
+        );
+        image.file.entry = find_entry(&image.file).with_context(|| {
+            format!(
+                "Failed to find entry for image mounted at '{}'",
+                image.mount_point.display()
+            )
+        })?;
+
+        if let Some(verity) = image.verity.as_mut() {
+            verity.file.entry = find_entry(&verity.file).with_context(|| {
+                format!(
+                    "Failed to find entry for verity hash of image mounted at '{}'",
+                    image.mount_point.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::io::{Cursor, Write};
+
+    use sha2::{Digest, Sha384};
+    use tar::{Builder, Header};
+    use tempfile::NamedTempFile;
+    use uuid::Uuid;
+
+    use osutils::partition_types::DiscoverablePartitionType;
+
+    /// Generate a test tarball with the given entries.
+    ///
+    /// An entry is a tuple of (path, data).
+    fn generate_test_tarball<'a>(
+        entries: impl Iterator<Item = (&'static str, &'a [u8])>,
+    ) -> Vec<u8> {
+        let mut archive = Builder::new(Vec::with_capacity(4096));
+        for (path, data) in entries {
+            // Create a new header with appropriate metadata.
+            let mut header = Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_cksum();
+
+            // Write the data to the archive.
+            archive.append_data(&mut header, path, data).unwrap();
+        }
+
+        // Finish the archive, retrieve inner Vec.
+        archive.finish().unwrap();
+        archive.into_inner().unwrap()
+    }
+
+    /// Generate a sample COSI v1.0 metadata file from the given entries.
+    ///
+    /// An entry is a tuple of (path, data).
+    ///
+    /// Since this is a spec, hard-coding a string made by following the spec
+    /// means we also check compliance. It also prevents us from having to
+    /// implement Serialize for the metadata only for testing.
+    fn generate_sample_metadata_v1_0<'a>(
+        images: impl Iterator<Item = (&'static str, u64, &'a str)>,
+    ) -> String {
+        let images = images
+            .map(|(path, size, hash)| {
+                format!(
+                    indoc::indoc! {r#"
+                        {{
+                            "image": {{
+                                "path": "{}",
+                                "compressedSize": {},
+                                "uncompressedSize": 2048,
+                                "sha384": "{sha384}"
+                            }},
+                            "mountPoint": "/some/mount/point/{}",
+                            "fsType": "ext4",
+                            "fsUuid": "{fsuuid}",
+                            "partType": "{parttype}"
+                        }}
+                    "#},
+                    path,
+                    size,
+                    path,
+                    sha384 = hash,
+                    fsuuid = Uuid::new_v4(),
+                    parttype = DiscoverablePartitionType::LinuxGeneric.to_uuid(),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n");
+
+        format!(
+            indoc::indoc! {r#"
+                {{
+                    "version": "1.0",
+                    "id": "{id}",
+                    "osArch": "x86_64",
+                    "osRelease": "",
+                    "images": [
+                        {}
+                    ]
+                }}
+            "#},
+            images,
+            id = Uuid::new_v4(),
+        )
+    }
+
+    #[test]
+    fn test_read_entries_from_tar_archive() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        let sample_data = [
+            ("file1.txt", "file1-data"),
+            ("file2.txt", "file2-data"),
+            ("directory/file3.txt", "file3-data"),
+        ];
+
+        // Form a test archive.
+        let cosi_file = generate_test_tarball(
+            sample_data
+                .iter()
+                .map(|(path, data)| (*path, data.as_bytes())),
+        );
+
+        // Read the entries. Use a Cursor as a file stand-in. (Cursor implements Read + Seek)
+        let entries = super::read_entries_from_tar_archive(Cursor::new(&cosi_file)).unwrap();
+
+        // Check the entries
+        assert_eq!(
+            entries.len(),
+            sample_data.len(),
+            " Incorrect number of entries"
+        );
+
+        // Check that each entry matches the expected data.
+        for (path, data) in sample_data.iter() {
+            let entry = entries.get(Path::new(path)).unwrap();
+            assert_eq!(
+                entry.size,
+                data.as_bytes().len() as u64,
+                "Incorrect entry size"
+            );
+            let read_data = cosi_file
+                .get(entry.offset as usize..(entry.offset + entry.size) as usize)
+                .unwrap();
+
+            assert_eq!(
+                read_data,
+                data.as_bytes(),
+                "Incorrect entry data, expected '{}', got '{}'",
+                data,
+                String::from_utf8_lossy(read_data)
             );
         }
+    }
 
-        let mut mount_points = HashSet::new();
-        for image in &self.metadata.images {
-            if !mount_points.insert(&image.mount_point) {
-                bail!("Duplicate mount point: '{}'", image.mount_point.display());
-            }
+    #[test]
+    fn test_validate_cosi_metadata_version() {
+        // Test accepted versions
+        for (major, minor) in ACCEPTED_COSI_VERSIONS.iter() {
+            let version = MetadataVersion {
+                major: *major,
+                minor: *minor,
+            };
+            super::validate_cosi_metadata_version(&version).unwrap();
         }
 
-        // TODO: Validate image entries
+        // Test unsupported versions
+        let version = MetadataVersion { major: 0, minor: 0 };
+        assert!(super::validate_cosi_metadata_version(&version).is_err());
+    }
 
-        Ok(())
+    #[test]
+    fn test_read_cosi_metadata() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        // Fake images we will insert in the metadata. All data is purely
+        // arbitrary, the only restriction is that the paths must be unique.
+        //
+        // We will then create fake entries for them, and finally, cross check
+        // the entries with the metadata.
+        //
+        // The layout is (image_path_in_tarball, offset, size_in_tarball).
+        let image_paths = [
+            ("some/image/path/A", 1024u64, 1024u64),
+            ("some/image/path/B", 2048u64, 4096u64),
+            ("some/image/path/C", 6144u64, 8192u64),
+        ];
+
+        let dummy_hash = "0".repeat(96);
+
+        let sample_metadata = generate_sample_metadata_v1_0(
+            image_paths
+                .iter()
+                .map(|(path, _, size)| (*path, *size, dummy_hash.as_str())),
+        );
+
+        // To mock the COSI file reader, we'll need to dump the metadata into a
+        // file. It doesn't really matter what the file is as long as the
+        // metadata is written raw. :)
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(sample_metadata.as_bytes()).unwrap();
+
+        // Create a COSI reader from the temp file.
+        let cosi_reader = CosiReader::new(&Url::from_file_path(temp_file.path()).unwrap()).unwrap();
+
+        // Create mock entries in a "hypothetical" COSI file. We will only read
+        // the metadata from the file, so this is the only entry where accurate
+        // data is needed.
+        let entries = [(
+            PathBuf::from(COSI_METADATA_PATH),
+            CosiEntry {
+                offset: 0,
+                size: sample_metadata.len() as u64,
+            },
+        )]
+        .into_iter()
+        .chain(image_paths.iter().map(|(path, offset, size)| {
+            // Create a fake entry for each image.
+            (
+                PathBuf::from(*path),
+                CosiEntry {
+                    offset: *offset,
+                    size: *size,
+                },
+            )
+        }))
+        .collect::<HashMap<_, _>>();
+
+        // Read the metadata.
+        let metadata = read_cosi_metadata(&cosi_reader, &entries).unwrap();
+
+        // Now check that the images in the metadata have the correct entries.
+        for (image, (path, offset, size)) in metadata.images.iter().zip(image_paths.iter()) {
+            assert_eq!(image.file.path, Path::new(path), "Incorrect image path",);
+            assert_eq!(image.file.entry.offset, *offset, "Incorrect image offset");
+            assert_eq!(image.file.entry.size, *size, "Incorrect image size");
+        }
+    }
+
+    #[test]
+    fn test_create_cosi() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        // In this test we're building a fake COSI file with a few mock images
+        // (aka files with arbitrary data) and metadata. We will then create a
+        // COSI file instance from it and validate that the metadata is correct.
+
+        // These are the mock "images". We don't need them to actually be
+        // images, so we just have text files.
+        let mock_images = [
+            ("some/image/path/A", "this is some example data [A]"),
+            ("some/image/path/B", "this is some example data [B]"),
+            ("some/image/path/C", "this is some example data [C]"),
+        ];
+
+        let data_hashes = mock_images
+            .iter()
+            .map(|(_, data)| format!("{:x}", Sha384::digest(data.as_bytes())))
+            .collect::<Vec<_>>();
+
+        // Generate a sample COSI metadata file.
+        let sample_metadata = generate_sample_metadata_v1_0(
+            mock_images
+                .iter()
+                .zip(data_hashes.iter())
+                .map(|((path, data), hash)| (*path, data.len() as u64, hash.as_str())),
+        );
+
+        // Generate a sample COSI file.
+        let cosi_file = generate_test_tarball(
+            [(COSI_METADATA_PATH, sample_metadata.as_bytes())]
+                .into_iter()
+                .chain(
+                    mock_images
+                        .iter()
+                        .map(|(path, data)| (*path, data.as_bytes())),
+                ),
+        );
+
+        // Write the COSI file to a temp file.
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(&cosi_file).unwrap();
+
+        // Create a COSI instance from the temp file.
+        let url = Url::from_file_path(temp_file.path()).unwrap();
+        let cosi = Cosi::new(&url).unwrap();
+
+        assert_eq!(
+            cosi.entries.len(),
+            mock_images.len() + 1,
+            "Incorrect number of entries"
+        );
+
+        assert_eq!(&url, cosi.source(), "Incorrect source URL in COSI instance")
     }
 }

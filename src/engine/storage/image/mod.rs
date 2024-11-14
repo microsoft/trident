@@ -1,25 +1,26 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io::Read,
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, warn};
 use reqwest::Url;
 use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
 
 use osutils::{
-    container, e2fsck, hashing_reader::HashingReader, image_streamer, resize2fs, veritysetup,
+    container, e2fsck, hashing_reader::HashingReader, image_streamer, lsblk, resize2fs, veritysetup,
 };
+
 use trident_api::{
     config::{
-        AbUpdate, HostConfiguration, HostConfigurationDynamicValidationError, Image, ImageFormat,
-        ImageSha256,
+        AbUpdate, FileSystemSource, HostConfiguration, HostConfigurationDynamicValidationError,
+        Image, ImageFormat, ImageSha256,
     },
-    constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingType},
     BlockDeviceId,
@@ -466,6 +467,131 @@ pub(super) fn provision(
     host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
     deploy_images(ctx, host_config).structured(ServicingError::DeployImages)?;
+    deploy_os_image(ctx, host_config).structured(ServicingError::DeployImages)?;
+
+    Ok(())
+}
+
+/// Deploys all the filesystem images sourced from the OS Image to the
+/// corresponding block devices.
+fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Result<(), Error> {
+    // Get the filesystems that are sourced from the OS image
+    let filesystems_from_os_image = {
+        let mut fs_list = Vec::new();
+
+        for filesystem in host_config.storage.filesystems.iter() {
+            if filesystem.source != FileSystemSource::OsImage {
+                // Skip everything that is not sourced from the OS image.
+                continue;
+            }
+
+            let device_id = filesystem.device_id.as_ref().with_context(|| {
+                format!(
+                    "Filesystem [{}] is sourced from an OS Image, but does not reference a block device.",
+                    filesystem.description()
+                )
+            })?;
+
+            let mount_point = filesystem.mount_point.as_ref().with_context(|| {
+                format!(
+                    "Filesystem [{}] is sourced from an OS Image, but does not have a mount point.",
+                    filesystem.description(),
+                )
+            })?;
+
+            if mount_point.path == Path::new(ESP_MOUNT_POINT_PATH) {
+                debug!(
+                    "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
+                    filesystem.description()
+                );
+                continue;
+            }
+
+            fs_list.push((device_id, mount_point));
+        }
+
+        fs_list
+    };
+
+    // If there are no filesystems sourced from the OS image, return early
+    if filesystems_from_os_image.is_empty() {
+        if ctx.os_image.is_none() {
+            // We don't have any filesystems sourced from the OS image nor an OS
+            // image, this is fine. This most likely means that the host
+            // configuration is using the old images API.
+            return Ok(());
+        } else {
+            bail!("OS image is available, but no filesystems are sourced from it.");
+        }
+    }
+
+    // If we have filesystems sourced from the OS image, ensure that the OS
+    // image is available.
+    let os_img = ctx.os_image.as_ref().context("OS image is not available")?;
+
+    // TODO: MOVE THIS TO THE VALIDATE FUNCTION (#9826)
+    // Get the available mount points
+    let available_mount_points = os_img.available_mount_points().collect::<HashSet<_>>();
+
+    // Iterate over the filesystems sourced from the OS image and ensure that the
+    // mount points are available
+    for (device_id, mp) in filesystems_from_os_image.iter() {
+        if !available_mount_points.contains(mp.path.as_path()) {
+            bail!(
+                "Mount point '{}' for device '{}' is not available in the OS image",
+                mp.path.display(),
+                device_id
+            );
+        }
+    }
+
+    let images = os_img
+        .filesystems()
+        .map(|fs| (fs.mount_point().to_owned(), fs))
+        .collect::<HashMap<_, _>>();
+
+    // Now, deploy the filesystems sourced from the OS image
+    for (id, mp) in filesystems_from_os_image {
+        let image = images.get(&mp.path).context(format!(
+            "Internal error: No image found for mount point '{}' in the OS image",
+            mp.path.display()
+        ))?;
+
+        let block_device_path = engine::get_block_device_path(ctx, id)
+            .context(format!("No block device with id '{}' found", id))?;
+
+        let dev_info = lsblk::get(&block_device_path).with_context(|| {
+            format!(
+                "Failed to get block device information for '{id}' at '{}'",
+                block_device_path.display()
+            )
+        })?;
+
+        ensure!(
+            dev_info.size >= image.size(),
+            "Block device is too small, expected at least {} bytes, got {} bytes",
+            image.size(),
+            dev_info.size
+        );
+
+        let stream = HashingReader::new(image.reader().with_context(|| {
+            format!(
+                "Failed to create reader for filesystem image to be mounted at '{}'",
+                mp.path.display()
+            )
+        })?);
+
+        let computed_sha256 =
+            image_streamer::stream_zstd(stream, &block_device_path).context(format!(
+                "Failed to stream image to block device '{id}' at '{}'",
+                block_device_path.display()
+            ))?;
+
+        debug!(
+            "Deployed filesystem image to block device '{}' [{computed_sha256}]",
+            block_device_path.display()
+        );
+    }
 
     Ok(())
 }

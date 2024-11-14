@@ -156,6 +156,12 @@ pub enum InvalidInputError {
 
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
+
+    #[error("Provided '{actual}' architecture OS image, but system is '{expected}'")]
+    MismatchedArchitecture {
+        expected: &'static str,
+        actual: &'static str,
+    },
 }
 
 /// Identifies errors that occur during servicing and require further user investigation, to

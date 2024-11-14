@@ -1,21 +1,27 @@
 use serde::{Deserialize, Deserializer};
+use strum_macros::IntoStaticStr;
 
 /// System architecture
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoStaticStr)]
 pub enum SystemArchitecture {
     /// 32-bit x86
+    #[strum(serialize = "x86")]
     X86,
 
     /// 64-bit x86
+    #[strum(serialize = "amd64")]
     Amd64,
 
     /// 32-bit ARM
+    #[strum(serialize = "arm")]
     Arm,
 
     /// 64-bit ARM
+    #[strum(serialize = "arm64")]
     Aarch64,
 
     /// Other
+    #[strum(serialize = "other")]
     Other,
 }
 

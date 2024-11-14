@@ -71,6 +71,7 @@ indoc = "2"
 maplit = "1.0.2"
 mockito = "1.6.0"
 osutils = { path = "osutils", features = ["test-utilities"] }
+sha2 = "0.10.8"
 
 
 [features]

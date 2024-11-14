@@ -2696,6 +2696,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "setsail",
+ "sha2",
  "sqlite",
  "strum",
  "strum_macros",

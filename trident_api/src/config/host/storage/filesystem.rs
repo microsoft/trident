@@ -300,7 +300,7 @@ impl FileSystem {
     /// Because filesystems don't have IDs that can uniquely identify them, this
     /// function can be used to create a description of the specific filesystem
     /// in lieu of an ID.
-    pub(crate) fn description(&self) -> String {
+    pub fn description(&self) -> String {
         [
             (
                 "src",

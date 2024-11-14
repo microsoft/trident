@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
-use log::debug;
+use log::{debug, trace};
 
 use osutils::{
     block_devices,
@@ -9,7 +9,7 @@ use osutils::{
 };
 use trident_api::{
     config::RaidLevel,
-    constants,
+    constants::{self, internal_params::ENABLE_COSI_SUPPORT},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     BlockDeviceId,
 };
@@ -250,14 +250,31 @@ fn create_boot_entry_helper(
 
 /// Returns the ESP partition device id from Engine Context
 fn get_esp_device_id(ctx: &EngineContext) -> Result<BlockDeviceId, Error> {
-    let esp_device_id = ctx
-        .spec
-        .storage
-        .filesystems
-        .iter()
-        .find_map(|fs| fs.source.esp_image().and(fs.device_id.as_ref()))
-        .context("Host configuration does not contain any ESP file systems.")?;
-    Ok(esp_device_id.to_string())
+    Ok(
+        // We need to check for the OS Image manually because the COSI image is
+        // not re-read for finalize, so ctx.os_image is None.
+        if ctx.spec.os_image.is_some() && ctx.spec.internal_params.get_flag(ENABLE_COSI_SUPPORT) {
+            // There is an OS Image, therefore the only means we have to identify the ESP is through
+            // the mount point.
+            trace!("Using ESP mount point to identify ESP device ID");
+            ctx.spec
+                .storage
+                .esp_filesystem()
+                .map(|(id, _)| id)
+                .context("Host Configuration does not contain an ESP filesystem.")?
+                .clone()
+        } else {
+            // TODO: Remove this branch once COSI is fully implemented.
+            trace!("Using ESP image to identify ESP device ID");
+            ctx.spec
+                .storage
+                .filesystems
+                .iter()
+                .find_map(|fs| fs.source.esp_image().and(fs.device_id.as_ref()))
+                .context("Host Configuration does not contain an ESP filesystem.")?
+                .clone()
+        },
+    )
 }
 
 /// Gets the EFI System Partition (ESP) device IDs and the path of the disks containing the ESP
@@ -285,7 +302,7 @@ fn get_esp_device_info(ctx: &EngineContext) -> Result<EspDevice, Error> {
     // This implementation just finds the first ESP filesystem and uses that.
 
     // Find the device ID of the ESP filesystem
-    let esp_device_id = get_esp_device_id(ctx)?;
+    let esp_device_id = get_esp_device_id(ctx).context("Could not find ESP device ID.")?;
 
     if let Some(raid) = ctx
         .spec
