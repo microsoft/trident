@@ -124,4 +124,6 @@ def test_trident_start_network(vm):
     trident = TridentTool(vm)
     trident.start_network()
 
+    vm.execute("rm /etc/trident/config.yaml")
+
     pass
