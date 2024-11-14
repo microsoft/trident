@@ -29,6 +29,9 @@ pub const DATASTORE_FILE_EXTENSION: &str = "sqlite";
 /// Default Trident datastore path. Used from the runtime OS.
 pub const TRIDENT_DATASTORE_PATH_DEFAULT: &str = "/var/lib/trident/datastore.sqlite";
 
+/// Path to load the agent config from.
+pub const AGENT_CONFIG_PATH: &str = "/etc/trident/trident.conf";
+
 // Block of volume agnostic path constants
 
 /// Boot directory name.

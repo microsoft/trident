@@ -28,7 +28,7 @@ steps:
 
   - bash: |
         set -eu
-        raidExists=$(sudo yq e '.hostConfiguration.storage.raid != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+        raidExists=$(sudo yq e '.storage.raid != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
         if [ "$raidExists" == "true" ]; then
           echo "Trident config requires Rebuild testing"
           echo "##vso[task.setvariable variable=TEST_REBUILD_RAID]True"
@@ -128,7 +128,7 @@ steps:
   # TODO: Remove after trident-container-verity-testimage is being used for E2E tests (Task #9652). 
   - bash: |
       set -eu
-      verityRequired=$(sudo yq e '.hostConfiguration.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      verityRequired=$(sudo yq e '.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$verityRequired" == "true" ]; then
         echo "Trident is running from the Runtime OS on the host (verity not enabled for container)."
         echo "##vso[task.setvariable variable=runtimeEnv]host"

@@ -22,9 +22,10 @@ def trident_rebuild_raid(connection, trident_config, runtime_env):
 
     """
     # Provide -c arg, the full path to the RW Trident config.
-    trident_return_code, trident_output = trident_run(
+    trident_return_code, trident_stdout, trident_stderr = trident_run(
         connection, f"rebuild-raid -v trace -c {trident_config}", runtime_env
     )
+    trident_output = trident_stdout + trident_stderr
     print("Trident rebuild-raid output {}".format(trident_output))
 
     # Check the exit code: if 0, Trident rebuild-raid succeeded.

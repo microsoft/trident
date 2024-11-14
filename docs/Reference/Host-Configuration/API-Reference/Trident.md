@@ -35,6 +35,14 @@ Whether Trident should start a gRPC server to listen for commands when the runti
 | -------------- | --------- |
 | Type           | `boolean` |
 
+### `logstream` (optional)
+
+Optional URL to stream logs to. TODO: document the interface.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
 ### `phonehome` (optional)
 
 URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.

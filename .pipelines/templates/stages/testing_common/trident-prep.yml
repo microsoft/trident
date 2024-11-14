@@ -6,6 +6,13 @@ parameters:
   - name: tridentConfigPath
     type: string
 
+  - name: runtimeEnv
+    displayName: "Runtime environment (host vs container)"
+    type: string
+    values:
+      - host
+      - container
+
 steps:
   - bash: |
       set -eux
@@ -15,9 +22,10 @@ steps:
 
   - bash: |
       set -eux
-      python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/add_key.py \
+      python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/edit_host_config.py \
           --keypath ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key \
-          --tridentconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml
+          --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
+          --runtimeEnv ${{ parameters.runtimeEnv }}
       chmod 600 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key
       ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/key -N ""
     workingDirectory: ${{ parameters.tridentSourceDirectory }}

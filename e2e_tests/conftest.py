@@ -34,7 +34,7 @@ def pytest_addoption(parser):
         action="store",
         type=str,
         required=True,
-        help="Provide the path to the directory with the trident configuration and compatible tests.",
+        help="Provide the path to the directory with the host configuration and compatible tests.",
     )
     parser.addoption(
         "-A",
@@ -104,7 +104,7 @@ def tridentCommand(request):
 
 
 @pytest.fixture
-def tridentConfiguration(request):
+def hostConfiguration(request):
     file_path = request.config.getoption("--configuration")
     tridentconfig_path = os.path.join(file_path, "trident-config.yaml")
     with open(tridentconfig_path, "r") as stream:

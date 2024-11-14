@@ -29,4 +29,4 @@ pub use host::{
     HostConfiguration,
 };
 
-pub use local::{GrpcConfiguration, HostConfigurationSource, LocalConfigFile, Operations};
+pub use local::{GrpcConfiguration, HostConfigurationSource, Operation, Operations};

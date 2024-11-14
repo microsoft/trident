@@ -90,6 +90,7 @@ stages:
             parameters:
               tridentSourceDirectory: $(tridentSourceDirectory)
               tridentConfigPath: $(tridentConfigPath)
+              runtimeEnv: ${{ parameters.runtimeEnv }}
 
           - bash: |
               set -eux

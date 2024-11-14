@@ -56,6 +56,10 @@ pub struct HostStatus {
     /// Trident will determine the next available index and use it for the new
     /// install.
     pub install_index: usize,
+
+    /// Whether this HostStatus is stored on the management OS.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_management_os: bool,
 }
 
 /// ServicingType is the type of servicing that the Trident agent is executing on the host. Through

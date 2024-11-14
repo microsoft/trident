@@ -6,19 +6,16 @@ import yaml
 import json
 
 
-def check_trident_config_fields(trident_config_file):
-    with open(trident_config_file, "r") as config:
-        trident_config_data = yaml.safe_load(config)
+def check_trident_config_fields(host_config_file):
+    with open(host_config_file, "r") as config:
+        host_config_data = yaml.safe_load(config)
 
     # Check for specific fields in the trident config
     fields_status = {
-        "raid_enabled": "raid" in trident_config_data["hostConfiguration"]["storage"],
-        "encryption_enabled": "encryption"
-        in trident_config_data["hostConfiguration"]["storage"],
-        "abUpdate_enabled": "abUpdate"
-        in trident_config_data["hostConfiguration"]["storage"],
-        "verity_enabled": "verity"
-        in trident_config_data["hostConfiguration"]["storage"],
+        "raid_enabled": "raid" in host_config_data["storage"],
+        "encryption_enabled": "encryption" in host_config_data["storage"],
+        "abUpdate_enabled": "abUpdate" in host_config_data["storage"],
+        "verity_enabled": "verity" in host_config_data["storage"],
     }
     return fields_status
 
@@ -83,7 +80,7 @@ def main():
     parser.add_argument(
         "--trident-config",
         "-t",
-        help="Path to the Trident configuration file",
+        help="Path to the Host Configuration file",
         required=True,
         type=str,
     )

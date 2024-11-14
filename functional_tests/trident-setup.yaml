@@ -1,86 +1,85 @@
-hostConfiguration:
-  trident:
-    selfUpgrade: true
-  os:
-    network:
-      ethernets:
-        vmeths:
-          match:
-            name: enp*
-          dhcp4: true
-      version: 2
-    selinux:
-      mode: permissive
-    users:
-      - name: testuser
-        secondaryGroups:
-          - wheel
-        sshPublicKeys: []
-        sshMode: key-only
-  scripts:
-    postConfigure:
-      - content: 'echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel'
-        name: wheel
-        runOn:
-          - clean-install
-      - content: |
-          mkdir -p /data
-          cd /data
-          curl -O http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-          curl -O http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-          curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
-          curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
-          curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
-        name: download-images
-        runOn:
-          - clean-install
-  storage:
-    abUpdate:
-      volumePairs:
-        - id: root
-          volumeAId: root-a
-          volumeBId: root-b
-    disks:
-      - device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-        id: os
-        partitionTableType: gpt
-        partitions:
-          - id: esp
-            size: 50M
-            type: esp
-          - id: root-a
-            size: 5G
-            type: root
-          - id: root-b
-            size: 2G
-            type: root
-          - id: swap
-            size: 2G
-            type: swap
-          - id: trident
-            size: 100M
-            type: linux-generic
-    filesystems:
-      - type: vfat
-        deviceId: esp
-        source:
-          type: esp-image
-          format: raw-zst
-          sha256: ignored
-          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-        mountPoint:
-          path: /boot/efi
-          options: umask=0077
-      - type: ext4
-        deviceId: root
-        source:
-          type: image
-          format: raw-zst
-          sha256: ignored
-          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-        mountPoint: /
-      - type: ext4
-        deviceId: trident
-        mountPoint: /var/lib/trident
-      - type: swap
-        deviceId: swap
+trident:
+  selfUpgrade: true
+os:
+  network:
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+    version: 2
+  selinux:
+    mode: permissive
+  users:
+    - name: testuser
+      secondaryGroups:
+        - wheel
+      sshPublicKeys: []
+      sshMode: key-only
+scripts:
+  postConfigure:
+    - content: 'echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel'
+      name: wheel
+      runOn:
+        - clean-install
+    - content: |
+        mkdir -p /data
+        cd /data
+        curl -O http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+        curl -O http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+        curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
+        curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
+        curl -O http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
+      name: download-images
+      runOn:
+        - clean-install
+storage:
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+  disks:
+    - device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      id: os
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          size: 50M
+          type: esp
+        - id: root-a
+          size: 5G
+          type: root
+        - id: root-b
+          size: 2G
+          type: root
+        - id: swap
+          size: 2G
+          type: swap
+        - id: trident
+          size: 100M
+          type: linux-generic
+  filesystems:
+    - type: vfat
+      deviceId: esp
+      source:
+        type: esp-image
+        format: raw-zst
+        sha256: ignored
+        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - type: ext4
+      deviceId: root
+      source:
+        type: image
+        format: raw-zst
+        sha256: ignored
+        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+      mountPoint: /
+    - type: ext4
+      deviceId: trident
+      mountPoint: /var/lib/trident
+    - type: swap
+      deviceId: swap

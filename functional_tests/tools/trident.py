@@ -21,12 +21,8 @@ class TridentTool:
 
         return self.node.execute(cmd)
 
-    def get(self, config=None) -> str:
-        cmd = f"trident get --verbosity DEBUG"
-        if config:
-            cmd = f"{cmd} --config {config}"
-
-        result = self.node.execute(cmd)
+    def get(self) -> str:
+        result = self.node.execute(f"trident get --verbosity DEBUG")
         assert_that(result.exit_code).is_equal_to(0)
         return result.stdout
 

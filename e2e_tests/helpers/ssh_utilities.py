@@ -30,7 +30,7 @@ class OutputWatcher(StreamWatcher):
 
 def trident_run(
     connection: Connection, command: str, runtime_env: Literal["host", "container"]
-) -> Tuple[int, str]:
+) -> Tuple[int, str, str]:
     """
     Runs Trident's commands on the remote host locally or in a container.
     """
@@ -51,10 +51,7 @@ def trident_run(
             timeout=240,
             watchers=[watcher],
         )
-        exit_code = result.return_code
-        output = result.stdout + result.stderr
-
-        return (exit_code, output)
+        return (result.return_code, result.stdout, result.stderr)
 
     # Handle the case where the command times out.
     except CommandTimedOut as timeout_exception:

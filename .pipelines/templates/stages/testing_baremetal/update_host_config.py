@@ -9,7 +9,7 @@ import logging
 
 
 def update_trident_host_config(
-    trident_yaml_content: str,
+    host_configuration: str,
     oam_ip: str,
     interface_name: str,
     oam_gateway: Optional[str] = None,
@@ -18,7 +18,6 @@ def update_trident_host_config(
     logging.info("Updating host config section of trident.yaml")
     logging.info("oam_ip: %s", oam_ip)
     logging.info("oam_gateway: %s", oam_gateway)
-    host_configuration = trident_yaml_content.get("hostConfiguration")
     os = host_configuration.setdefault("os", {})
     network = os.setdefault("network", {})
     ethernets = network.setdefault("ethernets", {})
@@ -44,7 +43,7 @@ def update_trident_host_config(
             disk["device"] = "/dev/sdb"
 
     logging.info(
-        "Final trident_yaml content post all the updates: %s", trident_yaml_content
+        "Final trident_yaml content post all the updates: %s", host_configuration
     )
 
 

@@ -1,66 +1,65 @@
-hostConfiguration:
-  storage:
-    disks:
-      - id: os
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-        partitionTableType: gpt
-        partitions:
-          - id: root
-            type: root
-            size: 8G
-          - id: swap-e
-            type: swap
-            size: 1G
-          - id: esp
-            type: esp
-            size: 1G
-      - id: disk2
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-        partitionTableType: gpt
-        partitions: []
-    encryption:
-      volumes:
-        - id: swap
-          deviceName: swap
-          deviceId: swap-e
-    filesystems:
-      - deviceId: swap
-        type: swap
-      - deviceId: esp
-        type: vfat
-        source:
-          type: esp-image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint:
-          path: /boot/efi
-          options: umask=0077
-      - deviceId: root
-        type: ext4
-        source:
-          type: image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint: /
-  scripts:
-    postConfigure:
-      - name: testing-privilege
-        runOn:
-          - clean-install
-        content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
-  os:
-    selinux:
-      mode: enforcing
-    network:
-      version: 2
-      ethernets:
-        vmeths:
-          match:
-            name: enp*
-          dhcp4: true
-    users:
-      - name: testing-user
-        sshPublicKeys: []
-        sshMode: key-only
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: root
+          type: root
+          size: 8G
+        - id: swap-e
+          type: swap
+          size: 1G
+        - id: esp
+          type: esp
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  encryption:
+    volumes:
+      - id: swap
+        deviceName: swap
+        deviceId: swap-e
+  filesystems:
+    - deviceId: swap
+      type: swap
+    - deviceId: esp
+      type: vfat
+      source:
+        type: esp-image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      type: ext4
+      source:
+        type: image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint: /
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+      content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+os:
+  selinux:
+    mode: enforcing
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only

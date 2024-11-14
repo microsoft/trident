@@ -75,6 +75,7 @@ def test_trident_offline_initialize(vm):
     vm.mkdir(working_dir)
 
     datastore_path = f"{working_dir}/datastore.sqlite"
+    vm.execute(f"echo 'DatastorePath={datastore_path}' > /etc/trident/trident.conf")
 
     # Update the datastore location
     host_status["spec"]["trident"] = {"datastorePath": datastore_path}
@@ -93,21 +94,8 @@ def test_trident_offline_initialize(vm):
 
     vm.execute(f"sudo chown testuser {datastore_path}")
 
-    # Create Trident config pointing to the new datastore
-    trident_config_path = f"{working_dir}/trident-config.yaml"
-    with open(trident_config_path, "w") as file:
-        yaml.dump(
-            {
-                "datastore": datastore_path,
-            },
-            file,
-        )
-    vm.copy(trident_config_path, trident_config_path)
-
     # Use Trident get with the new config to load the status from the datastore
-    loaded_host_status = yaml.load(
-        trident.get(trident_config_path), Loader=HostStatusSafeLoader
-    )
+    loaded_host_status = yaml.load(trident.get(), Loader=HostStatusSafeLoader)
 
     host_status["spec"].pop("trident")
     loaded_host_status["spec"].pop("trident")
@@ -122,6 +110,14 @@ def test_trident_offline_initialize(vm):
 @pytest.mark.core
 def test_trident_start_network(vm):
     """Basic trident start-network validation."""
+
+    vm.mkdir("/etc/trident")
+    vm.execute("sudo chmod 777 /etc/trident")
+    vm.copy(
+        TRIDENT_REPO_DIR_PATH / "functional_tests/trident-setup.yaml",
+        "/etc/trident/config.yaml",
+    )
+
     trident = TridentTool(vm)
     trident.start_network()
 

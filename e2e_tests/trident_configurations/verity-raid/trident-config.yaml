@@ -1,147 +1,146 @@
-hostConfiguration:
-  storage:
-    disks:
-      - id: os
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-        partitionTableType: gpt
-        partitions:
-          - id: esp
-            type: esp
-            size: 1G
-          - id: boot
-            type: xbootldr
-            size: 200M
-          - id: root-1
-            type: root
-            size: 4G
-          - id: root-hash-1
-            type: root-verity
-            size: 1G
-          - id: trident
-            type: linux-generic
-            size: 100M
-          - id: trident-overlay-1
-            type: linux-generic
-            size: 100M
-          - id: home
-            type: linux-generic
-            size: 100M
-          - id: var
-            type: linux-generic
-            size: 1G
-          - id: run
-            type: linux-generic
-            size: 1G
-      - id: disk2
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-        partitionTableType: gpt
-        partitions:
-          - id: root-2
-            type: root
-            size: 4G
-          - id: root-hash-2
-            type: root-verity
-            size: 1G
-          - id: trident-overlay-2
-            type: linux-generic
-            size: 100M
-    raid:
-      software:
-        - id: root
-          name: root
-          level: raid1
-          devices:
-            - root-1
-            - root-2
-        - id: root-hash
-          name: root-hash
-          level: raid1
-          devices:
-            - root-hash-1
-            - root-hash-2
-        - id: trident-overlay
-          name: trident-overlay
-          level: raid1
-          devices:
-            - trident-overlay-1
-            - trident-overlay-2
-    filesystems:
-      - deviceId: trident-overlay
-        type: ext4
-        mountPoint: /var/lib/trident-overlay
-      - deviceId: home
-        type: ext4
-        mountPoint: /home
-      - deviceId: var
-        type: ext4
-        source:
-          type: image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint: /var
-      - deviceId: boot
-        type: ext4
-        source:
-          type: image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint: /boot
-      - deviceId: trident
-        type: ext4
-        mountPoint: /var/lib/trident
-      - deviceId: run
-        type: ext4
-        mountPoint: /run
-      - deviceId: esp
-        type: vfat
-        source:
-          type: esp-image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint:
-          path: /boot/efi
-          options: umask=0077
-    verityFilesystems:
-      - name: root
-        dataDeviceId: root
-        hashDeviceId: root-hash
-        dataImage:
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
-          sha256: ignored
-          format: raw-zst
-        hashImage:
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
-          sha256: ignored
-          format: raw-zst
-        type: ext4
-        mountPoint:
-          path: /
-          options: defaults,ro
-  scripts:
-    postConfigure:
-      - name: overlay
-        runOn:
-          - clean-install
-          - ab-update
-        content: |
-          mkdir -p /var/lib/trident-overlay/etc-rw/upper
-          mkdir -p /var/lib/trident-overlay/etc-rw/work
-  os:
-    selinux:
-      mode: permissive
-    network:
-      version: 2
-      ethernets:
-        vmeths:
-          match:
-            name: enp*
-          dhcp4: true
-    users:
-      - name: testing-user
-        sshPublicKeys: []
-        secondaryGroups:
-          - wheel
-        sshMode: key-only
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 1G
+        - id: boot
+          type: xbootldr
+          size: 200M
+        - id: root-1
+          type: root
+          size: 4G
+        - id: root-hash-1
+          type: root-verity
+          size: 1G
+        - id: trident
+          type: linux-generic
+          size: 100M
+        - id: trident-overlay-1
+          type: linux-generic
+          size: 100M
+        - id: home
+          type: linux-generic
+          size: 100M
+        - id: var
+          type: linux-generic
+          size: 1G
+        - id: run
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions:
+        - id: root-2
+          type: root
+          size: 4G
+        - id: root-hash-2
+          type: root-verity
+          size: 1G
+        - id: trident-overlay-2
+          type: linux-generic
+          size: 100M
+  raid:
+    software:
+      - id: root
+        name: root
+        level: raid1
+        devices:
+          - root-1
+          - root-2
+      - id: root-hash
+        name: root-hash
+        level: raid1
+        devices:
+          - root-hash-1
+          - root-hash-2
+      - id: trident-overlay
+        name: trident-overlay
+        level: raid1
+        devices:
+          - trident-overlay-1
+          - trident-overlay-2
+  filesystems:
+    - deviceId: trident-overlay
+      type: ext4
+      mountPoint: /var/lib/trident-overlay
+    - deviceId: home
+      type: ext4
+      mountPoint: /home
+    - deviceId: var
+      type: ext4
+      source:
+        type: image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint: /var
+    - deviceId: boot
+      type: ext4
+      source:
+        type: image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint: /boot
+    - deviceId: trident
+      type: ext4
+      mountPoint: /var/lib/trident
+    - deviceId: run
+      type: ext4
+      mountPoint: /run
+    - deviceId: esp
+      type: vfat
+      source:
+        type: esp-image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+  verityFilesystems:
+    - name: root
+      dataDeviceId: root
+      hashDeviceId: root-hash
+      dataImage:
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
+        sha256: ignored
+        format: raw-zst
+      hashImage:
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
+        sha256: ignored
+        format: raw-zst
+      type: ext4
+      mountPoint:
+        path: /
+        options: defaults,ro
+scripts:
+  postConfigure:
+    - name: overlay
+      runOn:
+        - clean-install
+        - ab-update
+      content: |
+        mkdir -p /var/lib/trident-overlay/etc-rw/upper
+        mkdir -p /var/lib/trident-overlay/etc-rw/work
+os:
+  selinux:
+    mode: permissive
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      secondaryGroups:
+        - wheel
+      sshMode: key-only

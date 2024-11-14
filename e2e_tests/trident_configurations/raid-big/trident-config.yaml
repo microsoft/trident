@@ -1,73 +1,72 @@
-hostConfiguration:
-  storage:
-    disks:
-      - id: os
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-        partitionTableType: gpt
-        partitions:
-          - id: esp1
-            type: esp
-            size: 100M
-          - id: root-a1
-            type: root
-            size: 75G
-          - id: trident
-            type: linux-generic
-            size: 100M
-      - id: disk2
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-        partitionTableType: gpt
-        partitions:
-          - id: root-a2
-            type: root
-            size: 75G
-    raid:
-      software:
-        - id: root-a
-          name: root-a
-          level: raid1
-          devices:
-            - root-a1
-            - root-a2
-    filesystems:
-      - deviceId: root-a
-        type: ext4
-        source:
-          type: image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint: /
-      - deviceId: esp1
-        type: vfat
-        source:
-          type: esp-image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint:
-          path: /boot/efi
-          options: umask=0077
-      - deviceId: trident
-        type: ext4
-        mountPoint: /var/lib/trident
-  scripts:
-    postConfigure:
-      - name: testing-privilege
-        runOn:
-          - clean-install
-        content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
-  os:
-    selinux:
-      mode: enforcing
-    network:
-      version: 2
-      ethernets:
-        vmeths:
-          match:
-            name: enp*
-          dhcp4: true
-    users:
-      - name: testing-user
-        sshPublicKeys: []
-        sshMode: key-only
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp1
+          type: esp
+          size: 100M
+        - id: root-a1
+          type: root
+          size: 75G
+        - id: trident
+          type: linux-generic
+          size: 100M
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions:
+        - id: root-a2
+          type: root
+          size: 75G
+  raid:
+    software:
+      - id: root-a
+        name: root-a
+        level: raid1
+        devices:
+          - root-a1
+          - root-a2
+  filesystems:
+    - deviceId: root-a
+      type: ext4
+      source:
+        type: image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint: /
+    - deviceId: esp1
+      type: vfat
+      source:
+        type: esp-image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: trident
+      type: ext4
+      mountPoint: /var/lib/trident
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+      content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+os:
+  selinux:
+    mode: enforcing
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only

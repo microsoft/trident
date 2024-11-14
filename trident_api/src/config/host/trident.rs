@@ -50,6 +50,10 @@ pub struct Trident {
     /// be used. This is useful for debugging and monitoring purposes, say by an
     /// orchestrator.
     pub phonehome: Option<String>,
+
+    /// Optional URL to stream logs to. TODO: document the interface.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logstream: Option<String>,
 }
 
 impl Default for Trident {
@@ -60,6 +64,7 @@ impl Default for Trident {
             enable_grpc: Default::default(),
             datastore_path: Trident::default_datastore_path(),
             phonehome: Default::default(),
+            logstream: Default::default(),
         }
     }
 }

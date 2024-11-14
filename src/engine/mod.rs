@@ -320,6 +320,7 @@ fn stage_clean_install(
             disks_by_uuid: ctx.disks_by_uuid,
             install_index: ctx.install_index,
             last_error: None,
+            is_management_os: true,
         }
     })?;
     #[cfg(feature = "grpc-dangerous")]
@@ -615,6 +616,7 @@ fn stage_update(
             disks_by_uuid: ctx.disks_by_uuid,
             install_index: ctx.install_index,
             last_error: None,
+            is_management_os: false,
         };
     })?;
     #[cfg(feature = "grpc-dangerous")]

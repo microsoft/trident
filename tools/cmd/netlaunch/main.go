@@ -217,11 +217,11 @@ var rootCmd = &cobra.Command{
 				log.WithError(err).Fatalf("failed to unmarshal Trident config")
 			}
 
-			trident["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
-
-			if logstream {
-				trident["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
+			if _, ok := trident["trident"]; !ok {
+				trident["trident"] = make(map[interface{}]interface{})
 			}
+			trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
+			trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
 
 			tridentConfig, err := yaml.Marshal(trident)
 			if err != nil {

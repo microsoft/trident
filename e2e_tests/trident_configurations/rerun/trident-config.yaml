@@ -1,250 +1,249 @@
-hostConfiguration:
-  storage:
-    disks:
-      - id: os
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-        partitionTableType: gpt
-        partitions:
-          - id: esp
-            type: esp
-            size: 1G
-          - id: boot-a
-            type: xbootldr
-            size: 200M
-          - id: boot-b
-            type: xbootldr
-            size: 200M
-          - id: root-a-1
-            type: root
-            size: 4G
-          - id: root-b-1
-            type: root
-            size: 4G
-          - id: root-a-2
-            type: root
-            size: 4G
-          - id: root-b-2
-            type: root
-            size: 4G
-          - id: root-hash-a-1
-            type: root-verity
-            size: 1G
-          - id: root-hash-b-1
-            type: root-verity
-            size: 1G
-          - id: root-hash-a-2
-            type: root-verity
-            size: 1G
-          - id: root-hash-b-2
-            type: root-verity
-            size: 1G
-          - id: home-a-e-1
-            type: linux-generic
-            size: 100M
-          - id: home-a-e-2
-            type: linux-generic
-            size: 100M
-          - id: home-b-e-1
-            type: linux-generic
-            size: 100M
-          - id: home-b-e-2
-            type: linux-generic
-            size: 100M
-          - id: trident-overlay-a-1
-            type: linux-generic
-            size: 100M
-          - id: trident-overlay-b-1
-            type: linux-generic
-            size: 100M
-          - id: trident-overlay-a-2
-            type: linux-generic
-            size: 100M
-          - id: trident-overlay-b-2
-            type: linux-generic
-            size: 100M
-          - id: trident
-            type: linux-generic
-            size: 100M
-          - id: srv-e
-            type: linux-generic
-            size: 1G
-          - id: var
-            type: linux-generic
-            size: 1G
-      - id: disk2
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-        partitionTableType: gpt
-        partitions: []
-    raid:
-      software:
-        - id: home-a-e
-          name: home-a-e
-          level: raid1
-          devices:
-            - home-a-e-1
-            - home-a-e-2
-        - id: home-b-e
-          name: home-b-e
-          level: raid1
-          devices:
-            - home-b-e-1
-            - home-b-e-2
-        - id: root-a
-          name: root-a
-          level: raid1
-          devices:
-            - root-a-1
-            - root-a-2
-        - id: root-b
-          name: root-b
-          level: raid1
-          devices:
-            - root-b-1
-            - root-b-2
-        - id: root-hash-a
-          name: root-hash-a
-          level: raid1
-          devices:
-            - root-hash-a-1
-            - root-hash-a-2
-        - id: root-hash-b
-          name: root-hash-b
-          level: raid1
-          devices:
-            - root-hash-b-1
-            - root-hash-b-2
-        - id: trident-overlay-a
-          name: trident-overlay-a
-          level: raid1
-          devices:
-            - trident-overlay-a-1
-            - trident-overlay-a-2
-        - id: trident-overlay-b
-          name: trident-overlay-b
-          level: raid1
-          devices:
-            - trident-overlay-b-1
-            - trident-overlay-b-2
-    encryption:
-      volumes:
-        - id: srv
-          deviceName: srv
-          deviceId: srv-e
-        - id: home-a
-          deviceName: home-a
-          deviceId: home-a-e
-        - id: home-b
-          deviceName: home-b
-          deviceId: home-b-e
-    abUpdate:
-      volumePairs:
-        - id: boot
-          volumeAId: boot-a
-          volumeBId: boot-b
-        - id: root
-          volumeAId: root-a
-          volumeBId: root-b
-        - id: root-hash
-          volumeAId: root-hash-a
-          volumeBId: root-hash-b
-        - id: trident-overlay
-          volumeAId: trident-overlay-a
-          volumeBId: trident-overlay-b
-        - id: home
-          volumeAId: home-a
-          volumeBId: home-b
-    filesystems:
-      - deviceId: trident
-        type: ext4
-        mountPoint:
-          path: /var/lib/trident
-          options: defaults
-      - deviceId: srv
-        type: ext4
-        mountPoint:
-          path: /srv
-          options: defaults
-      - deviceId: var
-        type: ext4
-        source:
-          type: image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint: /var
-      - deviceId: home
-        type: ext4
-        mountPoint: /home
-      - deviceId: esp
-        type: vfat
-        source:
-          type: esp-image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint:
-          path: /boot/efi
-          options: umask=0077
-      - deviceId: boot
-        type: ext4
-        source:
-          type: image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint: /boot
-      - deviceId: trident-overlay
-        type: ext4
-        mountPoint: /var/lib/trident-overlay
-    verityFilesystems:
-      - name: root
-        dataDeviceId: root
-        hashDeviceId: root-hash
-        dataImage:
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
-          sha256: ignored
-          format: raw-zst
-        hashImage:
-          url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
-          sha256: ignored
-          format: raw-zst
-        type: ext4
-        mountPoint:
-          path: /
-          options: defaults,ro
-  scripts:
-    postProvision:
-      - name: rerun-trident
-        runOn: [all]
-        content: systemd-run --property=After=trident.service --no-block systemctl start trident.service
-    postConfigure:
-      - name: fail-on-the-first-run
-        runOn: [all]
-        content: |
-          if [ ! -f "$EXEC_ROOT/run/already-run" ]; then
-            touch "$EXEC_ROOT/run/already-run"
-            exit 1
-          fi
-      - name: overlay
-        runOn:
-          - clean-install
-          - ab-update
-        content: |
-          mkdir -p /var/lib/trident-overlay/etc-rw/upper
-          mkdir -p /var/lib/trident-overlay/etc-rw/work
-  os:
-    selinux:
-      mode: permissive
-    network:
-      version: 2
-      ethernets:
-        vmeths:
-          match:
-            name: enp*
-          dhcp4: true
-    users:
-      - name: testing-user
-        sshPublicKeys: []
-        secondaryGroups:
-          - wheel
-        sshMode: key-only
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 1G
+        - id: boot-a
+          type: xbootldr
+          size: 200M
+        - id: boot-b
+          type: xbootldr
+          size: 200M
+        - id: root-a-1
+          type: root
+          size: 4G
+        - id: root-b-1
+          type: root
+          size: 4G
+        - id: root-a-2
+          type: root
+          size: 4G
+        - id: root-b-2
+          type: root
+          size: 4G
+        - id: root-hash-a-1
+          type: root-verity
+          size: 1G
+        - id: root-hash-b-1
+          type: root-verity
+          size: 1G
+        - id: root-hash-a-2
+          type: root-verity
+          size: 1G
+        - id: root-hash-b-2
+          type: root-verity
+          size: 1G
+        - id: home-a-e-1
+          type: linux-generic
+          size: 100M
+        - id: home-a-e-2
+          type: linux-generic
+          size: 100M
+        - id: home-b-e-1
+          type: linux-generic
+          size: 100M
+        - id: home-b-e-2
+          type: linux-generic
+          size: 100M
+        - id: trident-overlay-a-1
+          type: linux-generic
+          size: 100M
+        - id: trident-overlay-b-1
+          type: linux-generic
+          size: 100M
+        - id: trident-overlay-a-2
+          type: linux-generic
+          size: 100M
+        - id: trident-overlay-b-2
+          type: linux-generic
+          size: 100M
+        - id: trident
+          type: linux-generic
+          size: 100M
+        - id: srv-e
+          type: linux-generic
+          size: 1G
+        - id: var
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  raid:
+    software:
+      - id: home-a-e
+        name: home-a-e
+        level: raid1
+        devices:
+          - home-a-e-1
+          - home-a-e-2
+      - id: home-b-e
+        name: home-b-e
+        level: raid1
+        devices:
+          - home-b-e-1
+          - home-b-e-2
+      - id: root-a
+        name: root-a
+        level: raid1
+        devices:
+          - root-a-1
+          - root-a-2
+      - id: root-b
+        name: root-b
+        level: raid1
+        devices:
+          - root-b-1
+          - root-b-2
+      - id: root-hash-a
+        name: root-hash-a
+        level: raid1
+        devices:
+          - root-hash-a-1
+          - root-hash-a-2
+      - id: root-hash-b
+        name: root-hash-b
+        level: raid1
+        devices:
+          - root-hash-b-1
+          - root-hash-b-2
+      - id: trident-overlay-a
+        name: trident-overlay-a
+        level: raid1
+        devices:
+          - trident-overlay-a-1
+          - trident-overlay-a-2
+      - id: trident-overlay-b
+        name: trident-overlay-b
+        level: raid1
+        devices:
+          - trident-overlay-b-1
+          - trident-overlay-b-2
+  encryption:
+    volumes:
+      - id: srv
+        deviceName: srv
+        deviceId: srv-e
+      - id: home-a
+        deviceName: home-a
+        deviceId: home-a-e
+      - id: home-b
+        deviceName: home-b
+        deviceId: home-b-e
+  abUpdate:
+    volumePairs:
+      - id: boot
+        volumeAId: boot-a
+        volumeBId: boot-b
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+      - id: root-hash
+        volumeAId: root-hash-a
+        volumeBId: root-hash-b
+      - id: trident-overlay
+        volumeAId: trident-overlay-a
+        volumeBId: trident-overlay-b
+      - id: home
+        volumeAId: home-a
+        volumeBId: home-b
+  filesystems:
+    - deviceId: trident
+      type: ext4
+      mountPoint:
+        path: /var/lib/trident
+        options: defaults
+    - deviceId: srv
+      type: ext4
+      mountPoint:
+        path: /srv
+        options: defaults
+    - deviceId: var
+      type: ext4
+      source:
+        type: image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint: /var
+    - deviceId: home
+      type: ext4
+      mountPoint: /home
+    - deviceId: esp
+      type: vfat
+      source:
+        type: esp-image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: boot
+      type: ext4
+      source:
+        type: image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint: /boot
+    - deviceId: trident-overlay
+      type: ext4
+      mountPoint: /var/lib/trident-overlay
+  verityFilesystems:
+    - name: root
+      dataDeviceId: root
+      hashDeviceId: root-hash
+      dataImage:
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
+        sha256: ignored
+        format: raw-zst
+      hashImage:
+        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
+        sha256: ignored
+        format: raw-zst
+      type: ext4
+      mountPoint:
+        path: /
+        options: defaults,ro
+scripts:
+  postProvision:
+    - name: rerun-trident
+      runOn: [all]
+      content: systemd-run --property=After=trident.service --no-block systemctl start trident.service
+  postConfigure:
+    - name: fail-on-the-first-run
+      runOn: [all]
+      content: |
+        if [ ! -f "$EXEC_ROOT/run/already-run" ]; then
+          touch "$EXEC_ROOT/run/already-run"
+          exit 1
+        fi
+    - name: overlay
+      runOn:
+        - clean-install
+        - ab-update
+      content: |
+        mkdir -p /var/lib/trident-overlay/etc-rw/upper
+        mkdir -p /var/lib/trident-overlay/etc-rw/work
+os:
+  selinux:
+    mode: permissive
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      secondaryGroups:
+        - wheel
+      sshMode: key-only

@@ -7,20 +7,16 @@ use trident_api::config::HostConfiguration;
 
 use osutils::netplan;
 
-pub fn start(
-    override_network: Option<NetworkConfig>,
-    host_config: Option<&HostConfiguration>,
-    wait_on_network: bool,
-) -> Result<(), Error> {
-    let netconf =
-        override_network
-            .as_ref()
-            .or(host_config
-                .and_then(|hc| hc.management_os.network.as_ref().or(hc.os.network.as_ref())));
+pub fn start(host_config: &HostConfiguration) -> Result<(), Error> {
+    let netconf = host_config
+        .management_os
+        .network
+        .as_ref()
+        .or(host_config.os.network.as_ref());
 
     match netconf {
         Some(config) => {
-            start_provisioning_network(config, wait_on_network)
+            start_provisioning_network(config, false)
                 .context("Failed to start provisioning network")?;
             info!("Setup of provisioning network complete!");
         }

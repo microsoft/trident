@@ -9,13 +9,13 @@ from base_test import HostStatusSafeLoader
 pytestmark = [pytest.mark.encryption]
 
 
-def get_filesystem(tridentConfig: dict, fsId: str) -> typing.Optional[dict]:
+def get_filesystem(hostConfiguration: dict, fsId: str) -> typing.Optional[dict]:
     """
     Get the filesystem for the given filesystem ID in the Trident
     configuration, or None if no such filesystem exists.
     """
 
-    for fs in tridentConfig["hostConfiguration"]["storage"]["filesystems"]:
+    for fs in hostConfiguration["storage"]["filesystems"]:
         if fs["deviceId"] == fsId:
             return fs
 
@@ -23,14 +23,12 @@ def get_filesystem(tridentConfig: dict, fsId: str) -> typing.Optional[dict]:
 
 
 def get_child_ab_update_volume_pair(
-    tridentConfig: dict, cryptId: str
+    hostConfiguration: dict, cryptId: str
 ) -> typing.Tuple[typing.Optional[dict], bool]:
-    if "abUpdate" not in tridentConfig["hostConfiguration"]["storage"]:
+    if "abUpdate" not in hostConfiguration["storage"]:
         return None, False
 
-    for abUpdateVolumePair in tridentConfig["hostConfiguration"]["storage"]["abUpdate"][
-        "volumePairs"
-    ]:
+    for abUpdateVolumePair in hostConfiguration["storage"]["abUpdate"]["volumePairs"]:
         if abUpdateVolumePair["volumeAId"] == cryptId:
             return abUpdateVolumePair, True
 
@@ -40,26 +38,28 @@ def get_child_ab_update_volume_pair(
     return None, False
 
 
-def get_raid_software_array_name(tridentConfig: dict, aId: str) -> typing.Optional[str]:
+def get_raid_software_array_name(
+    hostConfiguration: dict, aId: str
+) -> typing.Optional[str]:
     """
     Get the name of the RAID software array with the given ID in the
     Trident configuration, or None if no such array exists.
     """
 
-    for a in tridentConfig["hostConfiguration"]["storage"]["raid"]["software"]:
+    for a in hostConfiguration["storage"]["raid"]["software"]:
         if a["id"] == aId:
             return a["name"]
 
     return None
 
 
-def get_disk_partition(tridentConfig: dict, pId: str) -> typing.Optional[dict]:
+def get_disk_partition(hostConfiguration: dict, pId: str) -> typing.Optional[dict]:
     """
     Check if a disk partition with the given ID exists in the Trident
     configuration.
     """
 
-    for d in tridentConfig["hostConfiguration"]["storage"]["disks"]:
+    for d in hostConfiguration["storage"]["disks"]:
         for p in d["partitions"]:
             if p["id"] == pId:
                 return p
@@ -513,7 +513,7 @@ def check_crypsetup_luks_dump(
 
 def check_parent_devices(
     conn: fabric.Connection,
-    tridentConfig: dict,
+    hostConfiguration: dict,
     blockDevs: dict,
     cryptDevId: str,
 ) -> None:
@@ -524,7 +524,7 @@ def check_parent_devices(
 
     swap = False
 
-    part = get_disk_partition(tridentConfig, cryptDevId)
+    part = get_disk_partition(hostConfiguration, cryptDevId)
     if part is not None:
         swap = part["type"] == "swap"
         cryptDevPath = get_block_dev_path_by_partlabel(blockDevs, cryptDevId)
@@ -532,7 +532,7 @@ def check_parent_devices(
             cryptDevPath is not None
         ), f"Expected device with PARTLABEL {cryptDevId} to be in {blockDevs}"
     else:
-        cryptDevName = get_raid_software_array_name(tridentConfig, cryptDevId)
+        cryptDevName = get_raid_software_array_name(hostConfiguration, cryptDevId)
         assert (
             cryptDevName is not None
         ), f"Expected {cryptDevId} to be a disk partition or RAID array"
@@ -549,7 +549,7 @@ def check_parent_devices(
 
 def check_crypt_device(
     conn: fabric.Connection,
-    tridentConfig: dict,
+    hostConfiguration: dict,
     abActiveVolume: str,
     blockDevs: dict,
     cryptId: str,
@@ -558,13 +558,13 @@ def check_crypt_device(
 ) -> None:
     cryptDevicePath = f"/dev/mapper/{cryptDevName}"
 
-    check_parent_devices(conn, tridentConfig, blockDevs, cryptDevId)
+    check_parent_devices(conn, hostConfiguration, blockDevs, cryptDevId)
 
     swap = False
     isInUse = True
 
     childAbUpdateVolumePair, isVolumeA = get_child_ab_update_volume_pair(
-        tridentConfig, cryptId
+        hostConfiguration, cryptId
     )
     if childAbUpdateVolumePair is not None:
         assert abActiveVolume in [
@@ -575,7 +575,7 @@ def check_crypt_device(
             abActiveVolume == "volume-b" and not isVolumeA
         )
 
-        fs = get_filesystem(tridentConfig, childAbUpdateVolumePair["id"])
+        fs = get_filesystem(hostConfiguration, childAbUpdateVolumePair["id"])
         assert (
             fs is not None
         ), f"Expected filesystem for child ab update volume pair {childAbUpdateVolumePair['id']}"
@@ -590,7 +590,7 @@ def check_crypt_device(
         check_exists(conn, mpPath)
         check_findmnt(conn, mpPath, cryptDevicePath, isInUse)
     else:
-        fs = get_filesystem(tridentConfig, cryptId)
+        fs = get_filesystem(hostConfiguration, cryptId)
         assert (
             fs is not None
         ), f"Expected filesystem for encryption volume {cryptId} when it has no child ab update volume pair"
@@ -614,17 +614,16 @@ def check_crypt_device(
 
 
 def test_encryption(
-    connection: fabric.Connection, tridentConfiguration: dict, abActiveVolume: str
+    connection: fabric.Connection, hostConfiguration: dict, abActiveVolume: str
 ) -> None:
     blockDevs = get_blkid_output(connection)
 
-    hostConfig = tridentConfiguration["hostConfiguration"]
-    storageConfig = hostConfig["storage"]
+    storageConfig = hostConfiguration["storage"]
     encryptionConfig = storageConfig["encryption"]
     for crypt in encryptionConfig["volumes"]:
         check_crypt_device(
             connection,
-            tridentConfiguration,
+            hostConfiguration,
             abActiveVolume,
             blockDevs,
             crypt["id"],

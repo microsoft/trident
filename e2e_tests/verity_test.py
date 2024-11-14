@@ -12,7 +12,7 @@ class HostStatusSafeLoader(yaml.SafeLoader):
         return self.construct_mapping(node)
 
 
-def test_verity(connection, tridentConfiguration, tridentCommand, abActiveVolume):
+def test_verity(connection, hostConfiguration, tridentCommand, abActiveVolume):
     # Print out result of blkid for asserting verity root device mapper.
     res_blkid = connection.run("sudo blkid")
     # Expected output example:
@@ -57,9 +57,8 @@ def test_verity(connection, tridentConfiguration, tridentCommand, abActiveVolume
 
     # Collect expected verity info from host config for the later testing usage.
     expected_verity_config = dict()
-    host_config = tridentConfiguration["hostConfiguration"]
 
-    for verity in host_config["storage"]["verityFilesystems"]:
+    for verity in hostConfiguration["storage"]["verityFilesystems"]:
         expected_verity_config[verity["name"]] = verity
 
     # Collect veritysetup status output.

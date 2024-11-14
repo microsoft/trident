@@ -1204,6 +1204,11 @@
           "description": "Whether Trident should start a gRPC server to listen for commands when the runtime OS boots. Defaults to `false`.",
           "type": "boolean"
         },
+        "logstream": {
+          "description": "Optional URL to stream logs to. TODO: document the interface.",
+          "type": "string",
+          "nullable": true
+        },
         "phonehome": {
           "description": "URL to reach out to when runtime OS networking is up, so Trident can report its status. If not specified, the value from the Trident configuration will be used. This is useful for debugging and monitoring purposes, say by an orchestrator.",
           "type": "string",

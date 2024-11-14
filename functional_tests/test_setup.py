@@ -29,7 +29,7 @@ def create_vm(create_params):
 
 def disable_phonehome(ssh_node: SshNode):
     """Disables phonehome in the VM to allow faster rerunning of Trident."""
-    ssh_node.execute("sudo sed -i 's/phonehome: .*//' /etc/trident/config.yaml")
+    ssh_node.execute("sudo sed -i 's/^\s*phonehome: .*//' /etc/trident/config.yaml")
 
 
 def prepare_hostconfig(test_dir_path: Path, ssh_pub_key: str):
@@ -40,10 +40,7 @@ def prepare_hostconfig(test_dir_path: Path, ssh_pub_key: str):
         TRIDENT_REPO_DIR_PATH / "functional_tests/trident-setup.yaml", "r"
     ) as file:
         trident_setup = yaml.safe_load(file)
-    trident_setup["hostConfiguration"]["os"]["users"][0]["sshPublicKeys"].clear()
-    trident_setup["hostConfiguration"]["os"]["users"][0]["sshPublicKeys"].append(
-        ssh_pub_key
-    )
+    trident_setup["os"]["users"][0]["sshPublicKeys"] = [ssh_pub_key]
 
     prepped_host_config_path = test_dir_path / "trident-setup.yaml"
     with open(prepped_host_config_path, "w") as file:

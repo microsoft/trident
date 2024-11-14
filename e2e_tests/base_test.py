@@ -31,9 +31,8 @@ def test_connection(connection):
     assert output == "Successful connection"
 
 
-def test_partitions(connection, tridentConfiguration, tridentCommand, abActiveVolume):
+def test_partitions(connection, hostConfiguration, tridentCommand, abActiveVolume):
     # Structure hostConfiguration information
-    hostConfiguration = tridentConfiguration["hostConfiguration"]
     expected_partitions = dict()
 
     for disk_elements in hostConfiguration["storage"]["disks"]:
@@ -390,9 +389,8 @@ def get_raid_name_from_device_name(connection, device_name):
         return None
 
 
-def test_users(connection, tridentConfiguration):
+def test_users(connection, hostConfiguration):
     # Structure hostConfiguration information
-    hostConfiguration = tridentConfiguration["hostConfiguration"]
     expected_users = list()
     expected_groups = dict()
 

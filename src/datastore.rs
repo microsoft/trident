@@ -7,8 +7,6 @@ use trident_api::{
     status::HostStatus,
 };
 
-use crate::TRIDENT_TEMPORARY_DATASTORE_PATH;
-
 pub struct DataStore {
     db: Option<sqlite::Connection>,
     host_status: HostStatus,
@@ -16,20 +14,18 @@ pub struct DataStore {
 }
 
 impl DataStore {
-    pub(crate) fn open_temporary() -> Result<Self, TridentError> {
-        let path = Path::new(&TRIDENT_TEMPORARY_DATASTORE_PATH);
-
+    pub(crate) fn open_or_create(path: &Path) -> Result<Self, TridentError> {
         if path.exists() {
-            return Ok(Self {
-                temporary: true,
-                ..Self::open(path)?
-            });
+            return Self::open(path);
         }
 
         debug!("Creating temporary datastore at {}", path.display());
         Ok(Self {
             db: Some(Self::make_datastore(path)?),
-            host_status: HostStatus::default(),
+            host_status: HostStatus {
+                is_management_os: true,
+                ..Default::default()
+            },
             temporary: true,
         })
     }
@@ -63,8 +59,8 @@ impl DataStore {
 
         Ok(Self {
             db: Some(db),
+            temporary: host_status.is_management_os,
             host_status,
-            temporary: false,
         })
     }
 
@@ -93,6 +89,7 @@ impl DataStore {
     pub(crate) fn persist(&mut self, path: &Path) -> Result<(), TridentError> {
         if self.temporary {
             let persistent_db = Self::make_datastore(path)?;
+            self.host_status.is_management_os = false;
             Self::write_host_status(&persistent_db, self.host_status())?;
 
             self.db = Some(persistent_db);
@@ -208,14 +205,13 @@ mod functional_test {
 
     #[functional_test]
     fn test_open_temporary_persist_reopen() {
-        let _ = std::fs::remove_file(TRIDENT_TEMPORARY_DATASTORE_PATH);
-
         let temp_dir = TempDir::new().unwrap();
+        let datastore_temp_path = temp_dir.path().join("db-tmp.sqlite");
         let datastore_path = temp_dir.path().join("db.sqlite");
 
         // Open and initialize a temporary datastore.
         {
-            let mut datastore = DataStore::open_temporary().unwrap();
+            let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
             assert_eq!(
                 datastore.host_status().servicing_type,
                 ServicingType::NoActiveServicing
@@ -246,7 +242,7 @@ mod functional_test {
         // Re-open the temporary datastore and verify that the servicing type and state were
         // retained. Then re-rewrite and persist the datastore to a new location.
         {
-            let mut datastore = DataStore::open_temporary().unwrap();
+            let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
             assert_eq!(
                 datastore.host_status().servicing_type,
                 ServicingType::CleanInstall

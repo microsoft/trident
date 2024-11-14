@@ -130,6 +130,7 @@ stages:
           - template: ../testing_common/trident-prep.yml
             parameters:
               tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              runtimeEnv: ${{ parameters.runtimeEnv }}
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml

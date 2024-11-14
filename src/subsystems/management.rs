@@ -5,19 +5,18 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Context, Error};
-use log::{debug, info};
+use log::info;
 
 use osutils::path;
 use trident_api::{
-    config::{HostConfiguration, HostConfigurationDynamicValidationError, LocalConfigFile},
+    config::{HostConfiguration, HostConfigurationDynamicValidationError},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
 
 use crate::{
     engine::{EngineContext, Subsystem},
-    TRIDENT_BINARY_PATH, TRIDENT_LOCAL_CONFIG_PATH,
+    TRIDENT_BINARY_PATH,
 };
 
 #[derive(Default, Debug)]
@@ -68,42 +67,8 @@ impl Subsystem for ManagementSubsystem {
             .structured(ServicingError::CopyTridentBinary)?;
         }
 
-        fs::create_dir_all(Path::new(TRIDENT_LOCAL_CONFIG_PATH).parent().unwrap())
-            .structured(ServicingError::CreateTridentConfigDirectory)?;
-
-        create_trident_config(
-            &ctx.spec.trident.datastore_path,
-            &ctx.spec,
-            Path::new(TRIDENT_LOCAL_CONFIG_PATH),
-        )
-        .structured(ServicingError::CreateTridentConfig)?;
-        debug!("Trident config created");
-
         Ok(())
     }
-}
-
-pub(super) fn create_trident_config(
-    datastore_path: &Path,
-    host_config: &HostConfiguration,
-    trident_config_path: &Path,
-) -> Result<(), Error> {
-    let trident_config = LocalConfigFile::default()
-        .with_datastore(datastore_path.to_path_buf())
-        .with_phonehome(host_config.trident.phonehome.clone())
-        .with_grpc(if host_config.trident.enable_grpc {
-            Some(Default::default())
-        } else {
-            None
-        })
-        .with_host_configuration(host_config.clone());
-    fs::write(
-        trident_config_path,
-        serde_yaml::to_string(&trident_config).context("Failed to serialize trident config")?,
-    )
-    .context("Failed to write Trident Configuration")?;
-
-    Ok(())
 }
 
 #[cfg(test)]
