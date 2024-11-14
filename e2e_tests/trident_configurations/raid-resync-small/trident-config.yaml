@@ -24,7 +24,7 @@ storage:
           size: 100M
         - id: trident1
           type: linux-generic
-          size: 100M
+          size: 500M
     - id: disk2
       device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
       partitionTableType: gpt
@@ -40,7 +40,7 @@ storage:
           size: 100M
         - id: trident2
           type: linux-generic
-          size: 100M
+          size: 500M
   raid:
     syncTimeout: 300
     software:
