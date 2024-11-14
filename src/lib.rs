@@ -66,6 +66,9 @@ const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
 /// Path to the Trident background log for the current servicing.
 pub const TRIDENT_BACKGROUND_LOG_PATH: &str = "/var/log/trident-full.log";
 
+/// Path to the Trident metrics file for the current servicing.
+pub const TRIDENT_METRICS_FILE_PATH: &str = "/var/log/trident-metrics.jsonl";
+
 /// Trident will by default prevent running Clean Install on deployments other
 /// than from the Provisioning ISO, to limit chances of accidental data loss. To
 /// override, user can create this file on the host.

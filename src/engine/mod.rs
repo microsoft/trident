@@ -41,6 +41,7 @@ use crate::{
         selinux::SelinuxSubsystem,
     },
     HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH, TRIDENT_BACKGROUND_LOG_PATH,
+    TRIDENT_METRICS_FILE_PATH,
 };
 
 // Engine functionality
@@ -373,8 +374,16 @@ pub(super) fn finalize_clean_install(
     ))?;
     state.close();
 
-    // Persist the Trident background log to the new root
-    persist_background_log(
+    // Metric for clean install provisioning time in seconds
+    if let Some(start_time) = clean_install_start_time {
+        tracing::info!(
+            metric_name = "clean_install_provisioning_secs",
+            value = start_time.elapsed().as_secs_f64()
+        );
+    }
+
+    // Persist the Trident background log and metrics file to the new root
+    persist_background_log_and_metrics(
         &state.host_status().spec.trident.datastore_path,
         Some(new_root.path()),
         ServicingType::CleanInstall,
@@ -385,14 +394,6 @@ pub(super) fn finalize_clean_install(
     }
 
     storage::check_block_devices(state.host_status());
-
-    // Metric for clean install provisioning time in seconds
-    if let Some(start_time) = clean_install_start_time {
-        tracing::info!(
-            metric_name = "clean_install_provisioning_secs",
-            value = start_time.elapsed().as_secs_f64()
-        );
-    }
 
     if !state
         .host_status()
@@ -520,8 +521,8 @@ pub(super) fn update(
             #[cfg(feature = "grpc-dangerous")]
             send_host_status_state(&mut sender, state)?;
 
-            // Persist the Trident background log to the updated runtime OS
-            persist_background_log(
+            // Persist the Trident background log and metrics file to the updated runtime OS
+            persist_background_log_and_metrics(
                 &state.host_status().spec.trident.datastore_path,
                 None,
                 servicing_type,
@@ -676,8 +677,8 @@ pub(super) fn finalize_update(
         );
     }
 
-    // Persist the Trident background log to the updated runtime OS
-    persist_background_log(
+    // Persist the Trident background log and metrics file to the updated runtime OS
+    persist_background_log_and_metrics(
         &state.host_status().spec.trident.datastore_path,
         None,
         state.host_status().servicing_type,
@@ -699,13 +700,14 @@ pub(super) fn finalize_update(
     }
 }
 
-/// Persists the Trident background log to the updated runtime OS, by copying the log file at
-/// TRIDENT_BACKGROUND_LOG_PATH to the directory adjacent to the datastore. On failure, only prints
-/// out an error message.
+/// Persists the Trident background log and metrics files to the updated runtime
+/// OS, by copying the files at TRIDENT_BACKGROUND_LOG_PATH and
+/// TRIDENT_METRICS_FILE_PATH to the directory adjacent to the datastore. On
+/// failure, only prints out an error message.
 ///
-/// In case of clean install, the log is persisted to the datastore path in the new root, so
-/// newroot_path is provided.
-fn persist_background_log(
+/// In case of clean install, the files are persisted to the datastore path in
+/// the new root, so newroot_path is provided.
+fn persist_background_log_and_metrics(
     datastore_path: &Path,
     newroot_path: Option<&Path>,
     servicing_type: ServicingType,
@@ -713,6 +715,13 @@ fn persist_background_log(
     // Generate the new log filename based on the servicing type and the current timestamp
     let new_background_log_filename = format!(
         "trident-{:?}-{}.log",
+        servicing_type,
+        Utc::now().format("%Y%m%dT%H%M%SZ")
+    );
+
+    // Generate the new metrics filename based on the servicing type and the current timestamp
+    let new_metrics_filename = format!(
+        "trident-metrics-{:?}-{}.jsonl",
         servicing_type,
         Utc::now().format("%Y%m%dT%H%M%SZ")
     );
@@ -739,22 +748,50 @@ fn persist_background_log(
         new_background_log_path.display()
     );
 
+    // Create the full path for the new metrics file
+    let new_metrics_path: PathBuf = if let Some(new_root) = newroot_path {
+        join_relative(new_root, datastore_dir).join(new_metrics_filename)
+    } else {
+        datastore_dir.join(new_metrics_filename)
+    };
+
+    debug!(
+        "Persisting Trident metrics from '{}' to '{}' ",
+        TRIDENT_METRICS_FILE_PATH,
+        new_metrics_path.display()
+    );
+
     // Copy the background log file to the new location
-    if let Err(e) = fs::copy(TRIDENT_BACKGROUND_LOG_PATH, &new_background_log_path) {
+    if let Err(log_error) = fs::copy(TRIDENT_BACKGROUND_LOG_PATH, &new_background_log_path) {
         warn!(
             "Failed to persist Trident background log from '{}' to '{}': {}",
             TRIDENT_BACKGROUND_LOG_PATH,
             new_background_log_path.display(),
-            e
+            log_error
         );
-        return;
+    } else {
+        debug!(
+            "Successfully persisted Trident background log from '{}' to '{}'",
+            TRIDENT_BACKGROUND_LOG_PATH,
+            new_background_log_path.display()
+        );
     }
 
-    debug!(
-        "Successfully persisted Trident background log from '{}' to '{}'",
-        TRIDENT_BACKGROUND_LOG_PATH,
-        new_background_log_path.display()
-    );
+    // Copy the metrics file to the new location
+    if let Err(e) = fs::copy(TRIDENT_METRICS_FILE_PATH, &new_metrics_path) {
+        warn!(
+            "Failed to persist Trident metrics file from '{}' to '{}': {}",
+            TRIDENT_METRICS_FILE_PATH,
+            new_metrics_path.display(),
+            e
+        );
+    } else {
+        debug!(
+            "Successfully persisted Trident metrics from '{}' to '{}' ",
+            TRIDENT_METRICS_FILE_PATH,
+            new_metrics_path.display()
+        );
+    }
 }
 
 #[cfg(feature = "grpc-dangerous")]
@@ -1238,17 +1275,26 @@ mod functional_test {
 
     use tempfile::tempdir;
 
-    /// Helper function to check if the persisted background log file, i.e.
-    /// 'trident-<servicingType>-<timeStamp>.log', exists in the log directory.
-    fn persisted_log_exists(dir: &Path, servicing_type: ServicingType) -> bool {
-        let log_files = fs::read_dir(dir).unwrap();
-        let prefix = format!("trident-{:?}-", servicing_type);
-        for entry in log_files {
+    /// Helper function to check if the persisted background log and metrics
+    /// file, i.e. 'trident-<servicingType>-<timeStamp>.log' and
+    /// `trident-metrics-<servicingType>-<timeStamp>.jsonl`, exists in the log
+    /// directory.
+    fn persisted_log_and_metrics_exists(dir: &Path, servicing_type: ServicingType) -> bool {
+        let files = fs::read_dir(dir).unwrap();
+        let log_prefix = format!("trident-{:?}-", servicing_type);
+        let metrics_prefix = format!("trident-metrics-{:?}-", servicing_type);
+        let (mut log_found, mut metrics_found) = (false, false);
+        for entry in files {
             let entry = entry.unwrap();
             let file_name = entry.file_name().into_string().unwrap();
 
             // Check if any file starts with the correct prefix
-            if file_name.starts_with(&prefix) {
+            if file_name.starts_with(&log_prefix) {
+                log_found = true;
+            } else if file_name.starts_with(&metrics_prefix) {
+                metrics_found = true;
+            }
+            if log_found && metrics_found {
                 return true;
             }
         }
@@ -1256,7 +1302,7 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_persist_background_log_success() {
+    fn test_persist_background_log_and_metrics_success() {
         // Create a tempdir for mock datastore path
         let temp_dir_datastore = tempdir().unwrap();
         let datastore_dir = temp_dir_datastore.path();
@@ -1273,18 +1319,18 @@ mod functional_test {
         let log_dir = join_relative(newroot_path, datastore_dir);
         fs::create_dir_all(&log_dir).unwrap();
 
-        // Persist the background log
+        // Persist the background log and metrics file
         let servicing_type = ServicingType::CleanInstall;
-        persist_background_log(&datastore_path, Some(newroot_path), servicing_type);
+        persist_background_log_and_metrics(&datastore_path, Some(newroot_path), servicing_type);
 
         assert!(
-            persisted_log_exists(&log_dir, servicing_type),
-            "Trident background log should be persisted successfully."
+            persisted_log_and_metrics_exists(&log_dir, servicing_type),
+            "Trident background log and metrics should be persisted successfully."
         );
     }
 
     #[functional_test(feature = "helpers", negative = true)]
-    fn test_persist_background_log_failure() {
+    fn test_persist_background_log_and_metrics_failure() {
         // Create a tempdir for mock datastore path
         let temp_dir_datastore = tempdir().unwrap();
         let datastore_dir = temp_dir_datastore.path();
@@ -1299,16 +1345,25 @@ mod functional_test {
         // Remove TRIDENT_BACKGROUND_LOG_PATH
         fs::remove_file(TRIDENT_BACKGROUND_LOG_PATH).unwrap();
 
-        // Persist the background log
+        // Create a temp copy of TRIDENT_METRICS_FILE_PATH
+        let temp_metrics_path = TRIDENT_METRICS_FILE_PATH.to_owned() + ".temp";
+        fs::copy(TRIDENT_METRICS_FILE_PATH, &temp_metrics_path).unwrap();
+        // Remove TRIDENT_METRICS_FILE_PATH
+        fs::remove_file(TRIDENT_METRICS_FILE_PATH).unwrap();
+
+        // Persist the background log and metrics file
         let servicing_type = ServicingType::AbUpdate;
-        persist_background_log(&datastore_path, None, servicing_type);
+        persist_background_log_and_metrics(&datastore_path, None, servicing_type);
 
         assert!(
-            !persisted_log_exists(datastore_dir, servicing_type),
-            "Trident background log should not be persisted."
+            !persisted_log_and_metrics_exists(datastore_dir, servicing_type),
+            "Trident background log and metrics should not be persisted."
         );
 
         // Re-create TRIDENT_BACKGROUND_LOG_PATH by copying from the temp file
         fs::copy(&temp_log_path, TRIDENT_BACKGROUND_LOG_PATH).unwrap();
+
+        // Re-create TRIDENT_METRICS_FILE_PATH by copying from the temp file
+        fs::copy(&temp_metrics_path, TRIDENT_METRICS_FILE_PATH).unwrap();
     }
 }

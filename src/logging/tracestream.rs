@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
-    fs,
+    fs::{self, File},
+    io::Write,
     sync::{Arc, RwLock},
     time::Instant,
 };
@@ -18,11 +19,12 @@ use tracing::{
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
 use osutils::{
+    files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname,
 };
 
-use crate::TRIDENT_VERSION;
+use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
 
 /// The product uuid is used to identify the hardware that Trident is running on.
 const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
@@ -120,6 +122,7 @@ impl TraceStream {
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
+    metrics_file: Option<File>,
 }
 
 struct ExecutionTime(Instant);
@@ -133,6 +136,16 @@ impl TraceSender {
         Self {
             server,
             client: reqwest::blocking::Client::new(),
+            metrics_file: match files::create_file(TRIDENT_METRICS_FILE_PATH) {
+                Ok(f) => Some(f),
+                Err(err) => {
+                    eprintln!(
+                        "Tracestream setup error: failed to create local metrics file: {:?}",
+                        err
+                    );
+                    None
+                }
+            },
         }
     }
 
@@ -142,6 +155,14 @@ impl TraceSender {
 
     fn get_server(&self) -> Option<String> {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    fn write_metric_to_file(&self, metric: String) {
+        if let Some(mut file) = self.metrics_file.as_ref() {
+            if let Err(e) = file.write_all(format!("{}\n", metric).as_bytes()) {
+                trace!("Failed to write metric to file: {:?}", e);
+            }
+        }
     }
 }
 
@@ -213,6 +234,9 @@ where
                     return;
                 }
             };
+
+            // Write the metric to the local metrics file
+            self.write_metric_to_file(body.clone());
 
             if let Err(e) = self.client.post(target).body(body).send() {
                 trace!("Failed to send trace entry: {}", e);
@@ -289,6 +313,9 @@ where
                     return;
                 }
             };
+
+            // Write the metric to the local metrics file
+            self.write_metric_to_file(body.clone());
 
             if let Err(e) = self.client.post(target).body(body).send() {
                 trace!("Failed to send trace entry: {}", e);
