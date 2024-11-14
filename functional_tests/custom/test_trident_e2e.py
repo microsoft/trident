@@ -103,6 +103,9 @@ def test_trident_offline_initialize(vm):
     # Check if the loaded status is the same as the original status
     assert host_status == loaded_host_status
 
+    # Remove agent config so subsequent FTs use the real datastore
+    vm.execute(f"rm /etc/trident/trident.conf")
+
     pass
 
 
