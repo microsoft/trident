@@ -208,15 +208,6 @@ stages:
               artifactsDirectory: artifacts/test-image
               netlistenPort: ${{variables.netlaunchPort}}
 
-          - template: ../testing_common/trident-rebuild.yml
-            parameters:
-              hostIp: $(jq -r '.virtualmachines[0].ip' $(argusToolkitSourceDirectory)/virt-deploy-metadata.json)
-              sshKeyPath: $(tridentSourceDirectory)/e2e_tests/helpers/key
-              userName: testing-user
-              runtimeEnv: ${{ parameters.runtimeEnv }}
-              tridentSourceDirectory: $(tridentSourceDirectory)
-              tridentConfigPath: $(tridentConfigPath)
-
           - bash: |
               set -eux
               sudo virsh shutdown virtdeploy-vm-0

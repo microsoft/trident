@@ -344,3 +344,13 @@ steps:
           artifactsDirectory: ${{ parameters.artifactsDirectory }}
           deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
           netlistenPort: ${{ parameters.netlistenPort }}
+
+  - template: ../testing_common/trident-rebuild.yml
+    parameters:
+      hostIp: ${{ parameters.hostIp }}
+      sshKeyPath: ${{ parameters.sshKeyPath }}
+      userName: ${{ parameters.userName }}
+      runtimeEnv: ${{ parameters.runtimeEnv }}
+      tridentSourceDirectory: $(Build.SourcesDirectory)
+      tridentConfigPath: ${{ parameters.tridentConfigPath }}
+      deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
