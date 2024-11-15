@@ -63,7 +63,7 @@ storage:
           size: 100M
         - id: trident
           type: linux-generic
-          size: 100M
+          size: 500M
         - id: srv-e
           type: linux-generic
           size: 1G

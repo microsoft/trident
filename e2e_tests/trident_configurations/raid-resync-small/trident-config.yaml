@@ -12,7 +12,7 @@ storage:
           size: 4G
         - id: root-b1
           type: root
-          size: 1G
+          size: 4G
         - id: swap1
           type: swap
           size: 1G
@@ -34,7 +34,7 @@ storage:
           size: 4G
         - id: root-b2
           type: root
-          size: 1G
+          size: 4G
         - id: home2
           type: home
           size: 100M
