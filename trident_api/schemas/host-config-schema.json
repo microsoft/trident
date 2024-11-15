@@ -986,11 +986,11 @@
       "additionalProperties": false
     },
     "Selinux": {
-      "description": "Configuration for selinux mode",
+      "description": "Configuration for SELinux mode",
       "type": "object",
       "properties": {
         "mode": {
-          "description": "Override the SELinux mode. When not provided, no changes will be made to the existing configuration.",
+          "description": "Override the SELinux mode. When not provided, no changes will be made to the existing configuration.\n\nNote: Trident does not support the concurrent use of SELinux and verity. If using verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.",
           "allOf": [
             {
               "$ref": "#/definitions/SelinuxMode"

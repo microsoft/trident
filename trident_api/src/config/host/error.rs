@@ -98,6 +98,11 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Only root verity device is supported, but other verity devices were requested")]
     UnsupportedVerityDevices,
 
+    #[error(
+        "SELinux mode '{selinux_mode}' is not supported with verity, must be set to 'disabled'"
+    )]
+    VerityAndSelinuxUnsupported { selinux_mode: String },
+
     #[error("Verity device '{device_name}' is mounted read-write at '{mount_point_path}', but must be mounted read-only")]
     VerityDeviceMountedReadWrite {
         device_name: String,
@@ -166,4 +171,9 @@ pub enum HostConfigurationDynamicValidationError {
 
     #[error("Cannot modify storage configuration during update")]
     StorageConfigurationChanged,
+
+    #[error(
+        "SELinux mode '{selinux_mode}' is not supported with verity, must be set to 'disabled'"
+    )]
+    VerityAndSelinuxUnsupported { selinux_mode: String },
 }

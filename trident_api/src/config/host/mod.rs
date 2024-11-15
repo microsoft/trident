@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use log::warn;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
@@ -20,7 +21,7 @@ pub(crate) mod trident;
 
 use image::OsImage;
 use internal_params::InternalParams;
-use os::Os;
+use os::{Os, SelinuxMode};
 use scripts::Scripts;
 use storage::Storage;
 use trident::Trident;
@@ -94,7 +95,30 @@ impl HostConfiguration {
             return Err(HostConfigurationStaticValidationError::SelfUpgradeOnReadOnlyRootVerityFs);
         }
 
+        self.validate_selinux_mode()?;
         self.validate_datastore_location()?;
+
+        Ok(())
+    }
+
+    fn validate_selinux_mode(&self) -> Result<(), HostConfigurationStaticValidationError> {
+        // If SELinux is in `enforcing` mode, ensure that verity filesystems are not used. Warn if
+        // SELinux is in `permissive` mode.
+        if !self.storage.verity_filesystems.is_empty() {
+            match self.os.selinux.mode {
+                Some(SelinuxMode::Enforcing) => {
+                    return Err(
+                        HostConfigurationStaticValidationError::VerityAndSelinuxUnsupported {
+                            selinux_mode: SelinuxMode::Enforcing.to_string(),
+                        },
+                    );
+                }
+                Some(SelinuxMode::Permissive) => {
+                    warn!("The use of SELinux with verity is not supported. SELinux mode is currently set to '{}', but should be 'disabled'.", SelinuxMode::Permissive.to_string());
+                }
+                _ => {}
+            }
+        }
 
         Ok(())
     }
@@ -181,8 +205,9 @@ impl HostConfiguration {
 mod tests {
     use crate::{
         config::{
-            AbUpdate, AbVolumePair, FileSystem, FileSystemSource, FileSystemType, MountOptions,
-            MountPoint,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType, Image,
+            ImageFormat, ImageSha256, MountOptions, MountPoint, Partition, PartitionTableType,
+            PartitionType, VerityFileSystem,
         },
         constants::TRIDENT_DATASTORE_PATH_DEFAULT,
     };
@@ -343,5 +368,78 @@ mod tests {
                 volume_id: "root".into(),
             }
         );
+    }
+
+    #[test]
+    fn test_validate_selinux_mode() {
+        let mut host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "os".to_string(),
+                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
+                    partition_table_type: PartitionTableType::Gpt,
+                    partitions: vec![
+                        Partition {
+                            id: "root".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 0x200000000.into(), // 8GiB
+                        },
+                        Partition {
+                            id: "root-hash".to_string(),
+                            partition_type: PartitionType::RootVerity,
+                            size: 0x19000000.into(), // 400MiB
+                        },
+                    ],
+                    adopted_partitions: vec![],
+                }],
+                verity_filesystems: vec![VerityFileSystem {
+                    name: "root".into(),
+                    data_device_id: "root".into(),
+                    hash_device_id: "root-hash".into(),
+                    data_image: Image {
+                        url: "file:///trident_cdrom/data/verity_root.rawzst".into(),
+                        sha256: ImageSha256::Checksum(
+                            "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
+                                .into(),
+                        ),
+                        format: ImageFormat::RawZst,
+                    },
+                    hash_image: Image {
+                        url: "file:///trident_cdrom/data/verity_roothash.rawzst".into(),
+                        sha256: ImageSha256::Checksum(
+                            "e875214b5ba8aac92203b72dbf0f78d673a16bd3c2a6f3577bcf4ed5d7c903af"
+                                .into(),
+                        ),
+                        format: ImageFormat::RawZst,
+                    },
+                    fs_type: FileSystemType::Ext4,
+                    mount_point: MountPoint {
+                        path: "/".into(),
+                        options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+                    },
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Check that 'enforcing' mode returns an error
+        host_config.os.selinux.mode = Some(SelinuxMode::Enforcing);
+        let validation_error = host_config.validate_selinux_mode().unwrap_err();
+        assert_eq!(
+            validation_error,
+            HostConfigurationStaticValidationError::VerityAndSelinuxUnsupported {
+                selinux_mode: SelinuxMode::Enforcing.to_string()
+            },
+            "{validation_error}"
+        );
+
+        // Check that 'permissive' mode does not return an error
+        host_config.os.selinux.mode = Some(SelinuxMode::Permissive);
+        assert!(host_config.validate_selinux_mode().is_ok());
+
+        // Check that 'disabled' mode does not return an error
+        host_config.os.selinux.mode = Some(SelinuxMode::Disabled);
+        assert!(host_config.validate_selinux_mode().is_ok());
     }
 }

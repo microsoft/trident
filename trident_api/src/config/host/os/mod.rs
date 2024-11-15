@@ -76,13 +76,17 @@ pub struct KernelCommandLine {
     pub extra_command_line: Vec<String>,
 }
 
-/// Configuration for selinux mode
+/// Configuration for SELinux mode
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Selinux {
     /// Override the SELinux mode. When not provided, no changes will be made to
     /// the existing configuration.
+    ///
+    /// Note: Trident does not support the concurrent use of SELinux and verity.
+    /// If using verity, SELinux must not be enabled in the OS image or SELinux
+    /// should be explicitly set to `disabled`.
     pub mode: Option<SelinuxMode>,
 }
 
@@ -118,6 +122,19 @@ impl std::fmt::Display for SelinuxMode {
             SelinuxMode::Enforcing => "enforcing",
         };
         write!(f, "{}", mode_str)
+    }
+}
+
+impl std::str::FromStr for SelinuxMode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "disabled" => Ok(SelinuxMode::Disabled),
+            "permissive" => Ok(SelinuxMode::Permissive),
+            "enforcing" => Ok(SelinuxMode::Enforcing),
+            _ => Err(anyhow::anyhow!("Invalid SELinux mode: {}", s)),
+        }
     }
 }
 

@@ -2,21 +2,23 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
+    str::FromStr,
 };
 
-use anyhow::{bail, Error};
+use anyhow::{bail, Context, Error};
 
+use log::warn;
 use osutils::dependencies::{Dependency, DependencyResultExt};
 use trident_api::{
-    config::FileSystemType,
+    config::{FileSystemType, HostConfigurationDynamicValidationError, SelinuxMode},
     constants::SELINUX_CONFIG,
-    error::{ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
 
 use crate::engine::{EngineContext, Subsystem};
 
-/// Gets the seinux type from the selinux config file.
+/// Gets the SELinux type from the SELinux config file.
 fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Error> {
     let file = File::open(selinux_config_path.as_ref())?;
     let reader = BufReader::new(file);
@@ -34,6 +36,29 @@ fn get_selinux_type(selinux_config_path: impl AsRef<Path>) -> Result<String, Err
     );
 }
 
+/// Gets the SELinux mode (enforcing, permissive, disabled) from the SELinux config file.
+fn get_selinux_mode(selinux_config_path: impl AsRef<Path>) -> Result<SelinuxMode, Error> {
+    let file = File::open(selinux_config_path.as_ref()).with_context(|| {
+        format!(
+            "Failed to open file '{}'",
+            selinux_config_path.as_ref().display()
+        )
+    })?;
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        let line = line?;
+        if let Some(selinux_mode) = line.strip_prefix("SELINUX=") {
+            return SelinuxMode::from_str(selinux_mode);
+        }
+    }
+
+    bail!(
+        "Could not find SELinux mode in file {}",
+        selinux_config_path.as_ref().display()
+    );
+}
+
 #[derive(Default)]
 pub struct SelinuxSubsystem;
 impl Subsystem for SelinuxSubsystem {
@@ -44,6 +69,30 @@ impl Subsystem for SelinuxSubsystem {
     #[tracing::instrument(name = "selinux_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
         if let ServicingType::CleanInstall | ServicingType::AbUpdate = ctx.servicing_type {
+            // If a verity filesystem is mounted at root, ensure that SELinux is not in enforcing mode and
+            // warn if it is in permissive mode
+            if !ctx.spec.storage.verity_filesystems.is_empty() {
+                // If image does not have SELinux, config file will not exist
+                if !Path::new(SELINUX_CONFIG).exists() {
+                    return Ok(());
+                }
+
+                let selinux_mode =
+                    get_selinux_mode(SELINUX_CONFIG).structured(ServicingError::GetSelinuxMode)?;
+
+                match selinux_mode {
+                    SelinuxMode::Enforcing => {
+                        return Err(TridentError::new(InvalidInputError::from(
+                            HostConfigurationDynamicValidationError::VerityAndSelinuxUnsupported {
+                                selinux_mode: selinux_mode.to_string(),
+                            },
+                        )));
+                    }
+                    SelinuxMode::Permissive => warn!("The use of SELinux with verity is not supported. SELinux mode is currently set to '{}', but should be 'disabled'.", selinux_mode.to_string()),
+                    _ => (),
+                }
+            }
+
             // Get the mount points for the filesystems that are not of type vfat as setfiles does
             // not support vfat
             let mount_paths: Vec<&trident_api::config::MountPoint> = ctx
@@ -88,6 +137,15 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
+    fn test_get_selinux_mode_success_enforcing() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "SELINUX=enforcing").unwrap();
+
+        let selinux_mode = get_selinux_mode(temp_file.path().to_str().unwrap());
+        assert_eq!(selinux_mode.unwrap(), SelinuxMode::Enforcing);
+    }
+
+    #[test]
     fn test_get_selinux_type_success() {
         let mut temp_file = NamedTempFile::new().unwrap();
         writeln!(temp_file, "SELINUXTYPE=targeted").unwrap();
@@ -103,14 +161,20 @@ mod tests {
 
         let result = get_selinux_type(temp_file.path().to_str().unwrap());
         assert!(result.is_err());
+
+        let mode = get_selinux_mode(temp_file.path().to_str().unwrap()).unwrap();
+        assert!(mode == SelinuxMode::Disabled);
     }
 
     #[test]
-    fn test_get_selinux_type_empty_file() {
+    fn test_get_selinux_type_and_mode_empty_file() {
         let temp_file = NamedTempFile::new().unwrap();
 
-        let result = get_selinux_type(temp_file.path().to_str().unwrap());
-        assert!(result.is_err());
+        let result_type = get_selinux_type(temp_file.path().to_str().unwrap());
+        assert!(result_type.is_err());
+
+        let result_mode = get_selinux_mode(temp_file.path().to_str().unwrap());
+        assert!(result_mode.is_err());
     }
 
     #[test]
@@ -122,5 +186,8 @@ mod tests {
 
         let selinux_type = get_selinux_type(temp_file.path().to_str().unwrap()).unwrap();
         assert_eq!(selinux_type, "targeted");
+
+        let selinux_mode = get_selinux_mode(temp_file.path().to_str().unwrap()).unwrap();
+        assert_eq!(selinux_mode, SelinuxMode::Permissive);
     }
 }

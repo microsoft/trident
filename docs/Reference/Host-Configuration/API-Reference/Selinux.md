@@ -2,7 +2,7 @@
 
 # Selinux
 
-Configuration for selinux mode
+Configuration for SELinux mode
 
 | Characteristic | Value    |
 | -------------- | -------- |
@@ -13,6 +13,8 @@ Configuration for selinux mode
 ### `mode` (optional)
 
 Override the SELinux mode. When not provided, no changes will be made to the existing configuration.
+
+Note: Trident does not support the concurrent use of SELinux and verity. If using verity, SELinux must not be enabled in the OS image or SELinux should be explicitly set to `disabled`.
 
 | Characteristic | Value                           |
 | -------------- | ------------------------------- |

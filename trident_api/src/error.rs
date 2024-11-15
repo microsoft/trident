@@ -325,6 +325,9 @@ pub enum ServicingError {
     #[error("Failed to get mount point info for root with path '{root_path}'")]
     GetRootMountPointInfo { root_path: String },
 
+    #[error("Failed to get SELINUX")]
+    GetSelinuxMode,
+
     #[error("Failed to get SELINUXTYPE")]
     GetSelinuxType,
 
