@@ -294,19 +294,25 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
     Ok(logstream)
 }
 
-fn setup_tracing() -> Result<TraceStream, Error> {
+fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
     use tracing_subscriber::{filter, layer::SubscriberExt, Layer};
 
     let tracestream = TraceStream::default();
-    // Set up the trace sender
-    let trace_sender = tracestream
-        .make_trace_sender()
-        .with_filter(filter::LevelFilter::INFO);
 
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::Registry::default().with(trace_sender),
-    )
-    .context("Failed to set global default subscriber")?;
+    if matches!(
+        args.command,
+        Commands::Run { .. } | Commands::RebuildRaid { .. }
+    ) {
+        // Set up the trace sender
+        let trace_sender = tracestream
+            .make_trace_sender()
+            .with_filter(filter::LevelFilter::INFO);
+
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        )
+        .context("Failed to set global default subscriber")?;
+    }
 
     Ok(tracestream)
 }
@@ -323,7 +329,7 @@ fn main() -> ExitCode {
     }
 
     // Initialize the telemetry flow
-    let tracestream = setup_tracing();
+    let tracestream = setup_tracing(&args);
     if let Err(e) = tracestream {
         error!("Failed to initialize tracing: {e:?}");
         return ExitCode::from(1);
