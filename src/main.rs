@@ -214,7 +214,7 @@ fn run_trident(
                         ref allowed_operations,
                         ..
                     } => {
-                        let mut ops = Operations::default();
+                        let mut ops = Operations::empty();
                         if allowed_operations.contains(&AllowedOperation::Stage) {
                             ops.0.insert(Operation::Stage);
                         }

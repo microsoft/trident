@@ -52,6 +52,10 @@ impl Default for Operations {
 }
 
 impl Operations {
+    pub fn empty() -> Self {
+        Self(HashSet::new())
+    }
+
     pub fn contains(&self, op: Operation) -> bool {
         self.0.contains(&op)
     }
