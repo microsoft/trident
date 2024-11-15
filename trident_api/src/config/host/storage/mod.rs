@@ -1559,7 +1559,7 @@ mod tests {
         );
     }
 
-    /// Encrypted volume target ID may be a home partition
+    /// Encrypted volume target ID must not be a home partition
     #[test]
     fn test_validate_encryption_target_id_home_pass() {
         let mut storage: Storage = get_storage();
@@ -1569,7 +1569,18 @@ mod tests {
             .find(|p| p.id == "srv-enc")
             .unwrap()
             .partition_type = PartitionType::Home;
-        storage.validate(true).unwrap();
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidPartitionType {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    partition_id: "srv-enc".into(),
+                    partition_type: PartitionType::Home,
+                    valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
+                }
+            ),
+        )
     }
 
     /// Encrypted volume device ID must not be an ESP partition
@@ -1663,7 +1674,7 @@ mod tests {
         );
     }
 
-    /// Encrypted volume target ID may be a software RAID array of home partitions
+    /// Encrypted volume target ID must not be a software RAID array of home partitions
     #[test]
     fn test_validate_encryption_target_id_raid_home_pass() {
         let mut storage: Storage = get_storage();
@@ -1676,7 +1687,7 @@ mod tests {
         // Switch the encryption target to the mnt RAID array
         storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt".to_owned();
 
-        // Change the partition type of the mnt-raid-1/2 partitions to root
+        // Change the partition type of the mnt-raid-1/2 partitions to home
         storage.disks[1]
             .partitions
             .iter_mut()
@@ -1685,7 +1696,18 @@ mod tests {
                 p.partition_type = PartitionType::Home;
             });
 
-        storage.validate(true).unwrap();
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
+                BlockDeviceGraphBuildError::InvalidPartitionType {
+                    node_id: "srv".into(),
+                    kind: BlkDevKind::EncryptedVolume,
+                    partition_id: "mnt-raid-1".into(),
+                    partition_type: PartitionType::Home,
+                    valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
+                }
+            ),
+        );
     }
 
     /// Encrypted volume target ID must not be a software RAID array of esp partitions

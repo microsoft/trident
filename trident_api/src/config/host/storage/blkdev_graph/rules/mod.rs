@@ -423,11 +423,7 @@ impl BlkDevReferrerKind {
             Self::None => AllowBlockList::Any,
             Self::RaidArray => AllowBlockList::Any,
             Self::ABVolume => AllowBlockList::Any,
-            Self::EncryptedVolume => AllowBlockList::Block(vec![
-                PartitionType::Esp,
-                PartitionType::Root,
-                PartitionType::RootVerity,
-            ]),
+            Self::EncryptedVolume => AllowBlockList::Allow(vec![PartitionType::LinuxGeneric]),
             Self::FileSystem | Self::FileSystemAdopted | Self::FileSystemSysupdate => {
                 AllowBlockList::Block(vec![PartitionType::Esp])
             }
