@@ -5,15 +5,21 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
+use log::debug;
+
 use trident_api::{
     config::{Disk, HostConfiguration},
+    constants::{PROC_MOUNTINFO_PATH, ROOT_MOUNT_POINT_PATH},
+    error::TridentResultExt,
     BlockDeviceId,
 };
 
 use crate::{
+    container,
     dependencies::Dependency,
     lsblk::{self, BlockDeviceType},
     sfdisk::SfDisk,
+    tabfile,
 };
 
 pub struct ResolvedDisk {
@@ -199,6 +205,35 @@ pub fn get_partition_number(
     );
 }
 
+/// Gets the path of the root block device.
+pub fn get_root_device_path() -> Result<PathBuf, Error> {
+    let root_mount_path = if container::is_running_in_container()
+        .unstructured("Failed to determine whether running in a container")?
+    {
+        let host_root_path =
+            container::get_host_root_path().unstructured("Failed to get host root mount path")?;
+        debug!(
+            "Running inside a container. Using root mount path '{}'",
+            host_root_path.display()
+        );
+        host_root_path
+    } else {
+        debug!(
+            "Not running inside a container. Using default root mount path '{}'",
+            ROOT_MOUNT_POINT_PATH
+        );
+        Path::new(ROOT_MOUNT_POINT_PATH).to_path_buf()
+    };
+
+    let root_device_path =
+        tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &root_mount_path)
+            .context("Failed to find root mount point in '{PROC_MOUNTINFO_PATH}'")?;
+
+    debug!("Current root device path: {}", root_device_path.display());
+
+    Ok(root_device_path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,5 +359,13 @@ mod functional_test {
             .root_cause()
             .to_string()
             .contains("Dependency 'partx' finished unsuccessfully"));
+    }
+
+    #[functional_test]
+    fn test_get_root_device_path() {
+        assert_eq!(
+            get_root_device_path().unwrap().to_str().unwrap(),
+            "/dev/sda2"
+        );
     }
 }

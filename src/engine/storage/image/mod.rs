@@ -12,8 +12,8 @@ use reqwest::Url;
 use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
 
 use osutils::{
-    container, dependencies::Dependency, e2fsck, hashing_reader::HashingReader, image_streamer,
-    lsblk, resize2fs, veritysetup,
+    dependencies::Dependency, e2fsck, hashing_reader::HashingReader, image_streamer, lsblk,
+    resize2fs, veritysetup,
 };
 
 use trident_api::{
@@ -22,12 +22,12 @@ use trident_api::{
         Image, ImageFormat, ImageSha256,
     },
     constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
-    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::{AbVolumeSelection, ServicingType},
     BlockDeviceId,
 };
 
-use crate::engine::{self, storage::tabfile, EngineContext};
+use crate::engine::{self, EngineContext};
 
 pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
@@ -220,8 +220,8 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
     Ok(())
 }
 
-/// Resize ext2/ext3/ext4 filesystem on the given block device to the maximum
-/// size of the underlying block device
+/// Resizes ext2/ext3/ext4 filesystem on the given block device to the maximum
+/// size of the underlying block device.
 fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
     resize2fs::run(block_device_path).context(format!(
         "Failed to resize partition on block device at path '{}'",
@@ -229,20 +229,7 @@ fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
     ))
 }
 
-pub(crate) fn get_root_device_path() -> Result<PathBuf, Error> {
-    let root_mount_path = if container::is_running_in_container()
-        .unstructured("Failed to determine wheter running in a container")?
-    {
-        container::get_host_root_path().unstructured("Failed to get host root mount path")?
-    } else {
-        Path::new(ROOT_MOUNT_POINT_PATH).to_path_buf()
-    };
-    let path = tabfile::get_device_path(Path::new("/proc/mounts"), &root_mount_path)
-        .context("Failed to find root mount point")?;
-    debug!("Using root device path: {}", path.display());
-    Ok(path)
-}
-
+/// Updates the active volume based on the current root device path.
 pub(crate) fn update_active_volume(
     ctx: &mut EngineContext,
     root_device_path: PathBuf,
@@ -1044,14 +1031,6 @@ mod functional_test {
         self, AbVolumePair, Disk, FileSystemType, InternalMountPoint, MountOptions, MountPoint,
         Partition, PartitionType, VerityFileSystem,
     };
-
-    #[functional_test]
-    fn test_get_root_device_path() {
-        assert_eq!(
-            get_root_device_path().unwrap().to_str().unwrap(),
-            "/dev/sda2"
-        );
-    }
 
     #[functional_test]
     fn test_get_plain_volume_pair_paths() {

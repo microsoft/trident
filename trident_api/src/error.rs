@@ -87,7 +87,7 @@ pub enum InternalError {
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 
-    #[error("Failed to get root block device")]
+    #[error("Failed to get root block device path")]
     GetRootBlockDevicePath,
 
     #[error("Internal error: {0}")]
@@ -369,9 +369,6 @@ pub enum ServicingError {
 
     #[error("Failed to remove crypttab at path '{crypttab_path}'")]
     RemoveCrypttab { crypttab_path: String },
-
-    #[error("Failed to fetch device path for root from '{mountinfo_file}'")]
-    RootMountPointDevPath { mountinfo_file: String },
 
     #[error("Failed to run pre-servicing script '{script_name}'")]
     RunPreServicingScript { script_name: String },

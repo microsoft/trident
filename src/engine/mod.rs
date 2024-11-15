@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 
-use osutils::{chroot, container, dependencies::Dependency, path::join_relative};
+use osutils::{block_devices, chroot, container, dependencies::Dependency, path::join_relative};
 use trident_api::{
     config::HostConfiguration,
     constants::{
@@ -309,7 +309,10 @@ fn stage_clean_install(
     }
 
     // At this point, clean install has been staged, so update host status
-    debug!("Updating host's servicing state to Staged");
+    debug!(
+        "Updating host's servicing state to '{:?}'",
+        ServicingState::Staged
+    );
     state.with_host_status(|hs| {
         *hs = HostStatus {
             servicing_type: ServicingType::CleanInstall,
@@ -362,7 +365,10 @@ pub(super) fn finalize_clean_install(
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
     bootentries::set_boot_next_and_update_boot_order(&ctx, &esp_path)?;
 
-    debug!("Updating host's servicing state to Finalized");
+    debug!(
+        "Updating host's servicing state to '{:?}'",
+        ServicingState::Finalized
+    );
     state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
@@ -449,7 +455,7 @@ pub(super) fn update(
 
     if ctx.spec.storage.ab_update.is_some() {
         debug!("A/B update is enabled");
-        let root_device_path = storage::image::get_root_device_path()
+        let root_device_path = block_devices::get_root_device_path()
             .structured(InternalError::GetRootBlockDevicePath)?;
         storage::image::update_active_volume(&mut ctx, root_device_path)
             .structured(ServicingError::UpdateAbActiveVolume)?;
@@ -605,7 +611,10 @@ fn stage_update(
     };
 
     // At this point, deployment has been staged, so update servicing state
-    debug!("Updating host's servicing state to Staged");
+    debug!(
+        "Updating host's servicing state to '{:?}'",
+        ServicingState::Staged
+    );
     state.with_host_status(|hs| {
         *hs = HostStatus {
             spec: ctx.spec,
@@ -662,7 +671,10 @@ pub(super) fn finalize_update(
     };
     bootentries::set_boot_next_and_update_boot_order(&ctx, &esp_path)?;
 
-    debug!("Updating host's servicing state to Finalized");
+    debug!(
+        "Updating host's servicing state to '{:?}'",
+        ServicingState::Finalized
+    );
     state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
     #[cfg(feature = "grpc-dangerous")]
     send_host_status_state(sender, state)?;
@@ -877,67 +889,6 @@ fn get_ab_volume_block_device_id<'a>(
             return selection.map(|sel| match sel {
                 AbVolumeSelection::VolumeA => &v.volume_a_id,
                 AbVolumeSelection::VolumeB => &v.volume_b_id,
-            });
-        };
-    }
-    None
-}
-
-pub(super) fn get_block_device_path_hs(
-    host_status: &HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<PathBuf> {
-    if let Some(partition_path) = host_status.block_device_paths.get(block_device_id) {
-        return Some(partition_path.clone());
-    }
-
-    if let Some(raid) = host_status
-        .spec
-        .storage
-        .raid
-        .software
-        .iter()
-        .find(|r| &r.id == block_device_id)
-    {
-        return Some(raid.device_path());
-    }
-
-    if let Some(encryption) = &host_status.spec.storage.encryption {
-        if let Some(encrypted) = encryption.volumes.iter().find(|e| &e.id == block_device_id) {
-            return Some(encrypted.device_path());
-        }
-    }
-
-    if let Some(verity) = host_status
-        .spec
-        .storage
-        .internal_verity
-        .iter()
-        .find(|v| &v.id == block_device_id)
-    {
-        return Some(verity.device_path());
-    }
-
-    get_ab_volume_block_device_id_hs(host_status, block_device_id).and_then(
-        |child_block_device_id| get_block_device_path_hs(host_status, &child_block_device_id),
-    )
-}
-
-fn get_ab_volume_block_device_id_hs(
-    host_status: &HostStatus,
-    block_device_id: &BlockDeviceId,
-) -> Option<BlockDeviceId> {
-    if let Some(ab_update) = &host_status.spec.storage.ab_update {
-        let ab_volume = ab_update
-            .volume_pairs
-            .iter()
-            .find(|v| &v.id == block_device_id);
-        if let Some(v) = ab_volume {
-            let selection = host_status.get_ab_update_volume();
-            // Return the appropriate BlockDeviceId based on the selection
-            return selection.map(|sel| match sel {
-                AbVolumeSelection::VolumeA => v.volume_a_id.clone(),
-                AbVolumeSelection::VolumeB => v.volume_b_id.clone(),
             });
         };
     }

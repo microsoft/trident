@@ -107,6 +107,10 @@ pub const TRIDENT_OVERLAY_PATH: &str = formatcp!("/{TRIDENT_OVERLAY_RELATIVE_PAT
 /// updated OS (from runtime OS). To be used when /mnt/newroot is not available.
 pub const UPDATE_ROOT_FALLBACK_PATH: &str = formatcp!("{TRIDENT_OVERLAY_PATH}/newroot");
 
+/// Path to the mountinfo file in the host's proc directory that contains information about the
+/// host's mount points.
+pub const PROC_MOUNTINFO_PATH: &str = "/proc/self/mountinfo";
+
 // /etc overlay related path constants
 
 /// Lower directory relative path (etc).

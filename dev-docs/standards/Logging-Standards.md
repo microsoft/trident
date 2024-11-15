@@ -148,20 +148,31 @@ In case of **a non-fatal error**, no `TridentError` is returned, hence, an
 
 *Example 1.*
 
-The snippet below is taken from the logic in `src/lib.rs`, where Trident tries
-to validate that the firmware correctly re-booted from the updated runtime OS
-after a clean install or an A/B update. Trident needs to fetch the device path
-of the root mount point; if this operation fails, then Trident cannot continue
-the servicing, and so a `TridentError` is returned. In this case, since the
-contents of the `RootMountPointDevPath` error already summarize the error, an
-`ERROR` log is not needed.
+The snippet below is taken from the logic in `src/lib.rs`, where Trident
+validates whether the firmware correctly re-booted from the updated runtime OS
+after a clean install or an A/B update. Here, Trident detected that the
+firmware failed to boot from the expected device after the clean install was
+finalized. Because the contents of the `CleanInstallRebootCheck` error already
+summarize the failure, an `ERROR` log is *not* needed.
 
 ```rust
-Err(e) => {
-    return Err(TridentError::new(ServicingError::RootMountPointDevPath {
-        mountinfo_file: PROC_MOUNTINFO_PATH.to_string(),
-    }));
-}
+datastore.with_host_status(|host_status| {
+    host_status.servicing_type = ServicingType::NoActiveServicing;
+    host_status.servicing_state = ServicingState::CleanInstallFailed;
+})?;
+
+return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
+    root_device_path: root_device_path.to_string_lossy().to_string(),
+    expected_device_path: expected_root_device_path.to_string_lossy().to_string(),
+}));
+```
+
+```rust
+#[error("Clean install failed as host booted from '{root_device_path}' instead of the expected device '{expected_device_path}")]
+CleanInstallRebootCheck {
+    root_device_path: String,
+    expected_device_path: String,
+},
 ```
 
 *Example 2.*
@@ -289,16 +300,16 @@ Trident uses **two** different levels of logging:
 
 ```rust
 if datastore.host_status().servicing_type == ServicingType::CleanInstall {
-    info!(
-        "Clean install of runtime OS succeeded"
-    );
-    debug!("Updating host's servicing state to Provisioned");
+    info!("Clean install of runtime OS succeeded");
     tracing::info!(metric_name = "clean_install_success", value = true);
 } else {
     info!("A/B update succeeded");
-    debug!("Updating host's servicing state to Provisioned");
     tracing::info!(metric_name = "ab_update_success", value = true);
 }
+debug!(
+    "Updating host's servicing state to '{:?}'",
+    ServicingState::Provisioned
+);
 ```
 
 #### `DEBUG`
