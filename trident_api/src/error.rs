@@ -140,6 +140,12 @@ pub enum InvalidInputError {
     #[error("Failed to parse host configuration file from '{path}'")]
     ParseHostConfigurationFile { path: String },
 
+    #[error("Old style configuration not supported, 'hostConfiguration:' tag must be removed")]
+    OldStyleConfiguration,
+
+    #[error("Allowed operations must be passed via command line, not in host configuration")]
+    AllowedOperationsInHostConfiguration,
+
     #[error(
         "Failed to run as the previous A/B update attempt with the same host configuration failed"
     )]

@@ -36,6 +36,7 @@ pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
 mod subsystems;
+pub mod validation;
 
 #[cfg(feature = "grpc-dangerous")]
 mod grpc;
@@ -159,16 +160,18 @@ impl Trident {
         let host_config = match source {
             // Load the host configuration from a file.
             HostConfigurationSource::File(path) => {
-                info!("Loading host config from file at path '{}'", path.display());
+                info!(
+                    "Loading Host Configuration from file at path '{}'",
+                    path.display()
+                );
 
-                serde_yaml::from_str(&fs::read_to_string(path).structured(
+                let contents = fs::read_to_string(path).structured(
                     InvalidInputError::LoadHostConfigurationFile {
                         path: path.display().to_string(),
                     },
-                )?)
-                .structured(InvalidInputError::ParseHostConfigurationFile {
-                    path: path.display().to_string(),
-                })?
+                )?;
+
+                validation::parse_host_config(&contents, path)?
             }
 
             // Use the embedded host configuration.
@@ -250,7 +253,7 @@ impl Trident {
         // If we have a host config source, load it and dispatch it as the first
         // command.
         if let Some(host_config) = self.host_config.clone() {
-            debug!("Applying host configuration from local config");
+            debug!("Applying Host Configuration from local config");
             sender
                 .blocking_send(HostUpdateCommand {
                     allowed_operations,

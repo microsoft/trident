@@ -14,8 +14,6 @@ use trident_api::{
     error::{TridentError, TridentResultExt},
 };
 
-mod validation;
-
 #[derive(Parser, Debug)]
 #[clap(version = trident::TRIDENT_VERSION)]
 struct Cli {
@@ -140,7 +138,9 @@ fn run_trident(
 
     // Catch exit fast commands
     match &args.command {
-        Commands::Validate { config } => return validation::validate_host_config_file(config),
+        Commands::Validate { config } => {
+            return trident::validation::validate_host_config_file(config)
+        }
 
         #[cfg(feature = "pytest-generator")]
         Commands::Pytest => {
