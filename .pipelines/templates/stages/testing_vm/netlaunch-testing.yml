@@ -107,7 +107,7 @@ stages:
             displayName: "Move container image to the serveFolder for netlaunch"
 
           - bash: |
-              set -eux
+              set -euxo pipefail
               MAX_FAILURES_FLAG=""
 
               # rerun is expected to fail ONCE

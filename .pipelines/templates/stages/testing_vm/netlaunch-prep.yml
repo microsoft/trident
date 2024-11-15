@@ -99,6 +99,7 @@ steps:
     retryCountOnTaskFailure: 3
 
   - bash: |
+      set -o pipefail
       # Install Docker if it isn't installed
       if ! which docker ; then
         curl -fsSL https://get.docker.com | sudo bash

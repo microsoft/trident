@@ -107,7 +107,7 @@ stages:
             displayName: "Check Runtime OS deployment"
 
           - bash: |
-              set -eu
+              set -euo pipefail
 
               while [ `sudo virsh domifaddr ${{ variables.VM_NAME }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
               sudo virsh domifaddr ${{ variables.VM_NAME }}
@@ -124,7 +124,7 @@ stages:
                 "sudo trident get"
 
               ACTIVE=`ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$(vmip) \
-                "sudo trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
+                "set -o pipefail; sudo trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
               if [ "$ACTIVE" != "volume-a" ]; then
                 echo "Active volume is not A"
                 exit 1
@@ -152,7 +152,7 @@ stages:
               downloadTrident: false
 
           - bash: |
-              set -ux
+              set -uxo pipefail
 
               cd $(tridentSourceDirectory)/update
               python3 -m http.server &
@@ -183,7 +183,7 @@ stages:
             timeoutInMinutes: 5
 
           - bash: |
-              set -eux
+              set -euxo pipefail
 
               while [ `sudo virsh domifaddr ${{ variables.VM_NAME }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
               VM_IP=`sudo virsh domifaddr ${{ variables.VM_NAME }} | grep ipv4 | awk '{print $4}' | cut -d'/' -f1`
@@ -191,7 +191,7 @@ stages:
                 "sudo trident get"
 
               ACTIVE=`ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$VM_IP \
-                "sudo trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
+                "set -o pipefail; sudo trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
               if [ "$ACTIVE" != "volume-b" ]; then
                 echo "Active volume is not B"
                 exit 1

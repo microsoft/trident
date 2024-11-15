@@ -122,6 +122,7 @@ stages:
               setfacl --help
 
               # Install poetry
+              set -o pipefail
               curl -sSL https://install.python-poetry.org | python3 -
             displayName: "Install dependencies"
             retryCountOnTaskFailure: 3
@@ -174,7 +175,7 @@ stages:
             displayName: "Write Netlaunch configuration"
 
           - bash: |
-              set -eux
+              set -euxo pipefail
               MAX_FAILURES_FLAG=""
 
               # rerun is expected to fail ONCE

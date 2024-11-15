@@ -96,7 +96,7 @@ steps:
     condition: eq(variables['TEST_REBUILD_RAID'], 'True')
 
   - bash: |
-      set -eux
+      set -euxo pipefail
       # Name of the domain
       DOMAIN_NAME="virtdeploy-vm-0"
       

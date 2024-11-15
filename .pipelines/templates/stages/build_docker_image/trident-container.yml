@@ -29,7 +29,7 @@ stages:
               targetPath: "$(Build.SourcesDirectory)/bin/RPMS/x86_64"
 
           - script: |
-              set -eux
+              set -euxo pipefail
 
               mkdir -p $(ob_outputDirectory)
               DOCKER_BUILDKIT=1 docker build -f Dockerfile.runtime --progress plain -t trident/trident:latest .
