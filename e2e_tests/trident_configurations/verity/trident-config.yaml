@@ -18,7 +18,7 @@ storage:
           size: 1G
         - id: trident
           type: linux-generic
-          size: 100M
+          size: 500M
         - id: trident-overlay
           type: linux-generic
           size: 100M
