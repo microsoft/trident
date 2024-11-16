@@ -113,61 +113,66 @@ pub enum InternalError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InvalidInputError {
+    #[error("Allowed operations must be passed via command line, not in Host Configuration")]
+    AllowedOperationsInHostConfiguration,
+
     #[error("Failed to initialize clean install as host is already provisioned")]
     CleanInstallOnProvisionedHost,
 
-    #[error("Failed to get a unique host configuration source from local Trident config")]
+    #[error("Failed to get a unique Host Configuration source from local Trident config")]
     GetHostConfigurationSource,
 
-    #[error("Host configuration failed static validation: {inner}")]
-    InvalidHostConfigurationStatic {
-        #[from]
-        inner: HostConfigurationStaticValidationError,
-    },
-
-    #[error("Host configuration failed dynamic validation: {inner}")]
+    #[error("Host Configuration failed dynamic validation: {inner}")]
     InvalidHostConfigurationDynamic {
         #[from]
         inner: HostConfigurationDynamicValidationError,
     },
 
-    #[error("Failed to load host configuration file from '{path}'")]
+    #[error("Host Configuration failed static validation: {inner}")]
+    InvalidHostConfigurationStatic {
+        #[from]
+        inner: HostConfigurationStaticValidationError,
+    },
+
+    #[error("Failed to load COSI file from '{url}'")]
+    LoadCosi { url: Url },
+
+    #[error("Failed to load Host Configuration file from '{path}'")]
     LoadHostConfigurationFile { path: String },
 
     #[error("Failed to load kickstart file from '{path}'")]
     LoadKickstart { path: String },
-
-    #[error("Failed to parse host configuration file from '{path}'")]
-    ParseHostConfigurationFile { path: String },
-
-    #[error("Old style configuration not supported, 'hostConfiguration:' tag must be removed")]
-    OldStyleConfiguration,
-
-    #[error("Allowed operations must be passed via command line, not in host configuration")]
-    AllowedOperationsInHostConfiguration,
-
-    #[error(
-        "Failed to run as the previous A/B update attempt with the same host configuration failed"
-    )]
-    RerunAbUpdateWithFailedHostConfiguration,
-
-    #[error("Failed to run as the previous clean install attempt with the same host configuration failed")]
-    RerunCleanInstallWithFailedHostConfiguration,
-
-    #[error("Failed to translate kickstart")]
-    TranslateKickstart,
-
-    #[error("An OS image must be provided.")]
-    MissingOsImage,
-
-    #[error("Failed to load COSI file from '{url}'")]
-    LoadCosi { url: Url },
 
     #[error("Provided '{actual}' architecture OS image, but system is '{expected}'")]
     MismatchedArchitecture {
         expected: &'static str,
         actual: &'static str,
     },
+
+    #[error("An OS image must be provided.")]
+    MissingOsImage,
+
+    #[error("Old style configuration not supported, 'hostConfiguration:' tag must be removed")]
+    OldStyleConfiguration,
+
+    #[error("Failed to parse Host Configuration file from '{path}'")]
+    ParseHostConfigurationFile { path: String },
+
+    #[error(
+        "Failed to run as the previous A/B update attempt with the same Host Configuration failed"
+    )]
+    RerunAbUpdateWithFailedHostConfiguration,
+
+    #[error("Failed to run as the previous clean install attempt with the same Host Configuration failed")]
+    RerunCleanInstallWithFailedHostConfiguration,
+
+    #[error(
+        "SELinux is enabled in the Host Configuration, but SELinux could not be found on the image"
+    )]
+    SelinuxEnabledButNotFound,
+
+    #[error("Failed to translate kickstart")]
+    TranslateKickstart,
 }
 
 /// Identifies errors that occur during servicing and require further user investigation, to

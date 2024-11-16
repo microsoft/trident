@@ -107,21 +107,40 @@ impl Subsystem for SelinuxSubsystem {
             let selinux_type =
                 get_selinux_type(SELINUX_CONFIG).structured(ServicingError::GetSelinuxType)?;
 
-            Dependency::Setfiles
-                .cmd()
-                .arg("-m")
-                .arg(
-                    Path::new("/etc/selinux")
-                        .join(selinux_type)
-                        .join("contexts/files/file_contexts"),
-                )
-                .args(
-                    mount_paths
-                        .iter()
-                        .map(|mount_point| mount_point.path.as_os_str()),
-                )
-                .run_and_check()
-                .message("Failed to run setfiles command")?;
+            // Get SELinux mode from Host Configuration
+            let selinux_mode = ctx.spec.os.selinux.mode;
+            match selinux_mode {
+                Some(SelinuxMode::Disabled) => return Ok(()),
+                Some(SelinuxMode::Permissive) | Some(SelinuxMode::Enforcing) => {
+                    // Host Configuration enables SELinux, but OS does not contain SELinux
+                    if let Err(e) = Dependency::Setfiles.path() {
+                        return Err(TridentError::with_source(
+                            InvalidInputError::SelinuxEnabledButNotFound,
+                            e.into(),
+                        ));
+                    }
+                }
+                None => (),
+            }
+
+            // Check if setfiles exists, implicitly checking if SELinux is in OS
+            if Dependency::Setfiles.exists() {
+                Dependency::Setfiles
+                    .cmd()
+                    .arg("-m")
+                    .arg(
+                        Path::new("/etc/selinux")
+                            .join(selinux_type)
+                            .join("contexts/files/file_contexts"),
+                    )
+                    .args(
+                        mount_paths
+                            .iter()
+                            .map(|mount_point| mount_point.path.as_os_str()),
+                    )
+                    .run_and_check()
+                    .message("Failed to run setfiles command")?;
+            }
         }
 
         Ok(())
