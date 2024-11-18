@@ -319,9 +319,7 @@ def get_block_dev_path_by_partlabel(
     return None
 
 
-def check_crypsetup_luks_dump(
-    conn: fabric.Connection, cryptDevPath: str, swap: bool
-) -> None:
+def check_crypsetup_luks_dump(conn: fabric.Connection, cryptDevPath: str) -> None:
     """
     Check the output of `cryptsetup luksDump --dump-json-metadata` for the
     given device path.
@@ -522,11 +520,8 @@ def check_parent_devices(
     It can be either a disk partition or a RAID array. If a RAID
     """
 
-    swap = False
-
     part = get_disk_partition(hostConfiguration, cryptDevId)
     if part is not None:
-        swap = part["type"] == "swap"
         cryptDevPath = get_block_dev_path_by_partlabel(blockDevs, cryptDevId)
         assert (
             cryptDevPath is not None
@@ -544,7 +539,7 @@ def check_parent_devices(
         actualType == expectedType
     ), f"Expected TYPE to be {expectedType!r}, got {actualType!r}"
 
-    check_crypsetup_luks_dump(conn, cryptDevPath, swap)
+    check_crypsetup_luks_dump(conn, cryptDevPath)
 
 
 def check_crypt_device(
