@@ -206,16 +206,16 @@ The following referrers require that all underlying partitions are of the same s
 
 Some referrers only support specific underlying partitions types.
 
-| Referrer type          | Allowed partition types                          |
-| ---------------------- | ------------------------------------------------ |
-| raid-array             | any                                              |
-| ab-volume              | any                                              |
-| encrypted-volume       | any type except 'esp' or 'root' or 'root-verity' |
-| filesystem             | any type except 'esp'                            |
-| filesystem-esp         | 'esp'                                            |
-| filesystem-adopted     | any type except 'esp'                            |
-| verity-filesystem-data | 'root'                                           |
-| verity-filesystem-hash | 'root-verity'                                    |
+| Referrer type          | Allowed partition types                                    |
+| ---------------------- | ---------------------------------------------------------- |
+| raid-array             | any                                                        |
+| ab-volume              | any                                                        |
+| encrypted-volume       | any type except 'esp' or 'root' or 'root-verity' or 'home' |
+| filesystem             | any type except 'esp'                                      |
+| filesystem-esp         | 'esp'                                                      |
+| filesystem-adopted     | any type except 'esp'                                      |
+| verity-filesystem-data | 'root'                                                     |
+| verity-filesystem-hash | 'root-verity'                                              |
 
 ## Allowed RAID Levels
 
