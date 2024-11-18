@@ -33,7 +33,9 @@ stages:
           - bash: |
               set -eux
               # Disabled `generate-mermaid-diagrams` due to #9055
-              make bin/trident-rpms.tar.gz docker-build validate-configs
+              make validate-configs
+              make bin/trident-rpms.tar.gz
+              make docker-build
             displayName: Invoke make
 
           - script: |
