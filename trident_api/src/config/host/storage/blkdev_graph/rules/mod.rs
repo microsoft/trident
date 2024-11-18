@@ -423,7 +423,21 @@ impl BlkDevReferrerKind {
             Self::None => AllowBlockList::Any,
             Self::RaidArray => AllowBlockList::Any,
             Self::ABVolume => AllowBlockList::Any,
-            Self::EncryptedVolume => AllowBlockList::Allow(vec![PartitionType::LinuxGeneric]),
+            Self::EncryptedVolume => AllowBlockList::Block(vec![
+                PartitionType::Esp,
+                PartitionType::Root,
+                PartitionType::RootVerity,
+                // Blocking the home partition type is a temporary
+                // workaround for a conflict between
+                // systemd-gpt-auto-generator and
+                // systemd-cryptsetup-generator, where the former will
+                // generate a faulty systemd unit file for the encrypted
+                // volume if it detects that a home partition is
+                // encrypted. Remove this when
+                // https://dev.azure.com/mariner-org/ECF/_workitems/edit/9752
+                // is completed.
+                PartitionType::Home,
+            ]),
             Self::FileSystem | Self::FileSystemAdopted | Self::FileSystemSysupdate => {
                 AllowBlockList::Block(vec![PartitionType::Esp])
             }

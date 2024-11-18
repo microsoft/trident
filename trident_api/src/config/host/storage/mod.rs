@@ -1561,7 +1561,7 @@ mod tests {
 
     /// Encrypted volume target ID must not be a home partition
     #[test]
-    fn test_validate_encryption_target_id_home_pass() {
+    fn test_validate_encryption_target_id_home_fail() {
         let mut storage: Storage = get_storage();
         storage.disks[1]
             .partitions
@@ -1676,7 +1676,7 @@ mod tests {
 
     /// Encrypted volume target ID must not be a software RAID array of home partitions
     #[test]
-    fn test_validate_encryption_target_id_raid_home_pass() {
+    fn test_validate_encryption_target_id_raid_home_fail() {
         let mut storage: Storage = get_storage();
 
         // Delete the filesystem associated with mnt
