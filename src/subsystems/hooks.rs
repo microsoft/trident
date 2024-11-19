@@ -566,15 +566,13 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_dir = temp_dir.path().join("test-directory");
 
-        let mut environment_variables = HashMap::new();
-        environment_variables.insert("TEST_DIR".into(), test_dir.to_str().unwrap().into());
         let script = Script {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            source: ScriptSource::Content("mkdir".into()),
-            environment_variables,
-            arguments: vec!["$TEST_DIR".into()],
+            source: ScriptSource::Content("mkdir $1".into()),
+            arguments: vec![test_dir.to_str().unwrap().into()],
+            ..Default::default()
         };
         HooksSubsystem::default()
             .run_script(
@@ -587,7 +585,85 @@ mod tests {
                 Path::new("/"),
             )
             .unwrap();
-        assert!(test_dir.exists());
+        assert!(test_dir.exists(), "{}", test_dir.display());
+        // Cleanup
+        temp_dir.close().unwrap();
+    }
+
+    fn write_to_file(script_content: &'static str, args: Vec<String>, interpreter: PathBuf) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let script_path = temp_dir.path().join("test-script.sh");
+        std::fs::write(&script_path, script_content).unwrap();
+
+        let ctx = EngineContext {
+            spec: HostConfiguration {
+                scripts: Scripts {
+                    post_provision: vec![Script {
+                        name: "test-script".into(),
+                        run_on: vec![ServicingTypeSelection::CleanInstall],
+                        interpreter: Some(interpreter),
+                        source: ScriptSource::Path(script_path),
+                        arguments: args,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            servicing_type: ServicingType::CleanInstall,
+            ..Default::default()
+        };
+
+        let mut subsystem = HooksSubsystem::default();
+        subsystem.prepare(&ctx).unwrap();
+        subsystem
+            .provision(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+            .unwrap();
+        // Cleanup
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_use_args_multiline() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test-file.txt");
+        write_to_file(
+            indoc! {r#"
+                touch $1
+                cat $2 << EOF > $1
+                hello $3
+                EOF
+            "#},
+            vec![
+                file_path.to_str().unwrap().into(),
+                "-E".into(),
+                "world".into(),
+            ],
+            "/bin/bash".into(),
+        );
+
+        assert!(file_path.exists());
+        assert_eq!(fs::read_to_string(&file_path).unwrap(), "hello world$\n");
+        // Cleanup
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_use_args_python() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test-file.txt");
+        write_to_file(
+            indoc! {r#"
+                import sys
+                file = open(sys.argv[1], "w")
+                file.write(f"hello {sys.argv[2]}")
+                file.close()
+            "#},
+            vec![file_path.to_str().unwrap().into(), "world".into()],
+            "python3".into(),
+        );
+        assert!(file_path.exists());
+        assert_eq!(fs::read_to_string(&file_path).unwrap(), "hello world");
         // Cleanup
         temp_dir.close().unwrap();
     }

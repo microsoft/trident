@@ -3,7 +3,6 @@ use std::{
     ffi::OsStr,
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
-    os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
     process::{Command, ExitStatus},
 };
@@ -122,20 +121,16 @@ impl<'a> ScriptRunner<'a> {
             self.interpreter.display()
         ))?;
 
-        // Add arguments to the script
-        let mut full_script = self.script.to_vec();
-        for arg in &self.args {
-            full_script.push(b' ');
-            full_script.extend(arg.as_bytes());
-        }
-
         // Write the script to a file
         let script_file =
-            write_script_to_named_file(&full_script).context("Failed to write script to file")?;
+            write_script_to_named_file(self.script).context("Failed to write script to file")?;
 
         // Create command and set up the script file
         let mut cmd = Command::new(&self.interpreter);
         cmd.arg(script_file.path());
+
+        // Set arguments
+        cmd.args(&self.args);
 
         // Set environment variables
         cmd.envs(&self.env_vars);
