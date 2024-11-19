@@ -90,7 +90,7 @@ steps:
 
           # This prevents conflict on later install.
           # It fails silently if the packages aren't installed.
-          sudo apt-get purge -y swtpm swtpm-tools
+          sudo apt-get purge -y swtpm swtpm-tools libtpms0
 
           break
         fi
@@ -117,6 +117,7 @@ steps:
           virt-manager \
           qemu-efi \
           qemu-kvm \
+          libtpms0 \
           libvirt-daemon-system \
           libvirt-clients \
           python3-libvirt \
