@@ -199,7 +199,7 @@ target/trident-api-docs:
 build-api-schema: target/trident-api-docs docbuilder
 	$(DOCBUILDER_BIN) host-config schema -o "$(TRIDENT_API_HC_SCHEMA_GENERATED)"
 
-HC_SAMPLES = basic simple base verity advanced raid encryption
+HC_SAMPLES = basic simple base verity advanced raid encryption raid-mirrored
 TRIDENT_API_HC_SAMPLES := docs/Reference/Host-Configuration/Samples
 
 .PHONY: build-api-docs

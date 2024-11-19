@@ -1425,6 +1425,184 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                 ..Default::default()
             },
         ),
+        "raid-mirrored" => (
+            "Example of RAID mirroring demonstrating the use of RAID1 on ESP, root, and Trident.",
+            HostConfiguration {
+                storage: Storage {
+                    disks: vec![
+                        Disk {
+                            id: "disk1".to_string(),
+                            device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
+                            partition_table_type: PartitionTableType::Gpt,
+                            partitions: vec![
+                                Partition {
+                                    id: "esp1".to_string(),
+                                    partition_type: PartitionType::Esp,
+                                    size: 0x4000000.into(), // 64MiB
+                                },
+                                Partition {
+                                    id: "root1".to_string(),
+                                    partition_type: PartitionType::Root,
+                                    size: 0x100000000.into(), // 4GiB
+                                },
+                                Partition {
+                                    id: "trident1".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x8000000.into(), // 1GiB
+                                },
+                            ],
+                            adopted_partitions: vec![],
+                        },
+                        Disk {
+                            id: "disk2".to_string(),
+                            device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-3".into(),
+                            partition_table_type: PartitionTableType::Gpt,
+                            partitions: vec![
+                                Partition {
+                                    id: "esp2".to_string(),
+                                    partition_type: PartitionType::Esp,
+                                    size: 0x4000000.into(), // 64MiB
+                                },
+                                Partition {
+                                    id: "root2".to_string(),
+                                    partition_type: PartitionType::Root,
+                                    size: 0x100000000.into(), // 4GiB
+                                },
+                                Partition {
+                                    id: "trident2".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x8000000.into(), // 1GiB
+                                },
+                            ],
+                            adopted_partitions: vec![],
+                        },
+                    ],
+                    raid: Raid {
+                        sync_timeout: Some(180), // 180 seconds, 3 minutes
+                        software: vec![ SoftwareRaidArray {
+                                id: "esp".to_string(),
+                                name: "esp".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["esp1".to_string(), "esp2".to_string()],
+                            },
+                            SoftwareRaidArray {
+                            id: "root".to_string(),
+                            name: "root".to_string(),
+                            level: RaidLevel::Raid1,
+                            devices: vec!["root1".to_string(), "root2".to_string()],
+                        },
+                        SoftwareRaidArray {
+                            id: "trident".to_string(),
+                            name: "trident".to_string(),
+                            level: RaidLevel::Raid1,
+                            devices: vec!["trident1".to_string(), "trident2".to_string()],
+                        }],
+                    },
+                    encryption: None,
+                    ab_update: None,
+                    filesystems: vec![
+                        FileSystem {
+                            device_id: Some("esp".into()),
+                            fs_type: FileSystemType::Vfat,
+                            mount_point: Some(MountPoint {
+                                path: constants::ESP_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::new("umask=0077"),
+                            }),
+                            source: FileSystemSource::EspImage(Image {
+                                url: "file:///trident_cdrom/data/esp.rawzst".into(),
+                                sha256: ImageSha256::Checksum(
+                                    "e15853875ce26f8fb8090177821240a889e21ac0c5acee75c5a060401bbdf0ae"
+                                        .into(),
+                                ),
+                                format: ImageFormat::RawZst,
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("root".into()),
+                            fs_type: FileSystemType::Ext4,
+                            mount_point: Some(MountPoint {
+                                path: constants::ROOT_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::Image(Image {
+                                url: "file:///trident_cdrom/data/root.rawzst".into(),
+                                sha256: ImageSha256::Checksum(
+                                    "c2ce64662fbe2fa0b30a878c11aac71cb9f1ef27f59a157362ccc0881df47293"
+                                        .into(),
+                                ),
+                                format: ImageFormat::RawZst,
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("trident".into()),
+                            fs_type: FileSystemType::Ext4,
+                            mount_point: Some(MountPoint {
+                                path: "/var/lib/trident".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::Create,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                os: Os {
+                    selinux: Selinux {
+                        mode: Some(SelinuxMode::Permissive),
+                    },
+                    users: vec![User {
+                        name: "my-custom-user".into(),
+                        ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
+                        ssh_mode: SshMode::KeyOnly,
+                        ..Default::default()
+                    }],
+                    network: Some(NetworkConfig {
+                        version: 2,
+                        ethernets: Some(HashMap::from([(
+                            "eths".into(),
+                            EthernetConfig {
+                                common_all: Some(CommonPropertiesAllDevices {
+                                    dhcp4: Some(true),
+                                    ..Default::default()
+                                }),
+                                common_physical: Some(CommonPropertiesPhysicalDeviceType {
+                                    r#match: Some(MatchConfig {
+                                        name: Some("enp*".into()),
+                                        ..Default::default()
+                                    }),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            },
+                        )])),
+                        ..Default::default()
+                    }),
+                    additional_files: vec![],
+                    hostname: None,
+                    modules: vec![],
+                    services: Services {
+                        enable: vec![],
+                        disable: vec![],
+                    },
+                    kernel_command_line: KernelCommandLine {
+                        extra_command_line: vec![],
+                    },
+                },
+                scripts: Scripts {
+                    post_configure: vec![Script {
+                        name: "wheel".into(),
+                        run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                        source: ScriptSource::Content(
+                            "echo \"%wheel ALL=(ALL:ALL) NOPASSWD: ALL\" > /etc/sudoers.d/wheel"
+                                .into(),
+                        ),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ),
+
         _ => bail!("Unsupported sample name"),
     };
 
@@ -1545,6 +1723,21 @@ mod tests {
 
         assert_eq!(host_configuration.storage.raid.software.len(), 0);
         assert_eq!(host_configuration.storage.filesystems.len(), 4);
+        assert_eq!(host_configuration.storage.verity_filesystems.len(), 0);
+        assert!(host_configuration.storage.ab_update.is_none());
+        assert!(host_configuration.os.network.is_some());
+        assert_eq!(host_configuration.os.users.len(), 1);
+    }
+
+    #[test]
+    fn test_build_raid_mirrored_host_configuration() {
+        let (_, host_configuration) = sample_host_configuration("raid-mirrored").unwrap();
+        host_configuration.validate().unwrap();
+        assert_eq!(host_configuration.storage.disks.len(), 2);
+
+        assert!(host_configuration.storage.encryption.is_none());
+        assert_eq!(host_configuration.storage.raid.software.len(), 3);
+        assert_eq!(host_configuration.storage.filesystems.len(), 3);
         assert_eq!(host_configuration.storage.verity_filesystems.len(), 0);
         assert!(host_configuration.storage.ab_update.is_none());
         assert!(host_configuration.os.network.is_some());
