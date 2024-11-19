@@ -12,6 +12,7 @@ use trident_api::config::{Password, SshMode, User};
 
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";
 const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
+const GLOBAL_CONFIG_FILE_NAME: &str = "global_user.conf";
 
 pub(super) fn set_up_users(users: &[User], os_modifier_path: &Path) -> Result<(), Error> {
     if Path::new(SSHD_CONFIG_FILE).exists() {
@@ -20,7 +21,7 @@ pub(super) fn set_up_users(users: &[User], os_modifier_path: &Path) -> Result<()
         // Create sshd config dir
         osutils::files::create_dirs(SSHD_CONFIG_DIR).context("Failed to create sshd config dir")?;
 
-        let include_dir = format!("Include {}/*.conf", SSHD_CONFIG_DIR);
+        let include_dir = format!("Include {}/{}", SSHD_CONFIG_DIR, GLOBAL_CONFIG_FILE_NAME);
 
         // Check if the include directive is already in the sshd config.
         // If not, add it, otherwise do nothing.
@@ -162,7 +163,7 @@ fn ssh_global_config(users: &[User]) -> Result<(), Error> {
     buffer.push("\n".to_owned());
 
     // Write the config to a file
-    let path = PathBuf::from(SSHD_CONFIG_DIR).join("global_user.conf");
+    let path = PathBuf::from(SSHD_CONFIG_DIR).join(GLOBAL_CONFIG_FILE_NAME);
     osutils::files::create_file(path)
         .context("Failed to create sshd config file for global config")?
         .write_all(buffer.join("\n").as_bytes())
