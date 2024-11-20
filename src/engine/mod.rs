@@ -32,6 +32,7 @@ use crate::grpc::{self, protobufs::HostStatusState};
 use crate::{
     datastore::DataStore,
     engine::{boot::BootSubsystem, storage::StorageSubsystem},
+    image,
     subsystems::{
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
@@ -455,9 +456,8 @@ pub(super) fn update(
 
     if ctx.spec.storage.ab_update.is_some() {
         debug!("A/B update is enabled");
-        let root_device_path = block_devices::get_root_device_path()
-            .structured(InternalError::GetRootBlockDevicePath)?;
-        storage::image::update_active_volume(&mut ctx, root_device_path)
+        let root_device_path = block_devices::get_root_device_path()?;
+        image::update_active_volume(&mut ctx, root_device_path)
             .structured(ServicingError::UpdateAbActiveVolume)?;
     }
 

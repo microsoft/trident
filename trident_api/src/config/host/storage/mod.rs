@@ -586,6 +586,13 @@ impl Storage {
             }
         })
     }
+
+    /// Returns whether the root device is on verity.
+    pub fn root_is_verity(&self) -> bool {
+        self.verity_filesystems
+            .iter()
+            .any(|vfs| vfs.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH))
+    }
 }
 
 #[cfg(test)]

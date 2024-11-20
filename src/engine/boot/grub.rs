@@ -22,10 +22,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{
-        self, constants::TRIDENT_OVERLAY_PATH, storage::verity::get_verity_related_device_paths,
-        EngineContext,
-    },
+    engine::{self, constants::TRIDENT_OVERLAY_PATH, storage::verity, EngineContext},
     OS_MODIFIER_BINARY_PATH,
 };
 
@@ -155,7 +152,7 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
             .find(|device| device.id == *root_device_id)
             .map(|verity_device| {
                 let (verity_data_path, verity_hash_path, _) =
-                    get_verity_related_device_paths(ctx, verity_device)
+                    verity::get_verity_related_device_paths(ctx, verity_device)
                         .context("Failed to get verity-related device paths")?;
 
                 let verity_data_path_str = verity_data_path

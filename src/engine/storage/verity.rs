@@ -217,7 +217,7 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
 pub fn get_verity_related_device_paths(
     ctx: &EngineContext,
     verity_device: &config::InternalVerityDevice,
-) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), Error> {
+) -> Result<(PathBuf, PathBuf, PathBuf), Error> {
     let verity_data_path = engine::get_block_device_path(ctx, &verity_device.data_target_id)
         .context(format!(
             "Failed to find path of verity data device with id '{}'",

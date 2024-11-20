@@ -10,7 +10,7 @@ use log::debug;
 use trident_api::{
     config::{Disk, HostConfiguration},
     constants::{PROC_MOUNTINFO_PATH, ROOT_MOUNT_POINT_PATH},
-    error::TridentResultExt,
+    error::{InternalError, ReportError, TridentError},
     BlockDeviceId,
 };
 
@@ -206,12 +206,9 @@ pub fn get_partition_number(
 }
 
 /// Gets the path of the root block device.
-pub fn get_root_device_path() -> Result<PathBuf, Error> {
-    let root_mount_path = if container::is_running_in_container()
-        .unstructured("Failed to determine whether running in a container")?
-    {
-        let host_root_path =
-            container::get_host_root_path().unstructured("Failed to get host root mount path")?;
+pub fn get_root_device_path() -> Result<PathBuf, TridentError> {
+    let root_mount_path = if container::is_running_in_container()? {
+        let host_root_path = container::get_host_root_path()?;
         debug!(
             "Running inside a container. Using root mount path '{}'",
             host_root_path.display()
@@ -227,7 +224,7 @@ pub fn get_root_device_path() -> Result<PathBuf, Error> {
 
     let root_device_path =
         tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &root_mount_path)
-            .context("Failed to find root mount point in '{PROC_MOUNTINFO_PATH}'")?;
+            .structured(InternalError::GetRootBlockDevicePath)?;
 
     debug!("Current root device path: {}", root_device_path.display());
 

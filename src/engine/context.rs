@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+};
 
 use trident_api::{
     config::HostConfiguration,
@@ -18,13 +21,13 @@ pub struct EngineContext {
     pub servicing_type: ServicingType,
 
     /// The path associated with each block device in the Host Configuration.
-    pub block_device_paths: std::collections::BTreeMap<BlockDeviceId, PathBuf>,
+    pub block_device_paths: BTreeMap<BlockDeviceId, PathBuf>,
 
     /// A/B update status.
     pub ab_active_volume: Option<AbVolumeSelection>,
 
     /// Stores the Disks UUID to ID mapping of the host.
-    pub disks_by_uuid: std::collections::HashMap<uuid::Uuid, BlockDeviceId>,
+    pub disks_by_uuid: HashMap<uuid::Uuid, BlockDeviceId>,
 
     /// Index of the current Azure Linux install. Used to distinguish between
     /// different installs of Azure Linux on the same host.
