@@ -406,8 +406,6 @@ run-netlaunch-sample: build-api-docs
 
 .PHONY: download-runtime-partition-images
 download-runtime-partition-images:
-#	TODO: When bug 9348 is fixed, update the query to select only the latest
-#	successful trident-ci pipeline run (--result succeeded).
 	$(eval BRANCH ?= main)
 	$(eval RUN_ID ?= $(shell az pipelines runs list \
 		--org "https://dev.azure.com/mariner-org" \
@@ -415,11 +413,10 @@ download-runtime-partition-images:
 		--pipeline-ids 3371 \
 		--branch $(BRANCH) \
 		--query-order QueueTimeDesc \
+		--result succeeded \
 		--reason triggered \
-		--top 10 \
-		| jq -r '[.[] \
-			| select(.result == "succeeded" or .result == "partiallySucceeded") \
-			| .id] | first'))
+		--top 1 \
+		--query '[0].id'))
 	@echo PIPELINE RUN ID: $(RUN_ID)
 	$(eval DOWNLOAD_DIR := $(shell mktemp -d))
 	az pipelines runs artifact download \
@@ -496,8 +493,6 @@ endif
 
 .PHONY: download-trident-container-installer-iso
 download-trident-container-installer-iso:
-#	TODO: When bug 9348 is fixed, update the query to select only the latest
-#	successful trident-ci pipeline run (--result succeeded).
 	$(eval BRANCH ?= main)
 	$(eval RUN_ID ?= $(shell az pipelines runs list \
 		--org "https://dev.azure.com/mariner-org" \
@@ -505,11 +500,10 @@ download-trident-container-installer-iso:
 		--pipeline-ids 3371 \
 		--branch $(BRANCH) \
 		--query-order QueueTimeDesc \
+		--result succeeded \
 		--reason triggered \
-		--top 10 \
-		| jq -r '[.[] \
-			| select(.result == "succeeded" or .result == "partiallySucceeded") \
-			| .id] | first'))
+		--top 1 \
+		--query '[0].id'))
 	@echo PIPELINE RUN ID: $(RUN_ID)
 	mkdir -p ./artifacts
 	az pipelines runs artifact download \

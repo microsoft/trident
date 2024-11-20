@@ -47,7 +47,6 @@ stages:
       - job: Testing
         dependsOn: DefineTests
         timeoutInMinutes: 30
-        continueOnError: ${{ eq(parameters.runtimeEnv, 'container') }}
         pool:
           type: linux
           name: trident-ubuntu-1es-pool-eastus2
