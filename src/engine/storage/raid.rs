@@ -14,6 +14,7 @@ use strum_macros::{Display, EnumString};
 use osutils::{block_devices, dependencies::Dependency, mdadm, udevadm};
 use trident_api::{
     config::{HostConfiguration, SoftwareRaidArray},
+    constants::MDSTAT_PATH,
     BlockDeviceId,
 };
 
@@ -82,7 +83,7 @@ pub(super) fn configure(ctx: &EngineContext) -> Result<(), Error> {
 
 pub(super) fn get_raid_disks(raid_array: &Path) -> Result<HashSet<PathBuf>, Error> {
     // If there is no mdstat file, there are no pre-existing RAID arrays
-    if !Path::new("/proc/mdstat").exists() {
+    if !Path::new(MDSTAT_PATH).exists() {
         trace!("No pre-existing RAID arrays found. Skipping cleanup.");
         return Ok(HashSet::new());
     }
@@ -118,7 +119,7 @@ fn get_raid_disks_internal(mdadm_detail: &mdadm::MdadmDetail) -> Result<HashSet<
 #[tracing::instrument(skip_all)]
 pub(super) fn stop_pre_existing_raid_arrays(host_config: &HostConfiguration) -> Result<(), Error> {
     // If there is no mdstat file, there are no pre-existing RAID arrays
-    if !Path::new("/proc/mdstat").exists() {
+    if !Path::new(MDSTAT_PATH).exists() {
         trace!("No pre-existing RAID arrays found. Skipping cleanup.");
         return Ok(());
     }
@@ -308,6 +309,12 @@ fn wait_for_raid_sync(ctx: &EngineContext, sync_timeout: u64) -> Result<(), Erro
             "Still waiting for RAID arrays to sync. Checking again after {:?} seconds",
             sleep_duration.as_secs()
         );
+
+        // Log the current RAID sync status
+        let mdstat_output = osutils::files::read_file_trim(&PathBuf::from(MDSTAT_PATH))
+            .context(format!("Failed to read {}", MDSTAT_PATH))?;
+        trace!("RAID sync status:\n{}", mdstat_output);
+
         sleep(sleep_duration);
     }
     debug!(

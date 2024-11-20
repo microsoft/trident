@@ -134,6 +134,9 @@ pub const SELINUX_CONFIG: &str = "/etc/selinux/config";
 /// /var/tmp path
 pub const VAR_TMP_PATH: &str = "/var/tmp";
 
+/// /proc/mdstat path
+pub const MDSTAT_PATH: &str = "/proc/mdstat";
+
 // Azure Linux Specific Constants
 
 /// Azure Linux Install ID Prefix
