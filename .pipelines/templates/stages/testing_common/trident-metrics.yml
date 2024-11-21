@@ -31,29 +31,37 @@ parameters:
 
 steps:
   - bash: |
-      set -eu
+      set -eux
+      # Check if the metrics file exists and is not empty
       if [ -s "${{ parameters.metricsFile }}" ]; then
-        echo "##vso[task.setvariable variable=ProcessMetricsFile]true"
+        set +x
+        echo "##vso[task.setvariable variable=UploadMetrics]True"
+        set -x
         echo "Metrics file exists and is not empty."
+
+        # Run the Python script to process the metrics
+        python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/process_trident_metrics.py \
+          --trident-config ${{ parameters.tridentConfigPath }}/trident-config.yaml \
+          --metrics-file ${{ parameters.metricsFile }}
+        
+        echo "Trident Metrics:"
+        cat ${{ parameters.metricsFile }}
       else
         if [[ "$AGENT_JOBSTATUS" == "Succeeded" ]]; then
-          echo "Metrics file does not exist or is empty, but there were no previous failures!"
-          echo "##vso[task.setvariable variable=ProcessMetricsFile]false"
-          echo "##vso[task.complete result=Failed;]"
+            echo "Metrics file does not exist or is empty, but there were no previous failures!"
+            set +x
+            echo "##vso[task.setvariable variable=UploadMetrics]False"
+            set -x
         else
           echo "Metrics file does not exist or is empty, but a previous failure occurred."
-          echo "##vso[task.setvariable variable=ProcessMetricsFile]false"
+          set +x
+          echo "##vso[task.setvariable variable=UploadMetrics]False"
+          set -x
         fi
       fi
-    displayName: "Check if metrics file exists and is not empty"
+    displayName: "Validate and Process Trident metrics file"
     condition: succeededOrFailed()
-
-  - bash: |
-      set -eux
-      python3 ${{ parameters.tridentSourceDirectory }}/e2e_tests/helpers/process_trident_metrics.py --trident-config ${{ parameters.tridentConfigPath }}/trident-config.yaml --metrics-file ${{ parameters.metricsFile }}
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: "Process Trident metrics"
-    condition: eq(variables['ProcessMetricsFile'], 'true')
     env:
       TRIDENT_CONFIGURATION_NAME: ${{ parameters.tridentConfigurationName }}
       SOURCE_BRANCH_NAME: $(Build.SourceBranchName)
@@ -61,10 +69,36 @@ steps:
       RUNTIME_ENVIRONMENT: ${{ parameters.runtimeEnvironment }}
       PIPELINE_NAME: $(Build.DefinitionName)
 
-  - template: pipelines/templates/upload-metrics-step.yaml@platform-telemetry
-    parameters:
-      kustoDatabaseName: ${{ parameters.kustoDatabaseName }}
-      kustoTableName: ${{ parameters.kustoTableName }}
-      kustoTableMapping: ${{ parameters.kustoTableMapping }}
-      metricsFile: ${{ parameters.metricsFile }}
-      runOnFailure: true
+  - bash: |
+      set -ex
+      sudo apt update -y
+      sudo apt install -y python3 python3-pip azure-cli
+    displayName: "Install dependencies for metrics upload"
+    condition: and(succeeded(), eq(variables['UploadMetrics'], 'True'))
+    retryCountOnTaskFailure: 3
+
+  - task: AzureCLI@2.236.0
+    displayName: Azure CLI
+    inputs:
+      azureSubscription: bmp_perf_service_connection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -e
+        az account show
+        azToken=$(az account get-access-token --resource "https://api.kusto.windows.net" | jq -r '.accessToken')
+        echo "##vso[task.setvariable variable=AZ_TOKEN]$azToken"
+    condition: and(succeeded(), eq(variables['UploadMetrics'], 'True'))
+    retryCountOnTaskFailure: 3
+
+  - checkout: platform-telemetry
+  - bash: |
+      chmod +x "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh"
+      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh" \
+        "${{ parameters.metricsFile }}" \
+        "${{ parameters.kustoDatabaseName }}" \
+        "${{ parameters.kustoTableName }}" \
+        "${{ parameters.kustoTableMapping }}" \
+        "$(Pipeline.Workspace)/s/platform-telemetry"
+    displayName: "Upload metrics to Kusto"
+    condition: and(succeeded(), eq(variables['UploadMetrics'], 'True'))

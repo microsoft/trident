@@ -164,7 +164,7 @@ steps:
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
   - bash: |
       set -eux
-      ./bin/netlisten -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
+      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-ab-update-metrics.jsonl -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
       echo "Running script to stage and finalize A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
           --ip-address ${{ parameters.hostIp }} \
@@ -208,7 +208,7 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
+      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics.jsonl
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
@@ -255,7 +255,7 @@ steps:
 
   - bash: |
       set -eux
-      ./bin/netlisten -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
+      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-ab-update-metrics.jsonl -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
       echo "Running script to stage and finalize A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
           --ip-address ${{ parameters.hostIp }} \
@@ -299,7 +299,7 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-metrics.jsonl
+      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics.jsonl
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:

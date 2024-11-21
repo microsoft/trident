@@ -197,7 +197,7 @@ stages:
                   --trident $(TRIDENT_CONFIG_FILE) \
                   --servefolder ./artifacts/test-image \
                   --logstream $MAX_FAILURES_FLAG \
-                  --trace-file $(TRIDENT_SOURCE_DIR)/trident-metrics.jsonl \
+                  --trace-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
                   --force-color \
                   --full-logstream logstream-full.log \
                   --port ${{ variables.NETLAUNCH_PORT }} 2>&1 | tee ./clean-install-deployment.log
@@ -238,7 +238,7 @@ stages:
               deploymentEnvironment: bareMetal
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
               tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
-              metricsFile: $(TRIDENT_SOURCE_DIR)/trident-metrics.jsonl
+              metricsFile: $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl
               ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: main
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:

@@ -40,9 +40,7 @@ var listen_port uint16
 var serveFolder string
 var forceColor bool
 var backgroundLogstreamFull string
-
-// Filepath to store metrics from Trident
-var TRIDENT_METRICS_PATH = "trident-metrics.jsonl"
+var traceFile string
 
 var rootCmd = &cobra.Command{
 	Use:   "netlisten",
@@ -82,7 +80,7 @@ var rootCmd = &cobra.Command{
 		defer logstreamFull.Close()
 
 		// Set up listening for tracestream
-		phonehome.SetupTraceStream(TRIDENT_METRICS_PATH)
+		phonehome.SetupTraceStream(traceFile)
 
 		if len(serveFolder) != 0 {
 			http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(serveFolder))))
@@ -118,6 +116,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&serveFolder, "servefolder", "s", "", "Optional folder to serve files from at /files")
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output.")
 	rootCmd.PersistentFlags().StringVarP(&backgroundLogstreamFull, "full-logstream", "b", "logstream-full.log", "File to write full logstream output to.")
+	rootCmd.PersistentFlags().StringVarP(&traceFile, "trace-file", "m", "trident-metrics.jsonl", "File for writing metrics collected from Trident. Defaults to trident-metrics.jsonl")
 	rootCmd.MarkFlagRequired("port")
 	log.SetLevel(log.DebugLevel)
 }
