@@ -480,13 +480,9 @@ impl Trident {
                     // servicing state is possible here.
                     debug!("There is a clean install staged on the host");
                     if cmd.allowed_operations.has_finalize() {
-                        // Remount new root and custom mounts if we're finalizing a clean install
-                        let root_mount = engine::initialize_new_root(datastore.host_status())
-                            .message("Failed to re-mount new root")?;
-
                         engine::finalize_clean_install(
                             datastore,
-                            root_mount,
+                            None,
                             None,
                             #[cfg(feature = "grpc-dangerous")]
                             &mut cmd.sender,

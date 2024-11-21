@@ -181,7 +181,7 @@ pub(super) fn clean_install(
     } else {
         finalize_clean_install(
             state,
-            root_mount,
+            Some(root_mount),
             Some(clean_install_start_time),
             #[cfg(feature = "grpc-dangerous")]
             &mut sender,
@@ -337,13 +337,13 @@ fn stage_clean_install(
 
 /// Finalizes a clean install. Takes in 4 arguments:
 /// - state: A mutable reference to the DataStore.
-/// - new_root_path: New root device path.
+/// - new_root_path: New root device path. If None, a new root is created and mounted.
 /// - clean_install_start_time: Optional instant when clean install started.
 /// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all)]
 pub(super) fn finalize_clean_install(
     state: &mut DataStore,
-    new_root: NewrootMount,
+    new_root: Option<NewrootMount>,
     clean_install_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
@@ -360,6 +360,18 @@ pub(super) fn finalize_clean_install(
         disks_by_uuid: state.host_status().disks_by_uuid.clone(),
         install_index: state.host_status().install_index,
         os_image: None, // Not used in finalize_clean_install
+    };
+
+    let new_root = match new_root {
+        Some(new_root) => new_root,
+        None => NewrootMount::create_and_mount(
+            &ctx.spec,
+            &ctx.block_device_paths,
+            ctx.get_ab_update_volume()
+                .structured(InternalError::Internal(
+                    "No update volume despite there being an update in prgoress",
+                ))?,
+        )?,
     };
 
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
@@ -965,19 +977,6 @@ fn provision(
     }
     debug!("Finished step 'Provision'");
     Ok(())
-}
-
-#[tracing::instrument(skip_all)]
-pub(super) fn initialize_new_root(host_status: &HostStatus) -> Result<NewrootMount, TridentError> {
-    NewrootMount::create_and_mount(
-        &host_status.spec,
-        &host_status.block_device_paths,
-        host_status
-            .get_ab_update_volume()
-            .structured(InternalError::Internal(
-                "No update volume despite there being an update in prgoress",
-            ))?,
-    )
 }
 
 fn configure(
