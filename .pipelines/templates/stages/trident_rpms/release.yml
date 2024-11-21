@@ -1,3 +1,16 @@
+parameters:
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+  - name: previewContainerImageBuildId
+    type: string
+    default: "latestFromBranch"
+    
 steps:
   - script: |
       set -eux
@@ -14,6 +27,17 @@ steps:
   - script: sudo tdnf install -y moby-buildx p7zip p7zip-plugins zstd
     displayName: Install native dependencies
     retryCountOnTaskFailure: 3
+
+  - ${{ if eq(parameters.baseimgBuildType, 'preview') }}:
+    - template: ../common_tasks/preview-container.yml
+      parameters:
+        dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
+        dockerBuildContext: $(Build.SourcesDirectory)
+        ${{ if eq(parameters.previewContainerImageBuildId, 'latestFromBranch') }}:
+          runVersion: ${{ parameters.previewContainerImageBuildId }}
+        ${{ else }}:
+          runVersion: specific
+          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   - script: |
       set -eux
@@ -39,7 +63,7 @@ steps:
 
       mkdir -p $(ob_outputDirectory)
       tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3
-
+    workingDirectory: $(Build.SourcesDirectory)
     displayName: Build RPMs
 
   - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)

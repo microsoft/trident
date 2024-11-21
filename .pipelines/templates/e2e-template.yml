@@ -16,6 +16,10 @@ parameters:
       - preview
       - release
     default: "release"
+
+  - name: previewContainerImageBuildId
+    type: string
+    default: "latestFromBranch"
  
   - name: blockPublishing
     displayName: "Block publishing to artifact feed."
@@ -29,6 +33,8 @@ stages:
       stageType: ${{ parameters.stageType }}
       tridentArtifactName: trident-binaries
       codeCoverage: false
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
@@ -39,6 +45,9 @@ stages:
 
   # Build Trident container image
   - template: stages/build_docker_image/trident-container.yml
+    parameters:
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   # Build Trident installer ISO (host)
   - template: stages/build_image/trident-testimg.yml

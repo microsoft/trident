@@ -6,6 +6,18 @@ parameters:
     type: boolean
     default: true
 
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+  - name: previewContainerImageBuildId
+    type: string
+    default: "latestFromBranch"
+
 stages:
   - stage: Trident
     displayName: Trident RPMs (Build)
@@ -73,6 +85,9 @@ stages:
           - template: ../common_tasks/cargo-auth.yml
           - template: ../common_tasks/download-emu.yml
           - template: release.yml
+            parameters:
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
       - job: BuildTrident2
         displayName: Build Trident 2.0 RPMs

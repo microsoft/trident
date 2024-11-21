@@ -1,0 +1,49 @@
+parameters:
+  - name: runVersion
+    type: string
+    default: latestFromBranch
+    displayName: Specific run or latest successful run
+
+  - name: previewContainerImageBuildId
+    type: string
+    default: ""
+    displayName: Build Id of the pipeline run
+
+  - name: dockerfilePath
+    type: string
+    default: ""
+    displayName: File that will be edited to use preview container image
+    
+  - name: dockerBuildContext
+    type: string
+    default: $(Build.SourcesDirectory)
+    displayName: Path in which the Dockerfile will be run, the base for the container image will be saved there.
+
+steps:
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download preview of azl container image"
+    inputs:
+      buildType: "specific"
+      project: "mariner"
+      pipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
+      runVersion: ${{ parameters.runVersion }}
+      branchName: "refs/heads/master"
+      runId: ${{ parameters.previewContainerImageBuildId }}
+      tags: "3.0-preview"
+      artifactName: "drop_build_rpms_build"
+      patterns: "**/build-artifacts/container_base/core-*.tar.gz"
+      targetPath: "$(Pipeline.Workspace)"
+
+  - script: |
+      set -eux
+
+      mkdir -p ${{ parameters.dockerBuildContext }}/artifacts/container_base/
+      tar -xzvf $(Pipeline.Workspace)/build-artifacts/container_base/core-*.tar.gz -C \
+        artifacts/container_base/ > /dev/null 2>&1
+      
+      sed -i \
+        's|^FROM .*|FROM scratch\nCOPY artifacts/container_base/ / \nCMD ["/bin/bash"]|g' \
+         ${{ parameters.dockerfilePath }}
+
+      cat ${{ parameters.dockerfilePath }}
+    displayName: Replace azl container base with azl preview

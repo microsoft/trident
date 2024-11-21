@@ -7,6 +7,11 @@ parameters:
       - release
     default: "release"
 
+  - name: previewContainerImageBuildId
+    type: string
+    default: "latestFromBranch"
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 with tag 3.0-preview"
+
   - name: "debug"
     displayName: "Enable debug output"
     type: boolean
@@ -66,6 +71,14 @@ resources:
       type: git
       ref: refs/heads/main
 
+  pipelines:
+    - pipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
+      source: "[AMD64-6-OneBranch]-Prod-BuildImages"
+      project: mariner
+      branch: master
+      tags:
+        - "3.0-preview"
+
 extends:
   template: v2/OneBranch.Official.CrossPlat.yml@templates
   parameters:
@@ -91,3 +104,4 @@ extends:
         parameters:
           targetStage: pre
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}

@@ -16,12 +16,26 @@ parameters:
   - name: tridentArtifactName
     type: string
 
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+  - name: previewContainerImageBuildId
+    type: string
+    default: "latestFromBranch"
+
 stages:
   - ${{ if or(eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
       - template: build-source.yml
         parameters:
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
           codeCoverage: ${{ parameters.codeCoverage }}
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   - ${{ else }}:
       - template: download-staged.yml

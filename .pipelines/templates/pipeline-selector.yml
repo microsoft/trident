@@ -23,6 +23,10 @@ parameters:
       - release
     default: "release"
 
+  - name: previewContainerImageBuildId
+    type: string
+    default: "latestFromBranch"
+
   - name: blockPublishing
     type: boolean
     default: false
@@ -37,3 +41,4 @@ stages:
           stageType: ${{ parameters.targetStage }}
           blockPublishing: ${{ parameters.blockPublishing }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
