@@ -416,26 +416,23 @@ mod tests {
     #[test]
     fn test_command() {
         let run_and_check_res = Dependency::Echo.cmd().arg("Hello, world").run_and_check();
-        assert!(run_and_check_res.is_ok());
+        run_and_check_res.unwrap();
         let output_and_check_res = Dependency::Echo
             .cmd()
             .arg("Hello, world")
             .output_and_check();
-        assert!(output_and_check_res.is_ok());
         assert_eq!(output_and_check_res.unwrap(), "Hello, world\n");
 
         let raw_output_and_check_res = Dependency::Echo
             .cmd()
             .arg("Hello, world")
             .raw_output_and_check();
-        assert!(raw_output_and_check_res.is_ok());
         assert_eq!(raw_output_and_check_res.unwrap().stdout, b"Hello, world\n");
 
         let render_command_res = Dependency::Echo.cmd().arg("Hello, world").render_command();
         assert_eq!(render_command_res, "echo 'Hello, world'");
 
         let output_res = Dependency::Echo.cmd().arg("Hello, world").output();
-        assert!(output_res.is_ok());
         assert_eq!(output_res.unwrap().output(), "Hello, world\n");
     }
 
@@ -443,8 +440,6 @@ mod tests {
     fn test_arg_and_args() {
         let arg = Dependency::Echo.cmd().arg("Hello, world").output();
         let args = Dependency::Echo.cmd().args(["Hello,", "world"]).output();
-        assert!(arg.is_ok());
-        assert!(args.is_ok());
 
         let arg_output = arg.unwrap().output();
         let args_output = args.unwrap().output();

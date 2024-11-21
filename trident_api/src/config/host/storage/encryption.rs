@@ -160,10 +160,10 @@ mod tests {
     #[test]
     fn test_validate_encryption() {
         let mut config = Encryption::default();
-        assert!(config.validate().is_ok());
+        config.validate().unwrap();
 
         config.recovery_key_url = Some(Url::parse("file:///path/to/recovery.key").unwrap());
-        assert!(config.validate().is_ok());
+        config.validate().unwrap();
     }
 
     #[test]

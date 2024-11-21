@@ -229,9 +229,9 @@ fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
     ))
 }
 
-/// Updates the active volume based on the current root device path.
-pub(crate) fn update_active_volume(
-    ctx: &mut EngineContext,
+/// Validates that the A/B active volume in Host Status is set correctly.
+pub(crate) fn validate_active_volume(
+    ctx: &EngineContext,
     root_device_path: PathBuf,
 ) -> Result<(), Error> {
     let ab_update = &ctx
@@ -247,7 +247,7 @@ pub(crate) fn update_active_volume(
         .path_to_mount_point(Path::new(ROOT_MOUNT_POINT_PATH))
         .map(|m| &m.target_id)
         .context("No mount point for root volume found")?;
-    debug!("Root device id: {:?}", root_device_id);
+    debug!("Root device ID: {:?}", root_device_id);
 
     let (volume_pair_paths, root_data_device_path) = if ctx.spec.storage.root_is_verity() {
         debug!("Root is a verity device");
@@ -284,7 +284,7 @@ pub(crate) fn update_active_volume(
             .volume_a_path
             .canonicalize()
             .context(format!(
-                "Failed to find canonical path for '{}' (device ID: {})",
+                "Failed to canonicalize path '{}' for device with ID '{}'",
                 volume_pair_paths.volume_a_path.display(),
                 volume_pair_paths.volume_a_id,
             ))?;
@@ -293,7 +293,7 @@ pub(crate) fn update_active_volume(
             .volume_b_path
             .canonicalize()
             .context(format!(
-                "Failed to find canonical path '{}' (device ID: {})",
+                "Failed to canonicalize path '{}' for device with ID '{}'",
                 volume_pair_paths.volume_b_path.display(),
                 volume_pair_paths.volume_b_id,
             ))?;
@@ -312,26 +312,42 @@ pub(crate) fn update_active_volume(
         Dependency::Blkid.cmd().output_and_check().unwrap()
     );
 
-    ctx.ab_active_volume = if volume_a_path_canonical == root_data_device_path {
-        debug!("Active volume is A");
-        Some(AbVolumeSelection::VolumeA)
-    } else if volume_b_path_canonical == root_data_device_path {
-        debug!("Active volume is B");
-        Some(AbVolumeSelection::VolumeB)
-    } else {
-        debug!("Unrecognized active volume");
-        // To prevent data loss, abort if we cannot find the
-        // matching root volume outside of clean install
-        if ctx.servicing_type != ServicingType::CleanInstall {
+    // Validate that the active volume in Host Status matches actual root device path
+    if volume_a_path_canonical == root_data_device_path {
+        debug!(
+            "Current root device path '{}' matches root volume A path '{}'",
+            root_data_device_path.display(),
+            volume_a_path_canonical.display()
+        );
+
+        if ctx.ab_active_volume != Some(AbVolumeSelection::VolumeA) {
             bail!(
-                "Failed to match current root device path '{}' to either volume A path '{}' or volume B path '{}'",
-                root_data_device_path.display(),
-                volume_a_path_canonical.display(),
-                volume_b_path_canonical.display()
+                "Volume A is active, but active volume in Host Status is set to {}",
+                ctx.ab_active_volume
+                    .map_or("None".to_string(), |v| v.to_string())
             );
         }
-        None
-    };
+    } else if volume_b_path_canonical == root_data_device_path {
+        debug!(
+            "Current root device path '{}' matches root volume B path '{}'",
+            root_data_device_path.display(),
+            volume_b_path_canonical.display()
+        );
+
+        if ctx.ab_active_volume != Some(AbVolumeSelection::VolumeB) {
+            bail!(
+                "Volume B is active, but active volume in Host Status is set to {}",
+                ctx.ab_active_volume
+                    .map_or("None".to_string(), |v| v.to_string())
+            );
+        }
+    } else {
+        bail!("Failed to match current root device path '{}' to either volume A path '{}' or volume B path '{}'",
+            root_data_device_path.display(),
+            volume_a_path_canonical.display(),
+            volume_b_path_canonical.display()
+        )
+    }
 
     Ok(())
 }
@@ -1489,21 +1505,23 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_update_active_volume() {
-        // Missing ab_update
+    fn test_validate_active_volume() {
+        // Test case #0: Missing ab_update.
         let mut ctx = EngineContext {
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            servicing_type: ServicingType::AbUpdate,
             ..Default::default()
         };
+
         assert_eq!(
-            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "No A/B update found"
         );
 
-        // Missing root mount point
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        // Test case #1: Missing root mount point.
         ctx.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![AbVolumePair {
                 id: "rootq".to_string(),
@@ -1513,14 +1531,14 @@ mod functional_test {
         });
 
         assert_eq!(
-            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "No mount point for root volume found"
         );
 
-        // Missing volume pair for root mount point
+        // Test case #2: Missing volume pair for root mount point.
         ctx.spec.storage.internal_mount_points = vec![InternalMountPoint {
             target_id: "root".to_string(),
             filesystem: FileSystemType::Ext4,
@@ -1529,14 +1547,14 @@ mod functional_test {
         }];
 
         assert_eq!(
-            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "No volume pair for root volume found"
         );
 
-        // Missing block device for volume A
+        // Test case #3: Missing block device for volume A.
         ctx.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![AbVolumePair {
                 id: "root".to_string(),
@@ -1546,20 +1564,20 @@ mod functional_test {
         });
 
         assert_eq!(
-            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to get block device path for volume A with ID 'root-a'"
         );
 
-        // Missing block device for volume B
+        // Test case #4: Missing block device for volume B.
         ctx.block_device_paths = btreemap! {
             "root-a".to_owned() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}15")),
         };
 
         assert_eq!(
-            update_active_volume(&mut ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1571,42 +1589,44 @@ mod functional_test {
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
         );
 
-        // Volume A path cannot be resolved
+        // Test case #5: Volume A path cannot be resolved.
         assert_eq!(
-            update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")))
+            validate_active_volume(&ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "No such file or directory (os error 2)"
         );
 
-        // A or B paths do not match the root volume path
+        // Test case #6: A or B paths do not match the root volume path.
         *ctx.block_device_paths.get_mut("root-a").unwrap() =
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
 
         assert_eq!(
-            update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")))
+            validate_active_volume(&ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to match current root device path '/dev/sda3' to either volume A path '/dev/sda1' or volume B path '/dev/sda2'"
         );
 
-        // None when clean install
-        ctx.servicing_type = ServicingType::CleanInstall;
+        // Test case #7: Volume A is the root device path; active volume is set correctly to volume A.
+        validate_active_volume(&ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"))).unwrap();
 
-        update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3"))).unwrap();
-        assert_eq!(ctx.ab_active_volume, None);
+        // Test case #8: Volume B is the root device path; active volume is set correctly to volume B.
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        validate_active_volume(&ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2"))).unwrap();
 
-        // Volume A is the root device path
-        update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"))).unwrap();
-        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeA));
+        // Test case #9: Volume A is the root device path; active volume is incorrectly set to B.
+        assert_eq!(
+            validate_active_volume(&ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")))
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Volume A is active, but active volume in Host Status is set to Volume B"
+        );
 
-        // Volume B is the root device path
-        update_active_volume(&mut ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2"))).unwrap();
-        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeB));
-
-        // verity tests
+        // Verity tests. Set up verity devices.
         let expected_root_hash = verity::setup_verity_volumes();
 
         let verity_device_path = Path::new("/dev/mapper/root");
@@ -1629,19 +1649,11 @@ mod functional_test {
             "root-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
         };
 
-        update_active_volume(
-            &mut ctx,
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-        )
-        .unwrap();
-        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeA));
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))).unwrap();
 
-        update_active_volume(
-            &mut ctx,
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-        )
-        .unwrap();
-        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeB));
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))).unwrap();
 
         ctx.block_device_paths
             .insert("root".to_string(), PathBuf::from("/dev/mapper/root"));
@@ -1686,11 +1698,7 @@ mod functional_test {
             ],
         });
 
-        update_active_volume(
-            &mut ctx,
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-        )
-        .unwrap();
-        assert_eq!(ctx.ab_active_volume, Some(AbVolumeSelection::VolumeA));
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))).unwrap();
     }
 }

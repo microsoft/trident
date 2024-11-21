@@ -228,7 +228,7 @@ mod tests {
             source: ScriptSource::Path("/path/to/script".into()),
             arguments: vec![],
         };
-        assert!(script.validate().is_ok());
+        script.validate().unwrap();
     }
 
     #[test]
@@ -241,7 +241,7 @@ mod tests {
             source: ScriptSource::Content("echo".into()),
             arguments: vec!["test".into()],
         };
-        assert!(script.validate().is_ok());
+        script.validate().unwrap();
     }
 
     #[test]

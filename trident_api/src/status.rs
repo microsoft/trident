@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    fmt::{Display, Formatter, Result},
     path::PathBuf,
 };
 
@@ -110,4 +111,13 @@ pub enum ServicingState {
 pub enum AbVolumeSelection {
     VolumeA,
     VolumeB,
+}
+
+impl Display for AbVolumeSelection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            AbVolumeSelection::VolumeA => write!(f, "Volume A"),
+            AbVolumeSelection::VolumeB => write!(f, "Volume B"),
+        }
+    }
 }

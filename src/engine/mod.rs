@@ -466,11 +466,16 @@ pub(super) fn update(
         os_image: osimage::load_os_image(&command.host_config)?,
     };
 
+    // Before starting an update servicing, need to validate that the active volume is set
+    // correctly.
     if ctx.spec.storage.ab_update.is_some() {
-        debug!("A/B update is enabled");
+        debug!(
+            "A/B update is enabled, validating that '{:?}' is currently active",
+            ctx.ab_active_volume
+        );
         let root_device_path = block_devices::get_root_device_path()?;
-        image::update_active_volume(&mut ctx, root_device_path)
-            .structured(ServicingError::UpdateAbActiveVolume)?;
+        image::validate_active_volume(&ctx, root_device_path)
+            .structured(ServicingError::ValidateAbActiveVolume)?;
     }
 
     debug!("Determining servicing type");

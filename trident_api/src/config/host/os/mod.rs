@@ -200,14 +200,14 @@ mod tests {
     #[test]
     fn test_validate_os_users() {
         let mut config = Os::default();
-        assert!(config.validate().is_ok());
+        config.validate().unwrap();
 
         config.users.push(User {
             name: "test".to_string(),
             password: Password::Locked,
             ..Default::default()
         });
-        assert!(config.validate().is_ok());
+        config.validate().unwrap();
     }
 
     #[test]

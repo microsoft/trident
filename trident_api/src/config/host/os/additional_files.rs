@@ -87,10 +87,10 @@ mod tests {
             source: None,
             permissions: Some("0777".to_string()),
         };
-        assert!(file.validate().is_ok());
+        file.validate().unwrap();
 
         file.permissions = None;
-        assert!(file.validate().is_ok());
+        file.validate().unwrap();
 
         // Providing source and setting content to None is also valid
         file = AdditionalFile {
@@ -99,7 +99,7 @@ mod tests {
             source: Some(PathBuf::from("/test")),
             permissions: None,
         };
-        assert!(file.validate().is_ok());
+        file.validate().unwrap();
     }
 
     #[test]

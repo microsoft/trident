@@ -376,21 +376,18 @@ mod tests {
             ..Default::default()
         };
 
-        let result: Result<Vec<PathBuf>, Error> =
-            get_device_paths(&ctx, &["boot".to_string(), "root".to_string()]);
+        assert_eq!(
+            get_device_paths(&ctx, &["boot".to_string(), "root".to_string()]).unwrap(),
+            vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")]
+        );
 
-        assert!(result.is_ok());
-
-        let device_paths = result.unwrap();
-        assert_eq!(device_paths.len(), 2);
-
-        let expected_paths = vec![PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sda2")];
-
-        assert_eq!(device_paths, expected_paths);
-
-        let result: Result<Vec<PathBuf>, Error> =
-            get_device_paths(&ctx, &["boot2".to_string(), "root2".to_string()]);
-        assert!(result.is_err());
+        assert_eq!(
+            get_device_paths(&ctx, &["boot2".to_string(), "root2".to_string()])
+                .unwrap_err()
+                .root_cause()
+                .to_string(),
+            "Failed to get block device path for 'boot2'"
+        );
     }
 
     #[test]
@@ -472,11 +469,9 @@ mod functional_test {
         };
 
         let spec = &ctx.spec.clone();
-        let err = storage::raid::stop_pre_existing_raid_arrays(spec);
-        assert!(err.is_ok());
+        storage::raid::stop_pre_existing_raid_arrays(spec).unwrap();
 
-        let err = storage::partitioning::create_partitions(&mut ctx);
-        assert!(err.is_ok());
+        storage::partitioning::create_partitions(&mut ctx).unwrap();
     }
 
     #[functional_test]
@@ -565,17 +560,14 @@ mod functional_test {
 
         let spec = &ctx.spec.clone();
 
-        let err = stop_pre_existing_raid_arrays(spec);
-        assert!(err.is_ok());
+        stop_pre_existing_raid_arrays(spec).unwrap();
 
-        let err = storage::partitioning::create_partitions(&mut ctx);
-        assert!(err.is_ok());
+        storage::partitioning::create_partitions(&mut ctx).unwrap();
 
         create_sw_raid(&ctx, spec).unwrap();
 
-        // cleanup the RAID array
-        let err = stop_pre_existing_raid_arrays(spec);
-        assert!(err.is_ok());
+        // Clean up the RAID array
+        stop_pre_existing_raid_arrays(spec).unwrap();
     }
 
     #[functional_test]
@@ -617,17 +609,14 @@ mod functional_test {
         };
 
         let spec = &ctx.spec.clone();
-        let err = stop_pre_existing_raid_arrays(spec);
-        assert!(err.is_ok());
+        stop_pre_existing_raid_arrays(spec).unwrap();
 
-        let err = storage::partitioning::create_partitions(&mut ctx);
-        assert!(err.is_ok());
+        storage::partitioning::create_partitions(&mut ctx).unwrap();
 
         create_sw_raid(&ctx, spec).unwrap();
 
-        // cleanup the RAID array
-        let err = stop_pre_existing_raid_arrays(spec);
-        assert!(err.is_ok());
+        // Clean up the RAID arrays
+        stop_pre_existing_raid_arrays(spec).unwrap();
     }
 
     #[functional_test(negative = true)]
@@ -669,20 +658,17 @@ mod functional_test {
         };
 
         let spec = &ctx.spec.clone();
-        let err = stop_pre_existing_raid_arrays(spec);
-        assert!(err.is_ok());
+        stop_pre_existing_raid_arrays(spec).unwrap();
 
-        let err = storage::partitioning::create_partitions(&mut ctx);
-        assert!(err.is_ok());
+        storage::partitioning::create_partitions(&mut ctx).unwrap();
 
         assert_eq!(
             create_sw_raid(&ctx, spec).unwrap_err().to_string(),
             "Failed to wait for RAID sync"
         );
 
-        // cleanup the RAID array in case it was created
-        let err = stop_pre_existing_raid_arrays(spec);
-        assert!(err.is_ok());
+        // Clean up the RAID array in case it was created
+        stop_pre_existing_raid_arrays(spec).unwrap();
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -728,11 +714,9 @@ mod functional_test {
         };
 
         let spec = &ctx.spec.clone();
-        let err = stop_pre_existing_raid_arrays(spec);
-        assert!(err.is_ok());
+        stop_pre_existing_raid_arrays(spec).unwrap();
 
-        let err = storage::partitioning::create_partitions(&mut ctx);
-        assert!(err.is_ok());
+        storage::partitioning::create_partitions(&mut ctx).unwrap();
 
         assert_eq!(
             create_sw_raid_array(&ctx, &raid_array)

@@ -49,14 +49,8 @@ pub enum InitializationError {
     #[error("Failed to load local Trident Host Status")]
     LoadHostStatus,
 
-    #[error("Failed to load local Trident config")]
-    LoadLocalConfig,
-
-    #[error("Failed to parse the Host Status")]
+    #[error("Failed to parse Host Status")]
     ParseHostStatus,
-
-    #[error("Failed to parse the local config")]
-    ParseLocalConfig,
 
     #[error("Failed to read '/proc/cmdline'")]
     ReadCmdline,
@@ -411,9 +405,6 @@ pub enum ServicingError {
     #[error("Failed to update `BootOrder` via efibootmgr")]
     UpdateBootOrder,
 
-    #[error("Failed to update A/B active volume in host status")]
-    UpdateAbActiveVolume,
-
     #[error("Failed to update GRUB configs")]
     UpdateGrubConfigs,
 
@@ -425,6 +416,9 @@ pub enum ServicingError {
 
     #[error("Failed to write Netplan config")]
     WriteNetplanConfig,
+
+    #[error("Failed to validate A/B active volume in Host Status")]
+    ValidateAbActiveVolume,
 }
 
 /// Identifies errors that occur when interacting with a misconfigured datastore.
@@ -699,11 +693,11 @@ mod tests {
     #[test]
     fn test_error_serialize() {
         let e = TridentError(Box::new(TridentErrorInner {
-            kind: ErrorKind::Initialization(InitializationError::LoadLocalConfig),
+            kind: ErrorKind::Initialization(InitializationError::LoadHostStatus),
             location: Location::caller(),
             source: Some(
                 std::fs::read("/non-existant-file")
-                    .context("failed to read file")
+                    .context("Failed to read file")
                     .unwrap_err(),
             ),
             context: Vec::new(),
@@ -711,19 +705,19 @@ mod tests {
         match serde_yaml::to_value(e).unwrap() {
             Value::Mapping(m) => {
                 assert_eq!(m.len(), 5);
-                assert_eq!(m["error"], Value::String("load-local-config".into()));
+                assert_eq!(m["error"], Value::String("load-host-status".into()));
                 assert_eq!(m["category"], Value::String("initialization".into()));
                 assert!(matches!(m["cause"], Value::String(_)));
                 assert_eq!(
                     m["message"],
-                    Value::String("Failed to load local Trident config".into())
+                    Value::String("Failed to load local Trident Host Status".into())
                 );
                 match m["location"] {
                     Value::String(ref s) => assert!(s.contains("error.rs:")),
-                    _ => panic!("location isn't string"),
+                    _ => panic!("Location isn't string"),
                 }
             }
-            _ => panic!("value isn't mapping"),
+            _ => panic!("Value isn't mapping"),
         }
     }
 

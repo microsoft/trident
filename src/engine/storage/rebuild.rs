@@ -991,8 +991,7 @@ mod functional_test {
         };
 
         // Stop any pre-existing RAID arrays.
-        let err = storage::raid::stop_pre_existing_raid_arrays(&host_config);
-        assert!(err.is_ok());
+        storage::raid::stop_pre_existing_raid_arrays(&host_config).unwrap();
 
         // Create partitions on the test disks.
         storage::partitioning::create_partitions(&mut ctx).unwrap();

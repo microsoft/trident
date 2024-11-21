@@ -436,10 +436,10 @@ mod tests {
 
         // Check that 'permissive' mode does not return an error
         host_config.os.selinux.mode = Some(SelinuxMode::Permissive);
-        assert!(host_config.validate_selinux_mode().is_ok());
+        host_config.validate_selinux_mode().unwrap();
 
         // Check that 'disabled' mode does not return an error
         host_config.os.selinux.mode = Some(SelinuxMode::Disabled);
-        assert!(host_config.validate_selinux_mode().is_ok());
+        host_config.validate_selinux_mode().unwrap();
     }
 }
