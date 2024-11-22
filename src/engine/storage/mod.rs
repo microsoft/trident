@@ -172,7 +172,10 @@ impl Subsystem for StorageSubsystem {
             ),
         )? {
             debug!("Verity devices are compatible with the current system");
-            verity::create_machine_id(mount_point).structured(ServicingError::CreateMachineId)?;
+            if ctx.servicing_type == ServicingType::CleanInstall {
+                verity::create_machine_id(mount_point)
+                    .structured(ServicingError::CreateMachineId)?;
+            }
         }
 
         Ok(())

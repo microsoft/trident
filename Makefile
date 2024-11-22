@@ -361,7 +361,7 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 		$(if $(LOG_TRACE),--log-trace)
 
 
-#  To run this VM requires at least 11 GiB of memory (virt-deploy create --mem 11).
+#  To run this, VM requires at least 11 GiB of memory (virt-deploy create --mem 11).
 .PHONY: run-netlaunch-container-images
 run-netlaunch-container-images: \
 	validate \
@@ -601,3 +601,9 @@ bin/trident-mos.iso: artifacts/baremetal.vhdx artifacts/imagecustomizer systemd/
 			--output-image-file $@ \
 			--config-file trident-mos/iso.yaml \
 			--output-image-format iso
+
+.PHONY: recreate-verity-images
+recreate-verity-images: bin/trident-rpms.tar.gz
+	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
+	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
+	make copy-runtime-partition-images
