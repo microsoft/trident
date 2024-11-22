@@ -1,7 +1,7 @@
-use std::{io::Write, path::Path};
+use std::{fs, io::Write, path::Path};
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info};
+use log::{debug, info, trace};
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 
@@ -131,7 +131,22 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
 
         // OS modifier will read values of verity, selinux, root device, and overlay from original GRUB config
         // stamp them into /etc/default/grub and regenerate the GRUB config using grub-mkconfig.
+        // Log the contents of the GRUB config first.
+        let grub_config = fs::read_to_string(&boot_grub_config_path)?;
+        trace!(
+            "Contents of GRUB config at path '{}':\n{}",
+            boot_grub_config_path.display(),
+            grub_config
+        );
+
         osmodifier::update_grub(&os_modifier_path)?;
+
+        let updated_grub_config = fs::read_to_string(&boot_grub_config_path)?;
+        trace!(
+            "Contents of GRUB config at path '{}' updated with OS modifier:\n{}",
+            boot_grub_config_path.display(),
+            updated_grub_config
+        );
 
         // If selinux is provided in engine context, overwrite selinux in GRUB config
         let selinux_config = selinux_mode.map(|mode| Selinux { mode: Some(mode) });
