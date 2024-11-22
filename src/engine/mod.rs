@@ -32,7 +32,6 @@ use crate::grpc::{self, protobufs::HostStatusState};
 use crate::{
     datastore::DataStore,
     engine::{boot::BootSubsystem, storage::StorageSubsystem},
-    image,
     subsystems::{
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
@@ -52,6 +51,7 @@ mod kexec;
 mod newroot;
 mod osimage;
 pub mod provisioning_network;
+pub mod rollback;
 
 // Trident Subsystems
 pub mod boot;
@@ -472,9 +472,10 @@ pub(super) fn update(
         debug!(
             "A/B update is enabled, validating that '{:?}' is currently active",
             ctx.ab_active_volume
+                .map_or("None".to_string(), |v| v.to_string())
         );
         let root_device_path = block_devices::get_root_device_path()?;
-        image::validate_active_volume(&ctx, root_device_path)
+        rollback::validate_active_volume(&ctx, root_device_path)
             .structured(ServicingError::ValidateAbActiveVolume)?;
     }
 
