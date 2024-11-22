@@ -1,0 +1,117 @@
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp1
+          type: esp
+          size: 100M
+        - id: root1
+          type: root
+          size: 4G
+        - id: swap
+          type: swap
+          size: 1G
+        - id: home1
+          type: home
+          size: 100M
+        - id: trident1
+          type: linux-generic
+          size: 100M   
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: 
+        - id: esp2
+          type: esp
+          size: 100M
+        - id: root2
+          type: root
+          size: 4G  
+        - id: home2
+          type: home
+          size: 100M
+        - id: trident2
+          type: linux-generic
+          size: 100M 
+  raid:
+    software:
+      - id: esp
+        name: esp
+        level: raid1
+        devices:
+          - esp1
+          - esp2
+      - id: root
+        name: root
+        level: raid1
+        devices:
+          - root1
+          - root2
+      - id: home
+        name: home
+        level: raid1
+        devices:
+          - home1
+          - home2
+      - id: trident
+        name: trident
+        level: raid1
+        devices:
+          - trident1
+          - trident2
+  filesystems:
+    - deviceId: trident
+      type: ext4
+      mountPoint: /var/lib/trident
+    - deviceId: root
+      type: ext4
+      source:
+        type: image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint: /
+    - deviceId: home
+      type: ext4
+      mountPoint: /home
+    - deviceId: swap
+      type: swap
+    - deviceId: esp
+      type: vfat
+      source:
+        type: esp-image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+scripts:
+  postProvision:
+    - name: sample-provision-script
+      runOn:
+        - clean-install
+        - ab-update
+      content: echo 'Post provision!'
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+        - ab-update
+      content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+os:
+  selinux:
+    mode: enforcing
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only
