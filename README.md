@@ -9,9 +9,24 @@ Tags: comma,separated,list,of,tags
 
 # Trident
 
-Trident is a deployment and update agent for Azure Linux, allowing for inplace
-image deployments and atomic updates. Initial focus is on Bare Metal
-deployments, but can be leveraged outside of that as well.
+Trident is a deployment and update agent for Azure Linux, allowing for in-place
+image deployments and atomic updates. Trident can initially provision bare metal hosts
+from scratch as well as drive updates to already provisioned virtual machines or
+bare metal hosts, all controlled by a single declarative configuration file. Trident's
+focus is on providing a simple and reliable way to deploy and update Azure
+Linux, with focus on security. Among the features that Trident supports are:
+
+- Disk partitioning and imaging
+- RAID configuration
+- Encrypted volumes with TPM/PCR support
+- dm-verity support
+- A/B update
+- Bootloader configuration
+- Networking configuration
+- User management
+- SELinux configuration
+- Custom hooks
+- and more
 
 ## Contents
 
@@ -133,7 +148,7 @@ following commands, which can be provided as command line parameters:
   configuration is not sufficient.
 - `rebuild-raid`: Requests Trident to rebuild RAID arrays when a disk failure
   occurs and a disk is replaced. After running the `trident rebuild-raid`
-  command, the rebuild process begins.  
+  command, the rebuild process begins.
   Refer to [Rebuild RAID](./docs/Explanation/Rebuild-RAID.md) for more details.
 
 For any of the commands, you can change logging verbosity from the default
