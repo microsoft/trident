@@ -31,6 +31,7 @@ stages:
           - BuildingTools
           - TridentTestImg_trident_verity_testimage
           - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+              - BuildTridentContainerImage
               - TridentTestImg_trident_container_installer_testimage
               - TridentTestImg_trident_container_testimage
           - ${{ else }}:
