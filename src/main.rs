@@ -1,4 +1,9 @@
-use std::{panic, path::PathBuf, process::ExitCode};
+use std::{
+    fmt::{Display, Formatter, Result as FmtResult},
+    panic,
+    path::PathBuf,
+    process::ExitCode,
+};
 
 use anyhow::{bail, Context, Error};
 use clap::{Parser, Subcommand};
@@ -106,6 +111,27 @@ enum Commands {
         /// Path to a Host Status file
         hs_path: PathBuf,
     },
+}
+
+impl Commands {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Commands::Run { .. } => "run",
+            Commands::RebuildRaid { .. } => "rebuild-raid",
+            Commands::StartNetwork { .. } => "start-network",
+            Commands::GetHostStatus { .. } => "get-host-status",
+            Commands::Validate { .. } => "validate",
+            #[cfg(feature = "pytest-generator")]
+            Commands::Pytest => "pytest",
+            Commands::OfflineInitialize { .. } => "offline-initialize",
+        }
+    }
+}
+
+impl Display for Commands {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{}", self.name())
+    }
 }
 
 struct AgentConfig {
@@ -250,7 +276,7 @@ fn run_trident(
                     }
                 }
 
-                res.unstructured("Failed to execute Trident command")?;
+                res.unstructured(format!("Failed to execute '{}' command", args.command))?;
             }
             _ => unreachable!(),
         }
