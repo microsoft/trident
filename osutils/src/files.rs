@@ -1,5 +1,5 @@
 use std::{
-    fs::{File, Permissions},
+    fs::{self, File, Permissions},
     io::{Read, Write},
     os::{linux::fs::MetadataExt, unix::fs::PermissionsExt},
     path::{Path, PathBuf},
@@ -16,7 +16,7 @@ where
         create_dirs(parent)?;
     }
 
-    std::fs::File::create(path.as_ref()).context(format!(
+    File::create(path.as_ref()).context(format!(
         "Could not create file: {}",
         path.as_ref().display()
     ))
@@ -28,7 +28,7 @@ where
     S: AsRef<Path>,
 {
     let file = create_file(path.as_ref())?;
-    std::fs::set_permissions(path.as_ref(), Permissions::from_mode(mode)).context(format!(
+    fs::set_permissions(path.as_ref(), Permissions::from_mode(mode)).context(format!(
         "Could not set permissions {:#o} for file {}",
         mode,
         path.as_ref().display()
@@ -41,7 +41,7 @@ pub fn create_dirs<S>(path: S) -> Result<(), Error>
 where
     S: AsRef<Path>,
 {
-    std::fs::create_dir_all(path.as_ref()).context(format!(
+    fs::create_dir_all(path.as_ref()).context(format!(
         "Could not create path: {}",
         path.as_ref().display()
     ))
@@ -65,7 +65,7 @@ pub fn read_file_trim<S>(file_path: &S) -> Result<String, Error>
 where
     S: AsRef<Path>,
 {
-    let content = std::fs::read_to_string(file_path.as_ref()).context(format!(
+    let content = fs::read_to_string(file_path.as_ref()).context(format!(
         "Could not read file contents: {:?}",
         file_path.as_ref()
     ))?;
@@ -84,7 +84,7 @@ where
             bail!("Path exists but is not a file: {}", path.as_ref().display());
         }
 
-        mode = std::fs::metadata(path.as_ref())
+        mode = fs::metadata(path.as_ref())
             .context(format!(
                 "Could not get metadata for {}",
                 path.as_ref().display()
@@ -175,7 +175,7 @@ where
         bail!("Path exists but is not a directory: {}", path.display());
     }
 
-    std::fs::read_dir(path)
+    fs::read_dir(path)
         .context(format!(
             "Failed to read contents of directory {}",
             path.display()
@@ -183,10 +183,10 @@ where
         .try_for_each(|entry| {
             let path = entry.context("Failed to read entry")?.path();
             if path.is_dir() {
-                std::fs::remove_dir_all(&path)
+                fs::remove_dir_all(&path)
                     .with_context(|| format!("Failed to remove directory: {}", path.display()))
             } else {
-                std::fs::remove_file(&path)
+                fs::remove_file(&path)
                     .with_context(|| format!("Failed to remove file: {}", path.display()))
             }
         })
@@ -245,11 +245,11 @@ mod tests {
         drop(file);
 
         // Check that the contents are correct
-        assert_eq!(std::fs::read(&path).unwrap(), contents.as_bytes());
+        assert_eq!(fs::read(&path).unwrap(), contents.as_bytes());
         // Prepend the heading
         prepend_file(&path, false, heading.as_bytes()).unwrap();
         // Check that the new contents are correct
-        assert_eq!(std::fs::read(&path).unwrap(), expected.as_bytes());
+        assert_eq!(fs::read(&path).unwrap(), expected.as_bytes());
 
         // Assert that file is created when requested
         let nonexistent_path = dir.path().join("nonexistent");
@@ -273,7 +273,7 @@ mod tests {
 
 
         "#};
-        std::fs::write(&path, contents).unwrap();
+        fs::write(&path, contents).unwrap();
         assert_eq!(read_file_trim(&path).unwrap(), "line 1");
     }
 

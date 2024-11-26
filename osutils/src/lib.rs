@@ -6,6 +6,7 @@ pub mod container;
 pub mod dependencies;
 pub mod e2fsck;
 pub mod efibootmgr;
+pub mod encryption;
 pub mod exe;
 pub mod files;
 pub mod filesystems;

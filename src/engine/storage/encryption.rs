@@ -7,13 +7,13 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info};
+use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use osutils::{
     dependencies::{Dependency, DependencyResultExt},
-    lsblk,
+    encryption, files, lsblk,
     lsblk::BlockDeviceType,
 };
 use trident_api::{
@@ -28,12 +28,10 @@ use trident_api::{
 
 use crate::engine::{self, EngineContext};
 
-const LUKS_HEADER_SIZE_IN_MIB: usize = 16;
-const CIPHER: &str = "aes-xts-plain64";
-const KEY_SIZE: &str = "512";
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
+/// Validates the encryption configuration in Host Configuration.
 pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<(), TridentError> {
     if let Some(encryption) = &host_config.storage.encryption {
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
@@ -47,12 +45,11 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
                 )));
             }
 
-            let key_file_metadata =
-                std::fs::metadata(&key_file).structured(InvalidInputError::from(
-                    HostConfigurationDynamicValidationError::GetEncryptionKeyMetadata {
-                        key_file: key_file.to_string_lossy().to_string(),
-                    },
-                ))?;
+            let key_file_metadata = fs::metadata(&key_file).structured(InvalidInputError::from(
+                HostConfigurationDynamicValidationError::GetEncryptionKeyMetadata {
+                    key_file: key_file.to_string_lossy().to_string(),
+                },
+            ))?;
 
             if key_file_metadata.len() == 0 {
                 return Err(TridentError::new(InvalidInputError::from(
@@ -70,7 +67,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
                 )));
             }
 
-            let key_file_perms_mode: u32 = key_file_metadata.permissions().mode();
+            let key_file_perms_mode = key_file_metadata.permissions().mode();
 
             // In Unix-based systems, the file mode is represented by four
             // octal digits. The first digit specifies the file type,
@@ -97,7 +94,7 @@ pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<()
     Ok(())
 }
 
-// close_pre_existing_encrypted_volumes closes all open LUKS2-encrypted volumes founds on the system.
+/// Closes all open LUKS2-encrypted volumes found on the system.
 pub(super) fn close_pre_existing_encrypted_volumes(
     host_config: &HostConfiguration,
 ) -> Result<(), Error> {
@@ -116,21 +113,13 @@ pub(super) fn close_pre_existing_encrypted_volumes(
             crypt_block_device.name
         );
 
-        Dependency::Cryptsetup
-            .cmd()
-            .arg("luksClose")
-            .arg(crypt_block_device.name.as_str())
-            .run_and_check()
-            .context(format!(
-                "Failed to close pre-existing encrypted volume '{}'",
-                crypt_block_device.name
-            ))?;
+        encryption::cryptsetup_close(&crypt_block_device)?;
     }
 
     Ok(())
 }
 
-/// This function provisions all configured encrypted volumes.
+/// Provisions all configured encrypted volumes.
 #[tracing::instrument(name = "encryption_provision", fields(total_partition_size_bytes = tracing::field::Empty), skip_all)]
 pub(super) fn provision(
     ctx: &EngineContext,
@@ -142,9 +131,7 @@ pub(super) fn provision(
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
             key_file_path = recovery_key_url.path().into()
         } else {
-            // Create a temporary file to store the recovery key file. The
-            // key file will be deleted once the NamedTempFile is out of
-            // scope and dropped.
+            // Create a temporary file to store the recovery key file.
             key_file_tmp =
                 NamedTempFile::new().structured(ServicingError::CreateRecoveryKeyFile)?;
             key_file_path = key_file_tmp.path().to_owned();
@@ -171,10 +158,9 @@ pub(super) fn provision(
             .run_and_check()
             .message("Encryption requires access to a TPM 2.0 device but one is not accessible")?;
 
-        // Clear the TPM 2.0 device to ensure that it is in a known state.
-        // By clearing the lockout value, this prevents the TPM 2.0 device
-        // from being placed into DA lockout mode due to repeated
-        // successive provisioning attempts.
+        // Clear the TPM 2.0 device to ensure that it is in a known state. By clearing the lockout
+        // value, Trident prevents the TPM 2.0 device from being placed into DA lockout mode due to
+        // repeated successive provisioning attempts.
         Dependency::Tpm2Clear
             .cmd()
             .run_and_check()
@@ -182,9 +168,9 @@ pub(super) fn provision(
 
         let mut total_partition_size_bytes: u64 = 0;
         for ev in encryption.volumes.iter() {
-            // Get the block device indicated by device_id if it is a partition, or the first
-            // partition of device_id if it is a RAID array. Or return an error if device_id is
-            // neither a partition nor a RAID array.
+            // Get the block device indicated by device_id if it is a partition; the first
+            // partition of device_id if it is a RAID array; or, an error if device_id is neither
+            // a partition nor a RAID array.
             let partition = get_first_backing_partition(ctx, &ev.device_id).structured(
                 InvalidInputError::from(
                     HostConfigurationStaticValidationError::EncryptedVolumeNotPartitionOrRaid {
@@ -224,65 +210,27 @@ pub(super) fn provision(
     Ok(())
 }
 
-/// This function encrypts the device of a single encrypted volume by
-/// reformatting the device with a LUK2 header, enrolling a key file,
-/// enrolling another randomly-generated key and sealing it in the TPM2
-/// device with PCR 7, then opening the device as a LUKS2 volume.
+/// Encrypts the device of a single encrypted volume by reformatting the device with a LUKS2
+/// header, enrolling a key file, enrolling another randomly generated key and sealing it in the
+/// TPM 2.0 device with PCR 7, and finally, opening the device as a LUKS2 volume.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,
     key_file: &Path,
 ) -> Result<(), Error> {
-    // TODO: move to osutils
-    Dependency::Cryptsetup
-        .cmd()
-        .arg("reencrypt")
-        .arg("--encrypt")
-        .arg("--batch-mode")
-        .arg("--cipher")
-        .arg(CIPHER)
-        .arg("--force-password")
-        .arg("--hash")
-        .arg("sha512")
-        .arg("--iter-time")
-        .arg("0")
-        .arg("--key-file")
-        .arg(key_file.as_os_str())
-        .arg("--key-size")
-        .arg(KEY_SIZE)
-        .arg("--key-slot")
-        .arg("0")
-        .arg("--pbkdf")
-        .arg("pbkdf2")
-        .arg("--reduce-device-size")
-        .arg(format!("{}M", LUKS_HEADER_SIZE_IN_MIB))
-        .arg("--type")
-        .arg("luks2")
-        .arg(device_path.as_os_str())
-        .run_and_check()
-        .context(format!(
-            "Failed to encrypt underlying device '{}'",
-            device_path.display()
-        ))?;
-
     debug!(
-        "Enrolling TPM2 device for underlying device '{}'",
+        "Re-encrypting underlying device '{}'",
         device_path.display()
     );
 
-    Dependency::SystemdCryptenroll
-        .cmd()
-        .arg("--tpm2-device=auto")
-        .arg("--tpm2-pcrs=7")
-        .arg("--unlock-key-file")
-        .arg(key_file.as_os_str())
-        .arg("--wipe-slot=tpm2")
-        .arg(device_path.as_os_str())
-        .run_and_check()
-        .context(format!(
-            "Failed to enroll TPM2 device for underlying device '{}'",
-            device_path.display()
-        ))?;
+    encryption::cryptsetup_reencrypt(key_file, device_path)?;
+
+    debug!(
+        "Enrolling TPM 2.0 device for underlying device '{}'",
+        device_path.display()
+    );
+
+    encryption::systemd_cryptenroll(key_file, device_path)?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",
@@ -290,38 +238,23 @@ fn encrypt_and_open_device(
         device_name
     );
 
-    Dependency::Cryptsetup
-        .cmd()
-        .arg("luksOpen")
-        .arg("--key-file")
-        .arg(key_file.as_os_str())
-        .arg(device_path.as_os_str())
-        .arg(device_name)
-        .run_and_check()
-        .context(format!(
-            "Failed to open underlying device '{}' as '{}'",
-            device_path.display(),
-            device_name
-        ))?;
+    encryption::cryptsetup_open(key_file, device_path, device_name)?;
 
     Ok(())
 }
 
-/// This function creates a file at the specified path and fills it with
-/// cryptographically secure random bytes sourced from `/dev/random`. It
-/// is intended for generating a recovery key file with a specified size
-/// defined by `TMP_RECOVERY_KEY_SIZE`.
+/// This function creates a file at the specified path and fills it with cryptographically secure
+/// random bytes sourced from `/dev/random`. It is intended for generating a recovery key file with
+/// a specified size defined by `TMP_RECOVERY_KEY_SIZE`.
 ///
-/// `path` is a reference to a `Path` object that specifies the location
-/// and name of the file to be created. This path should be accessible and
+/// `path` specifies the locationm and name of the file to be created, and must be accessible and
 /// writable by the process.
 ///
-/// This function can return an error if opening or reading `/dev/random`
-/// fails. It can also error when writing to the specified file path
-/// fails, which could be due to permission issues, non-existent
-/// directories in the path, or other filesystem-related errors.
+/// This function can return an error if opening or reading `/dev/random` fails. It can also error
+/// when writing to the specified file path fails, which could be due to permission issues,
+/// non-existent directories in the path, or other filesystem-related errors.
 pub(super) fn generate_recovery_key_file(path: &Path) -> Result<(), Error> {
-    let mut random_file: File = File::open("/dev/random").context("Failed to open /dev/random")?;
+    let mut random_file = File::open("/dev/random").context("Failed to open /dev/random")?;
     let mut random_buffer: [u8; TMP_RECOVERY_KEY_SIZE] = [0u8; TMP_RECOVERY_KEY_SIZE];
     random_file
         .read_exact(&mut random_buffer)
@@ -357,8 +290,8 @@ struct LuksDumpSegment {
 
 #[tracing::instrument(name = "encryption_configuration", skip_all)]
 pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
-    let path: PathBuf = PathBuf::from(CRYPTTAB_PATH);
-    let mut contents: String = String::new();
+    let path = PathBuf::from(CRYPTTAB_PATH);
+    let mut contents = String::new();
 
     let Some(ref encryption) = ctx.spec.storage.encryption else {
         return Ok(());
@@ -378,30 +311,27 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
             },
         )?;
 
-        // An encrypted swap device is special-cased in the crypttab due
-        // to the unique nature and requirements of swap spaces in a Linux
-        // system. Since it often contains sensitive data temporarily
-        // stored in RAM, encrypting it is crucial for security, but
-        // unlike regular partitions, which uses a TPM2.0 device for
-        // passwordless startup, systemd completely wipes the swap device
-        // and formats it on each system startup.
+        // An encrypted swap device is special-cased in the crypttab due to the unique nature and
+        // requirements of swap spaces in a Linux system. Since it often contains sensitive data
+        // temporarily stored in RAM, encrypting it is crucial for security. However, unlike the
+        // regular partitions, which use TPM 2.0 devices for passwordless startup, systemd
+        // completely wipes the swap device and formats it on each system startup.
         //
-        // For systemd to do this, it needs a key, and here in the
-        // crypttab the swap device is configured with a randomly
-        // generated key from `/dev/random`. This is the most reliable way
-        // to generated a truly random key on Linux systems.
+        // For systemd to do this, it needs a key, and here in the crypttab, the swap device is
+        // configured with a randomly generated key from `/dev/random`. This is the most reliable
+        // way to generate a truly random key on Linux systems.
         //
-        // The default cipher (aes-cbc-essiv:sha256) and key size (256) is
-        // not used here in order to enhance the security posture of the
-        // swap space and align it with the rest of the encrypted devices.
+        // The default cipher (aes-cbc-essiv:sha256) and key size (256) are not used here, to
+        // enhance the security posture of the swap space and align it with the rest of the
+        // encrypted devices.
         if backing_partition.partition_type == PartitionType::Swap {
             contents.push_str(&format!(
                 "{}\t{}\t{}\tluks,swap,cipher={},size={}\n",
                 ev.device_name,
                 device_path.display(),
                 "/dev/random",
-                CIPHER,
-                KEY_SIZE
+                encryption::CIPHER,
+                encryption::KEY_SIZE
             ));
         } else {
             contents.push_str(&format!(
@@ -416,13 +346,13 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
     if contents.is_empty() {
         if path.exists() {
             info!("Removing crypttab because there are no encrypted volumes");
-            std::fs::remove_file(&path).structured(ServicingError::RemoveCrypttab {
+            fs::remove_file(&path).structured(ServicingError::RemoveCrypttab {
                 crypttab_path: path.to_string_lossy().to_string(),
             })?;
         }
     } else {
-        debug!("crypttab file contents:\n{contents}");
-        osutils::files::write_file(path.clone(), 0o644, contents.as_bytes()).structured(
+        trace!("crypttab file contents:\n{contents}");
+        files::write_file(path.clone(), 0o644, contents.as_bytes()).structured(
             ServicingError::CreateCrypttab {
                 crypttab_path: path.to_string_lossy().to_string(),
             },
@@ -636,7 +566,7 @@ mod tests {
         let host_config = get_host_config(&recovery_key_file);
 
         // Delete the recovery key file.
-        std::fs::remove_file(recovery_key_file.path()).unwrap();
+        fs::remove_file(recovery_key_file.path()).unwrap();
 
         assert_eq!(
             validate_host_config(&host_config).unwrap_err().kind(),
@@ -689,7 +619,7 @@ mod tests {
                     // Set the recovery key file's permissions to mode
                     let mut perms = recovery_key_file.path().metadata().unwrap().permissions();
                     perms.set_mode(mode);
-                    std::fs::set_permissions(recovery_key_file.path(), perms).unwrap();
+                    fs::set_permissions(recovery_key_file.path(), perms).unwrap();
 
                     validate_host_config(&host_config).unwrap();
                 }
@@ -716,7 +646,7 @@ mod tests {
                     // Set the recovery key file's permissions to mode
                     let mut perms = recovery_key_file.path().metadata().unwrap().permissions();
                     perms.set_mode(mode);
-                    std::fs::set_permissions(recovery_key_file.path(), perms).unwrap();
+                    fs::set_permissions(recovery_key_file.path(), perms).unwrap();
 
                     assert_eq!(
                         validate_host_config(&host_config).unwrap_err().kind(),
@@ -738,7 +668,7 @@ mod tests {
         let host_config = get_host_config(&recovery_key_file);
 
         // Set the recovery key file's contents to empty.
-        std::fs::write(recovery_key_file.path(), "").unwrap();
+        fs::write(recovery_key_file.path(), "").unwrap();
 
         assert_eq!(
             validate_host_config(&host_config).unwrap_err().kind(),
