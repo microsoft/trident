@@ -16,8 +16,9 @@ use osutils::{block_devices, chroot, container, dependencies::Dependency, path::
 use trident_api::{
     config::HostConfiguration,
     constants::{
-        self, internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
-        UPDATE_ROOT_PATH,
+        self,
+        internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
+        ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
     },
     error::{
         InitializationError, InternalError, InvalidInputError, ReportError, ServicingError,
@@ -990,6 +991,16 @@ fn configure(
     ctx: &EngineContext,
     exec_root: &Path,
 ) -> Result<(), TridentError> {
+    // UKI support currently assumes root verity without a writable overlay. Many module's configure
+    // methods would fail in this case, so we skip all of them.
+    //
+    // TODO: More granular logic for which configure operations to skip. At a minimum,
+    // post-configuration scripts should still run. Additionally, errors should be generated for any
+    // customizations requested in the Host Configuration that would be skipped.
+    if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+        return Ok(());
+    }
+
     // If verity is present, it means that we are currently doing root
     // verity. For now, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.

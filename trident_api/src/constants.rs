@@ -159,6 +159,9 @@ pub mod internal_params {
     /// Enable support for cosi files
     pub const ENABLE_COSI_SUPPORT: &str = "cosi";
 
+    /// Experimental support for UKIs
+    pub const ENABLE_UKI_SUPPORT: &str = "uki";
+
     /// Execroot deny-list extension parameter name
     pub const EXECROOT_DENYLIST_EXTENSION: &str = "execrootDenyList";
 

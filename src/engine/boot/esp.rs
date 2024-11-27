@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info, trace, warn};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
@@ -16,11 +16,16 @@ use osutils::{
     hashing_reader::HashingReader,
     image_streamer,
     mount::{self, MountGuard},
+    path::join_relative,
 };
 use trident_api::{
     config::{Image, ImageFormat, ImageSha256},
-    constants::internal_params::DISABLE_GRUB_NOPREFIX_CHECK,
+    constants::{
+        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, ENABLE_UKI_SUPPORT},
+        ESP_MOUNT_POINT_PATH,
+    },
     error::{ReportError, TridentError, TridentResultExt, UnsupportedConfigurationError},
+    status::AbVolumeSelection,
 };
 
 use crate::engine::{
@@ -179,6 +184,105 @@ fn copy_file_artifacts(
             temp_mount_dir.display(),
             esp_dir_path.display()
         ))?;
+
+    if ctx.spec.internal_params.get_flag(ENABLE_UKI_SUPPORT) {
+        let esp_root_path = join_relative(mount_point, ESP_MOUNT_POINT_PATH);
+
+        // The directory where systemd-boot looks for UKIs.
+        let esp_uki_directory = esp_root_path.join("EFI/Linux");
+
+        // Create the EFI/Linux directory on the ESP if it doesn't exist.
+        fs::create_dir_all(&esp_uki_directory)
+            .context("Failed to create 'EFI/Linux' on the ESP")?;
+
+        // Find all UKIs within the image. There should only be one.
+        let ukis: Vec<_> = temp_mount_dir
+            .join("EFI/Linux")
+            .read_dir()
+            .context("Could not read UKI directory")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed while reading UKI directory")?
+            .into_iter()
+            .map(|entry| entry.path())
+            .collect();
+        ensure!(!ukis.is_empty(), "No UKI files found within the image");
+        ensure!(ukis.len() == 1, "Multiple UKI files found within the image");
+
+        // Copy the UKI from the image into the AZLA/ALZB directory. Eventually the UKI will be
+        // placed into /EFI/Linux on the ESP. But in order to do that atomically, the file needs to
+        // already be located somewhere on the ESP.
+        const TMP_UKI_NAME: &str = "vmlinuz.efi";
+        fs::copy(&ukis[0], esp_dir_path.join(TMP_UKI_NAME))
+            .context("Failed to copy UKI to the ESP")?;
+
+        // Create 'loader/entries.srel' on the ESP as required by the Boot Loader Specification.
+        fs::create_dir(esp_root_path.join("loader"))
+            .context("Failed to create directory loader")?;
+        fs::write(esp_root_path.join("loader/entries.srel"), "type1\n")
+            .context("Failed to write entries.srel")?;
+
+        // Update the boot order used by systemd-boot.
+        //
+        // Every UKI placed by Trident will have a name of the form
+        // 'vmlinuz-<N>-azl<volume><index>.efi'. Due to the way systemd-boot works, the UKI with the
+        // highest N will be first in the boot order. The volume and install index portions of the
+        // name are used to map UKIs to the particular install index and A/B volume that created
+        // them.
+        //
+        // In the loop below, we delete any existing UKIs with the current install index and A/B
+        // update volume, and record the highest N of any UKI that remains. Once the loop is
+        // finished, this enables us to place the new UKI at the next highest N so that it will be
+        // first in the boot order.
+        //
+        // TODO: The rename should really happen during 'finalize' rather than when the ESP image is
+        // being written.
+        let uki_suffix = match ctx.ab_active_volume {
+            Some(AbVolumeSelection::VolumeA) => format!("azlb{}.efi", ctx.install_index),
+            None | Some(AbVolumeSelection::VolumeB) => {
+                format!("azla{}.efi", ctx.install_index)
+            }
+        };
+        let mut max_index = 0;
+        let entries = fs::read_dir(&esp_uki_directory).context(format!(
+            "Failed to read directory '{}'",
+            esp_uki_directory.display()
+        ))?;
+        for entry in entries {
+            let entry = entry.context("Failed to read entry")?;
+            let filename = entry.file_name();
+
+            // Parse the filename according to Trident's naming scheme. Any UKIs that don't match
+            // the naming scheme are for some other unknown install and will be left in place. This
+            // means they'll either be prioritized before or after the UKI Trident is placing, but
+            // they won't be deleted.
+            let Some((index, suffix)) = filename
+                .to_str()
+                .and_then(|filename| filename.strip_prefix("vmlinuz-"))
+                .and_then(|f| f.split_once('-'))
+                .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix)))
+            else {
+                trace!(
+                    "Ignoring existing UKI file '{}' that does not match Trident naming scheme",
+                    entry.path().display()
+                );
+                continue;
+            };
+
+            if suffix == uki_suffix {
+                fs::remove_file(entry.path()).context(format!(
+                    "Failed to remove file '{}'",
+                    entry.path().display()
+                ))?;
+            } else {
+                max_index = max_index.max(index);
+            }
+        }
+        fs::rename(
+            esp_dir_path.join(TMP_UKI_NAME),
+            esp_uki_directory.join(format!("vmlinuz-{}-{uki_suffix}", max_index + 1)),
+        )
+        .context("Failed to rename UKI file")?;
+    }
 
     // Bail if grub_noprefix.efi is not found on Azure Linux images.
     if !grub_noprefix
