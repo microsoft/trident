@@ -7,14 +7,16 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use enumflags2::BitFlags;
 use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use osutils::{
     dependencies::{Dependency, DependencyResultExt},
-    encryption, files, lsblk,
-    lsblk::BlockDeviceType,
+    encryption, files,
+    lsblk::{self, BlockDeviceType},
+    pcr::Pcr,
 };
 use trident_api::{
     config::{
@@ -230,7 +232,9 @@ fn encrypt_and_open_device(
         device_path.display()
     );
 
-    encryption::systemd_cryptenroll(key_file, device_path)?;
+    // Enroll the TPM 2.0 device for the underlying device. Currently, we bind the enrollment to
+    // PCR 7 by default.
+    encryption::systemd_cryptenroll(key_file, device_path, BitFlags::from(Pcr::Pcr7))?;
 
     debug!(
         "Opening underlying encrypted device '{}' as '{}'",
