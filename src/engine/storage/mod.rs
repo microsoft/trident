@@ -23,6 +23,7 @@ use crate::engine::Subsystem;
 mod encryption;
 mod filesystem;
 pub mod image;
+pub mod osimage;
 pub mod partitioning;
 pub mod raid;
 pub mod rebuild;
@@ -35,6 +36,7 @@ use super::EngineContext;
 
 const IMAGE_SUBSYSTEM_NAME: &str = "image";
 const ENCRYPTION_SUBSYSTEM_NAME: &str = "encryption";
+const OSIMAGE_SUBSYSTEM_NAME: &str = "osimage";
 
 #[derive(Default, Debug)]
 pub(super) struct StorageSubsystem;
@@ -148,6 +150,10 @@ impl Subsystem for StorageSubsystem {
 
         encryption::validate_host_config(host_config).message(format!(
             "Step 'Validate' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
+        ))?;
+
+        osimage::validate_host_config(ctx, host_config).message(format!(
+            "Step 'Validate' failed for subsystem '{OSIMAGE_SUBSYSTEM_NAME}'"
         ))?;
 
         Ok(())

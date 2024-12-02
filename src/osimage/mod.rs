@@ -6,8 +6,12 @@ use trident_api::primitives::hash::Sha384Hash;
 use url::Url;
 
 mod cosi;
+#[cfg(test)]
+pub(crate) mod mock;
 
 use cosi::{Cosi, CosiFileSystemImage};
+#[cfg(test)]
+use mock::{MockFileSystemImage, MockOsImage};
 
 /// Abstract representation of an OS image.
 #[derive(Debug, Clone)]
@@ -17,6 +21,10 @@ pub struct OsImage(OsImageInner);
 enum OsImageInner {
     /// Composable OS Image (COSI)
     Cosi(Cosi),
+
+    /// Mock implementation for testing purposes
+    #[cfg(test)]
+    Mock(Box<MockOsImage>),
 }
 
 impl OsImage {
@@ -24,10 +32,17 @@ impl OsImage {
         Ok(Self(OsImageInner::Cosi(Cosi::new(url)?)))
     }
 
+    #[cfg(test)]
+    pub(crate) fn mock(mock_os_image: MockOsImage) -> Self {
+        Self(OsImageInner::Mock(Box::new(mock_os_image)))
+    }
+
     /// Returns the name of the OS image type.
     pub(crate) fn name(&self) -> &'static str {
         match &self.0 {
             OsImageInner::Cosi(_) => "COSI",
+            #[cfg(test)]
+            OsImageInner::Mock(_) => "Mock",
         }
     }
 
@@ -35,14 +50,22 @@ impl OsImage {
     pub(crate) fn source(&self) -> &Url {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.source(),
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => &mock.source,
         }
     }
 
     /// Returns an iterator over the available mount points provided by the OS image. It does not
     /// include the ESP filesystem mount point.
-    pub(crate) fn available_mount_points(&self) -> impl Iterator<Item = &Path> {
+    pub(crate) fn available_mount_points<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Path> + 'a> {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.filesystems().map(|fs| fs.image.mount_point.as_path()),
+            OsImageInner::Cosi(cosi) => {
+                Box::new(cosi.filesystems().map(|fs| fs.image.mount_point.as_path()))
+            }
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => {
+                Box::new(mock.filesystems().map(|fs| fs.image.mount_point.as_path()))
+            }
         }
     }
 
@@ -50,6 +73,8 @@ impl OsImage {
     pub(crate) fn architecture(&self) -> SystemArchitecture {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.architecture(),
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => mock.architecture(),
         }
     }
 
@@ -57,13 +82,17 @@ impl OsImage {
     pub(crate) fn esp_filesystem(&self) -> Result<FileSystemImage, Error> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.esp_filesystem().map(FileSystemImage::cosi),
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => mock.esp_filesystem().map(FileSystemImage::mock),
         }
     }
 
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(crate) fn filesystems(&self) -> impl Iterator<Item = FileSystemImage> {
+    pub(crate) fn filesystems<'a>(&'a self) -> Box<dyn Iterator<Item = FileSystemImage> + 'a> {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.filesystems().map(FileSystemImage::cosi),
+            OsImageInner::Cosi(cosi) => Box::new(cosi.filesystems().map(FileSystemImage::cosi)),
+            #[cfg(test)]
+            OsImageInner::Mock(fs) => Box::new(fs.filesystems().map(FileSystemImage::mock)),
         }
     }
 }
@@ -73,6 +102,8 @@ pub struct FileSystemImage<'a>(FileSystemImageType<'a>);
 
 enum FileSystemImageType<'a> {
     Cosi(CosiFileSystemImage<'a>),
+    #[cfg(test)]
+    Mock(MockFileSystemImage<'a>),
 }
 
 impl<'a> FileSystemImage<'a> {
@@ -81,10 +112,17 @@ impl<'a> FileSystemImage<'a> {
         Self(FileSystemImageType::Cosi(fs))
     }
 
+    #[cfg(test)]
+    fn mock(fs: MockFileSystemImage<'a>) -> Self {
+        Self(FileSystemImageType::Mock(fs))
+    }
+
     /// Returns the path where this filesystem image should be mounted.
     pub fn mount_point(&self) -> &Path {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => &fs.image.mount_point,
+            #[cfg(test)]
+            FileSystemImageType::Mock(fs) => &fs.image.mount_point,
         }
     }
 
@@ -92,6 +130,8 @@ impl<'a> FileSystemImage<'a> {
     pub fn fs_type(&self) -> &str {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => &fs.image.fs_type,
+            #[cfg(test)]
+            FileSystemImageType::Mock(fs) => &fs.image.fs_type,
         }
     }
 
@@ -99,6 +139,8 @@ impl<'a> FileSystemImage<'a> {
     pub fn part_type(&self) -> DiscoverablePartitionType {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => fs.image.part_type,
+            #[cfg(test)]
+            FileSystemImageType::Mock(fs) => fs.image.part_type,
         }
     }
 
@@ -106,6 +148,10 @@ impl<'a> FileSystemImage<'a> {
     pub fn reader(&self) -> Result<Box<dyn Read>, Error> {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => fs.reader(),
+            #[cfg(test)]
+            FileSystemImageType::Mock(_) => {
+                unimplemented!("Mock filesystem image does not implement reader() method")
+            }
         }
     }
 
@@ -113,6 +159,10 @@ impl<'a> FileSystemImage<'a> {
     pub fn size(&self) -> u64 {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => fs.image.file.uncompressed_size,
+            #[cfg(test)]
+            FileSystemImageType::Mock(_) => {
+                unimplemented!("Mock filesystem image does not implement size() method")
+            }
         }
     }
 
@@ -120,6 +170,10 @@ impl<'a> FileSystemImage<'a> {
     pub fn sha384(&self) -> &Sha384Hash {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => &fs.image.file.sha384,
+            #[cfg(test)]
+            FileSystemImageType::Mock(_) => {
+                unimplemented!("Mock filesystem image does not implement sha384() method")
+            }
         }
     }
 
@@ -127,6 +181,10 @@ impl<'a> FileSystemImage<'a> {
     pub fn verity_roothash(&self) -> Option<&str> {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => fs.image.verity.as_ref().map(|v| v.roothash.as_str()),
+            #[cfg(test)]
+            FileSystemImageType::Mock(_) => {
+                unimplemented!("Mock filesystem image does not implement verity_roothash() method")
+            }
         }
     }
 
@@ -134,6 +192,10 @@ impl<'a> FileSystemImage<'a> {
     pub fn verity_reader(&self) -> Option<Result<Box<dyn Read>, Error>> {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => fs.reader_verity(),
+            #[cfg(test)]
+            FileSystemImageType::Mock(_) => {
+                unimplemented!("Mock filesystem image does not implement verity_reader() method")
+            }
         }
     }
 
@@ -143,6 +205,10 @@ impl<'a> FileSystemImage<'a> {
             FileSystemImageType::Cosi(fs) => {
                 fs.image.verity.as_ref().map(|v| v.file.uncompressed_size)
             }
+            #[cfg(test)]
+            FileSystemImageType::Mock(_) => {
+                unimplemented!("Mock filesystem image does not implement verity_size() method")
+            }
         }
     }
 
@@ -150,6 +216,10 @@ impl<'a> FileSystemImage<'a> {
     pub fn verity_sha384(&self) -> Option<&Sha384Hash> {
         match &self.0 {
             FileSystemImageType::Cosi(fs) => fs.image.verity.as_ref().map(|v| &v.file.sha384),
+            #[cfg(test)]
+            FileSystemImageType::Mock(_) => {
+                unimplemented!("Mock filesystem image does not implement verity_sha384() method")
+            }
         }
     }
 }

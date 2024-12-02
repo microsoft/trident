@@ -81,6 +81,11 @@ pub enum InternalError {
     #[error("Failed to get the ESP partition information")]
     GetEspDeviceInfo,
 
+    #[error(
+        "Failed to find mount point in Host Configuration for filesystems sourced from an OS image"
+    )]
+    GetMountPointForOSImage,
+
     #[error("Failed to get root block device path")]
     GetRootBlockDevicePath,
 
@@ -143,8 +148,21 @@ pub enum InvalidInputError {
         actual: &'static str,
     },
 
+    #[error("Provided '{hc_fs_type}' filesystem type at '{mount_point}' in Host Configuration, but found '{os_img_fs_type}' filesystem type in the OS image")]
+    MismatchedFsType {
+        mount_point: String,
+        hc_fs_type: String,
+        os_img_fs_type: String,
+    },
+
     #[error("An OS image must be provided.")]
     MissingOsImage,
+
+    #[error("Filesystem at '{mount_point}' of type '{fs_type}' in Host Configuration could not be found in the OS image")]
+    MissingOsImageFilesystem {
+        mount_point: String,
+        fs_type: String,
+    },
 
     #[error("Old style configuration not supported, 'hostConfiguration:' tag must be removed")]
     OldStyleConfiguration,
@@ -167,6 +185,12 @@ pub enum InvalidInputError {
 
     #[error("Failed to translate kickstart")]
     TranslateKickstart,
+
+    #[error("Filesystem at '{mount_point}' of type '{fs_type}' in OS Image is not being used by the provided Host Configuration")]
+    UnusedOsImageFilesystem {
+        mount_point: String,
+        fs_type: String,
+    },
 }
 
 /// Identifies errors that occur during servicing and require further user investigation, to
