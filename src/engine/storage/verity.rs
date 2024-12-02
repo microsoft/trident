@@ -118,8 +118,7 @@ fn setup_root_verity_device(
     let root_hash = get_root_verity_root_hash(ctx)?;
 
     // Get the verity data and hash device paths from the engine context
-    let (verity_data_path, verity_hash_path, _) =
-        get_verity_related_device_paths(ctx, root_verity_device)?;
+    let (verity_data_path, verity_hash_path) = get_verity_device_paths(ctx, root_verity_device)?;
 
     let updated_device_name = get_updated_device_name(&root_verity_device.device_name);
 
@@ -210,14 +209,13 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
     Ok(())
 }
 
-/// Get the verity data, hash, and overlay device paths.
+/// Get the verity data and hash paths.
 ///
-/// Verity data and hash devices are fetched from the engine context, and the
-/// overlay is curently hardcoded to TRIDENT_OVERLAY_PATH (/var/lib/trident-overlay).
-pub fn get_verity_related_device_paths(
+/// Verity data and hash devices are fetched from the engine context.
+pub fn get_verity_device_paths(
     ctx: &EngineContext,
     verity_device: &config::InternalVerityDevice,
-) -> Result<(PathBuf, PathBuf, PathBuf), Error> {
+) -> Result<(PathBuf, PathBuf), Error> {
     let verity_data_path = engine::get_block_device_path(ctx, &verity_device.data_target_id)
         .context(format!(
             "Failed to find path of verity data device with id '{}'",
@@ -230,6 +228,15 @@ pub fn get_verity_related_device_paths(
             verity_device.hash_target_id
         ))?;
 
+    Ok((verity_data_path, verity_hash_path))
+}
+
+/// Returns the device path of the block device which holds the verity overlay.
+///
+/// When root verity is used, Trident creates an overlay over the root filesystem to allow itself to
+/// perform write operations. This overlay must be located on a writeable filesystem, and thus
+/// cannot be on the root partition itself.
+fn get_verity_overlay_device_path(ctx: &EngineContext) -> Result<PathBuf, Error> {
     let overlay_target_id = &ctx
         .spec
         .storage
@@ -237,14 +244,12 @@ pub fn get_verity_related_device_paths(
         .iter()
         .find(|mp| mp.path == Path::new(TRIDENT_OVERLAY_PATH))
         .context(format!(
-            "Cannot find overlay device mount point '{TRIDENT_OVERLAY_PATH}'"
+            "'{TRIDENT_OVERLAY_PATH}' is not on a dedicated partition (currently required for dm-verity)"
         ))?
         .target_id;
-    let overlay_device_path = engine::get_block_device_path(ctx, overlay_target_id).context(
-        format!("Failed to find overlay device {}", overlay_target_id),
-    )?;
-
-    Ok((verity_data_path, verity_hash_path, overlay_device_path))
+    engine::get_block_device_path(ctx, overlay_target_id).context(format!(
+        "Failed to find device '{overlay_target_id}' which is supposed to be mounted at '{TRIDENT_OVERLAY_PATH}'",
+    ))
 }
 
 /// Update the root data, hash and overlay davice paths in the GRUB config,
@@ -269,8 +274,8 @@ pub(super) fn configure(ctx: &EngineContext, root_mount_path: &Path) -> Result<(
     // Ensure there is only one linux command line
     grub_config.check_linux_command_line_count()?;
 
-    let (verity_data_path, verity_hash_path, mnt_device_path) =
-        get_verity_related_device_paths(ctx, verity_device)?;
+    let (verity_data_path, verity_hash_path) = get_verity_device_paths(ctx, verity_device)?;
+    let mnt_device_path = get_verity_overlay_device_path(ctx)?;
 
     // Dynamically build the OVERLAYS value including the mount device path
     let volume_value = mnt_device_path.to_str().context(format!(
@@ -615,8 +620,9 @@ mod tests {
             ..Default::default()
         };
 
-        let (verity_data_path, verity_hash_path, overlay_device_path) =
-            get_verity_related_device_paths(&ctx, &ctx.spec.storage.internal_verity[0]).unwrap();
+        let (verity_data_path, verity_hash_path) =
+            get_verity_device_paths(&ctx, &ctx.spec.storage.internal_verity[0]).unwrap();
+        let overlay_device_path = get_verity_overlay_device_path(&ctx).unwrap();
         assert_eq!(verity_data_path, PathBuf::from("/dev/sdb2"));
         assert_eq!(verity_hash_path, PathBuf::from("/dev/sdb3"));
         assert_eq!(overlay_device_path, PathBuf::from("/dev/sdb4"));
@@ -629,10 +635,10 @@ mod tests {
             .internal_mount_points
             .retain(|mp| mp.path != PathBuf::from("/var/lib/trident-overlay"));
         assert_eq!(
-            get_verity_related_device_paths(&ctx_no_overlay, &ctx.spec.storage.internal_verity[0])
+            get_verity_overlay_device_path(&ctx_no_overlay)
                 .unwrap_err()
                 .to_string(),
-            "Cannot find overlay device mount point '/var/lib/trident-overlay'"
+            "'/var/lib/trident-overlay' is not on a dedicated partition (currently required for dm-verity)"
         );
 
         // test no verity data target id
@@ -645,7 +651,7 @@ mod tests {
             .unwrap()
             .data_target_id = "non-existing".into();
         assert_eq!(
-            get_verity_related_device_paths(
+            get_verity_device_paths(
                 &ctx_no_verity_data,
                 &ctx_no_verity_data.spec.storage.internal_verity[0]
             )
@@ -664,7 +670,7 @@ mod tests {
             .unwrap()
             .hash_target_id = "non-existing".into();
         assert_eq!(
-            get_verity_related_device_paths(
+            get_verity_device_paths(
                 &ctx_no_verity_hash,
                 &ctx_no_verity_hash.spec.storage.internal_verity[0]
             )
@@ -686,13 +692,10 @@ mod tests {
             .retain(|p| p.id != "overlay");
         ctx_no_overlay.block_device_paths.remove("overlay");
         assert_eq!(
-            get_verity_related_device_paths(
-                &ctx_no_overlay,
-                &ctx_no_overlay.spec.storage.internal_verity[0]
-            )
-            .unwrap_err()
-            .to_string(),
-            "Failed to find overlay device overlay"
+            get_verity_overlay_device_path(&ctx_no_overlay,)
+                .unwrap_err()
+                .to_string(),
+            "Failed to find device 'overlay' which is supposed to be mounted at '/var/lib/trident-overlay'"
         );
     }
 

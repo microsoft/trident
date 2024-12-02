@@ -165,8 +165,8 @@ fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, Trident
         let root_verity_device_config = get_root_verity_device_config(ctx, root_device_id)
             .structured(ServicingError::GetRootVerityDeviceConfig)?;
 
-        let (verity_data_path, _, _) =
-            verity::get_verity_related_device_paths(ctx, &root_verity_device_config)
+        let (verity_data_path, _) =
+            verity::get_verity_device_paths(ctx, &root_verity_device_config)
                 .structured(ServicingError::GetRootVerityDataDevPath)?;
 
         verity_data_path

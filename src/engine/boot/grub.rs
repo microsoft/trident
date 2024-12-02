@@ -166,8 +166,8 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
             .iter()
             .find(|device| device.id == *root_device_id)
             .map(|verity_device| {
-                let (verity_data_path, verity_hash_path, _) =
-                    verity::get_verity_related_device_paths(ctx, verity_device)
+                let (verity_data_path, verity_hash_path) =
+                    verity::get_verity_device_paths(ctx, verity_device)
                         .context("Failed to get verity-related device paths")?;
 
                 let verity_data_path_str = verity_data_path
