@@ -108,7 +108,10 @@ mod tests {
         arch::SystemArchitecture, osrelease::OsRelease, osuuid::OsUuid,
         partition_types::DiscoverablePartitionType,
     };
-    use trident_api::config::{FileSystem, FileSystemSource, FileSystemType, MountPoint, Storage};
+    use trident_api::{
+        config::{FileSystem, FileSystemSource, FileSystemType, MountPoint, Storage},
+        error::ErrorKind,
+    };
 
     use crate::osimage::{
         mock::{MockImage, MockOsImage},
@@ -180,7 +183,7 @@ mod tests {
     /// This test checks the scenario where there are more filesystems listed in
     /// the OS image than there are in the Host Configuration
     #[test]
-    fn test_validate_host_config_failure_unused_filesystems() {
+    fn test_validate_host_config_failure_unused() {
         let mock_entries_os_image = [
             ("/image/path/A", "ext4"),
             ("/image/path/B", "ext4"),
@@ -216,7 +219,15 @@ mod tests {
         let host_config = ctx.spec.clone();
 
         // Test that validation does not pass
-        validate_host_config(&ctx, &host_config).unwrap_err();
+        let validation_err = validate_host_config(&ctx, &host_config).unwrap_err();
+        assert_eq!(
+            validation_err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::UnusedOsImageFilesystem {
+                mount_point: "/unused/image/C".to_string(),
+                fs_type: "ext4".to_string()
+            }),
+            "Expected UnusedOsImageFilesystem error"
+        );
     }
 
     /// This test checks the scenario where the filesystems on the OS image
@@ -244,7 +255,7 @@ mod tests {
 
         let mock_entries_hc = [
             ("/image/path/A", FileSystemType::Ext4),
-            ("/image/other-path/X", FileSystemType::Ext4),
+            ("/image/path/B", FileSystemType::Vfat),
         ]
         .into_iter();
 
@@ -254,6 +265,62 @@ mod tests {
         let host_config = ctx.spec.clone();
 
         // Test that validation does not pass
-        validate_host_config(&ctx, &host_config).unwrap_err();
+        let validation_err = validate_host_config(&ctx, &host_config).unwrap_err();
+        assert_eq!(
+            validation_err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::MismatchedFsType {
+                mount_point: "/image/path/B".to_string(),
+                hc_fs_type: "vfat".to_string(),
+                os_img_fs_type: "ext4".to_string()
+            }),
+            "Expected MismatchedFsType error"
+        )
+    }
+
+    /// This test checks the scenario where a filesystem on the Host
+    /// Configuration is missing from the OS image
+    #[test]
+    fn test_validate_host_config_failure_missing() {
+        let mock_entries_os_image =
+            [("/image/path/A", "ext4"), ("/image/path/B", "ext4")].into_iter();
+
+        // Generate mock OS image
+        let os_image = OsImage::mock(MockOsImage {
+            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
+            os_arch: SystemArchitecture::X86,
+            os_release: OsRelease::default(),
+            images: mock_entries_os_image
+                .clone()
+                .map(|(path, fs_type)| MockImage {
+                    mount_point: PathBuf::from(path),
+                    fs_type: fs_type.to_string(),
+                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                    part_type: DiscoverablePartitionType::LinuxGeneric,
+                })
+                .collect(),
+        });
+
+        let mock_entries_hc = [
+            ("/image/path/A", FileSystemType::Ext4),
+            ("/image/path/B", FileSystemType::Ext4),
+            ("/image/path/C", FileSystemType::Ext4),
+        ]
+        .into_iter();
+
+        // Generate Engine Context and Host Configuration
+        let ctx = generate_test_engine_context(os_image, mock_entries_hc);
+
+        let host_config = ctx.spec.clone();
+
+        // Test that validation does not pass
+        let validation_err = validate_host_config(&ctx, &host_config).unwrap_err();
+        assert_eq!(
+            validation_err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::MissingOsImageFilesystem {
+                mount_point: "/image/path/C".to_string(),
+                fs_type: "ext4".to_string()
+            }),
+            "Expected MissingOsImageFilesystem error"
+        )
     }
 }
