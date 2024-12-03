@@ -39,7 +39,49 @@ pub fn systemd_cryptenroll(
         ))
 }
 
-/// Runs `cryptsetup-reencrypt` to re-encrypt the given device with LUKS2 encryption.
+/// Runs `cryptsetup-luksFormat` to initialize a LUKS2 encrypted volume for the given underlying
+/// device.
+///
+/// This function is used on a clean install by default.
+pub fn cryptsetup_luksformat(
+    key_file: impl AsRef<Path>,
+    device_path: impl AsRef<Path>,
+) -> Result<(), Error> {
+    Dependency::Cryptsetup
+        .cmd()
+        .arg("luksFormat")
+        .arg("--cipher")
+        .arg(CIPHER)
+        .arg("--force-password")
+        .arg("--hash")
+        .arg("sha512")
+        .arg("--iter-time")
+        .arg("0")
+        .arg("--key-file")
+        .arg(key_file.as_ref().as_os_str())
+        .arg("--key-size")
+        .arg(KEY_SIZE)
+        .arg("--key-slot")
+        .arg("0")
+        .arg("--pbkdf")
+        .arg("pbkdf2")
+        .arg("--reduce-device-size")
+        .arg(format!("{}M", LUKS_HEADER_SIZE_IN_MIB))
+        .arg("--type")
+        .arg("luks2")
+        .arg(device_path.as_ref().as_os_str())
+        .run_and_check()
+        .context(format!(
+            "Failed to encrypt underlying device '{}'",
+            device_path.as_ref().display()
+        ))
+}
+
+/// Runs `cryptsetup-reencrypt` to re-encrypt the LUKS2 encrypted volume for the given underlying
+/// device in-place.
+///
+/// While by default, `cryptsetup-luksFormat` will be used on a clean install, an internal
+/// parameter `REENCRYPT_ON_CLEAN_INSTALL` can be set, to instead re-encrypt the volumes.
 pub fn cryptsetup_reencrypt(
     key_file: impl AsRef<Path>,
     device_path: impl AsRef<Path>,

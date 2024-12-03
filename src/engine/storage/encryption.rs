@@ -23,7 +23,7 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, Partition, PartitionSize, PartitionType,
     },
-    constants::internal_params::NO_CLOSE_ENCYRPTED_VOLUMES,
+    constants::internal_params::{NO_CLOSE_ENCYRPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     BlockDeviceId,
 };
@@ -121,6 +121,13 @@ pub(super) fn close_pre_existing_encrypted_volumes(
     Ok(())
 }
 
+/// Describes the type of encryption.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum EncryptionType {
+    LuksFormat,
+    Reencrypt,
+}
+
 /// Provisions all configured encrypted volumes.
 #[tracing::instrument(name = "encryption_provision", fields(total_partition_size_bytes = tracing::field::Empty), skip_all)]
 pub(super) fn provision(
@@ -197,14 +204,27 @@ pub(super) fn provision(
                 },
             )?;
 
-            encrypt_and_open_device(&device_path, &ev.device_name, &key_file_path).structured(
-                ServicingError::EncryptBlockDevice {
-                    device_path: device_path.to_string_lossy().to_string(),
-                    device_id: ev.device_id.clone(),
-                    encrypted_volume_device_name: ev.device_name.clone(),
-                    encrypted_volume: ev.id.clone(),
+            // Check if `RECRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
+            // the device in-place. Otherwise, initialize a new LUKS2 volume.
+            encrypt_and_open_device(
+                &device_path,
+                &ev.device_name,
+                &key_file_path,
+                if host_config
+                    .internal_params
+                    .get_flag(REENCRYPT_ON_CLEAN_INSTALL)
+                {
+                    EncryptionType::Reencrypt
+                } else {
+                    EncryptionType::LuksFormat
                 },
-            )?;
+            )
+            .structured(ServicingError::EncryptBlockDevice {
+                device_path: device_path.to_string_lossy().to_string(),
+                device_id: ev.device_id.clone(),
+                encrypted_volume_device_name: ev.device_name.clone(),
+                encrypted_volume: ev.id.clone(),
+            })?;
         }
         tracing::Span::current().record("total_partition_size_bytes", total_partition_size_bytes);
     }
@@ -215,17 +235,41 @@ pub(super) fn provision(
 /// Encrypts the device of a single encrypted volume by reformatting the device with a LUKS2
 /// header, enrolling a key file, enrolling another randomly generated key and sealing it in the
 /// TPM 2.0 device with PCR 7, and finally, opening the device as a LUKS2 volume.
+///
+/// This function takes in 4 arguments:
+/// - `device_path`: The path to the device to be encrypted.
+/// - `device_name`: The name of the device to be used in the crypttab.
+/// - `key_file`: The path to the key file to be used for encryption.
+/// - `encryption_type`: The type of encryption to be used. Determines whether the device should be
+///    re-encrypted in-place, or whether a new LUKS2 volume should be initialized.
 fn encrypt_and_open_device(
     device_path: &Path,
     device_name: &String,
     key_file: &Path,
+    encryption_type: EncryptionType,
 ) -> Result<(), Error> {
-    debug!(
-        "Re-encrypting underlying device '{}'",
-        device_path.display()
-    );
-
-    encryption::cryptsetup_reencrypt(key_file, device_path)?;
+    match encryption_type {
+        EncryptionType::Reencrypt => {
+            debug!(
+                "Re-encrypting underlying device '{}' in-place",
+                device_path.display()
+            );
+            encryption::cryptsetup_reencrypt(key_file, device_path).context(format!(
+                "Failed to re-encrypt underlying device '{}'",
+                device_path.display()
+            ))?;
+        }
+        EncryptionType::LuksFormat => {
+            debug!(
+                "Encrypting underlying device '{}' with LUKS2",
+                device_path.display()
+            );
+            encryption::cryptsetup_luksformat(key_file, device_path).context(format!(
+                "Failed to encrypt underlying device '{}'",
+                device_path.display()
+            ))?;
+        }
+    }
 
     debug!(
         "Enrolling TPM 2.0 device for underlying device '{}'",

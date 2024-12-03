@@ -173,4 +173,8 @@ pub mod internal_params {
 
     /// Run extra partition and filesystem checks before reboot
     pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
+
+    /// Re-encrypt the encrypted LUKS2 volumes in-place on clean install, instead of initializing
+    /// new LUKS2 volumes.
+    pub const REENCRYPT_ON_CLEAN_INSTALL: &str = "reencryptOnCleanInstall";
 }
