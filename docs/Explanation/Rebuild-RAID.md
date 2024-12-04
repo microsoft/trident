@@ -1,4 +1,5 @@
 # Table of Contents
+
 - [Table of Contents](#table-of-contents)
   - [RAID and Rebuild-RAID](#raid-and-rebuild-raid)
   - [Use Cases](#use-cases)
@@ -13,36 +14,44 @@
     - [Sample Host Configuration](#sample-host-configuration)
 
 ## RAID and Rebuild-RAID
+
 RAID (Redundant Array of Independent Disks) is a technology that uses multiple
 disks to provide fault tolerance, improve performance, or both. When a disk in a
 RAID array fails, RAID-rebuild is the process by which the data that was on the
 failed disk is reconstructed onto a new disk.
 
 ## Use Cases
+
 ### When Should This Feature Be Used?
+
 - When a disk in a RAID array fails and needs to be replaced.
 
 ### When Is It Valuable?
+
 - In environments where data loss cannot be tolerated.
 
 ### When Is It Not?
+
 - For single-disk systems where RAID is not implemented.
 - In systems where a different data redundancy or backup strategy is in use.
 
 ## Capabilities & Limitations
+
 ### Capabilities
+
 - Reconstruction of data from a failed disk onto a new disk.
 - Maintaining data integrity and system functionality during the rebuild process.
 
 ### Limitations
+
 - Cannot handle the detection and physical replacement of the failed disk.
 - Rebuild RAID is not supported if the disk configuration includes images, mount points, or encryption on partitions which are not members of RAID.
 **Disk Configuration Requirements**: The new disk for the rebuild must only have unformatted partitions or partitions which are members of software RAID arrays. An unformatted partition is a segment of a disk that has not been formatted with a file system; it is in its initial, unprocessed state. Rebuilding is not supported if the disk configuration includes images, mount points, or encryption on partitions which are not members of RAID.
 
 **Consistency with Initial Host Configuration**: The disk configuration must match the original host configuration provided when the host was first provisioned. Simply run `trident rebuild-raid`, and Trident will by default load its configuration from `/etc/trident/config.yaml` to start rebuilding the RAID arrays on the new disk.
 
-
 ## Implementation
+
 This is a step-by-step explanation of how RAID-rebuild works, using RAID 1 (mirroring) as an example:
 
 1. **Detection**: The RAID controller or user software identifies the failed disk.
@@ -58,11 +67,11 @@ Please refer to [Trident Rebuild RAID](./docs/How-To-Guides/Trident-Rebuild-RAID
 When the `trident rebuild-raid` command is executed, it first verifies whether
 the host configuration is suitable for a rebuild operation. It identifies the
 presence of a new disk by monitoring the UUIDs of the disks. If a new disk is
-detected, it proceeds with further validation. 
+detected, it proceeds with further validation.
 
 The command then examines whether the disk configuration includes members of a
 RAID array that have an active copy, enabling data recovery from another disk,
-or if it has unformatted partitions. 
+or if it has unformatted partitions.
 
 If the rebuild operation is deemed feasible, Trident begins by rebuilding the
 new disk. It creates partitions and integrates the newly created RAID array

@@ -129,7 +129,7 @@ running the A/B update flow with Trident.
    view the Trident logs to follow the A/B update flow live:
 
    ```bash
-   sudo trident run -v trace
+   sudo trident run -v trace -c /path/to/host-config.yaml --allowed-operations stage,finalize
    ```
 
 8. Confirm that the VM simulating a BM host reboots into the new runtime OS

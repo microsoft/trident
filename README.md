@@ -135,16 +135,17 @@ following commands, which can be provided as command line parameters:
 
 - `run`: Runs Trident in the current OS. This is the main command to use to
   start Trident. Trident will load its configuration from
-  `/etc/trident/config.yaml` and start applying the desired Host Configuration.
-  In addition, if you pass `--status <path-to-output-file>`, Trident will write
-  the resulting Host Status to the specified file.
+  `/etc/trident/config.yaml` by default, or from `/path/to/host-config.yaml` if
+  `--config` argument is provided, and start applying the desired Host
+  Configuration. In addition, if you pass `--status <path-to-output-file>`,
+  Trident will write the resulting Host Status to the specified file.
 - `get`: Fetches the current Host Status, which then gets printed to the
   standard output. In addition, if you pass `--status <path-to-output-file>`,
   Trident will write the Host Status into the specified file instead.
 - `start-network`: Uses the `network` or `networkOverride` configuration (see
-  below for details, loaded from `/etc/trident/config.yaml`) to configure
-  networking in the currently running OS. This is mainly used to start up
-  networking during the initial provisioning, when the default DHCP
+  below for details, loaded from `/etc/trident/config.yaml` by default) to
+  configure networking in the currently running OS. This is mainly used to
+  start up networking during the initial provisioning, when the default DHCP
   configuration is not sufficient.
 - `rebuild-raid`: Requests Trident to rebuild RAID arrays when a disk failure
   occurs and a disk is replaced. After running the `trident rebuild-raid`
@@ -227,37 +228,42 @@ For more details on the Host Configuration format:
 
 ### Command Line Options
 
-- **--allowed-operations**: a list of flags representing allowed operations.
-  This is a set of operations that Trident is allowed to perform on the host.
-  Supported flags are:
-  - **stage**: Trident will stage a new runtime OS as required by the updated
-    Host Configuration. However, Trident will not reboot the host into the newly
-    stage runtime OS. This is useful if you want to drive additional operations
-    on the host outside of Trident or delay the reboot until a later point in
-    time. After the new runtime OS image has been staged, Trident will update
-    the host's status to Staged.
-  - **finalize**: Trident will reboot the host into the newly staged runtime
-    OS image to finalize a clean install or A/B update. Trident will first
-    manage the UEFI firmware variables, to ensure that post reboot, the
-    firmware will boot into the updated runtime OS image. Then, Trident will
-    set the host's servicing state to Finalized and reboot. After the host
-    comes back up, Trident will confirm that firmware correctly booted from the
-    updated runtime OS image and change the host's state to Provisioned.
-    Otherwise, if the host failed to boot from the expected device and instead,
-    booted from another device, Trident will issue an error to the user and set
-    the host's servicing state to CleanInstallFailed or AbUpdateFailed.
+#### Allowed Operations
 
-  The possible values are:
+**--allowed-operations** is a list of flags representing allowed operations.
+This is a set of operations that Trident is allowed to perform on the host.
 
-  * `--allowed-operations` (empty list means no operations are allowed)
-  * `--allowed-operations stage`
-  * `--allowed-operations finalize`
-  * `--allowed-operations stage,finalize` [default]
+Supported flags are:
 
-  When no operations are allowed, Trident will refresh the Host Status, but no
-  operations will be performed on the host.
+- **stage**: Trident will stage a new runtime OS as required by the updated
+  Host Configuration. However, Trident will not reboot the host into the newly
+  staged runtime OS. This is useful if you want to drive additional operations
+  on the host outside of Trident or delay the reboot until a later point in
+  time. After the new runtime OS image has been staged, Trident will update the
+  host's servicing state to `Staged`.
+- **finalize**: Trident will reboot the host into the newly staged runtime OS
+  image to finalize a clean install or A/B update. Trident will first manage
+  the UEFI firmware variables, to ensure that post reboot, the firmware boots
+  into the updated runtime OS image. Then, Trident will set the host's
+  servicing state to `Finalized` and reboot. After the host comes back up,
+  Trident will validate that firmware correctly booted from the updated runtime
+  OS image and change the host's servicing state to `Provisioned`. Otherwise,
+  if the host failed to boot from the expected device, Trident will issue an
+  error to the user.
 
-- For other command line options, run `trident run --help`.
+The possible values are:
+
+- `--allowed-operations` (empty list means no operations are allowed)
+- `--allowed-operations stage`
+- `--allowed-operations finalize`
+- `--allowed-operations stage,finalize` [default]
+
+When no operations are allowed, Trident will refresh the Host Status, but no
+operations will be performed on the host.
+
+#### Other Options
+
+For other command line options, run `trident run --help`.
 
 ### Agent Configuration
 
@@ -386,28 +392,30 @@ os:
 ```
 
 In the sample Host Configuration above, we're requesting Trident to create
-**two copies of the root** partition, i.e., a volume pair with id `root` that
-contains two partitions `root-a` and `root-b`, and to place an image in the raw
-zstd format onto `root`. However, as mentioned, the user can create volume pairs
-of different types. In particular, each volume pair can contain two disk
-partitions of any type except for ESP, two RAID arrays, or two encrypted volumes.
+**two copies** of the root partition, i.e., a volume pair with ID `root` that
+contains two partitions `root-a` and `root-b`, and to place an image in the
+`raw-zst` format onto `root`.
+
+For feature testing, the config should be modified to contain RAID arrays,
+verity, encryption, etc., to ensure that the A/B upgrade flow succeeds when
+these features are enabled.
 
 When the installation of the initial runtime OS is completed, the user will be
-able to log or ssh into the baremetal host, or the VM simulating a BM host. The
-user can now request an A/B update by applying an edited Trident host config.
-To do so, the user needs to update the `filesystems` section with the info on
-the new OS images, including their local URL links and sha256 hashes.
+able to log or ssh into the baremetal host or the VM instance. The user can now
+request an A/B update by applying an edited Trident config. To do so, the user
+needs to update the `filesystems` section with the info on the new OS images,
+including their local URL links and sha256 hashes.
 
-- To overwrite the Trident HostConfig, the user can either use vim or the sed
-command, for example:
+- To update the Trident config, the user can either use vim or the sed
+  command, for example:
 
     ```bash
-    sed -i 's|file:///trident_cdrom/data/esp.rawzst|<local_url>/esp_v2.rawzst|' /etc/trident/config.yaml
-    sed -i 's|file:///trident_cdrom/data/root.rawzst|<local_url>/root_v2.rawzst|' /etc/trident/config.yaml
+    sed -i 's|file:///trident_cdrom/data/esp.rawzst|<local_url>/esp_v2.rawzst| /path/to/host-config.yaml'
+    sed -i 's|file:///trident_cdrom/data/root.rawzst|<local_url>/root_v2.rawzst| /path/to/host-config.yaml'
     ```
 
-- After overwriting the Host Configuration, the user needs to apply the new
-host config by restarting Trident with the following command:
+- Now, the user needs to apply the new config by running Trident with the
+  following command:
 
     ```bash
     sudo systemctl restart trident.service
@@ -417,25 +425,26 @@ host config by restarting Trident with the following command:
   or:
 
     ```bash
-    sudo trident run -v trace
+    sudo trident run -c /path/to/host-config.yaml --allowed-operations stage,finalize
     ```
 
-- When the A/B update completes and the baremetal host, or a VM simulating a BM
-host, reboots, the user will be able to log or ssh back into the host. Now, the
-user can view the changes to the system by fetching the host's status:
-`trident get`. The user can also use commands such as `blkid` and `mount` to
-confirm that the volume pairs have been correctly updated and that the correct
-block devices have been mounted at the designated mountpoints.
+- When the A/B update completes and the baremetal host or the VM host reboots,
+  the user will be able to log or ssh back into the host. Now, the user can
+  view the changes to the system by fetching the Host Status via the
+  `trident get` command. The user can also use commands such as `blkid` and
+  `mount` to confirm that the volume pairs have been correctly updated and that
+  the correct block devices have been mounted at the designated mountpoints.
 
-- If the user wants to separately stage or finalize a clean install or an A/B
-update, `allowedOperations` also need to be updated, in addition to the image
-info:
+#### Staging and Finalizing A/B Update
 
-1. To only stage a new deployment, update the image info and set:
-   `allowedOperations: [stage]`.
-1. To only finalize the staged deployment, set: `allowedOperations: finalize`.
-1. To both stage a new deployment and then immediately finalize it, update the
-image info and set: `allowedOperations: [stage, finalize]`.
+In addition to testing the standard A/B update flow, where the new OS images
+are staged and then, immediately, finalized, it is also important to validate
+the scenario where the deployment is staged and finalized separately.
+
+- To only stage a new deployment, set `--allowed-operations stage`.
+- To only finalize the staged deployment, set `--allowed-operations finalize`.
+- To both stage a new deployment and then immediately finalize it, set
+  `--allowed-operations stage,finalize`.
 
 ## dm-verity Support
 
@@ -484,12 +493,12 @@ from a container, make sure you set this as part of your `Dockerfile`:
 DOCKER_ENVIRONMENT=true
 ```
 
-Update `/etc/trident/config.yaml` with the desired configuration.
+Update `/path/to/host-config.yaml` with the desired configuration.
 
 To run Trident using a docker container, run:
 
 ```bash
-docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys --pid host --ipc host trident/trident run
+docker run --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys --pid host --ipc host trident/trident run -c /path/to/host-config.yaml
 ```
 
 ## Running from Azure VM
