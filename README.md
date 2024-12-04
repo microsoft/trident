@@ -43,8 +43,8 @@ Linux, with focus on security. Among the features that Trident supports are:
     - [Safety check](#safety-check)
   - [Trident Configuration](#trident-configuration)
     - [Host Configuration](#host-configuration)
-    - [User Options](#user-options)
-    - [Internal Fields](#internal-fields)
+    - [Command Line Options](#command-line-options)
+    - [Agent Configuration](#agent-configuration)
   - [A/B Update](#ab-update)
     - [Getting Started with A/B Update](#getting-started-with-ab-update)
   - [dm-verity Support](#dm-verity-support)
@@ -184,15 +184,13 @@ creating a file named `override-trident-safety-check` in the root directory.
 
 ## Trident Configuration
 
-Trident is controlled by an input file containing both the desired state of the
-host and some configuration options. By default, this YAML file is read from
-`/etc/trident/config.yaml` though the path can be overridden using the
-`--config` command line option.
+Trident is controlled by an input file called the Host Configuration. By
+default, this YAML file is read from `/etc/trident/config.yaml` though the path
+can be overridden using the `--config` command line option.
 
-There is a `validate` subcommand that can be easily used to validate a config
-file. It is intended to enable fast iteration and can be run from a dev machine
-or other Linux system. Trident also supports validating a standalone Host
-Configuration file. For more details, see [Host Configuration
+There is a `validate` subcommand that can be easily used to validate a Host
+Configuration file. It is intended to enable fast iteration and can be run from
+a dev machine or other Linux system. For more details, see [Host Configuration
 Validation](docs/How-To-Guides/Host-Configuration-Validation.md).
 
 The validator can check the configuration for syntax errors, but also for many
@@ -205,10 +203,7 @@ Trident will catch these issues at runtime.
 The desired state of the machine is described by passing one of the following:
 
 - **hostConfiguration**: describes the host configuration. This is the
-  configuration that Trident will apply to the host (same payload as
-  `hostConfigurationFile`, but directly embedded in the Trident configuration).
-- **hostConfigurationFile**: path to the Host Configuration file. This is a YAML
-  file that describes the host configuration in the Host Configuration format.
+  configuration that Trident will apply to the host.
 - **kickstart**: describes the host configuration in the kickstart format. This
   is the configuration that Trident will apply to the host (same payload as
   `kickstartFile`, but directly embedded in the Trident configuration). WIP,
@@ -230,9 +225,9 @@ For more details on the Host Configuration format:
 - And also as a JSON Schema here:
 [host-config-schema.json](trident_api/schemas/host-config-schema.json)
 
-### User Options
+### Command Line Options
 
-- **allowedOperations**: a list of flags representing allowed operations.
+- **--allowed-operations**: a list of flags representing allowed operations.
   This is a set of operations that Trident is allowed to perform on the host.
   Supported flags are:
   - **stage**: Trident will stage a new runtime OS as required by the updated
@@ -252,57 +247,30 @@ For more details on the Host Configuration format:
     booted from another device, Trident will issue an error to the user and set
     the host's servicing state to CleanInstallFailed or AbUpdateFailed.
 
-  You can pass one, multiple, or no flags as a YAML list, for example:
+  The possible values are:
 
-    ```yaml
-    # Inline List
-    allowedOperations: [stage, finalize]
-
-    # Inline list, just one value
-    allowedOperations: [finalize]
-
-    # Multiline list
-    allowedOperations:
-      - stage
-      - finalize
-
-    # Multiline list, just one value
-    allowedOperations:
-      - finalize
-
-    # No operations
-    allowedOperations: []
-    ```
+  * `--allowed-operations` (empty list means no operations are allowed)
+  * `--allowed-operations stage`
+  * `--allowed-operations finalize`
+  * `--allowed-operations stage,finalize` [default]
 
   When no operations are allowed, Trident will refresh the Host Status, but no
   operations will be performed on the host.
-- **phonehome**: optional URL to reach out to when networking is up, so Trident
-  can report its status. This is useful for debugging and monitoring purposes,
-  say by an orchestrator. Note that separately the updates to the Host Status
-  can be monitored, once gRPC support is implemented. TODO: document the
-  interface, for reference in the meantime
-  [src/orchestrate.rs](src/orchestrate.rs).
-- **networkOverride**: optional network configuration for the bootstrap OS. If
-  not specified, the network configuration from Host Configuration (see below)
-  will be used otherwise.
-- **waitForProvisioningNetwork**: USE WITH CAUTION!! IT WILL INCREASE BOOT TIMES
-  IF THE NETWORK CONFIGURATION IS NOT PERFECT. (Only affects clean installs)
-  When set to `true`, Trident will start `systemd-networkd-wait-online` to wait
-  for the provisioning network to be up and configured before starting the
-  provisioning flow. To avoid problems, only configure interfaces you know
-  should work and are required for provisioning. Try to match by full name to
-  avoid matching interfaces you don't want to. E.g. `eth0` instead of `eth*` to
-  avoid matching `eth1` and `eth2` as well.
 
-<!-- There is also a grpc field, but it is not enabled in release builds -->
+- For other command line options, run `trident run --help`.
 
-### Internal Fields
+### Agent Configuration
 
-- **datastore**: if present, indicates the path to an existing datastore Trident
-  should load its state from. This field should not be included when Trident is
-  running from the provisioning OS. Trident interprets this field to mean that
-  it is running from an already provisioned system and thus should perform
-  updates rather than a clean install.
+In addition to the Host Configuration which describes the desired state of the
+machine, there is also an Agent Configuration file which controls the operation
+of Trident itself. At startup, Trident loads this Agent Configuration from
+`/etc/trident/trident.conf` on the system it is run from.
+
+Currently there is only a single field:
+
+- **DatastorePath=/path/to/datastore.sqlite**: if present, indicates the path to
+  a sqlite database that Trident should load and store its state from. If it
+  doesn't exist, Trident will create it. The default value is `/var/lib/trident/datastore.sqlite`.
 
 ## A/B Update
 
@@ -330,92 +298,91 @@ on as a local file. For example, the OS image can be bundled with the installer
 OS and referenced from the initial Host Configuration as follows:
 
 ```yaml
-hostConfiguration:
-  storage:
-    disks:
-      - id: os
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-        partitionTableType: gpt
-        partitions:
-          - id: esp
-            type: esp
-            size: 1G
-          - id: root-a
-            type: root
-            size: 8G
-          - id: root-b
-            type: root
-            size: 8G
-          - id: swap
-            type: swap
-            size: 2G
-          - id: home
-            type: home
-            size: 1G
-          - id: trident
-            type: linux-generic
-            size: 1G
-      - id: disk2
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-        partitionTableType: gpt
-        partitions: []
-    abUpdate:
-      volumePairs:
-        - id: root
-          volumeAId: root-a
-          volumeBId: root-b
-    filesystems:
-      - deviceId: swap
-        type: swap
-      - deviceId: trident
-        type: ext4
-        mountPoint:
-          path: /var/lib/trident
-          options: defaults
-      - deviceId: home
-        type: ext4
-        mountPoint:
-          path: /home
-          options: defaults
-      - deviceId: esp
-        type: vfat
-        source:
-          type: esp-image
-          url: file:///trident_cdrom/data/esp.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint:
-          path: /boot/efi
-          options: umask=0077
-      - deviceId: root
-        type: ext4
-        source:
-          type: image
-          url: file:///trident_cdrom/data/root.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
-  scripts:
-    postConfigure:
-      - name: testing-privilege
-        runOn:
-          - clean-install
-          - ab-update
-        content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
-  os:
-    network:
-      version: 2
-      ethernets:
-        vmeths:
-          match:
-            name: enp*
-          dhcp4: true
-    users:
-      - name: testing-user
-        sshPublicKeys: []
-        sshMode: key-only
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          size: 1G
+        - id: root-a
+          type: root
+          size: 8G
+        - id: root-b
+          type: root
+          size: 8G
+        - id: swap
+          type: swap
+          size: 2G
+        - id: home
+          type: home
+          size: 1G
+        - id: trident
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+  filesystems:
+    - deviceId: swap
+      type: swap
+    - deviceId: trident
+      type: ext4
+      mountPoint:
+        path: /var/lib/trident
+        options: defaults
+    - deviceId: home
+      type: ext4
+      mountPoint:
+        path: /home
+        options: defaults
+    - deviceId: esp
+      type: vfat
+      source:
+        type: esp-image
+        url: file:///trident_cdrom/data/esp.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      type: ext4
+      source:
+        type: image
+        url: file:///trident_cdrom/data/root.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /
+        options: defaults
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+        - ab-update
+      content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+os:
+  network:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only
 ```
 
 In the sample Host Configuration above, we're requesting Trident to create

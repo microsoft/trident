@@ -11,86 +11,85 @@ running the A/B update flow with Trident.
    follows:
 
    ```yaml
-         hostConfiguration:
-            storage:
-               disks:
-               - id: os
-                  device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-                  partitionTableType: gpt
-                  partitions:
-                     - id: esp
-                     type: esp
-                     size: 1G
-                     - id: root-a
-                     type: root
-                     size: 8G
-                     - id: root-b
-                     type: root
-                     size: 8G
-                     - id: swap
-                     type: swap
-                     size: 2G
-                     - id: home
-                     type: home
-                     size: 1G
-                     - id: trident
-                     type: linux-generic
-                     size: 1G
-               - id: disk2
-                  device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-                  partitionTableType: gpt
-                  partitions: []
-            abUpdate:
-               volumePairs:
-                  - id: root
-                     volumeAId: root-a
-                     volumeBId: root-b
-            filesystems:
-               - deviceId: swap
-                  type: swap
-               - deviceId: trident
-                  type: ext4
-                  mountPoint: /var/lib/trident
-               - deviceId: home
-                  type: ext4
-                  mountPoint: /home
-               - deviceId: esp
-                  type: vfat
-                  source:
-                     type: image
-                     url: file:///trident_cdrom/data/esp.rawzst
-                     sha256: ignored
-                     format: raw-zst
-                  mountPoint:
-                     path: /boot/efi
-                     options: umask=0077
-               - deviceId: root
-                  type: ext4
-                  source:
-                     type: image
-                     url: file:///trident_cdrom/data/root.rawzst
-                     sha256: ignored
-                     format: raw-zst
-                  mountPoint: /
-            scripts:
-               postConfigure:
-               - name: testing-privilege
-                  runOn:
-                     - clean-install
-                     - ab-update
-                  content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
-            os:
-               network:
-               version: 2
-               ethernets:
-                  vmeths:
-                     match:
-                     name: enp*
-                     dhcp4: true
-            users:
-               - name: testing-user
-                  sshPublicKeys: []
-                  sshMode: key-only
+   storage:
+      disks:
+      - id: os
+         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+         partitionTableType: gpt
+         partitions:
+            - id: esp
+            type: esp
+            size: 1G
+            - id: root-a
+            type: root
+            size: 8G
+            - id: root-b
+            type: root
+            size: 8G
+            - id: swap
+            type: swap
+            size: 2G
+            - id: home
+            type: home
+            size: 1G
+            - id: trident
+            type: linux-generic
+            size: 1G
+      - id: disk2
+         device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+         partitionTableType: gpt
+         partitions: []
+   abUpdate:
+      volumePairs:
+         - id: root
+            volumeAId: root-a
+            volumeBId: root-b
+   filesystems:
+      - deviceId: swap
+         type: swap
+      - deviceId: trident
+         type: ext4
+         mountPoint: /var/lib/trident
+      - deviceId: home
+         type: ext4
+         mountPoint: /home
+      - deviceId: esp
+         type: vfat
+         source:
+            type: image
+            url: file:///trident_cdrom/data/esp.rawzst
+            sha256: ignored
+            format: raw-zst
+         mountPoint:
+            path: /boot/efi
+            options: umask=0077
+      - deviceId: root
+         type: ext4
+         source:
+            type: image
+            url: file:///trident_cdrom/data/root.rawzst
+            sha256: ignored
+            format: raw-zst
+         mountPoint: /
+   scripts:
+      postConfigure:
+      - name: testing-privilege
+         runOn:
+            - clean-install
+            - ab-update
+         content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+   os:
+      network:
+      version: 2
+      ethernets:
+         vmeths:
+            match:
+            name: enp*
+            dhcp4: true
+   users:
+      - name: testing-user
+         sshPublicKeys: []
+         sshMode: key-only
    ```
 
 2. In the sample host configuration above, Trident is requested to create
@@ -116,9 +115,9 @@ running the A/B update flow with Trident.
    curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/555555/root.rawzst -o root_v2.raw.zst
    ```
 
-6. Request an A/B update by applying an edited Trident HostConfig. In the
-   local TridentConfig, update **storage.images** section to include the
-   local URL links to the update images:
+6. Request an A/B update by applying an edited Host Configuration. In the config
+   file, update **storage.images** section to include the local URL links to the
+   update images:
 
    ```bash
    cat > /etc/trident/config.yaml << EOF
@@ -126,9 +125,8 @@ running the A/B update flow with Trident.
    EOF
    ```
 
-7. After updating the HostConfiguration, apply the new local Trident config by
-   restarting Trident and view the Trident logs to follow the A/B update flow
-   live:
+7. After updating the Host Configuration, apply it by restarting Trident and
+   view the Trident logs to follow the A/B update flow live:
 
    ```bash
    sudo trident run -v trace

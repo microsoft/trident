@@ -44,7 +44,7 @@ enum Commands {
         #[clap(short, long, default_value = "/etc/trident/config.yaml")]
         config: PathBuf,
 
-        #[clap(long, value_delimiter = ',', num_args = 1.., default_value = "stage,finalize")]
+        #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
         allowed_operations: Vec<AllowedOperation>,
 
         /// Path to save the resulting Host Status

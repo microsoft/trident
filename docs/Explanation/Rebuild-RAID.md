@@ -1,9 +1,16 @@
 # Table of Contents
-1. [RAID and Rebuild-RAID](#raid-and-rebuild-raid)
-2. [Use Cases](#use-cases)
-3. [Capabilities & Limitations](#capabilities--limitations)
-4. [Implementation](#implementation)
-5. [Sample host configuration](#sample-host-configuration)
+- [Table of Contents](#table-of-contents)
+  - [RAID and Rebuild-RAID](#raid-and-rebuild-raid)
+  - [Use Cases](#use-cases)
+    - [When Should This Feature Be Used?](#when-should-this-feature-be-used)
+    - [When Is It Valuable?](#when-is-it-valuable)
+    - [When Is It Not?](#when-is-it-not)
+  - [Capabilities \& Limitations](#capabilities--limitations)
+    - [Capabilities](#capabilities)
+    - [Limitations](#limitations)
+  - [Implementation](#implementation)
+    - [What Is Trident Doing Internally](#what-is-trident-doing-internally)
+    - [Sample Host Configuration](#sample-host-configuration)
 
 ## RAID and Rebuild-RAID
 RAID (Redundant Array of Independent Disks) is a technology that uses multiple
@@ -64,75 +71,74 @@ members into the existing RAID array.
 ### Sample Host Configuration
 
 ```yaml
-hostConfiguration:
-  storage:
-    disks:
-      - id: disk1
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
-        partitionTableType: gpt
-        partitions:
-          - id: esp1
-            type: esp
-            size: 100M
-          - id: root-a1
-            type: root
-            size: 4G
-          - id: root-b1
-            type: root
-            size: 1G
-      - id: disk2
-        device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
-        partitionTableType: gpt
-        partitions: 
-          - id: root-a2
-            type: root
-            size: 4G
-          - id: root-b2
-            type: root
-            size: 1G
-          - id: raw-part
-            type: linux-generic
-            size: 100M 
-    raid:
-      software:
-        - id: root-a
-          name: root-a
-          level: raid1
-          devices:
-            - root-a1
-            - root-a2
-        - id: root-b
-          name: root-b
-          level: raid1
-          devices:
-            - root-b1
-            - root-b2
-    abUpdate:
-      volumePairs:
-        - id: root
-          volumeAId: root-a
-          volumeBId: root-b
-    filesystems:
-      - deviceId: root
-        type: ext4
-        source:
-          type: image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint:
-          path: /
-          options: defaults
-      - deviceId: esp1
-        type: vfat
-        source:
-          type: esp-image
-          url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-          sha256: ignored
-          format: raw-zst
-        mountPoint:
-          path: /boot/efi
-          options: umask=0077 
+storage:
+  disks:
+    - id: disk1
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp1
+          type: esp
+          size: 100M
+        - id: root-a1
+          type: root
+          size: 4G
+        - id: root-b1
+          type: root
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions:
+        - id: root-a2
+          type: root
+          size: 4G
+        - id: root-b2
+          type: root
+          size: 1G
+        - id: raw-part
+          type: linux-generic
+          size: 100M
+  raid:
+    software:
+      - id: root-a
+        name: root-a
+        level: raid1
+        devices:
+          - root-a1
+          - root-a2
+      - id: root-b
+        name: root-b
+        level: raid1
+        devices:
+          - root-b1
+          - root-b2
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+  filesystems:
+    - deviceId: root
+      type: ext4
+      source:
+        type: image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /
+        options: defaults
+    - deviceId: esp1
+      type: vfat
+      source:
+        type: esp-image
+        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
+        sha256: ignored
+        format: raw-zst
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
 ```
 
 In the sample host configuration above, a Trident rebuild RAID operation can be
