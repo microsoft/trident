@@ -48,7 +48,6 @@ pub struct User {
 
     /// Home directory for the user.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub home_directory: Option<String>,
 }
 

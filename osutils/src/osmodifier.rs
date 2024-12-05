@@ -54,6 +54,9 @@ pub struct MICUser {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub startup_command: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_directory: Option<String>,
 }
 
 #[derive(Serialize)]

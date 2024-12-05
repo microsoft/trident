@@ -18,6 +18,14 @@ Username
 | -------------- | -------- |
 | Type           | `string` |
 
+### `homeDirectory` (optional)
+
+Home directory for the user.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
 ### `password` (optional)
 
 Password configuration.

@@ -1229,6 +1229,11 @@
         "name"
       ],
       "properties": {
+        "homeDirectory": {
+          "description": "Home directory for the user.",
+          "type": "string",
+          "nullable": true
+        },
         "name": {
           "description": "Username",
           "type": "string"

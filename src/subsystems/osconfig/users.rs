@@ -207,5 +207,6 @@ fn create_mic_user(user: User) -> MICUser {
         primary_group: user.primary_group,
         secondary_groups: user.secondary_groups,
         startup_command: user.startup_command,
+        home_directory: user.home_directory,
     }
 }
