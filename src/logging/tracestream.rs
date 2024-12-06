@@ -149,10 +149,6 @@ impl TraceSender {
         }
     }
 
-    fn has_server(&self) -> bool {
-        self.server.read().map(|s| s.is_some()).unwrap_or_default()
-    }
-
     fn get_server(&self) -> Option<String> {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
     }
@@ -183,7 +179,7 @@ where
         metadata: &tracing::Metadata<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) -> bool {
-        metadata.level() <= &tracing::Level::INFO && self.has_server()
+        metadata.level() <= &tracing::Level::INFO
     }
 
     /// Each time an event is fired, this function is called for the TraceSender
@@ -191,53 +187,54 @@ where
     /// if enabled returns true. It creates a TraceEntry from the event based on
     /// the information cared about and sends it to the server.
     fn on_event(&self, event: &Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
-        if let Some(target) = self.get_server() {
-            let mut visitor = TraceEntryVisitor::default();
-            event.record(&mut visitor);
+        let mut visitor = TraceEntryVisitor::default();
+        event.record(&mut visitor);
 
-            let metric_name = match visitor.fields.get("metric_name").and_then(|v| v.as_str()) {
-                Some(name) => name.to_string(),
-                None => {
-                    warn!("Event does not have a metric_name field, skipping!");
-                    return;
-                }
-            };
+        let metric_name = match visitor.fields.get("metric_name").and_then(|v| v.as_str()) {
+            Some(name) => name.to_string(),
+            None => {
+                warn!("Event does not have a metric_name field, skipping!");
+                return;
+            }
+        };
 
-            // Apart from the metric name, check if we have a single or multiple values
-            let filtered_fields: BTreeMap<String, Value> = visitor
-                .fields
+        // Apart from the metric name, check if we have a single or multiple values
+        let filtered_fields: BTreeMap<String, Value> = visitor
+            .fields
+            .into_iter()
+            .filter(|(key, _)| key != "metric_name")
+            .collect();
+        let value = if filtered_fields.len() > 1 {
+            Value::Object(Map::from_iter(filtered_fields))
+        } else {
+            filtered_fields
                 .into_iter()
-                .filter(|(key, _)| key != "metric_name")
-                .collect();
-            let value = if filtered_fields.len() > 1 {
-                Value::Object(Map::from_iter(filtered_fields))
-            } else {
-                filtered_fields
-                    .into_iter()
-                    .find(|(k, _)| k == "value")
-                    .map(|(_, v)| v)
-                    .unwrap_or_default()
-            };
+                .find(|(k, _)| k == "value")
+                .map(|(_, v)| v)
+                .unwrap_or_default()
+        };
 
-            let entry = TraceEntry {
-                timestamp: Utc::now(),
-                metric_name,
-                value: json!(value),
-                additional_fields: ADDITIONAL_FIELDS.clone(),
-                platform_info: PLATFORM_INFO.clone(),
-            };
+        let entry = TraceEntry {
+            timestamp: Utc::now(),
+            metric_name,
+            value: json!(value),
+            additional_fields: ADDITIONAL_FIELDS.clone(),
+            platform_info: PLATFORM_INFO.clone(),
+        };
 
-            let body = match serde_json::to_string(&entry) {
-                Ok(b) => b,
-                Err(e) => {
-                    trace!("Failed to serialize trace entry: {}", e);
-                    return;
-                }
-            };
+        let body = match serde_json::to_string(&entry) {
+            Ok(b) => b,
+            Err(e) => {
+                trace!("Failed to serialize trace entry: {}", e);
+                return;
+            }
+        };
 
-            // Write the metric to the local metrics file
-            self.write_metric_to_file(body.clone());
+        // Write the metric to the local metrics file
+        self.write_metric_to_file(body.clone());
 
+        // Send the trace entry to the server if it exists
+        if let Some(target) = self.get_server() {
             if let Err(e) = self.client.post(target).body(body).send() {
                 trace!("Failed to send trace entry: {}", e);
             }
@@ -297,26 +294,27 @@ where
             .fields
             .insert("execution_time".to_string(), json!(execution_time));
 
+        let entry = TraceEntry {
+            timestamp: Utc::now(),
+            metric_name: span.name().to_string(),
+            value: json!(visitor.fields),
+            additional_fields: ADDITIONAL_FIELDS.clone(),
+            platform_info: PLATFORM_INFO.clone(),
+        };
+
+        let body = match serde_json::to_string(&entry) {
+            Ok(b) => b,
+            Err(e) => {
+                trace!("Failed to serialize trace entry: {}", e);
+                return;
+            }
+        };
+
+        // Write the metric to the local metrics file
+        self.write_metric_to_file(body.clone());
+
+        // Send the trace entry to the server if it exists
         if let Some(target) = self.get_server() {
-            let entry = TraceEntry {
-                timestamp: Utc::now(),
-                metric_name: span.name().to_string(),
-                value: json!(visitor.fields),
-                additional_fields: ADDITIONAL_FIELDS.clone(),
-                platform_info: PLATFORM_INFO.clone(),
-            };
-
-            let body = match serde_json::to_string(&entry) {
-                Ok(b) => b,
-                Err(e) => {
-                    trace!("Failed to serialize trace entry: {}", e);
-                    return;
-                }
-            };
-
-            // Write the metric to the local metrics file
-            self.write_metric_to_file(body.clone());
-
             if let Err(e) = self.client.post(target).body(body).send() {
                 trace!("Failed to send trace entry: {}", e);
             }
@@ -414,11 +412,6 @@ mod tests {
     fn test_tracestream() {
         let tracestream = TraceStream::default();
         let trace_sender = tracestream.make_trace_sender();
-
-        assert!(
-            !trace_sender.has_server(),
-            "tracestream should not have a server"
-        );
         assert!(
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
@@ -428,10 +421,6 @@ mod tests {
             .set_server("http://localhost:8080".to_string())
             .unwrap();
 
-        assert!(
-            trace_sender.has_server(),
-            "tracestream should have a server"
-        );
         assert_eq!(
             trace_sender.get_server().unwrap(),
             "http://localhost:8080",
@@ -445,10 +434,6 @@ mod tests {
         let trace_sender = tracestream.make_trace_sender();
 
         assert!(
-            !trace_sender.has_server(),
-            "tracestream should not have a server"
-        );
-        assert!(
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
         );
@@ -459,10 +444,6 @@ mod tests {
             .set_server("http://localhost:8080".to_string())
             .unwrap();
 
-        assert!(
-            !trace_sender.has_server(),
-            "tracestream should not have a server"
-        );
         assert!(
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
@@ -484,4 +465,120 @@ mod tests {
         let uuid = read_product_uuid(filepath.to_str().unwrap().to_string());
         assert_eq!(uuid, "test_uuid");
     }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use std::io::{BufRead, BufReader};
+
+    use super::*;
+
+    use pytest_gen::functional_test;
+    use tracing_subscriber::{filter, layer::SubscriberExt};
+
+    #[functional_test]
+    fn test_tracestream_write_metric_event_to_file() {
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender()
+            .with_filter(filter::LevelFilter::INFO);
+
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        )
+        .context("Failed to set global default subscriber")
+        .unwrap();
+
+        tracing::info!(metric_name = "test_metric", value = true);
+
+        // Ensure the trace system has time to write the file.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Check if the specific metric exists in the file.
+        let file = File::open(TRIDENT_METRICS_FILE_PATH).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let expected_substring = r#""metric_name":"test_metric","value":true"#;
+        let metric_found = lines.iter().any(|line| line.contains(expected_substring));
+
+        // Assert that the expected metric is present in the file.
+        assert!(
+            metric_found,
+            "Expected test metric not found in the local metrics file"
+        );
+    }
+
+    #[functional_test]
+    fn test_populate_additional_fields() {
+        let additional_fields = populate_additional_fields();
+        assert_eq!(
+            additional_fields.get("trident_version").unwrap(),
+            &json!(TRIDENT_VERSION)
+        );
+    }
+
+    #[functional_test]
+    fn test_populate_platform_info() {
+        let mut expected_platform_info = BTreeMap::new();
+        expected_platform_info.insert(
+            "asset_id".to_string(),
+            json!(read_product_uuid(PRODUCT_UUID_FILE.into())),
+        );
+        expected_platform_info.insert("os_release".to_string(), json!(get_os_release()));
+        expected_platform_info.insert("total_cpu".to_string(), json!(4));
+        expected_platform_info.insert("total_memory_gib".to_string(), json!(6));
+        expected_platform_info.insert(
+            "kernel_version".to_string(),
+            json!(uname::kernel_release().unwrap().trim()),
+        );
+
+        // Call the function to get the actual result.
+        let platform_info = populate_platform_info();
+
+        // Assert that the actual result matches the expected result.
+        assert_eq!(
+            platform_info, expected_platform_info,
+            "Platform info does not match the expected result"
+        );
+    }
+
+    #[functional_test]
+    fn test_tracestream_write_span_metric_to_file() {
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender()
+            .with_filter(filter::LevelFilter::INFO);
+
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        )
+        .context("Failed to set global default subscriber")
+        .unwrap();
+
+        // Call test function that will create a span
+        simulate_function_span();
+
+        // Ensure the trace system has time to simulate a span.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Check if the specific metric exists in the file.
+        let file = File::open(TRIDENT_METRICS_FILE_PATH).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let expected_substring = r#""metric_name":"test_span"#;
+        let span_metric_found = lines.iter().any(|line| line.contains(expected_substring));
+
+        // Assert that the expected metric is present in the file.
+        assert!(
+            span_metric_found,
+            "Expected test metric not found in the local metrics file"
+        );
+    }
+
+    // Helper function to test span metrics
+    #[tracing::instrument(name = "test_span", skip_all)]
+    fn simulate_function_span() {}
 }
