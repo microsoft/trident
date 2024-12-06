@@ -57,6 +57,9 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Netplan version '{version}' is invalid, must always be '2'")]
     InvalidNetplanVersion { version: u8 },
 
+    #[error("Invalid URL provided '{url}': '{explanation}'")]
+    InvalidSourceUrl { url: String, explanation: String },
+
     #[error("Mount point '{mount_point_path}' must be backed by A/B update volume pair")]
     MountPointNotBackedByAbUpdateVolumePair { mount_point_path: String },
 
@@ -94,6 +97,9 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error("Netplan renderer '{renderer}' is not supported")]
     UnsupportedNetplanRenderer { renderer: String },
+
+    #[error("Unsupported URL scheme provided '{url_scheme}', must be 'file', 'http', or 'https'")]
+    UnsupportedSourceUrlScheme { url_scheme: String },
 
     #[error("Only root verity device is supported, but other verity devices were requested")]
     UnsupportedVerityDevices,

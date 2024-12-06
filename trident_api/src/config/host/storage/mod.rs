@@ -5,6 +5,7 @@ use std::{
 
 use blkdev_graph::types::BlkDevNode;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
@@ -37,7 +38,7 @@ use self::{
     },
     disks::Disk,
     encryption::Encryption,
-    filesystem::{FileSystem, MountPointInfo, VerityFileSystem},
+    filesystem::{FileSystem, FileSystemSource, MountPointInfo, VerityFileSystem},
     imaging::{AbUpdate, Image},
     internal::{InternalMountPoint, InternalVerityDevice},
     partitions::Partition,
@@ -178,6 +179,8 @@ impl Storage {
     ) -> Result<(), HostConfigurationStaticValidationError> {
         // Check basic constraints
 
+        self.validate_image_urls()?;
+
         if let Some(encryption) = &self.encryption {
             encryption.validate()?;
         }
@@ -209,6 +212,43 @@ impl Storage {
         self.validate_verity(&graph)?;
 
         Ok(())
+    }
+
+    /// Validate all Image.urls in HostConfiguration.Storage.Filesystems and
+    /// HostConfiguration.Storage.VerityFileSystems.
+    ///
+    /// This function is called by validate() and returns an error if any Image.url
+    /// provided is incorrect or specifies an unsupported scheme.
+    fn validate_image_urls(&self) -> Result<(), HostConfigurationStaticValidationError> {
+        let mut all_images = vec![];
+        for fs in self.filesystems.iter() {
+            match &fs.source {
+                FileSystemSource::Image(img) => all_images.push(img.clone()),
+                FileSystemSource::EspImage(img) => all_images.push(img.clone()),
+                _ => {}
+            }
+        }
+        for vfs in self.verity_filesystems.iter() {
+            all_images.push(vfs.data_image.clone());
+            all_images.push(vfs.hash_image.clone());
+        }
+
+        all_images
+            .into_iter()
+            .try_for_each(|img| match Url::parse(img.url.as_str()) {
+                Err(e) => Err(HostConfigurationStaticValidationError::InvalidSourceUrl {
+                    url: img.url.clone(),
+                    explanation: e.to_string(),
+                }),
+                Ok(url) => match url.scheme() {
+                    "http" | "https" | "file" => Ok(()),
+                    _ => Err(
+                        HostConfigurationStaticValidationError::UnsupportedSourceUrlScheme {
+                            url_scheme: url.scheme().to_string(),
+                        },
+                    ),
+                },
+            })
     }
 
     /// Validate that a volume is present and backed by an image or an adopted
@@ -600,7 +640,7 @@ mod tests {
     use std::{path::PathBuf, str::FromStr};
 
     use blkdev_graph::types::AllowBlockList;
-    use url::Url;
+    use url::{ParseError, Url};
 
     use crate::{
         config::{
@@ -3003,5 +3043,154 @@ mod tests {
         assert_eq!(ab_volume_pair_images.len(), 0);
         let ab_volume_pair_ids = storage_no_ab_update.get_ab_volume_pair_ids();
         assert_eq!(ab_volume_pair_ids.len(), 0);
+    }
+
+    /// Validates that the logic in validate_host_config() is correct.
+    #[test]
+    fn test_validate_host_config_image_urls() {
+        let valid_http_image = Image {
+            url: "http://example.com/esp_2.img".to_string(),
+            sha256: ImageSha256::Checksum("valid_http_image".into()),
+            format: ImageFormat::RawZst,
+        };
+        let valid_local_image = Image {
+            url: "file:///tmp/esp_2.img".to_string(),
+            sha256: ImageSha256::Checksum("valid_local_image".into()),
+            format: ImageFormat::RawZst,
+        };
+        let schemeless_image = Image {
+            url: "/tmp/esp_2.img".to_string(),
+            sha256: ImageSha256::Checksum("schemeless_image".into()),
+            format: ImageFormat::RawZst,
+        };
+        let expected_error = HostConfigurationStaticValidationError::InvalidSourceUrl {
+            url: schemeless_image.url.clone(),
+            explanation: ParseError::RelativeUrlWithoutBase.to_string(),
+        };
+
+        let storage = Storage {
+            filesystems: vec![
+                FileSystem {
+                    source: FileSystemSource::EspImage(valid_http_image.clone()),
+                    device_id: None,
+                    fs_type: FileSystemType::Vfat,
+                    mount_point: None,
+                },
+                FileSystem {
+                    source: FileSystemSource::EspImage(valid_local_image.clone()),
+                    device_id: None,
+                    fs_type: FileSystemType::Vfat,
+                    mount_point: None,
+                },
+                FileSystem {
+                    source: FileSystemSource::Image(valid_http_image.clone()),
+                    device_id: None,
+                    fs_type: FileSystemType::Vfat,
+                    mount_point: None,
+                },
+                FileSystem {
+                    source: FileSystemSource::Image(valid_local_image.clone()),
+                    device_id: None,
+                    fs_type: FileSystemType::Vfat,
+                    mount_point: None,
+                },
+            ],
+            verity_filesystems: vec![
+                VerityFileSystem {
+                    data_image: valid_http_image.clone(),
+                    hash_image: valid_http_image.clone(),
+                    name: "a".to_string(),
+                    data_device_id: "a".to_string(),
+                    hash_device_id: "a".to_string(),
+                    fs_type: FileSystemType::Ext4,
+                    mount_point: MountPoint {
+                        path: "mp".to_string().into(),
+                        options: MountOptions::new("opt"),
+                    },
+                },
+                VerityFileSystem {
+                    data_image: valid_local_image.clone(),
+                    hash_image: valid_local_image.clone(),
+                    name: "a".to_string(),
+                    data_device_id: "a".to_string(),
+                    hash_device_id: "a".to_string(),
+                    fs_type: FileSystemType::Ext4,
+                    mount_point: MountPoint {
+                        path: "mp".to_string().into(),
+                        options: MountOptions::new("opt"),
+                    },
+                },
+            ],
+            ..Default::default()
+        };
+        // Check when ALL images/espimage are valid
+        storage.validate_image_urls().unwrap();
+        // Check that any invalid image in filesystems will signal failure
+        for i in 0..storage.filesystems.len() {
+            let mut storage_clone = storage.clone();
+            match storage_clone.filesystems[i].source {
+                FileSystemSource::EspImage(_) => {
+                    storage_clone.filesystems[i].source =
+                        FileSystemSource::EspImage(schemeless_image.clone())
+                }
+                FileSystemSource::Image(_) => {
+                    storage_clone.filesystems[i].source =
+                        FileSystemSource::Image(schemeless_image.clone())
+                }
+                _ => {}
+            }
+            assert_eq!(
+                storage_clone.validate_image_urls().unwrap_err(),
+                expected_error
+            );
+        }
+        // Check that any invalid image in verity_filesystems will signal failure
+        for i in 0..storage.verity_filesystems.len() {
+            let mut storage_data_image_test = storage.clone();
+            storage_data_image_test.verity_filesystems[i].data_image = schemeless_image.clone();
+            assert_eq!(
+                storage_data_image_test.validate_image_urls().unwrap_err(),
+                expected_error
+            );
+
+            let mut storage_hash_image_test = storage.clone();
+            storage_hash_image_test.verity_filesystems[i].hash_image = schemeless_image.clone();
+            assert_eq!(
+                storage_hash_image_test.validate_image_urls().unwrap_err(),
+                expected_error
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_host_configuration_url() {
+        let mut schemaless_storage: Storage = get_storage();
+        schemaless_storage.filesystems[0].source = FileSystemSource::EspImage(Image {
+            url: "/tmp/trident.img".to_string(),
+            sha256: ImageSha256::Checksum("trident_sha256_2_image_test".into()),
+            format: ImageFormat::RawZst,
+        });
+
+        assert_eq!(
+            schemaless_storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::InvalidSourceUrl {
+                url: "/tmp/trident.img".to_string(),
+                explanation: "relative URL without a base".to_string(),
+            }
+        );
+
+        let mut unknownschema_storage: Storage = get_storage();
+        unknownschema_storage.filesystems[0].source = FileSystemSource::EspImage(Image {
+            url: "foo://tmp/trident.img".to_string(),
+            sha256: ImageSha256::Checksum("trident_sha256_2_image_test".into()),
+            format: ImageFormat::RawZst,
+        });
+
+        assert_eq!(
+            unknownschema_storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::UnsupportedSourceUrlScheme {
+                url_scheme: "foo".to_string(),
+            }
+        );
     }
 }
