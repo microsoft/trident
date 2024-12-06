@@ -216,7 +216,7 @@ fn copy_file_artifacts(
             .context("Failed to copy UKI to the ESP")?;
 
         // Create 'loader/entries.srel' on the ESP as required by the Boot Loader Specification.
-        fs::create_dir(esp_root_path.join("loader"))
+        fs::create_dir_all(esp_root_path.join("loader"))
             .context("Failed to create directory loader")?;
         fs::write(esp_root_path.join("loader/entries.srel"), "type1\n")
             .context("Failed to write entries.srel")?;
@@ -242,7 +242,7 @@ fn copy_file_artifacts(
                 format!("azla{}.efi", ctx.install_index)
             }
         };
-        let mut max_index = 0;
+        let mut max_index = 99;
         let entries = fs::read_dir(&esp_uki_directory).context(format!(
             "Failed to read directory '{}'",
             esp_uki_directory.display()
