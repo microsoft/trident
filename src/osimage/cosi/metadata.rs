@@ -11,6 +11,8 @@ use osutils::{
 };
 use trident_api::primitives::hash::Sha384Hash;
 
+use crate::osimage::OsImageFileSystemType;
+
 use super::CosiEntry;
 
 /// COSI metadata version reader.
@@ -117,7 +119,8 @@ pub(crate) struct Image {
 
     pub mount_point: PathBuf,
 
-    pub fs_type: String,
+    #[serde(deserialize_with = "display_fs_type_field_name")]
+    pub fs_type: OsImageFileSystemType,
 
     #[allow(dead_code)]
     pub fs_uuid: OsUuid,
@@ -192,6 +195,16 @@ impl<'de> Deserialize<'de> for MetadataVersion {
             .map_err(|_| serde::de::Error::custom("minor version must be a valid u32"))?;
         Ok(MetadataVersion { major, minor })
     }
+}
+
+/// Displays a custom error message when deserializing `fs_type` field in an OS image, indicating
+/// the name of the field that resulted in the deserialization error.
+fn display_fs_type_field_name<'de, D>(deserializer: D) -> Result<OsImageFileSystemType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    OsImageFileSystemType::deserialize(deserializer)
+        .map_err(|err| serde::de::Error::custom(format!("Unknown filesystem type: {}", err)))
 }
 
 #[cfg(test)]

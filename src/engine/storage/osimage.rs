@@ -4,17 +4,47 @@ use std::{
 };
 
 use trident_api::{
-    config::{FileSystemSource, HostConfiguration},
+    config::{FileSystemSource, FileSystemType, HostConfiguration},
     error::{InternalError, InvalidInputError, ReportError, TridentError},
 };
 
+use crate::osimage::OsImageFileSystemType;
+
 use super::EngineContext;
 
-/// Validates that the host configuration aligns with the OS image metadata.
+/// Checks if the filesystem types in the OS image and the Host Configuration match.
+fn check_fs_match(a: FileSystemType, b: OsImageFileSystemType) -> bool {
+    match (a, b) {
+        (FileSystemType::Auto, _) => true,
+        (FileSystemType::Ext4, OsImageFileSystemType::Ext4) => true,
+        (FileSystemType::Vfat, OsImageFileSystemType::Vfat) => true,
+        (FileSystemType::Ntfs, OsImageFileSystemType::Ntfs) => true,
+        (FileSystemType::Iso9660, OsImageFileSystemType::Iso9660) => true,
+        (FileSystemType::Xfs, OsImageFileSystemType::Xfs) => true,
+        // Any mis-matching should be considered a failure
+        (
+            FileSystemType::Ext4
+            | FileSystemType::Vfat
+            | FileSystemType::Ntfs
+            | FileSystemType::Iso9660
+            | FileSystemType::Xfs,
+            _,
+        ) => false,
+        // Host Configuration filesystem types Other, Swap, Tmpfs, and Overlay
+        // do not map to any OS image filesystem types
+        (FileSystemType::Other, _) => false,
+        (FileSystemType::Swap, _) => false,
+        (FileSystemType::Tmpfs, _) => false,
+        (FileSystemType::Overlay, _) => false,
+    }
+}
+
+/// Validates that the Host Configuration aligns with the OS image metadata.
 ///
 /// Checks that:
 /// - There must be an equal number of filesystems in the OS image and Host Configuration
-/// - Filesystems in the OS image must match on mount points with filesystems in the Host Configuration
+/// - Filesystems in the OS image must match on mount points with filesystems in the Host
+///   Configuration
 pub fn validate_host_config(
     ctx: &EngineContext,
     host_config: &HostConfiguration,
@@ -30,8 +60,8 @@ pub fn validate_host_config(
         .collect::<Vec<_>>();
     let os_image_filesystems_map = all_os_image_filesystems
         .iter()
-        .map(|fs| (fs.mount_point(), fs.fs_type().to_string()))
-        .collect::<HashMap<&Path, String>>();
+        .map(|fs| (fs.mount_point(), fs.fs_type()))
+        .collect::<HashMap<&Path, OsImageFileSystemType>>();
 
     // Populate hashmap with filesystems from Host Configuration
     let hc_filesystems_map = host_config
@@ -45,7 +75,7 @@ pub fn validate_host_config(
                 .as_ref()
                 .map(|mp| mp.path.as_path())
                 .structured(InternalError::GetMountPointForOSImage)?;
-            Ok((mount_point, fs.fs_type.to_string()))
+            Ok((mount_point, fs.fs_type))
         })
         .collect::<Result<HashMap<_, _>, TridentError>>()?;
 
@@ -61,7 +91,7 @@ pub fn validate_host_config(
         return Err(TridentError::new(
             InvalidInputError::UnusedOsImageFilesystem {
                 mount_point: not_found_in_hc.display().to_string(),
-                fs_type: os_image_filesystems_map[*not_found_in_hc].clone(),
+                fs_type: os_image_filesystems_map[*not_found_in_hc].to_string(),
             },
         ));
     }
@@ -74,21 +104,22 @@ pub fn validate_host_config(
         return Err(TridentError::new(
             InvalidInputError::MissingOsImageFilesystem {
                 mount_point: not_found_in_os_img.display().to_string(),
-                fs_type: hc_filesystems_map[*not_found_in_os_img].clone(),
+                fs_type: hc_filesystems_map[*not_found_in_os_img].to_string(),
             },
         ));
     }
 
-    // Check for mismatched filesystems, i.e. mount point exists in both OS
-    // image and Host Configuration but filesystem type differs
-    if let Some((mount_point, hc_fs_type)) = hc_filesystems_map
-        .iter()
-        .find(|(mount_point, hc_fs_type)| **hc_fs_type != os_image_filesystems_map[*mount_point])
+    // Check for mismatched filesystems, i.e. mount point exists in both OS image and Host
+    // Configuration but filesystem type differs
+    if let Some((mount_point, hc_fs_type)) =
+        hc_filesystems_map.iter().find(|(mount_point, hc_fs_type)| {
+            !check_fs_match(**hc_fs_type, os_image_filesystems_map[*mount_point])
+        })
     {
         return Err(TridentError::new(InvalidInputError::MismatchedFsType {
             mount_point: mount_point.display().to_string(),
-            hc_fs_type: hc_fs_type.clone(),
-            os_img_fs_type: os_image_filesystems_map[*mount_point].clone(),
+            hc_fs_type: hc_fs_type.to_string(),
+            os_img_fs_type: os_image_filesystems_map[*mount_point].to_string(),
         }));
     }
 
@@ -97,10 +128,9 @@ pub fn validate_host_config(
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, str::FromStr};
-
     use super::*;
 
+    use std::{path::PathBuf, str::FromStr};
     use url::Url;
     use uuid::Uuid;
 
@@ -115,7 +145,7 @@ mod tests {
 
     use crate::osimage::{
         mock::{MockImage, MockOsImage},
-        OsImage,
+        OsImage, OsImageFileSystemType,
     };
 
     const OSIMAGE_DUMMY_SOURCE: &str = "http://example/osimage";
@@ -161,7 +191,7 @@ mod tests {
                 .clone()
                 .map(|(path, fs_type, _)| MockImage {
                     mount_point: PathBuf::from(path),
-                    fs_type: fs_type.to_string(),
+                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
                 })
@@ -180,8 +210,8 @@ mod tests {
         validate_host_config(&ctx, &host_config).unwrap();
     }
 
-    /// This test checks the scenario where there are more filesystems listed in
-    /// the OS image than there are in the Host Configuration
+    /// This test checks the scenario where there are more filesystems listed in the OS image than
+    /// there are in the Host Configuration
     #[test]
     fn test_validate_host_config_failure_unused() {
         let mock_entries_os_image = [
@@ -200,7 +230,7 @@ mod tests {
                 .clone()
                 .map(|(path, fs_type)| MockImage {
                     mount_point: PathBuf::from(path),
-                    fs_type: fs_type.to_string(),
+                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
                 })
@@ -230,8 +260,8 @@ mod tests {
         );
     }
 
-    /// This test checks the scenario where the filesystems on the OS image
-    /// do not match those in the Host Configuration
+    /// This test checks the scenario where the filesystems on the OS image do not match those in
+    /// the Host Configuration
     #[test]
     fn test_validate_host_config_failure_mismatch() {
         let mock_entries_os_image =
@@ -246,7 +276,7 @@ mod tests {
                 .clone()
                 .map(|(path, fs_type)| MockImage {
                     mount_point: PathBuf::from(path),
-                    fs_type: fs_type.to_string(),
+                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
                 })
@@ -277,8 +307,8 @@ mod tests {
         )
     }
 
-    /// This test checks the scenario where a filesystem on the Host
-    /// Configuration is missing from the OS image
+    /// This test checks the scenario where a filesystem on the Host Configuration is missing from
+    /// the OS image
     #[test]
     fn test_validate_host_config_failure_missing() {
         let mock_entries_os_image =
@@ -293,7 +323,7 @@ mod tests {
                 .clone()
                 .map(|(path, fs_type)| MockImage {
                     mount_point: PathBuf::from(path),
-                    fs_type: fs_type.to_string(),
+                    fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
                 })
@@ -322,5 +352,52 @@ mod tests {
             }),
             "Expected MissingOsImageFilesystem error"
         )
+    }
+
+    #[test]
+    fn test_check_fs_match() {
+        // Check success
+        assert!(check_fs_match(
+            FileSystemType::Ext4,
+            OsImageFileSystemType::Ext4
+        ));
+        assert!(check_fs_match(
+            FileSystemType::Vfat,
+            OsImageFileSystemType::Vfat
+        ));
+        assert!(check_fs_match(
+            FileSystemType::Ntfs,
+            OsImageFileSystemType::Ntfs
+        ));
+        assert!(check_fs_match(
+            FileSystemType::Iso9660,
+            OsImageFileSystemType::Iso9660
+        ));
+        assert!(check_fs_match(
+            FileSystemType::Xfs,
+            OsImageFileSystemType::Xfs
+        ));
+        assert!(check_fs_match(
+            FileSystemType::Auto,
+            OsImageFileSystemType::Msdos
+        ));
+
+        // Check failure
+        assert!(!check_fs_match(
+            FileSystemType::Other,
+            OsImageFileSystemType::Vfat
+        ));
+        assert!(!check_fs_match(
+            FileSystemType::Swap,
+            OsImageFileSystemType::Ntfs
+        ));
+        assert!(!check_fs_match(
+            FileSystemType::Tmpfs,
+            OsImageFileSystemType::Msdos
+        ));
+        assert!(!check_fs_match(
+            FileSystemType::Overlay,
+            OsImageFileSystemType::Ext2
+        ));
     }
 }

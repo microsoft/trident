@@ -8,6 +8,8 @@ use osutils::{
     partition_types::DiscoverablePartitionType,
 };
 
+use super::OsImageFileSystemType;
+
 /// This is a generic abstraction of what an OS image is, which can be used to
 /// mock an OS image for testing purposes. It should not be tied to the
 /// specifics of any one OS image implementation. Currently does not include
@@ -30,7 +32,7 @@ pub struct MockOsImage {
 pub struct MockImage {
     pub mount_point: PathBuf,
 
-    pub fs_type: String,
+    pub fs_type: OsImageFileSystemType,
 
     #[allow(dead_code)]
     pub fs_uuid: OsUuid,

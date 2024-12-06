@@ -1,9 +1,15 @@
-use std::{io::Read, path::Path};
+use std::{
+    fmt::{Display, Formatter},
+    io::Read,
+    path::Path,
+};
 
 use anyhow::Error;
+use serde::{Deserialize, Serialize};
+use url::Url;
+
 use osutils::{arch::SystemArchitecture, partition_types::DiscoverablePartitionType};
 use trident_api::primitives::hash::Sha384Hash;
-use url::Url;
 
 mod cosi;
 #[cfg(test)]
@@ -127,11 +133,11 @@ impl<'a> FileSystemImage<'a> {
     }
 
     /// Returns the filesystem type of this filesystem image.
-    pub fn fs_type(&self) -> &str {
+    pub fn fs_type(&self) -> OsImageFileSystemType {
         match &self.0 {
-            FileSystemImageType::Cosi(fs) => &fs.image.fs_type,
+            FileSystemImageType::Cosi(fs) => fs.image.fs_type,
             #[cfg(test)]
-            FileSystemImageType::Mock(fs) => &fs.image.fs_type,
+            FileSystemImageType::Mock(fs) => fs.image.fs_type,
         }
     }
 
@@ -221,5 +227,57 @@ impl<'a> FileSystemImage<'a> {
                 unimplemented!("Mock filesystem image does not implement verity_sha384() method")
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OsImageFileSystemType {
+    /// # Ext4 file system
+    Ext4,
+
+    /// # Ext3 file system
+    Ext3,
+
+    /// # Ext2 file system
+    Ext2,
+
+    /// # Cramfs file system
+    Cramfs,
+
+    /// # SquashFS file system
+    Squashfs,
+
+    /// # VFAT file system
+    Vfat,
+
+    /// # MS-DOS file system
+    Msdos,
+
+    /// # exFAT file system
+    Exfat,
+
+    /// # ISO9660 file system
+    Iso9660,
+
+    /// # NTFS file system
+    Ntfs,
+
+    /// # BTRFS file system
+    Btrfs,
+
+    /// # XFS file system
+    Xfs,
+}
+
+impl Display for OsImageFileSystemType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            serde_yaml::to_string(self)
+                .map_err(|_| std::fmt::Error)?
+                .trim()
+        )
     }
 }
