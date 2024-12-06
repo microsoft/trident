@@ -284,7 +284,7 @@ where
         };
         let execution_time = start.elapsed().as_secs_f64();
         trace!(
-            "Finished span: {:?}, execution_time: {:?}",
+            "Closed span: {:?}, execution_time: {:.2} seconds",
             span.name(),
             execution_time
         );
