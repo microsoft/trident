@@ -357,6 +357,8 @@ mod tests {
         error::ErrorKind,
     };
 
+    use osutils::encryption;
+
     fn get_ctx() -> EngineContext {
         EngineContext {
             servicing_type: ServicingType::CleanInstall,

@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fs::{self, File, Permissions},
-    io::Read,
+    fs::{self, Permissions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -31,7 +30,6 @@ use trident_api::{
 use crate::engine::{self, EngineContext};
 
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
-const TMP_RECOVERY_KEY_SIZE: usize = 64;
 
 /// Validates the encryption configuration in Host Configuration.
 pub(super) fn validate_host_config(host_config: &HostConfiguration) -> Result<(), TridentError> {
@@ -115,7 +113,7 @@ pub(super) fn close_pre_existing_encrypted_volumes(
             crypt_block_device.name
         );
 
-        encryption::cryptsetup_close(&crypt_block_device)?;
+        encryption::cryptsetup_close(&crypt_block_device.name)?;
     }
 
     Ok(())
@@ -149,7 +147,7 @@ pub(super) fn provision(
                     key_file: key_file_path.to_string_lossy().to_string(),
                 },
             )?;
-            generate_recovery_key_file(&key_file_path).structured(
+            encryption::generate_recovery_key_file(&key_file_path).structured(
                 ServicingError::GenerateRecoveryKeyFile {
                     key_file: key_file_path.to_string_lossy().to_string(),
                 },
@@ -291,28 +289,6 @@ fn encrypt_and_open_device(
     Ok(())
 }
 
-/// This function creates a file at the specified path and fills it with cryptographically secure
-/// random bytes sourced from `/dev/random`. It is intended for generating a recovery key file with
-/// a specified size defined by `TMP_RECOVERY_KEY_SIZE`.
-///
-/// `path` specifies the locationm and name of the file to be created, and must be accessible and
-/// writable by the process.
-///
-/// This function can return an error if opening or reading `/dev/random` fails. It can also error
-/// when writing to the specified file path fails, which could be due to permission issues,
-/// non-existent directories in the path, or other filesystem-related errors.
-pub(super) fn generate_recovery_key_file(path: &Path) -> Result<(), Error> {
-    let mut random_file = File::open("/dev/random").context("Failed to open /dev/random")?;
-    let mut random_buffer: [u8; TMP_RECOVERY_KEY_SIZE] = [0u8; TMP_RECOVERY_KEY_SIZE];
-    random_file
-        .read_exact(&mut random_buffer)
-        .context("Failed to read from /dev/random")?;
-    fs::write(path, random_buffer).context(format!(
-        "Failed to write random data to recovery key file '{}'",
-        path.display()
-    ))
-}
-
 /// This is an abbreviated representation of the JSON output of
 /// `cryptsetup luksDump --dump-json-metadata <device_path>`
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -377,7 +353,7 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
                 "{}\t{}\t{}\tluks,swap,cipher={},size={}\n",
                 ev.device_name,
                 device_path.display(),
-                "/dev/random",
+                encryption::DEV_RANDOM_PATH,
                 encryption::CIPHER,
                 encryption::KEY_SIZE
             ));

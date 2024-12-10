@@ -48,8 +48,7 @@ mod functional_test {
         udevadm,
     };
 
-    /// This function wipes the /dev/sdb device and ensures the /mnt
-    /// directory exists.
+    /// Wipes the /dev/sdb device and ensures the /mnt directory exists.
     fn setup_test() {
         // Just zero-out the metadata so this is a fast operation.
         repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
