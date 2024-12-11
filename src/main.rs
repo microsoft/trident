@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use clap::{Parser, Subcommand};
-use log::{error, info, LevelFilter};
+use log::{error, info, warn, LevelFilter};
 
 use trident::{
     offline_init, BackgroundLog, Logstream, MultiLogger, TraceStream, Trident,
@@ -215,7 +215,7 @@ fn run_trident(
 
                 if let Some(path) = &config_path {
                     if !path.exists() {
-                        error!("Config file '{}' does not exist. Ignoring.", path.display());
+                        warn!("Config file '{}' does not exist. Ignoring.", path.display());
                         config_path = None;
                     }
                 }

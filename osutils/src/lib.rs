@@ -17,6 +17,7 @@ pub mod hashing_reader;
 pub mod image_streamer;
 pub mod lsblk;
 pub mod lsof;
+pub mod machine_id;
 pub mod mdadm;
 pub mod mkfs;
 pub mod mkinitrd;

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 
 use crate::{
+    config::HarpoonConfig,
     constants::{DATASTORE_FILE_EXTENSION, TRIDENT_DATASTORE_PATH_DEFAULT},
     is_default,
 };
@@ -54,6 +55,14 @@ pub struct Trident {
     /// Optional URL to stream logs to. TODO: document the interface.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logstream: Option<String>,
+
+    /// Optional Harpoon configuration.
+    ///
+    /// Harpoon is an Omaha client that Trident can use to check for updated
+    /// host configuration files.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(skip))]
+    pub harpoon: Option<HarpoonConfig>,
 }
 
 impl Default for Trident {
@@ -65,6 +74,7 @@ impl Default for Trident {
             datastore_path: Trident::default_datastore_path(),
             phonehome: Default::default(),
             logstream: Default::default(),
+            harpoon: Default::default(),
         }
     }
 }

@@ -864,6 +864,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "harpoon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "indoc",
+ "log",
+ "maplit",
+ "mockito",
+ "osutils",
+ "quick-xml",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "sha2",
+ "thiserror",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1802,6 +1824,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.37.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f22f29bdff3987b4d8632ef95fd6424ec7e4e0a57e2f4fc63e489e75357f6a03"
+dependencies = [
+ "memchr",
+ "serde",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2074,6 +2106,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "semver"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
+
+[[package]]
 name = "serde"
 version = "1.0.208"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2113,6 +2151,16 @@ dependencies = [
  "itoa",
  "memchr",
  "ryu",
+ "serde",
+]
+
+[[package]]
+name = "serde_path_to_error"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af99884400da37c88f5e9146b7f1fd0fbcae8f6eec4e9da38b67d05486f814a6"
+dependencies = [
+ "itoa",
  "serde",
 ]
 
@@ -2699,6 +2747,7 @@ dependencies = [
  "enumflags2",
  "env_logger 0.11.5",
  "glob",
+ "harpoon",
  "indoc",
  "inventory",
  "lazy_static",
@@ -2753,6 +2802,7 @@ dependencies = [
  "netplan-types",
  "regex",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",

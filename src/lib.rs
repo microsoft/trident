@@ -23,11 +23,9 @@ use trident_api::{
 #[cfg(feature = "setsail")]
 use setsail::KsTranslator;
 
-use crate::datastore::DataStore;
-use crate::engine::{rollback, storage::rebuild};
-
 mod datastore;
 mod engine;
+mod harpoon_hc;
 mod logging;
 pub mod offline_init;
 mod orchestrate;
@@ -37,6 +35,10 @@ pub mod validation;
 
 #[cfg(feature = "grpc-dangerous")]
 mod grpc;
+
+use datastore::DataStore;
+use engine::{rollback, storage::rebuild};
+use harpoon_hc::HostConfigUpdate;
 
 pub use engine::provisioning_network;
 pub use logging::{
@@ -240,23 +242,70 @@ impl Trident {
             ));
         }
 
+        // Open the datastore.
+        let mut datastore =
+            DataStore::open_or_create(datastore_path).message("Failed to open datastore")?;
+
         // This creates a channel to send commands to the main trident thread. It lets us use the
         // same logic for processing an initial provision command contained within the trident local
         // config as for processing commands received from the gRPC endpoint.
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
 
-        // If we have a Host Configuration source, load it and dispatch it as the first
+        // If we have a local Host Configuration source, load it and dispatch it as the first
         // command.
-        if let Some(host_config) = self.host_config.clone() {
+        if let Some(local_host_config) = self.host_config.clone() {
             debug!("Applying Host Configuration from local config");
             sender
                 .blocking_send(HostUpdateCommand {
                     allowed_operations,
-                    host_config,
+                    host_config: local_host_config,
                     #[cfg(feature = "grpc-dangerous")]
                     sender: None,
                 })
                 .structured(InternalError::EnqueueHostUpdateCommand)?;
+        } else {
+            // Otherwise, ONLY IF:
+            // - Harpoon support is enabled+configured AND
+            // - The host is provisioned
+            //
+            // Then query Harpoon for an updated HC.
+            harpoon_hc::try_on_harpoon_enabled(
+                &datastore.host_status().spec,
+                |harpoon_config| -> Result<(), TridentError> {
+                    // We only check if the system is provisioned.
+                    if datastore.host_status().servicing_state != ServicingState::Provisioned {
+                        return Ok(());
+                    }
+
+                    info!(
+                        "Querying server for updated Host Configuration. URL: {}, App ID: {}, Track: {}, Document Version: {}",
+                        harpoon_config.url, harpoon_config.app_id, harpoon_config.track, harpoon_config.document_version
+                    );
+
+                    // Call into harpoon module to get an updated HC.
+                    match harpoon_hc::query_and_fetch_host_config(harpoon_config)? {
+                        HostConfigUpdate::Updated {
+                            host_config,
+                            version,
+                        } => {
+                            info!("Server replied with new Host configuration v{version}, applying...");
+                            sender
+                                .blocking_send(HostUpdateCommand {
+                                    allowed_operations,
+                                    host_config: *host_config,
+                                    #[cfg(feature = "grpc-dangerous")]
+                                    sender: None,
+                                })
+                                .structured(InternalError::EnqueueHostUpdateCommand)?;
+                        }
+                        HostConfigUpdate::NoUpdate => {
+                            warn!("No update available. No action will be taken.");
+                        }
+                    }
+
+                    Ok(())
+                },
+            )?;
         }
 
         if !cfg!(feature = "grpc-dangerous") || self.grpc.is_none() {
@@ -270,9 +319,6 @@ impl Trident {
                 self.server_runtime = Some(grpc::start(_grpc, self.orchestrator.as_ref(), sender)?);
             }
         }
-
-        let mut datastore =
-            DataStore::open_or_create(datastore_path).message("Failed to open datastore")?;
 
         if let Err(e) = self.handle_commands(receiver, &mut datastore) {
             let error = serde_yaml::to_value(&e).structured(InternalError::SerializeError)?;
@@ -340,9 +386,21 @@ impl Trident {
         // If host's servicing state is Finalized, need to validate that the firmware correctly
         // booted from the updated runtime OS image.
         if datastore.host_status().servicing_state == ServicingState::Finalized {
-            rollback::validate_boot(datastore).message(
+            let rollback_result = rollback::validate_boot(datastore).message(
                 "Failed to validate that firmware correctly booted from updated runtime OS image",
-            )?
+            );
+
+            harpoon_hc::on_harpoon_enabled_event(
+                &datastore.host_status().spec,
+                harpoon::EventType::Update,
+                match rollback_result {
+                    Ok(_) => harpoon::EventResult::SuccessReboot,
+                    Err(_) => harpoon::EventResult::Error,
+                },
+            );
+
+            // Re"throw" the error if there was one.
+            rollback_result?;
         }
 
         // Process commands. Starting with the initial command indicated in the local config file
@@ -364,6 +422,14 @@ impl Trident {
                         ),
                     );
                 }
+
+                // When harpoon is enabled, try to report an error to the server.
+                harpoon_hc::on_harpoon_enabled_event(
+                    &datastore.host_status().spec,
+                    harpoon::EventType::Install,
+                    harpoon::EventResult::Error,
+                );
+
                 if has_sender {
                     // TODO: report the error back to the sender and then
                     // possibly restart Trident

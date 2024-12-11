@@ -1,0 +1,30 @@
+[package]
+name = "harpoon"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = { version = "1.0.82", features = ["backtrace"] }
+log = "0.4.21"
+quick-xml = { version = "0.37.1", features = ["serialize"] }
+reqwest = { version = "0.12.4", default-features = false, features = [
+    "blocking",
+    "default-tls",
+    "charset",
+] } # "http2" is enabled by default but causes a (false positive) CG alert
+semver = "1.0.23"
+serde = { version = "1.0.200", features = ["derive"] }
+serde_path_to_error = "0.1"
+sha2 = "0.10.8"
+thiserror = "1.0.59"
+url = { version = "2.5.0", features = ["serde"] }
+uuid = { version = "1.8.0", features = ["v4", "serde"] }
+
+osutils = { path = "../osutils" }
+
+[dev-dependencies]
+indoc = "2"
+maplit = "1.0.2"
+mockito = "1.6.0"
+serde_json = "1.0"

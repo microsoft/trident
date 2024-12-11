@@ -50,6 +50,7 @@ uuid = { version = "1.8.0", features = ["v4", "serde"] }
 osutils = { path = "osutils" }
 setsail = { path = "setsail", optional = true }
 trident_api = { path = "trident_api" }
+harpoon = { path = "harpoon" }
 
 # Optional dependencies used by functional tests
 indoc = { version = "2.0.5", optional = true }
@@ -101,4 +102,5 @@ members = [
     "docbuilder",
     "pytest",
     "pytest_gen",
+    "harpoon",
 ]

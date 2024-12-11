@@ -54,6 +54,9 @@ pub enum InitializationError {
 
     #[error("Failed to read '/proc/cmdline'")]
     ReadCmdline,
+
+    #[error("Failed to query for updates with Harpoon: {0}")]
+    QueryForUpdates(String),
 }
 
 /// Identifies errors that occur when the host is running from a docker container, but the system

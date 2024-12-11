@@ -20,6 +20,7 @@ COPY setsail ./setsail
 COPY pytest ./pytest
 COPY pytest_gen ./pytest_gen
 COPY docbuilder ./docbuilder
+COPY harpoon ./harpoon
 
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0

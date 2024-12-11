@@ -177,4 +177,7 @@ pub mod internal_params {
     /// Re-encrypt the encrypted LUKS2 volumes in-place on clean install, instead of initializing
     /// new LUKS2 volumes.
     pub const REENCRYPT_ON_CLEAN_INSTALL: &str = "reencryptOnCleanInstall";
+
+    /// Enable support for Harpoon to query for updated Host Config documents.
+    pub const ENABLE_HARPOON_SUPPORT: &str = "harpoon";
 }

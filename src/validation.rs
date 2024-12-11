@@ -65,11 +65,11 @@ pub fn validate_setsail_file(path: impl AsRef<Path>) -> Result<(), Error> {
 
 pub(crate) fn parse_host_config(
     contents: &str,
-    path: &Path,
+    path: impl AsRef<Path>,
 ) -> Result<HostConfiguration, TridentError> {
     let parsed =
         serde_yaml::from_str(contents).structured(InvalidInputError::ParseHostConfigurationFile {
-            path: path.display().to_string(),
+            path: path.as_ref().display().to_string(),
         });
 
     if parsed.is_err() {

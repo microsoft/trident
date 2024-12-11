@@ -522,6 +522,14 @@ pub(super) fn update(
     )
     .message("Failed to stage update")?;
 
+    // When enabled, notify Harpoon that the installation of the update has
+    // finalized.
+    crate::harpoon_hc::on_harpoon_enabled_event(
+        &command.host_config,
+        harpoon::EventType::Install,
+        harpoon::EventResult::Success,
+    );
+
     match servicing_type {
         ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
             if !allowed_operations.has_finalize() {

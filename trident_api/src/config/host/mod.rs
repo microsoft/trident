@@ -12,6 +12,7 @@ use crate::{
 };
 
 pub(crate) mod error;
+pub(crate) mod harpoon;
 pub(crate) mod image;
 pub(crate) mod internal_params;
 pub(crate) mod os;
