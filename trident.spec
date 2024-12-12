@@ -101,6 +101,28 @@ Trident files for SystemD service
 
 # ------------------------------------------------------------------------------
 
+%package update-poll
+Summary:        Trident files for SystemD service
+Requires:       %{name}
+Requires:       %{name}-service
+
+%description update-poll
+SystemD timer for update polling with Harpoon.
+
+%files update-poll
+%{_unitdir}/%{name}.timer
+
+%post update-poll
+%systemd_post %{name}.timer
+
+%preun update-poll
+%systemd_preun %{name}.timer
+
+%postun update-poll
+%systemd_postun_with_restart %{name}.timer
+
+# ------------------------------------------------------------------------------
+
 %build
 export TRIDENT_VERSION="%{trident_version}"
 cargo build --release
@@ -116,6 +138,7 @@ install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
 install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
+install -D -m 644 systemd/%{name}.timer %{buildroot}%{_unitdir}/%{name}.timer
 
 mkdir -p %{buildroot}/etc/%{name}
 
