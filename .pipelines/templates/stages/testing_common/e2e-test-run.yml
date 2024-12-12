@@ -164,7 +164,7 @@ steps:
   # images in the custom Trident config, and re-run Trident to both stage and finalize A/B update.
   - bash: |
       set -eux
-      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-ab-update-metrics.jsonl -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
+      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-B.log 2>&1 &
       echo "Running script to stage and finalize A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
           --ip-address ${{ parameters.hostIp }} \
@@ -183,6 +183,8 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+      # kill the netlisten process so there is no port clash in the next stage
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage and finalize A/B update into runtime OS B"
@@ -208,7 +210,8 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics.jsonl
+      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-B.jsonl
+      tridentOperation: ab-update
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
@@ -255,7 +258,7 @@ steps:
 
   - bash: |
       set -eux
-      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-ab-update-metrics.jsonl -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
+      ./bin/netlisten -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
       echo "Running script to stage and finalize A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
           --ip-address ${{ parameters.hostIp }} \
@@ -274,6 +277,8 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
+      # kill the netlisten process so there is no port clash in the next stage
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage and finalize A/B update into runtime OS A"
@@ -299,7 +304,8 @@ steps:
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics.jsonl
+      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl
+      tridentOperation: ab-update
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:

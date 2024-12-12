@@ -80,6 +80,8 @@ steps:
           --runtime-env $(runtimeEnv) \
           --version $(version) \
           --stage-ab-update
+      # kill the netlisten process so there is no port clash in the next stage
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage A/B update"
@@ -112,6 +114,7 @@ steps:
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       metricsFile: $(Build.SourcesDirectory)/trident-stage-update-metrics.jsonl
+      tridentOperation: ab-update
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
@@ -137,6 +140,8 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
+      # kill the netlisten process so there is no port clash in the next stage
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Finalize A/B update into runtime OS B"
@@ -163,6 +168,7 @@ steps:
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
       metricsFile: $(Build.SourcesDirectory)/trident-finalize-update-metrics.jsonl
+      tridentOperation: ab-update
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
