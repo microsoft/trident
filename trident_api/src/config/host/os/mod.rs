@@ -37,6 +37,10 @@ pub struct Os {
     pub network: Option<NetworkConfig>,
 
     /// SELinux configuration for the host.
+    ///
+    /// Note: SELinux cannot be used in conjunction with vfat or NTFS filesystems. When SELinux is
+    /// set to permissive or enforcing, the setfiles operation will be skipped for any filesystems
+    /// of type vfat or NTFS.
     #[serde(default)]
     pub selinux: Selinux,
 

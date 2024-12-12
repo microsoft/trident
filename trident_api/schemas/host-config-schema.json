@@ -445,7 +445,8 @@
           ]
         },
         {
-          "title": "Ntfs file system",
+          "title": "NTFS file system",
+          "description": "Using NTFS on Linux comes with some limitations. For more information, see: [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)",
           "type": "string",
           "enum": [
             "ntfs"
@@ -610,7 +611,7 @@
           "nullable": true
         },
         "selinux": {
-          "description": "SELinux configuration for the host.",
+          "description": "SELinux configuration for the host.\n\nNote: SELinux cannot be used in conjunction with vfat or NTFS filesystems. When SELinux is set to permissive or enforcing, the setfiles operation will be skipped for any filesystems of type vfat or NTFS.",
           "default": {
             "mode": null
           },

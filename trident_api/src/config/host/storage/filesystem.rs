@@ -205,7 +205,11 @@ pub enum FileSystemType {
     /// # Vfat file system
     Vfat,
 
-    /// # Ntfs file system
+    /// # NTFS file system
+    ///
+    /// Using NTFS on Linux comes with some limitations. For more information,
+    /// see:
+    /// [Limitations of NTFS](/docs/Explanation/Limitations-Of-NTFS.md)
     Ntfs,
 
     /// # Swap partition

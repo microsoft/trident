@@ -12,10 +12,10 @@ use osutils::{
     container, files,
     filesystems::MountFileSystemType,
     findmnt::{FindMnt, MountpointMetadata},
-    mount, path,
+    lsblk, mount, path,
 };
 use trident_api::{
-    config::{HostConfiguration, InternalMountPoint},
+    config::{FileSystemType, HostConfiguration, InternalMountPoint},
     constants::{
         internal_params::EXECROOT_DENYLIST_EXTENSION, EXEC_ROOT_PATH, MOUNT_OPTION_READ_ONLY,
         NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
@@ -253,21 +253,58 @@ impl NewrootMount {
                     mp.target_id
                 ))?;
 
-                mount::mount(
-                    device_path,
-                    &target_path,
-                    MountFileSystemType::from_api_type(mp.filesystem).context(format!(
-                        "Filesystem type of block device '{}' is not valid for mounting: '{}'",
-                        mp.target_id, mp.filesystem,
-                    ))?,
-                    &mp.options,
-                )
-                .context(format!(
-                    "Failed to mount block device '{}' with device path '{}' to '{}'",
-                    mp.target_id,
-                    device_path.display(),
-                    target_path.display()
-                ))?;
+                // Check if block device is already mounted
+                let block_device = lsblk::get(device_path).with_context(|| {
+                    format!("Failed to get info about block device '{}'", mp.target_id)
+                })?;
+
+                // If a filesystem is of type NTFS and the device is already mounted, need to use a
+                // private bind mount instead, b/c NTFS doesn't support multiple mounts.
+                match (mp.filesystem, block_device.mountpoint) {
+                    (FileSystemType::Ntfs, Some(mp_path)) => {
+                        // Issue a warning to inform the user that we are creating a private bind
+                        // mount, instead of the "regular" mount.
+                        warn!(
+                            "Block device '{}' with an NTFS filesystem is already mounted at '{}', but NTFS does not support multiple mounts.\nCreating a private bind mount at '{}' instead",
+                            mp.target_id,
+                            mp_path.display(),
+                            target_path.display()
+                        );
+
+                        // Fetch mount options from the existing mount
+                        let flags = if block_device.readonly {
+                            MountFlags::RDONLY
+                        } else {
+                            MountFlags::empty()
+                        };
+
+                        // Do a private non-recursive bind mount
+                        do_bind_mount(&mp_path, &target_path, flags).with_context(|| {
+                            format!(
+                                "Failed to bind mount '{}' to '{}'",
+                                mp_path.display(),
+                                target_path.display(),
+                            )
+                        })?;
+                    },
+                    _ => {
+                        mount::mount(
+                            device_path,
+                            &target_path,
+                            MountFileSystemType::from_api_type(mp.filesystem).context(format!(
+                                "Filesystem type of block device '{}' is not valid for mounting: '{}'",
+                                mp.target_id, mp.filesystem,
+                            ))?,
+                            &mp.options,
+                        )
+                        .context(format!(
+                            "Failed to mount block device '{}' with device path '{}' to '{}'",
+                            mp.target_id,
+                            device_path.display(),
+                            target_path.display()
+                        ))?;
+                    }
+                }
 
                 self.add_mount(target_path.clone());
 
@@ -602,8 +639,9 @@ mod functional_test {
 
     use std::{
         fs::{self, File},
-        io::Read,
+        io::{Read, Write},
         path::{Path, PathBuf},
+        str::FromStr,
     };
 
     use const_format::formatcp;
@@ -611,15 +649,22 @@ mod functional_test {
     use tempfile::{NamedTempFile, TempDir};
 
     use osutils::{
+        dependencies::Dependency,
+        filesystems::MkfsFileSystemType,
         hashing_reader::HashingReader,
-        image_streamer, mountpoint,
-        repart::{RepartEmptyMode, SystemdRepartInvoker},
-        testutils::repart::{self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, TEST_DISK_DEVICE_PATH},
+        image_streamer, mkfs, mountpoint,
+        partition_types::DiscoverablePartitionType,
+        repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
+        testutils::repart::{
+            self, CDROM_DEVICE_PATH, CDROM_MOUNT_PATH, OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH,
+        },
         udevadm,
     };
     use pytest_gen::functional_test;
     use trident_api::{
-        config::{self, Disk, FileSystemType, HostConfiguration, Partition, PartitionType},
+        config::{
+            self, Disk, FileSystemType, HostConfiguration, Partition, PartitionSize, PartitionType,
+        },
         constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
     };
@@ -816,8 +861,6 @@ mod functional_test {
     /// Identifies the loop device associated with a given file
     #[cfg(test)]
     fn find_loop_device(file_path: &Path) -> Result<String, Error> {
-        use osutils::dependencies::Dependency;
-
         let output = Dependency::Losetup
             .cmd()
             .arg("-j")
@@ -994,6 +1037,145 @@ mod functional_test {
                 .kind(),
             &ErrorKind::Servicing(ServicingError::MountNewroot)
         );
+    }
+
+    /// This function wipes the /dev/sdb device and ensures the /mnt
+    /// directory exists.
+    fn setup_test() {
+        // Just zero-out the metadata so this is a fast operation.
+        repart::clear_disk(Path::new(TEST_DISK_DEVICE_PATH)).unwrap();
+        if !Path::new("/mnt").exists() {
+            Dependency::Mkdir.cmd().arg("/mnt").run_and_check().unwrap();
+        }
+    }
+
+    #[functional_test(feature = "engine")]
+    fn test_mount_newroot_partitions_ntfs() {
+        setup_test();
+
+        // NTFS requires partitions, so create partitions on block device
+        let repart = SystemdRepartInvoker::new(TEST_DISK_DEVICE_PATH, RepartEmptyMode::Force)
+            .with_partition_entries(vec![RepartPartitionEntry {
+                id: "1".to_string(),
+                partition_type: DiscoverablePartitionType::Root,
+                label: Some("1".to_string()),
+                size_max_bytes: Some(10 * 1048576),
+                size_min_bytes: Some(10 * 1048576),
+            }]);
+        let partition1 = &repart.execute().unwrap()[0];
+        let ntfs_device = Path::new(&partition1.node);
+
+        // Wait for udev to process pending events, so that the system recognizes the new partition
+        udevadm::settle().unwrap();
+
+        // Create an NTFS filesystem on the partition
+        mkfs::run(ntfs_device, MkfsFileSystemType::Ntfs).unwrap();
+
+        let ctx = EngineContext {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: PathBuf::from(OS_DISK_DEVICE_PATH),
+                        partitions: vec![Partition {
+                            id: "staging".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: PartitionSize::from_str("1M").unwrap(),
+                        }],
+                        ..Default::default()
+                    }],
+                    internal_mount_points: vec![config::InternalMountPoint {
+                        path: PathBuf::from("/mnt/staging"),
+                        target_id: "staging".to_string(),
+                        filesystem: FileSystemType::Ntfs,
+                        options: vec![],
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            block_device_paths: btreemap! {
+                "os".into() => PathBuf::from("OS_DISK_DEVICE_PATH"),
+                "staging".into() => ntfs_device.to_path_buf()
+            },
+            ..Default::default()
+        };
+
+        // Create a temp directory to mount the NTFS partition
+        let temp_mount_dir = TempDir::new().unwrap();
+        // Create a full path to the mount point of the NTFS partition
+        let mount_point = path::join_relative(temp_mount_dir.path(), Path::new("/mnt/staging"));
+        // Create the mount point if it doesn't exist
+        fs::create_dir_all(&mount_point).unwrap();
+        if mountpoint::check_is_mountpoint(&mount_point).unwrap() {
+            mount::umount(&mount_point, false).unwrap();
+        }
+
+        // Create a new NewrootMount object
+        let mut newroot_mount = NewrootMount::new(temp_mount_dir.path().to_owned());
+        // Mount NTFS partition
+        newroot_mount
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.block_device_paths,
+                AbVolumeSelection::VolumeA,
+            )
+            .unwrap();
+
+        // If device is a file, fetch the name of loop device that was mounted at mount point;
+        // otherwise, use the device path itself
+        let loop_device = if ntfs_device.is_file() {
+            find_loop_device(ntfs_device).unwrap()
+        } else {
+            ntfs_device.to_string_lossy().to_string()
+        };
+
+        // Validate that the device has been successfully mounted
+        assert!(
+            is_device_mounted_at(loop_device.clone(), &mount_point),
+            "Device '{}' is not mounted at the expected mount point '{}'",
+            loop_device,
+            mount_point.display()
+        );
+
+        // Create a test file inside the mounted directory
+        let test_file_path = mount_point.join("test_file");
+        let mut test_file = File::create(test_file_path).unwrap();
+        test_file.write_all(b"Hello, world!").unwrap();
+
+        // Now, try to mount the same NTFS partition to a different mount point.
+        // Create a new temp directory to mount the NTFS partition
+        let temp_mount_dir2 = TempDir::new().unwrap();
+        // Create a full path to the mount point of the NTFS partition
+        let mount_point2 = path::join_relative(temp_mount_dir2.path(), Path::new("/mnt/staging"));
+        // Create the mount point if it doesn't exist
+        fs::create_dir_all(&mount_point2).unwrap();
+        if mountpoint::check_is_mountpoint(&mount_point2).unwrap() {
+            mount::umount(&mount_point2, false).unwrap();
+        }
+
+        // Create a new NewrootMount object
+        let mut newroot_mount2 = NewrootMount::new(temp_mount_dir2.path().to_owned());
+        // Re-mount the NTFS partition
+        newroot_mount2
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.block_device_paths,
+                AbVolumeSelection::VolumeA,
+            )
+            .unwrap();
+
+        // Validate that the device has been successfully mounted
+        assert!(
+            is_device_mounted_at(loop_device.clone(), &mount_point2),
+            "Device '{}' is not mounted at the expected mount point '{}'",
+            loop_device,
+            mount_point2.display()
+        );
+
+        // Ensure that the bind-mounted directory contains the test file, too
+        let test_file_path2 = mount_point2.join("test_file");
+        assert!(test_file_path2.exists());
     }
 
     #[functional_test(feature = "engine")]

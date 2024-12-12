@@ -93,14 +93,18 @@ impl Subsystem for SelinuxSubsystem {
                 }
             }
 
-            // Get the mount points for the filesystems that are not of type vfat as setfiles does
-            // not support vfat
+            // Get the mount points for all filesystems, except for vfat and NTFS. These two FS
+            // types cannot be used in conjunction with SELinux, so the setfiles command will be
+            // skipped for them.
             let mount_paths: Vec<&trident_api::config::MountPoint> = ctx
                 .spec
                 .storage
                 .filesystems
                 .iter()
-                .filter(|filesystem| filesystem.fs_type != FileSystemType::Vfat)
+                .filter(|filesystem| {
+                    filesystem.fs_type != FileSystemType::Vfat
+                        && filesystem.fs_type != FileSystemType::Ntfs
+                })
                 .filter_map(|filesystem| filesystem.mount_point.as_ref())
                 .collect();
 

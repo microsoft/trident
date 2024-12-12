@@ -48,6 +48,8 @@ See [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netpla
 
 SELinux configuration for the host.
 
+Note: SELinux cannot be used in conjunction with vfat or NTFS filesystems. When SELinux is set to permissive or enforcing, the setfiles operation will be skipped for any filesystems of type vfat or NTFS.
+
 | Characteristic | Value                   |
 | -------------- | ----------------------- |
 | Type           | `Selinux`               |

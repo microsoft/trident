@@ -222,7 +222,7 @@ mod functional_test {
         setup_test();
 
         // NTFS requires partitions
-        // Create parititions on block device
+        // Create partitions on block device
         let repart = SystemdRepartInvoker::new(TEST_DISK_DEVICE_PATH, RepartEmptyMode::Force)
             .with_partition_entries(vec![RepartPartitionEntry {
                 id: "1".to_string(),
