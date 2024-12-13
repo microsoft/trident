@@ -106,6 +106,8 @@ steps:
     retryCountOnTaskFailure: 3
 
   - checkout: platform-telemetry
+    condition: eq(variables['UploadMetrics'], 'True')
+
   - bash: |
       chmod +x "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh"
       "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh" \
