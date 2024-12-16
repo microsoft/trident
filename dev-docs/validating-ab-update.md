@@ -1,14 +1,28 @@
-# Manual A/B update validation steps
+# Manual A/B Update Validation Steps
 
-The purpose of this document is to provide a manual validation procedure for
-running the A/B update flow with Trident.
+The purpose of this document is to provide clear guidelines for developers on
+how to manually validate the A/B update flow with Trident.
+
+- [Manual A/B update validation steps](#manual-ab-update-validation-steps)
+  - [Validation Steps](#validation-steps)
+  - [Staging and Finalizing A/B Update](#staging-and-finalizing-ab-update)
 
 ## Validation steps
 
-1. The runtime OS image payload needs to be made available for Trident to
-   operate on as a local file. For example, the OS image can be bundled with
-   the installer OS and referenced from the initial host configuration as
-   follows:
+1. First, make the runtime OS image payloads available for Trident to operate
+   on. An easy way to do so is to use the following command:
+   `make download-runtime-partition-images`. This will download the latest
+   images to the `artifacts/test-image` folder. Then, the payload can be
+   referenced as `http://NETLAUNCH_HOST_ADDRESS/files/<payload_name>` in the
+   Host Configuration: Netlaunch will substitute the placeholder with the
+   actual IP address and serve the files from `artifacts/test-image` in the
+   `files` sub-directory at this address.
+
+2. Then, update the Host Configuration in `input/trident.yaml` to include A/B
+   volume pairs, so that A/B update is enabled. For example, in the Host
+   Configuration below, Trident is requested to create **two copies** of the
+   `root` partition, i.e., an A/B volume pair with ID `root` that contains two
+   partitions `root-a` and `root-b`.
 
    ```yaml
    storage:
@@ -57,7 +71,7 @@ running the A/B update flow with Trident.
          type: vfat
          source:
             type: image
-            url: file:///trident_cdrom/data/esp.rawzst
+            url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
             sha256: ignored
             format: raw-zst
          mountPoint:
@@ -67,7 +81,7 @@ running the A/B update flow with Trident.
          type: ext4
          source:
             type: image
-            url: file:///trident_cdrom/data/root.rawzst
+            url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
             sha256: ignored
             format: raw-zst
          mountPoint: /
@@ -87,53 +101,84 @@ running the A/B update flow with Trident.
             name: enp*
             dhcp4: true
    users:
-      - name: testing-user
+      - name: root
          sshPublicKeys: []
          sshMode: key-only
    ```
 
-2. In the sample host configuration above, Trident is requested to create
-   **two copies of the root** partition, i.e., a volume pair with id root that
-   contains two partitions root-a and root-b, and to place an image in the
-   raw-zst format onto root. For feature testing, **storage.images** and
-   **storage.abUpdate** sections should be modified to contain RAID arrays,
-   encrypted volumes, etc., to ensure that the A/B upgrade flow succeeds when
-   these special block devices are present.
+3. For feature testing, the Host Configuration should be modified to contain
+   RAID arrays, verity, encryption, etc., to ensure that the A/B upgrade flow
+   succeeds with these special features enabled.
 
-3. Boot the VM with the Provisioning OS using standard `make run-netlaunch`. Do
-   not use any password authorization in the HC, as the non-dev build of
-   Trident would fail with that HC.
+4. Boot the VM simulating a Bare Metal host with the Provisioning OS using the
+   standard command `make run-netlaunch`. Remember to update the `sshPublicKeys`
+   field with the correct key for your machine, so that you can later SSH into
+   the VM.
 
-4. When the installation of the initial runtime OS is completed, log into the
-   VM using SSH.
+5. When the clean install, i.e. the installation of the initial runtime OS is
+   completed, log into the VM using SSH: `ssh root@<IP_address>`. The IP
+   address and the port number of the VM will be exposed in the Netlaunch logs:
 
-5. Download images for upgrading, e.g.:
-   Note: Trident supports images with grub-noprefix rpm, Pls use the latest images for upgrading.
+   `INFO[0019] Trident connected from <IP_address>:<port_number>`
 
-   ```bash
-   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/555555/esp.rawzst -o esp_v2.raw.zst
-   curl -L https://hermesstorageacc.blob.core.windows.net/hermes-container/555555/root.rawzst -o root_v2.raw.zst
-   ```
+6. Download images for A/B update. For GRUB to be able to correctly boot into
+   the B partition, these images need to come from a different build, so that
+   the ESP UUIDs are different. The easiest way to do this is to manually
+   download the OS image payloads from a successful run of the Trident PR
+   pipeline, i.e. `trident-pr-e2e`.
 
-6. Request an A/B update by applying an edited Host Configuration. In the config
-   file, update **storage.images** section to include the local URL links to the
-   update images:
-
-   ```bash
-   cat > /etc/trident/config.yaml << EOF
-   <body of the updated Trident HostConfig>
-   EOF
-   ```
-
-7. After updating the Host Configuration, apply it by restarting Trident and
-   view the Trident logs to follow the A/B update flow live:
+7. Make a copy of `input/trident.yaml` used for the clean install servicing and
+   update the URLs to point to the new images. An easy way to make the updated
+   payloads available is to use Netlisten to serve them at a local server for
+   Trident to pull from.
 
    ```bash
-   sudo trident run -v trace -c /path/to/host-config.yaml --allowed-operations stage,finalize
+   cp input/trident.yaml input/trident-update.yaml
+
+   # Use an IDE or vim to update the URLs inside the Host Configuration to
+   # point to the updated images.
+   # E.g. http://<VM_IP_address>:<any_port_number>/files/v2/esp.rawzst
+
+   # Build Netlisten
+   make bin/netlisten
+
+   # Run Netlisten to serve the images at the chose port number
+   bin/netlisten -s artifacts/test-image -p <any_port_number>
    ```
 
-8. Confirm that the VM simulating a BM host reboots into the new runtime OS
-image. Ssh back into the host and view the changes to the system by fetching
-the host's status with `trident get`. Use commands such as `blkid` and `mount`
-to confirm that the volume pairs have been correctly updated and that the
-correct block devices have been mounted at the designated mountpoints.
+8. Inside the VM, request an A/B update.
+
+   ```bash
+   vim trident-update.yaml
+
+   # Copy the updated HC from input/trident-update.yaml here
+
+   # Re-run Trident
+   sudo /usr/bin/trident run -v trace -c trident-update.yaml
+   ```
+
+9. Confirm that the VM simulating a BM host reboots into the new runtime OS
+   image. SSH back into the host and view the changes to the system by fetching
+   the Host Status with `trident get`. Specifically, make sure that
+   `abActiveVolume` is set to `volume-b`; that the image URLs have been
+   updated; and that there are no failures, i.e. `lastError` is empty.
+
+10. You can view the full background log under `/var/log/trident-full.log`, as
+   well as any log files persisted from the previous servicing, for more info.
+
+11. You can also use commands such as `blkid` and `mount` to confirm that the
+   volume B is mounted at root, as expected.
+
+## Staging and Finalizing A/B Update
+
+In addition to testing the standard A/B update flow, where the new OS images
+are staged and then, immediately, finalized, it is also important to validate
+the scenario where the deployment is staged and finalized separately. This can
+be done with the `--allowed-operations` option in the following way:
+
+- To only stage a new deployment, set `--allowed-operations stage`.
+- To only finalize the staged deployment, set `--allowed-operations finalize`.
+- To both stage a new deployment and then immediately finalize it, set
+  `--allowed-operations stage,finalize`. This is the **default** value, so when
+  the argument is not explicitly provided, the deployment will be both staged
+  and immediately finalized.
