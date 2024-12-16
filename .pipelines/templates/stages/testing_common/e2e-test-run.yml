@@ -183,8 +183,6 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
-      # kill the netlisten process so there is no port clash in the next stage
-      if pgrep netlisten > /dev/null; then pkill netlisten; fi
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage and finalize A/B update into runtime OS B"
@@ -258,6 +256,8 @@ steps:
 
   - bash: |
       set -eux
+      # If there is a netlisten process, kill it so there is no port clash in the instance
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
       ./bin/netlisten -m $(Build.SourcesDirectory)/trident-ab-update-metrics-runtime-os-A.jsonl -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-runtime-os-A.log 2>&1 &
       echo "Running script to stage and finalize A/B update..."
       python3 $(Build.SourcesDirectory)/e2e_tests/helpers/ab_update.py \
@@ -277,8 +277,6 @@ steps:
       set +x
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
-      # kill the netlisten process so there is no port clash in the next stage
-      if pgrep netlisten > /dev/null; then pkill netlisten; fi
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)
     displayName: "Stage and finalize A/B update into runtime OS A"
