@@ -58,7 +58,7 @@ build: .cargo/config
 .PHONY: format
 format:
 	cargo fmt
-	python3 -m black .
+	python3 -m black . --exclude "azure-linux-image-tools"
 
 .PHONY: test
 test: .cargo/config
@@ -94,16 +94,15 @@ EMU_PACKAGE_VERSION ?= 0.7.0-preview.667258
 print-var-emu-package-version:
 	@echo $(EMU_PACKAGE_VERSION)
 
+TOOLKIT_DIR="azure-linux-image-tools/toolkit"
+AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
+ARTIFACTS_DIR="artifacts"
+
 artifacts/osmodifier:
-	az artifacts universal download \
-		--organization "https://dev.azure.com/mariner-org/" \
-		--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-		--scope project \
-		--feed "MarinerCoreArtifacts" \
-		--name '$(EMU_PACKAGE_NAME)' \
-		--version '$(EMU_PACKAGE_VERSION)' \
-		--path artifacts/
-	chmod +x artifacts/osmodifier
+	@mkdir -p "$(ARTIFACTS_DIR)"
+	$(MAKE) -C $(TOOLKIT_DIR) go-osmodifier REBUILD_TOOLS=y
+	sudo mv "$(AZL_TOOLS_OUT_DIR)/osmodifier" "$(ARTIFACTS_DIR)/"
+	echo "osmodifier binary moved to $(ARTIFACTS_DIR)"
 
 bin/trident: build
 	@mkdir -p bin
@@ -292,7 +291,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: bin/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' --exclude-dir=trident-mos --exclude-dir=target --exclude-dir=dev -l))
+	$(eval DETECTED_HC_FILES := $(shell grep -R 'storage:' . --include '*.yaml' --exclude-dir=trident-mos --exclude-dir=target --exclude-dir=dev --exclude-dir=azure-linux-image-tools -l))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file || exit 1; \

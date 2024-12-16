@@ -1,0 +1,3 @@
+[submodule "azure-linux-image-tools"]
+	path = azure-linux-image-tools
+	url = https://github.com/microsoft/azure-linux-image-tools

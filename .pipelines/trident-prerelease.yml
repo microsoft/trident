@@ -86,8 +86,8 @@ extends:
       tsa:
         # Break build on SDL failures instead of filing bugs.
         enabled: false # onebranch publish all sdl results to TSA. If TSA is disabled all SDL tools will forced into 'break' build mode.
-      # credscan:
-      #   suppressionsFile: $(Build.SourcesDirectory)\.config\CredScanSuppressions.json
+      credscan:
+        suppressionsFile: $(Build.SourcesDirectory)\.config\CredScanSuppressions.json
       policheck:
         break: true # always break the build on policheck issues. You can disable it by setting to 'false'
       # suppression:
