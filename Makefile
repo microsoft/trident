@@ -300,16 +300,12 @@ validate-configs: bin/trident
 .PHONY: generate-mermaid-diagrams
 generate-mermaid-diagrams: mmdc
 	$(MAKE) $(addsuffix .png, $(basename $(wildcard $(abspath dev-docs/diagrams)/*.mmd)))
-	$(MAKE) $(addsuffix .png, $(basename $(wildcard $(abspath dev-docs/diagrams/state-diagrams)/*.mmd)))
 
 mmdc:
 	docker pull ghcr.io/mermaid-js/mermaid-cli/mermaid-cli
 
 $(abspath dev-docs/diagrams)/%.png: dev-docs/diagrams/%.mmd
 	docker run --rm -u `id -u`:`id -g` -v $(abspath dev-docs/diagrams):/data minlag/mermaid-cli -i /data/$(notdir $<) -o /data/$(notdir $@)
-
-$(abspath dev-docs/diagrams/state-diagrams)/%.png: dev-docs/diagrams/state-diagrams/%.mmd
-	docker run --rm -u `id -u`:`id -g` -v $(abspath dev-docs/diagrams/state-diagrams):/data minlag/mermaid-cli -i /data/$(notdir $<) -o /data/$(notdir $@)
 
 go.sum: go.mod
 	go mod tidy

@@ -294,8 +294,8 @@ another OS image staged instead, before requesting to boot into the updated OS
 image.
 
 This decoupled logic is implemented for **both clean install and A/B update.**
-This is achieved by splitting `allowedOperations`, where the user defines which
-actions are permitted/desired, into `stage` and `finalize`.
+This is achieved by splitting the `--allowed-operations` option into `stage`
+and `finalize`.
 
 ### Getting Started with A/B Update
 
@@ -528,8 +528,8 @@ to prevent data loss. As such, the current implementation will not allow to run
 Trident from a non-live OS. To override this, create an empty override file
 `sudo touch /override-trident-safety-check`.
 
-Unless `allowedOperations` are limited, upon completing the deployment, Trident
-will reboot the VM into the new OS.
+Unless the `--allowed-operations` option only includes `stage`, upon completing
+the deployment, Trident will reboot the VM into the new OS.
 
 ## gRPC Interface
 

@@ -201,7 +201,10 @@ mod functional_test {
     use tempfile::TempDir;
 
     use pytest_gen::functional_test;
-    use trident_api::status::{ServicingState, ServicingType};
+    use trident_api::{
+        error::ErrorKind,
+        status::{ServicingState, ServicingType},
+    };
 
     #[functional_test]
     fn test_open_temporary_persist_reopen() {
@@ -252,7 +255,7 @@ mod functional_test {
                 ServicingState::Staged
             );
             datastore
-                .with_host_status(|s| s.servicing_state = ServicingState::CleanInstallFailed)
+                .with_host_status(|s| s.servicing_state = ServicingState::Provisioned)
                 .unwrap();
             datastore.persist(&datastore_path).unwrap();
         }
@@ -261,18 +264,24 @@ mod functional_test {
         let mut datastore = DataStore::open(&datastore_path).unwrap();
         assert_eq!(
             datastore.host_status().servicing_state,
-            ServicingState::CleanInstallFailed
+            ServicingState::Provisioned
         );
         // Ensure that the datastore can be closed and re-opened.
         datastore.close();
-        datastore
-            .with_host_status(|s| s.servicing_state = ServicingState::Provisioned)
-            .unwrap_err();
+        assert_eq!(
+            datastore
+                .with_host_status(|s| s.servicing_state = ServicingState::Staged)
+                .unwrap_err()
+                .kind(),
+            &ErrorKind::Servicing(ServicingError::Datastore {
+                inner: DatastoreError::WriteToClosedDatastore
+            })
+        );
 
         let datastore = DataStore::open(&datastore_path).unwrap();
         assert_eq!(
             datastore.host_status().servicing_state,
-            ServicingState::CleanInstallFailed
+            ServicingState::Provisioned
         );
     }
 }

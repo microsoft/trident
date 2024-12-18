@@ -226,8 +226,6 @@ pub fn get_root_device_path() -> Result<PathBuf, TridentError> {
         tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &root_mount_path)
             .structured(InternalError::GetRootBlockDevicePath)?;
 
-    debug!("Current root device path: {}", root_device_path.display());
-
     Ok(root_device_path)
 }
 

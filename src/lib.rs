@@ -471,22 +471,15 @@ impl Trident {
                 debug!("Host Configuration has been updated");
                 // If allowed operations include 'stage', start update
                 if cmd.allowed_operations.has_stage() {
-                    engine::update(cmd, datastore).message("Failed update host")
+                    engine::update(cmd, datastore).message("Failed to execute an update")
                 } else {
-                    warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run");
+                    warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the update");
                     Ok(())
                 }
             } else {
                 debug!("Host Configuration has not been updated");
 
-                // If Host Configuration has not been updated and the previous A/B update failed,
-                // ask the user to update HC and re-run.
-                if datastore.host_status().servicing_state == ServicingState::AbUpdateFailed {
-                    error!("A/B update previously failed with current Host Configuration. Update Host Configuration and re-run");
-                    Err(TridentError::new(
-                        InvalidInputError::RerunAbUpdateWithFailedHostConfiguration,
-                    ))
-                } else if datastore.host_status().servicing_state == ServicingState::Staged {
+                if datastore.host_status().servicing_state == ServicingState::Staged {
                     // If an update has been previously staged, only need to finalize the update.
                     debug!("There is an update staged on the host");
                     if cmd.allowed_operations.has_finalize() {
@@ -498,13 +491,12 @@ impl Trident {
                         )
                         .message("Failed to finalize update")
                     } else {
-                        debug!("Allowed operations do not include 'finalize'. Skipping finalizing of update");
+                        warn!("There is an update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the update");
                         Ok(())
                     }
                 } else {
-                    // Otherwise, if servicing state is Provisioned, need to inform the user that
-                    // no new servicing has been requested. Servicing state cannot be
-                    // NotProvisioned or Finalized here.
+                    // Otherwise, if servicing state is Provisioned, need to either re-execute the
+                    // failed update OR inform the user that no update is needed.
                     engine::update(cmd, datastore).message("Failed to update host")
                 }
             }
@@ -518,25 +510,18 @@ impl Trident {
                 debug!("Host Configuration has been updated");
 
                 if cmd.allowed_operations.has_stage() {
-                    engine::clean_install(cmd, datastore).message("Failed to run clean_install()")
+                    engine::clean_install(cmd, datastore)
+                        .message("Failed to execute a clean install")
                 } else {
-                    warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run");
+                    warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the clean install");
                     Ok(())
                 }
             } else {
                 debug!("Host Configuration has not been updated");
 
-                // If Host Configuration has not been updated and the previous clean install servicing has
-                // failed, ask the user to update HC and re-run
-                if datastore.host_status().servicing_state == ServicingState::CleanInstallFailed {
-                    error!("Clean install previously failed with current Host Configuration. Update Host Configuration and re-run");
-                    Err(TridentError::new(
-                        InvalidInputError::RerunCleanInstallWithFailedHostConfiguration,
-                    ))
-                } else {
-                    // Otherwise, if servicing state is 'Staged', i.e. a clean install has been
-                    // staged, only need to finalize the clean install, if requested. No other
-                    // servicing state is possible here.
+                if datastore.host_status().servicing_state == ServicingState::Staged {
+                    // If a clean install has been staged on the host, only need to finalize the
+                    // clean install, if requested.
                     debug!("There is a clean install staged on the host");
                     if cmd.allowed_operations.has_finalize() {
                         engine::finalize_clean_install(
@@ -548,9 +533,14 @@ impl Trident {
                         )
                         .message("Failed to finalize clean install")
                     } else {
-                        debug!("Allowed operations do not include 'finalize'. Skipping finalizing of clean install");
+                        debug!("There is a clean install staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the clean install");
                         Ok(())
                     }
+                } else {
+                    // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
+                    // failed clean install OR inform the user that no update is needed.
+                    engine::clean_install(cmd, datastore)
+                        .message("Failed to execute a clean install")
                 }
             }
         }

@@ -256,9 +256,9 @@ fn stage_clean_install(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<NewrootMount, TridentError> {
-    // Initialize a copy of the host status with the changes that are planned. We make a copy rather
-    // than modifying the datastore's version so that we can wait until the clean install is staged
-    // before committing the changes.
+    // Initialize a copy of the Host Status with the changes that are planned. We make a copy
+    // rather than modifying the datastore's version so that we can wait until the clean install is
+    // staged before committing the changes.
     let mut ctx = EngineContext {
         spec: host_config.clone(),
         spec_old: Default::default(),
@@ -275,7 +275,8 @@ fn stage_clean_install(
 
     validate_host_config(subsystems, &ctx, host_config)?;
 
-    debug!("Clearing saved host status");
+    // Need to re-set saved Host Status in case another clean install has been previously staged
+    debug!("Clearing saved Host Status");
     state.with_host_status(|host_status| {
         host_status.spec = Default::default();
         host_status.servicing_type = ServicingType::NoActiveServicing;
@@ -370,7 +371,7 @@ pub(super) fn finalize_clean_install(
             &ctx.block_device_paths,
             ctx.get_ab_update_volume()
                 .structured(InternalError::Internal(
-                    "No update volume despite there being an update in prgoress",
+                    "No update volume despite there being a clean install in progress",
                 ))?,
         )?,
     };
@@ -447,6 +448,7 @@ pub(super) fn update(
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
     if state.host_status().servicing_type == ServicingType::AbUpdate {
+        // Need to re-set the Host Status in case another update has been previously staged
         debug!("Resetting A/B update state");
         state.with_host_status(|host_status| {
             host_status.spec = host_status.spec_old.clone();
@@ -480,7 +482,7 @@ pub(super) fn update(
             .structured(ServicingError::ValidateAbActiveVolume)?;
     }
 
-    debug!("Determining servicing type");
+    debug!("Determining servicing type of required update");
     let servicing_type = subsystems
         .iter()
         .map(|m| m.select_servicing_type(&ctx))
@@ -490,11 +492,11 @@ pub(super) fn update(
         .max()
         .unwrap_or(ServicingType::NoActiveServicing); // Never None b/c select_servicing_type() returns a value
     if servicing_type == ServicingType::NoActiveServicing {
-        info!("No updates required");
+        info!("No update servicing required");
         return Ok(());
     }
     debug!(
-        "Selected servicing type for the required update: {:?}",
+        "Update of servicing type '{:?}' is required",
         servicing_type
     );
 
@@ -561,7 +563,7 @@ pub(super) fn update(
                 servicing_type,
             );
 
-            info!("Update complete");
+            info!("Update of servicing type '{:?}' succeeded", servicing_type);
             Ok(())
         }
         ServicingType::CleanInstall => Err(TridentError::new(
@@ -571,12 +573,10 @@ pub(super) fn update(
     }
 }
 
-/// Stages an update. Takes in 5 arguments:
+/// Stages an update. Takes in 3-4 arguments:
 /// - subsystems: A mutable reference to the list of subsystems.
+/// - ctx: EngineContext.
 /// - state: A mutable reference to the DataStore.
-/// - host_config: Updated host configuration.
-/// - servicing_type: Servicing type of the update that Trident will now stage, based on host
-/// config.
 /// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns an Option<NewrootMount>; This is not null only for A/B updates.
@@ -590,16 +590,18 @@ fn stage_update(
     >,
 ) -> Result<(), TridentError> {
     match ctx.servicing_type {
-        ServicingType::HotPatch => info!("Performing hot patch update"),
-        ServicingType::NormalUpdate => info!("Performing normal update"),
-        ServicingType::UpdateAndReboot => info!("Performing update and reboot"),
-        ServicingType::AbUpdate => info!("Performing A/B update"),
         ServicingType::CleanInstall => {
             return Err(TridentError::new(
                 InvalidInputError::CleanInstallOnProvisionedHost,
             ));
         }
         ServicingType::NoActiveServicing => unreachable!(),
+        _ => {
+            info!(
+                "Staging update of servicing type '{:?}'",
+                ctx.servicing_type
+            )
+        }
     }
 
     prepare(subsystems, &ctx)?;
@@ -612,7 +614,7 @@ fn stage_update(
             &ctx.block_device_paths,
             ctx.get_ab_update_volume()
                 .structured(InternalError::Internal(
-                    "No update volume despite there being an update in progress",
+                    "No update volume despite there being an A/B update in progress",
                 ))?,
         )?;
 
@@ -675,7 +677,10 @@ pub(super) fn finalize_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    info!("Finalizing update");
+    info!(
+        "Finalizing update '{:?}'",
+        state.host_status().servicing_type
+    );
 
     let ctx = EngineContext {
         spec: state.host_status().spec.clone(),
@@ -689,9 +694,9 @@ pub(super) fn finalize_update(
     };
 
     let esp_path = if container::is_running_in_container()
-        .message("Failed to check if Trident is running in a container.")?
+        .message("Failed to check if Trident is running in a container")?
     {
-        let host_root = container::get_host_root_path().message("Failed to get host root path.")?;
+        let host_root = container::get_host_root_path().message("Failed to get host root path")?;
         join_relative(host_root, ESP_MOUNT_POINT_PATH)
     } else {
         PathBuf::from(ESP_MOUNT_POINT_PATH)

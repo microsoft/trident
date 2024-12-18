@@ -149,16 +149,15 @@ In case of **a non-fatal error**, no `TridentError` is returned, hence, an
 *Example 1.*
 
 The snippet below is taken from the logic in `src/lib.rs`, where Trident
-validates whether the firmware correctly re-booted from the updated runtime OS
-after a clean install or an A/B update. Here, Trident detected that the
-firmware failed to boot from the expected device after the clean install was
-finalized. Because the contents of the `CleanInstallRebootCheck` error already
-summarize the failure, an `ERROR` log is *not* needed.
+validates whether the firmware correctly booted from the updated runtime OS
+after a clean install. Here, Trident detected that the firmware failed to boot
+from the expected device. Because the contents of the `CleanInstallRebootCheck`
+error already summarize the failure, an `ERROR` log is *not* needed.
 
 ```rust
 datastore.with_host_status(|host_status| {
     host_status.servicing_type = ServicingType::NoActiveServicing;
-    host_status.servicing_state = ServicingState::CleanInstallFailed;
+    host_status.servicing_state = ServicingState::NotProvisioned;
 })?;
 
 return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
@@ -245,8 +244,9 @@ where the customer has updated the Host Configuration but did not include
 `stage` under the allowed operations section. This means that the servicing
 requested in the Host Configuration cannot be executed. While this does not
 cause an error, Trident suspects that the customer might have forgotten to
-update `allowedOperations` and hence, it issues a `WARN` log. This is not a
-failure but a no-action scenario, so we cannot return an `ERROR` log.
+include `stage` in the `--allowed-operations` option and hence, it issues a
+`WARN` log. This is not a failure but a no-action scenario, so we do not
+return an `ERROR` log.
 
 ```rust
 if cmd.allowed_operations.has_stage() {

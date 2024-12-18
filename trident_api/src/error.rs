@@ -174,14 +174,6 @@ pub enum InvalidInputError {
     ParseHostConfigurationFile { path: String },
 
     #[error(
-        "Failed to run as the previous A/B update attempt with the same Host Configuration failed"
-    )]
-    RerunAbUpdateWithFailedHostConfiguration,
-
-    #[error("Failed to run as the previous clean install attempt with the same Host Configuration failed")]
-    RerunCleanInstallWithFailedHostConfiguration,
-
-    #[error(
         "SELinux is enabled in the Host Configuration, but SELinux could not be found on the image"
     )]
     SelinuxEnabledButNotFound,

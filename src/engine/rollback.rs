@@ -60,9 +60,11 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
                 .message("Failed to set boot entries after reboot")?;
         }
     } else if datastore.host_status().servicing_type == ServicingType::CleanInstall {
+        // If Trident was executing a clean install, need to re-set the Host Status.
         datastore.with_host_status(|host_status| {
+            host_status.spec = Default::default();
             host_status.servicing_type = ServicingType::NoActiveServicing;
-            host_status.servicing_state = ServicingState::CleanInstallFailed;
+            host_status.servicing_state = ServicingState::NotProvisioned;
         })?;
 
         return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
@@ -70,9 +72,12 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             expected_device_path: expected_root_device_path.to_string_lossy().to_string(),
         }));
     } else {
+        // If Trident was executing an A/B update, need to re-set the Host Status.
         datastore.with_host_status(|host_status| {
+            host_status.spec = host_status.spec_old.clone();
+            host_status.spec_old = Default::default();
             host_status.servicing_type = ServicingType::NoActiveServicing;
-            host_status.servicing_state = ServicingState::AbUpdateFailed;
+            host_status.servicing_state = ServicingState::Provisioned;
         })?;
 
         return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {

@@ -450,7 +450,6 @@ mod tests {
     #[test]
     fn test_nonexistent_dep() {
         let output = Dependency::DoesNotExist.cmd().output().unwrap_err();
-        println!("{}", output);
         assert!(matches!(*output, DependencyError::NotFound { .. }));
         assert_eq!(
             output.to_string(),
