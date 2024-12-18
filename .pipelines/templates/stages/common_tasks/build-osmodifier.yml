@@ -1,0 +1,12 @@
+steps:
+  - bash: |
+      set -ex
+      git submodule init
+      git submodule update
+      mkdir -p artifacts
+      mkdir -p azure-linux-image-tools/SPECS
+      make -C azure-linux-image-tools/toolkit go-osmodifier REBUILD_TOOLS=y
+      rm -rf azure-linux-image-tools/SPECS
+      mv azure-linux-image-tools/toolkit/out/tools/osmodifier artifacts/
+    displayName: "Build OSModifier"
+    workingDirectory: $(Build.SourcesDirectory)

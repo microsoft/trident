@@ -83,7 +83,7 @@ stages:
 
         steps:
           - template: ../common_tasks/cargo-auth.yml
-          - template: ../common_tasks/download-emu.yml
+          - template: ../common_tasks/build-osmodifier.yml
           - template: release.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
@@ -107,5 +107,5 @@ stages:
           - template: ../common_tasks/cargo-auth.yml
             parameters:
               action: override
-          - template: ../common_tasks/download-emu.yml
+          - template: ../common_tasks/build-osmodifier.yml
           - template: release2.yml

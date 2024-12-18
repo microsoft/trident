@@ -15,7 +15,7 @@ stages:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
 
         steps:
-          - template: ../common_tasks/download-emu.yml
+          - template: ../common_tasks/build-osmodifier.yml
 
           - script: |
               set -eux
