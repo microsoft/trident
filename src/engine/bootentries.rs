@@ -7,10 +7,12 @@ use osutils::{
     block_devices,
     efibootmgr::{self, EfiBootManagerOutput},
 };
+
 use trident_api::{
     config::RaidLevel,
-    constants::{self, internal_params::ENABLE_COSI_SUPPORT},
+    constants::{self, internal_params::ENABLE_COSI_SUPPORT, ESP_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    status::AbVolumeSelection,
     BlockDeviceId,
 };
 
@@ -41,7 +43,7 @@ enum EspDevice {
 /// During clean install, this corresponds to /mnt/newroot/boot/efi, but during
 /// A/B update, both A and B share a single ESP at /boot/efi.
 #[tracing::instrument(name = "set_boot_order_configuration", skip_all)]
-pub fn set_boot_next_and_update_boot_order(
+pub fn create_and_update_boot_variables(
     ctx: &EngineContext,
     esp_path: &Path,
 ) -> Result<(), TridentError> {
@@ -99,22 +101,26 @@ pub fn set_boot_next_and_update_boot_order(
         bootloader_path_new,
     )?;
 
-    if !added_entry_numbers.is_empty() {
-        // Set the `BootNext` variable to boot from the newly added first entry on next boot.
-        let boot_next_entry = added_entry_numbers[0].clone();
+    // Update boot variables
+    set_boot_next_and_update_boot_order(added_entry_numbers)
+}
+
+/// Updates the `BootNext` variable to boot from the first entry from entry numbers on next boot.
+/// Also updates the `BootOrder` for non-QEMU targets by rearranging the `BootOrder` to include the
+/// boot entries.
+pub fn set_boot_next_and_update_boot_order(entry_numbers: Vec<String>) -> Result<(), TridentError> {
+    if !entry_numbers.is_empty() {
+        // Set the `BootNext` variable to boot from the first entry on next boot.
+        let boot_next_entry = entry_numbers[0].clone();
         efibootmgr::set_boot_next(&boot_next_entry)?;
         debug!("Set `BootNext` to newly added first entry '{boot_next_entry}'");
         // HACK: detect if we're inside qemu to avoid modifying `BootOrder`.
         // TODO(#7139): remove this special case.
         if !osutils::virt::is_qemu() {
-            update_boot_order(added_entry_numbers).structured(ServicingError::UpdateBootOrder)?;
+            update_boot_order(entry_numbers).structured(ServicingError::UpdateBootOrder)?;
         }
     } else {
-        // If we didn't have any boot entries to add, we would have failed before reaching this
-        // point.
-        return Err(TridentError::new(InternalError::Internal(
-            "Failed to add boot entries and update `BootNext` and `BootOrder`",
-        )));
+        debug!("No changes to the boot variables are needed, skipping `BootNext` and `BootOrder` update");
     }
 
     Ok(())
@@ -142,6 +148,155 @@ pub fn set_bootentries_after_reboot_for_qemu() -> Result<(), TridentError> {
     // Modify `BootOrder` to include all the entries with the same label as
     // `BootCurrent`` in the `BootOrder`.
     update_boot_order(boot_current_entries).structured(ServicingError::UpdateBootOrder)
+}
+
+/// Returns the boot entry labels of the A/B volumes.
+pub fn get_entry_labels(install_index: usize) -> Result<[String; 2], TridentError> {
+    let entry_label_a = boot::make_esp_dir_name(install_index, AbVolumeSelection::VolumeA);
+    let entry_label_b = boot::make_esp_dir_name(install_index, AbVolumeSelection::VolumeB);
+
+    Ok([entry_label_a, entry_label_b])
+}
+
+// Creates boot entries for the rebuilt esp partitions and returns the boot entry order including
+// the newly added boot entries.
+fn create_and_get_boot_entry_order_after_rebuilding(
+    ctx: &EngineContext,
+    entry_labels: Vec<String>,
+    disks_to_rebuild: &[BlockDeviceId],
+    esp_device_metadata: Vec<EspDeviceMetadata>,
+) -> Result<Vec<String>, TridentError> {
+    create_boot_entries_for_rebuilt_esp_partitions(
+        ctx,
+        entry_labels.clone(),
+        disks_to_rebuild,
+        esp_device_metadata,
+    )?;
+    get_boot_entry_order(entry_labels, ctx.ab_active_volume)
+}
+
+/// Creates boot entries for the missing A/B volumes for the rebuilt esp partitions after rebuilding
+/// the RAID1 disks.
+fn create_boot_entries_for_rebuilt_esp_partitions(
+    ctx: &EngineContext,
+    entry_labels: Vec<String>,
+    disks_to_rebuild: &[BlockDeviceId],
+    esp_device_metadata: Vec<EspDeviceMetadata>,
+) -> Result<(), TridentError> {
+    // If disks to rebuild is empty, no need to create boot entries.
+    if disks_to_rebuild.is_empty() {
+        debug!("No disks to rebuild, skipping boot entry creation for the ESP partitions");
+        return Ok(());
+    }
+
+    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()
+        .structured(ServicingError::ListAndParseBootEntries)?;
+
+    let esp_metadata_cloned = esp_device_metadata.clone();
+    // Create boot entries with the existing labels for the RAID1 ESP partitions on
+    // the disks to rebuild.
+    entry_labels
+        .iter()
+        .take(2)
+        .filter(|&entry_label| {
+            bootmgr_output
+                .boot_entry_exists(entry_label)
+                .unwrap_or(false)
+        })
+        .cloned()
+        .flat_map(|entry_label| {
+            esp_metadata_cloned.iter().flat_map(move |esp_device| {
+                ctx.spec.storage.disks.iter().flat_map({
+                    let entry_label = entry_label.clone();
+                    move |disk| {
+                        let partitions: Vec<_> =
+                            disk.partitions.iter().map(|p| p.id.clone()).collect();
+
+                        // Check if the ESP device is on the disk to be rebuilt.
+                        if disks_to_rebuild.contains(&disk.id)
+                            && partitions.contains(&esp_device.id)
+                        {
+                            let bootloader_path = Path::new(constants::ROOT_MOUNT_POINT_PATH)
+                                .join(constants::ESP_EFI_DIRECTORY)
+                                .join(&entry_label)
+                                .join(BOOT64_EFI);
+
+                            create_entry(
+                                ctx,
+                                esp_device.clone(),
+                                entry_label.clone(),
+                                Path::new(ESP_MOUNT_POINT_PATH),
+                                bootloader_path,
+                                true,
+                            )
+                            .ok()
+                            .map(|_| ())
+                        } else {
+                            None
+                        }
+                    }
+                })
+            })
+        })
+        .count();
+
+    Ok(())
+}
+
+/// Returns boot entry numbers of all the available A/B volumes in the order of the active volume.
+fn get_boot_entry_order(
+    mut labels: Vec<String>,
+    ab_active_volume: Option<AbVolumeSelection>,
+) -> Result<Vec<String>, TridentError> {
+    if ab_active_volume == Some(AbVolumeSelection::VolumeB) {
+        // Reverse the entry labels if the active volume is B so that boot entries will be added in
+        // the order of B, A to the BootOrder.
+        labels.reverse();
+    }
+    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()
+        .structured(ServicingError::ListAndParseBootEntries)?;
+
+    // Get the boot entry ids for the boot entries with the labels in the order of the active volume.
+    let boot_entry_ids: Vec<String> = labels
+        .iter()
+        .flat_map(|entry_label| {
+            bootmgr_output
+                .boot_entries
+                .iter()
+                .filter(move |entry| entry.label == *entry_label)
+                .map(|entry| entry.id.clone())
+        })
+        .collect();
+
+    Ok(boot_entry_ids)
+}
+
+/// Creates boot entries for the rebuilt esp partitions and updates the boot variables i.e
+/// `BootNext` and `BootOrder` after rebuilding the RAID1 disks.
+pub fn create_and_update_boot_variables_after_rebuilding(
+    ctx: &EngineContext,
+    entry_labels: Vec<String>,
+    disks_to_rebuild: &[BlockDeviceId],
+) -> Result<(), TridentError> {
+    let esp_device_info = get_esp_device_info(ctx).structured(ServicingError::GetEspDeviceInfo)?;
+
+    if let EspDevice::Partition(_) = esp_device_info {
+        // No need to create boot entries for standalone ESP partition.
+        return Ok(());
+    }
+    // If Esp device is on RAID1, we need to create boot entries for all the RAID1 partitions on the
+    // disks to rebuild.
+    let entry_numbers = create_and_get_boot_entry_order_after_rebuilding(
+        ctx,
+        entry_labels,
+        disks_to_rebuild,
+        parse_esp_metadata(ctx, esp_device_info)?,
+    )?;
+    // Update the `BootOrder` to include the newly added boot entries and to rearrange the
+    // `BootOrder`.
+    set_boot_next_and_update_boot_order(entry_numbers)?;
+
+    Ok(())
 }
 
 /// Parses the ESP device info and returns the ESP device metadata
@@ -193,59 +348,81 @@ fn create_boot_entry_helper(
     esp_device_metadata
         .into_iter()
         .map(|esp_device| {
-            let esp_device_id = esp_device.id.clone();
-            let disk_path = esp_device.path.clone();
-
-            // Get the UUID path of the ESP partition from ctx.
-            let esp_uuid_path = ctx.block_device_paths.get(&esp_device_id).structured(
-                ServicingError::GetBlockDevicePath {
-                    device_id: esp_device_id.to_string(),
-                },
-            )?;
-
-            debug!(
-                "The disk path of the first ESP partition is {:?}, and the partition UUID path is {:?}",
-                disk_path, esp_uuid_path
-            );
-
-            // Get the partition number of the ESP partition.
-            let part_num =
-                block_devices::get_partition_number(disk_path.clone(), esp_uuid_path.clone())
-                    .structured(ServicingError::GetPartitionNumber {
-                        disk_path: disk_path.to_string_lossy().to_string(),
-                        part_uuid_path: esp_uuid_path.to_string_lossy().to_string(),
-                    })?;
-
-            debug!("ESP partition number: {}", part_num);
-
-            // Create a boot entry for the new OS.
-            efibootmgr::create_boot_entry(
-                &entry_label_new,
-                disk_path.clone(),
-                bootloader_path_new.clone(),
+            create_entry(
+                ctx,
+                esp_device,
+                entry_label_new.clone(),
                 esp_path,
-                part_num,
+                bootloader_path_new.clone(),
                 skip_duplicate,
             )
-            .structured(ServicingError::CreateBootEntry {
-                boot_entry: entry_label_new.clone(),
-            })?;
-
-            let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()
-                .structured(ServicingError::ListAndParseBootEntries)?;
-
-            let added_entry_number = bootmgr_output
-                .get_boot_entry_number(&entry_label_new)
-                .structured(ServicingError::ReadEfibootmgr)?;
-
-            debug!(
-                "Added boot entry '{added_entry_number}' with label '{}'",
-                entry_label_new.as_str()
-            );
-
-            Ok(added_entry_number)
         })
         .collect::<Result<Vec<String>, TridentError>>()
+}
+
+/// Function that calls create_boot_entry to create a boot entry.
+fn create_entry(
+    ctx: &EngineContext,
+    esp_device: EspDeviceMetadata,
+    entry_label_new: String,
+    esp_path: &Path,
+    bootloader_path_new: PathBuf,
+    skip_duplicate: bool,
+) -> Result<String, TridentError> {
+    let esp_device_id = esp_device.id.clone();
+    let disk_path = esp_device.path.clone();
+
+    // Get the UUID path of the ESP partition from ctx.
+    let esp_uuid_path = ctx.block_device_paths.get(&esp_device_id).structured(
+        ServicingError::GetBlockDevicePath {
+            device_id: esp_device_id.to_string(),
+        },
+    )?;
+
+    debug!(
+        "The disk path of the first ESP partition is {:?}, and the partition UUID path is {:?}",
+        disk_path, esp_uuid_path
+    );
+
+    // Get the partition number of the ESP partition.
+    let part_num = block_devices::get_partition_number(disk_path.clone(), esp_uuid_path.clone())
+        .structured(ServicingError::GetPartitionNumber {
+            disk_path: disk_path.to_string_lossy().to_string(),
+            part_uuid_path: esp_uuid_path.to_string_lossy().to_string(),
+        })?;
+
+    debug!("ESP partition number: {}", part_num);
+
+    // Create a boot entry for the new OS.
+    efibootmgr::create_boot_entry(
+        &entry_label_new,
+        disk_path.clone(),
+        bootloader_path_new.clone(),
+        esp_path,
+        part_num,
+        skip_duplicate,
+    )
+    .structured(ServicingError::CreateBootEntry {
+        boot_entry: entry_label_new.clone(),
+    })?;
+
+    let added_entry_number = get_entry_number(&entry_label_new)?;
+    debug!(
+        "Added boot entry '{added_entry_number}' with label '{}'",
+        entry_label_new.as_str(),
+    );
+
+    Ok(added_entry_number)
+}
+
+/// Gets the entry number of the latest boot entry with the given label.
+fn get_entry_number(entry_label: &str) -> Result<String, TridentError> {
+    let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()
+        .structured(ServicingError::ListAndParseBootEntries)?;
+
+    bootmgr_output
+        .get_boot_entry_number(entry_label)
+        .structured(ServicingError::ReadEfibootmgr)
 }
 
 /// Returns the ESP partition device id from Engine Context
@@ -683,6 +860,44 @@ mod tests {
         let esp_device_metadata = parse_esp_metadata(&ctx, esp_device_info).unwrap();
         assert_eq!(esp_device_metadata, vec![esp_meta_data]);
     }
+
+    #[test]
+    fn test_get_entry_labels() {
+        let mut ctx = EngineContext {
+            spec: HostConfiguration {
+                storage: config::Storage {
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![],
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            get_entry_labels(ctx.install_index).unwrap(),
+            ["AZLA".to_string(), "AZLB".to_string()]
+        );
+
+        assert_eq!(
+            get_entry_labels(ctx.install_index).unwrap(),
+            ["AZLA".to_string(), "AZLB".to_string()]
+        );
+
+        ctx.install_index = 1;
+        assert_eq!(
+            get_entry_labels(ctx.install_index).unwrap(),
+            ["AZL2A".to_string(), "AZL2B".to_string()]
+        );
+
+        ctx.install_index = 0;
+        assert_eq!(
+            get_entry_labels(ctx.install_index).unwrap(),
+            ["AZLA".to_string(), "AZLB".to_string()]
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -691,16 +906,24 @@ mod functional_test {
     use super::*;
 
     use std::iter::Iterator;
+    use std::str::FromStr;
 
     use osutils::{
         efibootmgr::{self, EfiBootManagerOutput},
         files::create_file,
         path::join_relative,
+        sfdisk,
         testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
     };
     use pytest_gen::functional_test;
 
+    use trident_api::config::{
+        self, Disk, FileSystemType, HostConfiguration, MountOptions, MountPoint, Partition,
+        PartitionSize, PartitionType,
+    };
+
     use crate::engine::storage::partitioning;
+    use crate::engine::EngineContext;
 
     #[allow(dead_code)]
     fn delete_boot_next() {
@@ -1065,5 +1288,346 @@ mod functional_test {
                 efibootmgr::delete_boot_entry(&entry_number).unwrap();
             }
         }
+    }
+
+    fn get_esp_on_raid_ctx() -> EngineContext {
+        EngineContext {
+            spec: HostConfiguration {
+                storage: trident_api::config::Storage {
+                    filesystems: vec![config::FileSystem {
+                        source: config::FileSystemSource::EspImage(config::Image {
+                            url: "http://example.com/esp.img".to_string(),
+                            sha256: config::ImageSha256::Ignored,
+                            format: config::ImageFormat::RawZst,
+                        }),
+                        device_id: Some("esp".to_string()),
+                        fs_type: FileSystemType::Vfat,
+                        mount_point: Some(MountPoint {
+                            path: ESP_MOUNT_POINT_PATH.into(),
+                            options: MountOptions::defaults(),
+                        }),
+                    }],
+                    disks: vec![
+                        Disk {
+                            id: "disk1".into(),
+                            device: TEST_DISK_DEVICE_PATH.into(),
+                            partitions: vec![Partition {
+                                id: "esp1".into(),
+                                size: PartitionSize::from_str("512M").unwrap(),
+                                partition_type: PartitionType::Esp,
+                            }],
+                            ..Default::default()
+                        },
+                        Disk {
+                            id: "disk2".into(),
+                            device: TEST_DISK_DEVICE_PATH.into(),
+                            partitions: vec![Partition {
+                                id: "esp2".into(),
+                                size: PartitionSize::from_str("512M").unwrap(),
+                                partition_type: PartitionType::Esp,
+                            }],
+                            ..Default::default()
+                        },
+                    ],
+                    raid: config::Raid {
+                        software: vec![config::SoftwareRaidArray {
+                            id: "esp".into(),
+                            name: "esp".to_string(),
+                            level: config::RaidLevel::Raid1,
+                            devices: vec!["esp1".into(), "esp2".into()],
+                        }],
+                        sync_timeout: Some(180),
+                    },
+
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn create_test_boot_entries(
+        labels: Vec<String>,
+    ) -> (Vec<String>, Vec<String>, Vec<EspDeviceMetadata>) {
+        let tempdir = tempfile::tempdir().unwrap();
+        // Create bootloader path
+        let bootloader_path = Path::new(r"/EFI/TESTA/bootx64.efi");
+        // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
+        // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
+        let bootloader_path = Path::new(r"/EFI/TESTB/bootx64.efi");
+        // create_boot_entry() will call is_valid_bootloader_path() to verify if file exists at
+        // {tempdir}/{bootloader_path}. So, create a dummy bootloader file
+        let bootloader_file_path = join_relative(tempdir.path(), bootloader_path);
+        create_file(bootloader_file_path).unwrap();
+
+        for label in &labels {
+            efibootmgr::create_boot_entry(
+                label,
+                OS_DISK_DEVICE_PATH,
+                bootloader_path,
+                tempdir.path(),
+                3,
+                false,
+            )
+            .unwrap();
+
+            efibootmgr::create_boot_entry(
+                label,
+                OS_DISK_DEVICE_PATH,
+                bootloader_path,
+                tempdir.path(),
+                3,
+                true,
+            )
+            .unwrap();
+        }
+
+        let bootloader_path1 = Path::new(r"/boot/efi/EFI/TESTA/bootx64.efi");
+        create_file(bootloader_path1).unwrap();
+        let bootloader_path2 = Path::new(r"/boot/efi/EFI/TESTB/bootx64.efi");
+        create_file(bootloader_path2).unwrap();
+
+        let bootmgr_output_initial: EfiBootManagerOutput =
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
+
+        // Get all the entries with label "TESTA" and "TESTB"
+        let testa_entries = bootmgr_output_initial.get_entries_with_label("TESTA");
+
+        let testb_entries = bootmgr_output_initial.get_entries_with_label("TESTB");
+
+        for label in &labels {
+            // Get the entry number of the boot entry
+            let entry_number = efibootmgr::list_and_parse_bootmgr_entries()
+                .unwrap()
+                .get_boot_entry_number(label)
+                .unwrap();
+            // Delete one entry from each label
+            efibootmgr::delete_boot_entry(&entry_number).unwrap();
+        }
+
+        let esp_meta_data_vec = vec![
+            EspDeviceMetadata {
+                id: "esp1".into(),
+                path: PathBuf::from(OS_DISK_DEVICE_PATH),
+            },
+            EspDeviceMetadata {
+                id: "esp2".into(),
+                path: PathBuf::from(TEST_DISK_DEVICE_PATH),
+            },
+        ];
+
+        (testa_entries, testb_entries, esp_meta_data_vec)
+    }
+
+    fn cleanup(expected_output: Vec<String>) {
+        // Cleanup
+        // Delete all the entry numbers in the expected_output
+        for entry_number in &expected_output {
+            efibootmgr::delete_boot_entry(entry_number).unwrap();
+        }
+        // Delete the files created
+        let _ = std::fs::remove_file("/boot/efi/EFI/TESTA/bootx64.efi");
+        let _ = std::fs::remove_file("/boot/efi/EFI/TESTB/bootx64.efi");
+    }
+
+    #[functional_test]
+    fn test_create_and_get_boot_entry_order_after_rebuilding_a_b_boot_order() {
+        let labels = vec!["TESTA".to_string(), "TESTB".to_string()];
+        let (testa_entries, testb_entries, esp_meta_data_vec) =
+            create_test_boot_entries(labels.clone());
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let mut ctx = get_esp_on_raid_ctx();
+
+        // Set up the environment
+        // Create the esp2 partition
+        let mut ctx1 = tests::get_esp_on_raid_ctx();
+        partitioning::create_partitions(&mut ctx1).unwrap();
+        // Get the UUID path of the ESP partition from ctx1.
+        let esp_uuid_path = Box::new(ctx1.block_device_paths.get("esp2")).unwrap();
+        // Add this to the ctx block_device_paths
+        ctx.block_device_paths
+            .insert("esp2".to_string(), esp_uuid_path.clone());
+
+        // TestCase 1 : where active volume is VolumeA
+        ctx.ab_active_volume = Some(trident_api::status::AbVolumeSelection::VolumeA);
+        // Append testa_entries and testb_entries and create a vector of all the entries
+        let expected_output: Vec<String> = testa_entries
+            .iter()
+            .chain(testb_entries.iter())
+            .cloned()
+            .collect();
+        let output = create_and_get_boot_entry_order_after_rebuilding(
+            &ctx,
+            labels.clone(),
+            &disks_to_rebuild,
+            esp_meta_data_vec.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(output, expected_output.clone());
+
+        cleanup(expected_output);
+    }
+
+    #[functional_test]
+    fn test_create_and_get_boot_entry_order_after_rebuilding_b_a_boot_order() {
+        let labels = vec!["TESTA".to_string(), "TESTB".to_string()];
+        let (testa_entries, testb_entries, esp_meta_data_vec) =
+            create_test_boot_entries(labels.clone());
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        let mut ctx = get_esp_on_raid_ctx();
+
+        // Set up the environment to test create_and_get_boot_entry_numbers() function
+        // Create the esp2 partition
+        let mut ctx1 = tests::get_esp_on_raid_ctx();
+        partitioning::create_partitions(&mut ctx1).unwrap();
+        // Get the UUID path of the ESP partition from ctx1.
+        let esp_uuid_path = Box::new(ctx1.block_device_paths.get("esp2")).unwrap();
+        // Add this to the ctx block_device_paths
+        ctx.block_device_paths
+            .insert("esp2".to_string(), esp_uuid_path.clone());
+
+        // TestCase : where active volume is VolumeB
+        ctx.ab_active_volume = Some(trident_api::status::AbVolumeSelection::VolumeB);
+        // Append testa_entries and testb_entries and create a vector of all the entries
+        let expected_output: Vec<String> = testb_entries
+            .iter()
+            .chain(testa_entries.iter())
+            .cloned()
+            .collect();
+
+        let output = create_and_get_boot_entry_order_after_rebuilding(
+            &ctx,
+            labels,
+            &disks_to_rebuild,
+            esp_meta_data_vec.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(output, expected_output.clone());
+
+        cleanup(expected_output);
+    }
+
+    #[functional_test]
+    fn test_create_bootentries_after_rebuilding_active_volume_a() {
+        let labels = vec!["TESTA".to_string(), "TESTB".to_string()];
+        let (_testa_entries, _testb_entries, _esp_meta_data_vec) =
+            create_test_boot_entries(labels.clone());
+
+        let mut ctx = get_esp_on_raid_ctx();
+
+        // Set up the environment
+        // Create the esp2 partition
+        let mut ctx1 = tests::get_esp_on_raid_ctx();
+        partitioning::create_partitions(&mut ctx1).unwrap();
+        // Get the UUID path of the ESP partition from ctx1.
+        let esp_uuid_path1 = Box::new(ctx1.block_device_paths.get("esp1")).unwrap();
+
+        // Add this to the ctx block_device_paths
+        ctx.block_device_paths
+            .insert("esp1".to_string(), esp_uuid_path1.clone());
+        let esp_uuid_path2 = Box::new(ctx1.block_device_paths.get("esp2")).unwrap();
+
+        // Add this to the ctx block_device_paths
+        ctx.block_device_paths
+            .insert("esp2".to_string(), esp_uuid_path2.clone());
+
+        // TestCase 1 : where active volume is VolumeA
+        ctx.ab_active_volume = Some(trident_api::status::AbVolumeSelection::VolumeA);
+
+        let bootmgr_output: EfiBootManagerOutput =
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
+        print!("{:?}", bootmgr_output);
+
+        let disk1_uuid = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sda"))
+            .unwrap()
+            .unwrap();
+        ctx.disks_by_uuid
+            .insert(disk1_uuid.as_uuid().unwrap(), "disk1".to_string());
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        create_and_update_boot_variables_after_rebuilding(&ctx, labels, &disks_to_rebuild).unwrap();
+
+        let bootmgr_output: EfiBootManagerOutput =
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
+        print!("{:?}", bootmgr_output);
+        // Get all the entries with label "TESTA"
+        let testa_entries = bootmgr_output.get_entries_with_label("TESTA");
+        // Get all the entries with label "TESTB"
+        let testb_entries = bootmgr_output.get_entries_with_label("TESTB");
+        assert_eq!(testa_entries.len(), 2);
+        assert_eq!(testb_entries.len(), 2);
+
+        // Check BootNext when active volume is VolumeA
+        assert_eq!(bootmgr_output.boot_next, testa_entries[0]);
+
+        // Cleanup
+        cleanup(testa_entries);
+        cleanup(testb_entries);
+    }
+
+    #[functional_test]
+    fn test_create_bootentries_after_rebuilding_active_volume_b() {
+        let labels = vec!["TESTA".to_string(), "TESTB".to_string()];
+        let (_testa_entries, _testb_entries, _esp_meta_data_vec) =
+            create_test_boot_entries(labels.clone());
+
+        let mut ctx = get_esp_on_raid_ctx();
+
+        // Set up the environment
+        // Create the esp2 partition
+        let mut ctx1 = tests::get_esp_on_raid_ctx();
+        partitioning::create_partitions(&mut ctx1).unwrap();
+        // Get the UUID path of the ESP partition from ctx1.
+        let esp_uuid_path1 = Box::new(ctx1.block_device_paths.get("esp1")).unwrap();
+
+        // Add this to the ctx block_device_paths
+        ctx.block_device_paths
+            .insert("esp1".to_string(), esp_uuid_path1.clone());
+        let esp_uuid_path2 = Box::new(ctx1.block_device_paths.get("esp2")).unwrap();
+
+        // Add this to the ctx block_device_paths
+        ctx.block_device_paths
+            .insert("esp2".to_string(), esp_uuid_path2.clone());
+
+        // TestCase 2 : where active volume is VolumeB
+        ctx.ab_active_volume = Some(trident_api::status::AbVolumeSelection::VolumeB);
+
+        let bootmgr_output: EfiBootManagerOutput =
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
+        print!("{:?}", bootmgr_output);
+
+        let disk1_uuid = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sda"))
+            .unwrap()
+            .unwrap();
+        ctx.disks_by_uuid
+            .insert(disk1_uuid.as_uuid().unwrap(), "disk1".to_string());
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+        create_and_update_boot_variables_after_rebuilding(&ctx, labels, &disks_to_rebuild).unwrap();
+
+        let bootmgr_output: EfiBootManagerOutput =
+            efibootmgr::list_and_parse_bootmgr_entries().unwrap();
+
+        // Get all the entries with label "TESTA"
+        let testa_entries = bootmgr_output.get_entries_with_label("TESTA");
+        // Get all the entries with label "TESTB"
+        let testb_entries = bootmgr_output.get_entries_with_label("TESTB");
+        assert_eq!(testa_entries.len(), 2);
+        assert_eq!(testb_entries.len(), 2);
+
+        // Check BootNext when active volume is VolumeB
+        assert_eq!(bootmgr_output.boot_next, testb_entries[0]);
+
+        // Cleanup
+        cleanup(testa_entries);
+        cleanup(testb_entries);
     }
 }

@@ -334,6 +334,12 @@ pub enum ServicingError {
     #[error("Failed to get block device path for device '{device_id}'")]
     GetBlockDevicePath { device_id: String },
 
+    #[error("Failed to get the disks to rebuild")]
+    GetDisksToRebuild,
+
+    #[error("Failed to get the ESP device information")]
+    GetEspDeviceInfo,
+
     #[error("Failed to get the label and path for the EFI boot loader of the A/B update volume")]
     GetLabelandPath,
 
@@ -342,6 +348,9 @@ pub enum ServicingError {
         disk_path: String,
         part_uuid_path: String,
     },
+
+    #[error("Failed to resolve disks to device paths")]
+    GetResolvedDisks,
 
     #[error("Failed to get mount point info for root with path '{root_path}'")]
     GetRootMountPointInfo { root_path: String },
@@ -391,6 +400,9 @@ pub enum ServicingError {
     #[error("Reboot timed out")]
     RebootTimeout,
 
+    #[error("Failed to rebuild RAID arrays")]
+    RebuildRaid,
+
     #[error("Failed to regenerate initrd")]
     RegenerateInitrd,
 
@@ -418,8 +430,8 @@ pub enum ServicingError {
     #[error("Failed to start network")]
     StartNetwork,
 
-    #[error("Failed to validate and rebuild RAID")]
-    ValidateAndRebuildRaid,
+    #[error("Trident rebuild-raid validation failed")]
+    ValidateRebuildRaid,
 
     #[error("Failed to unmount newroot, unable to unmount '{dir}'")]
     UnmountNewroot { dir: String },

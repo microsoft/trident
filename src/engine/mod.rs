@@ -384,7 +384,7 @@ pub(super) fn finalize_clean_install(
 
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
-    bootentries::set_boot_next_and_update_boot_order(&ctx, &esp_path)?;
+    bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",
@@ -712,7 +712,7 @@ pub(super) fn finalize_update(
     } else {
         PathBuf::from(ESP_MOUNT_POINT_PATH)
     };
-    bootentries::set_boot_next_and_update_boot_order(&ctx, &esp_path)?;
+    bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
 
     debug!(
         "Updating host's servicing state to '{:?}'",

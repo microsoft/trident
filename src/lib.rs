@@ -4,11 +4,12 @@ use std::{
 };
 
 use anyhow::{Context, Error};
+use engine::{bootentries, EngineContext};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
 use tokio::sync::mpsc::{self};
 
-use osutils::container;
+use osutils::{block_devices, container};
 use trident_api::config::{
     GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations,
 };
@@ -363,20 +364,58 @@ impl Trident {
                 ExecutionEnvironmentMisconfigurationError::CheckRootPrivileges,
             ));
         }
+        let mut host_config = Default::default();
+        let mut disks_to_rebuild = Vec::new();
+        let mut datastore = DataStore::open(datastore_path)?;
+        let _ = datastore.with_host_status(|host_status| -> Result<(), TridentError> {
+            host_config = self
+                .host_config
+                .clone()
+                .unwrap_or_else(|| host_status.spec.clone());
 
-        DataStore::open(datastore_path)?
-            .with_host_status(|host_status| {
-                let host_config = self
-                    .host_config
-                    .clone()
-                    .unwrap_or_else(|| host_status.spec.clone());
+            let resolved_disks = block_devices::get_resolved_disks(&host_config)
+                .structured(ServicingError::GetResolvedDisks)?;
+            disks_to_rebuild =
+                rebuild::get_disks_to_rebuild(&host_status.disks_by_uuid, &resolved_disks)
+                    .structured(ServicingError::GetDisksToRebuild)?;
+            info!("Validating and rebuilding RAID devices");
+            // Validate the loaded Host Configuration
+            rebuild::validate_rebuild_raid(&host_config, host_status, &disks_to_rebuild)
+                .structured(ServicingError::ValidateRebuildRaid)?;
+            // Rebuild RAID devices
+            rebuild::rebuild_raid(&host_config, host_status)
+                .structured(ServicingError::RebuildRaid)?;
 
-                // Validate the loaded Host Configuration and rebuild RAID devices
-                rebuild::validate_and_rebuild_raid(&host_config, host_status)
-            })?
-            .structured(ServicingError::ValidateAndRebuildRaid)?;
+            Ok(())
+        })?;
 
-        Ok(())
+        let host_status = datastore.host_status();
+        let ctx = EngineContext {
+            spec: host_status.spec.clone(),
+            spec_old: host_status.spec_old.clone(),
+            servicing_type: host_status.servicing_type,
+            ab_active_volume: host_status.ab_active_volume,
+            block_device_paths: host_status.block_device_paths.clone(),
+            disks_by_uuid: host_status.disks_by_uuid.clone(),
+            install_index: host_status.install_index,
+            os_image: None,
+        };
+
+        if ctx.ab_active_volume.is_none() {
+            return Err(TridentError::new(InternalError::Internal(
+                "No active volume selected",
+            )));
+        }
+
+        let entry_labels = bootentries::get_entry_labels(ctx.install_index)?;
+
+        info!("Creating and updating boot variables after rebuilding RAID devices");
+        // Create boot entries and update boot variables after rebuilding RAID devices
+        bootentries::create_and_update_boot_variables_after_rebuilding(
+            &ctx,
+            entry_labels.to_vec(),
+            &disks_to_rebuild,
+        )
     }
 
     fn handle_commands(

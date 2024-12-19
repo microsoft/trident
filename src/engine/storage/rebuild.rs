@@ -123,7 +123,7 @@ fn rebuild_raid_array(
 }
 
 /// Gets the disks that need to be rebuilt.
-fn get_disks_to_rebuild(
+pub fn get_disks_to_rebuild(
     old_disk_uuid_id_map: &HashMap<Uuid, BlockDeviceId>,
     resolved_disks: &[ResolvedDisk],
 ) -> Result<Vec<BlockDeviceId>, Error> {
@@ -163,11 +163,16 @@ fn get_disks_to_rebuild(
 /// This function verifies if the rebuild-raid operation can be initiated by
 /// validating the host configuration changes and determining whether the RAID
 /// can be successfully recovered.
-fn validate_rebuild_raid(
+pub(crate) fn validate_rebuild_raid(
     host_config: &HostConfiguration,
     host_status: &mut HostStatus,
     disks_to_rebuild: &[BlockDeviceId],
 ) -> Result<(), Error> {
+    if disks_to_rebuild.is_empty() {
+        info!("No disks to rebuild to perform RAID recovery");
+        return Ok(());
+    }
+
     validate_host_config_delta(host_config, &host_status.spec)
         .context("Failed to validate host configuration delta for rebuild-raid operation")?;
 
@@ -234,8 +239,8 @@ fn validate_rebuild_raid(
     Ok(())
 }
 
-/// Validates the host configuration and rebuilds the RAID arrays.
-pub(crate) fn validate_and_rebuild_raid(
+/// Rebuilds the RAID arrays.
+pub(crate) fn rebuild_raid(
     host_config: &HostConfiguration,
     host_status: &mut HostStatus,
 ) -> Result<(), Error> {
@@ -243,14 +248,6 @@ pub(crate) fn validate_and_rebuild_raid(
         .context("Failed to resolve disks to device paths")?;
     let disks_to_rebuild = get_disks_to_rebuild(&host_status.disks_by_uuid, &resolved_disks)
         .context("Failed to get disks to rebuild from Host Status")?;
-
-    if disks_to_rebuild.is_empty() {
-        info!("No disks to rebuild to perform RAID recovery");
-        return Ok(());
-    }
-
-    validate_rebuild_raid(host_config, host_status, &disks_to_rebuild)
-        .context("Trident rebuild-raid validation failed or could not be performed")?;
 
     debug!(
         "Rebuilding RAID arrays, Disks to rebuild {:?}",
@@ -984,7 +981,7 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_validate_and_rebuild_raid_success() {
+    fn test_rebuild_raid_success() {
         let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
         let mut ctx = EngineContext {
             spec: host_status.spec.clone(),
@@ -1023,7 +1020,7 @@ mod functional_test {
         mdadm::remove(&raid_path, PathBuf::from("/dev/sdb1")).unwrap();
 
         // Disks to rebuild is empty as 2 disks UUIDs are already present in Host Status.
-        validate_and_rebuild_raid(&host_config, &mut host_status).unwrap();
+        rebuild_raid(&host_config, &mut host_status).unwrap();
 
         // Verify that the RAID array hasnt been rebuilt as disks to rebuild is empty.
         let raid_devices = mdadm::detail(raid_path.as_ref()).unwrap();
@@ -1041,7 +1038,7 @@ mod functional_test {
             .remove(&disk2_uuid.as_uuid().unwrap());
 
         // Validate and rebuild RAID arrays.
-        validate_and_rebuild_raid(&host_config, &mut host_status).unwrap();
+        rebuild_raid(&host_config, &mut host_status).unwrap();
 
         // Verify that the RAID array has been rebuilt successfully.
         raid::verify_raid_creation(raid_path.clone(), devices);
@@ -1056,7 +1053,7 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_validate_and_rebuild_raid_validation_failure() {
+    fn test_validate_rebuild_raid_validation_failure() {
         let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
 
         if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
@@ -1069,16 +1066,18 @@ mod functional_test {
         // Fail validation.
         host_status.servicing_type = trident_api::status::ServicingType::CleanInstall;
 
-        let err = validate_and_rebuild_raid(&host_config, &mut host_status);
+        let disks_to_rebuild = vec!["disk2".to_string()];
+
+        let err = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
 
         assert_eq!(
             err.unwrap_err().to_string(),
-            "Trident rebuild-raid validation failed or could not be performed"
+            "rebuild-raid command is not allowed when servicing type is CleanInstall"
         );
     }
 
     #[functional_test]
-    fn test_validate_and_rebuild_raid_raidrecovery_failure() {
+    fn test_validate_rebuild_raid_raidrecovery_failure() {
         let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
 
         if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
@@ -1113,11 +1112,13 @@ mod functional_test {
 
         host_status.spec = host_config.clone();
 
-        let err = validate_and_rebuild_raid(&host_config, &mut host_status);
+        let disks_to_rebuild = vec!["disk2".to_string()];
+
+        let err = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
 
         assert_eq!(
             err.unwrap_err().to_string(),
-            "Trident rebuild-raid validation failed or could not be performed"
+            "Failed to validate RAID recovery"
         );
     }
 }
