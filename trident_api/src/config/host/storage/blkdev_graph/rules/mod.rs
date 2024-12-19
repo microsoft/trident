@@ -244,6 +244,12 @@ impl FileSystemType {
 
     /// Returns whether a filesystem type can be used with verity.
     pub fn supports_verity(&self) -> bool {
+        // If a filesystem cannot be mounted, by default it cannot be used with
+        // verity.
+        if !self.can_have_mountpoint() {
+            return false;
+        }
+
         match self {
             Self::Ext4 | Self::Xfs => true,
             Self::Vfat

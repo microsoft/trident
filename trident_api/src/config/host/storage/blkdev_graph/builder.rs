@@ -49,8 +49,6 @@ use super::{
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct BlockDeviceGraphBuilder<'a> {
     nodes: Vec<BlkDevNode<'a>>,
-    // images: Vec<&'a Image>,
-    // mount_points: Vec<&'a MountPoint>,
     filesystems: Vec<&'a FileSystem>,
     verity_filesystems: Vec<&'a VerityFileSystem>,
 }

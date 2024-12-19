@@ -2902,6 +2902,7 @@ dependencies = [
  "log",
  "maplit",
  "netplan-types",
+ "petgraph",
  "regex",
  "schemars",
  "semver",

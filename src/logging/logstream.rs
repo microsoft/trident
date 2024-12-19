@@ -94,7 +94,7 @@ impl LogSender {
 
 impl Log for LogSender {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        // BLock logs with a level higher than the max level
+        // Block logs with a level higher than the max level
         // Block reqwest logs from being sent to the server
         // Block logs if there is no server
         // Blocks logs from request to avoid logging recursively

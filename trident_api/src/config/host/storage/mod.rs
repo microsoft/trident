@@ -28,6 +28,7 @@ pub mod imaging;
 pub mod internal;
 pub mod partitions;
 pub mod raid;
+pub mod storage_graph;
 pub mod verity;
 
 use self::{
@@ -43,6 +44,9 @@ use self::{
     internal::{InternalMountPoint, InternalVerityDevice},
     partitions::Partition,
     raid::Raid,
+    storage_graph::{
+        builder::StorageGraphBuilder, error::StorageGraphBuildError, graph::StorageGraph,
+    },
     verity::VerityDevice,
 };
 
@@ -120,6 +124,57 @@ impl Storage {
         false
     }
 
+    /// Builds a storage graph from the storage configuration. (GraphV2)
+    pub fn build_graph2(&self) -> Result<StorageGraph, StorageGraphBuildError> {
+        let mut builder = StorageGraphBuilder::default();
+
+        // Add disks
+        for disk in &self.disks {
+            builder.add_node(disk.into());
+
+            // Add partitions
+            for partition in &disk.partitions {
+                builder.add_node(partition.into());
+            }
+
+            // Add adopted partitions
+            for adopted_partition in &disk.adopted_partitions {
+                builder.add_node(adopted_partition.into());
+            }
+        }
+
+        // Add RAID arrays
+        for raid in &self.raid.software {
+            builder.add_node(raid.into());
+        }
+
+        // Add A/B update volume pairs
+        if let Some(ab_update) = &self.ab_update {
+            for pair in &ab_update.volume_pairs {
+                builder.add_node(pair.into());
+            }
+        }
+
+        // Add encrypted volumes
+        if let Some(encryption) = &self.encryption {
+            for volume in &encryption.volumes {
+                builder.add_node(volume.into());
+            }
+        }
+
+        for fs in &self.filesystems {
+            builder.add_node(fs.into());
+        }
+
+        for vfs in &self.verity_filesystems {
+            builder.add_node(vfs.into());
+        }
+
+        // Try to build the graph
+        builder.build()
+    }
+
+    /// Builds a block device graph from the storage configuration. (GraphV1)
     pub fn build_graph(&self) -> Result<BlockDeviceGraph<'_>, BlockDeviceGraphBuildError> {
         let mut builder = BlockDeviceGraphBuilder::default();
 
@@ -187,6 +242,17 @@ impl Storage {
 
         // Build the graph
         let graph = self.build_graph()?;
+
+        log::debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
+        let res = self.build_graph2();
+        if let Err(err) = res {
+            log::error!(
+                "EXPERIMENTAL GRAPHv2: Failed to build storage graph: {}",
+                err
+            );
+        } else {
+            log::debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
+        }
 
         // If storage configuration is requested, then
         if *self != Storage::default() {

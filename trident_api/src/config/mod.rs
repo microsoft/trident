@@ -24,6 +24,7 @@ pub use host::{
         internal::{InternalMountPoint, InternalVerityDevice},
         partitions::{AdoptedPartition, Partition, PartitionSize, PartitionType},
         raid::{Raid, RaidLevel, SoftwareRaidArray},
+        verity::VerityDevice,
         Storage,
     },
     trident::Trident,

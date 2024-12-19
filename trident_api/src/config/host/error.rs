@@ -1,7 +1,12 @@
 //! Validation errors for the host configuration.
 
-use crate::constants::VAR_TMP_PATH;
 use serde::{Deserialize, Serialize};
+
+use crate::constants::VAR_TMP_PATH;
+
+use super::storage::{
+    blkdev_graph::error::BlockDeviceGraphBuildError, storage_graph::error::StorageGraphBuildError,
+};
 
 /// Identifies errors detected during static validation of the host configuration, i.e. errors that
 /// can be detected without applying the configuration to the host.
@@ -44,9 +49,10 @@ pub enum HostConfigurationStaticValidationError {
     ExpectedMountPointNotFound { mount_point_path: String },
 
     #[error(transparent)]
-    InvalidBlockDeviceGraph(
-        #[from] super::storage::blkdev_graph::error::BlockDeviceGraphBuildError,
-    ),
+    InvalidBlockDeviceGraph(#[from] BlockDeviceGraphBuildError),
+
+    #[error(transparent)]
+    InvalidStorageGraph(#[from] StorageGraphBuildError),
 
     #[error("Encryption recovery key URL '{url}' has invalid scheme '{scheme}'")]
     InvalidEncryptionRecoveryKeyUrlScheme { url: String, scheme: String },
