@@ -239,17 +239,28 @@ pub(super) fn create_block_devices(ctx: &mut EngineContext) -> Result<(), Triden
 
     // Close verity devices and encrypted volumes before stopping RAID
     // arrays, as both can sit on top of RAID arrays.
-    verity::stop_pre_existing_verity_devices(&ctx.spec)
-        .structured(ServicingError::CleanupVerity)?;
-    encryption::close_pre_existing_encrypted_volumes(&ctx.spec)
-        .structured(ServicingError::CleanupEncryption)?;
-    raid::stop_pre_existing_raid_arrays(&ctx.spec).structured(ServicingError::CleanupRaid)?;
+    close_pre_existing_devices(ctx).message("Closing pre-existing block devices failed")?;
 
     partitioning::create_partitions(ctx).structured(ServicingError::CreatePartitions)?;
     raid::create_sw_raid(ctx, &ctx.spec).structured(ServicingError::CreateRaid)?;
     encryption::provision(ctx, &ctx.spec).message(format!(
         "Step 'Provision' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
     ))?;
+
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+pub(super) fn close_pre_existing_devices(ctx: &EngineContext) -> Result<(), TridentError> {
+    debug!("Closing pre-existing block devices");
+
+    // Close verity devices and encrypted volumes before stopping RAID
+    // arrays, as both can sit on top of RAID arrays.
+    verity::stop_pre_existing_verity_devices(&ctx.spec)
+        .structured(ServicingError::CleanupVerity)?;
+    encryption::close_pre_existing_encrypted_volumes(&ctx.spec)
+        .structured(ServicingError::CleanupEncryption)?;
+    raid::stop_pre_existing_raid_arrays(&ctx.spec).structured(ServicingError::CleanupRaid)?;
 
     Ok(())
 }

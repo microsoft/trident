@@ -337,9 +337,7 @@ pub(super) fn configure(ctx: &EngineContext, root_mount_path: &Path) -> Result<(
 }
 
 #[tracing::instrument(skip_all)]
-pub(super) fn stop_pre_existing_verity_devices(
-    host_config: &HostConfiguration,
-) -> Result<(), Error> {
+pub fn stop_pre_existing_verity_devices(host_config: &HostConfiguration) -> Result<(), Error> {
     // If no verity module is loaded, there are no verity devices to stop
     if !Path::new("/sys/module/dm_verity").exists() {
         return Ok(());
@@ -347,6 +345,7 @@ pub(super) fn stop_pre_existing_verity_devices(
 
     debug!("Attempting to stop pre-existing verity devices");
 
+    // Compose path of the root verity device for the updated volume
     let updated_device_name = get_updated_device_name("root");
     let root_verity_device_path = Path::new(DEV_MAPPER_PATH).join(&updated_device_name);
 
@@ -412,7 +411,10 @@ pub(super) fn stop_pre_existing_verity_devices(
             "Deactivating verity device '{}'",
             root_verity_device_path.display()
         );
-        veritysetup::close(&updated_device_name).context("Failed to close root verity device")?;
+        veritysetup::close(&updated_device_name).context(format!(
+            "Failed to close root verity device '{}'",
+            updated_device_name
+        ))?;
     }
 
     Ok(())

@@ -166,7 +166,7 @@ pub mod internal_params {
     pub const EXECROOT_DENYLIST_EXTENSION: &str = "execrootDenyList";
 
     /// Block trident from closing encrypted volumes at the start of provisioning
-    pub const NO_CLOSE_ENCYRPTED_VOLUMES: &str = "noCloseEncryptedVolumes";
+    pub const NO_CLOSE_ENCRYPTED_VOLUMES: &str = "noCloseEncryptedVolumes";
 
     /// Block trident from transitioning to the new OS after finalizing
     pub const NO_TRANSITION: &str = "noTransition";

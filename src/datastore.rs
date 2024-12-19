@@ -137,7 +137,7 @@ impl DataStore {
     ) -> Result<T, TridentError> {
         let mut updated = self.host_status().clone();
 
-        // Call the provided method and return early if the host status was not modified.
+        // Call the provided method and return early if the Host Status was not modified.
         let ret = f(&mut updated);
         if &updated == self.host_status() {
             return ret;
@@ -145,8 +145,8 @@ impl DataStore {
 
         self.host_status = updated;
 
-        // Always attempt to save the updated host status, even if the previous call failed,
-        // but only report errors from saving the host status if it succeeded.
+        // Always attempt to save the updated Host Status, even if the previous call failed,
+        // but only report errors from saving the Host Status if it succeeded.
         let ret2 = Self::write_host_status(
             self.db
                 .as_ref()

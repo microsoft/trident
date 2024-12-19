@@ -25,11 +25,11 @@ pub fn open(
         .arg(root_hash)
         .arg("--verbose")
         .run_and_check()
-        .context(format!("Failed to open verity device {}", device_name))?;
+        .context(format!("Failed to open verity device '{}'", device_name))?;
     let dm_verity_root_path = Path::new(DEV_MAPPER_PATH).join(device_name);
     if !dm_verity_root_path.exists() {
         bail!(
-            "Verity device {} does not exist",
+            "Verity device '{}' does not exist",
             dm_verity_root_path.display()
         );
     }
@@ -186,7 +186,7 @@ pub fn close(device_name: &str) -> Result<(), Error> {
         .arg(device_name)
         .arg("--verbose")
         .run_and_check()
-        .context(format!("Failed to close verity device {}", device_name));
+        .context(format!("Failed to close verity device '{}'", device_name));
 
     if let Err(e) = res {
         // If close returns an error, do best effort to log what is holding the
@@ -194,13 +194,13 @@ pub fn close(device_name: &str) -> Result<(), Error> {
         let block_device = lsblk::get(Path::new(DEV_MAPPER_PATH).join(device_name));
         if let Ok(block_device) = block_device {
             error!(
-                "Failed to close {}: active children: {:?}, active mount points: {:?}",
+                "Failed to close '{}': active children: {:?}, active mount points: {:?}",
                 device_name, block_device.children, block_device.mountpoints
             );
         }
 
         // Propagate the original unmount error
-        return Err(e.context(format!("Failed to close verity device {}", device_name)));
+        return Err(e.context(format!("Failed to close verity device '{}'", device_name)));
     }
 
     Ok(())
@@ -659,7 +659,7 @@ mod functional_test {
     fn test_fail_close_on_missing_devices() {
         assert_eq!(
             close("non-existent-device").unwrap_err().to_string(),
-            "Failed to close verity device non-existent-device"
+            "Failed to close verity device 'non-existent-device'"
         );
     }
 

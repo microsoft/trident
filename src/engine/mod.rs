@@ -12,7 +12,10 @@ use tokio::sync::mpsc;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 
-use osutils::{block_devices, chroot, container, dependencies::Dependency, path::join_relative};
+use osutils::{
+    block_devices, chroot, container, dependencies::Dependency, mount, mountpoint,
+    path::join_relative,
+};
 use trident_api::{
     config::HostConfiguration,
     constants::{
@@ -32,7 +35,10 @@ use trident_api::{
 use crate::grpc::{self, protobufs::HostStatusState};
 use crate::{
     datastore::DataStore,
-    engine::{boot::BootSubsystem, storage::StorageSubsystem},
+    engine::{
+        boot::BootSubsystem,
+        storage::{verity, StorageSubsystem},
+    },
     subsystems::{
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
@@ -75,7 +81,7 @@ pub(crate) trait Subsystem: Send {
     // TODO: Implement dependencies
     // fn dependencies(&self) -> &'static [&'static str];
 
-    /// Select the servicing type based on the host status and host config.
+    /// Select the servicing type based on the Host Status and Host Configuration.
     fn select_servicing_type(
         &self,
         _ctx: &EngineContext,
@@ -83,7 +89,7 @@ pub(crate) trait Subsystem: Send {
         Ok(None)
     }
 
-    /// Validate the host config.
+    /// Validate the Host Configuration.
     fn validate_host_config(
         &self,
         _ctx: &EngineContext,
@@ -106,7 +112,7 @@ pub(crate) trait Subsystem: Send {
         Ok(())
     }
 
-    /// Configure the system as specified by the host configuration, and update the host status
+    /// Configure the system as specified by the Host Configuration, and update the Host Status
     /// accordingly.
     fn configure(&mut self, _ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
         Ok(())
@@ -144,14 +150,14 @@ pub(super) fn clean_install(
     let clean_install_start_time = Instant::now();
 
     if Path::new(UPDATE_ROOT_PATH).exists()
-        && osutils::mountpoint::check_is_mountpoint(UPDATE_ROOT_PATH).structured(
+        && mountpoint::check_is_mountpoint(UPDATE_ROOT_PATH).structured(
             ServicingError::CheckIfMountPoint {
                 path: UPDATE_ROOT_PATH.to_string(),
             },
         )?
     {
         debug!("Unmounting volumes from earlier runs of Trident");
-        if let Err(e) = osutils::mount::umount(UPDATE_ROOT_PATH, true) {
+        if let Err(e) = mount::umount(UPDATE_ROOT_PATH, true) {
             warn!("Attempt to unmount '{UPDATE_ROOT_PATH}' returned error: {e}",);
         }
     }
@@ -311,7 +317,7 @@ fn stage_clean_install(
         return Err(original_error).message("Failed to execute in chroot");
     }
 
-    // At this point, clean install has been staged, so update host status
+    // At this point, clean install has been staged, so update Host Status
     debug!(
         "Updating host's servicing state to '{:?}'",
         ServicingState::Staged
@@ -608,6 +614,11 @@ fn stage_update(
 
     if let ServicingType::AbUpdate = ctx.servicing_type {
         debug!("Preparing storage to mount new root");
+
+        // Close any pre-existing verity devices
+        verity::stop_pre_existing_verity_devices(&ctx.spec)
+            .structured(ServicingError::CleanupVerity)?;
+
         storage::initialize_block_devices(&ctx)?;
         let newroot_mount = NewrootMount::create_and_mount(
             &ctx.spec,

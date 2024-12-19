@@ -6,24 +6,24 @@ Trident itself why a certain failure occurred and how it can be resolved.
 Structured error in Trident is built around a struct called **`TridentError`**.
 
 In the runtime, `TridentError` will be automatically printed by Trident as
-`error!(...)`. Moreover, the host status provided to the customer will also
+`error!(...)`. Moreover, the Host Status provided to the customer will also
 include the contents of `TridentError` under the `lastError` section.
 
 `TridentError` references the inner `ErrorKind`. In turn, `ErrorKind` is an
 enum that contains multiple values that describe different categories of
 potential errors that might occur on a host and/or in Trident:
 
-1.  `ExecutionEnvironmentMisconfiguration` identifies errors that occur when
+1. `ExecutionEnvironmentMisconfiguration` identifies errors that occur when
     the execution environment is misconfigured. E.g. when Trident is run on the
     host without the required root permissions, the error is due to a
     misconfiguration of the execution environment.
 
-2.  `Initialization` identifies errors that occur when Trident fails to
+2. `Initialization` identifies errors that occur when Trident fails to
     initialize. E.g. when Trident fails to load the local Trident config, the
     entire initialization fails.
 
 3. `Internal` identifies errors that occur due to an internal bug or failure in
-    Trident. E.g. failing to serialize or send the host status are examples of
+    Trident. E.g. failing to serialize or send the Host Status are examples of
     such an internal error.
 
 4. `InvalidInput` identifies errors that occur the user provides invalid input.
@@ -34,7 +34,7 @@ potential errors that might occur on a host and/or in Trident:
     are two key sub-categories that describe potential errors in the host
     configuration provided by the user.
 
-5.  `Servicing` identifies errors that occur during servicing and require
+5. `Servicing` identifies errors that occur during servicing and require
     user investigation, to determine whether the error occurred due to an
     internal failure in Trident, a failure in one of its dependencies, or a
     system misconfiguration. E.g. `DatastoreError` is within this category
@@ -42,15 +42,15 @@ potential errors that might occur on a host and/or in Trident:
 
 ## Adding a new error type
 
-1.  When adding a new error type, e.g. when implementing new functionality or
+1. When adding a new error type, e.g. when implementing new functionality or
     modifying a function to return structured error, first determine the
     character of the error. Which category does it belong to?
 
-2.  Review the relevant error category, making use of the fact that each one
+2. Review the relevant error category, making use of the fact that each one
     is ordered alphabetically, and ensure that such an error type does not
     exist yet. If no category matches, add a new category.
 
-3.  Summarize the error in the **error attribute**, or the string message that
+3. Summarize the error in the **error attribute**, or the string message that
     will be displayed when the error variant is triggered. Try to follow one of
     the three patterns:
     - "Failed to do X..."
@@ -60,7 +60,7 @@ potential errors that might occur on a host and/or in Trident:
     immediately communicate to the user why a specific input is wrong and how
     it can be fixed.)
 
-4.  Create a brief yet descriptive **error type name**. For errors where a
+4. Create a brief yet descriptive **error type name**. For errors where a
     certain *action* failed, the name could be the action itself: e.g. if
     Trident failed to load the local Trident config, naming the error
     `LoadTridentConfig` is helpful because it's both short and informative.

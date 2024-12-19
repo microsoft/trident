@@ -424,7 +424,7 @@ mod functional_test {
         SoftwareRaidArray, Storage,
     };
 
-    use crate::engine::storage;
+    use crate::engine::storage::partitioning;
 
     const DEVICE_ONE: &str = formatcp!("{TEST_DISK_DEVICE_PATH}1");
     const DEVICE_TWO: &str = formatcp!("{TEST_DISK_DEVICE_PATH}2");
@@ -469,9 +469,9 @@ mod functional_test {
         };
 
         let spec = &ctx.spec.clone();
-        storage::raid::stop_pre_existing_raid_arrays(spec).unwrap();
+        stop_pre_existing_raid_arrays(spec).unwrap();
 
-        storage::partitioning::create_partitions(&mut ctx).unwrap();
+        partitioning::create_partitions(&mut ctx).unwrap();
     }
 
     #[functional_test]
@@ -562,7 +562,7 @@ mod functional_test {
 
         stop_pre_existing_raid_arrays(spec).unwrap();
 
-        storage::partitioning::create_partitions(&mut ctx).unwrap();
+        partitioning::create_partitions(&mut ctx).unwrap();
 
         create_sw_raid(&ctx, spec).unwrap();
 
@@ -611,7 +611,7 @@ mod functional_test {
         let spec = &ctx.spec.clone();
         stop_pre_existing_raid_arrays(spec).unwrap();
 
-        storage::partitioning::create_partitions(&mut ctx).unwrap();
+        partitioning::create_partitions(&mut ctx).unwrap();
 
         create_sw_raid(&ctx, spec).unwrap();
 
@@ -660,7 +660,7 @@ mod functional_test {
         let spec = &ctx.spec.clone();
         stop_pre_existing_raid_arrays(spec).unwrap();
 
-        storage::partitioning::create_partitions(&mut ctx).unwrap();
+        partitioning::create_partitions(&mut ctx).unwrap();
 
         assert_eq!(
             create_sw_raid(&ctx, spec).unwrap_err().to_string(),
@@ -716,7 +716,7 @@ mod functional_test {
         let spec = &ctx.spec.clone();
         stop_pre_existing_raid_arrays(spec).unwrap();
 
-        storage::partitioning::create_partitions(&mut ctx).unwrap();
+        partitioning::create_partitions(&mut ctx).unwrap();
 
         assert_eq!(
             create_sw_raid_array(&ctx, &raid_array)

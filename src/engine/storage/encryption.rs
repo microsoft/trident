@@ -22,7 +22,7 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, Partition, PartitionSize, PartitionType,
     },
-    constants::internal_params::{NO_CLOSE_ENCYRPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
+    constants::internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     BlockDeviceId,
 };
@@ -100,7 +100,7 @@ pub(super) fn close_pre_existing_encrypted_volumes(
 ) -> Result<(), Error> {
     if host_config
         .internal_params
-        .get_flag(NO_CLOSE_ENCYRPTED_VOLUMES)
+        .get_flag(NO_CLOSE_ENCRYPTED_VOLUMES)
     {
         return Ok(());
     }

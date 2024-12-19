@@ -104,7 +104,7 @@ def sudo(connection: fabric.Connection, cmd: str) -> str:
 
 def get_host_status(connection: fabric.Connection, tridentCommand: str) -> dict:
     """
-    Get the host status by running `trident get` on the given connection,
+    Get the Host Status by running `trident get` on the given connection,
     and return the parsed YAML output.
     """
 

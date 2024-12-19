@@ -349,7 +349,7 @@ impl Trident {
         if let Some(ref orchestrator) = self.orchestrator {
             orchestrator.report_success(Some(
                 serde_yaml::to_string(&datastore.host_status())
-                    .unwrap_or("Failed to serialize host status".into()),
+                    .unwrap_or("Failed to serialize Host Status".into()),
             ))
         }
         Ok(())
@@ -435,7 +435,7 @@ impl Trident {
                         format!("{e:?}"),
                         Some(
                             serde_yaml::to_string(&datastore.host_status())
-                                .unwrap_or("Failed to serialize host status".into()),
+                                .unwrap_or("Failed to serialize Host Status".into()),
                         ),
                     );
                 }

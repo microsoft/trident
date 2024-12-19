@@ -13,7 +13,7 @@ class HostStatusSafeLoader(yaml.SafeLoader):
 def test_ab_update_staged(
     connection, hostConfiguration, tridentCommand, abActiveVolume
 ):
-    # Check host status.
+    # Check Host Status.
     trident_get_command = tridentCommand + "get"
     res_host_status = connection.run(trident_get_command)
     output_host_status = res_host_status.stdout.strip()

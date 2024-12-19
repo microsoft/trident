@@ -41,7 +41,7 @@ fn rebuild_raid_array(
                 .iter()
                 .find(|d| d.id == *disk_id)
                 .context(format!(
-                    "Failed to find configuration for disk '{}' in host status spec",
+                    "Failed to find configuration for disk '{}' in Host Status spec",
                     disk_id
                 ))
                 .map(|disk| disk.partitions.iter().map(|p| p.id.clone()))
@@ -58,7 +58,7 @@ fn rebuild_raid_array(
         .iter()
         .find(|raid| raid.id == *raid_id)
         .context(format!(
-            "Failed to find configuration for RAID array '{}' in host status spec",
+            "Failed to find configuration for RAID array '{}' in Host Status spec",
             raid_id
         ))?;
 
@@ -85,7 +85,7 @@ fn rebuild_raid_array(
         })
         .collect();
     let rebuild_partition_paths: Vec<PathBuf> = rebuild_partition_paths
-        .context("Failed to get rebuild partition paths from host status spec")?;
+        .context("Failed to get rebuild partition paths from Host Status spec")?;
 
     info!(
         "Rebuilding RAID array '{}' with partitions {:?}",
@@ -242,7 +242,7 @@ pub(crate) fn validate_and_rebuild_raid(
     let resolved_disks = block_devices::get_resolved_disks(host_config)
         .context("Failed to resolve disks to device paths")?;
     let disks_to_rebuild = get_disks_to_rebuild(&host_status.disks_by_uuid, &resolved_disks)
-        .context("Failed to get disks to rebuild from host status")?;
+        .context("Failed to get disks to rebuild from Host Status")?;
 
     if disks_to_rebuild.is_empty() {
         info!("No disks to rebuild to perform RAID recovery");
@@ -375,20 +375,20 @@ fn get_raid_disks_to_rebuild_map(
     Ok(raid_disks_to_rebuild_map)
 }
 
-/// Validates the difference between the host configuration used to trigger a
-/// rebuild and the initial host configuration that is saved as host status spec.
-/// Currently, it only checks if the host status specification and host
-/// configuration are identical.
+/// Validates the difference between the Host Configuration used to trigger a
+/// rebuild and the initial host onfiguration that is saved as Host Status spec.
+/// Currently, it only checks if the Host Status specification and Host
+/// Configuration are identical.
 fn validate_host_config_delta(
     host_config: &HostConfiguration,
     host_status_spec: &HostConfiguration,
 ) -> Result<(), Error> {
-    // Compare the host status spec and host_config.
+    // Compare the Host Status spec and host_config.
     let mut host_status_spec = host_status_spec.clone();
     let mut host_config_to_compare = host_config.clone();
 
     // Skip checking the Trident field as Trident fields gets populated only on
-    // host status spec.
+    // Host Status spec.
     host_status_spec.trident = Default::default();
     host_config_to_compare.trident = Default::default();
 
@@ -869,8 +869,9 @@ mod functional_test {
 
     use osutils::{
         dependencies::Dependency,
+        sfdisk::SfDisk,
         testutils::{raid, repart::TEST_DISK_DEVICE_PATH},
-        udevadm,
+        udevadm, wipefs,
     };
     use pytest_gen::functional_test;
     use trident_api::{
@@ -883,7 +884,7 @@ mod functional_test {
 
     use crate::engine::{storage, EngineContext};
 
-    /// Returns the host configuration and host status.
+    /// Returns the Host Configuration and Host Status.
     fn get_hostconfig_and_hoststatus() -> (HostConfiguration, trident_api::status::HostStatus) {
         let host_config = HostConfiguration {
             storage: Storage {
@@ -962,7 +963,7 @@ mod functional_test {
     /// Deletes the partition /dev/sda6.
     fn delete_partition() {
         // Get sfdisk information for /dev/sda6.
-        let sfdisk_info = sfdisk::SfDisk::get_info(PathBuf::from("/dev/sda")).unwrap();
+        let sfdisk_info = SfDisk::get_info(PathBuf::from("/dev/sda")).unwrap();
         // Get partition information for /dev/sda6.
         let partition_info = sfdisk_info
             .partitions
@@ -994,7 +995,7 @@ mod functional_test {
         storage::raid::stop_pre_existing_raid_arrays(&host_config).unwrap();
 
         // Create partitions on the test disks.
-        storage::partitioning::create_partitions(&mut ctx).unwrap();
+        partitioning::create_partitions(&mut ctx).unwrap();
         host_status.block_device_paths = ctx.block_device_paths;
         host_status.disks_by_uuid = ctx.disks_by_uuid;
         udevadm::settle().unwrap();
@@ -1007,7 +1008,7 @@ mod functional_test {
         udevadm::wait(&raid_path).unwrap();
         raid::verify_raid_creation(&raid_path, devices.clone());
 
-        // Add block device path of raid array to host status.
+        // Add block device path of RAID array to Host Status.
         host_status
             .block_device_paths
             .insert("raid1".to_string(), raid_path.clone());
@@ -1021,7 +1022,7 @@ mod functional_test {
         // Now remove the disk2part1 from the RAID array.
         mdadm::remove(&raid_path, PathBuf::from("/dev/sdb1")).unwrap();
 
-        // Disks to rebuild is empty as 2 disks UUIDs are already present in host status.
+        // Disks to rebuild is empty as 2 disks UUIDs are already present in Host Status.
         validate_and_rebuild_raid(&host_config, &mut host_status).unwrap();
 
         // Verify that the RAID array hasnt been rebuilt as disks to rebuild is empty.
@@ -1034,7 +1035,7 @@ mod functional_test {
             .unwrap()
             .unwrap();
 
-        // Remove disk2 UUID from host status.
+        // Remove disk2 UUID from Host Status.
         host_status
             .disks_by_uuid
             .remove(&disk2_uuid.as_uuid().unwrap());
@@ -1048,7 +1049,7 @@ mod functional_test {
         // Cleanup the raid array.
         raid::stop_if_exists(&raid_path);
 
-        osutils::wipefs::all("/dev/sda6").unwrap();
+        wipefs::all("/dev/sda6").unwrap();
 
         // Delete the partition.
         delete_partition();
@@ -1059,7 +1060,7 @@ mod functional_test {
         let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
 
         if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
-            // Remove disk2 UUID from host status.
+            // Remove disk2 UUID from Host Status.
             host_status
                 .disks_by_uuid
                 .remove(&disk2_uuid.as_uuid().unwrap());
@@ -1081,7 +1082,7 @@ mod functional_test {
         let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
 
         if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
-            // Remove disk2 UUID from host status.
+            // Remove disk2 UUID from Host Status.
             host_status
                 .disks_by_uuid
                 .remove(&disk2_uuid.as_uuid().unwrap());

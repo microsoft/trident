@@ -98,13 +98,13 @@ pub enum InternalError {
     #[error("Failed to execute container-only logic as host is not running in a container")]
     RunInContainer,
 
-    #[error("Failed to send host status")]
+    #[error("Failed to send Host Status")]
     SendHostStatus,
 
     #[error("Failed to serialize error")]
     SerializeError,
 
-    #[error("Failed to serialize host status")]
+    #[error("Failed to serialize Host Status")]
     SerializeHostStatus,
 
     #[error("Failed to start tokio runtime")]

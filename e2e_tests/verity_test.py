@@ -105,7 +105,7 @@ def test_verity(connection, hostConfiguration, tridentCommand, abActiveVolume):
     assert "verified" == veritysetup_status_dict["status"]
     assert "readonly" == veritysetup_status_dict["mode"]
 
-    # Check host status.
+    # Check Host Status.
     trident_get_command = tridentCommand + "get"
     res_host_status = connection.run(trident_get_command)
     output_host_status = res_host_status.stdout.strip()
@@ -206,7 +206,7 @@ def test_verity(connection, hostConfiguration, tridentCommand, abActiveVolume):
             assert active_hash_id == extracted_hash_block_device
         else:
             # If get_raid_name_from_device_name() returned None, block device is a partition.
-            # NOTE: This check assumes that PARTLABEL in blkid is same as targetId in host status
+            # NOTE: This check assumes that PARTLABEL in blkid is same as device ID in Host Status.
             extracted_data_block_device = data_block_device.split("/")[-1]
             extracted_hash_block_device = hash_block_device.split("/")[-1]
 
