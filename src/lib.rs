@@ -13,6 +13,7 @@ use trident_api::config::{
     GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations,
 };
 use trident_api::{
+    constants::internal_params::ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
@@ -102,19 +103,35 @@ impl Trident {
             .map(|source| Self::load_host_config(&source))
             .transpose()?;
 
-        let (phonehome_url, logstream_url) = if let Some(config) = &host_config {
-            (
-                config.trident.phonehome.clone(),
-                config.trident.logstream.clone(),
-            )
-        } else if let Ok(datastore) = DataStore::open(datastore_path) {
-            let host_config = &datastore.host_status().spec;
-            (
-                host_config.trident.phonehome.clone(),
-                host_config.trident.logstream.clone(),
-            )
+        let (phonehome_url, logstream_url, connection_timeout_param) =
+            if let Some(config) = &host_config {
+                (
+                    config.trident.phonehome.clone(),
+                    config.trident.logstream.clone(),
+                    config
+                        .internal_params
+                        .get_u16(ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS),
+                )
+            } else if let Ok(datastore) = DataStore::open(datastore_path) {
+                let host_config = &datastore.host_status().spec;
+                (
+                    host_config.trident.phonehome.clone(),
+                    host_config.trident.logstream.clone(),
+                    host_config
+                        .internal_params
+                        .get_u16(ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS),
+                )
+            } else {
+                (None, None, None)
+            };
+
+        let connection_timeout = if let Some(connection_timeout_result) = connection_timeout_param {
+            match connection_timeout_result {
+                Ok(connection_timeout_value) => Some(connection_timeout_value),
+                Err(e) => return Err(TridentError::new(e)),
+            }
         } else {
-            (None, None)
+            None
         };
 
         // Set up logstream if configured
@@ -126,7 +143,7 @@ impl Trident {
 
         let orchestrator = phonehome_url
             .as_ref()
-            .and_then(|url| OrchestratorConnection::new(url.clone()));
+            .and_then(|url| OrchestratorConnection::new(url.clone(), connection_timeout));
 
         // Set up tracestream if configured, using phonehome url for now
         if let Some(url) = phonehome_url {

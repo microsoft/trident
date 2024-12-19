@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Error};
+use anyhow::Context;
 use log::warn;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::Value;
+
+use crate::error::InvalidInputError;
 
 /// Struct to hold free-form preview parameters.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InternalParams(HashMap<String, Value>);
 
-type Parameter<T> = Option<Result<T, Error>>;
+type Parameter<T> = Option<Result<T, InvalidInputError>>;
 
 impl InternalParams {
     /// Get the value of a key as a generic type.
@@ -25,6 +27,10 @@ impl InternalParams {
             );
             serde_yaml::from_value(v.clone())
                 .with_context(|| format!("Failed to parse as '{}'", std::any::type_name::<T>()))
+                .map_err(|e| InvalidInputError::InvalidInternalParameter {
+                    name: key.as_ref().to_string(),
+                    explanation: e.to_string(),
+                })
         })
     }
 
@@ -35,6 +41,11 @@ impl InternalParams {
 
     /// Get the value of a key as a vector of strings.
     pub fn get_vec_string(&self, key: impl AsRef<str>) -> Parameter<Vec<String>> {
+        self.get(key)
+    }
+
+    /// Get the value of a key as a u16.
+    pub fn get_u16(&self, key: impl AsRef<str>) -> Parameter<u16> {
         self.get(key)
     }
 
@@ -91,6 +102,34 @@ mod tests {
 
         // Assert we get None for missing key
         assert!(params.get_vec_string("missing").is_none());
+    }
+
+    #[test]
+    fn test_get_u16() {
+        let params: InternalParams = serde_yaml::from_str(
+            r#"
+            badU16_as_list:
+              - value1
+              - value2
+            badU16_with_chars: 22a
+            badU16_negative: -22
+            badU16_too_big: 128000
+            validU16: 1234
+        "#,
+        )
+        .unwrap();
+
+        // Assert we None when list provided
+        assert_eq!(params.get_u16("validU16").unwrap().unwrap(), 1234);
+
+        // Assert we get None when list provided
+        params.get_u16("badU16_as_list").unwrap().unwrap_err();
+        // Assert we get None when chars exist
+        params.get_u16("badU16_with_chars").unwrap().unwrap_err();
+        // Assert we get None when negative
+        params.get_u16("badU16_negative").unwrap().unwrap_err();
+        // Assert we get None when too big
+        params.get_u16("badU16_too_big").unwrap().unwrap_err();
     }
 
     #[test]

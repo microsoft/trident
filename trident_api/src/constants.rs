@@ -180,4 +180,8 @@ pub mod internal_params {
 
     /// Enable support for Harpoon to query for updated Host Config documents.
     pub const ENABLE_HARPOON_SUPPORT: &str = "harpoon";
+
+    /// Allow configuration of orchestrator connection timeout
+    pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: &str =
+        "orchestratorConnectionTimeoutSeconds";
 }
