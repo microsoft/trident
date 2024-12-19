@@ -13,5 +13,5 @@ name = "pytest"
 indoc = "2.0.5"
 inventory = "0.3.15"
 itertools = "0.13.0"
-serde = { version = "1.0.200", features = ["derive"] }
+serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0"

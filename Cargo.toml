@@ -7,45 +7,45 @@ rust-version = "1.72.0"
 
 
 [dependencies]
-anyhow = { version = "1.0.82", features = ["backtrace"] }
+anyhow = { version = "1.0.94", features = ["backtrace"] }
 chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version = "4.4.0", features = ["derive"] }
-configparser = { version = "3.0.4", features = ["indexmap"] }
-const_format = "0.2.32"
+clap = { version = "4.4.18", features = ["derive"] }
+configparser = { version = "3.1.0", features = ["indexmap"] }
+const_format = "0.2.33"
 duct = "0.13.7"
 enumflags2 = { version = "0.7", features = ["serde"] }
-env_logger = "0.11.3"
+env_logger = "0.11.5"
 glob = "0.3.1"
-lazy_static = "1.4.0"
-libc = "0.2.154"
-log = "0.4.21"
+lazy_static = "1.5.0"
+libc = "0.2.167"
+log = "0.4.22"
 netplan-types = "0.5.0"
 nix = { version = "0.29.0", default-features = false, features = [
     "fs",
     "user",
 ] }
 rayon = "1.10"
-regex = "1.10.4"
-reqwest = { version = "0.12.4", default-features = false, features = [
+regex = "1.11.1"
+reqwest = { version = "0.12.9", default-features = false, features = [
     "blocking",
     "default-tls",
     "charset",
 ] } # "http2" is enabled by default but causes a (false positive) CG alert
-serde = { version = "1.0.200", features = ["derive"] }
+serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.34"
-sqlite = "0.36.0"
-strum = "0.26.2"
-strum_macros = "0.26.2"
+sqlite = "0.36.1"
+strum = "0.26.3"
+strum_macros = "0.26.4"
 sys-mount = { version = "3.0.1", default-features = false } # Disable loop device feature
 sysinfo = "0.30.13"
-tar = "0.4.42"
-tempfile = "3.10.1"
-tokio = { version = "1.37.0", features = ["rt-multi-thread"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["json"] }
-url = { version = "2.5.0", features = ["serde"] }
-uuid = { version = "1.8.0", features = ["v4", "serde"] }
+tar = "0.4.43"
+tempfile = "3.14.0"
+tokio = { version = "1.42.0", features = ["rt-multi-thread"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["json"] }
+url = { version = "2.5.4", features = ["serde"] }
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
 osutils = { path = "osutils" }
 setsail = { path = "setsail", optional = true }
@@ -60,18 +60,18 @@ pytest_gen = { path = "pytest_gen", optional = true }
 
 # Optional dependencies used for grpc
 pytest = { path = "pytest", optional = true }
-prost = { version = "0.13.1", optional = true }
-tonic = { version = "0.12.1", optional = true }
-tokio-stream = { version = "0.1.15", optional = true }
+prost = { version = "0.13.4", optional = true }
+tonic = { version = "0.12.3", optional = true }
+tokio-stream = { version = "0.1.17", optional = true }
 
 [build-dependencies]
-tonic-build = { version = "0.12.1", optional = true }
+tonic-build = { version = "0.12.3", optional = true }
 osutils = { path = "osutils" }
 
 [dev-dependencies]
 indoc = "2"
 maplit = "1.0.2"
-mockito = "1.6.0"
+mockito = "1.6.1"
 osutils = { path = "osutils", features = ["test-utilities"] }
 sha2 = "0.10.8"
 

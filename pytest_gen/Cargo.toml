@@ -13,8 +13,8 @@ proc-macro = true
 [dependencies]
 indoc = "2.0.5"
 inventory = "0.3.15"
-proc-macro2 = "1.0.81"
-quote = "1.0.36"
-syn = { version = "2.0.60", features = ["full"] }
+proc-macro2 = "1.0.92"
+quote = "1.0.37"
+syn = { version = "2.0.90", features = ["full"] }
 
 pytest = { path = "../pytest" }

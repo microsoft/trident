@@ -1,11 +1,10 @@
 steps:
-  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust
+  - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel
     displayName: Install native dependencies
     retryCountOnTaskFailure: 3
 
+  - template: ../common_tasks/rustup.yml
   - template: ../common_tasks/cargo-auth.yml
-    parameters:
-      action: override
 
   - script: |
       set -eux
@@ -42,7 +41,7 @@ steps:
   - script: cargo check --locked --all-features 2>&1
     displayName: Check with all features
 
-  - script: cargo install --locked cargo-deny@0.14.11
+  - script: cargo install --locked cargo-deny@0.16.1
     displayName: Install cargo-deny
 
   - script: cargo deny --all-features --workspace check licenses
