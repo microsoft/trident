@@ -130,7 +130,7 @@ scripts:
         mkdir -p /var/lib/trident-overlay/etc-rw/work
 os:
   selinux:
-    mode: disabled
+    mode: permissive
   network:
     version: 2
     ethernets:
