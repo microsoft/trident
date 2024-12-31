@@ -120,7 +120,8 @@ steps:
       $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
-          "${{ parameters.hostIp }}"
+          "${{ parameters.hostIp }}" \
+          "$(runtimeEnv)"
     displayName: "Check SSH connection"
 
   - bash: |
@@ -197,7 +198,8 @@ steps:
       $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
-          "${{ parameters.hostIp }}"
+          "${{ parameters.hostIp }}" \
+          "$(runtimeEnv)"
     displayName: "Check SSH connection after booting into runtime OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -291,7 +293,8 @@ steps:
       $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/check-ssh-connection.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
-          "${{ parameters.hostIp }}"
+          "${{ parameters.hostIp }}" \
+          "$(runtimeEnv)"
     displayName: "Check SSH connection after booting into runtime OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
