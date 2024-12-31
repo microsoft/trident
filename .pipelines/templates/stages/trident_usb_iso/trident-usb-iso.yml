@@ -1,0 +1,84 @@
+parameters:
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+stages:
+- stage: TridentTestImg_azl_installer
+  displayName: Build azl-installer
+  dependsOn:
+    - GetTridentBinaries_rpms
+    - BuildTridentContainerImage
+
+  jobs:
+  - job: BuildTridentTestImg
+    displayName: Build
+    timeoutInMinutes: 20
+    pool:
+      type: linux
+
+    variables:
+      ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
+      ob_artifactBaseName: azl-installer
+      MIC_BUILD_TYPE: "release"
+      MIC_VERSION: "*.*.*"
+      BASEIMG_VERSION: "*.*.*"
+      BASEIMG_AZURE_LINUX_VERSION: "3.0"
+
+    steps:
+    - checkout: test-images
+      fetchDepth: 1
+      path: s/test-images
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: current
+        artifactName: trident-binaries
+        targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+      displayName: Download Trident RPMs
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: current
+        artifactName: "trident-docker-image"
+        patterns: "**/trident-container.tar.gz"
+        targetPath: "$(Build.ArtifactStagingDirectory)/trident-docker-image"
+      displayName: Download trident docker image
+
+    - script: |
+        set -eux
+        docker \
+            load \
+            --input $(Build.ArtifactStagingDirectory)/trident-docker-image/trident-container.tar.gz
+
+        ls -l $(Pipeline.Workspace)/s/test-images/platform-integration-images/azl-installer/mos/files
+        cat $(Pipeline.Workspace)/s/test-images/platform-integration-images/azl-installer/mos/files/default-trident-config.yaml
+
+        docker \
+            run \
+            -v $(Pipeline.Workspace)/s/test-images/platform-integration-images/azl-installer/mos/files:/etc/trident_config \
+            trident/trident:latest \
+            validate /etc/trident_config/default-trident-config.yaml
+
+      displayName: "Validate usb-iso trident configuration."
+      # There is a bit of chicken and egg related to trident and test-images.  To minimize this, use
+      # continueOnError to make note of the usb-iso config error, but do not break the pipeline.  In
+      # future, we should move the usb-iso code to the trident repo and then we can remove this.
+      continueOnError: true
+
+    - template: .pipelines/templates/trident-testimg-template.yml@test-images
+      parameters:        
+        target: build/azl-installer.iso
+        outputDirectory: ${{ variables.ob_outputDirectory }}
+        testImagesRepo: test-images
+        micBuildType: ${{ variables.MIC_BUILD_TYPE }}
+        micVersion: ${{ variables.MIC_VERSION }}
+        baseimgBuildType: ${{ parameters.baseimgBuildType }}
+        baseimgVersion: ${{ variables.BASEIMG_VERSION }}
+        baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
+        downloadTrident: false
+   

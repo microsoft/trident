@@ -16,7 +16,11 @@ parameters:
 stages:
   - stage: Publishing
     dependsOn:
-      - Trident
+      - GetTridentBinaries_rpms
+      - ${{ if eq(parameters.stageType, 'ci') }}:
+        - TridentTestImg_azl_installer
+      - ${{ else }}:
+        - GetTridentBinaries_usb_iso
       - ${{ if eq(parameters.stageType, 'pre') }}:
           - DeploymentTesting_host
           - DeploymentTesting_container
@@ -71,6 +75,29 @@ stages:
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              targetPath: $(Pipeline.Workspace)/azl-installer
+              artifactName: azl-installer
+            displayName: "Download USB-ISO"
+
+          - script: |
+              set -eux
+
+              alreadyPublished=$(./scripts/get-packages.py --debug \
+                  --package '${{ variables.usbIsoPackageBaseName }}${{ variables.artifactSuffix }}' \
+                  --version '$(Build.BuildNumber)' \
+                  --action=exists)
+
+              # Save variable to know if package needs to be published
+              set +x
+              echo "##vso[task.setvariable variable=isUsbIsoVersionInFeed;]$alreadyPublished"
+            displayName: "Check if ${{ variables.usbIsoPackageBaseName }} version has already been published in the feed."
+            workingDirectory: $(Build.SourcesDirectory)
+            env:
+              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
           - task: UniversalPackages@0
             displayName: "Publish rpms Universal Package"
             condition: and(succeeded(), eq(variables.isVersionInFeed, false))
@@ -81,3 +108,16 @@ stages:
               publishDirectory: "$(Pipeline.Workspace)/rpms"
               versionPublish: $(Build.BuildNumber)
               versionOption: custom
+
+          - task: UniversalPackages@0
+            displayName: "Publish ${{ variables.usbIsoPackageBaseName }} Universal Package"
+            condition: and(succeeded(), eq(variables.isUsbIsoVersionInFeed, false))
+            inputs:
+              command: publish
+              vstsFeedPublish: ${{ parameters.feed }}
+              vstsFeedPackagePublish: "${{ variables.usbIsoPackageBaseName }}${{ variables.artifactSuffix }}"
+              publishDirectory: "$(Pipeline.Workspace)/azl-installer"
+              # We are forced to use semver, we use MARINER_MAJOR.YYYYMMDD.BUILD_COUNTER
+              versionPublish: "$(Build.BuildNumber)"
+              versionOption: custom
+              packagePublishDescription: "Azure Linux Installer ISO (Trident)"

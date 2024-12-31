@@ -8,11 +8,19 @@ parameters:
     default: ""
 
 stages:
-  - template: stages/trident_rpms/download-staged.yml
+  - template: stages/download_staged/download-staged.yml
     parameters:
       stageType: rel
-      tridentArtifactName: trident-binaries
+      artifactName: trident-binaries
       specificVersion: ${{ parameters.specificVersion }}
+      feedName: rpms
+
+  - template: stages/download_staged/download-staged.yml
+    parameters:
+      stageType: rel
+      artifactName: usb-iso
+      specificVersion: ${{ parameters.specificVersion }}
+      feedName: usb-iso
 
   - template: stages/publishing/publish.yml
     parameters:

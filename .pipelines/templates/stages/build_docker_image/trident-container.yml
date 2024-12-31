@@ -14,7 +14,7 @@ parameters:
 stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
-    dependsOn: Trident
+    dependsOn: GetTridentBinaries_rpms
 
     jobs:
       - job: BuildImage

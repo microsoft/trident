@@ -26,7 +26,7 @@ stages:
   displayName: Build ${{ parameters.outputArtifactName }}
   dependsOn:
     - ${{ if eq(parameters.runtimeEnv, 'host') }}:
-        - Trident
+        - GetTridentBinaries_rpms
     - ${{ else }}:
         []
 

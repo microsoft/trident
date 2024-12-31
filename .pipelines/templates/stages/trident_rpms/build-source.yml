@@ -19,7 +19,7 @@ parameters:
     default: "latestFromBranch"
 
 stages:
-  - stage: Trident
+  - stage: GetTridentBinaries_rpms
     displayName: Trident RPMs (Build)
 
     jobs:

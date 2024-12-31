@@ -38,7 +38,8 @@ stages:
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   - ${{ else }}:
-      - template: download-staged.yml
+      - template: ../download_staged/download-staged.yml
         parameters:
-          tridentArtifactName: ${{ parameters.tridentArtifactName }}
+          artifactName: ${{ parameters.tridentArtifactName }}
           stageType: ${{ parameters.stageType }}
+          feedName: rpms

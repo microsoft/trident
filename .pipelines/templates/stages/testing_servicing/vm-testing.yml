@@ -19,7 +19,7 @@ stages:
       - ${{ if eq(parameters.testingRun, true) }}: 
         - DownloadTestingElements
       - ${{ else }}:
-        - Trident
+        - GetTridentBinaries_rpms
 
     jobs:
       - job: Testing

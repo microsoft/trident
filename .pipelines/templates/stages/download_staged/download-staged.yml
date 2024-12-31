@@ -1,6 +1,12 @@
 parameters:
-  - name: tridentArtifactName
+  - name: artifactName
     type: string
+
+  - name: feedName
+    type: string
+    values:
+      - rpms
+      - usb-iso
 
   - name: "stageType"
     displayName: "Controls whether this is a pre-release or a release run."
@@ -16,8 +22,8 @@ parameters:
     default: ""
 
 stages:
-  - stage: Trident
-    displayName: Trident RPMs (Download)
+  - stage: GetTridentBinaries_${{ replace(parameters.feedName, '-', '_') }}
+    displayName: Download staged ${{ parameters.feedName }} for ${{ parameters.stageType }}
 
     jobs:
       - job: DownloadTrident
@@ -28,7 +34,7 @@ stages:
         variables:
           # Control the name of the artifact where trident binaries are stored
           - name: ob_artifactBaseName
-            value: ${{ parameters.tridentArtifactName }}
+            value: ${{ parameters.artifactName }}
           - name: ob_outputDirectory
             value: "$(Build.SourcesDirectory)/out"
 
@@ -42,22 +48,23 @@ stages:
               value: ${{ variables.stage_pre_suffix }}
 
         steps:
-          - script: sudo tdnf install -y p7zip p7zip-plugins zstd
-            displayName: Install native dependencies to extract Trident binary
-            retryCountOnTaskFailure: 3
-
           - template: ../common_tasks/download-universal-artifact.yml
             parameters:
-              packageName: ${{ variables.rpmsPackageBaseName }}${{ variables.downloadArtifactSuffix }}
+              packageName: ${{ parameters.feedName }}${{ variables.downloadArtifactSuffix }}
               downloadLocation: $(ob_outputDirectory)
               outputVersionVariable: trident_version
               specificVersion: ${{ parameters.specificVersion }}
-
-          - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
-            displayName: Extract Trident binary
 
           - task: onebranch.pipeline.version@1
             displayName: "Set build number"
             inputs:
               system: "Custom"
               customVersion: $(trident_version)
+
+          - ${{ if eq(parameters.feedName, 'rpms') }}:
+            - script: sudo tdnf install -y p7zip p7zip-plugins zstd
+              displayName: Install native dependencies to extract Trident binary
+              retryCountOnTaskFailure: 3
+
+            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
+              displayName: Extract Trident binary

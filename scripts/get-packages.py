@@ -130,15 +130,15 @@ for package in packages:
     pkgout["versions"] = [version_info["version"] for version_info in versions]
     output.append(pkgout)
 
-if not output:
-    logging.error("No packages found!")
-    exit(1)
-
 if args.action == Actions.INFO:
     # Print the output
     print(json.dumps(output, indent=2))
 
 elif args.action == Actions.LATEST_VERSION:
+    if not output:
+        logging.error("No packages found!")
+        exit(1)
+
     # Get the latest version of each package
     latest_versions = {
         package["name"]: (
@@ -161,8 +161,11 @@ elif args.action == Actions.LATEST_VERSION:
         print(json.dumps(latest_versions, indent=2))
 
 elif args.action == Actions.VERSION_EXISTS:
-    # Check if the specified version is in the feed
-    print(json.dumps(args.version in output[0]["versions"]))
+    if not output:
+        print(json.dumps(False))
+    else:
+        # Check if the specified version is in the feed
+        print(json.dumps(args.version in output[0]["versions"]))
 
 else:
     logging.error("Invalid action")

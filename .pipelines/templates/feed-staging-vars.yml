@@ -7,3 +7,5 @@ variables:
     value: ''
   - name: rpmsPackageBaseName
     value: 'rpms'
+  - name: usbIsoPackageBaseName
+    value: 'usb-iso'
