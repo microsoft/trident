@@ -390,81 +390,64 @@ mod functional_test {
     ///
     /// This test requires `sfdisk` to be installed on the system.
     ///
-    /// It assumes the following disk layout:
-    /// ```yaml
-    /// # Host config
-    /// partitions:
-    /// - id: esp
-    ///   size: 50M
-    ///   type: esp
-    /// - id: root-a
-    ///   size: 3G
-    ///   type: root
-    /// - id: root-b
-    ///   size: 2G
-    ///   type: root
-    /// - id: swap
-    ///   size: 2G
-    ///   type: swap
-    /// - id: trident
-    ///   size: 100M
-    ///   type: linux-generic
-    /// ```
+    /// It assumes the disk layout requested in functional_tests/trident-setup.yaml.
     ///
     /// The output of `sfdisk -J /dev/sda` is expected to be:
     ///
-    /// ```json
+    ///  ```json
     /// {
     ///   "partitiontable": {
-    ///    "label": "gpt",
-    ///    "id": "A8DBCA6F-77A6-485C-8C67-B653758A8928",
-    ///    "device": "/dev/sda",
-    ///    "unit": "sectors",
-    ///    "firstlba": 2048,
-    ///    "lastlba": 33554398,
-    ///    "sectorsize": 512,
-    ///    "partitions": [
-    ///       {
-    ///          "node": "/dev/sda1",
-    ///          "start": 2048,
-    ///          "size": 102400,
-    ///          "type": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
-    ///          "uuid": "7D77C4D1-8D4D-42BC-9968-2C1C0E242E0B",
-    ///          "name": "esp"
-    ///       },{
-    ///          "node": "/dev/sda2",
-    ///          "start": 104448,
-    ///          "size": 6291456,
-    ///          "type": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
-    ///          "uuid": "8B03BBD1-8A00-4E66-8315-71923929F2B5",
-    ///          "name": "root-a",
-    ///          "attrs": "GUID:59"
-    ///       },{
-    ///          "node": "/dev/sda3",
-    ///          "start": 6395904,
-    ///          "size": 4194304,
-    ///          "type": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
-    ///          "uuid": "7B22B5BF-8A3C-439C-A639-19EA81E4D05A",
-    ///          "name": "root-b",
-    ///          "attrs": "GUID:59"
-    ///       },{
-    ///          "node": "/dev/sda4",
-    ///          "start": 10590208,
-    ///          "size": 4194304,
-    ///          "type": "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F",
-    ///          "uuid": "93F88CB4-B0F0-49E3-BD8A-369E8B380305",
-    ///          "name": "swap"
-    ///       },{
-    ///          "node": "/dev/sda5",
-    ///          "start": 14784512,
-    ///          "size": 204800,
-    ///          "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
-    ///          "uuid": "AB6FA2BD-70F8-4C1A-83E4-9D704A865C3B",
-    ///          "name": "trident"
-    ///       }
-    ///    ]
+    ///     "label": "gpt",
+    ///     "id": "71F5C3EB-6D53-414B-9FF4-0953E6291577",
+    ///     "device": "/dev/sda",
+    ///     "unit": "sectors",
+    ///     "firstlba": 2048,
+    ///     "lastlba": 33554398,
+    ///     "sectorsize": 512,
+    ///     "partitions": [
+    ///        {
+    ///           "node": "/dev/sda1",
+    ///           "start": 2048,
+    ///           "size": 102400,
+    ///           "type": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
+    ///           "uuid": "8D738FD1-9B6F-4B6D-B174-021954453D68",
+    ///           "name": "esp"
+    ///        },{
+    ///           "node": "/dev/sda2",
+    ///           "start": 104448,
+    ///           "size": 8388608,
+    ///           "type": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
+    ///           "uuid": "71982B79-7759-449F-8D68-ACA7625AC1E2",
+    ///           "name": "root-a",
+    ///           "attrs": "GUID:59"
+    ///        },{
+    ///           "node": "/dev/sda3",
+    ///           "start": 8493056,
+    ///           "size": 8388608,
+    ///           "type": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
+    ///           "uuid": "1864172F-3594-4F7A-B447-EBCA0B115DC6",
+    ///           "name": "root-b",
+    ///           "attrs": "GUID:59"
+    ///        },{
+    ///           "node": "/dev/sda4",
+    ///           "start": 16881664,
+    ///           "size": 4194304,
+    ///           "type": "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F",
+    ///           "uuid": "ED608DB8-58D6-484B-B309-B03CD3615037",
+    ///           "name": "swap"
+    ///        },{
+    ///           "node": "/dev/sda5",
+    ///           "start": 21075968,
+    ///           "size": 204800,
+    ///           "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+    ///           "uuid": "7DE2DA6E-4512-4091-B0B7-EC432DA971AA",
+    ///           "name": "trident"
+    ///        }
+    ///     ]
+    ///  }
     /// }
     /// ```
+    ///
     #[functional_test(feature = "helpers")]
     fn test_get() {
         let disk = SfDisk::get_info("/dev/sda").unwrap();
@@ -493,8 +476,8 @@ mod functional_test {
             SfPartition {
                 node: PathBuf::from("/dev/sda2"),
                 start: 104448,
-                size_sectors: 10485760,
-                size: 5368709120,
+                size_sectors: 8388608,
+                size: 4294967296,
                 partition_type: DiscoverablePartitionType::Root.resolve(),
                 id: Uuid::nil().into(),
                 name: Some("root-a".to_string()),
@@ -503,9 +486,9 @@ mod functional_test {
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda3"),
-                start: 10590208,
-                size_sectors: 4194304,
-                size: 2147483648,
+                start: 8493056,
+                size_sectors: 8388608,
+                size: 4294967296,
                 partition_type: DiscoverablePartitionType::Root.resolve(),
                 id: Uuid::nil().into(),
                 name: Some("root-b".to_string()),
@@ -514,7 +497,7 @@ mod functional_test {
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda4"),
-                start: 14784512,
+                start: 16881664,
                 size_sectors: 4194304,
                 size: 2147483648,
                 partition_type: DiscoverablePartitionType::Swap.resolve(),
@@ -525,7 +508,7 @@ mod functional_test {
             },
             SfPartition {
                 node: PathBuf::from("/dev/sda5"),
-                start: 18978816,
+                start: 21075968,
                 size_sectors: 204800,
                 size: 104857600,
                 partition_type: DiscoverablePartitionType::LinuxGeneric.resolve(),
@@ -539,23 +522,45 @@ mod functional_test {
         assert_eq!(
             disk.partitions.len(),
             expected_partitions.len(),
-            "number of partitions is wrong"
+            "Expected {} partitions, found {}",
+            disk.partitions.len(),
+            expected_partitions.len()
         );
 
         for (expected, found) in expected_partitions.iter().zip(disk.partitions.iter()) {
-            assert_eq!(found.node, expected.node, "node is wrong");
-            assert_eq!(found.start, expected.start, "start is wrong");
+            assert_eq!(
+                found.node,
+                expected.node,
+                "Expected node {}, found {}",
+                expected.node.display(),
+                found.node.display()
+            );
+            assert_eq!(
+                found.start, expected.start,
+                "Expected node to start at {}, but it starts at {}",
+                expected.start, found.start
+            );
             assert_eq!(
                 found.size_sectors, expected.size_sectors,
-                "size_sectors is wrong"
+                "Expected node to have size_sectors {}, but it has {}",
+                expected.size_sectors, found.size_sectors
             );
-            assert_eq!(found.size, expected.size, "size is wrong");
+            assert_eq!(
+                found.size, expected.size,
+                "Expected node to have size {}, but it has {}",
+                expected.size, found.size
+            );
             assert_eq!(
                 found.partition_type, expected.partition_type,
-                "partition_type is wrong"
+                "Expected node to have partition type {:?}, but it has partition {:?}",
+                expected.partition_type, found.partition_type
             );
             // Skip UUID check as it is not expected to be the same
-            assert_eq!(found.name, expected.name, "name is wrong");
+            assert_eq!(
+                found.name, expected.name,
+                "Expected node to have name {:?}, but it has name {:?}",
+                expected.name, found.name
+            );
         }
     }
 }

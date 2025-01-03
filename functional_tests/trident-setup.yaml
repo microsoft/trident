@@ -48,10 +48,10 @@ storage:
           size: 50M
           type: esp
         - id: root-a
-          size: 5G
+          size: 4G
           type: root
         - id: root-b
-          size: 2G
+          size: 4G
           type: root
         - id: swap
           size: 2G
