@@ -1,0 +1,466 @@
+{
+    "filesystems": [
+        {
+            "id": 61,
+            "target": "/",
+            "source": "/dev/mapper/root",
+            "fsroot": "/",
+            "options": "ro,relatime,seclabel",
+            "propagation": "shared",
+            "children": [
+                {
+                    "id": 29,
+                    "target": "/tmp",
+                    "source": "tmpfs",
+                    "fsroot": "/",
+                    "options": "rw,nosuid,nodev,seclabel,nr_inodes=1048576",
+                    "propagation": "shared"
+                },
+                {
+                    "id": 33,
+                    "target": "/dev",
+                    "source": "devtmpfs",
+                    "fsroot": "/",
+                    "options": "rw,nosuid,seclabel,size=4096k,nr_inodes=248896,mode=755",
+                    "propagation": "shared",
+                    "children": [
+                        {
+                            "id": 24,
+                            "target": "/dev/hugepages",
+                            "source": "hugetlbfs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,relatime,seclabel,pagesize=2M",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 26,
+                            "target": "/dev/mqueue",
+                            "source": "mqueue",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime,seclabel",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 34,
+                            "target": "/dev/shm",
+                            "source": "tmpfs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,seclabel",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 35,
+                            "target": "/dev/pts",
+                            "source": "devpts",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,noexec,relatime,seclabel,gid=5,mode=620,ptmxmode=000",
+                            "propagation": "shared"
+                        }
+                    ]
+                },
+                {
+                    "id": 36,
+                    "target": "/sys",
+                    "source": "sysfs",
+                    "fsroot": "/",
+                    "options": "rw,nosuid,nodev,noexec,relatime,seclabel",
+                    "propagation": "shared",
+                    "children": [
+                        {
+                            "id": 23,
+                            "target": "/sys/fs/selinux",
+                            "source": "selinuxfs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,noexec,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 25,
+                            "target": "/sys/kernel/debug",
+                            "source": "debugfs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime,seclabel",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 27,
+                            "target": "/sys/kernel/tracing",
+                            "source": "tracefs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime,seclabel",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 30,
+                            "target": "/sys/fs/fuse/connections",
+                            "source": "fusectl",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 31,
+                            "target": "/sys/kernel/config",
+                            "source": "configfs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 37,
+                            "target": "/sys/kernel/security",
+                            "source": "securityfs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 38,
+                            "target": "/sys/fs/cgroup",
+                            "source": "cgroup2",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime,seclabel,nsdelegate,memory_recursiveprot",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 39,
+                            "target": "/sys/fs/pstore",
+                            "source": "pstore",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime,seclabel",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 40,
+                            "target": "/sys/firmware/efi/efivars",
+                            "source": "efivarfs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 41,
+                            "target": "/sys/fs/bpf",
+                            "source": "bpf",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime,mode=700",
+                            "propagation": "shared"
+                        }
+                    ]
+                },
+                {
+                    "id": 42,
+                    "target": "/proc",
+                    "source": "proc",
+                    "fsroot": "/",
+                    "options": "rw,nosuid,nodev,noexec,relatime",
+                    "propagation": "shared",
+                    "children": [
+                        {
+                            "id": 22,
+                            "target": "/proc/sys/fs/binfmt_misc",
+                            "source": "systemd-1",
+                            "fsroot": "/",
+                            "options": "rw,relatime,fd=32,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=3437",
+                            "propagation": "shared"
+                        }
+                    ]
+                },
+                {
+                    "id": 43,
+                    "target": "/run",
+                    "source": "tmpfs",
+                    "fsroot": "/",
+                    "options": "rw,nosuid,nodev,seclabel,size=403536k,nr_inodes=819200,mode=755",
+                    "propagation": "shared",
+                    "children": [
+                        {
+                            "id": 137,
+                            "target": "/run/user/1001",
+                            "source": "tmpfs",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,relatime,seclabel,size=201764k,nr_inodes=50441,mode=700,uid=1001,gid=1001",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 147,
+                            "target": "/run/containerd/io.containerd.grpc.v1.cri/sandboxes/03c2ca0225d9fbbc3c863bf39e29e5fa869c4921978450bc31c0d36c5a4543d4/shm",
+                            "source": "shm",
+                            "fsroot": "/",
+                            "options": "rw,nosuid,nodev,noexec,relatime,seclabel,size=65536k",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 157,
+                            "target": "/run/netns/cni-3c15a3bd-8755-6124-e0f8-54dbfeacdf6e",
+                            "source": "nsfs[net:[4026532339]]",
+                            "fsroot": "net:[4026532339]",
+                            "options": "rw",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 503,
+                            "target": "/run/containerd/io.containerd.runtime.v2.task/k8s.io/03c2ca0225d9fbbc3c863bf39e29e5fa869c4921978450bc31c0d36c5a4543d4/rootfs",
+                            "source": null,
+                            "fsroot": "/",
+                            "options": "rw,relatime,seclabel,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/5a5aad80055ff20012a50dc25f8df7a29924474324d65f7d5306ee8ee27ff71d,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/d3ae0999-dbdd-49fc-b2f9-de07330509f1/upper,workdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/d3ae0999-dbdd-49fc-b2f9-de07330509f1/work,uuid=on",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 617,
+                            "target": "/run/containerd/io.containerd.runtime.v2.task/k8s.io/85d3217ead611b5b0f72ec5cc952fd6e42a9f8e160224b5293518e457df717be/rootfs",
+                            "source": null,
+                            "fsroot": "/",
+                            "options": "rw,relatime,seclabel,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/8bfbba769663652404a64a23a7eeab79438daed71accf329a40a4f68efaf0ff4:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/8cc7afbcdd04f17aff8f6d4935e4f54a1f5add47dca516e8d35453f1f4218167:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/9030e60aa8d8ab9c27f051e2c785a549d8aec18881699eab320a0409f7fdbe39:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/36af9c08146e6d251d513e59e5a1c62d62cfb9ebe856d75394befddece7484c1:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/0165a0c07865775dea83a4517c125ff30c1e2c1a098e7cbce7bcafe2b7199cbc,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/f964fde1-a146-49e8-a496-fa91c62bca4d/upper,workdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/f964fde1-a146-49e8-a496-fa91c62bca4d/work,uuid=on",
+                            "propagation": "shared"
+                        }
+                    ]
+                },
+                {
+                    "id": 45,
+                    "target": "/overlays",
+                    "source": "/dev/sda14",
+                    "fsroot": "/",
+                    "options": "rw,relatime,seclabel",
+                    "propagation": "shared"
+                },
+                {
+                    "id": 50,
+                    "target": "/etc",
+                    "source": "overlay",
+                    "fsroot": "/",
+                    "options": "rw,relatime,seclabel,lowerdir=/etc,upperdir=/overlays/etc/upper,workdir=/overlays/etc/work,uuid=on",
+                    "propagation": "shared"
+                },
+                {
+                    "id": 53,
+                    "target": "/var",
+                    "source": "/dev/sda10",
+                    "fsroot": "/",
+                    "options": "rw,relatime,seclabel",
+                    "propagation": "shared",
+                    "children": [
+                        {
+                            "id": 91,
+                            "target": "/var/lib/trident-overlay",
+                            "source": "/dev/sda8",
+                            "fsroot": "/",
+                            "options": "rw,relatime,seclabel",
+                            "propagation": "shared",
+                            "children": [
+                                {
+                                    "id": 135,
+                                    "target": "/var/lib/trident-overlay/newroot",
+                                    "source": "/dev/mapper/root_new",
+                                    "fsroot": "/",
+                                    "options": "ro,relatime,seclabel",
+                                    "propagation": "shared",
+                                    "children": [
+                                        {
+                                            "id": 394,
+                                            "target": "/var/lib/trident-overlay/newroot/boot",
+                                            "source": "/dev/sda3",
+                                            "fsroot": "/",
+                                            "options": "rw,relatime,seclabel",
+                                            "propagation": "shared",
+                                            "children": [
+                                                {
+                                                    "id": 403,
+                                                    "target": "/var/lib/trident-overlay/newroot/boot/efi",
+                                                    "source": "/dev/sda1",
+                                                    "fsroot": "/",
+                                                    "options": "rw,relatime,fmask=0077,dmask=0077,codepage=437,iocharset=ascii,shortname=mixed,errors=remount-ro",
+                                                    "propagation": "shared"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "id": 412,
+                                            "target": "/var/lib/trident-overlay/newroot/home",
+                                            "source": "/dev/sda15",
+                                            "fsroot": "/",
+                                            "options": "rw,relatime,seclabel",
+                                            "propagation": "shared"
+                                        },
+                                        {
+                                            "id": 421,
+                                            "target": "/var/lib/trident-overlay/newroot/overlays",
+                                            "source": "/dev/sda14",
+                                            "fsroot": "/",
+                                            "options": "rw,relatime,seclabel",
+                                            "propagation": "shared"
+                                        },
+                                        {
+                                            "id": 430,
+                                            "target": "/var/lib/trident-overlay/newroot/rw",
+                                            "source": "/dev/sda13",
+                                            "fsroot": "/",
+                                            "options": "rw,relatime,seclabel",
+                                            "propagation": "shared"
+                                        },
+                                        {
+                                            "id": 439,
+                                            "target": "/var/lib/trident-overlay/newroot/var",
+                                            "source": "/dev/sda11",
+                                            "fsroot": "/",
+                                            "options": "rw,relatime,seclabel",
+                                            "propagation": "shared",
+                                            "children": [
+                                                {
+                                                    "id": 577,
+                                                    "target": "/var/lib/trident-overlay/newroot/var/lib/trident",
+                                                    "source": "/dev/sda12",
+                                                    "fsroot": "/",
+                                                    "options": "rw,relatime,seclabel",
+                                                    "propagation": "shared"
+                                                },
+                                                {
+                                                    "id": 633,
+                                                    "target": "/var/lib/trident-overlay/newroot/var/lib/trident-overlay",
+                                                    "source": "/dev/sda9",
+                                                    "fsroot": "/",
+                                                    "options": "rw,relatime,seclabel",
+                                                    "propagation": "shared"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "id": 642,
+                                            "target": "/var/lib/trident-overlay/newroot/tmp",
+                                            "source": "tmpfs",
+                                            "fsroot": "/",
+                                            "options": "rw,relatime,seclabel",
+                                            "propagation": "shared"
+                                        },
+                                        {
+                                            "id": 651,
+                                            "target": "/var/lib/trident-overlay/newroot/run",
+                                            "source": "tmpfs",
+                                            "fsroot": "/",
+                                            "options": "rw,relatime,seclabel",
+                                            "propagation": "shared"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "id": 125,
+                            "target": "/var/lib/trident",
+                            "source": "/dev/sda12",
+                            "fsroot": "/",
+                            "options": "rw,relatime,seclabel",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 481,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/5a5aad80055ff20012a50dc25f8df7a29924474324d65f7d5306ee8ee27ff71d",
+                            "source": "/dev/mapper/5a5aad80055ff20012a50dc25f8df7a29924474324d65f7d5306ee8ee27ff71d",
+                            "fsroot": "/",
+                            "options": "ro,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 493,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/d3ae0999-dbdd-49fc-b2f9-de07330509f1/mount",
+                            "source": null,
+                            "fsroot": "/",
+                            "options": "rw,relatime,seclabel,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/5a5aad80055ff20012a50dc25f8df7a29924474324d65f7d5306ee8ee27ff71d,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/d3ae0999-dbdd-49fc-b2f9-de07330509f1/upper,workdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/d3ae0999-dbdd-49fc-b2f9-de07330509f1/work,uuid=on",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 513,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/8bfbba769663652404a64a23a7eeab79438daed71accf329a40a4f68efaf0ff4",
+                            "source": "/dev/mapper/8bfbba769663652404a64a23a7eeab79438daed71accf329a40a4f68efaf0ff4",
+                            "fsroot": "/",
+                            "options": "ro,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 536,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/8cc7afbcdd04f17aff8f6d4935e4f54a1f5add47dca516e8d35453f1f4218167",
+                            "source": "/dev/mapper/8cc7afbcdd04f17aff8f6d4935e4f54a1f5add47dca516e8d35453f1f4218167",
+                            "fsroot": "/",
+                            "options": "ro,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 546,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/9030e60aa8d8ab9c27f051e2c785a549d8aec18881699eab320a0409f7fdbe39",
+                            "source": "/dev/mapper/9030e60aa8d8ab9c27f051e2c785a549d8aec18881699eab320a0409f7fdbe39",
+                            "fsroot": "/",
+                            "options": "ro,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 565,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/36af9c08146e6d251d513e59e5a1c62d62cfb9ebe856d75394befddece7484c1",
+                            "source": "/dev/mapper/36af9c08146e6d251d513e59e5a1c62d62cfb9ebe856d75394befddece7484c1",
+                            "fsroot": "/",
+                            "options": "ro,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 575,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/0165a0c07865775dea83a4517c125ff30c1e2c1a098e7cbce7bcafe2b7199cbc",
+                            "source": "/dev/mapper/0165a0c07865775dea83a4517c125ff30c1e2c1a098e7cbce7bcafe2b7199cbc",
+                            "fsroot": "/",
+                            "options": "ro,relatime",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 591,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/37cb0a18-9501-438f-bef6-d1156469d2ee/mount",
+                            "source": null,
+                            "fsroot": "/",
+                            "options": "rw,relatime,seclabel,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/8bfbba769663652404a64a23a7eeab79438daed71accf329a40a4f68efaf0ff4:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/8cc7afbcdd04f17aff8f6d4935e4f54a1f5add47dca516e8d35453f1f4218167:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/9030e60aa8d8ab9c27f051e2c785a549d8aec18881699eab320a0409f7fdbe39:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/36af9c08146e6d251d513e59e5a1c62d62cfb9ebe856d75394befddece7484c1:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/0165a0c07865775dea83a4517c125ff30c1e2c1a098e7cbce7bcafe2b7199cbc,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/37cb0a18-9501-438f-bef6-d1156469d2ee/upper,workdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/37cb0a18-9501-438f-bef6-d1156469d2ee/work,uuid=on",
+                            "propagation": "shared"
+                        },
+                        {
+                            "id": 607,
+                            "target": "/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/f964fde1-a146-49e8-a496-fa91c62bca4d/mount",
+                            "source": null,
+                            "fsroot": "/",
+                            "options": "rw,relatime,seclabel,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/8bfbba769663652404a64a23a7eeab79438daed71accf329a40a4f68efaf0ff4:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/8cc7afbcdd04f17aff8f6d4935e4f54a1f5add47dca516e8d35453f1f4218167:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/9030e60aa8d8ab9c27f051e2c785a549d8aec18881699eab320a0409f7fdbe39:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/36af9c08146e6d251d513e59e5a1c62d62cfb9ebe856d75394befddece7484c1:/var/lib/containerd/io.containerd.snapshotter.v1.tardev/mounts/0165a0c07865775dea83a4517c125ff30c1e2c1a098e7cbce7bcafe2b7199cbc,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/f964fde1-a146-49e8-a496-fa91c62bca4d/upper,workdir=/var/lib/containerd/io.containerd.snapshotter.v1.tardev/overlay/f964fde1-a146-49e8-a496-fa91c62bca4d/work,uuid=on",
+                            "propagation": "shared"
+                        }
+                    ]
+                },
+                {
+                    "id": 56,
+                    "target": "/rw",
+                    "source": "/dev/sda13",
+                    "fsroot": "/",
+                    "options": "rw,relatime,seclabel",
+                    "propagation": "shared"
+                },
+                {
+                    "id": 59,
+                    "target": "/boot",
+                    "source": "/dev/sda2",
+                    "fsroot": "/",
+                    "options": "rw,relatime,seclabel",
+                    "propagation": "shared",
+                    "children": [
+                        {
+                            "id": 128,
+                            "target": "/boot/efi",
+                            "source": "/dev/sda1",
+                            "fsroot": "/",
+                            "options": "rw,relatime,fmask=0077,dmask=0077,codepage=437,iocharset=ascii,shortname=mixed,errors=remount-ro",
+                            "propagation": "shared"
+                        }
+                    ]
+                },
+                {
+                    "id": 63,
+                    "target": "/home",
+                    "source": "/dev/sda15",
+                    "fsroot": "/",
+                    "options": "rw,relatime,seclabel",
+                    "propagation": "shared"
+                }
+            ]
+        }
+    ]
+}

@@ -95,25 +95,29 @@ pub struct FindMnt {
 #[derive(Debug, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub struct MountpointMetadata {
-    /// Mount ID
+    /// Mount ID.
     pub id: u32,
 
-    /// Mount target
+    /// Mount target.
     pub target: PathBuf,
 
-    /// Source device
-    pub source: PathBuf,
+    /// Source device.
+    ///
+    /// This is an optional field because in some cases, a mounted filesystem will not have a
+    /// specific source. E.g. When containerd and tardev-snapshotter are used for running Trident
+    /// inside a container, an overlay mount will have its source reported as `null` by `findmnt`.
+    pub source: Option<PathBuf>,
 
-    /// Filesystem root
+    /// Filesystem root.
     pub fsroot: PathBuf,
 
-    /// Options
+    /// Options.
     pub options: MountOptions,
 
-    /// Propagation type
+    /// Propagation type.
     pub propagation: String,
 
-    /// Mounts under this filesystem
+    /// Mounts under this filesystem.
     #[serde(default)]
     pub children: Vec<MountpointMetadata>,
 }
@@ -327,9 +331,17 @@ mod tests {
         include_str!("test_files/findmnt.json")
     }
 
+    fn sample_json_null_source() -> &'static str {
+        // Sample output of `findmnt` from a scenario with containerd and tardev-snapshotter, where
+        // the source of the overlay mount is reported as `null`.
+        include_str!("test_files/findmnt-null-source.json")
+    }
+
     #[test]
     fn test_findmnt() {
         FindMnt::from_json(sample_json()).unwrap();
+
+        FindMnt::from_json(sample_json_null_source()).unwrap();
     }
 
     #[test]
@@ -540,8 +552,10 @@ mod functional_tests {
         // All real filesystems on the functional test VM should be backed by a
         // block device in /dev.
         for mount in root.traverse_depth() {
+            let source = mount.source.as_ref().unwrap();
+
             assert!(
-                mount.source.starts_with("/dev/"),
+                source.starts_with("/dev/"),
                 "Mount {} is not backed by a block device in /dev",
                 mount.target.display()
             );
