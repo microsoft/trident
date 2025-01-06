@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
 
-use osutils::{block_devices, dependencies::Dependency, veritysetup};
+use osutils::{block_devices, veritysetup};
 
 use trident_api::{
     config::{AbUpdate, InternalVerityDevice},
@@ -315,11 +315,6 @@ pub(crate) fn validate_active_volume(
     debug!(
         "Root volume B path (canonical): {}",
         volume_b_path_canonical.display()
-    );
-
-    trace!(
-        "Available devices: {}",
-        Dependency::Blkid.cmd().output_and_check().unwrap()
     );
 
     // Validate that the active volume in Host Status matches actual root device path
