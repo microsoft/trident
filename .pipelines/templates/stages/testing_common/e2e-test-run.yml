@@ -59,14 +59,12 @@ steps:
     displayName: "Installing dependencies for E2E tests"
 
   # Check if Trident config requires A/B update testing. Skip A/B update testing
-  # if config is 'rerun' or 'memory-constraint-combined'. This is because those
-  # two scenarios trigger another systemd service run of Trident, which is not
-  # possible in the current A/B update testing script.
+  # if config is 'memory-constraint-combined'. Related ADO task:
+  # https://dev.azure.com/mariner-org/ECF/_workitems/edit/10425.
   - bash: |
       set -eu
       abUpdateExists=$(sudo yq e '.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$abUpdateExists" == "true" ] && \
-       [ "${{ parameters.tridentConfigurationName }}" != "rerun" ] && \
        [ "${{ parameters.tridentConfigurationName }}" != "memory-constraint-combined" ]; then
         echo "Trident config requires A/B update testing"
         echo "##vso[task.setvariable variable=abActiveVolume]volume-a"

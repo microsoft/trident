@@ -214,14 +214,15 @@ storage:
 scripts:
   postProvision:
     - name: rerun-trident
-      runOn: [all]
+      runOn:
+        - clean-install
       content: systemd-run --property=After=trident.service --no-block systemctl start trident.service
   postConfigure:
     - name: fail-on-the-first-run
       runOn: [all]
       content: |
-        if [ ! -f "$EXEC_ROOT/run/already-run" ]; then
-          touch "$EXEC_ROOT/run/already-run"
+        if [ ! -f "$EXEC_ROOT/var/already-run" ]; then
+          touch "$EXEC_ROOT/var/already-run"
           exit 1
         fi
     - name: overlay

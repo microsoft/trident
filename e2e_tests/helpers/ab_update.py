@@ -23,17 +23,14 @@ class YamlSafeLoader(yaml.SafeLoader):
 
 def trident_run_command(
     connection,
-    keys_file_path,
-    ip_address,
-    user_name,
     runtime_env,
     stage_ab_update,
     finalize_ab_update,
     trident_config_path,
 ):
     """
-    Runs "trident run" to trigger A/B update on the host and ensure that the
-    host completed staging or staging and finalizing of A/B update successfully.
+    Composes and runs a command to trigger A/B update on the host and processes a range of
+    possible outcomes.
     """
 
     # Determine the allowed operations to set
@@ -48,75 +45,43 @@ def trident_run_command(
         allowed_operations.append("finalize")
     allowed_operations_str = ",".join(allowed_operations)
 
-    try:
-        # Provide -c arg, the full path to the RW Trident config.
-        trident_return_code, trident_stdout, trident_stderr = trident_run(
-            connection,
-            f"run -v trace -c {trident_config_path} --allowed-operations {allowed_operations_str}",
-            runtime_env,
-        )
-    except CommandTimedOut as timeout_exception:
-        # Access the output from the exception and look for reboot information in Trident output.
-        timeout_trident_output = "".join(timeout_exception.args)
-        trident_output_lines = timeout_trident_output.strip().split("\n")
-        if "[INFO  trident::engine] Rebooting system" in trident_output_lines:
-            print("Host rebooted successfully. Timeout occurred.")
-            return
-        else:
-            raise Exception("Trident run timed out") from timeout_exception
+    for attempt in range(MAX_RETRIES):
+        try:
+            print(f"Attempt {attempt + 1}: Running Trident run command...")
 
-    # Check the exit code: if 0, staging of A/B update succeeded.
-    trident_output_lines = trident_stderr.strip().split("\n")
-    if (
-        trident_return_code == 0
-        and "[INFO  trident::engine] Staging of update 'AbUpdate' succeeded"
-        in trident_output_lines
-    ):
-        print(
-            "Received expected output with exit code 0. Staging of A/B update succeeded."
-        )
-    # If exit code is -1, host rebooted.
-    elif (
-        trident_return_code == -1
-        and "[INFO  trident::engine] Rebooting system" in trident_output_lines
-    ):
-        print("Received expected output with exit code -1. Host rebooted successfully.")
-    # If exit code is non 0 but host was running the rerun script, keep reconnecting.
-    elif (
-        trident_return_code != 0
-        and "[DEBUG trident::engine::hooks] Running script fail-on-the-first-run-to-force-rerun with interpreter /usr/bin/python3"
-        in trident_output_lines
-    ):
-        print("Detected an intentional Trident run failure. Attempting to reconnect...")
-        for attempt in range(MAX_RETRIES):
-            try:
-                time.sleep(RETRY_INTERVAL)
+            # Provide -c arg, the full path to the RW Trident config.
+            trident_return_code, trident_stdout, trident_stderr = trident_run(
+                connection,
+                f"run -v trace -c {trident_config_path} --allowed-operations {allowed_operations_str}",
+                runtime_env,
+            )
 
-                # Re-establish connection
-                print(f"Attempt {attempt + 1}: Reconnecting to the host...")
-
-                connection = create_ssh_connection(
-                    ip_address, user_name, keys_file_path
+            if (
+                trident_return_code == 0
+                and "Staging of update 'AbUpdate' succeeded" in trident_stderr
+            ):
+                print("Staging of A/B update succeeded")
+                return
+            elif trident_return_code == -1 and "Rebooting system" in trident_stderr:
+                print("Host rebooted successfully")
+                return
+            elif (
+                trident_return_code == 2
+                and "Failed to run post-configure script 'fail-on-the-first-run'"
+                in trident_stderr
+            ):
+                print(
+                    "Detected intentional failure as part of rerun test. Re-running..."
                 )
-
-                # Check if the host is reachable
-                run_ssh_command(
-                    connection, "echo 'Successfully reconnected after A/B update'"
+                continue
+            else:
+                raise Exception(
+                    f"Unexpected exit code {trident_return_code}. Output: {trident_stdout + trident_stderr}"
                 )
-                break
-            except Exception as e:
-                print(f"Reconnection attempt {attempt + 1} failed with exception: {e}")
-            finally:
-                connection.close()
-        else:
-            raise Exception("Maximum reconnection attempts exceeded.")
-    else:
-        raise Exception(
-            f"Command unexpectedly returned with exit code {trident_return_code} and output {trident_stdout + trident_stderr}"
-        )
-
-    # Return
-    return
+        except Exception as e:
+            print(f"Exception during Trident run: {e}")
+            raise
+    raise Exception("Maximum retries exceeded for Trident run")
 
 
 def update_host_config_images(runtime_env, destination_directory, host_config, version):
@@ -207,9 +172,6 @@ def trigger_ab_update(
     print("Re-running Trident to trigger A/B update", flush=True)
     trident_run_command(
         connection,
-        keys_file_path,
-        ip_address,
-        user_name,
         runtime_env,
         stage_ab_update,
         finalize_ab_update,

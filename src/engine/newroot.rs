@@ -89,8 +89,8 @@ impl NewrootMount {
         }
     }
 
-    /// Given a engine context, create all the required mount points for newroot
-    /// and return a NewrootMount object.
+    /// Given an engine context, creates all the required mount points for newroot and returns a
+    /// NewrootMount object.
     #[tracing::instrument(name = "initialize_new_root", skip_all)]
     pub fn create_and_mount(
         host_config: &HostConfiguration,

@@ -39,9 +39,12 @@ def trident_run(
     # Initialize stdout and stderr streams.
     out_stream = StringIO()
     err_stream = StringIO()
+
     # Define how to execute Trident.
     trident_invocation = _trident_command(runtime_env, connection)
+
     try:
+        print(f"Executing Trident run command: {command}")
         # Set warn=True to continue execution even if the command has a non-zero exit code.
         result = connection.run(
             f"sudo {trident_invocation} {command}",
@@ -55,17 +58,14 @@ def trident_run(
 
     # Handle the case where the command times out.
     except CommandTimedOut as timeout_exception:
-        print("Timeout occurred.")
+        print("Timeout occurred while executing Trident run command.")
         output = out_stream.getvalue() + err_stream.getvalue()
         # Raise error with Trident's output as additional information.
         raise CommandTimedOut(output) from timeout_exception
 
     except Exception as e:
-        print(f"An unexpected error occurred:\n{e}")
+        print(f"Unexpected error occurred while executing Trident run command: {e}")
         raise
-
-    finally:
-        connection.close()
 
 
 def _trident_command(
