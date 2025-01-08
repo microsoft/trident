@@ -65,14 +65,13 @@ def trident_run_command(
             elif trident_return_code == -1 and "Rebooting system" in trident_stderr:
                 print("Host rebooted successfully")
                 return
-            elif (
-                trident_return_code == 2
-                and "Failed to run post-configure script 'fail-on-the-first-run'"
+            elif trident_return_code == 2 and (
+                "Failed to run post-configure script 'fail-on-the-first-run'"
+                in trident_stderr
+                or "Failed to run pre-servicing script 'rerun-trident-with-memory-limit'"
                 in trident_stderr
             ):
-                print(
-                    "Detected intentional failure as part of rerun test. Re-running..."
-                )
+                print("Detected intentional failure. Re-running...")
                 continue
             else:
                 raise Exception(

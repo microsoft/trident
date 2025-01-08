@@ -58,14 +58,11 @@ steps:
       sudo pip3 install fabric
     displayName: "Installing dependencies for E2E tests"
 
-  # Check if Trident config requires A/B update testing. Skip A/B update testing
-  # if config is 'memory-constraint-combined'. Related ADO task:
-  # https://dev.azure.com/mariner-org/ECF/_workitems/edit/10425.
+  # Check if Trident config requires A/B update testing.
   - bash: |
       set -eu
       abUpdateExists=$(sudo yq e '.storage.abUpdate != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      if [ "$abUpdateExists" == "true" ] && \
-       [ "${{ parameters.tridentConfigurationName }}" != "memory-constraint-combined" ]; then
+      if [ "$abUpdateExists" == "true" ]; then
         echo "Trident config requires A/B update testing"
         echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
         echo "##vso[task.setvariable variable=version]2"
