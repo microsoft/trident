@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::debug;
+use log::{debug, trace};
 use regex::Regex;
 use uuid::Uuid;
 
@@ -89,7 +89,7 @@ impl GrubConfig {
     /// Find the linux command line in the GRUB config.
     fn find_linux_command_line(&self) -> Result<&str, Error> {
         let re = Regex::new(LINUX_COMMAND_LINE_PATTERN)?;
-        Ok(re
+        let linux_command_line = re
             .captures(&self.contents)
             .context(format!(
                 "Failed to find linux command line in '{}'",
@@ -97,7 +97,10 @@ impl GrubConfig {
             ))?
             .get(2) // The list of arguments
             .context("No capture on linux command line")?
-            .as_str())
+            .as_str();
+        trace!("Found Linux command line: {}", linux_command_line);
+
+        Ok(linux_command_line)
     }
 
     fn parse_linux_command_line(&self) -> Result<Vec<(String, String)>, Error> {
@@ -133,12 +136,14 @@ impl GrubConfig {
     /// config. If multiple matching keys are present, returns the value of the
     /// last key.
     pub fn read_linux_command_line_argument(&mut self, key: &str) -> Result<String, Error> {
-        if self.linux_command_line.is_none() {
-            self.linux_command_line = Some(self.parse_linux_command_line()?);
-        }
-        self.linux_command_line
-            .as_ref()
-            .unwrap()
+        let linux_command_line = match &self.linux_command_line {
+            Some(linux_command_line) => linux_command_line,
+            None => {
+                self.linux_command_line = Some(self.parse_linux_command_line()?);
+                self.linux_command_line.as_ref().unwrap()
+            }
+        };
+        linux_command_line
             .iter()
             .rev()
             .find_map(|(k, v)| if k == key { Some(v.clone()) } else { None })
