@@ -14,6 +14,7 @@ def update_trident_host_config(
     interface_name: str,
     oam_gateway: Optional[str] = None,
     oam_mac: Optional[str] = None,
+    use_dhcp: bool = False,
 ):
     logging.info("Updating host config section of trident.yaml")
     logging.info("oam_ip: %s", oam_ip)
@@ -21,6 +22,12 @@ def update_trident_host_config(
     os = host_configuration.setdefault("os", {})
     network = os.setdefault("network", {})
     ethernets = network.setdefault("ethernets", {})
+
+    # Ensure that all interface dhcp4 settings are consistent
+    for ethernet in ethernets:
+        if "dhcp4" in ethernets[ethernet]:
+            ethernets[ethernet]["dhcp4"] = use_dhcp
+
     eno_interface = ethernets.setdefault(interface_name, {})
 
     # Temporary fix for #8837.
@@ -28,7 +35,7 @@ def update_trident_host_config(
         eno_interface["match"] = {"macaddress": oam_mac}
 
     eno_interface.setdefault("addresses", []).append(oam_ip + "/23")
-    eno_interface["dhcp4"] = True
+    eno_interface["dhcp4"] = use_dhcp
     if oam_gateway:
         eno_interface.setdefault("routes", []).append(
             {"to": "0.0.0.0/0", "via": oam_gateway}
@@ -73,6 +80,7 @@ def main():
     parser.add_argument(
         "--oam-mac", default=None, help="MAC address of the OAM interface."
     )
+    parser.add_argument("--use-dhcp", default=False, help="Configure DHCP.")
     args = parser.parse_args()
 
     with open(args.trident_yaml) as f:
@@ -84,6 +92,7 @@ def main():
         args.interface_name,
         args.oam_gateway,
         args.oam_mac,
+        args.use_dhcp,
     )
     with open(args.trident_yaml, "w") as f:
         yaml.dump(trident_yaml_content, f, default_flow_style=False)
