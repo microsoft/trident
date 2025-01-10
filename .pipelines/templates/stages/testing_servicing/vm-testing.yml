@@ -121,7 +121,7 @@ stages:
               set -eux
 
               ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$(vmip) \
-                "sudo trident get"
+                "sudo systemd-run --property=After=trident.service trident get"
 
               ACTIVE=`ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$(vmip) \
                 "set -o pipefail; sudo trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
@@ -188,7 +188,7 @@ stages:
               while [ `sudo virsh domifaddr ${{ variables.VM_NAME }} | grep -c "ipv4"` -eq 0 ]; do sleep 1; done
               VM_IP=`sudo virsh domifaddr ${{ variables.VM_NAME }} | grep ipv4 | awk '{print $4}' | cut -d'/' -f1`
               ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$VM_IP \
-                "sudo trident get"
+                "sudo systemd-run --property=After=trident.service trident get"
 
               ACTIVE=`ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testuser@$VM_IP \
                 "set -o pipefail; sudo trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
