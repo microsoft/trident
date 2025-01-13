@@ -7,6 +7,16 @@ parameters:
       - release
     default: "release"
 
+  - name: previewContainerImageBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
 stages:
 - stage: TridentTestImg_azl_installer
   displayName: Build azl-installer
@@ -26,8 +36,6 @@ stages:
       ob_artifactBaseName: azl-installer
       MIC_BUILD_TYPE: "release"
       MIC_VERSION: "*.*.*"
-      BASEIMG_VERSION: "*.*.*"
-      BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
     steps:
     - checkout: test-images
@@ -70,6 +78,11 @@ stages:
       # future, we should move the usb-iso code to the trident repo and then we can remove this.
       continueOnError: true
 
+    - template: ../common_tasks/find-base-image-version.yml
+      parameters:
+        baseimgBuildType: ${{ parameters.baseimgBuildType }}
+        previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+
     - template: .pipelines/templates/trident-testimg-template.yml@test-images
       parameters:        
         target: build/azl-installer.iso
@@ -78,7 +91,7 @@ stages:
         micBuildType: ${{ variables.MIC_BUILD_TYPE }}
         micVersion: ${{ variables.MIC_VERSION }}
         baseimgBuildType: ${{ parameters.baseimgBuildType }}
-        baseimgVersion: ${{ variables.BASEIMG_VERSION }}
-        baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
+        baseimgVersion: $(baseimgVersion)
+        baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
         downloadTrident: false
    

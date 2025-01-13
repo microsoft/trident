@@ -8,20 +8,6 @@
 # Support:        https://aka.ms/onebranchsup                                   #
 #################################################################################
 
-parameters:
-  - name: baseimgBuildType
-    displayName: Base Image build type
-    type: string
-    values:
-      - preview
-      - release
-    default: "release"
-
-  - name: previewContainerImageBuildId
-    type: string
-    default: "latestFromBranch"
-    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 with tag 3.0-preview"
-
 trigger:
   batch: true
   branches:
@@ -93,5 +79,3 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: ci
-          baseimgBuildType: ${{ parameters.baseimgBuildType }}
-          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}

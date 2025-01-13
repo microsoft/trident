@@ -28,8 +28,12 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: forceTridentRebuild
+    type: boolean
+    default: false
+
 stages:
-  - ${{ if or(eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
+  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
       - template: build-source.yml
         parameters:
           tridentArtifactName: ${{ parameters.tridentArtifactName }}

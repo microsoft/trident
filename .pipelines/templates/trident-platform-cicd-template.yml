@@ -1,0 +1,18 @@
+# TRIDENT PLATFORM CICD TEMPLATE
+# This template is used by the platform-cicd-preview pipeline to
+# build and test trident deployment scenarios for a specified AZL
+# preview build.
+
+parameters:
+  - name: previewContainerImageBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+
+stages:
+    - template: e2e-template.yml
+      parameters:
+        stageType: pre
+        blockPublishing: true
+        baseimgBuildType: preview
+        previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+        forceTridentRebuild: true

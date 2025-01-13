@@ -13,6 +13,11 @@ parameters:
     - release
   default: "release"
 
+- name: previewContainerImageBuildId
+  displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+  type: string
+  default: "latestFromBranch"
+
 - name: runtimeEnv
   displayName: "Runtime environment (host vs container)"
   type: string
@@ -42,7 +47,6 @@ stages:
       ob_artifactBaseName: ${{ parameters.outputArtifactName }}
       MIC_BUILD_TYPE: "release"
       MIC_VERSION: "*.*.*"
-      BASEIMG_VERSION: "*.*.*"
       BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
     steps:
@@ -54,6 +58,11 @@ stages:
       displayName: Download Trident RPMs
       condition: eq('${{ parameters.runtimeEnv }}', 'host')
 
+    - template: ../common_tasks/find-base-image-version.yml
+      parameters:
+        baseimgBuildType: ${{ parameters.baseimgBuildType }}
+        previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+
     - template: .pipelines/templates/trident-testimg-template.yml@test-images
       parameters:        
         target: ${{ parameters.imageName }}
@@ -62,7 +71,7 @@ stages:
         micBuildType: ${{ variables.MIC_BUILD_TYPE }}
         micVersion: ${{ variables.MIC_VERSION }}
         baseimgBuildType: ${{ parameters.baseimgBuildType }}
-        baseimgVersion: ${{ variables.BASEIMG_VERSION }}
+        baseimgVersion: $(baseimgVersion)
         baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
         downloadTrident: false
    

@@ -26,6 +26,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: forceTridentRebuild
+    displayName: "Force trident rebuild rather than downloading previously built."
+    type: boolean
+    default: false
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -35,6 +40,7 @@ stages:
       codeCoverage: false
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
@@ -55,6 +61,7 @@ stages:
       imageName: build/trident-installer-testimage.iso
       outputArtifactName: trident-installer-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   # Build Trident installer ISO (container)
   - template: stages/build_image/trident-testimg.yml
@@ -62,6 +69,7 @@ stages:
       imageName: build/trident-container-installer-testimage.iso
       outputArtifactName: trident-container-installer-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       runtimeEnv: "container"
 
   # Build Trident test image (regular)
@@ -70,6 +78,7 @@ stages:
       imageName: trident-testimage
       outputArtifactName: trident-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   # Build Trident test image (container)
   - template: stages/build_image/trident-testimg.yml
@@ -77,6 +86,7 @@ stages:
       imageName: trident-container-testimage
       outputArtifactName: trident-container-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       runtimeEnv: "container"
 
   # Build Trident test image (verity)
@@ -85,12 +95,14 @@ stages:
       imageName: trident-verity-testimage
       outputArtifactName: trident-verity-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
-  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
+  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
     # Build USB-ISO
     - template: stages/trident_usb_iso/trident-usb-iso.yml
       parameters:
         baseimgBuildType: ${{ parameters.baseimgBuildType }}
+        previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
   - ${{ else }}:
     # Download USB-ISO from previous
     - template: stages/download_staged/download-staged.yml
@@ -109,6 +121,7 @@ stages:
   - template: stages/testing_servicing/vm-testing.yml
     parameters:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:

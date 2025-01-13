@@ -1,0 +1,47 @@
+parameters:
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+  - name: previewContainerImageBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+
+steps:
+  - ${{ if eq(parameters.baseimgBuildType, 'release') }}:
+    - script: |
+        set -eux
+        baseimgVersion="*.*.*"
+
+        set +x
+        echo "##vso[task.setvariable variable=baseimgVersion]$baseimgVersion"
+      name: SetBaseImageVersion
+      displayName: Set Base Image version variable
+  - ${{ else }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download version-full.config from Prod-BuildImages"
+      inputs:
+        buildType: "specific"
+        project: "mariner"
+        pipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
+        runVersion: specific
+        branchName: "refs/heads/master"
+        runId: ${{ parameters.previewContainerImageBuildId }}
+        tags: "3.0-preview"
+        artifactName: "drop_build_rpms_build"
+        patterns: "**/build-config/version-full.config"
+        targetPath: "$(Build.SourcesDirectory)/output"
+
+    - script: |
+        set -eux
+        versionFullConfigPath=$(find $(Build.SourcesDirectory) -name version-full.config)
+        baseimgVersion=$(cat $versionFullConfigPath)
+
+        set +x
+        echo "##vso[task.setvariable variable=baseimgVersion]$baseimgVersion"
+      name: SetBaseImageVersion
+      displayName: Set Base Image version variable
