@@ -17,7 +17,7 @@ use osutils::{
     path::join_relative,
 };
 use trident_api::{
-    config::HostConfiguration,
+    config::{HostConfiguration, Storage},
     constants::{
         self,
         internal_params::{ENABLE_UKI_SUPPORT, NO_TRANSITION},
@@ -28,6 +28,7 @@ use trident_api::{
         TridentError, TridentResultExt,
     },
     status::{AbVolumeSelection, HostStatus, ServicingState, ServicingType},
+    storage_graph::graph::StorageGraph,
     BlockDeviceId,
 };
 
@@ -274,6 +275,7 @@ fn stage_clean_install(
         disks_by_uuid: Default::default(),      // Will be initialized later
         install_index: 0,                       // Will be initialized later
         os_image: osimage::load_os_image(host_config)?,
+        storage_graph: build_storage_graph(&host_config.storage), // Build storage graph
     };
 
     // Execute pre-servicing scripts
@@ -368,6 +370,7 @@ pub(super) fn finalize_clean_install(
         disks_by_uuid: state.host_status().disks_by_uuid.clone(),
         install_index: state.host_status().install_index,
         os_image: None, // Not used in finalize_clean_install
+        storage_graph: build_storage_graph(&state.host_status().spec.storage), // Build storage graph
     };
 
     let new_root = match new_root {
@@ -473,6 +476,7 @@ pub(super) fn update(
         disks_by_uuid: state.host_status().disks_by_uuid.clone(),
         install_index: state.host_status().install_index,
         os_image: osimage::load_os_image(&command.host_config)?,
+        storage_graph: build_storage_graph(&host_config.storage), // Build storage graph
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -702,6 +706,7 @@ pub(super) fn finalize_update(
         disks_by_uuid: state.host_status().disks_by_uuid.clone(),
         install_index: state.host_status().install_index,
         os_image: None, // Not used in finalize_update
+        storage_graph: build_storage_graph(&state.host_status().spec.storage), // Build storage graph
     };
 
     let esp_path = if container::is_running_in_container()
@@ -1077,6 +1082,26 @@ pub fn reboot() -> Result<(), TridentError> {
 
     error!("Waited for reboot for 10 minutes, but nothing happened, aborting");
     Err(TridentError::new(ServicingError::RebootTimeout))
+}
+
+/// Builds the storage graph for the given storage configuration. Since graph v2 is still in its
+/// experimental phase, any errors that occur during the graph building process are logged, and an
+/// empty/default graph is returned, without returing an error.
+pub(super) fn build_storage_graph(storage: &Storage) -> StorageGraph {
+    debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
+    match storage.build_graph2() {
+        Ok(graph) => {
+            debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
+            graph
+        }
+        Err(err) => {
+            error!(
+                "EXPERIMENTAL GRAPHv2: Failed to build storage graph: {}",
+                err
+            );
+            Default::default()
+        }
+    }
 }
 
 #[cfg(test)]

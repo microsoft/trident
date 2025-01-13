@@ -16,17 +16,18 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
 
 /// The samples module contains sample data for the API.
 ///
-/// The samples are only used in the documentation. Therefore it is gated by a
-/// feature flag.
+/// The samples are only used in the documentation. Therefore it is gated by a feature flag.
 #[cfg(feature = "samples")]
 pub mod samples;
 
-/// Give docbuilder easy access to the block device graph types
+/// Give docbuilder easy access to the block device graph types.
 #[cfg(feature = "documentation")]
 pub use config::host::storage::blkdev_graph;
 
-/// Re export dependency so docbuilder can use the exact same version without
-/// having to manage a separate dependency in docbuilder's Cargo.toml.
+pub use config::host::storage::storage_graph;
+
+/// Re-export dependency so docbuilder can use the exact same version without having to manage a
+/// separate dependency in docbuilder's Cargo.toml.
 #[cfg(feature = "schemars")]
 pub use schemars;
 

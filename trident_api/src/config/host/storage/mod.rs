@@ -3,6 +3,8 @@ use std::{
     path::Path,
 };
 
+use log::{debug, error};
+
 use blkdev_graph::types::BlkDevNode;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -243,15 +245,15 @@ impl Storage {
         // Build the graph
         let graph = self.build_graph()?;
 
-        log::debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
+        debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
         let res = self.build_graph2();
         if let Err(err) = res {
-            log::error!(
+            error!(
                 "EXPERIMENTAL GRAPHv2: Failed to build storage graph: {}",
                 err
             );
         } else {
-            log::debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
+            debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
         }
 
         // If storage configuration is requested, then

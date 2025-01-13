@@ -390,6 +390,7 @@ impl Trident {
         })?;
 
         let host_status = datastore.host_status();
+
         let ctx = EngineContext {
             spec: host_status.spec.clone(),
             spec_old: host_status.spec_old.clone(),
@@ -399,6 +400,7 @@ impl Trident {
             disks_by_uuid: host_status.disks_by_uuid.clone(),
             install_index: host_status.install_index,
             os_image: None,
+            storage_graph: engine::build_storage_graph(&host_config.storage), // Build storage graph
         };
 
         if ctx.ab_active_volume.is_none() {

@@ -44,7 +44,7 @@
 // Modules directly related to the graph and its building.
 pub(super) mod builder;
 pub(super) mod conversions;
-pub(super) mod graph;
+pub mod graph;
 pub(super) mod node;
 pub mod references;
 pub mod types;

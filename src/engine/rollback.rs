@@ -37,6 +37,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         disks_by_uuid: datastore.host_status().disks_by_uuid.clone(),
         install_index: datastore.host_status().install_index,
         os_image: None, // Not used for boot validation logic
+        storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage), // Build storage graph
     };
 
     // Get the block device path of the current root
