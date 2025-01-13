@@ -121,3 +121,30 @@ stages:
               versionPublish: "$(Build.BuildNumber)"
               versionOption: custom
               packagePublishDescription: "Azure Linux Installer ISO (Trident)"
+
+          - ${{ if eq(parameters.stageType, 'rel') }}:
+            - bash: |
+                set -eux
+                sudo cp $(Pipeline.Workspace)/azl-installer/azl-installer.iso /tmp/azl-installer.iso
+                sudo mkdir /tmp/azl-installer.iso.mnt
+                sudo mount -o loop /tmp/azl-installer.iso /tmp/azl-installer.iso.mnt
+                sudo mkdir /tmp/azl-installer.iso.mnt.liveos.rootfs
+                sudo mount /tmp/azl-installer.iso.mnt/liveos/rootfs.img /tmp/azl-installer.iso.mnt.liveos.rootfs
+                AZL_VERSION=$(cat /tmp/azl-installer.iso.mnt.liveos.rootfs/etc/os-release | grep "VERSION=" | cut -d '=' -f 2 | tr -d '"')
+                set +x
+                echo "##vso[task.setvariable variable=azlVersion;]$AZL_VERSION"
+              displayName: "Find AZL version in usb-iso"
+              condition: and(succeeded(), eq(variables.isUsbIsoVersionInFeed, false))
+
+            - task: UniversalPackages@0
+              displayName: "Publish ${{ variables.usbIsoPackageBaseName }} Universal Package"
+              condition: and(succeeded(), eq(variables.isUsbIsoVersionInFeed, false))
+              inputs:
+                command: publish
+                vstsFeedPublish: mariner/AzureLinuxArtifacts
+                vstsFeedPackagePublish: "usb_iso-3.0-stable"
+                publishDirectory: "$(Pipeline.Workspace)/azl-installer"
+                # Align to AZL versioning
+                versionPublish: "$(azlVersion)"
+                versionOption: custom
+                packagePublishDescription: "Azure Linux Installer ISO (Trident)"
