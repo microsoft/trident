@@ -47,6 +47,7 @@ use super::{
 mod devices;
 mod filesystems;
 mod partition;
+mod raid;
 mod relationships;
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -110,6 +111,10 @@ impl StorageGraphBuilder {
         // Check partition type homogeneity
         trace!("Checking partition type homogeneity");
         partition::check_partition_types(&graph)?;
+
+        // Check RAID levels
+        trace!("Checking RAID levels");
+        raid::check_raid_levels(&graph)?;
 
         // Additional checks
         trace!("Checking targets");

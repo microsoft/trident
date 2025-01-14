@@ -15,7 +15,8 @@ use std::{os::unix::ffi::OsStrExt, path::PathBuf};
 use anyhow::{bail, ensure, Error};
 
 use crate::config::{
-    FileSystemType, HostConfigurationStaticValidationError, Partition, PartitionSize, PartitionType,
+    FileSystemType, HostConfigurationStaticValidationError, Partition, PartitionSize,
+    PartitionType, RaidLevel,
 };
 
 use super::{
@@ -495,6 +496,23 @@ impl PartitionType {
 }
 
 impl BlkDevReferrerKind {
+    /// Returns the valid RAID levels for a given referrer kind.
+    ///
+    /// **NOTE:** this check is not performed transitively. It only checks direct references.
+    pub fn allowed_raid_levels(&self) -> Option<AllowBlockList<RaidLevel>> {
+        if !self.compatible_kinds().contains(BlkDevKindFlag::RaidArray) {
+            return None;
+        }
+
+        Some(match self {
+            // ESP can only use RAID1
+            Self::FileSystemEsp => AllowBlockList::Allow(vec![RaidLevel::Raid1]),
+
+            // All other referrers that allow RAID can use any level.
+            _ => AllowBlockList::Any,
+        })
+    }
+
     /// Checks for the targets of a given referrer kind.
     ///
     /// THESE CHECKS ARE NOT VERY DECLARATIVE, TRY TO MINIMIZE THEIR USE AND

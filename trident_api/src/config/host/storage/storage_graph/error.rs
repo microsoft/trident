@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{FileSystemType, PartitionType},
+    config::{FileSystemType, PartitionType, RaidLevel},
     BlockDeviceId,
 };
 
@@ -118,6 +118,19 @@ pub enum StorageGraphBuildError {
         partition_type: PartitionType,
         valid_types: AllowBlockList<PartitionType>,
         special_ref_kind: SpecialReferenceKind,
+    },
+
+    #[error(
+        "Referrer {} of kind '{kind}' references RAID array '{raid_id}' of invalid level \
+            '{raid_level}', acceptable levels are: {valid_levels}",
+            pretty_node_id(.node_identifier)
+    )]
+    InvalidRaidlevel {
+        node_identifier: NodeIdentifier,
+        kind: BlkDevReferrerKind,
+        raid_id: BlockDeviceId,
+        raid_level: RaidLevel,
+        valid_levels: AllowBlockList<RaidLevel>,
     },
 
     #[error(
