@@ -1,5 +1,3 @@
-# This script is used in pipelines until Bug #10306 is resolved
-# ADO link: https://dev.azure.com/mariner-org/ECF/_workitems/edit/10306
 steps:
   - script: |
       set -eu

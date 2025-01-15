@@ -111,7 +111,6 @@ AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
 
 # Build OSModifier from the azure-linux-image-tools submodule
-# Prefer not to use this target until Bug #10306 is resolved
 .PHONY: build-osmodifier
 build-osmodifier:
 	@mkdir -p "$(ARTIFACTS_DIR)"

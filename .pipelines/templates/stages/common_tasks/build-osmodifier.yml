@@ -10,6 +10,3 @@ steps:
       mv azure-linux-image-tools/toolkit/out/tools/osmodifier artifacts/
     displayName: "Build OSModifier"
     workingDirectory: $(Build.SourcesDirectory)
-    # Disabled to avoid usage in pipelines until Bug #10306 is resolved
-    # ADO link: https://dev.azure.com/mariner-org/ECF/_workitems/edit/10306
-    enabled: false
