@@ -27,7 +27,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::{self, EngineContext};
+use crate::engine::EngineContext;
 
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
 
@@ -195,7 +195,7 @@ pub(super) fn provision(
                 partition.partition_type.to_sdrepart_part_type()
             );
 
-            let device_path = engine::get_block_device_path(ctx, &ev.device_id).structured(
+            let device_path = ctx.get_block_device_path(&ev.device_id).structured(
                 ServicingError::FindEncryptedVolumeBlockDevice {
                     device_id: ev.device_id.clone(),
                     encrypted_volume: ev.id.clone(),
@@ -328,7 +328,7 @@ pub fn configure(ctx: &EngineContext) -> Result<(), TridentError> {
                     encrypted_volume: ev.id.clone(),
                 },
             ))?;
-        let device_path = &engine::get_block_device_path(ctx, &ev.device_id).structured(
+        let device_path = &ctx.get_block_device_path(&ev.device_id).structured(
             ServicingError::FindEncryptedVolumeBlockDevice {
                 device_id: ev.device_id.clone(),
                 encrypted_volume: ev.id.clone(),

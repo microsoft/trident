@@ -22,7 +22,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{self, constants::TRIDENT_OVERLAY_PATH, storage::verity, EngineContext},
+    engine::{constants::TRIDENT_OVERLAY_PATH, storage::verity, EngineContext},
     OS_MODIFIER_BINARY_PATH,
 };
 
@@ -69,7 +69,8 @@ fn update_grub_config_boot(
 
 pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<(), Error> {
     // Get the root block device path
-    let root_device_path = engine::get_root_block_device_path(ctx)
+    let root_device_path = ctx
+        .get_root_block_device_path()
         .context("Cannot find the root block device path")?;
     if root_device_path.as_os_str().is_empty() {
         bail!("Root device path is none");
@@ -93,7 +94,8 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
     }
 
     let boot_block_device_id = &boot_mount_point.target_id;
-    let boot_block_device_path = engine::get_block_device_path(ctx, boot_block_device_id)
+    let boot_block_device_path = ctx
+        .get_block_device_path(boot_block_device_id)
         .context("Failed to find boot block device")?;
 
     let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_path)?;
@@ -199,7 +201,8 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
                     .device_id
                     .as_ref()
                     .map(|device_id| {
-                        let overlay_device_path = engine::get_block_device_path(ctx, device_id)
+                        let overlay_device_path = ctx
+                            .get_block_device_path(device_id)
                             .context(format!("Failed to find overlay device {}", device_id))?;
 
                         let volume_value = overlay_device_path.to_str().context(format!(
@@ -395,8 +398,9 @@ pub(crate) mod functional_test {
     use std::path::PathBuf;
 
     use const_format::formatcp;
-    use engine::storage::raid;
     use maplit::btreemap;
+
+    use crate::engine::storage::raid;
 
     use osutils::{
         filesystems::MkfsFileSystemType,

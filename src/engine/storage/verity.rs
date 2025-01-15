@@ -29,7 +29,7 @@ use trident_api::{
     },
 };
 
-use crate::engine::{self, EngineContext};
+use crate::engine::EngineContext;
 
 use super::raid;
 
@@ -163,7 +163,7 @@ fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
 
     // Get the boot device path
     let boot_device_id = &boot_mount_point.target_id;
-    let boot_device_path = engine::get_block_device_path(ctx, boot_device_id).context(format!(
+    let boot_device_path = ctx.get_block_device_path(boot_device_id).context(format!(
         "Failed to find path of boot device with id '{}'",
         boot_device_id
     ))?;
@@ -216,13 +216,15 @@ pub fn get_verity_device_paths(
     ctx: &EngineContext,
     verity_device: &config::InternalVerityDevice,
 ) -> Result<(PathBuf, PathBuf), Error> {
-    let verity_data_path = engine::get_block_device_path(ctx, &verity_device.data_target_id)
+    let verity_data_path = ctx
+        .get_block_device_path(&verity_device.data_target_id)
         .context(format!(
             "Failed to find path of verity data device with id '{}'",
             verity_device.data_target_id
         ))?;
 
-    let verity_hash_path = engine::get_block_device_path(ctx, &verity_device.hash_target_id)
+    let verity_hash_path = ctx
+        .get_block_device_path(&verity_device.hash_target_id)
         .context(format!(
             "Failed to find verity hash device with ID '{}'",
             verity_device.hash_target_id
@@ -247,7 +249,7 @@ fn get_verity_overlay_device_path(ctx: &EngineContext) -> Result<PathBuf, Error>
             "'{TRIDENT_OVERLAY_PATH}' is not on a dedicated partition (currently required for dm-verity)"
         ))?
         .target_id;
-    engine::get_block_device_path(ctx, overlay_target_id).context(format!(
+    ctx.get_block_device_path(overlay_target_id).context(format!(
         "Failed to find device '{overlay_target_id}' which is supposed to be mounted at '{TRIDENT_OVERLAY_PATH}'",
     ))
 }

@@ -24,7 +24,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::{self, EngineContext};
+use crate::engine::EngineContext;
 
 pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
@@ -64,7 +64,8 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
 
     for (device_id, image) in images_to_deploy {
         // Validate that block device exists
-        let block_device_path = engine::get_block_device_path(ctx, &device_id)
+        let block_device_path = ctx
+            .get_block_device_path(&device_id)
             .context(format!("No block device with id '{}' found", device_id))?;
 
         // Parse the URL to determine the download strategy
@@ -417,7 +418,8 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
             mp.path.display()
         ))?;
 
-        let block_device_path = engine::get_block_device_path(ctx, id)
+        let block_device_path = ctx
+            .get_block_device_path(id)
             .context(format!("No block device with id '{}' found", id))?;
 
         let dev_info = lsblk::get(&block_device_path).with_context(|| {

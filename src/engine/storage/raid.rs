@@ -18,7 +18,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::{self, EngineContext};
+use crate::engine::EngineContext;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, Display, EnumString)]
 #[serde(rename_all = "kebab-case")]
@@ -58,7 +58,7 @@ fn get_device_paths(ctx: &EngineContext, devices: &[BlockDeviceId]) -> Result<Ve
     devices
         .iter()
         .map(|device_id| {
-            engine::get_block_device_path(ctx, device_id).context(format!(
+            ctx.get_block_device_path(device_id).context(format!(
                 "Failed to get block device path for '{}'",
                 device_id
             ))

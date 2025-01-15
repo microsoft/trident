@@ -12,7 +12,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::{self, EngineContext};
+use crate::engine::EngineContext;
 
 /// Creates clean filesystems on top of block devices that are not to be initialized with images,
 /// i.e. have the file system source 'Create'. The function also re-formats any inactive/update A/B
@@ -82,7 +82,7 @@ fn block_devices_needing_fs_creation(
         }
 
         // Get the block device info for the device_id
-        let bd_path = engine::get_block_device_path(ctx, device_id).with_context(|| {
+        let bd_path = ctx.get_block_device_path(device_id).with_context(|| {
             format!("Block device path not found for device ID: {:?}", device_id)
         })?;
 
@@ -97,12 +97,13 @@ fn block_devices_needing_fs_creation(
                 device_id
             );
 
-            engine::get_ab_volume_block_device_id(ctx, device_id).with_context(|| {
-                format!(
-                    "Failed to resolve A/B volume pair ID to update volume ID: {:?}",
-                    device_id
-                )
-            })?
+            ctx.get_ab_volume_block_device_id(device_id)
+                .with_context(|| {
+                    format!(
+                        "Failed to resolve A/B volume pair ID to update volume ID: {:?}",
+                        device_id
+                    )
+                })?
         } else if ctx.servicing_type == ServicingType::CleanInstall {
             // If the block device is NOT an A/B volume pair, only add it to
             // block_devices if a filesystem has not been previously created,

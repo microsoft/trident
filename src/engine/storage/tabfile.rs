@@ -6,7 +6,7 @@ use osutils::{
 };
 use trident_api::config::{FileSystemType, InternalMountPoint};
 
-use crate::engine::{self, EngineContext};
+use crate::engine::EngineContext;
 
 pub(super) const DEFAULT_FSTAB_PATH: &str = "/etc/fstab";
 
@@ -35,7 +35,7 @@ fn entry_from_mountpoint(
         // Now, for all the types that *do* require a block device:
         fs_type => {
             // Try to look up the block device
-            let device = engine::get_block_device_path(hs, &mp.target_id).context(format!(
+            let device = hs.get_block_device_path(&mp.target_id).context(format!(
                 "Failed to find block device with id {}",
                 mp.target_id
             ))?;

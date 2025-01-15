@@ -178,7 +178,7 @@ fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, Trident
         verity_data_path
     } else {
         // Fetch the expected root device path
-        engine::get_block_device_path(ctx, root_device_id).structured(
+        ctx.get_block_device_path(root_device_id).structured(
             ServicingError::GetBlockDevicePath {
                 device_id: root_device_id.to_string(),
             },
@@ -379,13 +379,15 @@ fn get_plain_volume_pair_paths(
         .context("No volume pair for root volume found")?;
     debug!("Root device pair: {:?}", root_device_pair);
 
-    let volume_a_path =
-        engine::get_block_device_path(ctx, &root_device_pair.volume_a_id).context(format!(
+    let volume_a_path = ctx
+        .get_block_device_path(&root_device_pair.volume_a_id)
+        .context(format!(
             "Failed to get block device path for volume A with ID '{}'",
             root_device_pair.volume_a_id
         ))?;
-    let volume_b_path =
-        engine::get_block_device_path(ctx, &root_device_pair.volume_b_id).context(format!(
+    let volume_b_path = ctx
+        .get_block_device_path(&root_device_pair.volume_b_id)
+        .context(format!(
             "Failed to get block device path for volume B with ID '{}'",
             root_device_pair.volume_b_id
         ))?;
@@ -413,12 +415,14 @@ fn get_verity_data_volume_pair_paths(
         .context("No volume pair for root data device found")?;
     debug!("Root data device pair: {:?}", root_data_device_pair);
 
-    let volume_a_path = engine::get_block_device_path(ctx, &root_data_device_pair.volume_a_id)
+    let volume_a_path = ctx
+        .get_block_device_path(&root_data_device_pair.volume_a_id)
         .context(format!(
             "Failed to get block device for data volume A with ID '{}'",
             &root_data_device_pair.volume_a_id
         ))?;
-    let volume_b_path = engine::get_block_device_path(ctx, &root_data_device_pair.volume_b_id)
+    let volume_b_path = ctx
+        .get_block_device_path(&root_data_device_pair.volume_b_id)
         .context(format!(
             "Failed to get block device for data volume B with ID '{}'",
             &root_data_device_pair.volume_b_id
