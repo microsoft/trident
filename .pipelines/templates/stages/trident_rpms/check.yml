@@ -6,6 +6,11 @@ steps:
   - template: ../common_tasks/rustup.yml
   - template: ../common_tasks/cargo-auth.yml
 
+  - task: PipAuthenticate@1
+    displayName: Provision - Authenticate Pip
+    inputs:
+      artifactFeeds: 'mariner/Mariner-Pypi-Feed'
+
   - script: |
       set -eux
       python3 --version
