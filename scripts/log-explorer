@@ -124,13 +124,25 @@ if "@" in args.target:
         capture_output=True,
     )
     result.check_returncode()
-    lines = result.stdout.splitlines()
+    lines = result.stdout
 
 else:
     with open(args.target, "r") as log_file:
-        lines = log_file.readlines()
+        lines = log_file.read()
+
+
+def remove_newline(matchobj):
+    return matchobj.group(0).replace("\n", "")
+
 
 if lines:
+    (recovered_lines, change_num) = re.subn(r"\n[^{]", remove_newline, lines)
+    if change_num > 0:
+        print(
+            "WARNING: LOG FILE IS CORRUPTED\nAttempting to recover, but results may not be complete or accurate.\n"
+        )
+    lines = recovered_lines.splitlines()
+
     for line in lines:
         log = RustLog(line)
         logger.log(log)
