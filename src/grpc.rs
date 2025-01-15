@@ -15,7 +15,7 @@ use trident_api::{
     error::{InternalError, ReportError, ServicingError, TridentError},
 };
 
-use crate::{HostUpdateCommand, OrchestratorConnection};
+use crate::{datastore::DataStore, HostUpdateCommand, OrchestratorConnection};
 
 pub mod protobufs {
     tonic::include_proto!("trident");
@@ -90,6 +90,21 @@ pub(crate) fn start(
     }
 
     Ok(rt)
+}
+
+pub(crate) fn send_host_status_state(
+    sender: &mut Option<mpsc::UnboundedSender<Result<HostStatusState, tonic::Status>>>,
+    state: &DataStore,
+) -> Result<(), TridentError> {
+    if let Some(ref mut sender) = sender {
+        sender
+            .send(Ok(HostStatusState {
+                status: serde_yaml::to_string(state.host_status())
+                    .structured(trident_api::error::InternalError::SerializeHostStatus)?,
+            }))
+            .structured(trident_api::error::InternalError::SendHostStatus)?;
+    }
+    Ok(())
 }
 
 fn open_firewall_for_grpc() -> Result<(), Error> {
