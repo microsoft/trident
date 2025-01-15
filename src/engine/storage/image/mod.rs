@@ -408,7 +408,7 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
 
     let images = os_img
         .filesystems()
-        .map(|fs| (fs.mount_point().to_owned(), fs))
+        .map(|fs| (fs.mount_point.to_owned(), fs))
         .collect::<HashMap<_, _>>();
 
     // Now, deploy the filesystems sourced from the OS image
@@ -430,13 +430,13 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
         })?;
 
         ensure!(
-            dev_info.size >= image.size(),
+            dev_info.size >= image.image_file.uncompressed_size,
             "Block device is too small, expected at least {} bytes, got {} bytes",
-            image.size(),
+            image.image_file.uncompressed_size,
             dev_info.size
         );
 
-        let stream = HashingReader::new(image.reader().with_context(|| {
+        let stream = HashingReader::new(image.image_file.reader().with_context(|| {
             format!(
                 "Failed to create reader for filesystem image to be mounted at '{}'",
                 mp.path.display()

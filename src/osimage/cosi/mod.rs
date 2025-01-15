@@ -13,8 +13,10 @@ use url::Url;
 mod metadata;
 mod reader;
 
-use metadata::{CosiMetadata, CosiMetadataVersion, Image, ImageFile, MetadataVersion};
+use metadata::{CosiMetadata, CosiMetadataVersion, ImageFile, MetadataVersion};
 use reader::CosiReader;
+
+use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
 
 /// Path to the COSI metadata file. Part of the COSI specification.
 const COSI_METADATA_PATH: &str = "metadata.json";
@@ -37,45 +39,6 @@ pub(super) struct Cosi {
 struct CosiEntry {
     offset: u64,
     size: u64,
-}
-
-/// A wrapper over a specific filesystem image with logic to read the image from
-/// the COSI file.
-#[derive(Debug, Clone)]
-pub(super) struct CosiFileSystemImage<'a> {
-    pub(super) image: &'a Image,
-    reader: CosiReader,
-}
-
-impl CosiFileSystemImage<'_> {
-    /// Returns a reader for the filesystem image.
-    pub(super) fn reader(&self) -> Result<Box<dyn Read>, Error> {
-        self.reader
-            .section_reader(self.image.file.entry.offset, self.image.file.entry.size)
-            .with_context(|| {
-                format!(
-                    "Failed to create COSI section reader for filesystem at '{}'",
-                    self.image.mount_point.display(),
-                )
-            })
-    }
-
-    /// Returns a reader for the verity hash of the filesystem image, when available.
-    pub(super) fn reader_verity(&self) -> Option<Result<Box<dyn Read>, Error>> {
-        self.image
-            .verity
-            .as_ref()
-            .map(|verity| {
-                self.reader
-                    .section_reader(verity.file.entry.offset, verity.file.entry.size)
-                    .with_context(|| {
-                        format!(
-                            "Failed to create COSI section reader for verity hash of filesystem at '{}'",
-                            self.image.mount_point.display(),
-                        )
-                    })
-            })
-    }
 }
 
 impl Cosi {
@@ -107,24 +70,70 @@ impl Cosi {
     }
 
     /// Returns the ESP filesystem image.
-    pub(super) fn esp_filesystem(&self) -> Result<CosiFileSystemImage<'_>, Error> {
+    pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         self.metadata
             .get_esp_filesystem()
-            .map(|image| CosiFileSystemImage {
-                image,
-                // Cloning the reader is cheap, as it only clones the URL/path.
-                reader: self.reader.clone(),
+            .map(|image| OsImageFileSystem {
+                mount_point: image.mount_point.clone(),
+                fs_type: image.fs_type,
+                part_type: image.part_type,
+                image_file: OsImageFile {
+                    compressed_size: image.file.compressed_size,
+                    sha384: image.file.sha384.clone(),
+                    uncompressed_size: image.file.uncompressed_size,
+                    reader: {
+                        Box::new(|| {
+                            self.reader
+                                .section_reader(image.file.entry.offset, image.file.entry.size)
+                        })
+                    },
+                },
+                image_file_verity: None,
             })
     }
 
-    /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(super) fn filesystems(&self) -> impl Iterator<Item = CosiFileSystemImage<'_>> {
+    /// Returns an iterator of available mount points in the COSI file.
+    pub(super) fn available_mount_points(&self) -> impl Iterator<Item = &Path> {
         self.metadata
             .get_regular_filesystems()
-            .map(|image| CosiFileSystemImage {
-                image,
-                // Cloning the reader is cheap, as it only clones the URL/path.
-                reader: self.reader.clone(),
+            .map(|image| image.mount_point.as_path())
+    }
+
+    /// Returns an iterator over all images that are NOT the ESP filesystem image.
+    pub(super) fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
+        self.metadata
+            .get_regular_filesystems()
+            .map(|image| OsImageFileSystem {
+                mount_point: image.mount_point.clone(),
+                fs_type: image.fs_type,
+                part_type: image.part_type,
+                image_file: OsImageFile {
+                    compressed_size: image.file.compressed_size,
+                    sha384: image.file.sha384.clone(),
+                    uncompressed_size: image.file.uncompressed_size,
+                    reader: {
+                        Box::new(|| {
+                            self.reader
+                                .section_reader(image.file.entry.offset, image.file.entry.size)
+                        })
+                    },
+                },
+                image_file_verity: image.verity.as_ref().map(|verity| OsImageVerityHash {
+                    roothash: verity.roothash.clone(),
+                    hash_image_file: OsImageFile {
+                        compressed_size: verity.file.compressed_size,
+                        sha384: verity.file.sha384.clone(),
+                        uncompressed_size: verity.file.uncompressed_size,
+                        reader: {
+                            Box::new(|| {
+                                self.reader.section_reader(
+                                    verity.file.entry.offset,
+                                    verity.file.entry.size,
+                                )
+                            })
+                        },
+                    },
+                }),
             })
     }
 

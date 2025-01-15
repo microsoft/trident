@@ -603,6 +603,7 @@ pub(super) fn deploy_esp_from_os_image(
     let temp_file = load_raw_image(
         os_image.source(),
         esp_img
+            .image_file
             .reader()
             .context("Failed to get reader for ESP image from OS image")?,
     )

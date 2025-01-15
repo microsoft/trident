@@ -60,7 +60,7 @@ pub fn validate_host_config(
         .collect::<Vec<_>>();
     let os_image_filesystems_map = all_os_image_filesystems
         .iter()
-        .map(|fs| (fs.mount_point(), fs.fs_type()))
+        .map(|fs| (fs.mount_point.as_path(), fs.fs_type))
         .collect::<HashMap<&Path, OsImageFileSystemType>>();
 
     // Populate hashmap with filesystems from Host Configuration
