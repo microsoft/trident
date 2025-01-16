@@ -1,5 +1,4 @@
-#/bin/bash
-
+#!/bin/bash
 set -euxo pipefail
 
 . $(dirname $0)/common.sh
