@@ -9,7 +9,7 @@ parameters:
       - validation
 
   - name: testingRun
-    displayName: "Pipeline run downloaded Trident images"
+    displayName: "Download prebuilt test artifacts"
     type: boolean
     default: false
 
@@ -159,7 +159,8 @@ stages:
               sudo $(tridentSourceDirectory)/e2e_tests/helpers/wait_for_login.py \
                   -d "$VM_SERIAL_LOG" \
                   -o ./serial.log \
-                  -t 250
+                  -t 250 \
+                  -v
 
               WAIT_FOR_LOGIN_EXITCODE=$?
 

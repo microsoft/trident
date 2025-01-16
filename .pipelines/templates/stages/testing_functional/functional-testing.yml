@@ -1,6 +1,6 @@
 parameters:
   - name: testingRun
-    displayName: "Pipeline run downloaded Trident images"
+    displayName: "Download prebuilt test artifacts"
     type: boolean
     default: false
 

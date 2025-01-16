@@ -1,0 +1,86 @@
+parameters:
+  - name: testingRun
+    displayName: "Download prebuilt test artifacts"
+    type: boolean
+    default: false
+
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+  - name: label
+    type: string
+    displayName: "Label for the image"
+    default: ""
+
+  - name: makeTarget
+    type: string
+    displayName: "Make target for the image"
+    default: ""
+
+  - name: previewContainerImageBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+jobs:
+  - job: PrepareImage_${{ parameters.label }}
+    displayName: Prepare Image ${{ parameters.label }}
+    timeoutInMinutes: 15
+    pool:
+      type: linux
+    dependsOn:
+      - PrepareSSHKeys
+
+    variables:
+      ob_outputDirectory: $(Build.SourcesDirectory)/out
+      ob_artifactBaseName: "image-${{ parameters.label }}"
+      MIC_BUILD_TYPE: "release"
+      MIC_VERSION: "*.*.*"
+
+    steps:
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: trident-binaries
+          targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+        displayName: Download Trident RPMs
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+        displayName: Download SSH Keys
+
+      - bash: |
+          set -eux
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
+          mkdir -p $(ob_outputDirectory)
+        displayName: Set up SSH Keys
+
+      - template: ../common_tasks/find-base-image-version.yml
+        parameters:
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+
+      - template: .pipelines/templates/trident-testimg-template.yml@test-images
+        parameters:
+          target: ${{ parameters.makeTarget }}
+          outputDirectory: "$(ob_outputDirectory)"
+          testImagesRepo: test-images
+          micBuildType: ${{ variables.MIC_BUILD_TYPE }}
+          micVersion: ${{ variables.MIC_VERSION }}
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          baseimgVersion: $(baseimgVersion)
+          baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
+          downloadTrident: false

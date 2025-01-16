@@ -9,7 +9,7 @@ parameters:
       - usb-iso
 
   - name: "stageType"
-    displayName: "Controls whether this is a pre-release or a release run."
+    displayName: "Pipeline configuration type"
     type: string
     values:
       - pre
@@ -18,7 +18,7 @@ parameters:
   - name: specificVersion
     type: string
     displayName: |
-      Specific version of the package to download, leave empty to download latest.
+      Specific version of the package to download, leave empty to download latest
     default: ""
 
 stages:

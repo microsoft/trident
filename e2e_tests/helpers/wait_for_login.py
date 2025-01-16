@@ -34,6 +34,13 @@ parser.add_argument(
     help="Path to save the output.",
 )
 
+parser.add_argument(
+    "-v",
+    "--verbose",
+    action="store_true",
+    help="Print the output to the terminal.",
+)
+
 args = parser.parse_args()
 
 # ANSI escape code cleaner
@@ -59,7 +66,8 @@ def print_and_save(line: str):
         return
     # Remove ANSI control codes
     line = ansi_control_cleaner.sub("", line)
-    print(line)
+    if args.verbose:
+        print(line)
     if args.output:
         # Remove all ANSI escape codes
         line = ansi_cleaner.sub("", line)

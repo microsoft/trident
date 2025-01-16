@@ -1,6 +1,6 @@
 parameters:
   - name: "stageType"
-    displayName: "Controls whether this is a pre-release or a CI run."
+    displayName: "Pipeline configuration type"
     type: string
     default: ci
     values:
@@ -22,7 +22,7 @@ parameters:
     default: "latestFromBranch"
  
   - name: blockPublishing
-    displayName: "Block publishing to artifact feed."
+    displayName: "Block publishing to artifact feed"
     type: boolean
     default: false
 

@@ -5,7 +5,7 @@ parameters:
     default: ECF/Trident
 
   - name: "stageType"
-    displayName: "Controls whether this is a pre-release or a CI run."
+    displayName: "Pipeline configuration type"
     type: string
     default: ci
     values:

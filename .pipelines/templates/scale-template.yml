@@ -1,0 +1,52 @@
+parameters:
+  - name: "stageType"
+    displayName: "Pipeline configuration type"
+    type: string
+    default: pre
+    values:
+      - pr-e2e
+      - ci
+      - pre
+      - rel
+
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+  - name: previewContainerImageBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: verboseLogging
+    displayName: "Enable verbose logging"
+    type: boolean
+    default: false
+
+stages:
+  # Trident Build/Download
+  - template: stages/download_staged/download-staged.yml
+    parameters:
+      stageType: ${{ parameters.stageType }}
+      artifactName: trident-binaries
+      feedName: rpms
+
+  # Test Servicing on VMs
+  - template: stages/testing_servicing/vm-testing.yml
+    parameters:
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      updateIterationCount: 100
+      workers: 256
+      updateCheckTimeoutInMinutes: 200 # Generally need less than a minute per update, so with buffer, this should be updateIterationCount * 2
+      verboseLogging: ${{ parameters.verboseLogging }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}

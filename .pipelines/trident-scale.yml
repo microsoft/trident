@@ -1,0 +1,114 @@
+parameters:
+  # This parameter is to test against the azl preview. As it currently is being
+  # used, we test against images based on the preview, but Trident is not being
+  # built on the azl preview container. To build Trident on the preview of the
+  # container image we would need to build instead of download (not use "pre" as
+  # stageType in trident-stage).
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
+
+  - name: "debug"
+    displayName: "Enable debug output"
+    type: boolean
+    default: false
+
+  - name: previewContainerImageBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+schedules:
+  - cron: "0 8 * * *" # 1 am PST
+    displayName: Daily build
+    always: true
+    branches:
+      include:
+        - main
+
+trigger: none
+
+variables:
+  - name: CDP_DEFINITION_BUILD_COUNT
+    value: $[counter('', 0)] # needed for onebranch.pipeline.version task https://aka.ms/obpipelines/versioning
+  - name: system.debug
+    value: ${{ parameters.debug }}
+  # ENABLE_PRS_DELAYSIGN: 0
+  # ROOT: $(Build.SourcesDirectory)
+  # REPOROOT: $(Build.SourcesDirectory)
+  # OUTPUTROOT: $(REPOROOT)\out
+  - name: DEBIAN_FRONTEND
+    value: noninteractive
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: OneBranch.Pipelines/GovernedTemplates
+      ref: refs/heads/main
+
+    - repository: platform-tests
+      type: git
+      name: platform-tests
+      ref: refs/heads/main
+
+    - repository: platform-pipelines
+      type: git
+      name: platform-pipelines
+      ref: refs/heads/main
+
+    - repository: test-images
+      type: git
+      name: test-images
+      ref: refs/heads/main
+
+    - repository: platform-telemetry
+      name: platform-telemetry
+      type: git
+      ref: refs/heads/main
+
+  pipelines:
+    - pipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
+      source: "[AMD64-6-OneBranch]-Prod-BuildImages"
+      project: mariner
+      branch: master
+      tags:
+        - "3.0-preview"
+
+extends:
+  template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates
+  parameters:
+    globalSdl: # https://aka.ms/obpipelines/sdl
+      tsa:
+        # Break build on SDL failures instead of filing bugs.
+        enabled: false # onebranch publish all sdl results to TSA. If TSA is disabled all SDL tools will forced into 'break' build mode.
+      # credscan:
+      #   suppressionsFile: $(Build.SourcesDirectory)\.config\CredScanSuppressions.json
+      policheck:
+        break: true # always break the build on policheck issues. You can disable it by setting to 'false'
+      # suppression:
+      #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
+      disableLegacyManifest: true
+      cg:
+        alertWarningLevel: Medium
+    featureFlags:
+      runOnHost: true
+      EnableCDPxPAT: false
+
+    stages:
+      - template: templates/scale-template.yml
+        parameters:
+          stageType: pre
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          verboseLogging: ${{ parameters.debug }}
+          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
