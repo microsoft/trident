@@ -87,7 +87,7 @@ impl From<&FileSystem> for StorageGraphNode {
     }
 }
 
-/// Get a StorageGraphNode from a Filesystem reference.
+/// Get a StorageGraphNode from a verity Filesystem reference.
 impl From<&VerityFileSystem> for StorageGraphNode {
     fn from(vfs: &VerityFileSystem) -> Self {
         Self::new_verity_filesystem(vfs.clone())

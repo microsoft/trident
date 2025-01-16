@@ -62,5 +62,6 @@ pub mod display;
 // Public because it's used by trident to report errors.
 pub mod error;
 
-// #[cfg(test)]
-// mod validation_tests;
+// Validation unit tests.
+#[cfg(test)]
+mod validation_tests;
