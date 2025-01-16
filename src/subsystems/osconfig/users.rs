@@ -5,16 +5,15 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::{debug, warn};
-use tempfile::NamedTempFile;
 
-use osutils::osmodifier::{self, MICPassword, MICUser, MICUsers, PasswordType};
+use osutils::osmodifier::{MICPassword, MICUser, PasswordType};
 use trident_api::config::{Password, SshMode, User};
 
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";
 const SSHD_CONFIG_DIR: &str = "/etc/ssh/sshd_config.d";
 const GLOBAL_CONFIG_FILE_NAME: &str = "global_user.conf";
 
-pub(super) fn set_up_users(users: &[User], os_modifier_path: &Path) -> Result<(), Error> {
+pub(super) fn set_up_users(users: &[User]) -> Result<Vec<MICUser>, Error> {
     if Path::new(SSHD_CONFIG_FILE).exists() {
         debug!("Setting up sshd config");
 
@@ -86,27 +85,10 @@ pub(super) fn set_up_users(users: &[User], os_modifier_path: &Path) -> Result<()
         warn!("sshd_config not found, skipping sshd config");
     }
 
-    debug!("Setting up users");
-
-    let mic_users_yaml = serde_yaml::to_string(&MICUsers {
-        users: users
-            .iter()
-            .map(|user| create_mic_user(user.clone()))
-            .collect(),
-    })
-    .context("Failed to serialize MIC configuration")?;
-
-    let mut tmpfile = NamedTempFile::new().context("Failed to create a temporary file")?;
-    tmpfile
-        .write_all(mic_users_yaml.as_bytes())
-        .context("Failed to write MIC users YAML to temporary file")?;
-    tmpfile.flush().context("Failed to flush temporary file")?;
-
-    // Invoke os modifier with the user config file
-    osmodifier::run(os_modifier_path, tmpfile.path())
-        .context("Failed to run OS modifier to set up users")?;
-
-    Ok(())
+    Ok(users
+        .iter()
+        .map(|user| create_mic_user(user.clone()))
+        .collect())
 }
 
 fn ssh_global_config(users: &[User]) -> Result<(), Error> {

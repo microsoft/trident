@@ -59,3 +59,19 @@ os:
     - name: testing-user
       sshPublicKeys: []
       sshMode: key-only
+  modules:
+    - name: test-module
+      loadMode: always
+      options:
+        "option1": "value1"
+        "option2": "value2"
+  services:
+    enable:
+      - sshd
+      - cron
+    disable:
+      - sshd
+  kernelCommandLine:
+    extraCommandLine:
+      - param1=value
+      - param2=\"value2 value3\"

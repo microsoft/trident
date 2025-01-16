@@ -415,14 +415,14 @@ pub enum ServicingError {
     #[error("Failed to run post-configure script '{script_name}'")]
     RunPostConfigureScript { script_name: String },
 
+    #[error("Failed to run OS modifier")]
+    RunOsModifier,
+
     #[error("Failed to run post-provision script '{script_name}'")]
     RunPostProvisionScript { script_name: String },
 
     #[error("Failed to set permissions on temporary recovery key file '{key_file}'")]
     SetRecoveryKeyFilePermissions { key_file: String },
-
-    #[error("Failed to set up hostname for management OS")]
-    SetUpHostname,
 
     #[error("Failed to set up users for management OS")]
     SetUpUsers,

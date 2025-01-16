@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct Module {
     /// Name of the module.

@@ -549,6 +549,59 @@
         }
       ]
     },
+    "KernelCommandLine": {
+      "description": "Additional kernel command line options to add to the image.",
+      "type": "object",
+      "required": [
+        "extraCommandLine"
+      ],
+      "properties": {
+        "extraCommandLine": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LoadMode": {
+      "description": "Load mode of the kernel module.",
+      "oneOf": [
+        {
+          "title": "Always",
+          "description": "Set kernel modules to be loaded automatically at boot time.",
+          "type": "string",
+          "enum": [
+            "always"
+          ]
+        },
+        {
+          "title": "Auto",
+          "description": "Used for modules that are automatically loaded by the kernel as needed, without explicit configuration to load them at boot.",
+          "type": "string",
+          "enum": [
+            "auto"
+          ]
+        },
+        {
+          "title": "Disable",
+          "description": "Configures kernel modules to be explicitly disabled, preventing them from loading automatically.",
+          "type": "string",
+          "enum": [
+            "disable"
+          ]
+        },
+        {
+          "title": "Inherit",
+          "description": "Configures kernel modules to inherit the loading behavior set in the base image. Only applying new options where they are explicitly provided and applicable.",
+          "type": "string",
+          "enum": [
+            "inherit"
+          ]
+        }
+      ]
+    },
     "ManagementOs": {
       "description": "Configuration for the management OS.",
       "type": "object",
@@ -565,6 +618,36 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/User"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Module": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "loadMode": {
+          "description": "Load mode of the kernel module.\n\nThe load mode setting for kernel modules dictates how and when these modules are loaded or disabled in the system.",
+          "default": "inherit",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LoadMode"
+            }
+          ]
+        },
+        "name": {
+          "description": "Name of the module.",
+          "type": "string"
+        },
+        "options": {
+          "description": "Kernel options.\n\nKernel options for modules can specify how these modules interact with the system, and adjust performance or security settings specific to each module.",
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
           }
         }
       },
@@ -604,6 +687,21 @@
           "type": "string",
           "nullable": true
         },
+        "kernelCommandLine": {
+          "description": "Options for configuring the kernel.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/KernelCommandLine"
+            }
+          ]
+        },
+        "modules": {
+          "description": "Kernel modules to configure.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Module"
+          }
+        },
         "network": {
           "description": "Netplan network configuration for the runtime OS.\n\nSee [Netplan YAML Configuration](https://netplan.readthedocs.io/en/stable/netplan-yaml/) for more information.",
           "type": "object",
@@ -618,6 +716,14 @@
           "allOf": [
             {
               "$ref": "#/definitions/Selinux"
+            }
+          ]
+        },
+        "services": {
+          "description": "Options for configuring systemd services.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Services"
             }
           ]
         },
@@ -1030,6 +1136,28 @@
           ]
         }
       ]
+    },
+    "Services": {
+      "type": "object",
+      "properties": {
+        "disable": {
+          "description": "List of services to disable.\n\nThe services listed here will *not* be set to automatically run on OS boot.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enable": {
+          "description": "List of services to enable.\n\nThe services listed here will be set to automatically run on OS boot.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "ServicingTypeSelection": {
       "description": "The selection of servicing types performed by Trident that can be used for any user-facing API. Currently, it is used to allow the user to select when to run a custom Script.",

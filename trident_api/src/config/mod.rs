@@ -7,7 +7,7 @@ pub use host::{
     image::{CosiFile, OsImage},
     os::{
         additional_files::AdditionalFile,
-        modules::Module,
+        modules::{LoadMode, Module},
         services::Services,
         users::{Password, SshMode, User},
         KernelCommandLine, ManagementOs, Os, Selinux, SelinuxMode,

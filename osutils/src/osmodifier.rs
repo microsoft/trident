@@ -1,15 +1,65 @@
-use std::{path::Path, process::Command};
+use std::{io::Write, path::Path, process::Command};
 
 use anyhow::{Context, Error};
+use log::{debug, trace, warn};
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 
-use trident_api::config::Selinux;
+use trident_api::config::{KernelCommandLine, Module, Selinux, Services};
 
-use crate::exe::RunAndCheck;
+use crate::{exe::RunAndCheck, osmodifier};
 
-#[derive(Serialize, Deserialize)]
-pub struct MICHostname {
-    pub hostname: String,
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OSModifierConfig {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub users: Vec<MICUser>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<Module>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub services: Option<Services>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kernel_command_line: Option<KernelCommandLine>,
+}
+
+impl OSModifierConfig {
+    pub fn call_os_modifier(&self, os_modifier_path: &Path) -> Result<(), Error> {
+        let os_modifier_config_yaml =
+            serde_yaml::to_string(&self).context("Failed to serialize OS modifier config")?;
+
+        if os_modifier_config_yaml.is_empty() {
+            // Should never get here, but in case the OS modifier config is empty, return early
+            // without calling binary
+            warn!("OS modifier config is empty. OS modifier will not be called.");
+            return Ok(());
+        }
+
+        debug!("Calling OS modifier");
+        trace!(
+            "Calling OS modifier with the following config:\n{}",
+            os_modifier_config_yaml
+        );
+        let mut config_file = NamedTempFile::new().context("Failed to create a temporary file")?;
+        config_file
+            .write_all(os_modifier_config_yaml.as_bytes())
+            .and_then(|_| config_file.flush())
+            .context("Failed to write OS modifier config to temporary file and flush")?;
+        osmodifier::run(os_modifier_path, config_file.path())
+            .context("Failed to run OS modifier")?;
+        Ok(())
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MICServices {
+    pub services: Services,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -57,12 +107,6 @@ pub struct MICUser {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub home_directory: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MICUsers {
-    pub users: Vec<MICUser>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

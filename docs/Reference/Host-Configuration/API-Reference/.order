@@ -13,7 +13,10 @@ FileSystemType
 Image
 ImageFormat
 ImageSha256
+KernelCommandLine
+LoadMode
 ManagementOs
+Module
 MountPoint
 Os
 Partition
@@ -27,6 +30,7 @@ Script
 Scripts
 Selinux
 SelinuxMode
+Services
 ServicingTypeSelection
 SoftwareRaidArray
 SshMode

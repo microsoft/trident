@@ -33,6 +33,30 @@ Hostname of the system.
 | -------------- | -------- |
 | Type           | `string` |
 
+### `kernelCommandLine` (optional)
+
+Options for configuring the kernel.
+
+| Characteristic | Value                                       |
+| -------------- | ------------------------------------------- |
+| Type           | `KernelCommandLine`                         |
+| Link           | [KernelCommandLine](./KernelCommandLine.md) |
+
+### `modules` (optional)
+
+Kernel modules to configure.
+
+| Characteristic | Value   |
+| -------------- | ------- |
+| Type           | `array` |
+
+- Items of the array must have the type:
+
+   | Characteristic | Value                 |
+   | -------------- | --------------------- |
+   | Type           | `Module`              |
+   | Link           | [Module](./Module.md) |
+
 ### `network` (optional)
 
 Netplan network configuration for the runtime OS.
@@ -55,6 +79,15 @@ Note: SELinux cannot be used in conjunction with vfat or NTFS filesystems. When 
 | Type           | `Selinux`               |
 | Default        | `{"mode":null}`         |
 | Link           | [Selinux](./Selinux.md) |
+
+### `services` (optional)
+
+Options for configuring systemd services.
+
+| Characteristic | Value                     |
+| -------------- | ------------------------- |
+| Type           | `Services`                |
+| Link           | [Services](./Services.md) |
 
 ### `users` (optional)
 

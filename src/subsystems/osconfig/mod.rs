@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use anyhow::Context;
 use log::{debug, error, info, warn};
 
-use osutils::path;
+use osutils::{osmodifier::OSModifierConfig, path};
 use trident_api::{
     config::{HostConfiguration, ManagementOs, Os, SshMode},
     error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
@@ -15,19 +15,23 @@ use crate::{
     OS_MODIFIER_BINARY_PATH,
 };
 
-mod hostname;
 mod users;
 
 /// Path to the machine-id file, as expected by SystemD.
 const MACHINE_ID_PATH: &str = "/etc/machine-id";
 
 /// Returns whether the given OS configuration requires the os-modifier binary to be present.
-fn requires_os_modifier_os(os_config: &Os) -> bool {
-    !os_config.users.is_empty() || os_config.hostname.is_some()
+fn os_config_requires_os_modifier(os_config: &Os) -> bool {
+    !os_config.users.is_empty()
+        || os_config.hostname.is_some()
+        || !os_config.modules.is_empty()
+        || !os_config.services.enable.is_empty()
+        || !os_config.services.disable.is_empty()
+        || !os_config.kernel_command_line.extra_command_line.is_empty()
 }
 
 /// Returns whether the given MOS configuration requires the os-modifier binary to be present.
-fn requires_os_modifier_mos(mos_config: &ManagementOs) -> bool {
+fn mos_config_requires_os_modifier(mos_config: &ManagementOs) -> bool {
     !mos_config.users.is_empty()
 }
 
@@ -44,7 +48,8 @@ impl Subsystem for OsConfigSubsystem {
         host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
-        if requires_os_modifier_os(&host_config.os) && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
+        if os_config_requires_os_modifier(&host_config.os)
+            && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
         {
             return Err(TridentError::new(
                 ExecutionEnvironmentMisconfigurationError::FindOSModifierBinary {
@@ -87,19 +92,62 @@ impl Subsystem for OsConfigSubsystem {
             return Ok(());
         }
 
+        if !os_config_requires_os_modifier(&ctx.spec.os) {
+            debug!(
+                "Skipping step 'Configure' for subsystem '{}' as OS modifier is not required",
+                self.name()
+            );
+            return Ok(());
+        }
+
+        let mut os_modifier_config = OSModifierConfig::default();
+
+        if !ctx.spec.os.users.is_empty() {
+            debug!("Setting up users");
+            os_modifier_config.users =
+                users::set_up_users(&ctx.spec.os.users).structured(ServicingError::SetUpUsers)?;
+        }
+
+        if ctx.spec.os.hostname.is_some() {
+            debug!("Setting up hostname");
+            os_modifier_config.hostname = ctx.spec.os.hostname.clone();
+        }
+
+        if !ctx.spec.os.modules.is_empty() {
+            debug!("Setting up kernel modules");
+            os_modifier_config.modules = ctx.spec.os.modules.to_vec();
+        }
+
+        if !ctx.spec.os.services.enable.is_empty() || !ctx.spec.os.services.disable.is_empty() {
+            debug!("Setting up services");
+            os_modifier_config.services = Some(ctx.spec.os.services.clone());
+        }
+
+        if !ctx
+            .spec
+            .os
+            .kernel_command_line
+            .extra_command_line
+            .is_empty()
+        {
+            debug!(
+                "Setting up kernel command line: [{}]",
+                ctx.spec
+                    .os
+                    .kernel_command_line
+                    .extra_command_line
+                    .join(", ")
+            );
+            os_modifier_config.kernel_command_line = Some(ctx.spec.os.kernel_command_line.clone());
+        }
+
         // Get the path to the os-modifier binary. We've already validated that
         // it exists when required in 'validate_host_config'.
         let os_modifier_path = path::join_relative(exec_root, OS_MODIFIER_BINARY_PATH);
 
-        if !ctx.spec.os.users.is_empty() {
-            users::set_up_users(&ctx.spec.os.users, &os_modifier_path)
-                .structured(ServicingError::SetUpUsers)?;
-        }
-
-        if let Some(ref hostname) = ctx.spec.os.hostname {
-            hostname::set_up_hostname(hostname, &os_modifier_path)
-                .structured(ServicingError::SetUpHostname)?;
-        }
+        os_modifier_config
+            .call_os_modifier(&os_modifier_path)
+            .structured(ServicingError::RunOsModifier)?;
 
         Ok(())
     }
@@ -127,7 +175,7 @@ impl Subsystem for MosConfigSubsystem {
         }
 
         // If the os-modifier binary is required but not present, return an error.
-        if requires_os_modifier_mos(&host_config.management_os)
+        if mos_config_requires_os_modifier(&host_config.management_os)
             && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
         {
             return Err(TridentError::new(
@@ -157,8 +205,14 @@ impl Subsystem for MosConfigSubsystem {
 
         if !ctx.spec.management_os.users.is_empty() {
             info!("Setting up users for management OS");
-            users::set_up_users(&ctx.spec.management_os.users, os_modifier_path)
-                .structured(ServicingError::SetUpUsers)?;
+            let os_modifier_config = OSModifierConfig {
+                users: users::set_up_users(&ctx.spec.management_os.users)
+                    .structured(ServicingError::SetUpUsers)?,
+                ..Default::default()
+            };
+            os_modifier_config
+                .call_os_modifier(os_modifier_path)
+                .structured(ServicingError::RunOsModifier)?;
 
             // If the config enables SSH for any MOS user, then we changed the
             // SSHD config, meaning we need to restart SSHD.
@@ -189,8 +243,8 @@ mod tests {
     use trident_api::config::{KernelCommandLine, Module, Password, Services, User};
 
     #[test]
-    fn test_requires_os_modifier_os() {
-        use super::requires_os_modifier_os;
+    fn test_os_config_requires_os_modifier() {
+        use super::os_config_requires_os_modifier;
         use trident_api::config::{Os, Selinux};
 
         // Manually create an empty Os struct. This is the same as
@@ -205,43 +259,43 @@ mod tests {
             ..Default::default()
         };
         let mut os = mk_os();
-        assert!(!requires_os_modifier_os(&os));
+        assert!(!os_config_requires_os_modifier(&os));
 
         os.users.push(User {
             name: "test".to_string(),
             password: Password::Locked,
             ..Default::default()
         });
-        assert!(requires_os_modifier_os(&os));
+        assert!(os_config_requires_os_modifier(&os));
 
         os = mk_os();
         os.hostname = Some("test".to_string());
-        assert!(requires_os_modifier_os(&os));
+        assert!(os_config_requires_os_modifier(&os));
 
         os = mk_os();
         os.modules.push(Module {
             name: "test".to_string(),
             ..Default::default()
         });
-        assert!(!requires_os_modifier_os(&os));
+        assert!(os_config_requires_os_modifier(&os));
 
         os = mk_os();
         os.services = Services {
             enable: vec!["enabled-test".to_string()],
             disable: vec!["disabled-test".to_string()],
         };
-        assert!(!requires_os_modifier_os(&os));
+        assert!(os_config_requires_os_modifier(&os));
 
         os = mk_os();
         os.kernel_command_line = KernelCommandLine {
             extra_command_line: vec!["test".to_string()],
         };
-        assert!(!requires_os_modifier_os(&os));
+        assert!(os_config_requires_os_modifier(&os));
     }
 
     #[test]
-    fn test_requires_os_modifier_mos() {
-        use super::requires_os_modifier_mos;
+    fn test_mos_config_requires_os_modifier() {
+        use super::mos_config_requires_os_modifier;
         use trident_api::config::ManagementOs;
 
         // Manually create an empty ManagementOs struct. This is the same as
@@ -251,13 +305,13 @@ mod tests {
             users: vec![],
             network: None,
         };
-        assert!(!requires_os_modifier_mos(&mos));
+        assert!(!mos_config_requires_os_modifier(&mos));
 
         mos.users.push(User {
             name: "test".to_string(),
             password: Password::Locked,
             ..Default::default()
         });
-        assert!(requires_os_modifier_mos(&mos));
+        assert!(mos_config_requires_os_modifier(&mos));
     }
 }

@@ -58,17 +58,14 @@ pub struct Os {
 
     /// Kernel modules to configure.
     #[serde(default, skip_serializing_if = "is_default")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub modules: Vec<Module>,
 
     /// Options for configuring systemd services.
     #[serde(default, skip_serializing_if = "is_default")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub services: Services,
 
     /// Options for configuring the kernel.
     #[serde(default, skip_serializing_if = "is_default")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
     pub kernel_command_line: KernelCommandLine,
 }
 
