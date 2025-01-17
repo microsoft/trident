@@ -1,16 +1,15 @@
 use std::path::Path;
 
-use anyhow::{Context, Error};
 use log::{debug, info};
 
 use trident_api::{
     config::HostConfiguration,
-    error::{InvalidInputError, ReportError, TridentError, TridentResultExt},
+    error::{InternalError, InvalidInputError, ReportError, TridentError, TridentResultExt},
 };
 
 #[cfg(feature = "setsail")]
 #[allow(unused)]
-pub fn validate_setsail(conents: impl AsRef<str>) -> Result<(), Error> {
+pub fn validate_setsail(conents: impl AsRef<str>) -> Result<(), anyhow::Error> {
     use anyhow::bail;
     use log::error;
     use setsail::KsTranslator;
@@ -36,8 +35,8 @@ pub fn validate_setsail(conents: impl AsRef<str>) -> Result<(), Error> {
 
 #[cfg(feature = "setsail")]
 #[allow(unused)]
-pub fn validate_setsail_file(path: impl AsRef<Path>) -> Result<(), Error> {
-    use anyhow::bail;
+pub fn validate_setsail_file(path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
+    use anyhow::{bail, Context};
     use log::error;
     use setsail::KsTranslator;
 
@@ -90,28 +89,32 @@ pub(crate) fn parse_host_config(
     parsed
 }
 
-pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), Error> {
+pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), TridentError> {
     info!(
         "Validating Host Configuration file: {}",
         path.as_ref().display()
     );
 
-    let contents = std::fs::read_to_string(path.as_ref())
-        .with_context(|| format!("Failed to read file: {}", path.as_ref().display()))?;
+    let contents =
+        std::fs::read_to_string(path.as_ref()).structured(InvalidInputError::ReadInputFile {
+            path: path.as_ref().display().to_string(),
+        })?;
 
     let parsed = parse_host_config(&contents, path.as_ref())
-        .unstructured("Failed to parse Host Configuration")?;
+        .message("Failed to parse Host Configuration")?;
 
     validate_host_config(parsed)
 }
 
-fn validate_host_config(hc: HostConfiguration) -> Result<(), Error> {
-    hc.validate().context("Host Configuration is invalid")?;
+fn validate_host_config(hc: HostConfiguration) -> Result<(), TridentError> {
+    hc.validate()
+        .map_err(Into::into)
+        .message("Host Configuration is invalid")?;
 
     info!("Host Configuration is valid");
     debug!(
         "Parsed contents:\n{}",
-        serde_yaml::to_string(&hc).context("Failed to serialize Host Configuration file.")?
+        serde_yaml::to_string(&hc).structured(InternalError::SerializeHostStatus)?
     );
     Ok(())
 }

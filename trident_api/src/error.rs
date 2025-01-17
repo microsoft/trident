@@ -95,6 +95,9 @@ pub enum InternalError {
     #[error("Internal error: {0}")]
     Internal(&'static str),
 
+    #[error("Encountered a panic: {0}")]
+    Panic(String),
+
     #[error("Failed to execute container-only logic as host is not running in a container")]
     RunInContainer,
 
@@ -176,6 +179,9 @@ pub enum InvalidInputError {
     #[error("Failed to parse Host Configuration file from '{path}'")]
     ParseHostConfigurationFile { path: String },
 
+    #[error("Failed to read input file '{path}'")]
+    ReadInputFile { path: String },
+
     #[error(
         "SELinux is enabled in the Host Configuration, but SELinux could not be found on the image"
     )]
@@ -189,6 +195,9 @@ pub enum InvalidInputError {
         mount_point: String,
         fs_type: String,
     },
+
+    #[error("Failed to write to output file '{path}'")]
+    WriteOutputFile { path: String },
 }
 
 /// Identifies errors that occur during servicing and require further user investigation, to

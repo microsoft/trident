@@ -3,7 +3,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Error};
 use engine::{bootentries, EngineContext};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
@@ -506,9 +505,10 @@ impl Trident {
         datastore: &mut DataStore,
         mut cmd: HostUpdateCommand,
     ) -> Result<(), TridentError> {
-        cmd.host_config.validate().map_err(|e| {
-            TridentError::new(InvalidInputError::InvalidHostConfigurationStatic { inner: e })
-        })?;
+        cmd.host_config
+            .validate()
+            .map_err(Into::into)
+            .message("Invalid Host Configuration provided")?;
 
         // Populate internal fields in Host Configuration.
         // This is needed because the external API and the internal logic use different fields.
@@ -608,24 +608,25 @@ impl Trident {
         datastore_path: &Path,
         output_path: &Option<PathBuf>,
         config_only: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<(), TridentError> {
         let host_status = DataStore::open(datastore_path)
-            .unstructured("Failed to open datastore")?
+            .message("Failed to open datastore")?
             .host_status()
             .clone();
 
         let yaml = if config_only {
             serde_yaml::to_string(&host_status.spec)
-                .context("Failed to serialize Host Configuration")?
+                .structured(InternalError::SerializeHostStatus)?
         } else {
-            serde_yaml::to_string(&host_status).context("Failed to serialize Host Status")?
+            serde_yaml::to_string(&host_status).structured(InternalError::SerializeHostStatus)?
         };
 
         match output_path {
             Some(path) => {
                 info!("Writing Host Status to {:?}", &path);
-                fs::write(path, yaml)
-                    .context(format!("Failed to write Host Status to {:?}", path))?;
+                fs::write(path, yaml).structured(InvalidInputError::WriteOutputFile {
+                    path: path.display().to_string(),
+                })?
             }
             None => {
                 println!("{yaml}");

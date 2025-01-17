@@ -2,7 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::constants::VAR_TMP_PATH;
+use crate::{
+    constants::VAR_TMP_PATH,
+    error::{InvalidInputError, TridentError},
+};
 
 use super::storage::{
     blkdev_graph::error::BlockDeviceGraphBuildError, storage_graph::error::StorageGraphBuildError,
@@ -120,6 +123,12 @@ pub enum HostConfigurationStaticValidationError {
         device_name: String,
         mount_point_path: String,
     },
+}
+
+impl From<HostConfigurationStaticValidationError> for TridentError {
+    fn from(inner: HostConfigurationStaticValidationError) -> Self {
+        TridentError::new(InvalidInputError::InvalidHostConfigurationStatic { inner })
+    }
 }
 
 /// Identifies errors detected during dynamic validation of the host configuration, i.e. errors

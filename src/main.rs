@@ -5,18 +5,18 @@ use std::{
     process::ExitCode,
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
 use clap::{Parser, Subcommand};
 use log::{error, info, warn, LevelFilter};
 
 use trident::{
-    offline_init, BackgroundLog, Logstream, MultiLogger, TraceStream, Trident,
+    offline_init, validation, BackgroundLog, Logstream, MultiLogger, TraceStream, Trident,
     TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::{HostConfigurationSource, Operation, Operations},
     constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
-    error::{TridentError, TridentResultExt},
+    error::{InternalError, TridentError, TridentResultExt},
 };
 
 #[derive(Parser, Debug)]
@@ -138,7 +138,7 @@ struct AgentConfig {
     datastore: PathBuf,
 }
 
-fn load_agent_config() -> Result<AgentConfig, Error> {
+fn load_agent_config() -> Result<AgentConfig, TridentError> {
     let mut config = AgentConfig {
         datastore: TRIDENT_DATASTORE_PATH_DEFAULT.into(),
     };
@@ -158,14 +158,14 @@ fn run_trident(
     mut logstream: Logstream,
     mut tracestream: TraceStream,
     args: &Cli,
-) -> Result<(), Error> {
+) -> Result<(), TridentError> {
     // Log version ASAP
     info!("Trident version: {}", trident::TRIDENT_VERSION);
 
     // Catch exit fast commands
     match &args.command {
         Commands::Validate { config } => {
-            return trident::validation::validate_host_config_file(config)
+            return validation::validate_host_config_file(config);
         }
 
         #[cfg(feature = "pytest-generator")]
@@ -175,8 +175,7 @@ fn run_trident(
         }
 
         Commands::OfflineInitialize { hs_path } => {
-            return offline_init::execute(hs_path)
-                .unstructured("Failed to offline initialize Trident datastore")
+            return offline_init::execute(hs_path);
         }
 
         Commands::GetHostStatus {
@@ -188,7 +187,7 @@ fn run_trident(
                 status,
                 *config_only,
             )
-            .context("Failed to retrieve Host Status");
+            .message("Failed to retrieve Host Status");
         }
 
         Commands::StartNetwork { config } => {
@@ -197,8 +196,7 @@ fn run_trident(
             logstream.disable();
             tracestream.disable();
 
-            return Trident::start_network(HostConfigurationSource::File(config.clone()))
-                .unstructured("Failed to start network");
+            return Trident::start_network(HostConfigurationSource::File(config.clone()));
         }
 
         _ => (),
@@ -228,7 +226,7 @@ fn run_trident(
                     logstream,
                     tracestream,
                 )
-                .unstructured("Failed to initialize trident")?;
+                .message("Failed to initialize Trident")?;
 
                 // After initialization, create a trace event for the purpose of
                 // measuring Trident reboot times
@@ -257,9 +255,9 @@ fn run_trident(
                 if status.is_some() {
                     if let Err(e) =
                         Trident::retrieve_host_status(&agent_config.datastore, status, false)
-                            .context("Failed to retrieve Host Status")
+                            .message("Failed to retrieve Host Status")
                     {
-                        error!("{e}");
+                        error!("{e:?}");
                     }
                 }
 
@@ -276,7 +274,7 @@ fn run_trident(
                     }
                 }
 
-                res.unstructured(format!("Failed to execute '{}' command", args.command))?;
+                res.message(format!("Failed to execute '{}' command", args.command))?;
             }
             _ => unreachable!(),
         }
@@ -285,7 +283,7 @@ fn run_trident(
     });
 
     match res {
-        Err(e) => bail!("Trident panicked: {e:?}"),
+        Err(e) => Err(TridentError::new(InternalError::Panic(format!("{e:?}")))),
         Ok(r) => r,
     }
 }
