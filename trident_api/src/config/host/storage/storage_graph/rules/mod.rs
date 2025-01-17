@@ -196,6 +196,7 @@ impl BlkDevReferrerKind {
                     | BlkDevKindFlag::RaidArray
                     | BlkDevKindFlag::EncryptedVolume
                     | BlkDevKindFlag::ABVolume
+                    | BlkDevKindFlag::VerityDevice
             }
             Self::FileSystemEsp => {
                 BlkDevKindFlag::Partition

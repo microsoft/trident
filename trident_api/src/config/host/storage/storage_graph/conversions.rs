@@ -2,7 +2,7 @@
 
 use crate::config::{
     AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource, Partition,
-    SoftwareRaidArray, VerityFileSystem,
+    SoftwareRaidArray, VerityDevice, VerityFileSystem,
 };
 
 use super::{
@@ -80,6 +80,16 @@ impl From<&EncryptedVolume> for StorageGraphNode {
     }
 }
 
+/// Get a StorageGraphNode from a VerityDevice reference.
+impl From<&VerityDevice> for StorageGraphNode {
+    fn from(verity: &VerityDevice) -> Self {
+        Self::new_block_device(
+            verity.id.clone(),
+            HostConfigBlockDevice::VerityDevice(verity.clone()),
+        )
+    }
+}
+
 /// Get a StorageGraphNode from a Filesystem reference.
 impl From<&FileSystem> for StorageGraphNode {
     fn from(fs: &FileSystem) -> Self {
@@ -87,7 +97,7 @@ impl From<&FileSystem> for StorageGraphNode {
     }
 }
 
-/// Get a StorageGraphNode from a verity Filesystem reference.
+/// Get a StorageGraphNode from a VerityFileSystem reference.
 impl From<&VerityFileSystem> for StorageGraphNode {
     fn from(vfs: &VerityFileSystem) -> Self {
         Self::new_verity_filesystem(vfs.clone())

@@ -3,7 +3,7 @@ use std::{
     path::Path,
 };
 
-use log::{debug, error};
+use log::{debug, error, warn};
 
 use blkdev_graph::types::BlkDevNode;
 use serde::{Deserialize, Serialize};
@@ -47,10 +47,15 @@ use self::{
     partitions::Partition,
     raid::Raid,
     storage_graph::{
-        builder::StorageGraphBuilder, error::StorageGraphBuildError, graph::StorageGraph,
+        builder::StorageGraphBuilder,
+        error::StorageGraphBuildError,
+        graph::{StorageGraph, VolumeStatus as VolumeStatusGraph2},
     },
     verity::VerityDevice,
 };
+
+type VolumePresenceValidator<'a> =
+    Box<dyn Fn(&Path) -> Result<(), HostConfigurationStaticValidationError> + 'a>;
 
 /// Storage configuration describes the disks of the host that will be used to
 /// store the OS and data. Not all disks of the host need to be captured inside
@@ -102,6 +107,10 @@ pub struct Storage {
 }
 
 impl Storage {
+    /// Returns a reference to the partition with the given ID, if it exists.
+    ///
+    /// This function searches through all disks and their partitions to find
+    /// the partition with the given ID.
     pub fn get_partition(&self, id: &BlockDeviceId) -> Option<&Partition> {
         self.disks
             .iter()
@@ -162,6 +171,11 @@ impl Storage {
             for volume in &encryption.volumes {
                 builder.add_node(volume.into());
             }
+        }
+
+        // Add verity devices
+        for verity in &self.verity {
+            builder.add_node(verity.into());
         }
 
         for fs in &self.filesystems {
@@ -242,29 +256,62 @@ impl Storage {
             encryption.validate()?;
         }
 
+        // ⚠️ NOTE: ⚠️
+        //
+        // The following is a bit messy, but will be cleaned up once graphv1 is
+        // deprecated. This setup is meant to allow for use of both graphv1 and
+        // graphv2 for storage graph building in the same function, depending on
+        // whether the new Verity API is in use. This is because the new Verity
+        // API requires graphv2 for validation, but we still want to validate
+        // the storage graph using graphv1 if the new Verity API is not in use.
+
         // Check that the new and old APIs are not used at the same time!
         if !self.verity_filesystems.is_empty() && !self.internal_verity.is_empty() {
             return Err(HostConfigurationStaticValidationError::VerityApiMixed);
         }
 
-        // Build the graph
-        let graph = self.build_graph()?;
+        // If we are using the new verity API, we NEED to validate with graphv2.
+        let validate_with_graph_v2 = !self.verity.is_empty();
 
-        debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
-        let res = self.build_graph2();
-        if let Err(err) = res {
-            error!(
-                "EXPERIMENTAL GRAPHv2: Failed to build storage graph: {}",
-                err
-            );
-        } else {
+        // Build the graph version that was requested, report on the status of
+        // the other. Also returns the corresponding VolumePresenceValidator
+        // function.
+        let validate_volume_presence: VolumePresenceValidator = if validate_with_graph_v2 {
+            warn!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building because new Verity API is in use!");
+            // Report if graphv1 built successfully, but don't break.
+            if let Err(err) = self.build_graph() {
+                error!("GRAPHv1: Failed to build storage graph: {}", err);
+            } else {
+                debug!("GRAPHv1: Storage graph built successfully.");
+            }
+
+            // Ensure graphv2 was built successfully.
+            let graphv2 = self.build_graph2()?;
             debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
-        }
+
+            Box::new(move |path| validate_volume_presence_graphv2(&graphv2, path))
+        } else {
+            // Ensure graphv1 was built successfully.
+            let graphv1 = self.build_graph()?;
+
+            // Report if graphv2 built successfully, but don't break.
+            debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
+            if let Err(err) = self.build_graph2() {
+                error!(
+                    "EXPERIMENTAL GRAPHv2: Failed to build storage graph: {}",
+                    err
+                );
+            } else {
+                debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
+            }
+
+            Box::new(move |path| validate_volume_presence_graphv1(&graphv1, path))
+        };
 
         // If storage configuration is requested, then
         if *self != Storage::default() {
             // ESP volume must be present, to update Grub configuration
-            Self::validate_volume_presence(&graph, ESP_MOUNT_POINT_PATH)?;
+            validate_volume_presence(Path::new(ESP_MOUNT_POINT_PATH))?;
             // /var/tmp must not be on a read-only volume
             self.validate_writable_mount_points()?;
         }
@@ -277,12 +324,14 @@ impl Storage {
             || *self != Storage::default()
             || !self.verity_filesystems.is_empty()
         {
-            Self::validate_volume_presence(&graph, ROOT_MOUNT_POINT_PATH)?;
+            validate_volume_presence(Path::new(ROOT_MOUNT_POINT_PATH))?;
         }
 
-        // Validate verity configuration
-        // Depends on root mount point validated above
-        self.validate_verity(&graph)?;
+        // Validation of old verity filesystems API
+        self.validate_verity_filesystems(&validate_volume_presence)?;
+
+        // Validation of new verity devices API
+        self.validate_verity_devices(&validate_volume_presence)?;
 
         Ok(())
     }
@@ -324,29 +373,6 @@ impl Storage {
             })
     }
 
-    /// Validate that a volume is present and backed by an image or an adopted
-    /// filesystem.
-    fn validate_volume_presence(
-        graph: &BlockDeviceGraph,
-        path: impl AsRef<Path>,
-    ) -> Result<(), HostConfigurationStaticValidationError> {
-        match graph.get_volume_status(path.as_ref()) {
-            VolumeStatus::PresentAndBackedByImage | VolumeStatus::PresentAndBackedByAdoptedFs => {
-                Ok(())
-            }
-            VolumeStatus::PresentButNotBackedByImage => Err(
-                HostConfigurationStaticValidationError::MountPointNotBackedByImage {
-                    mount_point_path: path.as_ref().to_string_lossy().to_string(),
-                },
-            ),
-            VolumeStatus::NotPresent => Err(
-                HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
-                    mount_point_path: path.as_ref().to_string_lossy().to_string(),
-                },
-            ),
-        }
-    }
-
     /// Checks that mountpoints that are expected to be writable are mounted as
     /// writable. Currently only check /var/tmp.
     fn validate_writable_mount_points(&self) -> Result<(), HostConfigurationStaticValidationError> {
@@ -375,11 +401,151 @@ impl Storage {
         Ok(())
     }
 
-    /// Validates the verity configuration. Assumes the verity list of devices
-    /// is not empty.
-    fn validate_verity(
+    /// Validates the verity device configuration.
+    fn validate_verity_devices(
         &self,
-        graph: &BlockDeviceGraph,
+        validate_volume_presence: impl Fn(&Path) -> Result<(), HostConfigurationStaticValidationError>,
+    ) -> Result<(), HostConfigurationStaticValidationError> {
+        // Return early if no verity devices are present
+        if self.verity.is_empty() {
+            return Ok(());
+        }
+
+        // Verity is only supported for root volume, verify the input is not
+        // asking for something else
+        if self.verity.len() > 1 {
+            return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
+        }
+
+        // Get the root verity device
+        let verity_device = &self.verity[0];
+
+        // Get the root mount point
+        let root_mount_point = self.path_to_mount_point_info(ROOT_MOUNT_POINT_PATH).ok_or(
+            HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
+                mount_point_path: ROOT_MOUNT_POINT_PATH.into(),
+            },
+        )?;
+
+        // Ensure the verity device is the backing for the root mount point
+        if Some(&verity_device.id) != root_mount_point.device_id {
+            return Err(HostConfigurationStaticValidationError::UnsupportedVerityDevices);
+        }
+
+        // If root verity is required, we also require dedicated /boot
+        // partition, as we otherwise cannot modify grub configuration and
+        // kernel command line.
+        validate_volume_presence(Path::new(BOOT_MOUNT_POINT_PATH))?;
+
+        // For root verity, we also require an overlay for /etc, so that we can
+        // inject configuration generated by Trident. This overlay needs to be
+        // stored on a separate partition, as the root partition is read-only.
+        // For the initial release, we are not exposing configuration of this
+        // overlay backing partition to user, but instead, we will expect
+        // /var/lib/trident-overlay to be present and use it as the backing
+        // partition for the overlay. /var/lib/trident-overlay needs to be
+        // backed by an A/B update volume pair and not reside on a read-only
+        // volume.
+        let overlay_support_mount_point =
+            self.path_to_mount_point_info(TRIDENT_OVERLAY_PATH).ok_or(
+                HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
+                    mount_point_path: TRIDENT_OVERLAY_PATH.into(),
+                },
+            )?;
+
+        // Make sure the overlay is backed by a block device
+        let overlay_block_device_id = overlay_support_mount_point.device_id.ok_or(
+            HostConfigurationStaticValidationError::MountPointNotBackedByBlockDevice {
+                mount_point_path: TRIDENT_OVERLAY_PATH.into(),
+            },
+        )?;
+
+        // If some ab_update is present, the overlay must be also on an A/B volume.
+        if let Some(ab_update) = &self.ab_update {
+            if !ab_update
+                .volume_pairs
+                .iter()
+                .any(|p| p.id == *overlay_block_device_id)
+            {
+                return Err(
+                    HostConfigurationStaticValidationError::MountPointNotBackedByAbUpdateVolumePair {
+                        mount_point_path: TRIDENT_OVERLAY_PATH.into(),
+                    },
+                );
+            }
+        }
+
+        // Ensure the overlay is not on a read-only volume
+        if overlay_support_mount_point
+            .mount_point
+            .options
+            .contains(MOUNT_OPTION_READ_ONLY)
+        {
+            return Err(
+                HostConfigurationStaticValidationError::OverlayOnReadOnlyVolume {
+                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
+                    mount_point_path: overlay_support_mount_point
+                        .mount_point
+                        .path
+                        .to_string_lossy()
+                        .to_string(),
+                },
+            );
+        }
+
+        // Ensure the overlay is not on a verity protected volume
+        if self
+            .verity
+            .iter()
+            .any(|v| v.data_device_id.as_str() == overlay_block_device_id)
+        {
+            return Err(
+                HostConfigurationStaticValidationError::OverlayOnVerityProtectedVolume {
+                    overlay_path: TRIDENT_OVERLAY_PATH.into(),
+                    mount_point_path: overlay_support_mount_point
+                        .mount_point
+                        .path
+                        .to_string_lossy()
+                        .to_string(),
+                },
+            );
+        }
+
+        // Ensure the root verity fs name is set to 'root', as that is what the dracut verity
+        // module expects.
+        if verity_device.name != "root" {
+            return Err(
+                HostConfigurationStaticValidationError::RootVerityDeviceNameInvalid {
+                    device_name: verity_device.name.clone(),
+                },
+            );
+        }
+
+        // Ensure the root verity device is mounted read-only at /.
+        if !root_mount_point
+            .mount_point
+            .options
+            .contains(MOUNT_OPTION_READ_ONLY)
+        {
+            return Err(
+                HostConfigurationStaticValidationError::VerityDeviceMountedReadWrite {
+                    device_name: verity_device.name.clone(),
+                    mount_point_path: root_mount_point
+                        .mount_point
+                        .path
+                        .to_string_lossy()
+                        .to_string(),
+                },
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Validates the verity filesystem configuration.
+    fn validate_verity_filesystems(
+        &self,
+        validate_volume_presence: impl Fn(&Path) -> Result<(), HostConfigurationStaticValidationError>,
     ) -> Result<(), HostConfigurationStaticValidationError> {
         // Return early if no verity filesystems are present
         if self.verity_filesystems.is_empty() {
@@ -403,7 +569,7 @@ impl Storage {
         // If root verity is required, we also require dedicated /boot
         // partition, as we otherwise cannot modify grub configuration and
         // kernel command line.
-        Self::validate_volume_presence(graph, BOOT_MOUNT_POINT_PATH)?;
+        validate_volume_presence(Path::new(BOOT_MOUNT_POINT_PATH))?;
 
         // For root verity, we also require an overlay for /etc, so that we can
         // inject configuration generated by Trident. This overlay needs to be
@@ -705,6 +871,51 @@ impl Storage {
         self.verity_filesystems
             .iter()
             .any(|vfs| vfs.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH))
+    }
+}
+
+/// Validate that a volume is present and backed by an image or an adopted
+/// filesystem.
+///
+/// NOTE: Will be replaced by graphv2.
+fn validate_volume_presence_graphv1(
+    graph: &BlockDeviceGraph,
+    path: impl AsRef<Path>,
+) -> Result<(), HostConfigurationStaticValidationError> {
+    match graph.get_volume_status(path.as_ref()) {
+        VolumeStatus::PresentAndBackedByImage | VolumeStatus::PresentAndBackedByAdoptedFs => Ok(()),
+        VolumeStatus::PresentButNotBackedByImage => Err(
+            HostConfigurationStaticValidationError::MountPointNotBackedByImage {
+                mount_point_path: path.as_ref().to_string_lossy().to_string(),
+            },
+        ),
+        VolumeStatus::NotPresent => Err(
+            HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
+                mount_point_path: path.as_ref().to_string_lossy().to_string(),
+            },
+        ),
+    }
+}
+
+/// Validate that a volume is present and backed by an image or an adopted
+/// filesystem.
+fn validate_volume_presence_graphv2(
+    graph: &StorageGraph,
+    path: impl AsRef<Path>,
+) -> Result<(), HostConfigurationStaticValidationError> {
+    match graph.get_volume_status(path.as_ref()) {
+        VolumeStatusGraph2::PresentAndBackedByImage
+        | VolumeStatusGraph2::PresentAndBackedByAdoptedFs => Ok(()),
+        VolumeStatusGraph2::PresentButNotBackedByImage => Err(
+            HostConfigurationStaticValidationError::MountPointNotBackedByImage {
+                mount_point_path: path.as_ref().to_string_lossy().to_string(),
+            },
+        ),
+        VolumeStatusGraph2::NotPresent => Err(
+            HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
+                mount_point_path: path.as_ref().to_string_lossy().to_string(),
+            },
+        ),
     }
 }
 
