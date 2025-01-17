@@ -214,20 +214,36 @@ func (data *ImageBuildData) addToCosi(tw *tar.Writer) error {
 	}
 	defer imageFile.Close()
 
-	err = tw.WriteHeader(&tar.Header{
+	addFileToCosi(tw, data.Metadata.Image.Path, int64(data.Metadata.Image.CompressedSize), imageFile)
+
+	if data.VeritySource != nil && data.Metadata.Verity != nil {
+		log.WithField("image", *data.VeritySource).Info("Adding verity file to COSI...")
+		verityFile, err := os.Open(*data.VeritySource)
+		if err != nil {
+			return fmt.Errorf("failed to open verity file: %w", err)
+		}
+		defer verityFile.Close()
+		addFileToCosi(tw, data.Metadata.Verity.Image.Path, int64(data.Metadata.Verity.Image.CompressedSize), verityFile)
+	}
+
+	return nil
+}
+
+func addFileToCosi(tw *tar.Writer, name string, size int64, file *os.File) error {
+	err := tw.WriteHeader(&tar.Header{
 		Typeflag: tar.TypeReg,
-		Name:     data.Metadata.Image.Path,
-		Size:     int64(data.Metadata.Image.CompressedSize),
+		Name:     name,
+		Size:     size,
 		Mode:     0o400,
 		Format:   tar.FormatPAX,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to write tar header: %w", err)
+		return fmt.Errorf("failed to write tar headerfor file '%s': %w", name, err)
 	}
 
-	_, err = io.Copy(tw, imageFile)
+	_, err = io.Copy(tw, file)
 	if err != nil {
-		return fmt.Errorf("failed to write image to COSI: %w", err)
+		return fmt.Errorf("failed to write image '%s' to COSI: %w", name, err)
 	}
 
 	return nil
