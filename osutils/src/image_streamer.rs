@@ -7,6 +7,8 @@ use std::{
 use anyhow::{bail, Context, Error};
 use log::{debug, trace};
 
+use trident_api::primitives::bytes::ByteCount;
+
 use crate::hashing_reader::HashingReader;
 
 pub fn stream_zstd<R>(
@@ -53,9 +55,16 @@ where
         .context("Failed to sync")?;
 
     debug!(
-        "Copied {} bytes to '{}' in {:.2} seconds",
+        "Copied {} [{}] to '{}'{} in {:.2} seconds",
+        ByteCount::from(bytes_copied).to_human_readable_approx(),
         bytes_copied,
         destination_path.display(),
+        // Try to resolve path, only print extra context if it differs.
+        match destination_path.canonicalize() {
+            Ok(real_path) if real_path != destination_path =>
+                format!(" ('{}')", real_path.display()),
+            _ => "".into(),
+        },
         t.elapsed().as_secs_f32()
     );
 

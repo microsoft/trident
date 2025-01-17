@@ -14,6 +14,15 @@ impl ByteCount {
         self.0
     }
 
+    /// Returns an exact human-readable version of the byte count when possible.
+    /// If the byte count is not a multiple of a power of 1024, then the exact
+    /// number of bytes is displayed.
+    ///
+    /// For example, 1024 bytes will be displayed as "1K", but 1025 bytes will
+    /// be displayed as "1025".
+    ///
+    /// This is useful for displaying sizes in a human-readable format, while
+    /// still being precise.
     pub fn to_human_readable(&self) -> String {
         match self.0.trailing_zeros() {
             _ if self.0 == 0 => "0".to_owned(),
@@ -23,6 +32,23 @@ impl ByteCount {
             30..=39 => format!("{}G", self.0 >> 30),
             _ => format!("{}T", self.0 >> 40),
         }
+    }
+
+    /// Returns a human-readable *approximation* of the byte count. This is will
+    /// ALWAYS use the largest suffix possible at the cost of precision.
+    ///
+    /// ONLY use this to give a rough idea of the size, not for precise display.
+    pub fn to_human_readable_approx(&self) -> String {
+        let suffixes = ["B", "K", "M", "G", "T"];
+
+        for threshold in (1..suffixes.len()).rev() {
+            let res = self.0 as f32 / ((1u64 << (threshold * 10)) as f32);
+            if res >= 1f32 {
+                return format!("{:.1}{}", res, suffixes[threshold]);
+            }
+        }
+
+        format!("{}{}", self.0, suffixes[0])
     }
 
     pub fn from_human_readable(mut s: &str) -> Result<Self, ParseIntError> {
@@ -155,6 +181,45 @@ mod schema_impl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_to_human_readable_approx() {
+        // Some values
+        assert_eq!(ByteCount(0).to_human_readable_approx(), "0B");
+        assert_eq!(ByteCount(1).to_human_readable_approx(), "1B");
+        assert_eq!(ByteCount(1023).to_human_readable_approx(), "1023B");
+        assert_eq!(ByteCount(1024).to_human_readable_approx(), "1.0K");
+        assert_eq!(ByteCount(1025).to_human_readable_approx(), "1.0K");
+        assert_eq!(ByteCount(1024 * 1024).to_human_readable_approx(), "1.0M");
+        assert_eq!(
+            ByteCount(1024 * 1024 + 1).to_human_readable_approx(),
+            "1.0M"
+        );
+        assert_eq!(
+            ByteCount(1024 * 1024 + 1024).to_human_readable_approx(),
+            "1.0M"
+        );
+        assert_eq!(
+            ByteCount(1024 * 1024 * 1024).to_human_readable_approx(),
+            "1.0G"
+        );
+        assert_eq!(
+            ByteCount(1024 * 1024 * 1024 + 1).to_human_readable_approx(),
+            "1.0G"
+        );
+        assert_eq!(
+            ByteCount(1024 * 1024 * 1024 * 1024).to_human_readable_approx(),
+            "1.0T"
+        );
+        assert_eq!(
+            ByteCount(1024 * 1024 * 1024 * 1024 + 1).to_human_readable_approx(),
+            "1.0T"
+        );
+        assert_eq!(
+            ByteCount(1024 * 1024 * 1024 * 1024 * 1024).to_human_readable_approx(),
+            "1024.0T"
+        );
+    }
 
     #[test]
     fn test_from_string() {
