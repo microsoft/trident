@@ -25,7 +25,8 @@ storage:
         path: /
 
 os:
-  resetBootLoaderType: hard-reset
+  bootloader:
+    resetType: hard-reset
   hostname: trident-containerhost-mos-testimage
 
   packages:
@@ -65,4 +66,8 @@ iso:
     - source: files/pre-trident-script.sh
       destination: /pre-trident-script.sh
   kernelCommandLine:
-    extraCommandLine: "console=tty0 console=ttyS0 rd.luks=0"
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.luks=0
+      - selinux=0
