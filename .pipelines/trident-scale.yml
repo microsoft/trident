@@ -1,9 +1,4 @@
 parameters:
-  # This parameter is to test against the azl preview. As it currently is being
-  # used, we test against images based on the preview, but Trident is not being
-  # built on the azl preview container. To build Trident on the preview of the
-  # container image we would need to build instead of download (not use "pre" as
-  # stageType in trident-stage).
   - name: baseimgBuildType
     displayName: Base Image build type
     type: string

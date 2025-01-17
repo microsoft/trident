@@ -34,11 +34,14 @@ parameters:
 
 stages:
   # Trident Build/Download
-  - template: stages/download_staged/download-staged.yml
+  - template: stages/trident_rpms/trident-stage.yml
     parameters:
       stageType: ${{ parameters.stageType }}
-      artifactName: trident-binaries
-      feedName: rpms
+      tridentArtifactName: trident-binaries
+      codeCoverage: false
+      baseimgBuildType: ${{ parameters.baseimgBuildType }}
+      previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      forceTridentRebuild: ${{ eq(parameters.baseimgBuildType, 'preview') }}
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
