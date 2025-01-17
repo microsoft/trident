@@ -22,14 +22,14 @@ pub struct EngineContext {
     /// Type of servicing that Trident is executing on the host.
     pub servicing_type: ServicingType,
 
-    /// The path associated with each block device in the Host Configuration.
-    pub block_device_paths: BTreeMap<BlockDeviceId, PathBuf>,
+    /// The path associated with each partition in the Host Configuration.
+    pub partition_paths: BTreeMap<BlockDeviceId, PathBuf>,
 
     /// A/B update status.
     pub ab_active_volume: Option<AbVolumeSelection>,
 
     /// Stores the Disks UUID to ID mapping of the host.
-    pub disks_by_uuid: HashMap<uuid::Uuid, BlockDeviceId>,
+    pub disk_uuids: HashMap<BlockDeviceId, uuid::Uuid>,
 
     /// Index of the current Azure Linux install. Used to distinguish between
     /// different installs of Azure Linux on the same host.
@@ -117,7 +117,7 @@ impl EngineContext {
     /// If the volume is part of an A/B Volume Pair this returns the update volume (i.e. the one that
     /// isn't active).
     pub(super) fn get_block_device_path(&self, block_device_id: &BlockDeviceId) -> Option<PathBuf> {
-        if let Some(partition_path) = self.block_device_paths.get(block_device_id) {
+        if let Some(partition_path) = self.partition_paths.get(block_device_id) {
             return Some(partition_path.clone());
         }
 
@@ -225,7 +225,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "foo".to_owned() => PathBuf::from("/dev/sda"),
                 "boot".to_owned() => PathBuf::from("/dev/sda1"),
                 "root".to_owned() => PathBuf::from("/dev/sda2"),
@@ -287,7 +287,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "efi".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),

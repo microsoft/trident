@@ -8,7 +8,7 @@ use osutils::{block_devices, veritysetup};
 use trident_api::{
     config::{AbUpdate, VerityDevice},
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
 };
@@ -31,10 +31,10 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
     let ctx = EngineContext {
         spec: datastore.host_status().spec.clone(),
         spec_old: datastore.host_status().spec_old.clone(),
-        servicing_type: datastore.host_status().servicing_type,
+        servicing_type: ServicingType::AbUpdate,
         ab_active_volume: datastore.host_status().ab_active_volume,
-        block_device_paths: datastore.host_status().block_device_paths.clone(),
-        disks_by_uuid: datastore.host_status().disks_by_uuid.clone(),
+        partition_paths: datastore.host_status().partition_paths.clone(),
+        disk_uuids: datastore.host_status().disk_uuids.clone(),
         install_index: datastore.host_status().install_index,
         os_image: None, // Not used for boot validation logic
         storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage), // Build storage graph
@@ -60,11 +60,12 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
             bootentries::set_bootentries_after_reboot_for_qemu()
                 .message("Failed to set boot entries after reboot")?;
         }
-    } else if datastore.host_status().servicing_type == ServicingType::CleanInstall {
+    } else if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged
+        || datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized
+    {
         // If Trident was executing a clean install, need to re-set the Host Status.
         datastore.with_host_status(|host_status| {
             host_status.spec = Default::default();
-            host_status.servicing_type = ServicingType::NoActiveServicing;
             host_status.servicing_state = ServicingState::NotProvisioned;
         })?;
 
@@ -77,7 +78,6 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         datastore.with_host_status(|host_status| {
             host_status.spec = host_status.spec_old.clone();
             host_status.spec_old = Default::default();
-            host_status.servicing_type = ServicingType::NoActiveServicing;
             host_status.servicing_state = ServicingState::Provisioned;
         })?;
 
@@ -87,19 +87,24 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
         }));
     }
 
-    match datastore.host_status().servicing_type {
-        ServicingType::CleanInstall => {
+    match datastore.host_status().servicing_state {
+        ServicingState::CleanInstallFinalized => {
             info!("Clean install of runtime OS succeeded");
             tracing::info!(metric_name = "clean_install_success", value = true);
         }
-        ServicingType::AbUpdate => {
+        ServicingState::AbUpdateFinalized => {
             info!("A/B update succeeded");
             tracing::info!(metric_name = "ab_update_success", value = true);
         }
         // Because the boot validation logic is currently called only on clean install and A/B
         // update, this should be unreachable.
         // TODO: When/If `UpdateAndReboot` is used, this should be updated.
-        _ => unreachable!(),
+        state => {
+            return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                state,
+            }))
+            .message("Validate boot failed");
+        }
     }
 
     debug!(
@@ -109,7 +114,6 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
 
     datastore.with_host_status(|host_status| {
         host_status.servicing_state = ServicingState::Provisioned;
-        host_status.servicing_type = ServicingType::NoActiveServicing;
         host_status.spec_old = Default::default();
         host_status.ab_active_volume = match host_status.ab_active_volume {
             None | Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
@@ -563,7 +567,7 @@ mod tests {
 
         // Test case #3: When block devices are defined, should return the expected root device
         // path of 'root-a'.
-        ctx.block_device_paths = btreemap! {
+        ctx.partition_paths = btreemap! {
             "os".to_owned() => PathBuf::from("/dev/sda"),
             "efi".to_owned() => PathBuf::from("/dev/sda1"),
             "root-a".to_owned() => PathBuf::from("/dev/sda2"),
@@ -654,7 +658,7 @@ mod tests {
         });
 
         // Update the block device paths
-        ctx.block_device_paths = btreemap! {
+        ctx.partition_paths = btreemap! {
             "os".to_owned() => PathBuf::from("/dev/sda"),
             "efi".to_owned() => PathBuf::from("/dev/sda1"),
             "root-data-a".to_owned() => PathBuf::from("/dev/sda2"),
@@ -831,7 +835,7 @@ mod functional_test {
                 size: 100.into(),
             }],
         }];
-        ctx.block_device_paths
+        ctx.partition_paths
             .insert("root-a".to_string(), PathBuf::from("/dev/sda1"));
 
         assert_eq!(
@@ -858,7 +862,7 @@ mod functional_test {
                 partition_type: PartitionType::Root,
                 size: 100.into(),
             });
-        ctx.block_device_paths
+        ctx.partition_paths
             .insert("root-b".to_string(), PathBuf::from("/dev/sda2"));
 
         assert_eq!(
@@ -988,7 +992,7 @@ mod functional_test {
                 size: 100.into(),
             }],
         }];
-        ctx.block_device_paths
+        ctx.partition_paths
             .insert("root-data-a".to_string(), PathBuf::from("/dev/sda1"));
 
         assert_eq!(
@@ -1004,7 +1008,7 @@ mod functional_test {
             partition_type: PartitionType::Root,
             size: 100.into(),
         });
-        ctx.block_device_paths
+        ctx.partition_paths
             .insert("root-data-b".to_string(), PathBuf::from("/dev/sda2"));
 
         // Test case #3: When information is complete, returns the volume pair paths.
@@ -1092,9 +1096,9 @@ mod functional_test {
                 },
             ],
         }];
-        ctx.block_device_paths
+        ctx.partition_paths
             .insert("root-data-a".to_string(), PathBuf::from("/dev/sda1"));
-        ctx.block_device_paths
+        ctx.partition_paths
             .insert("root-data-b".to_string(), PathBuf::from("/dev/sda2"));
 
         // Test case #2: Returns an error if the verity device is not active.
@@ -1113,7 +1117,7 @@ mod functional_test {
             veritysetup::close("root").unwrap();
         }
 
-        ctx.block_device_paths = btreemap! {
+        ctx.partition_paths = btreemap! {
             "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
             "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
             "root-data-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
@@ -1280,7 +1284,7 @@ mod functional_test {
         );
 
         // Test case #4: Missing block device for volume B.
-        ctx.block_device_paths = btreemap! {
+        ctx.partition_paths = btreemap! {
             "root-a".to_owned() => PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}15")),
         };
 
@@ -1292,7 +1296,7 @@ mod functional_test {
             "Failed to get block device path for volume B with ID 'root-b'"
         );
 
-        ctx.block_device_paths.insert(
+        ctx.partition_paths.insert(
             "root-b".to_owned(),
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
         );
@@ -1307,7 +1311,7 @@ mod functional_test {
         );
 
         // Test case #6: A or B paths do not match the root volume path.
-        *ctx.block_device_paths.get_mut("root-a").unwrap() =
+        *ctx.partition_paths.get_mut("root-a").unwrap() =
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
 
         assert_eq!(
@@ -1352,7 +1356,7 @@ mod functional_test {
             device_name: "root",
         };
 
-        ctx.block_device_paths = btreemap! {
+        ctx.partition_paths = btreemap! {
             "root-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             "root-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
         };
@@ -1363,7 +1367,7 @@ mod functional_test {
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))).unwrap();
 
-        ctx.block_device_paths
+        ctx.partition_paths
             .insert("root".to_string(), PathBuf::from("/dev/mapper/root"));
         ctx.spec.storage.verity_filesystems = vec![VerityFileSystem {
             name: "root".to_string(),

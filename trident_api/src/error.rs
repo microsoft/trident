@@ -8,8 +8,9 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use url::Url;
 
-use crate::config::{
-    HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError,
+use crate::{
+    config::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
+    status::ServicingState,
 };
 
 /// Identifies errors that occur when the execution environment is misconfigured. This error type
@@ -112,6 +113,9 @@ pub enum InternalError {
 
     #[error("Failed to start tokio runtime")]
     StartTokioRuntime,
+
+    #[error("Unexpected servicing state '{state:?}'")]
+    UnexpectedServicingState { state: ServicingState },
 }
 
 /// Identifies errors that occur when the user provides an invalid input.

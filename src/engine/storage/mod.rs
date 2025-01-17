@@ -64,7 +64,7 @@ impl Subsystem for StorageSubsystem {
 
             // Ensure that all partitions still exist.
             let removed_block_devices: Vec<_> = ctx
-                .block_device_paths
+                .partition_paths
                 .iter()
                 .filter(|&(_id, path)| !path.exists())
                 .collect();
@@ -286,7 +286,7 @@ pub(super) fn check_block_devices(host_status: &HostStatus) {
         return;
     }
 
-    for (id, path) in &host_status.block_device_paths {
+    for (id, path) in &host_status.partition_paths {
         let Ok(canonical) = path.canonicalize() else {
             warn!(
                 "Block device '{id}' (path '{}'): No longer exists",
@@ -573,7 +573,7 @@ mod tests {
         generate_fstab(
             &EngineContext {
                 spec: get_host_config(&temp_tabfile),
-                block_device_paths: btreemap! {
+                partition_paths: btreemap! {
                     "part1".into() => PathBuf::from("/part1"),
                 },
                 ..Default::default()
@@ -603,7 +603,7 @@ mod tests {
         generate_fstab(
             &EngineContext {
                 spec: hc,
-                block_device_paths: btreemap! {
+                partition_paths: btreemap! {
                     "part1".into() => PathBuf::from("/part1"),
                 },
                 ..Default::default()

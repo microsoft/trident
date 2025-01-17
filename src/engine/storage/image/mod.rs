@@ -559,7 +559,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root-a".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
@@ -690,7 +690,7 @@ mod tests {
             servicing_type: ServicingType::NoActiveServicing,
             spec: host_config.clone(),
             spec_old: host_config,
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "esp".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root-a".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),

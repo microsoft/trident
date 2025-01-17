@@ -201,10 +201,7 @@ mod functional_test {
     use tempfile::TempDir;
 
     use pytest_gen::functional_test;
-    use trident_api::{
-        error::ErrorKind,
-        status::{ServicingState, ServicingType},
-    };
+    use trident_api::{error::ErrorKind, status::ServicingState};
 
     #[functional_test]
     fn test_open_temporary_persist_reopen() {
@@ -216,43 +213,28 @@ mod functional_test {
         {
             let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
             assert_eq!(
-                datastore.host_status().servicing_type,
-                ServicingType::NoActiveServicing
-            );
-            assert_eq!(
                 datastore.host_status().servicing_state,
                 ServicingState::NotProvisioned
             );
 
-            // Update servicing type and state for clean install
+            // Update Host Status contents.
             datastore
-                .with_host_status(|s| s.servicing_type = ServicingType::CleanInstall)
-                .unwrap();
-            datastore
-                .with_host_status(|s| s.servicing_state = ServicingState::Staged)
+                .with_host_status(|s| s.servicing_state = ServicingState::AbUpdateStaged)
                 .unwrap();
 
             assert_eq!(
-                datastore.host_status().servicing_type,
-                ServicingType::CleanInstall
-            );
-            assert_eq!(
                 datastore.host_status().servicing_state,
-                ServicingState::Staged
+                ServicingState::AbUpdateStaged
             );
         }
 
-        // Re-open the temporary datastore and verify that the servicing type and state were
-        // retained. Then re-rewrite and persist the datastore to a new location.
+        // Re-open the temporary datastore and verify that the servicing state was retained. Then
+        // re-rewrite and persist the datastore to a new location.
         {
             let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
             assert_eq!(
-                datastore.host_status().servicing_type,
-                ServicingType::CleanInstall
-            );
-            assert_eq!(
                 datastore.host_status().servicing_state,
-                ServicingState::Staged
+                ServicingState::AbUpdateStaged
             );
             datastore
                 .with_host_status(|s| s.servicing_state = ServicingState::Provisioned)
@@ -270,7 +252,7 @@ mod functional_test {
         datastore.close();
         assert_eq!(
             datastore
-                .with_host_status(|s| s.servicing_state = ServicingState::Staged)
+                .with_host_status(|s| s.servicing_state = ServicingState::AbUpdateStaged)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::Servicing(ServicingError::Datastore {

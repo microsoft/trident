@@ -94,7 +94,7 @@ impl NewrootMount {
     #[tracing::instrument(name = "initialize_new_root", skip_all)]
     pub fn create_and_mount(
         host_config: &HostConfiguration,
-        disk_paths: &BTreeMap<BlockDeviceId, PathBuf>,
+        partition_paths: &BTreeMap<BlockDeviceId, PathBuf>,
         update_volume: AbVolumeSelection,
     ) -> Result<Self, TridentError> {
         // Get the path where the newroot should be mounted
@@ -110,7 +110,7 @@ impl NewrootMount {
         let mut newroot_mount = NewrootMount::new(new_root_path);
 
         newroot_mount
-            .mount_newroot_partitions(host_config, disk_paths, update_volume)
+            .mount_newroot_partitions(host_config, partition_paths, update_volume)
             .message("Failed to mount all partitions in newroot")?;
 
         // Mount tmpfs for /tmp and /run
@@ -195,10 +195,10 @@ impl NewrootMount {
     fn mount_newroot_partitions(
         &mut self,
         host_config: &HostConfiguration,
-        disk_paths: &BTreeMap<BlockDeviceId, PathBuf>,
+        partition_paths: &BTreeMap<BlockDeviceId, PathBuf>,
         update_volume: AbVolumeSelection,
     ) -> Result<(), TridentError> {
-        let mut block_device_paths = disk_paths.clone();
+        let mut block_device_paths = partition_paths.clone();
 
         for raid in &host_config.storage.raid.software {
             block_device_paths.insert(raid.id.clone(), raid.device_path());
@@ -706,7 +706,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/sr"),
                 "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
             },
@@ -715,11 +715,7 @@ mod functional_test {
 
         let mut newroot_mount = NewrootMount::new(mount_point.to_owned());
         newroot_mount
-            .mount_newroot_partitions(
-                &ctx.spec,
-                &ctx.block_device_paths,
-                AbVolumeSelection::VolumeA,
-            )
+            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
             .unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
@@ -776,7 +772,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "esp".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
@@ -817,11 +813,7 @@ mod functional_test {
         // Test recursive mounting
         let mut newroot_mount2 = NewrootMount::new(root_mount_dir.path().to_owned());
         newroot_mount2
-            .mount_newroot_partitions(
-                &ctx.spec,
-                &ctx.block_device_paths,
-                AbVolumeSelection::VolumeA,
-            )
+            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
             .unwrap();
 
         assert!(root_mount_dir
@@ -907,7 +899,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/sr"),
                 "sr0".into() => PathBuf::from(CDROM_DEVICE_PATH)
             },
@@ -920,7 +912,7 @@ mod functional_test {
             newroot_mount
                 .mount_newroot_partitions(
                     &ctx.spec,
-                    &ctx.block_device_paths,
+                    &ctx.partition_paths,
                     AbVolumeSelection::VolumeA
                 )
                 .unwrap_err()
@@ -940,7 +932,7 @@ mod functional_test {
             newroot_mount
                 .mount_newroot_partitions(
                     &ctx.spec,
-                    &ctx.block_device_paths,
+                    &ctx.partition_paths,
                     AbVolumeSelection::VolumeA
                 )
                 .unwrap_err()
@@ -1009,7 +1001,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/sr"),
                 "sr0".into() => PathBuf::from("/dev/sr0")
             },
@@ -1028,7 +1020,7 @@ mod functional_test {
             newroot_mount
                 .mount_newroot_partitions(
                     &ctx.spec,
-                    &ctx.block_device_paths,
+                    &ctx.partition_paths,
                     AbVolumeSelection::VolumeA
                 )
                 .expect_err(
@@ -1094,7 +1086,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("OS_DISK_DEVICE_PATH"),
                 "staging".into() => ntfs_device.to_path_buf()
             },
@@ -1115,11 +1107,7 @@ mod functional_test {
         let mut newroot_mount = NewrootMount::new(temp_mount_dir.path().to_owned());
         // Mount NTFS partition
         newroot_mount
-            .mount_newroot_partitions(
-                &ctx.spec,
-                &ctx.block_device_paths,
-                AbVolumeSelection::VolumeA,
-            )
+            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
             .unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
@@ -1158,11 +1146,7 @@ mod functional_test {
         let mut newroot_mount2 = NewrootMount::new(temp_mount_dir2.path().to_owned());
         // Re-mount the NTFS partition
         newroot_mount2
-            .mount_newroot_partitions(
-                &ctx.spec,
-                &ctx.block_device_paths,
-                AbVolumeSelection::VolumeA,
-            )
+            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
             .unwrap();
 
         // Validate that the device has been successfully mounted

@@ -9,8 +9,9 @@ use nix::unistd::Uid;
 use tokio::sync::mpsc::{self};
 
 use osutils::{block_devices, container};
-use trident_api::config::{
-    GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations,
+use trident_api::{
+    config::{GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations},
+    status::ServicingType,
 };
 use trident_api::{
     constants::internal_params::ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
@@ -375,7 +376,7 @@ impl Trident {
             let resolved_disks = block_devices::get_resolved_disks(&host_config)
                 .structured(ServicingError::GetResolvedDisks)?;
             disks_to_rebuild =
-                rebuild::get_disks_to_rebuild(&host_status.disks_by_uuid, &resolved_disks)
+                rebuild::get_disks_to_rebuild(&host_status.disk_uuids, &resolved_disks)
                     .structured(ServicingError::GetDisksToRebuild)?;
             info!("Validating and rebuilding RAID devices");
             // Validate the loaded Host Configuration
@@ -393,10 +394,10 @@ impl Trident {
         let ctx = EngineContext {
             spec: host_status.spec.clone(),
             spec_old: host_status.spec_old.clone(),
-            servicing_type: host_status.servicing_type,
+            servicing_type: ServicingType::NoActiveServicing,
             ab_active_volume: host_status.ab_active_volume,
-            block_device_paths: host_status.block_device_paths.clone(),
-            disks_by_uuid: host_status.disks_by_uuid.clone(),
+            partition_paths: host_status.partition_paths.clone(),
+            disk_uuids: host_status.disk_uuids.clone(),
             install_index: host_status.install_index,
             os_image: None,
             storage_graph: engine::build_storage_graph(&host_config.storage), // Build storage graph
@@ -425,10 +426,6 @@ impl Trident {
         datastore: &mut DataStore,
     ) -> Result<(), TridentError> {
         debug!(
-            "Current servicing type: {:?}",
-            datastore.host_status().servicing_type
-        );
-        debug!(
             "Current servicing state: {:?}",
             datastore.host_status().servicing_state
         );
@@ -442,7 +439,9 @@ impl Trident {
 
         // If host's servicing state is Finalized, need to validate that the firmware correctly
         // booted from the updated runtime OS image.
-        if datastore.host_status().servicing_state == ServicingState::Finalized {
+        if datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized
+            || datastore.host_status().servicing_state == ServicingState::AbUpdateFinalized
+        {
             let rollback_result = rollback::validate_boot(datastore).message(
                 "Failed to validate that firmware correctly booted from updated runtime OS image",
             );
@@ -537,25 +536,35 @@ impl Trident {
             } else {
                 debug!("Host Configuration has not been updated");
 
-                if datastore.host_status().servicing_state == ServicingState::Staged {
-                    // If an update has been previously staged, only need to finalize the update.
-                    debug!("There is an update staged on the host");
-                    if cmd.allowed_operations.has_finalize() {
-                        engine::finalize_update(
-                            datastore,
-                            None,
-                            #[cfg(feature = "grpc-dangerous")]
-                            &mut cmd.sender,
-                        )
-                        .message("Failed to finalize update")
-                    } else {
-                        warn!("There is an update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the update");
-                        Ok(())
+                match datastore.host_status().servicing_state {
+                    ServicingState::AbUpdateStaged => {
+                        // If an update has been previously staged, only need to finalize the update.
+                        debug!("There is an update staged on the host");
+                        if cmd.allowed_operations.has_finalize() {
+                            engine::finalize_update(
+                                datastore,
+                                ServicingType::AbUpdate,
+                                None,
+                                #[cfg(feature = "grpc-dangerous")]
+                                &mut cmd.sender,
+                            )
+                            .message("Failed to finalize update")
+                        } else {
+                            warn!("There is an update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the update");
+                            Ok(())
+                        }
                     }
-                } else {
-                    // Otherwise, if servicing state is Provisioned, need to either re-execute the
-                    // failed update OR inform the user that no update is needed.
-                    engine::update(cmd, datastore).message("Failed to update host")
+                    ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
+                        // Need to either re-execute the failed update OR inform the user that no update
+                        // is needed.
+                        engine::update(cmd, datastore).message("Failed to update host")
+                    }
+                    servicing_state => {
+                        Err(TridentError::new(InternalError::UnexpectedServicingState {
+                            state: servicing_state,
+                        }))
+                        .message("Failed to A/B update with same Host Configuration")
+                    }
                 }
             }
         } else {
@@ -577,28 +586,37 @@ impl Trident {
             } else {
                 debug!("Host Configuration has not been updated");
 
-                if datastore.host_status().servicing_state == ServicingState::Staged {
-                    // If a clean install has been staged on the host, only need to finalize the
-                    // clean install, if requested.
-                    debug!("There is a clean install staged on the host");
-                    if cmd.allowed_operations.has_finalize() {
-                        engine::finalize_clean_install(
-                            datastore,
-                            None,
-                            None,
-                            #[cfg(feature = "grpc-dangerous")]
-                            &mut cmd.sender,
-                        )
-                        .message("Failed to finalize clean install")
-                    } else {
-                        debug!("There is a clean install staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the clean install");
-                        Ok(())
+                match datastore.host_status().servicing_state {
+                    ServicingState::CleanInstallStaged => {
+                        // If a clean install has been staged on the host, only need to finalize the
+                        // clean install, if requested.
+                        debug!("There is a clean install staged on the host");
+                        if cmd.allowed_operations.has_finalize() {
+                            engine::finalize_clean_install(
+                                datastore,
+                                None,
+                                None,
+                                #[cfg(feature = "grpc-dangerous")]
+                                &mut cmd.sender,
+                            )
+                            .message("Failed to finalize clean install")
+                        } else {
+                            debug!("There is a clean install staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the clean install");
+                            Ok(())
+                        }
                     }
-                } else {
-                    // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
-                    // failed clean install OR inform the user that no update is needed.
-                    engine::clean_install(cmd, datastore)
-                        .message("Failed to execute a clean install")
+                    ServicingState::NotProvisioned => {
+                        // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
+                        // failed clean install OR inform the user that no update is needed.
+                        engine::clean_install(cmd, datastore)
+                            .message("Failed to execute a clean install")
+                    }
+                    servicing_state => {
+                        Err(TridentError::new(InternalError::UnexpectedServicingState {
+                            state: servicing_state,
+                        }))
+                        .message("Failed to run from management OS")
+                    }
                 }
             }
         }

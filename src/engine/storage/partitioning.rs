@@ -40,8 +40,8 @@ pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
         create_partitions_on_disk(
             &ctx.spec,
             disk,
-            &mut ctx.block_device_paths,
-            &mut ctx.disks_by_uuid,
+            &mut ctx.partition_paths,
+            &mut ctx.disk_uuids,
         )
         .with_context(|| format!("Failed to create partitions for disk '{}'", disk.id))?;
     }
@@ -51,8 +51,8 @@ pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
 pub fn create_partitions_on_disk(
     host_config: &HostConfiguration,
     disk: &ResolvedDisk,
-    block_device_paths: &mut BTreeMap<BlockDeviceId, PathBuf>,
-    disks_by_uuid: &mut HashMap<Uuid, BlockDeviceId>,
+    partition_paths: &mut BTreeMap<BlockDeviceId, PathBuf>,
+    disk_uuids: &mut HashMap<BlockDeviceId, Uuid>,
 ) -> Result<(), Error> {
     let mut repart = SystemdRepartInvoker::new(&disk.bus_path, RepartEmptyMode::Force);
 
@@ -124,7 +124,7 @@ pub fn create_partitions_on_disk(
     match disk_information.id.as_uuid() {
         Some(disk_uuid) => {
             // Update the engine context with disk UUID to disk ID mapping
-            disks_by_uuid.insert(disk_uuid, disk.id.clone());
+            disk_uuids.insert(disk.id.clone(), disk_uuid);
         }
         None => {
             debug!(
@@ -150,7 +150,7 @@ pub fn create_partitions_on_disk(
             repart_partition.id,
             repart_partition
         );
-        block_device_paths.insert(repart_partition.id.clone(), repart_partition.path_by_uuid());
+        partition_paths.insert(repart_partition.id.clone(), repart_partition.path_by_uuid());
     }
     Ok(())
 }
@@ -893,10 +893,10 @@ mod functional_test {
 
         create_partitions(&mut ctx).unwrap();
 
-        assert_eq!(ctx.block_device_paths.len(), 3);
+        assert_eq!(ctx.partition_paths.len(), 3);
 
         let check_part = |name: &str| {
-            ctx.block_device_paths
+            ctx.partition_paths
                 .get(name)
                 .unwrap_or_else(|| panic!("Failed to find block device '{}' in status", name));
         };
@@ -979,16 +979,10 @@ mod functional_test {
 
         create_partitions(&mut ctx).unwrap();
 
-        assert_eq!(ctx.block_device_paths.len(), 2);
-        assert!(
-            ctx.block_device_paths.contains_key("part1"),
-            "part1 not found"
-        );
-        assert!(!ctx.block_device_paths.contains_key("part2"), "part2 found");
-        assert!(
-            ctx.block_device_paths.contains_key("part3"),
-            "part3 not found"
-        );
+        assert_eq!(ctx.partition_paths.len(), 2);
+        assert!(ctx.partition_paths.contains_key("part1"), "part1 not found");
+        assert!(!ctx.partition_paths.contains_key("part2"), "part2 found");
+        assert!(ctx.partition_paths.contains_key("part3"), "part3 not found");
 
         osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
     }

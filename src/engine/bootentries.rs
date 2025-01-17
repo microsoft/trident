@@ -373,11 +373,12 @@ fn create_entry(
     let disk_path = esp_device.path.clone();
 
     // Get the UUID path of the ESP partition from ctx.
-    let esp_uuid_path = ctx.block_device_paths.get(&esp_device_id).structured(
-        ServicingError::GetBlockDevicePath {
-            device_id: esp_device_id.to_string(),
-        },
-    )?;
+    let esp_uuid_path =
+        ctx.partition_paths
+            .get(&esp_device_id)
+            .structured(ServicingError::GetBlockDevicePath {
+                device_id: esp_device_id.to_string(),
+            })?;
 
     debug!(
         "The disk path of the first ESP partition is {:?}, and the partition UUID path is {:?}",
@@ -506,7 +507,7 @@ fn get_esp_metadata(
     esp_device_id: &BlockDeviceId,
     ctx: &EngineContext,
 ) -> Result<EspDeviceMetadata, Error> {
-    let device_path = ctx.block_device_paths.get(esp_device_id).with_context(|| {
+    let device_path = ctx.partition_paths.get(esp_device_id).with_context(|| {
         format!("Failed to find device path for ESP partition with device ID '{esp_device_id}'",)
     })?;
 
@@ -1028,7 +1029,7 @@ mod functional_test {
         assert_eq!(esp_metadata[0].id, "esp", "ESP device id mismatch");
 
         // Test case where get_partition_number() finds the ESP partition number
-        let esp_partition_path = ctx.block_device_paths.get(&esp_id).unwrap();
+        let esp_partition_path = ctx.partition_paths.get(&esp_id).unwrap();
         let part_num = block_devices::get_partition_number(&disk_path, esp_partition_path).unwrap();
         assert_eq!(part_num, 1, "Partition number mismatch");
         // Test case where get_partition_number() fails to find the ESP partition number
@@ -1106,7 +1107,7 @@ mod functional_test {
         );
 
         // Test case where get_partition_number() finds the ESP partition number
-        let esp_partition_path = ctx.block_device_paths.get(&esp_id1).unwrap();
+        let esp_partition_path = ctx.partition_paths.get(&esp_id1).unwrap();
         let part_num =
             block_devices::get_partition_number(&disk_path1, esp_partition_path).unwrap();
         assert_eq!(part_num, 1, "Partition number mismatch");
@@ -1448,9 +1449,9 @@ mod functional_test {
         let mut ctx1 = tests::get_esp_on_raid_ctx();
         partitioning::create_partitions(&mut ctx1).unwrap();
         // Get the UUID path of the ESP partition from ctx1.
-        let esp_uuid_path = Box::new(ctx1.block_device_paths.get("esp2")).unwrap();
-        // Add this to the ctx block_device_paths
-        ctx.block_device_paths
+        let esp_uuid_path = Box::new(ctx1.partition_paths.get("esp2")).unwrap();
+        // Add this to the ctx partition_paths
+        ctx.partition_paths
             .insert("esp2".to_string(), esp_uuid_path.clone());
 
         // TestCase 1 : where active volume is VolumeA
@@ -1488,9 +1489,9 @@ mod functional_test {
         let mut ctx1 = tests::get_esp_on_raid_ctx();
         partitioning::create_partitions(&mut ctx1).unwrap();
         // Get the UUID path of the ESP partition from ctx1.
-        let esp_uuid_path = Box::new(ctx1.block_device_paths.get("esp2")).unwrap();
-        // Add this to the ctx block_device_paths
-        ctx.block_device_paths
+        let esp_uuid_path = Box::new(ctx1.partition_paths.get("esp2")).unwrap();
+        // Add this to the ctx partition_paths
+        ctx.partition_paths
             .insert("esp2".to_string(), esp_uuid_path.clone());
 
         // TestCase : where active volume is VolumeB
@@ -1528,15 +1529,15 @@ mod functional_test {
         let mut ctx1 = tests::get_esp_on_raid_ctx();
         partitioning::create_partitions(&mut ctx1).unwrap();
         // Get the UUID path of the ESP partition from ctx1.
-        let esp_uuid_path1 = Box::new(ctx1.block_device_paths.get("esp1")).unwrap();
+        let esp_uuid_path1 = Box::new(ctx1.partition_paths.get("esp1")).unwrap();
 
-        // Add this to the ctx block_device_paths
-        ctx.block_device_paths
+        // Add this to the ctx partition_paths
+        ctx.partition_paths
             .insert("esp1".to_string(), esp_uuid_path1.clone());
-        let esp_uuid_path2 = Box::new(ctx1.block_device_paths.get("esp2")).unwrap();
+        let esp_uuid_path2 = Box::new(ctx1.partition_paths.get("esp2")).unwrap();
 
-        // Add this to the ctx block_device_paths
-        ctx.block_device_paths
+        // Add this to the ctx partition_paths
+        ctx.partition_paths
             .insert("esp2".to_string(), esp_uuid_path2.clone());
 
         // TestCase 1 : where active volume is VolumeA
@@ -1549,8 +1550,8 @@ mod functional_test {
         let disk1_uuid = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sda"))
             .unwrap()
             .unwrap();
-        ctx.disks_by_uuid
-            .insert(disk1_uuid.as_uuid().unwrap(), "disk1".to_string());
+        ctx.disk_uuids
+            .insert("disk1".to_string(), disk1_uuid.as_uuid().unwrap());
 
         let disks_to_rebuild = vec!["disk2".to_string()];
         create_and_update_boot_variables_after_rebuilding(&ctx, labels, &disks_to_rebuild).unwrap();
@@ -1586,15 +1587,15 @@ mod functional_test {
         let mut ctx1 = tests::get_esp_on_raid_ctx();
         partitioning::create_partitions(&mut ctx1).unwrap();
         // Get the UUID path of the ESP partition from ctx1.
-        let esp_uuid_path1 = Box::new(ctx1.block_device_paths.get("esp1")).unwrap();
+        let esp_uuid_path1 = Box::new(ctx1.partition_paths.get("esp1")).unwrap();
 
-        // Add this to the ctx block_device_paths
-        ctx.block_device_paths
+        // Add this to the ctx partition_paths
+        ctx.partition_paths
             .insert("esp1".to_string(), esp_uuid_path1.clone());
-        let esp_uuid_path2 = Box::new(ctx1.block_device_paths.get("esp2")).unwrap();
+        let esp_uuid_path2 = Box::new(ctx1.partition_paths.get("esp2")).unwrap();
 
-        // Add this to the ctx block_device_paths
-        ctx.block_device_paths
+        // Add this to the ctx partition_paths
+        ctx.partition_paths
             .insert("esp2".to_string(), esp_uuid_path2.clone());
 
         // TestCase 2 : where active volume is VolumeB
@@ -1607,8 +1608,8 @@ mod functional_test {
         let disk1_uuid = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sda"))
             .unwrap()
             .unwrap();
-        ctx.disks_by_uuid
-            .insert(disk1_uuid.as_uuid().unwrap(), "disk1".to_string());
+        ctx.disk_uuids
+            .insert("disk1".to_string(), disk1_uuid.as_uuid().unwrap());
 
         let disks_to_rebuild = vec!["disk2".to_string()];
         create_and_update_boot_variables_after_rebuilding(&ctx, labels, &disks_to_rebuild).unwrap();

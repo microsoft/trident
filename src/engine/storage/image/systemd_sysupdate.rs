@@ -463,7 +463,7 @@ fn get_partition_path(
 ) -> Result<String, Error> {
     // Fetch BlockDeviceInfo of partition based on its id
     let part_block_device_path = ctx
-        .block_device_paths
+        .partition_paths
         .get(block_device_id)
         .context(format!("No partition with id '{block_device_id}' found"))?;
 
@@ -507,7 +507,7 @@ fn get_parent_disk(ctx: &EngineContext, partition_id: &BlockDeviceId) -> Option<
         for partition in &disk.partitions {
             // Check if the partition id matches the given BlockDeviceId
             if &partition.id == partition_id {
-                return ctx.block_device_paths.get(&disk.id).cloned();
+                return ctx.partition_paths.get(&disk.id).cloned();
             }
         }
     }
@@ -967,7 +967,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
@@ -1024,7 +1024,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
@@ -1081,7 +1081,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
@@ -1127,7 +1127,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "data".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
             },
@@ -1176,7 +1176,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
@@ -1189,7 +1189,7 @@ mod tests {
         // Case 1: Partition ID is valid
         assert_eq!(
             &get_parent_disk(&ctx, &"root".to_string()).unwrap(),
-            ctx.block_device_paths.get("os").unwrap()
+            ctx.partition_paths.get("os").unwrap()
         );
         // Case 2: Partition ID is invalid
         assert_eq!(get_parent_disk(&ctx, &"invalid".to_string()), None);

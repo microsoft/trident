@@ -629,7 +629,7 @@ pub(crate) mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "foo".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot1".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root1".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
@@ -672,7 +672,7 @@ pub(crate) mod functional_test {
                 options: vec![],
             });
 
-        ctx.block_device_paths
+        ctx.partition_paths
             .insert(raid_array.id.clone(), root_device_path.to_owned());
 
         mkfs::run(root_device_path, MkfsFileSystemType::Ext4).unwrap();
@@ -725,7 +725,7 @@ pub(crate) mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "foo".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
@@ -816,7 +816,7 @@ pub(crate) mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap![
+            partition_paths: btreemap![
                 "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "efi".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
@@ -867,7 +867,7 @@ pub(crate) mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "foo".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
@@ -919,7 +919,7 @@ pub(crate) mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "foo".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root".into() => PathBuf::from(""),

@@ -171,9 +171,9 @@ fn stage_clean_install(
         spec_old: Default::default(),
         servicing_type: ServicingType::CleanInstall,
         ab_active_volume: None,
-        block_device_paths: Default::default(), // Will be initialized later
-        disks_by_uuid: Default::default(),      // Will be initialized later
-        install_index: 0,                       // Will be initialized later
+        partition_paths: Default::default(), // Will be initialized later
+        disk_uuids: Default::default(),      // Will be initialized later
+        install_index: 0,                    // Will be initialized later
         os_image: osimage::load_os_image(host_config)?,
         storage_graph: engine::build_storage_graph(&host_config.storage), // Build storage graph
     };
@@ -187,7 +187,6 @@ fn stage_clean_install(
     debug!("Clearing saved Host Status");
     state.with_host_status(|host_status| {
         host_status.spec = Default::default();
-        host_status.servicing_type = ServicingType::NoActiveServicing;
         host_status.servicing_state = ServicingState::NotProvisioned;
     })?;
     #[cfg(feature = "grpc-dangerous")]
@@ -200,7 +199,7 @@ fn stage_clean_install(
     storage::initialize_block_devices(&ctx)?;
     let newroot_mount = NewrootMount::create_and_mount(
         host_config,
-        &ctx.block_device_paths,
+        &ctx.partition_paths,
         AbVolumeSelection::VolumeA,
     )?;
     ctx.install_index = boot::esp::next_install_index(newroot_mount.path())?;
@@ -224,17 +223,16 @@ fn stage_clean_install(
     // At this point, clean install has been staged, so update Host Status
     debug!(
         "Updating host's servicing state to '{:?}'",
-        ServicingState::Staged
+        ServicingState::CleanInstallStaged
     );
     state.with_host_status(|hs| {
         *hs = HostStatus {
-            servicing_type: ServicingType::CleanInstall,
-            servicing_state: ServicingState::Staged,
+            servicing_state: ServicingState::CleanInstallStaged,
             spec: host_config.clone(),
             spec_old: Default::default(),
             ab_active_volume: None,
-            block_device_paths: ctx.block_device_paths,
-            disks_by_uuid: ctx.disks_by_uuid,
+            partition_paths: ctx.partition_paths,
+            disk_uuids: ctx.disk_uuids,
             install_index: ctx.install_index,
             last_error: None,
             is_management_os: true,
@@ -266,10 +264,10 @@ pub(crate) fn finalize_clean_install(
     let ctx = EngineContext {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
-        servicing_type: state.host_status().servicing_type,
+        servicing_type: ServicingType::CleanInstall,
         ab_active_volume: state.host_status().ab_active_volume,
-        block_device_paths: state.host_status().block_device_paths.clone(),
-        disks_by_uuid: state.host_status().disks_by_uuid.clone(),
+        partition_paths: state.host_status().partition_paths.clone(),
+        disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         os_image: None, // Not used in finalize_clean_install
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage), // Build storage graph
@@ -279,7 +277,7 @@ pub(crate) fn finalize_clean_install(
         Some(new_root) => new_root,
         None => NewrootMount::create_and_mount(
             &ctx.spec,
-            &ctx.block_device_paths,
+            &ctx.partition_paths,
             ctx.get_ab_update_volume()
                 .structured(InternalError::Internal(
                     "No update volume despite there being a clean install in progress",
@@ -293,9 +291,11 @@ pub(crate) fn finalize_clean_install(
 
     debug!(
         "Updating host's servicing state to '{:?}'",
-        ServicingState::Finalized
+        ServicingState::CleanInstallFinalized
     );
-    state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
+    state.with_host_status(|status| {
+        status.servicing_state = ServicingState::CleanInstallFinalized
+    })?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
 

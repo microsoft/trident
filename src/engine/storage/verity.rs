@@ -616,7 +616,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
@@ -695,7 +695,7 @@ mod tests {
             .unwrap()
             .partitions
             .retain(|p| p.id != "overlay");
-        ctx_no_overlay.block_device_paths.remove("overlay");
+        ctx_no_overlay.partition_paths.remove("overlay");
         assert_eq!(
             get_verity_overlay_device_path(&ctx_no_overlay,)
                 .unwrap_err()
@@ -872,7 +872,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
@@ -907,7 +907,7 @@ mod functional_test {
             .unwrap()
             .partitions
             .retain(|p| p.id != "boot");
-        ctx_no_boot_part.block_device_paths.remove("boot");
+        ctx_no_boot_part.partition_paths.remove("boot");
         assert_eq!(
             get_root_verity_root_hash(&ctx_no_boot_part)
                 .unwrap_err()
@@ -1008,7 +1008,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
@@ -1067,7 +1067,7 @@ mod functional_test {
         let ctx = EngineContext::default();
         setup_verity_devices(&ctx).unwrap();
 
-        assert!(ctx.block_device_paths.is_empty());
+        assert!(ctx.partition_paths.is_empty());
 
         // test root verity device
         let _expected_root_hash = verity::setup_verity_volumes();
@@ -1134,7 +1134,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
@@ -1151,7 +1151,7 @@ mod functional_test {
                 device_name: "root_new",
             };
             assert!(verity_device_path.exists());
-            assert_eq!(ctx.block_device_paths.len(), 5);
+            assert_eq!(ctx.partition_paths.len(), 5);
         }
 
         // test failure when root hash is not matching
@@ -1186,8 +1186,8 @@ mod functional_test {
             "Failed to activate verity device 'root', status: 'corrupted'"
         );
         assert!(!verity_device_path.exists());
-        assert_eq!(ctx.block_device_paths.len(), 5);
-        assert_eq!(ctx.block_device_paths, ctx_golden.block_device_paths);
+        assert_eq!(ctx.partition_paths.len(), 5);
+        assert_eq!(ctx.partition_paths, ctx_golden.partition_paths);
     }
 
     #[functional_test]
@@ -1287,7 +1287,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "sdb".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
@@ -1429,7 +1429,7 @@ mod functional_test {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "foo".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
                 "boot".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root-hash".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),

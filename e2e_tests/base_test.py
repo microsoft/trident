@@ -173,14 +173,13 @@ def test_partitions(connection, hostConfiguration, tridentCommand, abActiveVolum
     HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
     host_status = yaml.load(host_status_output, Loader=HostStatusSafeLoader)
 
-    # Check that servicingType, servicingState are as expected
-    assert host_status["servicingType"] == "no-active-servicing"
+    # Check that servicingState is as expected
     assert host_status["servicingState"] == "provisioned"
 
     # Check partitions size and type
     for partition_id in expected_partitions:
         # Partition present
-        assert partition_id in host_status["blockDevicePaths"]
+        assert partition_id in host_status["partitionPaths"]
         assert partition_id in partitions_system_info
 
     # Fetch path of block device mounted at /
@@ -258,7 +257,7 @@ def test_partitions(connection, hostConfiguration, tridentCommand, abActiveVolum
             # Iterate through block devices and confirm that path of active volume corresponds to
             # non-canonicalized root device path
             for block_device_id, block_device_path in host_status[
-                "blockDevicePaths"
+                "partitionPaths"
             ].items():
                 if block_device_id == active_volume_id:
                     assert block_device_path == root_device_path

@@ -110,7 +110,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
@@ -286,7 +286,7 @@ mod tests {
         let ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
             spec: host_config.clone(),
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".into() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "efi".into() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root".into() => PathBuf::from("/dev/disk/by-partlabel/osp2"),

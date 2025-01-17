@@ -47,13 +47,12 @@ pub(crate) fn update(
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
-    if state.host_status().servicing_type == ServicingType::AbUpdate {
+    if state.host_status().servicing_state == ServicingState::AbUpdateStaged {
         // Need to re-set the Host Status in case another update has been previously staged
         debug!("Resetting A/B update state");
         state.with_host_status(|host_status| {
             host_status.spec = host_status.spec_old.clone();
             host_status.spec_old = Default::default();
-            host_status.servicing_type = ServicingType::NoActiveServicing;
             host_status.servicing_state = ServicingState::Provisioned;
         })?;
     }
@@ -62,9 +61,9 @@ pub(crate) fn update(
         spec: command.host_config.clone(),
         spec_old: state.host_status().spec.clone(),
         servicing_type: ServicingType::NoActiveServicing,
-        block_device_paths: state.host_status().block_device_paths.clone(),
+        partition_paths: state.host_status().partition_paths.clone(),
         ab_active_volume: state.host_status().ab_active_volume,
-        disks_by_uuid: state.host_status().disks_by_uuid.clone(),
+        disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         os_image: osimage::load_os_image(&command.host_config)?,
         storage_graph: engine::build_storage_graph(&host_config.storage), // Build storage graph
@@ -140,6 +139,7 @@ pub(crate) fn update(
             } else {
                 finalize_update(
                     state,
+                    servicing_type,
                     Some(update_start_time),
                     #[cfg(feature = "grpc-dangerous")]
                     &mut sender,
@@ -151,7 +151,6 @@ pub(crate) fn update(
         }
         ServicingType::NormalUpdate | ServicingType::HotPatch => {
             state.with_host_status(|host_status| {
-                host_status.servicing_type = ServicingType::NoActiveServicing;
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;
             #[cfg(feature = "grpc-dangerous")]
@@ -196,7 +195,9 @@ fn stage_update(
                 InvalidInputError::CleanInstallOnProvisionedHost,
             ));
         }
-        ServicingType::NoActiveServicing => unreachable!(),
+        ServicingType::NoActiveServicing => {
+            return Err(TridentError::internal("No active servicing type"))
+        }
         _ => {
             info!(
                 "Staging update of servicing type '{:?}'",
@@ -217,7 +218,7 @@ fn stage_update(
         storage::initialize_block_devices(&ctx)?;
         let newroot_mount = NewrootMount::create_and_mount(
             &ctx.spec,
-            &ctx.block_device_paths,
+            &ctx.partition_paths,
             ctx.get_ab_update_volume()
                 .structured(InternalError::Internal(
                     "No update volume despite there being an A/B update in progress",
@@ -248,17 +249,16 @@ fn stage_update(
     // At this point, deployment has been staged, so update servicing state
     debug!(
         "Updating host's servicing state to '{:?}'",
-        ServicingState::Staged
+        ServicingState::AbUpdateStaged
     );
     state.with_host_status(|hs| {
         *hs = HostStatus {
             spec: ctx.spec,
             spec_old: ctx.spec_old,
-            servicing_state: ServicingState::Staged,
-            servicing_type: ctx.servicing_type,
+            servicing_state: ServicingState::AbUpdateStaged,
             ab_active_volume: ctx.ab_active_volume,
-            block_device_paths: ctx.block_device_paths,
-            disks_by_uuid: ctx.disks_by_uuid,
+            partition_paths: ctx.partition_paths,
+            disk_uuids: ctx.disk_uuids,
             install_index: ctx.install_index,
             last_error: None,
             is_management_os: false,
@@ -275,26 +275,30 @@ fn stage_update(
 /// Finalizes an update. Takes in 2 arguments:
 /// - state: A mutable reference to the DataStore.
 /// - sender: Optional mutable reference to the gRPC sender.
-#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", state.host_status().servicing_type)))]
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
 pub(crate) fn finalize_update(
     state: &mut DataStore,
+    servicing_type: ServicingType,
     update_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    info!(
-        "Finalizing update '{:?}'",
-        state.host_status().servicing_type
-    );
+    info!("Finalizing update");
+
+    if servicing_type != ServicingType::AbUpdate {
+        return Err(TridentError::internal(
+            "Unimplemented servicing type for finalize",
+        ));
+    }
 
     let ctx = EngineContext {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
-        servicing_type: state.host_status().servicing_type,
+        servicing_type,
         ab_active_volume: state.host_status().ab_active_volume,
-        block_device_paths: state.host_status().block_device_paths.clone(),
-        disks_by_uuid: state.host_status().disks_by_uuid.clone(),
+        partition_paths: state.host_status().partition_paths.clone(),
+        disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         os_image: None, // Not used in finalize_update
         storage_graph: engine::build_storage_graph(&state.host_status().spec.storage), // Build storage graph
@@ -312,9 +316,9 @@ pub(crate) fn finalize_update(
 
     debug!(
         "Updating host's servicing state to '{:?}'",
-        ServicingState::Finalized
+        ServicingState::AbUpdateFinalized
     );
-    state.with_host_status(|status| status.servicing_state = ServicingState::Finalized)?;
+    state.with_host_status(|status| status.servicing_state = ServicingState::AbUpdateFinalized)?;
     #[cfg(feature = "grpc-dangerous")]
     grpc::send_host_status_state(sender, state)?;
     state.close();
@@ -324,7 +328,7 @@ pub(crate) fn finalize_update(
         tracing::info!(
             metric_name = "update_time_secs",
             value = start_time.elapsed().as_secs_f64(),
-            servicing_type = format!("{:?}", state.host_status().servicing_type)
+            servicing_type = format!("{:?}", servicing_type)
         );
     }
 
@@ -332,7 +336,7 @@ pub(crate) fn finalize_update(
     engine::persist_background_log_and_metrics(
         &state.host_status().spec.trident.datastore_path,
         None,
-        state.host_status().servicing_type,
+        servicing_type,
     );
 
     if !state

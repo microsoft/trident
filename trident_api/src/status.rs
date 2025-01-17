@@ -22,26 +22,23 @@ pub struct HostStatus {
     #[serde(default, skip_serializing_if = "is_default")]
     pub spec_old: HostConfiguration,
 
-    /// Type of servicing that Trident is executing on the host.
-    pub servicing_type: ServicingType,
-
     /// Current state of the servicing that Trident is executing on the host.
     pub servicing_state: ServicingState,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<serde_yaml::Value>,
 
-    /// The path associated with each block device in the Host Configuration.
+    /// The device paths of each partition.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub block_device_paths: BTreeMap<BlockDeviceId, PathBuf>,
+    pub partition_paths: BTreeMap<BlockDeviceId, PathBuf>,
 
     /// A/B update status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ab_active_volume: Option<AbVolumeSelection>,
 
-    /// Stores the Disks UUID to ID mapping of the host.
+    /// The UUID for each disk.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub disks_by_uuid: HashMap<Uuid, BlockDeviceId>,
+    pub disk_uuids: HashMap<BlockDeviceId, Uuid>,
 
     /// Index of the current Azure Linux install. Used to distinguish between
     /// different installs of Azure Linux on the same host.
@@ -89,12 +86,17 @@ pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
     #[default]
     NotProvisioned,
-    /// Servicing has been staged, i.e., the updated runtime OS image has been deployed onto block
-    /// devices.
-    Staged,
-    /// Servicing has been finalized, i.e., UEFI variables have been set, so that firmware boots
-    /// from the updated runtime OS image after reboot.
-    Finalized,
+    /// Clean install has been staged, i.e., the initial runtime OS images have been deployed onto
+    /// block devices.
+    CleanInstallStaged,
+    /// A/B update has been staged. The new runtime OS images have been deployed onto block devices.
+    AbUpdateStaged,
+    /// Clean install has been finalized, i.e., UEFI variables have been set, so that firmware boots
+    /// from the runtime OS image after reboot.
+    CleanInstallFinalized,
+    /// A/B update has been finalized. For the next boot, the firmware will boot from the updated
+    /// runtime OS image.
+    AbUpdateFinalized,
     /// Servicing has been completed, and the host succesfully booted from the updated runtime OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,

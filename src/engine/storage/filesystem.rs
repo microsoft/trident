@@ -254,7 +254,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
@@ -360,7 +360,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),
@@ -457,7 +457,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            block_device_paths: btreemap! {
+            partition_paths: btreemap! {
                 "os".to_owned() => PathBuf::from("/dev/disk/by-bus/foobar"),
                 "esp".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp1"),
                 "root-a".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp2"),

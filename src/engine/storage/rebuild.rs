@@ -12,7 +12,7 @@ use osutils::{
 };
 use trident_api::{
     config::HostConfiguration,
-    status::{HostStatus, ServicingType},
+    status::{HostStatus, ServicingState},
     BlockDeviceId,
 };
 
@@ -73,7 +73,7 @@ fn rebuild_raid_array(
         .iter()
         .map(|device| {
             host_status
-                .block_device_paths
+                .partition_paths
                 .get(device)
                 .cloned()
                 .ok_or_else(|| {
@@ -124,7 +124,7 @@ fn rebuild_raid_array(
 
 /// Gets the disks that need to be rebuilt.
 pub fn get_disks_to_rebuild(
-    old_disk_uuid_id_map: &HashMap<Uuid, BlockDeviceId>,
+    old_disk_uuid_id_map: &HashMap<BlockDeviceId, Uuid>,
     resolved_disks: &[ResolvedDisk],
 ) -> Result<Vec<BlockDeviceId>, Error> {
     let mut disks_to_rebuild = Vec::new();
@@ -134,7 +134,7 @@ pub fn get_disks_to_rebuild(
             disk.dev_path.display()
         ))? {
             Some(OsUuid::Uuid(uuid)) => {
-                if !old_disk_uuid_id_map.contains_key(&uuid) {
+                if old_disk_uuid_id_map.get(&disk.id) != Some(&uuid) {
                     debug!(
                         "New disk {} with partition information added",
                         disk.dev_path.display()
@@ -176,11 +176,18 @@ pub(crate) fn validate_rebuild_raid(
     validate_host_config_delta(host_config, &host_status.spec)
         .context("Failed to validate host configuration delta for rebuild-raid operation")?;
 
-    if host_status.servicing_type == ServicingType::CleanInstall {
-        bail!(
-            "rebuild-raid command is not allowed when servicing type is {:?}",
-            host_status.servicing_type
-        );
+    match host_status.servicing_state {
+        ServicingState::NotProvisioned
+        | ServicingState::CleanInstallStaged
+        | ServicingState::CleanInstallFinalized => {
+            bail!(
+                "rebuild-raid command is not allowed when servicing state is {:?}",
+                host_status.servicing_state
+            );
+        }
+        ServicingState::Provisioned
+        | ServicingState::AbUpdateStaged
+        | ServicingState::AbUpdateFinalized => {}
     }
 
     validate_raid_recovery(host_config, disks_to_rebuild)
@@ -246,8 +253,16 @@ pub(crate) fn rebuild_raid(
 ) -> Result<(), Error> {
     let resolved_disks = block_devices::get_resolved_disks(host_config)
         .context("Failed to resolve disks to device paths")?;
-    let disks_to_rebuild = get_disks_to_rebuild(&host_status.disks_by_uuid, &resolved_disks)
-        .context("Failed to get disks to rebuild from Host Status")?;
+    let disks_to_rebuild = get_disks_to_rebuild(&host_status.disk_uuids, &resolved_disks)
+        .context("Failed to get disks to rebuild from HostStatus")?;
+
+    if disks_to_rebuild.is_empty() {
+        info!("No disks to rebuild to perform RAID recovery");
+        return Ok(());
+    }
+
+    validate_rebuild_raid(host_config, host_status, &disks_to_rebuild)
+        .context("Trident rebuild-raid validation failed or could not be performed")?;
 
     debug!(
         "Rebuilding RAID arrays, Disks to rebuild {:?}",
@@ -265,8 +280,8 @@ pub(crate) fn rebuild_raid(
         partitioning::create_partitions_on_disk(
             host_config,
             resolved_disk,
-            &mut host_status.block_device_paths,
-            &mut host_status.disks_by_uuid,
+            &mut host_status.partition_paths,
+            &mut host_status.disk_uuids,
         )
         .context(format!(
             "Failed to create partitions on disk '{}'",
@@ -681,7 +696,7 @@ mod tests {
         let host_config = get_host_config();
 
         let mut host_status = HostStatus {
-            servicing_type: ServicingType::CleanInstall,
+            servicing_state: ServicingState::CleanInstallStaged,
             spec: host_config.clone(),
             ..Default::default()
         };
@@ -691,7 +706,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            "rebuild-raid command is not allowed when servicing type is CleanInstall"
+            "rebuild-raid command is not allowed when servicing state is CleanInstallStaged"
         );
     }
 
@@ -737,6 +752,7 @@ mod tests {
         let host_config = get_host_config();
         let mut host_status = HostStatus {
             spec: host_config.clone(),
+            servicing_state: ServicingState::Provisioned,
             ..Default::default()
         };
 
@@ -773,6 +789,7 @@ mod tests {
 
         let mut host_status = HostStatus {
             spec: host_config.clone(),
+            servicing_state: ServicingState::Provisioned,
             ..Default::default()
         };
 
@@ -795,6 +812,7 @@ mod tests {
 
         let mut host_status = HostStatus {
             spec: host_config.clone(),
+            servicing_state: ServicingState::Provisioned,
             ..Default::default()
         };
 
@@ -837,6 +855,7 @@ mod tests {
 
         let mut host_status = HostStatus {
             spec: host_config.clone(),
+            servicing_state: ServicingState::Provisioned,
             ..Default::default()
         };
 
@@ -993,8 +1012,8 @@ mod functional_test {
 
         // Create partitions on the test disks.
         partitioning::create_partitions(&mut ctx).unwrap();
-        host_status.block_device_paths = ctx.block_device_paths;
-        host_status.disks_by_uuid = ctx.disks_by_uuid;
+        host_status.partition_paths = ctx.partition_paths;
+        host_status.disk_uuids = ctx.disk_uuids;
         udevadm::settle().unwrap();
 
         // Create a raid array raid1.
@@ -1007,7 +1026,7 @@ mod functional_test {
 
         // Add block device path of RAID array to Host Status.
         host_status
-            .block_device_paths
+            .partition_paths
             .insert("raid1".to_string(), raid_path.clone());
 
         // Mark raid1 array as failed to simulate a disk failure.
@@ -1027,15 +1046,8 @@ mod functional_test {
         // Check if the RAID array has only 1 device.
         assert_eq!(raid_devices.devices.len(), 1);
 
-        // Get disk UUID of disk2.
-        let disk2_uuid = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb"))
-            .unwrap()
-            .unwrap();
-
         // Remove disk2 UUID from Host Status.
-        host_status
-            .disks_by_uuid
-            .remove(&disk2_uuid.as_uuid().unwrap());
+        host_status.disk_uuids.remove("disk2");
 
         // Validate and rebuild RAID arrays.
         rebuild_raid(&host_config, &mut host_status).unwrap();
@@ -1056,15 +1068,11 @@ mod functional_test {
     fn test_validate_rebuild_raid_validation_failure() {
         let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
 
-        if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
-            // Remove disk2 UUID from Host Status.
-            host_status
-                .disks_by_uuid
-                .remove(&disk2_uuid.as_uuid().unwrap());
-        }
+        // Remove disk2 UUID from Host Status.
+        host_status.disk_uuids.remove("disk2");
 
         // Fail validation.
-        host_status.servicing_type = trident_api::status::ServicingType::CleanInstall;
+        host_status.servicing_state = trident_api::status::ServicingState::CleanInstallStaged;
 
         let disks_to_rebuild = vec!["disk2".to_string()];
 
@@ -1072,7 +1080,7 @@ mod functional_test {
 
         assert_eq!(
             err.unwrap_err().to_string(),
-            "rebuild-raid command is not allowed when servicing type is CleanInstall"
+            "rebuild-raid command is not allowed when servicing state is CleanInstallStaged"
         );
     }
 
@@ -1080,12 +1088,8 @@ mod functional_test {
     fn test_validate_rebuild_raid_raidrecovery_failure() {
         let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
 
-        if let Some(disk2_uuid) = sfdisk::get_disk_uuid(&PathBuf::from("/dev/sdb")).unwrap() {
-            // Remove disk2 UUID from Host Status.
-            host_status
-                .disks_by_uuid
-                .remove(&disk2_uuid.as_uuid().unwrap());
-        }
+        // Remove disk2 UUID from Host Status.
+        host_status.disk_uuids.remove("disk2");
 
         // Add a raid array raid2 which has partitions on disk2 to the host configuration.
         let mut host_config = host_config;
