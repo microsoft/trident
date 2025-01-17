@@ -89,6 +89,30 @@ stages:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
+      - job: BuildTridentARM64
+        displayName: Build Trident 3.0 RPMs for ARM64
+        pool:
+          type: linux
+          name: mariner-hci-ARM64-1es-pool-westcentralus
+          hostArchitecture: arm64
+
+        variables:
+          - name: ob_artifactBaseName
+            value: ${{ parameters.tridentArtifactName }}-arm64
+          - name: ob_outputDirectory
+            value: "$(Build.SourcesDirectory)/out"
+          - template: common/setup-registries-vars-template.yaml@platform-pipelines
+            parameters:
+              buildType: auto
+
+        steps:
+          - template: ../common_tasks/cargo-auth.yml
+          - template: ../common_tasks/build-osmodifier.yml
+          - template: release.yml
+            parameters:
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+
       - job: BuildTrident2
         displayName: Build Trident 2.0 RPMs
         pool:

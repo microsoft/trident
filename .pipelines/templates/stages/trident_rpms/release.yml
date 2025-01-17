@@ -10,7 +10,7 @@ parameters:
   - name: previewContainerImageBuildId
     type: string
     default: "latestFromBranch"
-    
+
 steps:
   - script: |
       set -eux
@@ -28,16 +28,22 @@ steps:
     displayName: Install native dependencies
     retryCountOnTaskFailure: 3
 
+  - script: |
+      set -eux
+      sudo systemctl start docker
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: Start Docker
+
   - ${{ if eq(parameters.baseimgBuildType, 'preview') }}:
-    - template: ../common_tasks/preview-container.yml
-      parameters:
-        dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
-        dockerBuildContext: $(Build.SourcesDirectory)
-        ${{ if eq(parameters.previewContainerImageBuildId, 'latestFromBranch') }}:
-          runVersion: ${{ parameters.previewContainerImageBuildId }}
-        ${{ else }}:
-          runVersion: specific
-          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      - template: ../common_tasks/preview-container.yml
+        parameters:
+          dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
+          dockerBuildContext: $(Build.SourcesDirectory)
+          ${{ if eq(parameters.previewContainerImageBuildId, 'latestFromBranch') }}:
+            runVersion: ${{ parameters.previewContainerImageBuildId }}
+          ${{ else }}:
+            runVersion: specific
+            previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   - script: |
       set -eux
