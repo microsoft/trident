@@ -1,26 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use log::trace;
 
-use crate::{config::FileSystemType, constants::DEV_MAPPER_PATH, misc::IdGenerator, BlockDeviceId};
+use crate::{
+    config::{FileSystemType, VerityDevice},
+    misc::IdGenerator,
+    BlockDeviceId,
+};
 
 use super::Storage;
-
-/// Verity configuration for a volume.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct InternalVerityDevice {
-    /// Block device id of the verity device
-    pub id: BlockDeviceId,
-
-    /// Name of the verity device, used for the device mapper name
-    pub device_name: String,
-
-    /// Block device id of the data block device
-    pub data_target_id: BlockDeviceId,
-
-    /// Block device id of the hash block device
-    pub hash_target_id: BlockDeviceId,
-}
 
 /// Mount point configuration.
 ///
@@ -68,7 +56,6 @@ impl Storage {
     pub fn populate_internal(&mut self) {
         // Clear any previous internal configuration
         self.internal_mount_points.clear();
-        self.internal_verity.clear();
 
         // First, go over all filesystems
         self.filesystems.iter().for_each(|fs| {
@@ -99,11 +86,12 @@ impl Storage {
         for vfs in self.verity_filesystems.iter() {
             let verity_device_id = verity_id_gen.next_id();
 
-            self.internal_verity.push(InternalVerityDevice {
+            self.internal_verity.push(VerityDevice {
                 id: verity_device_id.clone(),
-                device_name: vfs.name.clone(),
-                data_target_id: vfs.data_device_id.clone(),
-                hash_target_id: vfs.hash_device_id.clone(),
+                name: vfs.name.clone(),
+                data_device_id: vfs.data_device_id.clone(),
+                hash_device_id: vfs.hash_device_id.clone(),
+                ..Default::default()
             });
 
             self.internal_mount_points.push(InternalMountPoint {
@@ -118,24 +106,6 @@ impl Storage {
             "Internal mount point configuration:\n{:#?}",
             self.internal_mount_points
         );
-        trace!(
-            "Internal verity configuration:\n{:#?}",
-            self.internal_verity
-        );
-    }
-}
-
-impl InternalVerityDevice {
-    pub fn device_path(&self) -> PathBuf {
-        Path::new(DEV_MAPPER_PATH).join(&self.device_name)
-    }
-
-    /// The path where this verity device will be mounted while staging an update.
-    ///
-    /// This path must be different from where the device will be mounted at runtime because the
-    /// verity device_name is shared between the A and B devices.
-    pub fn temporary_device_path(&self) -> PathBuf {
-        Path::new(DEV_MAPPER_PATH).join(format!("{}_new", self.device_name))
     }
 }
 
@@ -332,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn test_populate_internal_verity() {
+    fn test_populate_verity() {
         let mut storage = Storage {
             verity_filesystems: vec![VerityFileSystem {
                 name: "my-verity-device".to_string(),
@@ -371,11 +341,12 @@ mod tests {
 
         assert_eq!(
             storage.internal_verity,
-            vec![InternalVerityDevice {
+            vec![VerityDevice {
                 id: "verity-0".to_string(),
-                device_name: "my-verity-device".to_string(),
-                data_target_id: "/dev/sda1".to_string(),
-                hash_target_id: "/dev/sda2".to_string(),
+                name: "my-verity-device".to_string(),
+                data_device_id: "/dev/sda1".to_string(),
+                hash_device_id: "/dev/sda2".to_string(),
+                ..Default::default()
             }]
         );
     }

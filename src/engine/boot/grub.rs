@@ -182,7 +182,7 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
 
                 Ok::<Verity, anyhow::Error>(Verity {
                     id: verity_device.id.clone(),
-                    name: verity_device.device_name.to_string(),
+                    name: verity_device.name.to_string(),
                     data_device_id: verity_data_path_str.to_string(),
                     hash_device_id: verity_hash_path_str.to_string(),
                     corruption_option: None,

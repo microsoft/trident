@@ -6,7 +6,7 @@ use log::{debug, info, trace};
 use osutils::{block_devices, veritysetup};
 
 use trident_api::{
-    config::{AbUpdate, InternalVerityDevice},
+    config::{AbUpdate, VerityDevice},
     constants::ROOT_MOUNT_POINT_PATH,
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
@@ -411,7 +411,7 @@ fn get_verity_data_volume_pair_paths(
     let root_data_device_pair = ab_update
         .volume_pairs
         .iter()
-        .find(|vp| vp.id == root_verity_device_config.data_target_id)
+        .find(|vp| vp.id == root_verity_device_config.data_device_id)
         .context("No volume pair for root data device found")?;
     debug!("Root data device pair: {:?}", root_data_device_pair);
 
@@ -449,9 +449,9 @@ fn get_root_verity_data_device_path(
 
     // Run 'veritysetup' to get the data device path
     let root_verity_status =
-        veritysetup::status(&root_verity_device_config.device_name).context(format!(
+        veritysetup::status(&root_verity_device_config.name).context(format!(
             "Failed to get verity status for device '{}'",
-            root_verity_device_config.device_name
+            root_verity_device_config.name
         ))?;
     trace!("Root verity status: {:?}", root_verity_status);
 
@@ -462,7 +462,7 @@ fn get_root_verity_data_device_path(
 pub fn get_root_verity_device_config(
     ctx: &EngineContext,
     root_device_id: &BlockDeviceId,
-) -> Result<InternalVerityDevice, Error> {
+) -> Result<VerityDevice, Error> {
     // Get the root data device path from the 'veritysetup' output
     let root_verity_device_config = ctx
         .spec
@@ -491,8 +491,8 @@ mod tests {
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystemType, Image, ImageFormat, ImageSha256,
-            InternalMountPoint, InternalVerityDevice, MountOptions, MountPoint, Partition,
-            PartitionType, VerityFileSystem,
+            InternalMountPoint, MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
+            VerityFileSystem,
         },
         constants::MOUNT_OPTION_READ_ONLY,
         error::ErrorKind,
@@ -711,11 +711,12 @@ mod tests {
 
         // Test case #1. Add an internal verity device configuration. Should now correctly return
         // the expected root device path of 'root-data-a', since servicing type is CleanInstall.
-        ctx.spec.storage.internal_verity = vec![InternalVerityDevice {
+        ctx.spec.storage.internal_verity = vec![VerityDevice {
             id: "root".into(),
-            device_name: "root".into(),
-            data_target_id: "root-data".into(),
-            hash_target_id: "root-hash".into(),
+            name: "root".into(),
+            data_device_id: "root-data".into(),
+            hash_device_id: "root-hash".into(),
+            ..Default::default()
         }];
 
         assert_eq!(
@@ -933,11 +934,12 @@ mod functional_test {
 
         ctx.spec = HostConfiguration {
             storage: config::Storage {
-                internal_verity: vec![config::InternalVerityDevice {
+                internal_verity: vec![config::VerityDevice {
                     id: "root".to_string(),
-                    device_name: "root".to_string(),
-                    data_target_id: "root-data".to_string(),
-                    hash_target_id: "root-hash".to_string(),
+                    name: "root".to_string(),
+                    data_device_id: "root-data".to_string(),
+                    hash_device_id: "root-hash".to_string(),
+                    ..Default::default()
                 }],
                 ..Default::default()
             },
@@ -1039,11 +1041,12 @@ mod functional_test {
         );
 
         // Test case #1. Add an internal verity device config and ensure it is returned.
-        ctx.spec.storage.internal_verity = vec![config::InternalVerityDevice {
+        ctx.spec.storage.internal_verity = vec![config::VerityDevice {
             id: "root".to_string(),
-            device_name: "root".to_string(),
-            data_target_id: "root-data".to_string(),
-            hash_target_id: "root-hash".to_string(),
+            name: "root".to_string(),
+            data_device_id: "root-data".to_string(),
+            hash_device_id: "root-hash".to_string(),
+            ..Default::default()
         }];
 
         ctx.spec.storage.ab_update = Some(AbUpdate {
@@ -1180,20 +1183,22 @@ mod functional_test {
         );
 
         // Test case #1. Add an internal verity device config and ensure it is returned.
-        ctx.spec.storage.internal_verity = vec![config::InternalVerityDevice {
+        ctx.spec.storage.internal_verity = vec![config::VerityDevice {
             id: "root".to_string(),
-            device_name: "root".to_string(),
-            data_target_id: "root-data".to_string(),
-            hash_target_id: "root-hash".to_string(),
+            name: "root".to_string(),
+            data_device_id: "root-data".to_string(),
+            hash_device_id: "root-hash".to_string(),
+            ..Default::default()
         }];
 
         assert_eq!(
             get_root_verity_device_config(&ctx, &"root".to_owned()).unwrap(),
-            config::InternalVerityDevice {
+            config::VerityDevice {
                 id: "root".to_string(),
-                device_name: "root".to_string(),
-                data_target_id: "root-data".to_string(),
-                hash_target_id: "root-hash".to_string(),
+                name: "root".to_string(),
+                data_device_id: "root-data".to_string(),
+                hash_device_id: "root-hash".to_string(),
+                ..Default::default()
             }
         );
 
@@ -1380,11 +1385,12 @@ mod functional_test {
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             },
         }];
-        ctx.spec.storage.internal_verity = vec![config::InternalVerityDevice {
+        ctx.spec.storage.internal_verity = vec![config::VerityDevice {
             id: "root".to_string(),
-            device_name: "root".to_string(),
-            data_target_id: "root-data".to_string(),
-            hash_target_id: "root-hash".to_string(),
+            name: "root".to_string(),
+            data_device_id: "root-data".to_string(),
+            hash_device_id: "root-hash".to_string(),
+            ..Default::default()
         }];
         ctx.spec.storage.ab_update = Some(AbUpdate {
             volume_pairs: vec![

@@ -43,7 +43,7 @@ use self::{
     encryption::Encryption,
     filesystem::{FileSystem, FileSystemSource, MountPointInfo, VerityFileSystem},
     imaging::{AbUpdate, Image},
-    internal::{InternalMountPoint, InternalVerityDevice},
+    internal::InternalMountPoint,
     partitions::Partition,
     raid::Raid,
     storage_graph::{
@@ -64,7 +64,7 @@ pub struct Storage {
     pub disks: Vec<Disk>,
 
     /// Encryption configuration.
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encryption: Option<Encryption>,
 
     /// RAID configuration.
@@ -85,8 +85,8 @@ pub struct Storage {
 
     /// New API for Verity block devices.
     #[cfg_attr(feature = "schemars", schemars(skip))]
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub verity: VerityDevice,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verity: Vec<VerityDevice>,
 
     /// Old API for mount points.
     ///
@@ -98,7 +98,7 @@ pub struct Storage {
     ///
     /// Used internally by Trident-Core.
     #[serde(skip)]
-    pub internal_verity: Vec<InternalVerityDevice>,
+    pub internal_verity: Vec<VerityDevice>,
 }
 
 impl Storage {
@@ -240,6 +240,11 @@ impl Storage {
 
         if let Some(encryption) = &self.encryption {
             encryption.validate()?;
+        }
+
+        // Check that the new and old APIs are not used at the same time!
+        if !self.verity_filesystems.is_empty() && !self.internal_verity.is_empty() {
+            return Err(HostConfigurationStaticValidationError::VerityApiMixed);
         }
 
         // Build the graph

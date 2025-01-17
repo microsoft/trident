@@ -123,6 +123,13 @@ pub enum HostConfigurationStaticValidationError {
         device_name: String,
         mount_point_path: String,
     },
+
+    /// TEMPORARY - REMOVE ONCE VERITY FILESYSTEMS ARE REMOVED
+    #[error(
+        "Verity configuration must be provided using only ONE API, but the new (verity device) \
+        and old (verity filesystem) forms were provided."
+    )]
+    VerityApiMixed,
 }
 
 impl From<HostConfigurationStaticValidationError> for TridentError {

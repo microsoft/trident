@@ -112,7 +112,7 @@ pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
 /// Setup the root verity device.
 fn setup_root_verity_device(
     ctx: &EngineContext,
-    root_verity_device: &config::InternalVerityDevice,
+    root_verity_device: &config::VerityDevice,
 ) -> Result<(), Error> {
     // Extract the root hash from GRUB config
     let root_hash = get_root_verity_root_hash(ctx)?;
@@ -120,7 +120,7 @@ fn setup_root_verity_device(
     // Get the verity data and hash device paths from the engine context
     let (verity_data_path, verity_hash_path) = get_verity_device_paths(ctx, root_verity_device)?;
 
-    let updated_device_name = get_updated_device_name(&root_verity_device.device_name);
+    let updated_device_name = get_updated_device_name(&root_verity_device.name);
 
     // Setup the verity device
     veritysetup::open(
@@ -141,7 +141,7 @@ fn setup_root_verity_device(
                 veritysetup::close(updated_device_name.as_str())?;
                 return Err(anyhow::anyhow!(
                     "Failed to activate verity device '{}', status: '{}'",
-                    root_verity_device.device_name,
+                    root_verity_device.name,
                     status.status
                 ));
             }
@@ -214,20 +214,20 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
 /// Verity data and hash devices are fetched from the engine context.
 pub fn get_verity_device_paths(
     ctx: &EngineContext,
-    verity_device: &config::InternalVerityDevice,
+    verity_device: &config::VerityDevice,
 ) -> Result<(PathBuf, PathBuf), Error> {
     let verity_data_path = ctx
-        .get_block_device_path(&verity_device.data_target_id)
+        .get_block_device_path(&verity_device.data_device_id)
         .context(format!(
             "Failed to find path of verity data device with id '{}'",
-            verity_device.data_target_id
+            verity_device.data_device_id
         ))?;
 
     let verity_hash_path = ctx
-        .get_block_device_path(&verity_device.hash_target_id)
+        .get_block_device_path(&verity_device.hash_device_id)
         .context(format!(
             "Failed to find verity hash device with ID '{}'",
-            verity_device.hash_target_id
+            verity_device.hash_device_id
         ))?;
 
     Ok((verity_data_path, verity_hash_path))
@@ -605,11 +605,12 @@ mod tests {
                         target_id: "overlay".to_string(),
                         options: vec!["defaults".to_string()],
                     }],
-                    internal_verity: vec![config::InternalVerityDevice {
+                    internal_verity: vec![config::VerityDevice {
                         id: "root-verity".into(),
-                        device_name: "root".into(),
-                        data_target_id: "root".into(),
-                        hash_target_id: "root-hash".into(),
+                        name: "root".into(),
+                        data_device_id: "root".into(),
+                        hash_device_id: "root-hash".into(),
+                        ..Default::default()
                     }],
                     ..Default::default()
                 },
@@ -653,7 +654,7 @@ mod tests {
             .internal_verity
             .get_mut(0)
             .unwrap()
-            .data_target_id = "non-existing".into();
+            .data_device_id = "non-existing".into();
         assert_eq!(
             get_verity_device_paths(
                 &ctx_no_verity_data,
@@ -672,7 +673,7 @@ mod tests {
             .internal_verity
             .get_mut(0)
             .unwrap()
-            .hash_target_id = "non-existing".into();
+            .hash_device_id = "non-existing".into();
         assert_eq!(
             get_verity_device_paths(
                 &ctx_no_verity_hash,
@@ -732,7 +733,7 @@ mod functional_test {
     };
     use pytest_gen::functional_test;
     use trident_api::config::{
-        Disk, FileSystemType, InternalVerityDevice, Partition, PartitionType, Storage,
+        Disk, FileSystemType, Partition, PartitionType, Storage, VerityDevice,
     };
 
     #[functional_test]
@@ -785,11 +786,12 @@ mod functional_test {
         host_config.storage.internal_verity = vec![];
         validate_compatibility(&host_config, new_root_dir.path()).unwrap();
 
-        host_config.storage.internal_verity = vec![InternalVerityDevice {
+        host_config.storage.internal_verity = vec![VerityDevice {
             id: "root".into(),
-            device_name: "root".into(),
-            data_target_id: "root".into(),
-            hash_target_id: "root".into(),
+            name: "root".into(),
+            data_device_id: "root".into(),
+            hash_device_id: "root".into(),
+            ..Default::default()
         }];
         assert_eq!(
             validate_compatibility(&host_config, new_root_dir.path())
@@ -995,11 +997,12 @@ mod functional_test {
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    internal_verity: vec![config::InternalVerityDevice {
+                    internal_verity: vec![config::VerityDevice {
                         id: "root-verity".into(),
-                        device_name: "root".into(),
-                        data_target_id: "root".into(),
-                        hash_target_id: "root-hash".into(),
+                        name: "root".into(),
+                        data_device_id: "root".into(),
+                        hash_device_id: "root-hash".into(),
+                        ..Default::default()
                     }],
                     ..Default::default()
                 },
@@ -1120,11 +1123,12 @@ mod functional_test {
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    internal_verity: vec![config::InternalVerityDevice {
+                    internal_verity: vec![config::VerityDevice {
                         id: "root-verity".into(),
-                        device_name: "root".into(),
-                        data_target_id: "root".into(),
-                        hash_target_id: "root-hash".into(),
+                        name: "root".into(),
+                        data_device_id: "root".into(),
+                        hash_device_id: "root-hash".into(),
+                        ..Default::default()
                     }],
                     ..Default::default()
                 },
@@ -1272,11 +1276,12 @@ mod functional_test {
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    internal_verity: vec![config::InternalVerityDevice {
+                    internal_verity: vec![config::VerityDevice {
                         id: "root-verity".into(),
-                        device_name: "root".into(),
-                        data_target_id: "root".into(),
-                        hash_target_id: "root-hash".into(),
+                        name: "root".into(),
+                        data_device_id: "root".into(),
+                        hash_device_id: "root-hash".into(),
+                        ..Default::default()
                     }],
                     ..Default::default()
                 },
@@ -1413,11 +1418,12 @@ mod functional_test {
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    internal_verity: vec![config::InternalVerityDevice {
+                    internal_verity: vec![config::VerityDevice {
                         id: "root-verity".into(),
-                        device_name: "root".into(),
-                        data_target_id: "root".into(),
-                        hash_target_id: "root-hash".into(),
+                        name: "root".into(),
+                        data_device_id: "root".into(),
+                        hash_device_id: "root-hash".into(),
+                        ..Default::default()
                     }],
                     ..Default::default()
                 },

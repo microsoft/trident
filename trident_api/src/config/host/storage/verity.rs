@@ -1,9 +1,11 @@
+use std::path::{Path, PathBuf};
+
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
 use serde::{Deserialize, Serialize};
 
-use crate::BlockDeviceId;
+use crate::{constants::DEV_MAPPER_PATH, BlockDeviceId};
 
 /// Verity device configuration.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -54,4 +56,19 @@ pub enum VerityCorruptionOption {
     ///
     /// Attempts to restart the system.
     Restart,
+}
+
+impl VerityDevice {
+    /// Returns the path where this verity device will be mounted at runtime.
+    pub fn device_path(&self) -> PathBuf {
+        Path::new(DEV_MAPPER_PATH).join(&self.name)
+    }
+
+    /// Returns the path where this verity device will be mounted while staging an update.
+    ///
+    /// This path must be different from where the device will be mounted at runtime because the
+    /// verity device_name is shared between the A and B devices.
+    pub fn temporary_device_path(&self) -> PathBuf {
+        Path::new(DEV_MAPPER_PATH).join(format!("{}_new", self.name))
+    }
 }

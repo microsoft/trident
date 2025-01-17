@@ -592,11 +592,12 @@ mod tests {
         let expected_contents = "/part1 / ext4 defaults 0 1\noverlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2\n";
 
         let mut hc = get_host_config(&temp_tabfile);
-        hc.storage.internal_verity = vec![config::InternalVerityDevice {
-            device_name: "".into(),
+        hc.storage.internal_verity = vec![config::VerityDevice {
+            name: "".into(),
             id: "".into(),
-            data_target_id: "".into(),
-            hash_target_id: "".into(),
+            data_device_id: "".into(),
+            hash_device_id: "".into(),
+            ..Default::default()
         }];
 
         generate_fstab(
