@@ -11,7 +11,7 @@ use log::warn;
 use osutils::dependencies::{Dependency, DependencyResultExt};
 use trident_api::{
     config::{FileSystemType, HostConfigurationDynamicValidationError, SelinuxMode},
-    constants::SELINUX_CONFIG,
+    constants::{MOUNT_OPTION_READ_ONLY, SELINUX_CONFIG},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
@@ -101,11 +101,15 @@ impl Subsystem for SelinuxSubsystem {
                 .storage
                 .filesystems
                 .iter()
+                // Filter out vfat and NTFS filesystems
                 .filter(|filesystem| {
                     filesystem.fs_type != FileSystemType::Vfat
                         && filesystem.fs_type != FileSystemType::Ntfs
                 })
+                // Filter out filesystems that are not mounted
                 .filter_map(|filesystem| filesystem.mount_point.as_ref())
+                // Filter out read-only mount points
+                .filter(|mp| !mp.options.contains(MOUNT_OPTION_READ_ONLY))
                 .collect();
 
             let selinux_type =

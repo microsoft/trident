@@ -257,7 +257,7 @@ fn provision(
     // If verity is present, it means that we are currently doing root
     // verity. For now, we can assume that /etc is readonly, so we setup
     // a writable overlay for it.
-    let use_overlay = !ctx.spec.storage.internal_verity.is_empty();
+    let use_overlay = ctx.spec.storage.has_verity_device();
 
     info!("Starting step 'Provision'");
     for subsystem in subsystems {
@@ -302,7 +302,7 @@ fn configure(
     // a writable overlay for it.
     let use_overlay = (ctx.servicing_type == ServicingType::CleanInstall
         || ctx.servicing_type == ServicingType::AbUpdate)
-        && !ctx.spec.storage.internal_verity.is_empty();
+        && ctx.spec.storage.has_verity_device();
 
     info!("Starting step 'Configure'");
     for subsystem in subsystems {

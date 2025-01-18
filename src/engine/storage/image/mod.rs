@@ -7,12 +7,11 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 use reqwest::Url;
 use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
 
 use osutils::{e2fsck, hashing_reader::HashingReader, image_streamer, lsblk, resize2fs};
-
 use trident_api::{
     config::{
         FileSystemSource, HostConfiguration, HostConfigurationDynamicValidationError, Image,
@@ -24,7 +23,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::EngineContext;
+use crate::{engine::EngineContext, osimage::OsImageFile};
 
 pub(crate) mod stream_image;
 #[cfg(feature = "sysupdate")]
@@ -368,7 +367,7 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
                 continue;
             }
 
-            fs_list.push((device_id, mount_point));
+            fs_list.push((device_id, mount_point, filesystem.fs_type));
         }
 
         fs_list
@@ -396,7 +395,7 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
 
     // Iterate over the filesystems sourced from the OS image and ensure that the
     // mount points are available
-    for (device_id, mp) in filesystems_from_os_image.iter() {
+    for (device_id, mp, _) in filesystems_from_os_image.iter() {
         if !available_mount_points.contains(mp.path.as_path()) {
             bail!(
                 "Mount point '{}' for device '{}' is not available in the OS image",
@@ -412,47 +411,132 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
         .collect::<HashMap<_, _>>();
 
     // Now, deploy the filesystems sourced from the OS image
-    for (id, mp) in filesystems_from_os_image {
+    for (id, mp, fs_type) in filesystems_from_os_image {
         let image = images.get(&mp.path).context(format!(
             "Internal error: No image found for mount point '{}' in the OS image",
             mp.path.display()
         ))?;
 
-        let block_device_path = ctx
-            .get_block_device_path(id)
-            .context(format!("No block device with id '{}' found", id))?;
+        // Check if this ID is a verity device, if so, we must explore the graph
+        // to obtain the underlying devices.
+        if let Some(verity_device) = ctx.spec.storage.verity_device(id) {
+            let Some(image_file_verity) = image.image_file_verity.as_ref() else {
+                bail!(
+                    "Attempt to deploy a filesystem image sourced from the OS image to a verity \
+                    device, but no verity hash is available in the OS image."
+                )
+            };
 
-        let dev_info = lsblk::get(&block_device_path).with_context(|| {
-            format!(
-                "Failed to get block device information for '{id}' at '{}'",
-                block_device_path.display()
-            )
-        })?;
+            // Deploy the data image to the underlying data device.
+            info!(
+                "Initializing '{}': writing image for filesystem at '{}' from '{}'",
+                verity_device.data_device_id,
+                image.mount_point.display(),
+                os_img.source()
+            );
+            deploy_os_image_file(
+                ctx,
+                &verity_device.data_device_id,
+                &image.image_file,
+                FileSystemResize::NoResize,
+            )?;
 
-        ensure!(
-            dev_info.size >= image.image_file.uncompressed_size,
-            "Block device is too small, expected at least {} bytes, got {} bytes",
-            image.image_file.uncompressed_size,
-            dev_info.size
-        );
+            info!(
+                "Initializing '{}': writing verity hash image for filesystem at '{}' from '{}'",
+                verity_device.hash_device_id,
+                image.mount_point.display(),
+                os_img.source()
+            );
+            deploy_os_image_file(
+                ctx,
+                &verity_device.hash_device_id,
+                &image_file_verity.hash_image_file,
+                FileSystemResize::NoResize,
+            )?;
+        } else {
+            // For non-verity devices, we can deploy the image directly.
+            info!(
+                "Initializing '{id}': writing image for filesystem at '{}' from '{}'",
+                image.mount_point.display(),
+                os_img.source()
+            );
 
-        let stream = HashingReader::new(image.image_file.reader().with_context(|| {
-            format!(
-                "Failed to create reader for filesystem image to be mounted at '{}'",
-                mp.path.display()
-            )
-        })?);
+            // Determine if/how the filesystem should be resized.
+            let resize = if mp.options.contains(MOUNT_OPTION_READ_ONLY) {
+                FileSystemResize::NoResize
+            } else if fs_type.is_ext() {
+                FileSystemResize::Ext
+            } else {
+                FileSystemResize::NoResize
+            };
 
-        let computed_sha256 =
-            image_streamer::stream_zstd(stream, &block_device_path).context(format!(
-                "Failed to stream image to block device '{id}' at '{}'",
-                block_device_path.display()
-            ))?;
+            deploy_os_image_file(ctx, id, &image.image_file, resize)?;
+        }
+    }
 
-        debug!(
-            "Deployed filesystem image to block device '{}' [{computed_sha256}]",
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileSystemResize {
+    NoResize,
+    Ext,
+}
+
+/// Deploys an individual OS image file from an OS image.
+fn deploy_os_image_file(
+    ctx: &EngineContext,
+    id: &BlockDeviceId,
+    image_file: &OsImageFile,
+    fs_resize: FileSystemResize,
+) -> Result<(), Error> {
+    let block_device_path = ctx
+        .get_block_device_path(id)
+        .context(format!("No block device with id '{}' found", id))?;
+
+    let dev_info = lsblk::get(&block_device_path).with_context(|| {
+        format!(
+            "Failed to get block device information for '{id}' at '{}'",
             block_device_path.display()
-        );
+        )
+    })?;
+
+    ensure!(
+        dev_info.size >= image_file.uncompressed_size,
+        "Block device is too small, expected at least {} bytes, got {} bytes",
+        image_file.uncompressed_size,
+        dev_info.size
+    );
+
+    let stream = HashingReader::new(
+        image_file
+            .reader()
+            .context("Failed to create reader for filesystem image file")?,
+    );
+
+    let computed_sha256 =
+        image_streamer::stream_zstd(stream, &block_device_path).context(format!(
+            "Failed to stream image to block device '{id}' at '{}'",
+            block_device_path.display()
+        ))?;
+
+    trace!("Deployed image with hash {computed_sha256}");
+
+    match fs_resize {
+        // Resize an ext* filesystem
+        FileSystemResize::Ext => {
+            // TODO investigate if we stop doing the check, tracked by https://dev.azure.com/mariner-org/ECF/_workitems/edit/7218
+            debug!("Checking filesystem on block device '{id}'");
+            e2fsck::fix(&block_device_path)
+                .context(format!("Failed to check filesystem on block device '{id}'"))?;
+            debug!("Resizing filesystem on block device '{id}'");
+            resize_ext_fs(&block_device_path).context(format!(
+                "Failed to resize filesystem on block device '{id}'",
+            ))?;
+        }
+
+        // No resizing needed
+        FileSystemResize::NoResize => {}
     }
 
     Ok(())

@@ -216,7 +216,7 @@ impl Subsystem for StorageSubsystem {
 /// Create a tabfile that captures all the desired as per the spec in engine context.
 fn generate_fstab(ctx: &EngineContext, path: &Path) -> Result<(), Error> {
     let mut mount_points = ctx.spec.storage.internal_mount_points.clone();
-    if !ctx.spec.storage.internal_verity.is_empty() {
+    if ctx.spec.storage.has_verity_device() {
         mount_points.push(verity::create_etc_overlay_mount_point());
     }
     let fstab = tabfile::from_mountpoints(ctx, &mount_points)
@@ -592,13 +592,7 @@ mod tests {
         let expected_contents = "/part1 / ext4 defaults 0 1\noverlay /etc overlay lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,ro 0 2\n";
 
         let mut hc = get_host_config(&temp_tabfile);
-        hc.storage.internal_verity = vec![config::VerityDevice {
-            name: "".into(),
-            id: "".into(),
-            data_device_id: "".into(),
-            hash_device_id: "".into(),
-            ..Default::default()
-        }];
+        hc.storage.internal_verity = vec![config::VerityDevice::default()];
 
         generate_fstab(
             &EngineContext {

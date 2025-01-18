@@ -148,6 +148,16 @@ impl EngineContext {
             return Some(verity.device_path());
         }
 
+        if let Some(verity) = self
+            .spec
+            .storage
+            .verity
+            .iter()
+            .find(|v| &v.id == block_device_id)
+        {
+            return Some(verity.device_path());
+        }
+
         self.get_ab_volume_block_device_id(block_device_id)
             .and_then(|child_block_device_id| self.get_block_device_path(child_block_device_id))
     }

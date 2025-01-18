@@ -107,6 +107,18 @@ pub struct Storage {
 }
 
 impl Storage {
+    /// Returns whether this storage configuration is using verity.
+    pub fn has_verity_device(&self) -> bool {
+        !self.verity.is_empty()
+            || !self.internal_verity.is_empty()
+            || !self.verity_filesystems.is_empty()
+    }
+
+    /// Returns the verity device with the given ID, if it exists.
+    pub fn verity_device(&self, device_id: &BlockDeviceId) -> Option<&VerityDevice> {
+        self.verity.iter().find(|v| &v.id == device_id)
+    }
+
     /// Returns a reference to the partition with the given ID, if it exists.
     ///
     /// This function searches through all disks and their partitions to find

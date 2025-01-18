@@ -107,13 +107,6 @@ pub struct OsImageFileSystem<'a> {
     pub image_file_verity: Option<OsImageVerityHash<'a>>,
 }
 
-impl OsImageFileSystem<'_> {
-    /// Returns the verity hash image file metadata, when available.
-    pub fn image_file_verity(&self) -> Option<&OsImageVerityHash> {
-        self.image_file_verity.as_ref()
-    }
-}
-
 pub struct OsImageFile<'a> {
     pub compressed_size: u64,
     pub sha384: Sha384Hash,

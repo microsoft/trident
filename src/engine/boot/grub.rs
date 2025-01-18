@@ -166,6 +166,7 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
             .storage
             .internal_verity
             .iter()
+            .chain(ctx.spec.storage.verity.iter())
             .find(|device| device.id == *root_device_id)
             .map(|verity_device| {
                 let (verity_data_path, verity_hash_path) =

@@ -197,14 +197,15 @@ fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
 /// Setup verity devices; currently, only the root verity device is supported.
 #[tracing::instrument(skip_all)]
 pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
-    if ctx.spec.storage.internal_verity.is_empty() {
-        return Ok(());
-    }
-
     // Validated from API there is only one verity device at the moment and it
     // is tied to the root volume
-    let root_verity_device = &ctx.spec.storage.internal_verity[0];
-    setup_root_verity_device(ctx, root_verity_device)?;
+    if let Some(root_verity_device) = ctx.spec.storage.internal_verity.first() {
+        // Prefer old verity API for now.
+        setup_root_verity_device(ctx, root_verity_device)?;
+    } else if let Some(verity_device) = ctx.spec.storage.verity.first() {
+        // Failback to new verity API.
+        setup_root_verity_device(ctx, verity_device)?;
+    }
 
     Ok(())
 }
@@ -258,14 +259,20 @@ fn get_verity_overlay_device_path(ctx: &EngineContext) -> Result<PathBuf, Error>
 /// along with the overlay configuration.
 #[tracing::instrument(name = "verity_configuration", skip_all)]
 pub(super) fn configure(ctx: &EngineContext, root_mount_path: &Path) -> Result<(), Error> {
-    if ctx.spec.storage.internal_verity.is_empty() {
+    if !ctx.spec.storage.has_verity_device() {
         return Ok(());
     }
 
     info!("Updating root verity configuration in GRUB config");
 
     // We currently only support a single verity device, which is the root
-    let verity_device = &ctx.spec.storage.internal_verity[0];
+    let verity_device = &ctx
+        .spec
+        .storage
+        .internal_verity
+        .first()
+        .or(ctx.spec.storage.verity.first())
+        .context("No verity device found")?;
 
     let mut grub_config = GrubConfig::read(
         root_mount_path
@@ -437,7 +444,7 @@ pub(super) fn validate_compatibility(
         // If verity is enabled, we need to ensure that the verity definition is present in the
         // host configuration; API checks ensure that root verity is present
         // and correctly populated.
-        if host_config.storage.internal_verity.is_empty() {
+        if !host_config.storage.has_verity_device() {
             return Err(anyhow::anyhow!(
                 "Verity is enabled for the root image, but no verity definition is present in the Host Configuration"
             ));
@@ -449,7 +456,7 @@ pub(super) fn validate_compatibility(
     } else {
         // If verity is not enabled, we need to ensure that the verity definition is not present in
         // the host configuration.
-        if !host_config.storage.internal_verity.is_empty() {
+        if host_config.storage.has_verity_device() {
             return Err(anyhow::anyhow!(
                 "Verity is not enabled for the root image, but a verity definition is present in the Host Configuration"
             ));

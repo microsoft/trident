@@ -106,7 +106,11 @@ impl HttpFile {
         let response = client
             .head(url.as_str())
             .send()
+            .map_err(Self::http_to_io_err)?
+            .error_for_status()
             .map_err(Self::http_to_io_err)?;
+
+        trace!("HTTP file '{}' has status: {}", url, response.status());
 
         // Get the file size from the response headers
         let size = response
@@ -131,6 +135,8 @@ impl HttpFile {
                 )
             })?;
 
+        trace!("HTTP file '{}' has size: {}", url, size);
+
         // Ensure the server supports range requests, this implementation
         // requires that feature!
         if response
@@ -138,7 +144,7 @@ impl HttpFile {
             .get("Accept-Ranges")
             .ok_or(IoError::new(
                 IoErrorKind::Other,
-                "Server does not support range requests",
+                "Server does not support range requests: 'Accept-Ranges' header was not provided",
             ))?
             .to_str()
             .map_err(|e| {
@@ -152,7 +158,7 @@ impl HttpFile {
         {
             return Err(IoError::new(
                 IoErrorKind::Other,
-                "Server does not support range requests",
+                "Server does not support range requests: 'Accept-Ranges: none'",
             ));
         }
 

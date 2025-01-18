@@ -214,6 +214,10 @@ impl NewrootMount {
             block_device_paths.insert(verity.id.clone(), verity.temporary_device_path());
         }
 
+        for verity in &host_config.storage.verity {
+            block_device_paths.insert(verity.id.clone(), verity.temporary_device_path());
+        }
+
         if let Some(ab) = &host_config.storage.ab_update {
             for pair in &ab.volume_pairs {
                 let path = match update_volume {
