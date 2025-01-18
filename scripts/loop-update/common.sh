@@ -23,16 +23,24 @@ function sshCommand() {
         "$COMMAND"
 }
 
+function adoError() {
+    local MESSAGE=$1
+
+    set +x
+    echo "##vso[task.logissue type=error]$MESSAGE"
+    set -x
+
+}
+
 function checkActiveVolume() {
     local VOLUME=$1
+    local ITERATION=$2
 
     ACTIVE=`sshCommand "set -o pipefail; sudo systemd-run --pipe --property=After=trident.service trident get" | grep abActiveVolume | tr -d ' ' | cut -d':' -f2`
     if [ "$ACTIVE" != $VOLUME ]; then
         sshCommand "sudo trident get"
         echo "Active volume is not $VOLUME, but $ACTIVE"
-        set +x
-        echo "##vso[task.logissue type=error]Active volume is not $VOLUME, but $ACTIVE"
-        set -x
+        adoError "Active volume is not $VOLUME, but $ACTIVE for iteration $ITERATION"
         exit 1
     fi
 }
@@ -43,6 +51,7 @@ function truncateLog() {
 
 function waitForLogin() {
     set +e
+    local ITERATION=$1
 
     LOGGING=""
     if [ $VERBOSE == True ]; then
@@ -61,11 +70,13 @@ function waitForLogin() {
 
     if [ "$OUTPUT" != "" ]; then
         mkdir -p $OUTPUT
-        sudo cp ./serial.log $OUTPUT/serial-update-$i.log
+        sudo cp ./serial.log $OUTPUT/serial-$ITERATION.log
     fi
 
     if [ $WAIT_FOR_LOGIN_EXITCODE -ne 0 ]; then
-        echo "Failed to update Trident"
+        echo "Failed to reach login prompt for the VM"
+        adoError "Failed to reach login prompt for the VM for iteration $ITERATION"
+
         df -h
         exit $WAIT_FOR_LOGIN_EXITCODE
     fi

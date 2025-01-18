@@ -24,27 +24,4 @@ do
     sleep 0.1
 done
 
-LOGGING=""
-if [ $VERBOSE == True ]; then
-    echo "Found VM serial log file: $VM_SERIAL_LOG"
-    echo "VM serial log:"
-    LOGGING="-v"
-fi
-
-sudo $TRIDENT_SOURCE_DIRECTORY/e2e_tests/helpers/wait_for_login.py \
-    -d "$VM_SERIAL_LOG" \
-    -o ./serial.log \
-    -t 120 \
-    $LOGGING
-
-WAIT_FOR_LOGIN_EXITCODE=$?
-
-if [ "$OUTPUT" != "" ]; then
-    mkdir -p $OUTPUT
-    sudo cp ./serial.log $OUTPUT/serial.log
-fi
-
-if [ $WAIT_FOR_LOGIN_EXITCODE -ne 0 ]; then
-    echo "Failed to deploy VM"
-    exit $WAIT_FOR_LOGIN_EXITCODE
-fi
+waitForLogin 0

@@ -33,7 +33,7 @@ for i in $(seq 1 $RETRY_COUNT); do
         sudo virsh shutdown $VM_NAME
         until [ `sudo virsh list | grep -c $VM_NAME` -eq 0 ]; do sleep 1; done
         sudo virsh start $VM_NAME
-        waitForLogin
+        waitForLogin $i
     fi
 
     echo ""
@@ -61,7 +61,7 @@ for i in $(seq 1 $RETRY_COUNT); do
         LOGGING="-v"
     fi
 
-    waitForLogin
+    waitForLogin $i
     set -e
 
     # Check that Trident updated correctly
@@ -70,7 +70,7 @@ for i in $(seq 1 $RETRY_COUNT); do
         echo "VM IP changed from $VM_IP to $NEW_IP"
         exit 1
     fi
-    checkActiveVolume $EXPECTED_VOLUME
+    checkActiveVolume $EXPECTED_VOLUME $i
     if [ $VERBOSE == True ]; then
         sshCommand "sudo trident get"
     fi
