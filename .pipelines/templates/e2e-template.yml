@@ -20,7 +20,7 @@ parameters:
   - name: previewContainerImageBuildId
     type: string
     default: "latestFromBranch"
- 
+
   - name: blockPublishing
     displayName: "Block publishing to artifact feed"
     type: boolean
@@ -98,18 +98,18 @@ stages:
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
-    # Build USB-ISO
-    - template: stages/trident_usb_iso/trident-usb-iso.yml
-      parameters:
-        baseimgBuildType: ${{ parameters.baseimgBuildType }}
-        previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      # Build USB-ISO
+      - template: stages/trident_usb_iso/trident-usb-iso.yml
+        parameters:
+          baseimgBuildType: ${{ parameters.baseimgBuildType }}
+          previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
   - ${{ else }}:
-    # Download USB-ISO from previous
-    - template: stages/download_staged/download-staged.yml
-      parameters:
-        stageType: ${{ parameters.stageType }}
-        artifactName: azl-installer
-        feedName: usb-iso
+      # Download USB-ISO from previous
+      - template: stages/download_staged/download-staged.yml
+        parameters:
+          stageType: ${{ parameters.stageType }}
+          artifactName: azl-installer
+          feedName: usb-iso
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from trident pipelines alltogether in favor of being only test-images
