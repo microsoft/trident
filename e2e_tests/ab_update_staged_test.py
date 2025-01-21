@@ -21,9 +21,8 @@ def test_ab_update_staged(
     HostStatusSafeLoader.add_constructor("!image", HostStatusSafeLoader.accept_image)
     host_status = yaml.load(output_host_status, Loader=HostStatusSafeLoader)
 
-    # Assert that servicingType and serviceState are correct.
-    assert host_status["servicingType"] == "ab-update"
-    assert host_status["servicingState"] == "staged"
+    # Assert that servicingState is correct.
+    assert host_status["servicingState"] == "ab-update-staged"
 
     # Assert that the active volume has not changed.
     assert host_status["abActiveVolume"] == abActiveVolume
