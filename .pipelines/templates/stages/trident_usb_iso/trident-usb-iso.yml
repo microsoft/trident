@@ -94,4 +94,25 @@ stages:
         baseimgVersion: $(baseimgVersion)
         baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
         downloadTrident: false
+    
+- stage: Test_azl_installer
+  displayName: Test azl-installer
+  dependsOn:
+    - TridentTestImg_azl_installer
+
+  jobs:
+  - job: BuildTridentTestImg
+    displayName: Validate
+    timeoutInMinutes: 15
+    pool:
+      type: linux
+      name: trident-ubuntu-1es-pool-eastus2
+      hostArchitecture: amd64
+
+    variables:
+      ob_outputDirectory: $(Pipeline.Workspace)/azl-installer-test
+      ob_artifactBaseName: azl-installer-test
+
+    steps:
+    - template: validate-usb-iso.yml
    
