@@ -34,17 +34,31 @@
 
 ## Background
 
-Trident is per-partition image-based installer for Azure Linux. As such, it
-requires a set of images to install. Trident's original design was to use handle
-one file per image that needs to be deployed.
+Trident is an image-based installer for Azure Linux. However, it does not deploy
+simple disk images like other image-based installers, but instead, allows for
+composability in the storage layout and structure. Because of that, it requires
+a set of discrete images to install an Operating System.
 
-The multiple-files approach has manifested a few drawbacks, and not any
+Trident's original design was to consume multiple files, one per partition that
+needed to be imaged. This design requires the user to manage multiple files in
+all stages:
+
+- Creation: Users need to create multiple files, one per partition. (Done
+  through MIC).
+- Configuration: Users need to specify the paths to the multiple files in the
+  Trident Host Configuration.
+- Distribution: Users need to make sure all the images are available to Trident
+  at the time of installation/update.
+
+The multiple-files approach has manifested a few drawbacks, and not many
 advantages. Some of the key drawbacks are:
 
 - The need to manage multiple files.
 - The risk of mixing files from different versions.
 - The risk of missing files.
 - The added verbosity of the Trident Host Configuration.
+- The error-prone process of updating several image filenames and hashes in
+  configuration files.
 
 See more in the [Image Bundle Proposal
 One-Pager](https://microsoft.sharepoint-df.com/:fl:/g/contentstorage/CSP_f0da4e64-56d1-4a82-845f-0fc5e98b83bb/EfVovKhKi89AjKbQX4bf0pgB_8S9SrV5qstrK6EriF541g?e=7AdTyk&nav=cz0lMkZjb250ZW50c3RvcmFnZSUyRkNTUF9mMGRhNGU2NC01NmQxLTRhODItODQ1Zi0wZmM1ZTk4YjgzYmImZD1iJTIxWkU3YThORldna3FFWHdfRjZZdUR1eU54N3hib3pXOUlqUXdma0Y0cnE3amo5MFgxdGhINFFhMHhscXdwMEJZcCZmPTAxM0ZKWk5WUFZOQzZLUVNVTFo1QUlaSldRTDZETjdVVVkmYz0lMkYmYT1Mb29wQXBwJnA9JTQwZmx1aWR4JTJGbG9vcC1wYWdlLWNvbnRhaW5lciZ4PSU3QiUyMnclMjIlM0ElMjJUMFJUVUh4dGFXTnliM052Wm5RdWMyaGhjbVZ3YjJsdWRDMWtaaTVqYjIxOFlpRmFSVGRoT0U1R1YyZHJjVVZZZDE5R05sbDFSSFY1VG5nM2VHSnZlbGM1U1dwUmQyWnJSalJ5Y1RkcWFqa3dXREYwYUVnMFVXRXdlR3h4ZDNBd1FsbHdmREF4TTBaS1drNVdTVFEzTTFvMk1sazFVelJhUWtsYVUwdERXVXhZUTBSTFRFbyUzRCUyMiUyQyUyMmklMjIlM0ElMjIxYjI1NThkMi05YzM5LTQ5NzgtOTgxZS0zMjUyOTgzMzY5ZTElMjIlN0Q%3D).
@@ -55,8 +69,8 @@ This document describes the Composable OS Image (COSI) Specification. The COSI
 format is a single file that contains all the images required to install a Linux
 OS with Trident.
 
-This document adheres [RFC2119: Key words for use in RFCs to Indicate Requirement
-  Levels](https://datatracker.ietf.org/doc/html/rfc2119).
+This document adheres to [RFC2119: Key words for use in RFCs to Indicate
+  Requirement Levels](https://datatracker.ietf.org/doc/html/rfc2119).
 
 ## Goals
 
@@ -66,7 +80,7 @@ COSI should:
 - Be a portable and relatively trivial format.
 - Contain all the images required to install a Linux OS
   with Trident.
-- Contain enough metadata to inform trident about the OS contained in the COSI
+- Contain enough metadata to inform Trident about the OS contained in the COSI
   file without adding extra verbosity to the Host Configuration.
 
 ## COSI File Format
@@ -79,7 +93,7 @@ The COSI file itself MUST be a simple uncompressed tarball with the extension
 The tarball MUST contain the following files:
 
 - `metadata.json`: A JSON file that contains the metadata of the COSI file.
-- Partition image files in the folder `images/`: The actual partition images
+- Filesystem image files in the folder `images/`: The actual filesystem images
   that Trident will use to install the OS.
 
 To allow for future extensions, the tarball MAY contain other files, but Trident
@@ -182,8 +196,8 @@ device on top of a data partition.
 
 _Notes:_
 
-- **[5]** The `sha384` field is optional, but it is RECOMMENDED to include it for integrity
-    verification.
+- **[5]** The `sha384` field is optional, but it is RECOMMENDED to include it
+    for integrity verification.
 
 ##### `OsArchitecture` Enum
 
@@ -196,13 +210,16 @@ architecture of the OS. The following table lists the valid values for the
 | `x86_64` | AMD64 or Intel 64-bit architecture. |
 | `arm64`  | ARM 64-bit architecture.            |
 
+_Note:_ The `osArch` field uses the names reported by `uname -m` for consistency.
+The `osArch` field is case-insensitive.
+
 ##### `OsPackage` Object
 
 When present, the `osPackages` field in the root object MUST contain an array of
 `OsPackage` objects. Each object represents a package installed in the OS.
 
 The field is strictly optional, but recommended. Trident MAY use this field to
-figure out if the new OS is compatible with the host configuration by, for
+figure out if the new OS is compatible with the Host Configuration by, for
 example, identifying missing dependencies.
 
 | Field     | Type   | Required | Description                           |
@@ -324,6 +341,8 @@ rpm -qa --queryformat "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"
 - Tar is simple and ubiquitous. It is easy to create and extract tarballs on
   virtually any platform. There are native libraries for virtually every
   programming language to handle tarballs, including Rust and Go.
+- Tar is a super simple tape format. It is just a stream of files with metadata
+  at the beginning. This makes it easy to read and write.
 
 **Why an uncompressed tarball?**
 
@@ -348,3 +367,25 @@ rpm -qa --queryformat "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"
   cases, specifically network streaming. However, the complexity of creating and
   maintaining a custom format outweighs the benefits. Tar is simple and good
   enough for our needs.
+
+**Why not use VHD or VHDX?**
+
+- VHD and VHDX are complex formats that are not designed for our use case. They
+  are designed to be used as virtual disks, not as a simple container for
+  partition images. They are also not as portable as tarballs.
+- They do not have a standard way to store metadata. The spec does include some
+  empty space reserved for future expansion, but using it would require us to
+  implement our own fork of the VHD/VHDX spec.
+
+  **What about a VHD+Metadata?**
+
+  - Putting the metadata in a separate file would defeat the purpose of having a
+    single file.
+
+**What other formats were considered?**
+
+- We considered using a custom format, but the complexity of creating and
+  maintaining a custom format outweighs the benefits.
+- SquashFS was considered, but it would only change the container around the
+  filesystems images. When considering only the container, there was no real
+  practical benefit to using SquashFS over Tar.
