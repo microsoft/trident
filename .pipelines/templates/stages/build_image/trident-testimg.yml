@@ -1,77 +1,122 @@
 parameters:
-- name: imageName
-  type: string
+  - name: imageName
+    type: string
 
-- name: outputArtifactName
-  type: string
+  - name: outputArtifactName
+    type: string
 
-- name: baseimgBuildType
-  displayName: Base Image build type
-  type: string
-  values:
-    - preview
-    - release
-  default: "release"
+  - name: baseimgBuildType
+    displayName: Base Image build type
+    type: string
+    values:
+      - preview
+      - release
+    default: "release"
 
-- name: previewContainerImageBuildId
-  displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
-  type: string
-  default: "latestFromBranch"
+  - name: previewContainerImageBuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
 
-- name: runtimeEnv
-  displayName: "Runtime environment (host vs container)"
-  type: string
-  default: "host"
-  values:
-    - host
-    - container
+  - name: runtimeEnv
+    displayName: "Runtime environment (host vs container)"
+    type: string
+    default: "host"
+    values:
+      - host
+      - container
+
+  - name: mkcosiTemplate
+    type: string
+    default: "none"
+    values:
+      - none
+      - regular
+      - verity
 
 stages:
-- stage: TridentTestImg_${{ replace(parameters.outputArtifactName, '-', '_') }}
-  displayName: Build ${{ parameters.outputArtifactName }}
-  dependsOn:
-    - ${{ if eq(parameters.runtimeEnv, 'host') }}:
-        - GetTridentBinaries_rpms
-    - ${{ else }}:
-        []
+  - stage: TridentTestImg_${{ replace(parameters.outputArtifactName, '-', '_') }}
+    displayName: Build ${{ parameters.outputArtifactName }}
+    dependsOn:
+      - BuildingTools
+      - ${{ if eq(parameters.runtimeEnv, 'host') }}:
+          - GetTridentBinaries_rpms
 
-  jobs:
-  - job: BuildTridentTestImg
-    displayName: Build
-    timeoutInMinutes: 20
-    pool:
-      type: linux
+    jobs:
+      - job: BuildTridentTestImg
+        displayName: Build
+        timeoutInMinutes: 20
+        pool:
+          type: linux
 
-    variables:
-      ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
-      ob_artifactBaseName: ${{ parameters.outputArtifactName }}
-      MIC_BUILD_TYPE: "release"
-      MIC_VERSION: "*.*.*"
-      BASEIMG_AZURE_LINUX_VERSION: "3.0"
+        variables:
+          ob_outputDirectory: $(Pipeline.Workspace)/s/test-images/output
+          ob_artifactBaseName: ${{ parameters.outputArtifactName }}
+          MIC_BUILD_TYPE: "release"
+          MIC_VERSION: "*.*.*"
+          BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
-    steps:
-    - task: DownloadPipelineArtifact@2
-      inputs:
-        buildType: current
-        artifactName: trident-binaries
-        targetPath: "$(Build.ArtifactStagingDirectory)/trident"
-      displayName: Download Trident RPMs
-      condition: eq('${{ parameters.runtimeEnv }}', 'host')
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: trident-binaries
+              targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+            displayName: Download Trident RPMs
+            condition: eq('${{ parameters.runtimeEnv }}', 'host')
 
-    - template: ../common_tasks/find-base-image-version.yml
-      parameters:
-        baseimgBuildType: ${{ parameters.baseimgBuildType }}
-        previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          - template: ../common_tasks/find-base-image-version.yml
+            parameters:
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
 
-    - template: .pipelines/templates/trident-testimg-template.yml@test-images
-      parameters:        
-        target: ${{ parameters.imageName }}
-        outputDirectory: ${{ variables.ob_outputDirectory }}
-        testImagesRepo: test-images
-        micBuildType: ${{ variables.MIC_BUILD_TYPE }}
-        micVersion: ${{ variables.MIC_VERSION }}
-        baseimgBuildType: ${{ parameters.baseimgBuildType }}
-        baseimgVersion: $(baseimgVersion)
-        baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
-        downloadTrident: false
-   
+          - template: .pipelines/templates/trident-testimg-template.yml@test-images
+            parameters:
+              target: ${{ parameters.imageName }}
+              outputDirectory: ${{ variables.ob_outputDirectory }}
+              testImagesRepo: test-images
+              micBuildType: ${{ variables.MIC_BUILD_TYPE }}
+              micVersion: ${{ variables.MIC_VERSION }}
+              baseimgBuildType: ${{ parameters.baseimgBuildType }}
+              baseimgVersion: $(baseimgVersion)
+              baseimgAzureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
+              downloadTrident: false
+
+          - ${{ if ne(parameters.mkcosiTemplate, 'none') }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download mkcosi"
+                inputs:
+                  buildType: current
+                  artifactName: "go-tools"
+                  patterns: |
+                    mkcosi
+                  targetPath: "$(Build.SourcesDirectory)/bin/"
+              - bash: |
+                  set -eux
+
+                  echo "Existing images:"
+                  ls -alh ${{ variables.ob_outputDirectory }}
+
+                  INPUT_DIR="${{ variables.ob_outputDirectory }}"
+
+                  # Unfortunately, we use different names locally than in
+                  # pipelines for verity partition files, so we must do 
+                  # some renames.
+                  if [ "${{parameters.mkcosiTemplate }}" = "verity" ]; then
+                    temp_dir=$(mktemp -d)
+                    cp $INPUT_DIR/esp.raw.zst       $temp_dir/verity_esp.raw.zst
+                    cp $INPUT_DIR/boot.raw.zst      $temp_dir/verity_boot.raw.zst
+                    cp $INPUT_DIR/root.raw.zst      $temp_dir/verity_root.raw.zst
+                    cp $INPUT_DIR/root-hash.raw.zst $temp_dir/verity_roothash.raw.zst
+                    cp $INPUT_DIR/var.raw.zst       $temp_dir/verity_var.raw.zst
+                    INPUT_DIR="$temp_dir"
+                  fi
+
+                  chmod +x $(Build.SourcesDirectory)/bin/mkcosi
+
+                  sudo $(Build.SourcesDirectory)/bin/mkcosi build ${{ parameters.mkcosiTemplate }} \
+                      $INPUT_DIR \
+                      ${{ variables.ob_outputDirectory }}/${{ parameters.imageName }}.cosi \
+                      --extension raw.zst \
+                      --force-color
+                displayName: "Build ${{ parameters.imageName }}.cosi"

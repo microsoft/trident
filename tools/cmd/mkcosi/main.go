@@ -8,7 +8,8 @@ import (
 )
 
 type CLI struct {
-	Build BuildCmd `cmd:"" help:"Build an COSI file from existing test images!"`
+	Build      BuildCmd `cmd:"" help:"Build an COSI file from existing test images!"`
+	ForceColor bool     `help:"Force color output." short:"c"`
 }
 
 type BuildCmd struct {
@@ -21,6 +22,13 @@ func main() {
 	log.Debug("Starting mkcosi")
 	cli := CLI{}
 	ctx := kong.Parse(&cli)
+
+	if cli.ForceColor {
+		log.SetFormatter(&log.TextFormatter{
+			ForceColors: true,
+		})
+	}
+
 	err := ctx.Run()
 	ctx.FatalIfErrorf(err)
 }

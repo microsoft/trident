@@ -11,6 +11,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: buildMkcosi
+    type: boolean
+    default: true
+
 stages:
   - stage: BuildingTools
     displayName: Building Tools
@@ -55,3 +59,12 @@ stages:
                   mv bin/miniproxy $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
                 displayName: "Building miniproxy"
+
+          - ${{ if eq(parameters.buildMkcosi, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/mkcosi
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/mkcosi $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building mkcosi"

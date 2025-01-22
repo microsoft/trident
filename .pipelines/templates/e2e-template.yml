@@ -79,6 +79,7 @@ stages:
       outputArtifactName: trident-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      mkcosiTemplate: "regular"
 
   # Build Trident test image (container)
   - template: stages/build_image/trident-testimg.yml
@@ -88,6 +89,7 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       runtimeEnv: "container"
+      mkcosiTemplate: "regular"
 
   # Build Trident test image (verity)
   - template: stages/build_image/trident-testimg.yml
@@ -96,6 +98,7 @@ stages:
       outputArtifactName: trident-verity-testimage
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      mkcosiTemplate: "verity"
 
   - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')) }}:
       # Build USB-ISO

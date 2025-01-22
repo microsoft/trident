@@ -21,12 +21,12 @@ func (b *BuildRegular) IsVerity() bool {
 func (b *BuildRegular) ExpectedImages() []ExpectedImage {
 	return []ExpectedImage{
 		{
-			Name:       "esp.rawzst",
+			Name:       "esp",
 			PartType:   PartitionTypeEsp,
 			MountPoint: "/boot/efi",
 		},
 		{
-			Name:                "root.rawzst",
+			Name:                "root",
 			PartType:            PartitionTypeRoot,
 			MountPoint:          "/",
 			OsReleasePath:       ref.Of("etc/os-release"),

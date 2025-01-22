@@ -19,25 +19,25 @@ func (b *BuildVerity) CommonOpts() CommonOpts {
 func (b *BuildVerity) ExpectedImages() []ExpectedImage {
 	return []ExpectedImage{
 		{
-			Name:       "verity_esp.rawzst",
+			Name:       "verity_esp",
 			PartType:   PartitionTypeEsp,
 			MountPoint: "/boot/efi",
 		},
 		{
-			Name:        "verity_boot.rawzst",
+			Name:        "verity_boot",
 			PartType:    PartitionTypeXbootldr,
 			MountPoint:  "/boot",
 			GrubCfgPath: ref.Of("grub2/grub.cfg"),
 		},
 		{
-			Name:            "verity_root.rawzst",
+			Name:            "verity_root",
 			PartType:        PartitionTypeRoot,
 			MountPoint:      "/",
 			OsReleasePath:   ref.Of("etc/os-release"),
-			VerityImageName: ref.Of("verity_roothash.rawzst"),
+			VerityImageName: ref.Of("verity_roothash"),
 		},
 		{
-			Name:                "verity_var.rawzst",
+			Name:                "verity_var",
 			PartType:            PartitionTypeVar,
 			MountPoint:          "/var",
 			ContainsRpmDatabase: true,

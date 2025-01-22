@@ -28,8 +28,9 @@ type ImageVariant interface {
 }
 
 type CommonOpts struct {
-	Source string `arg:"" help:"Source directory to build COSI from" required:"" type:"path"`
-	Output string `arg:"" help:"Output file to write COSI to" required:"" type:"path"`
+	Source          string `arg:"" help:"Source directory to build COSI from." required:"" type:"path"`
+	Output          string `arg:"" help:"Output file to write COSI to." required:"" type:"path"`
+	SourceExtension string `name:"extension" short:"e" help:"Source file extension." default:"rawzst"`
 }
 
 func (opts CommonOpts) Validate() error {
@@ -101,30 +102,37 @@ func buildCosiFile(variant ImageVariant) error {
 	// metadata we need to populate.
 	imageData := make([]ImageBuildData, len(expectedImages))
 	for i, image := range expectedImages {
+		// Ge the full name of the image
+		full_image_name := fmt.Sprintf("%s.%s", image.Name, commonOpts.SourceExtension)
 		// Get a reference to the metadata for this index
 		metadata := &metadata.Images[i]
 		// Populate the image build data for this index
 		imageData[i] = ImageBuildData{
 			// Create the in-host path to the image
-			Source:    path.Join(commonOpts.Source, image.Name),
+			Source:    path.Join(commonOpts.Source, full_image_name),
 			Metadata:  metadata,
 			KnownInfo: image,
 		}
 
+		log.WithField("path", imageData[i].Source).Debug("Adding expected image to list.")
+
 		// Populate the in-COSI file path
-		metadata.Image.Path = path.Join("images", image.Name)
+		metadata.Image.Path = path.Join("images", full_image_name)
 		// Populate the partition type
 		metadata.PartType = image.PartType
 		// Populate the mount point
 		metadata.MountPoint = image.MountPoint
 		// Populate verity data if needed
 		if variant.IsVerity() && image.VerityImageName != nil {
-			imageData[i].VeritySource = ref.Of(path.Join(commonOpts.Source, *image.VerityImageName))
+			full_verity_image_name := fmt.Sprintf("%s.%s", *image.VerityImageName, commonOpts.SourceExtension)
+			imageData[i].VeritySource = ref.Of(path.Join(commonOpts.Source, full_verity_image_name))
 			metadata.Verity = &Verity{
 				Image: ImageFile{
-					Path: path.Join("images", *image.VerityImageName),
+					Path: path.Join("images", full_verity_image_name),
 				},
 			}
+
+			log.WithField("path", *imageData[i].VeritySource).Debug("Adding expected image to list.")
 
 			// Set the pointer to the roothash
 			roothash = &metadata.Verity.Roothash
