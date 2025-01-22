@@ -46,14 +46,16 @@ stages:
   - stage: BuildImages
     displayName: Build Base and Update Images
     dependsOn:
-      - GetTridentBinaries_rpms
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
+      - ${{ else }}:
+          - GetTridentBinaries_rpms
 
     jobs:
       - template: generate-ssh-keys.yml
 
       - template: build-image.yml
         parameters:
-          testingRun: ${{ parameters.testingRun }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           label: "Base"
           makeTarget: "build/trident-vm-verity-testimage.qcow2"
@@ -62,7 +64,6 @@ stages:
 
       - template: build-image.yml
         parameters:
-          testingRun: ${{ parameters.testingRun }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           label: "UpdateA"
           makeTarget: "trident-vm-verity-testimage"
@@ -71,7 +72,6 @@ stages:
 
       - template: build-image.yml
         parameters:
-          testingRun: ${{ parameters.testingRun }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           label: "UpdateB"
           makeTarget: "trident-vm-verity-testimage"

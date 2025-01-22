@@ -1,9 +1,4 @@
 parameters:
-  - name: testingRun
-    displayName: "Download prebuilt test artifacts"
-    type: boolean
-    default: false
-
   - name: baseimgBuildType
     displayName: Base Image build type
     type: string
