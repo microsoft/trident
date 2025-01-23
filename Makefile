@@ -82,37 +82,12 @@ coverage: ut-coverage coverage-report
 clean-coverage:
 	rm -rf target/coverage/profraw
 
-EMU_PACKAGE_NAME ?= osmodifier_preview
-
-.PHONY: print-var-emu-package-name
-print-var-emu-package-name:
-	@echo $(EMU_PACKAGE_NAME)
-
-EMU_PACKAGE_VERSION ?= 0.7.0-preview.667258
-
-.PHONY: print-var-emu-package-version
-print-var-emu-package-version:
-	@echo $(EMU_PACKAGE_VERSION)
-
-# Download the osmodifier binary from the Azure DevOps artifacts feed
-artifacts/osmodifier:
-	az artifacts universal download \
-		--organization "https://dev.azure.com/mariner-org/" \
-		--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-		--scope project \
-		--feed "MarinerCoreArtifacts" \
-		--name '$(EMU_PACKAGE_NAME)' \
-		--version '$(EMU_PACKAGE_VERSION)' \
-		--path artifacts/
-	chmod +x artifacts/osmodifier
-
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
 
 # Build OSModifier from the azure-linux-image-tools submodule
-.PHONY: build-osmodifier
-build-osmodifier:
+artifacts/osmodifier:
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	$(MAKE) -C $(TOOLKIT_DIR) go-osmodifier REBUILD_TOOLS=y
 	sudo mv "$(AZL_TOOLS_OUT_DIR)/osmodifier" "$(ARTIFACTS_DIR)/"
