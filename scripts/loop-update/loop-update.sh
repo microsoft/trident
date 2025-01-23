@@ -48,7 +48,17 @@ for i in $(seq 1 $RETRY_COUNT); do
         LOGGING="-v INFO"
     fi
 
+    # Masking errors as we want to report the specific failure if it happens
+    set +e
+
     sshCommand "sudo trident run $LOGGING -c $UPDATE_CONFIG --allowed-operations stage"
+    if [ $? -ne 0 ]; then
+        echo "Failed to stage update"
+        adoError "Failed to stage update for iteration $i"
+        exit 1
+    fi
+
+    set -e
 
     # Masking errors as the VM will be rebooting
     set +e

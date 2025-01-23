@@ -19,7 +19,21 @@ function getIp() {
 function sshCommand() {
     local COMMAND=$1
 
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP \
+    # BatchMode - running from a script, disable any interactive prompts
+    # ConnectTimeout - how long to wait for the connection to be established
+    # ServerAliveCountMax - how many keepalive packets can be missed before the connection is closed
+    # ServerAliveInterval - how often to send keepalive packets
+    # StrictHostKeyChecking - disable host key checking; TODO: remove this and
+    # use the known_hosts file instead
+    # UserKnownHostsFile - disable known hosts file to simplify local runs
+    ssh \
+        -o BatchMode=yes \
+        -o ConnectTimeout=10 \
+        -o ServerAliveCountMax=3 \
+        -o ServerAliveInterval=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        $SSH_USER@$VM_IP \
         "$COMMAND"
 }
 
