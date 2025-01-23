@@ -2,6 +2,7 @@ package variants
 
 import (
 	"archive/tar"
+	"argus_toolkit/cmd/mkcosi/metadata"
 	"argus_toolkit/pkg/ref"
 	"crypto/sha512"
 	_ "embed"
@@ -53,13 +54,13 @@ func (opts CommonOpts) Validate() error {
 type ImageBuildData struct {
 	Source       string
 	KnownInfo    ExpectedImage
-	Metadata     *Image
+	Metadata     *metadata.Image
 	VeritySource *string
 }
 
 type ExpectedImage struct {
 	Name                string
-	PartType            PartitionType
+	PartType            metadata.PartitionType
 	MountPoint          string
 	OsReleasePath       *string
 	GrubCfgPath         *string
@@ -84,11 +85,11 @@ func buildCosiFile(variant ImageVariant) error {
 		return fmt.Errorf("invalid common options: %w", err)
 	}
 
-	metadata := MetadataJson{
+	cosiMetadata := metadata.MetadataJson{
 		Version: "1.0",
 		OsArch:  "x86_64",
 		Id:      uuid.New().String(),
-		Images:  make([]Image, len(expectedImages)),
+		Images:  make([]metadata.Image, len(expectedImages)),
 	}
 
 	if len(expectedImages) == 0 {
@@ -104,30 +105,30 @@ func buildCosiFile(variant ImageVariant) error {
 	for i, image := range expectedImages {
 		// Ge the full name of the image
 		full_image_name := fmt.Sprintf("%s.%s", image.Name, commonOpts.SourceExtension)
-		// Get a reference to the metadata for this index
-		metadata := &metadata.Images[i]
+		// Get a reference to the imgMetadata for this index
+		imgMetadata := &cosiMetadata.Images[i]
 		// Populate the image build data for this index
 		imageData[i] = ImageBuildData{
 			// Create the in-host path to the image
 			Source:    path.Join(commonOpts.Source, full_image_name),
-			Metadata:  metadata,
+			Metadata:  imgMetadata,
 			KnownInfo: image,
 		}
 
 		log.WithField("path", imageData[i].Source).Debug("Adding expected image to list.")
 
 		// Populate the in-COSI file path
-		metadata.Image.Path = path.Join("images", full_image_name)
+		imgMetadata.Image.Path = path.Join("images", full_image_name)
 		// Populate the partition type
-		metadata.PartType = image.PartType
+		imgMetadata.PartType = image.PartType
 		// Populate the mount point
-		metadata.MountPoint = image.MountPoint
+		imgMetadata.MountPoint = image.MountPoint
 		// Populate verity data if needed
 		if variant.IsVerity() && image.VerityImageName != nil {
 			full_verity_image_name := fmt.Sprintf("%s.%s", *image.VerityImageName, commonOpts.SourceExtension)
 			imageData[i].VeritySource = ref.Of(path.Join(commonOpts.Source, full_verity_image_name))
-			metadata.Verity = &Verity{
-				Image: ImageFile{
+			imgMetadata.Verity = &metadata.Verity{
+				Image: metadata.ImageFile{
 					Path: path.Join("images", full_verity_image_name),
 				},
 			}
@@ -135,7 +136,7 @@ func buildCosiFile(variant ImageVariant) error {
 			log.WithField("path", *imageData[i].VeritySource).Debug("Adding expected image to list.")
 
 			// Set the pointer to the roothash
-			roothash = &metadata.Verity.Roothash
+			roothash = &imgMetadata.Verity.Roothash
 		}
 	}
 
@@ -156,7 +157,7 @@ func buildCosiFile(variant ImageVariant) error {
 
 		if extracted.OsRelease != nil {
 			log.Debugf("Populated os-release metadata from image %s", data.Source)
-			metadata.OsRelease = *extracted.OsRelease
+			cosiMetadata.OsRelease = *extracted.OsRelease
 		}
 
 		if variant.IsVerity() && extracted.GrubCfg != nil {
@@ -176,7 +177,7 @@ func buildCosiFile(variant ImageVariant) error {
 	}
 
 	// Marshal the metadata to json
-	metadataJson, err := json.MarshalIndent(metadata, "", "  ")
+	metadataJson, err := json.MarshalIndent(cosiMetadata, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
@@ -405,7 +406,7 @@ func (data *ImageBuildData) populateMetadata() (*ExtractedImageData, error) {
 	return &extractedData, nil
 }
 
-func populateVerityMetadata(source *string, verity *Verity) error {
+func populateVerityMetadata(source *string, verity *metadata.Verity) error {
 	if source == nil && verity == nil {
 		return nil
 	}

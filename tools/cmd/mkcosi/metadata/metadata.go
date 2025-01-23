@@ -1,4 +1,4 @@
-package variants
+package metadata
 
 type MetadataJson struct {
 	Version   string  `json:"version"`

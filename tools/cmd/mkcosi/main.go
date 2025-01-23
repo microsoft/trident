@@ -1,6 +1,7 @@
 package main
 
 import (
+	"argus_toolkit/cmd/mkcosi/metadata"
 	"argus_toolkit/cmd/mkcosi/variants"
 
 	"github.com/alecthomas/kong"
@@ -8,8 +9,9 @@ import (
 )
 
 type CLI struct {
-	Build      BuildCmd `cmd:"" help:"Build an COSI file from existing test images!"`
-	ForceColor bool     `help:"Force color output." short:"c"`
+	Build        BuildCmd              `cmd:"" help:"Build an COSI file from existing test images!"`
+	ReadMetadata metadata.ReadMetadata `cmd:"" help:"Read metadata from a COSI file."`
+	ForceColor   bool                  `help:"Force color output." short:"c"`
 }
 
 type BuildCmd struct {

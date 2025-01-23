@@ -314,7 +314,7 @@ bin/miniproxy: tools/cmd/miniproxy/* tools/go.sum
 	mkdir -p bin
 	cd tools && go build -o ../bin/miniproxy ./cmd/miniproxy
 
-bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/variants/*
+bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/variants/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 
@@ -420,6 +420,8 @@ download-runtime-partition-images:
 		name=$$(basename $$file | cut -d'.' -f1); \
 		mv $$file ./artifacts/test-image/$$name.rawzst; \
 	done
+#	Move COSI image
+	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/regular.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
@@ -440,6 +442,8 @@ download-runtime-partition-images:
 		mv $$file ./artifacts/test-image/verity_$$name.rawzst; \
 	done
 	mv ./artifacts/test-image/verity_root-hash.rawzst ./artifacts/test-image/verity_roothash.rawzst
+#	Move COSI image
+	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/verity.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 
@@ -459,6 +463,8 @@ download-runtime-partition-images:
 		name=$$(basename $$file | cut -d'.' -f1); \
 		mv $$file ./artifacts/test-image/container_$$name.rawzst; \
 	done
+#	Move COSI image
+	mv $(DOWNLOAD_DIR)/*.cosi ./artifacts/test-image/container.cosi
 #	Clean temp dir
 	rm -rf $(DOWNLOAD_DIR)
 

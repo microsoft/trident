@@ -1,6 +1,7 @@
 package variants
 
 import (
+	"argus_toolkit/cmd/mkcosi/metadata"
 	"argus_toolkit/pkg/ref"
 )
 
@@ -20,25 +21,25 @@ func (b *BuildVerity) ExpectedImages() []ExpectedImage {
 	return []ExpectedImage{
 		{
 			Name:       "verity_esp",
-			PartType:   PartitionTypeEsp,
+			PartType:   metadata.PartitionTypeEsp,
 			MountPoint: "/boot/efi",
 		},
 		{
 			Name:        "verity_boot",
-			PartType:    PartitionTypeXbootldr,
+			PartType:    metadata.PartitionTypeXbootldr,
 			MountPoint:  "/boot",
 			GrubCfgPath: ref.Of("grub2/grub.cfg"),
 		},
 		{
 			Name:            "verity_root",
-			PartType:        PartitionTypeRoot,
+			PartType:        metadata.PartitionTypeRoot,
 			MountPoint:      "/",
 			OsReleasePath:   ref.Of("etc/os-release"),
 			VerityImageName: ref.Of("verity_roothash"),
 		},
 		{
 			Name:                "verity_var",
-			PartType:            PartitionTypeVar,
+			PartType:            metadata.PartitionTypeVar,
 			MountPoint:          "/var",
 			ContainsRpmDatabase: true,
 		},
