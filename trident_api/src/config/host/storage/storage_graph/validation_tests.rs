@@ -1,13 +1,11 @@
 //! A module for testing the storage graph validation.
 
-use crate::{
-    config::{
-        AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource,
-        FileSystemType, Image, ImageFormat, ImageSha256, MountOptions, MountPoint, Partition,
-        PartitionSize, PartitionTableType, PartitionType, RaidLevel, SoftwareRaidArray,
-    },
-    constants,
-};
+// Currently the folloowing error variants are not produceable and therefore are not tested:
+// - StorageGraphBuildError::InvalidPartitionTypeSpecial
+// - StorageGraphBuildError::InvalidSpecialReferenceKind
+// - StorageGraphBuildError::InvalidTargets
+// - StorageGraphBuildError::ReferrerForbiddenSharing
+// - StorageGraphBuildError::PartitionTypeMismatchSpecial
 
 use super::{
     builder::StorageGraphBuilder,
@@ -15,6 +13,28 @@ use super::{
     node::StorageGraphNode,
     types::{BlkDevReferrerKind, HostConfigBlockDevice},
 };
+
+use crate::{
+    config::{
+        AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, FileSystem, FileSystemSource,
+        FileSystemType, Image, ImageFormat, ImageSha256, MountOptions, MountPoint, Partition,
+        PartitionSize, PartitionTableType, PartitionType, RaidLevel, SoftwareRaidArray,
+    },
+    constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+    storage_graph::{
+        containers::ItemList,
+        types::{BlkDevKind, FileSystemSourceKind},
+    },
+};
+
+// Helper function to create a generic partition used in unit tests
+fn generic_partition() -> Partition {
+    Partition {
+        id: "partition".into(),
+        partition_type: PartitionType::LinuxGeneric,
+        size: PartitionSize::Fixed(4096.into()),
+    }
+}
 
 #[test]
 fn test_basic_graph() {
@@ -76,7 +96,7 @@ fn test_basic_graph() {
             format: ImageFormat::RawZst,
         }),
         mount_point: Some(MountPoint {
-            path: constants::ROOT_MOUNT_POINT_PATH.into(),
+            path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
         }),
     };
@@ -86,10 +106,10 @@ fn test_basic_graph() {
     let mut graph = builder.build().unwrap();
 
     // Check that all nodes were successfully added
-    assert!(nodes.len() == graph.inner.node_count());
+    assert_eq!(nodes.len(), graph.inner.node_count());
     for index in graph.inner.node_indices().rev() {
         let removed = graph.inner.remove_node(index);
-        assert!(removed.unwrap() == nodes.pop().unwrap());
+        assert_eq!(removed.unwrap(), nodes.pop().unwrap());
     }
 }
 
@@ -106,9 +126,31 @@ fn test_duplicate_node() {
     builder.add_node((&disk).into());
     builder.add_node((&disk).into());
 
-    matches!(
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::DuplicateDeviceId { .. }
+        StorageGraphBuildError::DuplicateDeviceId("disk".to_string())
+    );
+}
+
+#[test]
+fn test_duplicate_mountpoint() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let fs1 = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Ext4,
+        source: FileSystemSource::OsImage,
+        mount_point: Some(MountPoint {
+            path: ROOT_MOUNT_POINT_PATH.into(),
+            options: MountOptions::defaults(),
+        }),
+    };
+    builder.add_node((&fs1).into());
+    builder.add_node((&fs1).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::DuplicateMountPoint(ROOT_MOUNT_POINT_PATH.to_string())
     );
 }
 
@@ -129,11 +171,15 @@ fn test_duplicate_member() {
         volume_a_id: "partition".into(),
         volume_b_id: "partition".into(),
     };
-
     builder.add_node((&ab_volume_pair).into());
-    matches!(
+
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::DuplicateTargetId { .. }
+        StorageGraphBuildError::DuplicateTargetId {
+            node_identifier: StorageGraphNode::from(&ab_volume_pair).identifier(),
+            kind: BlkDevReferrerKind::ABVolume,
+            target_id: "partition".to_string()
+        }
     );
 
     // Duplicate member in RAID volume
@@ -146,12 +192,188 @@ fn test_duplicate_member() {
         devices: vec!["partition".into(), "partition".into()],
         level: RaidLevel::Raid1,
     };
-
     builder.add_node((&raid_array).into());
 
-    matches!(
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::DuplicateTargetId { .. }
+        StorageGraphBuildError::DuplicateTargetId {
+            node_identifier: StorageGraphNode::from(&raid_array).identifier(),
+            kind: BlkDevReferrerKind::RaidArray,
+            target_id: "partition".to_string()
+        }
+    );
+}
+
+#[test]
+fn test_filesystem_incompatible_source() {
+    let mut builder_base = StorageGraphBuilder::default();
+    let partition = generic_partition();
+    builder_base.add_node((&partition).into());
+
+    // Should pass
+    let fs1 = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Ext4,
+        source: FileSystemSource::Image(Image {
+            url: "http://image".into(),
+            sha256: ImageSha256::Checksum("checksum".into()),
+            format: ImageFormat::RawZst,
+        }),
+        mount_point: Some(MountPoint {
+            path: ROOT_MOUNT_POINT_PATH.into(),
+            options: MountOptions::empty(),
+        }),
+    };
+    let mut builder = builder_base.clone();
+    builder.add_node((&fs1).into());
+    builder.build().unwrap();
+
+    // Should fail
+    // FileSystemType::Other is only compatible with source types Image and OsImage
+    let fs2 = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Other,
+        source: FileSystemSource::Create,
+        mount_point: None,
+    };
+    let mut builder = builder_base.clone();
+    builder.add_node((&fs2).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::FilesystemIncompatibleSource {
+            fs_desc: "src:new, type:other, dev:partition".to_string(),
+            fs_source: FileSystemSourceKind::Create,
+            fs_compatible_sources: ItemList(vec![
+                FileSystemSourceKind::Image,
+                FileSystemSourceKind::OsImage
+            ])
+        }
+    );
+
+    // Should fail
+    // FileSystemType::Swap is only compatible with source type Create
+    let fs3 = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Swap,
+        source: FileSystemSource::OsImage,
+        mount_point: None,
+    };
+    let mut builder = builder_base.clone();
+    builder.add_node((&fs3).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::FilesystemIncompatibleSource {
+            fs_desc: "src:os-image, type:swap, dev:partition".into(),
+            fs_source: FileSystemSourceKind::OsImage,
+            fs_compatible_sources: ItemList(vec![FileSystemSourceKind::Create])
+        }
+    );
+}
+
+#[test]
+fn test_filesystem_missing_blkdev_id() {
+    let builder_base = StorageGraphBuilder::default();
+
+    let fs = FileSystem {
+        device_id: None,
+        fs_type: FileSystemType::Vfat,
+        source: FileSystemSource::OsImage,
+        mount_point: Some(MountPoint {
+            path: ROOT_MOUNT_POINT_PATH.into(),
+            options: MountOptions::empty(),
+        }),
+    };
+    let mut builder = builder_base.clone();
+    builder.add_node((&fs).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::FilesystemMissingBlockDeviceId {
+            fs_desc: "src:os-image, type:vfat, mnt:/".into()
+        },
+    );
+}
+
+#[test]
+fn test_filesystem_missing_mp() {
+    // FileSystemType::Tmpfs expects a mount point
+    let mut fs = FileSystem {
+        device_id: None,
+        fs_type: FileSystemType::Tmpfs,
+        source: FileSystemSource::Create,
+        mount_point: None,
+    };
+    let mut builder = StorageGraphBuilder::default();
+    builder.add_node((&fs).into());
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::FilesystemMissingMountPoint {
+            fs_desc: "src:new, type:tmpfs".into()
+        }
+    );
+
+    // build() should pass after adding mount point
+    fs.mount_point = Some(MountPoint {
+        path: ROOT_MOUNT_POINT_PATH.into(),
+        options: MountOptions::defaults(),
+    });
+    let mut builder = StorageGraphBuilder::default();
+    builder.add_node((&fs).into());
+    builder.build().unwrap();
+}
+
+#[test]
+fn test_unexpected_blkdev_id() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let partition = generic_partition();
+    builder.add_node((&partition).into());
+
+    // FileSystemType::Tmpfs does not expect device_id
+    let fs = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Tmpfs,
+        source: FileSystemSource::Create,
+        mount_point: Some(MountPoint {
+            path: ROOT_MOUNT_POINT_PATH.into(),
+            options: MountOptions::defaults(),
+        }),
+    };
+    builder.add_node((&fs).into());
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::FilesystemUnexpectedBlockDeviceId {
+            fs_desc: "src:new, type:tmpfs, dev:partition, mnt:/".into()
+        }
+    );
+}
+
+#[test]
+fn test_unexpected_mp() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let partition = generic_partition();
+    builder.add_node((&partition).into());
+
+    // FileSystemType::Swap should not have a mount point
+    let fs = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Swap,
+        source: FileSystemSource::OsImage,
+        mount_point: Some(MountPoint {
+            path: ROOT_MOUNT_POINT_PATH.into(),
+            options: MountOptions::empty(),
+        }),
+    };
+    builder.add_node((&fs).into());
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::FilesystemUnexpectedMountPoint {
+            fs_desc: "src:os-image, type:swap, dev:partition, mnt:/".into(),
+            fs_type: FileSystemType::Swap
+        }
     );
 }
 
@@ -181,9 +403,15 @@ fn test_member_validity() {
     };
     builder.add_node((&ab_volume_pair).into());
 
-    matches!(
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::InvalidReferenceKind { .. }
+        StorageGraphBuildError::InvalidReferenceKind {
+            node_identifier: StorageGraphNode::from(&ab_volume_pair).identifier(),
+            kind: BlkDevReferrerKind::ABVolume,
+            target_id: "disk".into(),
+            target_kind: BlkDevKind::Disk,
+            valid_references: BlkDevReferrerKind::ABVolume.compatible_kinds()
+        }
     );
 }
 
@@ -294,7 +522,7 @@ fn test_cardinality() {
 }
 
 #[test]
-fn valid_target_count() {
+fn test_valid_target_count() {
     let partition1 = Partition {
         id: "partition1".into(),
         size: PartitionSize::Fixed(4096.into()),
@@ -335,9 +563,14 @@ fn valid_target_count() {
     let mut builder = base_builder.clone();
     builder.add_node((&raid_empty).into());
 
-    matches!(
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::InvalidTargetCount { .. }
+        StorageGraphBuildError::InvalidTargetCount {
+            node_identifier: StorageGraphNode::from(&raid_empty).identifier(),
+            kind: BlkDevReferrerKind::RaidArray,
+            target_count: 0_usize,
+            expected: BlkDevReferrerKind::RaidArray.valid_target_count()
+        }
     );
 
     // Should not be ok
@@ -351,9 +584,14 @@ fn valid_target_count() {
     let mut builder = base_builder.clone();
     builder.add_node((&raid_single).into());
 
-    matches!(
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::InvalidTargetCount { .. }
+        StorageGraphBuildError::InvalidTargetCount {
+            node_identifier: StorageGraphNode::from(&raid_single).identifier(),
+            kind: BlkDevReferrerKind::RaidArray,
+            target_count: 1_usize,
+            expected: BlkDevReferrerKind::RaidArray.valid_target_count()
+        }
     );
 }
 
@@ -369,9 +607,13 @@ fn test_invalid_sizes() {
     let mut builder = base_builder.clone();
     builder.add_node((&partition1).into());
 
-    matches!(
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::BasicCheckFailed { .. }
+        StorageGraphBuildError::BasicCheckFailed {
+            node_id: "partition1".into(),
+            kind: BlkDevKind::Partition,
+            body: "Partition size must be a non-zero multiple of 4096 bytes.".into()
+        }
     );
 
     let partition2 = Partition {
@@ -382,9 +624,13 @@ fn test_invalid_sizes() {
     let mut builder = base_builder.clone();
     builder.add_node((&partition2).into());
 
-    matches!(
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::BasicCheckFailed { .. }
+        StorageGraphBuildError::BasicCheckFailed {
+            node_id: "partition2".into(),
+            kind: BlkDevKind::Partition,
+            body: "Partition size must be a non-zero multiple of 4096 bytes.".into()
+        }
     );
 
     let partition_zero = Partition {
@@ -395,9 +641,178 @@ fn test_invalid_sizes() {
     let mut builder = base_builder.clone();
     builder.add_node((&partition_zero).into());
 
-    matches!(
+    assert_eq!(
         builder.build().unwrap_err(),
-        StorageGraphBuildError::BasicCheckFailed { .. }
+        StorageGraphBuildError::BasicCheckFailed {
+            node_id: "partition_zero".into(),
+            kind: BlkDevKind::Partition,
+            body: "Partition size must be a non-zero multiple of 4096 bytes.".into()
+        }
+    );
+}
+
+#[test]
+fn test_invalid_raid_level() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let part1 = Partition {
+        id: "partition1".into(),
+        partition_type: PartitionType::Esp,
+        size: PartitionSize::Fixed(4096.into()),
+    };
+    builder.add_node((&part1).into());
+
+    let part2 = Partition {
+        id: "partition2".into(),
+        partition_type: PartitionType::Esp,
+        size: PartitionSize::Fixed(4096.into()),
+    };
+    builder.add_node((&part2).into());
+
+    let raid_array = SoftwareRaidArray {
+        id: "raid_array".into(),
+        name: "md0".into(),
+        devices: vec!["partition1".into(), "partition2".into()],
+        level: RaidLevel::Raid5,
+    };
+    builder.add_node((&raid_array).into());
+
+    // The referrer kind of FileSystemSource::EspImage(_) is BlkDevReferrerKind::FileSystemEsp
+    // Any block device with BlkDevReferrerKind::FileSystemEsp, can only refer to a RAID array with
+    // raid level 1
+    let fs = FileSystem {
+        device_id: Some("raid_array".into()),
+        fs_type: FileSystemType::Vfat,
+        source: FileSystemSource::EspImage(Image {
+            url: "http://image".into(),
+            sha256: ImageSha256::Checksum("checksum".into()),
+            format: ImageFormat::RawZst,
+        }),
+        mount_point: Some(MountPoint {
+            path: ESP_MOUNT_POINT_PATH.into(),
+            options: MountOptions::defaults(),
+        }),
+    };
+    builder.add_node((&fs).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::InvalidRaidlevel {
+            node_identifier: StorageGraphNode::from(&fs).identifier(),
+            kind: BlkDevReferrerKind::FileSystemEsp,
+            raid_id: "raid_array".into(),
+            raid_level: RaidLevel::Raid5,
+            valid_levels: BlkDevReferrerKind::FileSystemEsp
+                .allowed_raid_levels()
+                .unwrap()
+        }
+    );
+}
+
+#[test]
+fn test_mount_point_path_not_absolute() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let partition = generic_partition();
+    builder.add_node((&partition).into());
+
+    let fs = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Ext4,
+        source: FileSystemSource::OsImage,
+        mount_point: Some(MountPoint {
+            path: "not/absolute".into(),
+            options: MountOptions::defaults(),
+        }),
+    };
+    builder.add_node((&fs).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::MountPointPathNotAbsolute("not/absolute".to_string())
+    );
+}
+
+#[test]
+fn test_nonexistent_ref() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let fs = FileSystem {
+        device_id: Some("partition".into()),
+        fs_type: FileSystemType::Ext4,
+        source: FileSystemSource::OsImage,
+        mount_point: Some(MountPoint {
+            path: ROOT_MOUNT_POINT_PATH.into(),
+            options: MountOptions::empty(),
+        }),
+    };
+    builder.add_node((&fs).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::NonExistentReference {
+            node_identifier: StorageGraphNode::from(&fs).identifier(),
+            kind: BlkDevReferrerKind::FileSystemOsImage,
+            target_id: "partition".into()
+        }
+    );
+}
+
+#[test]
+fn test_nonexistent_ref_raid() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let partition = generic_partition();
+    builder.add_node((&partition).into());
+
+    let raid_array = SoftwareRaidArray {
+        id: "raid_array".into(),
+        name: "md0".into(),
+        devices: vec!["partition".into(), "nonexistent-partition".into()],
+        level: RaidLevel::Raid1,
+    };
+    builder.add_node((&raid_array).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::NonExistentReference {
+            node_identifier: StorageGraphNode::from(&raid_array).identifier(),
+            kind: BlkDevReferrerKind::RaidArray,
+            target_id: "nonexistent-partition".into()
+        }
+    )
+}
+
+#[test]
+fn test_unique_field_constraint_error() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let disk1 = Disk {
+        id: "disk1".into(),
+        device: "/dev/sda".into(),
+        partition_table_type: PartitionTableType::Gpt,
+        ..Default::default()
+    };
+    builder.add_node((&disk1).into());
+
+    let disk2 = Disk {
+        id: "disk2".into(),
+        device: "/dev/sda".into(),
+        partition_table_type: PartitionTableType::Gpt,
+        ..Default::default()
+    };
+    builder.add_node((&disk2).into());
+
+    // Graph build should fail because across all disk nodes, the "device" field must be unique.
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::UniqueFieldConstraintError {
+            node_id: "disk2".into(),
+            other_id: "disk1".into(),
+            kind: BlkDevKind::Disk,
+            field_name: "device".into(),
+            value: "/dev/sda".into()
+        }
     );
 }
 
@@ -440,7 +855,7 @@ mod verity {
             },
             name: "verity".into(),
             mount_point: MountPoint {
-                path: constants::ROOT_MOUNT_POINT_PATH.into(),
+                path: ROOT_MOUNT_POINT_PATH.into(),
                 options: MountOptions::empty(),
             },
         };
@@ -498,7 +913,7 @@ mod verity {
             },
             name: "verity".into(),
             mount_point: MountPoint {
-                path: constants::ROOT_MOUNT_POINT_PATH.into(),
+                path: ROOT_MOUNT_POINT_PATH.into(),
                 options: MountOptions::empty(),
             },
         };
@@ -547,7 +962,7 @@ mod verity {
             },
             name: "verity".into(),
             mount_point: MountPoint {
-                path: constants::ROOT_MOUNT_POINT_PATH.into(),
+                path: ROOT_MOUNT_POINT_PATH.into(),
                 options: MountOptions::empty(),
             },
         };
@@ -602,7 +1017,7 @@ mod verity {
             },
             name: "verity".into(),
             mount_point: MountPoint {
-                path: constants::ROOT_MOUNT_POINT_PATH.into(),
+                path: ROOT_MOUNT_POINT_PATH.into(),
                 options: MountOptions::empty(),
             },
         };
@@ -619,6 +1034,178 @@ mod verity {
                 valid_types: SpecialReferenceKind::VerityHashDevice
                     .allowed_partition_types()
                     .unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_verity_unsupported_fs_type() {
+        let mut builder = StorageGraphBuilder::default();
+
+        let part1 = Partition {
+            id: "part1".into(),
+            size: PartitionSize::Fixed(4096.into()),
+            partition_type: PartitionType::Root,
+        };
+        builder.add_node((&part1).into());
+
+        let part2 = Partition {
+            id: "part2".into(),
+            size: PartitionSize::Fixed(4096.into()),
+            partition_type: PartitionType::RootVerity,
+        };
+        builder.add_node((&part2).into());
+
+        let vfs = VerityFileSystem {
+            data_device_id: "part1".into(),
+            hash_device_id: "part2".into(),
+            fs_type: FileSystemType::Ntfs, // Only Ext4 and Xfs are supported
+            data_image: Image {
+                url: "http://image".into(),
+                sha256: ImageSha256::Checksum("checksum".into()),
+                format: ImageFormat::RawZst,
+            },
+            hash_image: Image {
+                url: "http://image".into(),
+                sha256: ImageSha256::Checksum("checksum".into()),
+                format: ImageFormat::RawZst,
+            },
+            name: "verity".into(),
+            mount_point: MountPoint {
+                path: ROOT_MOUNT_POINT_PATH.into(),
+                options: MountOptions::empty(),
+            },
+        };
+        builder.add_node((&vfs).into());
+
+        assert_eq!(
+            builder.build().unwrap_err(),
+            StorageGraphBuildError::VerityFileSystemUnsupportedType {
+                name: "verity".into(),
+                fs_type: FileSystemType::Ntfs
+            }
+        );
+    }
+
+    #[test]
+    fn test_verity_filesystem_duplicate_name() {
+        let mut builder = StorageGraphBuilder::default();
+
+        let part1 = Partition {
+            id: "part1".into(),
+            size: PartitionSize::Fixed(4096.into()),
+            partition_type: PartitionType::Root,
+        };
+        builder.add_node((&part1).into());
+
+        let part2 = Partition {
+            id: "part2".into(),
+            size: PartitionSize::Fixed(4096.into()),
+            partition_type: PartitionType::RootVerity,
+        };
+        builder.add_node((&part2).into());
+
+        let vfs = VerityFileSystem {
+            data_device_id: "part1".into(),
+            hash_device_id: "part2".into(),
+            fs_type: FileSystemType::Ext4,
+            data_image: Image {
+                url: "http://image".into(),
+                sha256: ImageSha256::Checksum("checksum".into()),
+                format: ImageFormat::RawZst,
+            },
+            hash_image: Image {
+                url: "http://image".into(),
+                sha256: ImageSha256::Checksum("checksum".into()),
+                format: ImageFormat::RawZst,
+            },
+            name: "verity".into(), // Duplicated name
+            mount_point: MountPoint {
+                path: ROOT_MOUNT_POINT_PATH.into(),
+                options: MountOptions::empty(),
+            },
+        };
+        builder.add_node((&vfs).into());
+
+        let part3 = Partition {
+            id: "part3".into(),
+            size: PartitionSize::Fixed(4096.into()),
+            partition_type: PartitionType::Root,
+        };
+        builder.add_node((&part3).into());
+
+        let part4 = Partition {
+            id: "part4".into(),
+            size: PartitionSize::Fixed(4096.into()),
+            partition_type: PartitionType::RootVerity,
+        };
+        builder.add_node((&part4).into());
+
+        let vfs2 = VerityFileSystem {
+            data_device_id: "part3".into(),
+            hash_device_id: "part4".into(),
+            fs_type: FileSystemType::Ext4,
+            data_image: Image {
+                url: "http://image".into(),
+                sha256: ImageSha256::Checksum("checksum".into()),
+                format: ImageFormat::RawZst,
+            },
+            hash_image: Image {
+                url: "http://image".into(),
+                sha256: ImageSha256::Checksum("checksum".into()),
+                format: ImageFormat::RawZst,
+            },
+            name: "verity".into(), // Duplicated name
+            mount_point: MountPoint {
+                path: "/mount/".into(),
+                options: MountOptions::empty(),
+            },
+        };
+        builder.add_node((&vfs2).into());
+
+        assert_eq!(
+            builder.build().unwrap_err(),
+            StorageGraphBuildError::VerityFilesystemDuplicateName {
+                name: "verity".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_verity_nonexistent_ref() {
+        let mut builder = StorageGraphBuilder::default();
+
+        let partition = generic_partition();
+        builder.add_node((&partition).into());
+
+        let vfs = VerityFileSystem {
+            data_device_id: "partition".into(),
+            hash_device_id: "nonexistent-hash-partition".into(),
+            fs_type: FileSystemType::Ext4,
+            data_image: Image {
+                url: "http://image".into(),
+                sha256: ImageSha256::Checksum("checksum".into()),
+                format: ImageFormat::RawZst,
+            },
+            hash_image: Image {
+                url: "http://image".into(),
+                sha256: ImageSha256::Checksum("checksum".into()),
+                format: ImageFormat::RawZst,
+            },
+            name: "verity".into(), // Duplicated name
+            mount_point: MountPoint {
+                path: ROOT_MOUNT_POINT_PATH.into(),
+                options: MountOptions::empty(),
+            },
+        };
+        builder.add_node((&vfs).into());
+
+        assert_eq!(
+            builder.build().unwrap_err(),
+            StorageGraphBuildError::NonExistentReference {
+                node_identifier: StorageGraphNode::from(&vfs).identifier(),
+                kind: BlkDevReferrerKind::FilesystemVerity,
+                target_id: "nonexistent-hash-partition".into()
             }
         );
     }
@@ -666,6 +1253,135 @@ mod ab {
             StorageGraphBuildError::ReferenceKindMismatch {
                 node_identifier: StorageGraphNode::from(&ab).identifier(),
                 kind: BlkDevReferrerKind::ABVolume,
+            }
+        );
+    }
+
+    #[test]
+    fn test_ab_volume_partition_size_mismatch() {
+        let mut builder = StorageGraphBuilder::default();
+
+        let part1 = Partition {
+            id: "part1".into(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::Fixed(4096.into()),
+        };
+        builder.add_node((&part1).into());
+
+        let part2 = Partition {
+            id: "part2".into(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::Fixed(8192.into()),
+        };
+        builder.add_node((&part2).into());
+
+        let ab = AbVolumePair {
+            id: "ab".into(),
+            volume_a_id: "part1".into(),
+            volume_b_id: "part2".into(),
+        };
+        builder.add_node((&ab).into());
+
+        assert_eq!(
+            builder.build().unwrap_err(),
+            StorageGraphBuildError::PartitionSizeMismatch {
+                node_identifier: StorageGraphNode::from(&ab).identifier(),
+                kind: BlkDevReferrerKind::ABVolume
+            }
+        );
+    }
+
+    #[test]
+    fn test_ab_volume_partition_size_grow() {
+        let mut builder = StorageGraphBuilder::default();
+
+        let part1 = Partition {
+            id: "part1".into(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::Grow,
+        };
+        builder.add_node((&part1).into());
+
+        let part2 = Partition {
+            id: "part2".into(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::Grow,
+        };
+        builder.add_node((&part2).into());
+
+        let ab = AbVolumePair {
+            id: "ab".into(),
+            volume_a_id: "part1".into(),
+            volume_b_id: "part2".into(),
+        };
+        builder.add_node((&ab).into());
+
+        // AB Volume pairs expected to have equally sized, fixed volumes
+        assert_eq!(
+            builder.build().unwrap_err(),
+            StorageGraphBuildError::PartitionSizeNotFixed {
+                node_identifier: StorageGraphNode::from(&ab).identifier(),
+                kind: BlkDevReferrerKind::ABVolume,
+                partition_id: "part2".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_ab_volume_partition_type_mismatch() {
+        let mut builder = StorageGraphBuilder::default();
+
+        let part1 = Partition {
+            id: "part1".into(),
+            partition_type: PartitionType::Root,
+            size: PartitionSize::Fixed(4096.into()),
+        };
+        builder.add_node((&part1).into());
+
+        let part2 = Partition {
+            id: "part2".into(),
+            partition_type: PartitionType::LinuxGeneric,
+            size: PartitionSize::Fixed(4096.into()),
+        };
+        builder.add_node((&part2).into());
+
+        let ab = AbVolumePair {
+            id: "ab".into(),
+            volume_a_id: "part1".into(),
+            volume_b_id: "part2".into(),
+        };
+        builder.add_node((&ab).into());
+
+        // AB Volume pairs must have same partition type
+        assert_eq!(
+            builder.build().unwrap_err(),
+            StorageGraphBuildError::PartitionTypeMismatch {
+                node_identifier: StorageGraphNode::from(&ab).identifier(),
+                kind: BlkDevReferrerKind::ABVolume
+            }
+        );
+    }
+
+    #[test]
+    fn test_ab_volume_nonexistent_ref() {
+        let mut builder = StorageGraphBuilder::default();
+
+        let partition = generic_partition();
+        builder.add_node((&partition).into());
+
+        let ab = AbVolumePair {
+            id: "ab".into(),
+            volume_a_id: "partition".into(),
+            volume_b_id: "nonexistent-partition".into(),
+        };
+        builder.add_node((&ab).into());
+
+        assert_eq!(
+            builder.build().unwrap_err(),
+            StorageGraphBuildError::NonExistentReference {
+                node_identifier: StorageGraphNode::from(&ab).identifier(),
+                kind: BlkDevReferrerKind::ABVolume,
+                target_id: "nonexistent-partition".into()
             }
         );
     }
