@@ -46,6 +46,9 @@ stages:
             parameters:
               action: override
 
+          # Download all test images
+          - template: ../testing_common/download-test-images.yml
+
           - template: ../testing_vm/netlaunch-prep.yml
 
           - bash: |
@@ -77,7 +80,7 @@ stages:
               # rebuilding the test binaries and invoking pytest. The regular
               # target is meant for local use and does extra setup not required
               # here.
-              sg libvirt "make functional-test-core INSTALLER_ISO_PATH=$(System.ArtifactsDirectory)/trident-installer-testimage.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
+              sg libvirt "make functional-test-core INSTALLER_ISO_PATH=./artifacts/iso/trident-installer-testimage.iso ARGUS_TOOLKIT_PATH=argus-toolkit"
             displayName: Execute Functional Tests
 
           - template: ../common_tasks/coverage.yml

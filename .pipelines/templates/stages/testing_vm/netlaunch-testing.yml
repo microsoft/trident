@@ -77,14 +77,16 @@ stages:
           - checkout: argus-toolkit
             fetchDepth: 1
 
-          - template: netlaunch-prep.yml
+          # Download all test images
+          - template: ../testing_common/download-test-images.yml
             parameters:
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 installerISO: trident-container-installer-testimage
                 tridentTestImage: trident-container-testimage
-              ${{ else }}:
-                installerISO: trident-installer-testimage
-                tridentTestImage: trident-testimage
+                downloadTridentContainer: true
+              ${{ else }}: {}
+
+          - template: netlaunch-prep.yml
 
           - template: ../testing_common/trident-prep.yml
             parameters:
@@ -98,13 +100,6 @@ stages:
               sg libvirt "./virt-deploy run"
             workingDirectory: $(argusToolkitSourceDirectory)
             displayName: "Running sushy tools for testing deployment with BMC"
-
-          - bash: |
-              set -eux
-              mv $(System.ArtifactsDirectory)/container/trident-container.tar.gz $(tridentSourceDirectory)/artifacts/test-image/
-              ls -la $(tridentSourceDirectory)/artifacts/test-image/
-            condition: and(succeeded(), eq('${{ parameters.runtimeEnv }}', 'container'))
-            displayName: "Move container image to the serveFolder for netlaunch"
 
           - bash: |
               set -euxo pipefail
@@ -124,7 +119,7 @@ stages:
               fi
 
               ./bin/netlaunch \
-                  --iso $(System.ArtifactsDirectory)/$(installerISO) \
+                  --iso ./artifacts/iso/$(installerISO) \
                   --config $(argusToolkitSourceDirectory)/vm-netlaunch.yaml \
                   --trident $(tridentConfigPath)/trident-config.yaml \
                   --servefolder ./artifacts/test-image \

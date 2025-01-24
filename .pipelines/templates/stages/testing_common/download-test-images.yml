@@ -7,6 +7,26 @@ parameters:
       - trident-installer-testimage
       - trident-container-installer-testimage
 
+  - name: tridentTestImage
+    displayName: "Image used the runtime OS, source of trident (container vs host)"
+    type: string
+    default: trident-testimage
+    values:
+      - trident-container-testimage
+      - trident-testimage
+
+  - name: tridentTestImageVerity
+    displayName: "Image used the verity runtime OS, source of trident (container vs host)"
+    type: string
+    default: trident-verity-testimage
+    values:
+      - trident-verity-testimage
+
+  - name: downloadTridentContainer
+    displayName: "Download Trident container"
+    type: boolean
+    default: false
+
   - name: targetDirectory
     type: string
     default: "$(Build.SourcesDirectory)/artifacts/test-image"
@@ -28,7 +48,7 @@ parameters:
     default: "$(System.ArtifactsDirectory)/verity-testimage"
 
 steps:
-  - ${{ if eq(parameters.installerISO, 'trident-container-installer-testimage') }}:
+  - ${{ if parameters.downloadTridentContainer }}:
       - task: DownloadPipelineArtifact@2
         displayName: "Download Trident container"
         inputs:
@@ -45,17 +65,17 @@ steps:
       targetPath: "${{ parameters.isoDirectory }}"
 
   - task: DownloadPipelineArtifact@2
-    displayName: "Download trident-testimage"
+    displayName: "Download ${{ parameters.tridentTestImage }}"
     inputs:
       buildType: current
-      artifactName: "trident-testimage"
+      artifactName: "${{ parameters.tridentTestImage }}"
       targetPath: "${{ parameters.testImageDir }}"
 
   - task: DownloadPipelineArtifact@2
-    displayName: "Download trident-verity-testimage"
+    displayName: "Download ${{ parameters.tridentTestImageVerity }}"
     inputs:
       buildType: current
-      artifactName: "trident-verity-testimage"
+      artifactName: "${{ parameters.tridentTestImageVerity }}"
       targetPath: "${{ parameters.testImageDirVerity }}"
 
   - task: DownloadPipelineArtifact@2
@@ -81,6 +101,8 @@ steps:
       if [ -n "${{ parameters.testImageDir }}" ]; then
         mv "${{ parameters.testImageDir }}/esp.raw.zst" "${{ parameters.targetDirectory }}/esp.rawzst"
         mv "${{ parameters.testImageDir }}/root.raw.zst" "${{ parameters.targetDirectory }}/root.rawzst"
+
+        mv "${{ parameters.testImageDir }}/${{ parameters.tridentTestImage }}.cosi" "${{ parameters.targetDirectory }}/regular.cosi"
       fi
 
       # If testImageDirVerity is not an empty string, rename the Trident verity test images
@@ -91,6 +113,8 @@ steps:
         mv "${{ parameters.testImageDirVerity }}/root.raw.zst" "${{ parameters.targetDirectory }}/verity_root.rawzst"
         mv "${{ parameters.testImageDirVerity }}/root-hash.raw.zst" "${{ parameters.targetDirectory }}/verity_roothash.rawzst"
         mv "${{ parameters.testImageDirVerity }}/var.raw.zst" "${{ parameters.targetDirectory }}/verity_var.rawzst"
+
+        mv "${{ parameters.testImageDirVerity }}/${{ parameters.tridentTestImageVerity }}.cosi" "${{ parameters.targetDirectory }}/verity.cosi"
       fi
 
       # List tools in the target directory
