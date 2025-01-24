@@ -112,7 +112,7 @@ stages:
         parameters:
           stageType: ${{ parameters.stageType }}
           artifactName: azl-installer
-          feedName: usb-iso
+          packageName: usb-iso
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from trident pipelines alltogether in favor of being only test-images

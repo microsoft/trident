@@ -2,7 +2,7 @@ parameters:
   - name: artifactName
     type: string
 
-  - name: feedName
+  - name: packageName
     type: string
     values:
       - rpms
@@ -22,8 +22,8 @@ parameters:
     default: ""
 
 stages:
-  - stage: GetTridentBinaries_${{ replace(parameters.feedName, '-', '_') }}
-    displayName: Download staged ${{ parameters.feedName }} for ${{ parameters.stageType }}
+  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}
+    displayName: Download staged ${{ parameters.packageName }} for ${{ parameters.stageType }}
 
     jobs:
       - job: DownloadTrident
@@ -50,7 +50,7 @@ stages:
         steps:
           - template: ../common_tasks/download-universal-artifact.yml
             parameters:
-              packageName: ${{ parameters.feedName }}${{ variables.downloadArtifactSuffix }}
+              packageName: ${{ parameters.packageName }}${{ variables.downloadArtifactSuffix }}
               downloadLocation: $(ob_outputDirectory)
               outputVersionVariable: trident_version
               specificVersion: ${{ parameters.specificVersion }}
@@ -61,7 +61,7 @@ stages:
               system: "Custom"
               customVersion: $(trident_version)
 
-          - ${{ if eq(parameters.feedName, 'rpms') }}:
+          - ${{ if eq(parameters.packageName, 'rpms') }}:
             - script: sudo tdnf install -y p7zip p7zip-plugins zstd
               displayName: Install native dependencies to extract Trident binary
               retryCountOnTaskFailure: 3

@@ -46,4 +46,4 @@ stages:
         parameters:
           artifactName: ${{ parameters.tridentArtifactName }}
           stageType: ${{ parameters.stageType }}
-          feedName: rpms
+          packageName: rpms
