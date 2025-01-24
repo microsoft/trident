@@ -187,6 +187,13 @@ pub enum InvalidInputError {
     ReadInputFile { path: String },
 
     #[error(
+        "Root verity configuration in OS Image does not match Host Configuration. Expected OS \
+        Image to {}have root verity enabled.", 
+        if *hc_verity_status { "" } else { "not " }
+    )]
+    RootVerityMismatch { hc_verity_status: bool },
+
+    #[error(
         "SELinux is enabled in the Host Configuration, but SELinux could not be found on the image"
     )]
     SelinuxEnabledButNotFound,

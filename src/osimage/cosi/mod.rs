@@ -35,7 +35,7 @@ pub(super) struct Cosi {
 }
 
 /// Entry inside the COSI file.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 struct CosiEntry {
     offset: u64,
     size: u64,
@@ -73,23 +73,7 @@ impl Cosi {
     pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         self.metadata
             .get_esp_filesystem()
-            .map(|image| OsImageFileSystem {
-                mount_point: image.mount_point.clone(),
-                fs_type: image.fs_type,
-                part_type: image.part_type,
-                image_file: OsImageFile {
-                    compressed_size: image.file.compressed_size,
-                    sha384: image.file.sha384.clone(),
-                    uncompressed_size: image.file.uncompressed_size,
-                    reader: {
-                        Box::new(|| {
-                            self.reader
-                                .section_reader(image.file.entry.offset, image.file.entry.size)
-                        })
-                    },
-                },
-                image_file_verity: None,
-            })
+            .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
     }
 
     /// Returns an iterator of available mount points in the COSI file.
@@ -103,43 +87,52 @@ impl Cosi {
     pub(super) fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
         self.metadata
             .get_regular_filesystems()
-            .map(|image| OsImageFileSystem {
-                mount_point: image.mount_point.clone(),
-                fs_type: image.fs_type,
-                part_type: image.part_type,
-                image_file: OsImageFile {
-                    compressed_size: image.file.compressed_size,
-                    sha384: image.file.sha384.clone(),
-                    uncompressed_size: image.file.uncompressed_size,
-                    reader: {
-                        Box::new(|| {
-                            self.reader
-                                .section_reader(image.file.entry.offset, image.file.entry.size)
-                        })
-                    },
-                },
-                image_file_verity: image.verity.as_ref().map(|verity| OsImageVerityHash {
-                    roothash: verity.roothash.clone(),
-                    hash_image_file: OsImageFile {
-                        compressed_size: verity.file.compressed_size,
-                        sha384: verity.file.sha384.clone(),
-                        uncompressed_size: verity.file.uncompressed_size,
-                        reader: {
-                            Box::new(|| {
-                                self.reader.section_reader(
-                                    verity.file.entry.offset,
-                                    verity.file.entry.size,
-                                )
-                            })
-                        },
-                    },
-                }),
-            })
+            .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
     }
 
     /// Returns the architecture of the OS contained in the COSI file.
     pub(super) fn architecture(&self) -> SystemArchitecture {
         self.metadata.os_arch
+    }
+}
+
+/// Converts a COSI metadata Image to an OsImageFileSystem.
+fn cosi_image_to_os_image_filesystem<'a>(
+    cosi_reader: &'a CosiReader,
+    image: &metadata::Image,
+) -> OsImageFileSystem<'a> {
+    // Make an early copy so the borrow checker knows that we are not keeping a reference to the
+    // original image. Calling as_rer().map() on image.verity seems to tell the borrow checker
+    // that we are keeping a reference to the original image, even if we only clone stuff and don't
+    // keep a reference to the original image.
+    let image = image.clone();
+    OsImageFileSystem {
+        mount_point: image.mount_point,
+        fs_type: image.fs_type,
+        part_type: image.part_type,
+        image_file: OsImageFile {
+            compressed_size: image.file.compressed_size,
+            sha384: image.file.sha384,
+            uncompressed_size: image.file.uncompressed_size,
+            reader: {
+                Box::new(move || {
+                    cosi_reader.section_reader(image.file.entry.offset, image.file.entry.size)
+                })
+            },
+        },
+        verity: image.verity.map(|verity| OsImageVerityHash {
+            hash_image_file: OsImageFile {
+                compressed_size: verity.file.compressed_size,
+                sha384: verity.file.sha384,
+                uncompressed_size: verity.file.uncompressed_size,
+                reader: {
+                    Box::new(move || {
+                        cosi_reader.section_reader(verity.file.entry.offset, verity.file.entry.size)
+                    })
+                },
+            },
+            roothash: verity.roothash,
+        }),
     }
 }
 
@@ -333,12 +326,18 @@ mod tests {
 
     use std::io::{Cursor, Write};
 
+    use metadata::{Image, VerityMetadata};
     use sha2::{Digest, Sha384};
     use tar::{Builder, Header};
     use tempfile::NamedTempFile;
+    use trident_api::primitives::hash::Sha384Hash;
     use uuid::Uuid;
 
-    use osutils::partition_types::DiscoverablePartitionType;
+    use osutils::{
+        osrelease::OsRelease, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
+    };
+
+    use crate::osimage::OsImageFileSystemType;
 
     /// Generate a test tarball with the given entries.
     ///
@@ -617,5 +616,370 @@ mod tests {
         );
 
         assert_eq!(&url, cosi.source(), "Incorrect source URL in COSI instance")
+    }
+
+    #[test]
+    fn test_cosi_image_to_os_image_filesystem() {
+        let data = "some data";
+        let reader = CosiReader::Mock(Cursor::new(data.as_bytes().to_vec()));
+        let mut cosi_img = Image {
+            file: ImageFile {
+                path: PathBuf::from("some/path"),
+                compressed_size: data.len() as u64,
+                uncompressed_size: data.len() as u64,
+                sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(data.as_bytes()))),
+                entry: CosiEntry {
+                    offset: 0,
+                    size: data.len() as u64,
+                },
+            },
+            mount_point: PathBuf::from("/some/mount/point"),
+            fs_type: OsImageFileSystemType::Ext4,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::LinuxGeneric,
+            verity: None,
+        };
+        let os_fs = cosi_image_to_os_image_filesystem(&reader, &cosi_img);
+
+        assert_eq!(os_fs.mount_point, cosi_img.mount_point);
+        assert_eq!(os_fs.fs_type, cosi_img.fs_type);
+        assert_eq!(os_fs.part_type, cosi_img.part_type);
+        assert_eq!(
+            os_fs.image_file.compressed_size,
+            cosi_img.file.compressed_size
+        );
+        assert_eq!(os_fs.image_file.sha384, cosi_img.file.sha384);
+        assert_eq!(
+            os_fs.image_file.uncompressed_size,
+            cosi_img.file.uncompressed_size
+        );
+        assert!(os_fs.verity.is_none());
+
+        let mut read_data = String::new();
+        os_fs
+            .image_file
+            .reader()
+            .unwrap()
+            .read_to_string(&mut read_data)
+            .unwrap();
+        assert_eq!(read_data, data);
+
+        // Now test with verity.
+        let root_hash = "some-root-hash-1234";
+        let verity_data = "some data";
+        let reader = CosiReader::Mock(Cursor::new(verity_data.as_bytes().to_vec()));
+        cosi_img.verity = Some(VerityMetadata {
+            file: ImageFile {
+                path: PathBuf::from("some/verity/path"),
+                compressed_size: verity_data.len() as u64,
+                uncompressed_size: verity_data.len() as u64,
+                sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(verity_data.as_bytes()))),
+                entry: CosiEntry {
+                    offset: 0,
+                    size: verity_data.len() as u64,
+                },
+            },
+            roothash: root_hash.to_string(),
+        });
+
+        let os_fs = cosi_image_to_os_image_filesystem(&reader, &cosi_img);
+
+        assert_eq!(os_fs.mount_point, cosi_img.mount_point);
+        assert_eq!(os_fs.fs_type, cosi_img.fs_type);
+        assert_eq!(os_fs.part_type, cosi_img.part_type);
+        assert_eq!(
+            os_fs.image_file.compressed_size,
+            cosi_img.file.compressed_size
+        );
+        assert_eq!(os_fs.image_file.sha384, cosi_img.file.sha384);
+        assert_eq!(
+            os_fs.image_file.uncompressed_size,
+            cosi_img.file.uncompressed_size
+        );
+        assert!(os_fs.verity.is_some());
+
+        let os_fs_verity = os_fs.verity.unwrap();
+        let cosi_img_verity = cosi_img.verity.unwrap();
+
+        assert_eq!(os_fs_verity.roothash, root_hash);
+        assert_eq!(
+            os_fs_verity.hash_image_file.compressed_size,
+            cosi_img_verity.file.compressed_size
+        );
+        assert_eq!(
+            os_fs_verity.hash_image_file.sha384,
+            cosi_img_verity.file.sha384
+        );
+        assert_eq!(
+            os_fs_verity.hash_image_file.uncompressed_size,
+            cosi_img_verity.file.uncompressed_size
+        );
+
+        let mut read_data = String::new();
+        os_fs_verity
+            .hash_image_file
+            .reader()
+            .unwrap()
+            .read_to_string(&mut read_data)
+            .unwrap();
+
+        assert_eq!(read_data, verity_data);
+    }
+
+    fn sample_verity_cosi_file(
+        mock_images: &[(&str, OsImageFileSystemType, DiscoverablePartitionType, &str)],
+    ) -> Cosi {
+        // Reader data
+        let mut data = Cursor::new(Vec::<u8>::new());
+        let mut entries = HashMap::new();
+        let mut images = Vec::new();
+
+        for (mntpt, fs_type, pt_type, file_data) in mock_images.iter() {
+            let filename = Uuid::new_v4().to_string();
+            let entry = CosiEntry {
+                offset: data.position(),
+                size: file_data.as_bytes().len() as u64,
+            };
+            entries.insert(PathBuf::from(&filename), entry);
+
+            data.write_all(file_data.as_bytes()).unwrap();
+
+            images.push(Image {
+                file: ImageFile {
+                    path: PathBuf::from(filename),
+                    compressed_size: file_data.as_bytes().len() as u64,
+                    uncompressed_size: file_data.as_bytes().len() as u64,
+                    sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(file_data.as_bytes()))),
+                    entry,
+                },
+                mount_point: PathBuf::from(mntpt),
+                fs_type: *fs_type,
+                fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                part_type: *pt_type,
+                verity: None,
+            });
+        }
+
+        Cosi {
+            source: Url::parse("mock://").unwrap(),
+            entries,
+            metadata: CosiMetadata {
+                version: MetadataVersion { major: 1, minor: 0 },
+                id: Some(Uuid::new_v4()),
+                os_arch: SystemArchitecture::Amd64,
+                os_release: OsRelease::default(),
+                os_packages: None,
+                images,
+            },
+            reader: CosiReader::Mock(data),
+        }
+    }
+
+    #[test]
+    fn test_esp_filesystem() {
+        // Test with an empty COSI file.
+        let empty = Cosi {
+            source: Url::parse("mock://").unwrap(),
+            entries: HashMap::new(),
+            metadata: CosiMetadata {
+                version: MetadataVersion { major: 1, minor: 0 },
+                id: Some(Uuid::new_v4()),
+                os_arch: SystemArchitecture::Amd64,
+                os_release: OsRelease::default(),
+                images: vec![],
+                os_packages: None,
+            },
+            reader: CosiReader::Mock(Cursor::new(Vec::<u8>::new())),
+        };
+
+        // Weird behavior with none/multiple ESPs is primarily tested by the
+        // unit tests checking underlying metadata methods.
+        assert_eq!(
+            empty.esp_filesystem().unwrap_err().to_string(),
+            "Expected exactly one ESP filesystem image, found 0"
+        );
+
+        // Test with a COSI file with multiple images.
+        let mock_images = [
+            (
+                "/boot/efi",
+                OsImageFileSystemType::Vfat,
+                DiscoverablePartitionType::Esp,
+                "my-esp-data",
+            ),
+            (
+                "/boot",
+                OsImageFileSystemType::Ext4,
+                // Prism does not guarantee accurate partition types, for non-esp
+                // partitions, so we test with linux generic here to ensure that's
+                // ok.
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-boot-data",
+            ),
+            (
+                "/",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-root-data",
+            ),
+            (
+                "/var",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-var-data",
+            ),
+        ];
+        let cosi = sample_verity_cosi_file(&mock_images);
+        let esp = cosi.esp_filesystem().unwrap();
+
+        let expected = cosi_image_to_os_image_filesystem(
+            &cosi.reader,
+            // The ESP is the first image in the list.
+            &cosi.metadata.images[0],
+        );
+
+        assert_eq!(esp.mount_point, expected.mount_point);
+        assert_eq!(esp.fs_type, expected.fs_type);
+        assert_eq!(esp.part_type, expected.part_type);
+        assert_eq!(
+            esp.image_file.compressed_size,
+            expected.image_file.compressed_size
+        );
+        assert_eq!(esp.image_file.sha384, expected.image_file.sha384);
+        assert_eq!(
+            esp.image_file.uncompressed_size,
+            expected.image_file.uncompressed_size
+        );
+        assert_eq!(esp.verity.is_none(), expected.verity.is_none());
+
+        let read_data = {
+            let mut data = String::new();
+            esp.image_file
+                .reader()
+                .unwrap()
+                .read_to_string(&mut data)
+                .unwrap();
+            data
+        };
+
+        assert_eq!(read_data, mock_images[0].3);
+    }
+
+    #[test]
+    fn test_available_mount_points() {
+        let mock_images = [
+            (
+                "/boot/efi",
+                OsImageFileSystemType::Vfat,
+                DiscoverablePartitionType::Esp,
+                "my-esp-data",
+            ),
+            (
+                "/boot",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-boot-data",
+            ),
+            (
+                "/",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-root-data",
+            ),
+            (
+                "/var",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-var-data",
+            ),
+        ];
+        let cosi = sample_verity_cosi_file(&mock_images);
+
+        let mount_points = cosi.available_mount_points().collect::<Vec<_>>();
+        let expected = mock_images
+            .iter()
+            .filter(|data| data.2 != DiscoverablePartitionType::Esp)
+            .map(|(mntpt, _, _, _)| Path::new(*mntpt))
+            .collect::<Vec<_>>();
+
+        assert_eq!(mount_points, expected);
+    }
+
+    #[test]
+    fn test_filesystems() {
+        let mock_images = [
+            (
+                "/boot/efi",
+                OsImageFileSystemType::Vfat,
+                DiscoverablePartitionType::Esp,
+                "my-esp-data",
+            ),
+            (
+                "/boot",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-boot-data",
+            ),
+            (
+                "/",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-root-data",
+            ),
+            (
+                "/var",
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::LinuxGeneric,
+                "my-var-data",
+            ),
+        ];
+        let cosi = sample_verity_cosi_file(&mock_images);
+
+        let filesystems = cosi.filesystems().collect::<Vec<_>>();
+        let expected = cosi
+            .metadata
+            .images
+            .iter()
+            .skip(1)
+            .map(|img| cosi_image_to_os_image_filesystem(&cosi.reader, img))
+            .collect::<Vec<_>>();
+        let img_data = mock_images
+            .iter()
+            .skip(1)
+            .map(|(_, _, _, data)| *data)
+            .collect::<Vec<_>>();
+        assert_eq!(expected.len(), img_data.len());
+        assert_eq!(filesystems.len(), expected.len());
+
+        for (fs, (expected_fs, expected_data)) in filesystems
+            .iter()
+            .zip(expected.iter().zip(img_data.into_iter()))
+        {
+            assert_eq!(fs.mount_point, expected_fs.mount_point);
+            assert_eq!(fs.fs_type, expected_fs.fs_type);
+            assert_eq!(fs.part_type, expected_fs.part_type);
+            assert_eq!(
+                fs.image_file.compressed_size,
+                expected_fs.image_file.compressed_size
+            );
+            assert_eq!(fs.image_file.sha384, expected_fs.image_file.sha384);
+            assert_eq!(
+                fs.image_file.uncompressed_size,
+                expected_fs.image_file.uncompressed_size
+            );
+            assert_eq!(fs.verity.is_none(), expected_fs.verity.is_none());
+
+            let read_data = {
+                let mut data = String::new();
+                fs.image_file
+                    .reader()
+                    .unwrap()
+                    .read_to_string(&mut data)
+                    .unwrap();
+                data
+            };
+
+            assert_eq!(read_data, expected_data);
+        }
     }
 }

@@ -29,7 +29,7 @@ use trident_api::{
     },
 };
 
-use crate::engine::EngineContext;
+use crate::{engine::EngineContext, osimage::OsImage};
 
 use super::raid;
 
@@ -150,8 +150,34 @@ fn setup_root_verity_device(
     Ok(())
 }
 
-/// Get the root verity root hash from the GRUB config.
+/// Get the root verity root hash.
 fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
+    // When available, extract information from the OS image.
+    if let Some(os_img) = ctx.os_image.as_ref() {
+        get_root_verity_root_hash_osimage(os_img).context(format!(
+            "Failed to get root hash from OS image '{}'",
+            os_img.source()
+        ))
+    } else {
+        get_root_verity_root_hash_grub(ctx)
+    }
+}
+
+/// Get the root verity root hash from the OS image.
+fn get_root_verity_root_hash_osimage(os_img: &OsImage) -> Result<String, Error> {
+    let root_fs = os_img
+        .root_filesystem()
+        .context("Failed to get root filesystem from OS image")?;
+
+    if let Some(verity) = root_fs.verity.as_ref() {
+        Ok(verity.roothash.clone())
+    } else {
+        bail!("Root filesystem in OS image is not verity enabled");
+    }
+}
+
+/// Get the root verity root hash from the GRUB config.
+fn get_root_verity_root_hash_grub(ctx: &EngineContext) -> Result<String, Error> {
     // API check ensures there is a boot volume, look up its mount point
     let boot_mount_point = &ctx
         .spec
@@ -336,7 +362,10 @@ pub(super) fn configure(ctx: &EngineContext, root_mount_path: &Path) -> Result<(
                 .write()
                 .context("Failed to update GRUB config")?;
         }
+
+        // In Azure Linux 3.0 Trident relies on OSModifier to update the GRUB config.
         Distro::AzureLinux(AzureLinuxRelease::AzL3) => {}
+
         distro => {
             bail!("Unsupported Linux distribution for verity setup: '{distro:?}'")
         }
@@ -429,47 +458,50 @@ pub fn stop_pre_existing_verity_devices(host_config: &HostConfiguration) -> Resu
     Ok(())
 }
 
-/// Ensure that if verity is enabled in the root filesystem, the host
-/// configuration contains a verity definition as well. And vice-versa, ensure
-/// that if verity is not enabled in the root filesystem, the host configuration
-/// does not contain a verity configuration.
-/// Returns true if verity is enabled, false if not enabled and error if there
-/// is some indication of misconfiguration (e.g. images are verity enabled, but
-/// HC is not and vice-versa).
-pub(super) fn validate_compatibility(
-    host_config: &HostConfiguration,
+/// Ensures that the Host Config and the provided image have matching verity
+/// configurations. Returns whether verity is enabled, or error if there is some
+/// indication of misconfiguration (e.g. images are verity enabled, but HC is
+/// not and vice-versa).
+pub(super) fn validate_verity_compatibility(
+    ctx: &EngineContext,
     new_root: &Path,
 ) -> Result<bool, Error> {
-    if check_verity_enabled(&new_root.join(GRUB2_CONFIG_RELATIVE_PATH))? {
-        // If verity is enabled, we need to ensure that the verity definition is present in the
-        // host configuration; API checks ensure that root verity is present
-        // and correctly populated.
-        if !host_config.storage.has_verity_device() {
-            return Err(anyhow::anyhow!(
-                "Verity is enabled for the root image, but no verity definition is present in the Host Configuration"
-            ));
-        }
-
-        // The input configuration (HC+images) are correctly configured for
-        // verity scenarios.
-        Ok(true)
+    let root_verity_in_image = if let Some(os_img) = ctx.os_image.as_ref() {
+        // Prefer checking the OS image for verity configuration when possible.
+        os_img
+            .root_filesystem()
+            .with_context(|| {
+                format!(
+                    "Failed to get root filesystem from OS image '{}'",
+                    os_img.source()
+                )
+            })?
+            .verity
+            .is_some()
     } else {
-        // If verity is not enabled, we need to ensure that the verity definition is not present in
-        // the host configuration.
-        if host_config.storage.has_verity_device() {
-            return Err(anyhow::anyhow!(
-                "Verity is not enabled for the root image, but a verity definition is present in the Host Configuration"
-            ));
-        }
+        // Fall back to the GRUB config when the OS image is not available.
+        check_verity_enabled(&new_root.join(GRUB2_CONFIG_RELATIVE_PATH))?
+    };
 
-        // The input configuration (HC+images) do not expect verity scenarios
-        // and are not attempting to use it.
-        Ok(false)
+    match (root_verity_in_image, ctx.spec.storage.has_verity_device()) {
+        // Image has verity but HC doesn't.
+        (true, false) => bail!("Verity is enabled for the root image, but no verity definition is present in the Host Configuration"),
+
+        // Image doesn't have verity but HC does.
+        (false, true) => bail!("Verity is not enabled for the root image, but a verity definition is present in the Host Configuration"),
+
+        // Verity and HC are in sync, return their state.
+        _ => Ok(root_verity_in_image),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::osimage::{
+        mock::{MockImage, MockOsImage},
+        OsImageFileSystemType,
+    };
+
     use super::*;
 
     use std::{fs, path::PathBuf, str::FromStr};
@@ -477,7 +509,9 @@ mod tests {
     use indoc;
     use maplit::btreemap;
 
-    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
+    use osutils::{
+        partition_types::DiscoverablePartitionType, testutils::repart::TEST_DISK_DEVICE_PATH,
+    };
     use trident_api::config::{
         Disk, FileSystemType, Partition, PartitionSize, PartitionType, Storage,
     };
@@ -716,6 +750,43 @@ mod tests {
         assert_eq!(get_updated_device_name("root"), "root_new");
         assert_eq!(get_updated_device_name("foo"), "foo_new");
     }
+
+    #[test]
+    fn test_get_root_verity_root_hash_osimage() {
+        let expected_root_hash = "sample-roothash";
+        let mut mock = MockOsImage::new().with_image(MockImage::new(
+            ROOT_MOUNT_POINT_PATH,
+            OsImageFileSystemType::Ext4,
+            DiscoverablePartitionType::Root,
+            Some(expected_root_hash),
+        ));
+
+        assert_eq!(
+            get_root_verity_root_hash_osimage(&OsImage::mock(mock.clone())).unwrap(),
+            expected_root_hash,
+            "Root hash does not match expected"
+        );
+
+        // test failure when root filesystem is not verity enabled
+        mock.images[0].verity = None;
+        assert_eq!(
+            get_root_verity_root_hash_osimage(&OsImage::mock(mock.clone()))
+                .unwrap_err()
+                .to_string(),
+            "Root filesystem in OS image is not verity enabled",
+            "Got unexpected error"
+        );
+
+        // test failure when root filesystem is not found
+        mock.images.clear();
+        assert_eq!(
+            get_root_verity_root_hash_osimage(&OsImage::mock(mock.clone()))
+                .unwrap_err()
+                .to_string(),
+            "Failed to get root filesystem from OS image",
+            "Got unexpected error"
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -739,101 +810,10 @@ mod functional_test {
         },
     };
     use pytest_gen::functional_test;
-    use trident_api::config::{
-        Disk, FileSystemType, Partition, PartitionType, Storage, VerityDevice,
-    };
+    use trident_api::config::{Disk, FileSystemType, Partition, PartitionType, Storage};
 
     #[functional_test]
-    fn test_validate_verity_compatibility() {
-        let mut host_config = HostConfiguration::default();
-
-        let new_root_dir = tempfile::tempdir().unwrap();
-
-        assert_eq!(
-            validate_compatibility(&host_config, new_root_dir.path())
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            format!(
-                "GRUB config does not exist at path: '{}/boot/grub2/grub.cfg'",
-                new_root_dir.path().display()
-            )
-        );
-
-        let config_dir_path = Path::new(new_root_dir.path()).join("boot/grub2");
-        files::create_dirs(&config_dir_path).unwrap();
-        let grub_config_path = config_dir_path.join("grub.cfg");
-        files::write_file(&grub_config_path, 0o644, "".as_bytes()).unwrap();
-
-        assert_eq!(
-            validate_compatibility(&host_config, new_root_dir.path())
-                .unwrap_err()
-                .to_string(),
-            format!(
-                "Failed to find linux command line in '{}/boot/grub2/grub.cfg'",
-                new_root_dir.path().display()
-            )
-        );
-
-        files::write_file(
-            &grub_config_path,
-            0o644,
-            indoc::indoc! {
-                r#"
-                    set root='hd0,gpt2'
-                    linux /vmlinuz-5.4.0-1052-azure root=UUID
-                "#
-            }
-            .as_bytes(),
-        )
-        .unwrap();
-
-        validate_compatibility(&host_config, new_root_dir.path()).unwrap();
-
-        host_config.storage.internal_verity = vec![];
-        validate_compatibility(&host_config, new_root_dir.path()).unwrap();
-
-        host_config.storage.internal_verity = vec![VerityDevice {
-            id: "root".into(),
-            name: "root".into(),
-            data_device_id: "root".into(),
-            hash_device_id: "root".into(),
-            ..Default::default()
-        }];
-        assert_eq!(
-            validate_compatibility(&host_config, new_root_dir.path())
-                .unwrap_err()
-                .to_string(),
-            "Verity is not enabled for the root image, but a verity definition is present in the Host Configuration"
-        );
-
-        // now enable verity in the grub config
-        files::write_file(
-            &grub_config_path,
-            0o644,
-            indoc::indoc! {
-                r#"
-                    set root='hd0,gpt2'
-                    linux /vmlinuz-5.4.0-1052-azure root=UUID rd.systemd.verity=1
-                "#
-            }
-            .as_bytes(),
-        )
-        .unwrap();
-
-        validate_compatibility(&host_config, new_root_dir.path()).unwrap();
-
-        let host_config = HostConfiguration::default();
-        assert_eq!(
-            validate_compatibility(&host_config, new_root_dir.path())
-                .unwrap_err()
-                .to_string(),
-            "Verity is enabled for the root image, but no verity definition is present in the Host Configuration"
-        );
-    }
-
-    #[functional_test]
-    fn test_get_root_verity_root_hash() {
+    fn test_get_root_verity_root_hash_grub() {
         let expected_root_hash = verity::setup_verity_volumes();
 
         let ctx = EngineContext {
@@ -888,7 +868,10 @@ mod functional_test {
             ..Default::default()
         };
 
-        assert_eq!(get_root_verity_root_hash(&ctx).unwrap(), expected_root_hash);
+        assert_eq!(
+            get_root_verity_root_hash_grub(&ctx).unwrap(),
+            expected_root_hash
+        );
 
         // test failure on missing boot partition in config/status
         let mut ctx_no_boot_mount = ctx.clone();
@@ -898,7 +881,7 @@ mod functional_test {
             .internal_mount_points
             .retain(|mp| mp.path != PathBuf::from("/boot"));
         assert_eq!(
-            get_root_verity_root_hash(&ctx_no_boot_mount)
+            get_root_verity_root_hash_grub(&ctx_no_boot_mount)
                 .unwrap_err()
                 .to_string(),
             "Cannot find boot volume"
@@ -916,7 +899,7 @@ mod functional_test {
             .retain(|p| p.id != "boot");
         ctx_no_boot_part.partition_paths.remove("boot");
         assert_eq!(
-            get_root_verity_root_hash(&ctx_no_boot_part)
+            get_root_verity_root_hash_grub(&ctx_no_boot_part)
                 .unwrap_err()
                 .to_string(),
             "Failed to find path of boot device with id 'boot'"
@@ -943,7 +926,7 @@ mod functional_test {
             files::write_file(grub_config_path, 0o644, grub_config.as_bytes()).unwrap();
         }
 
-        assert!(get_root_verity_root_hash(&ctx)
+        assert!(get_root_verity_root_hash_grub(&ctx)
             .unwrap_err()
             .to_string()
             .starts_with("Failed to find 'roothash' on linux command line in '"));

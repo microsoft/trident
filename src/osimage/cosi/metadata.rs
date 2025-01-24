@@ -30,7 +30,7 @@ pub(super) struct CosiMetadataVersion {
 ///
 /// [COSI Specification](/dev-docs/specs/Composable-OS-Image.md)
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CosiMetadata {
     /// The spec version of this COSI file.
@@ -105,13 +105,13 @@ impl CosiMetadata {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct MetadataVersion {
     pub major: u32,
     pub minor: u32,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct Image {
     #[serde(rename = "image")]
@@ -136,7 +136,7 @@ impl Image {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ImageFile {
     pub path: PathBuf,
@@ -151,7 +151,7 @@ pub(crate) struct ImageFile {
     pub(super) entry: CosiEntry,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct VerityMetadata {
     #[serde(rename = "image")]
@@ -160,7 +160,7 @@ pub(crate) struct VerityMetadata {
     pub roothash: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct OsPackage {
     #[allow(dead_code)]
@@ -235,5 +235,163 @@ mod tests {
         assert_invalid_version(r#""1.0.0""#);
         assert_invalid_version(r#""abcd.efgh""#);
         assert_invalid_version(r#""hello there""#);
+    }
+
+    fn mock_image_file() -> ImageFile {
+        ImageFile {
+            path: PathBuf::from("/path/to/image"),
+            compressed_size: 50,
+            uncompressed_size: 100,
+            sha384: Sha384Hash::from("sample_sha384"),
+            entry: CosiEntry::default(),
+        }
+    }
+
+    #[test]
+    fn test_get_esp_filesystem() {
+        let mut metadata = CosiMetadata {
+            version: MetadataVersion { major: 1, minor: 0 },
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            images: vec![], // Empty images
+            os_packages: None,
+            id: None,
+        };
+
+        // No images
+        assert_eq!(
+            metadata.get_esp_filesystem().unwrap_err().to_string(),
+            "Expected exactly one ESP filesystem image, found 0"
+        );
+
+        // Two images, neither is ESP
+        metadata.images = vec![
+            Image {
+                file: mock_image_file(),
+                mount_point: PathBuf::from("/mnt"),
+                fs_type: OsImageFileSystemType::Ext4,
+                fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                part_type: DiscoverablePartitionType::LinuxGeneric,
+                verity: None,
+            },
+            Image {
+                file: mock_image_file(),
+                mount_point: PathBuf::from("/var"),
+                fs_type: OsImageFileSystemType::Ext4,
+                fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                part_type: DiscoverablePartitionType::LinuxGeneric,
+                verity: None,
+            },
+        ];
+
+        assert_eq!(
+            metadata.get_esp_filesystem().unwrap_err().to_string(),
+            "Expected exactly one ESP filesystem image, found 0"
+        );
+
+        // Three images, one is ESP
+        let esp_img = Image {
+            file: mock_image_file(),
+            mount_point: PathBuf::from("/boot/efi"),
+            fs_type: OsImageFileSystemType::Vfat,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::Esp,
+            verity: None,
+        };
+        metadata.images.push(esp_img.clone());
+        assert_eq!(metadata.get_esp_filesystem().unwrap(), &esp_img);
+
+        // Four images, two are ESP
+        metadata.images.push(Image {
+            file: mock_image_file(),
+            mount_point: PathBuf::from("/boot/efi2"),
+            fs_type: OsImageFileSystemType::Vfat,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::Esp,
+            verity: None,
+        });
+        assert_eq!(
+            metadata.get_esp_filesystem().unwrap_err().to_string(),
+            "Expected exactly one ESP filesystem image, found 2"
+        );
+    }
+
+    #[test]
+    fn test_get_regular_filesystems() {
+        let mut metadata = CosiMetadata {
+            version: MetadataVersion { major: 1, minor: 0 },
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            images: vec![], // Empty images
+            os_packages: None,
+            id: None,
+        };
+
+        // No images
+        assert_eq!(metadata.get_regular_filesystems().count(), 0);
+
+        // Two images, neither is ESP
+        metadata.images = vec![
+            Image {
+                file: mock_image_file(),
+                mount_point: PathBuf::from("/mnt"),
+                fs_type: OsImageFileSystemType::Ext4,
+                fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                part_type: DiscoverablePartitionType::LinuxGeneric,
+                verity: None,
+            },
+            Image {
+                file: mock_image_file(),
+                mount_point: PathBuf::from("/var"),
+                fs_type: OsImageFileSystemType::Ext4,
+                fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                part_type: DiscoverablePartitionType::LinuxGeneric,
+                verity: None,
+            },
+        ];
+        assert_eq!(metadata.get_regular_filesystems().count(), 2);
+
+        // Three images, one is ESP
+        metadata.images.push(Image {
+            file: mock_image_file(),
+            mount_point: PathBuf::from("/boot/efi"),
+            fs_type: OsImageFileSystemType::Vfat,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::Esp,
+            verity: None,
+        });
+        assert_eq!(metadata.get_regular_filesystems().count(), 2);
+
+        // Four images, two are ESP
+        metadata.images.push(Image {
+            file: mock_image_file(),
+            mount_point: PathBuf::from("/boot/efi2"),
+            fs_type: OsImageFileSystemType::Vfat,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::Esp,
+            verity: None,
+        });
+        assert_eq!(metadata.get_regular_filesystems().count(), 2);
+
+        // Two images, both are ESP
+        metadata.images = vec![
+            Image {
+                file: mock_image_file(),
+                mount_point: PathBuf::from("/boot/efi"),
+                fs_type: OsImageFileSystemType::Vfat,
+                fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                part_type: DiscoverablePartitionType::Esp,
+                verity: None,
+            },
+            Image {
+                file: mock_image_file(),
+                mount_point: PathBuf::from("/boot/efi2"),
+                fs_type: OsImageFileSystemType::Vfat,
+                fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                part_type: DiscoverablePartitionType::Esp,
+                verity: None,
+            },
+        ];
+        assert_eq!(metadata.get_regular_filesystems().count(), 0);
     }
 }

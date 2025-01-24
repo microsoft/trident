@@ -597,3 +597,10 @@ recreate-verity-images: bin/trident-rpms.tar.gz
 	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
 	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
 	make copy-runtime-partition-images
+
+artifacts/test-image/verity.cosi: bin/mkcosi artifacts/test-image/verity_*.rawzst
+	sudo bin/mkcosi build verity artifacts/test-image artifacts/test-image/verity.cosi
+
+artifacts/test-image/regular.cosi: bin/mkcosi artifacts/test-image/root.rawzst
+	sudo bin/mkcosi build regular artifacts/test-image artifacts/test-image/regular.cosi
+

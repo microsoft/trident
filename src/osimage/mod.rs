@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use osutils::{arch::SystemArchitecture, partition_types::DiscoverablePartitionType};
-use trident_api::primitives::hash::Sha384Hash;
+use trident_api::{constants::ROOT_MOUNT_POINT_PATH, primitives::hash::Sha384Hash};
 
 mod cosi;
 #[cfg(test)]
@@ -97,14 +97,28 @@ impl OsImage {
             OsImageInner::Mock(mock) => Box::new(mock.filesystems()),
         }
     }
+
+    /// Returns the root filesystem image.
+    pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem> {
+        self.filesystems()
+            .find(|fs| fs.mount_point == Path::new(ROOT_MOUNT_POINT_PATH))
+    }
 }
 
+#[derive(Debug)]
 pub struct OsImageFileSystem<'a> {
     pub mount_point: PathBuf,
     pub fs_type: OsImageFileSystemType,
     pub part_type: DiscoverablePartitionType,
     pub image_file: OsImageFile<'a>,
-    pub image_file_verity: Option<OsImageVerityHash<'a>>,
+    pub verity: Option<OsImageVerityHash<'a>>,
+}
+
+impl OsImageFileSystem<'_> {
+    /// Returns whether the image has a verity hash.
+    pub fn has_verity(&self) -> bool {
+        self.verity.is_some()
+    }
 }
 
 pub struct OsImageFile<'a> {
@@ -121,12 +135,13 @@ impl OsImageFile<'_> {
     }
 }
 
+#[derive(Debug)]
 pub struct OsImageVerityHash<'a> {
     pub roothash: String,
     pub hash_image_file: OsImageFile<'a>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum OsImageFileSystemType {
     /// # Ext4 file system
@@ -175,5 +190,170 @@ impl Display for OsImageFileSystemType {
                 .map_err(|_| std::fmt::Error)?
                 .trim()
         )
+    }
+}
+
+impl std::fmt::Debug for OsImageFile<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OsImageFile")
+            .field("compressed_size", &self.compressed_size)
+            .field("sha384", &self.sha384)
+            .field("uncompressed_size", &self.uncompressed_size)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::HashSet;
+
+    use osutils::osrelease::OsRelease;
+
+    use mock::{MockImage, MOCK_OS_IMAGE_CONTENT};
+    use uuid::Uuid;
+
+    #[test]
+    fn test_basic_properties() {
+        let source_url = Url::parse("mock://").unwrap();
+        let arch = SystemArchitecture::Other;
+        let os_release = OsRelease {
+            id: Some("os-id".into()),
+            name: Some("os-name".into()),
+            version: Some("os-version".into()),
+            version_id: Some("os-version-id".into()),
+            pretty_name: Some("pretty-name-1234".into()),
+        };
+
+        let mock = OsImage::mock(MockOsImage {
+            source: source_url.clone(),
+            os_arch: arch,
+            os_release: os_release.clone(),
+            images: vec![
+                MockImage::new(
+                    "/boot/efi",
+                    OsImageFileSystemType::Ext4,
+                    DiscoverablePartitionType::Esp,
+                    None::<&str>,
+                ),
+                MockImage::new(
+                    "/boot",
+                    OsImageFileSystemType::Ext4,
+                    DiscoverablePartitionType::Xbootldr,
+                    None::<&str>,
+                ),
+                MockImage::new(
+                    "/",
+                    OsImageFileSystemType::Ext4,
+                    DiscoverablePartitionType::Root,
+                    None::<&str>,
+                ),
+                MockImage::new(
+                    "/var",
+                    OsImageFileSystemType::Ext4,
+                    DiscoverablePartitionType::Var,
+                    None::<&str>,
+                ),
+            ],
+        });
+
+        assert_eq!(mock.name(), "Mock");
+        assert_eq!(mock.source(), &source_url);
+        assert_eq!(mock.architecture(), arch);
+
+        assert_eq!(
+            mock.available_mount_points().collect::<HashSet<&Path>>(),
+            HashSet::from([Path::new("/boot"), Path::new("/"), Path::new("/var")])
+        );
+    }
+
+    #[test]
+    fn test_filesystem_getters() {
+        // Array of the mount points in the OS image and random uuids to use as
+        // verity hashed to validate we're grabbing the right filesystems.
+        let some_uuid = || Uuid::new_v4().to_string();
+        let mntpoints = [
+            ("/boot/efi", DiscoverablePartitionType::Esp, some_uuid()),
+            (
+                "/boot",
+                DiscoverablePartitionType::LinuxGeneric,
+                some_uuid(),
+            ),
+            ("/", DiscoverablePartitionType::LinuxGeneric, some_uuid()),
+            ("/var", DiscoverablePartitionType::LinuxGeneric, some_uuid()),
+        ];
+
+        let mock = OsImage::mock(MockOsImage::new().with_images(mntpoints.iter().map(
+            |(mnt, part_type, verity)| {
+                MockImage::new(*mnt, OsImageFileSystemType::Ext4, *part_type, Some(verity))
+            },
+        )));
+
+        // TEST GET ALL FILESYSTEMS
+        let filesystems = mock.filesystems().collect::<Vec<_>>();
+
+        assert_eq!(filesystems.len(), 3);
+
+        // We shouldn't have the ESP filesystem in the list of filesystems.
+        let esp_fs = filesystems
+            .iter()
+            .find(|fs| fs.mount_point == Path::new("/boot/efi"));
+        assert!(esp_fs.is_none());
+
+        // We should have all filesystems EXCEPT the ESP filesystem.
+        for (mnt, part_type, verity) in &mntpoints[1..] {
+            let fs = filesystems
+                .iter()
+                .find(|fs| fs.mount_point == Path::new(*mnt))
+                .unwrap();
+
+            assert_eq!(fs.mount_point, Path::new(*mnt));
+            assert_eq!(fs.part_type, *part_type);
+            assert_eq!(fs.verity.as_ref().unwrap().roothash, *verity);
+        }
+
+        // TEST GET ESP FILESYSTEM
+        let expected = mntpoints
+            .iter()
+            .find(|(_, part_type, _)| *part_type == DiscoverablePartitionType::Esp)
+            .unwrap();
+        let esp_fs = mock.esp_filesystem().unwrap();
+
+        assert_eq!(esp_fs.mount_point, Path::new(expected.0));
+        assert_eq!(esp_fs.part_type, expected.1);
+        assert_eq!(
+            esp_fs.verity.as_ref().unwrap().roothash,
+            expected.2.to_string()
+        );
+
+        // TEST GET ROOT FILESYSTEM
+        let expected = mntpoints.iter().find(|(mntp, _, _)| mntp == &"/").unwrap();
+        let root_fs = mock.root_filesystem().unwrap();
+
+        assert_eq!(root_fs.mount_point, Path::new(expected.0));
+        assert_eq!(root_fs.part_type, expected.1);
+        assert_eq!(
+            root_fs.verity.as_ref().unwrap().roothash,
+            expected.2.to_string()
+        );
+    }
+
+    #[test]
+    fn test_reader() {
+        let mock = OsImage::mock(MockOsImage::new().with_images(vec![MockImage::new(
+            "/boot",
+            OsImageFileSystemType::Ext4,
+            DiscoverablePartitionType::LinuxGeneric,
+            Some("some-verity-hash"),
+        )]));
+
+        let fs = mock.filesystems().next().unwrap();
+        let mut reader = fs.image_file.reader().unwrap();
+
+        let mut buf = String::new();
+        reader.read_to_string(&mut buf).unwrap();
+
+        assert_eq!(buf, MOCK_OS_IMAGE_CONTENT);
     }
 }

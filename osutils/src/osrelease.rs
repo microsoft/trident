@@ -21,7 +21,7 @@ pub fn is_azl3() -> Result<bool, Error> {
 }
 
 /// Represents the contents of the /etc/os-release file.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct OsRelease {
     pub id: Option<String>,
     pub name: Option<String>,

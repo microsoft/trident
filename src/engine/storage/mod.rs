@@ -172,7 +172,7 @@ impl Subsystem for StorageSubsystem {
     }
 
     fn provision(&mut self, ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
-        if verity::validate_compatibility(&ctx.spec, mount_point).structured(
+        if verity::validate_verity_compatibility(ctx, mount_point).structured(
             InvalidInputError::from(
                 HostConfigurationDynamicValidationError::DmVerityMisconfiguration,
             ),

@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::io::Cursor;
 use std::{
     fs::File,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
@@ -14,6 +16,9 @@ pub(super) trait ReadSeek: Read + Seek {}
 impl ReadSeek for HttpFile {}
 impl ReadSeek for File {}
 
+#[cfg(test)]
+impl ReadSeek for Cursor<Vec<u8>> {}
+
 /// An abstraction over a COSI file reader that can be either a local file or an
 /// HTTP request.
 ///
@@ -24,6 +29,10 @@ impl ReadSeek for File {}
 pub(super) enum CosiReader {
     File(PathBuf),
     Http(HttpFile),
+
+    /// Variant reserved for testing purposes only.
+    #[cfg(test)]
+    Mock(Cursor<Vec<u8>>),
 }
 
 impl CosiReader {
@@ -60,6 +69,8 @@ impl CosiReader {
         Ok(match self {
             Self::File(file) => Box::new(File::open(file)?),
             Self::Http(http_file) => Box::new(http_file.clone()),
+            #[cfg(test)]
+            Self::Mock(cursor) => Box::new(cursor.clone()),
         })
     }
 
@@ -73,7 +84,17 @@ impl CosiReader {
                 // Return a reader that is limited to the section size
                 Box::new(file.take(size))
             }
+
             Self::Http(http_file) => Box::new(http_file.section_reader(section_offset, size)?),
+
+            #[cfg(test)]
+            Self::Mock(cursor) => {
+                // Clone the cursor and seek to the section
+                let mut cursor = cursor.clone();
+                cursor.seek(SeekFrom::Start(section_offset))?;
+                // Return a reader that is limited to the section size
+                Box::new(cursor.take(size))
+            }
         })
     }
 }

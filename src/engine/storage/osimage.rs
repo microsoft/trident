@@ -3,12 +3,13 @@ use std::{
     path::Path,
 };
 
+use log::{debug, trace};
 use trident_api::{
     config::{FileSystemSource, FileSystemType, HostConfiguration},
     error::{InternalError, InvalidInputError, ReportError, TridentError},
 };
 
-use crate::osimage::OsImageFileSystemType;
+use crate::osimage::{OsImage, OsImageFileSystemType};
 
 use super::EngineContext;
 
@@ -53,6 +54,21 @@ pub fn validate_host_config(
         return Ok(());
     };
 
+    debug!("Validating Host Configuration filesystems against OS image");
+    validate_filesystems(os_image, host_config)?;
+
+    debug!("Validating Host Configuration root verity configuration against OS image");
+    validate_root_verity_match(os_image, host_config)?;
+
+    Ok(())
+}
+
+/// Validates that all OS Image filesystems are used, and that all applicable Host Configuration
+/// filesystems can be satisfied by the OS image.
+fn validate_filesystems(
+    os_image: &OsImage,
+    host_config: &HostConfiguration,
+) -> Result<(), TridentError> {
     // Populate hashmap with filesystems from OS image
     let all_os_image_filesystems = os_image
         .filesystems()
@@ -126,6 +142,38 @@ pub fn validate_host_config(
     Ok(())
 }
 
+/// Validates that the OS Image and the HC match in terms of root verity configuration.
+///
+/// Either both must have root verity enabled or both must have it disabled.
+fn validate_root_verity_match(
+    os_image: &OsImage,
+    host_config: &HostConfiguration,
+) -> Result<(), TridentError> {
+    // We validate that the OsImage has a root filesystem in previous validation steps.
+    let Some(root_fs) = os_image.root_filesystem() else {
+        trace!("No root filesystem found in OS image, skipping root verity validation");
+        return Ok(());
+    };
+
+    let hc_verity_status = host_config.storage.has_verity_device();
+
+    if hc_verity_status == root_fs.has_verity() {
+        trace!(
+            "Root verity status matches between OS image and Host Configuration: {}",
+            if hc_verity_status {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        );
+        Ok(())
+    } else {
+        Err(TridentError::new(InvalidInputError::RootVerityMismatch {
+            hc_verity_status,
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,39 +187,123 @@ mod tests {
         partition_types::DiscoverablePartitionType,
     };
     use trident_api::{
-        config::{FileSystem, FileSystemSource, FileSystemType, MountPoint, Storage},
+        config::{FileSystem, FileSystemSource, FileSystemType, MountPoint, Storage, VerityDevice},
+        constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
         error::ErrorKind,
     };
 
     use crate::osimage::{
-        mock::{MockImage, MockOsImage},
+        mock::{MockImage, MockOsImage, MockVerity},
         OsImage, OsImageFileSystemType,
     };
 
     const OSIMAGE_DUMMY_SOURCE: &str = "http://example/osimage";
 
-    fn generate_test_engine_context(
-        os_image: OsImage,
+    fn generate_test_host_config(
         fs: impl Iterator<Item = (&'static str, FileSystemType)>,
-    ) -> EngineContext {
-        EngineContext {
-            os_image: Some(os_image),
-            spec: HostConfiguration {
-                storage: Storage {
-                    filesystems: fs
-                        .map(|(path, fs_type)| FileSystem {
-                            device_id: Some("dev".into()),
-                            fs_type,
-                            source: FileSystemSource::OsImage,
-                            mount_point: Some(MountPoint::from_str(path).unwrap()),
-                        })
-                        .collect::<Vec<_>>(),
-                    ..Default::default()
-                },
+    ) -> HostConfiguration {
+        HostConfiguration {
+            storage: Storage {
+                filesystems: fs
+                    .map(|(path, fs_type)| FileSystem {
+                        device_id: Some("dev".into()),
+                        fs_type,
+                        source: FileSystemSource::OsImage,
+                        mount_point: Some(MountPoint::from_str(path).unwrap()),
+                    })
+                    .collect::<Vec<_>>(),
                 ..Default::default()
             },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn test_validate_root_verity_match() {
+        // Generate mock OS image
+        let mock_image = MockOsImage {
+            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
+            os_arch: SystemArchitecture::X86,
+            os_release: OsRelease::default(),
+            images: vec![
+                MockImage {
+                    mount_point: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                    fs_type: OsImageFileSystemType::Vfat,
+                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                    part_type: DiscoverablePartitionType::Esp,
+                    verity: None,
+                },
+                MockImage {
+                    mount_point: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                    fs_type: OsImageFileSystemType::Ext4,
+                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                    part_type: DiscoverablePartitionType::Root,
+                    verity: Some(MockVerity {
+                        roothash: "mock-roothash".to_string(),
+                    }),
+                },
+            ],
+        };
+
+        // Create an OS image with root verity disabled
+        let os_image_no_verity = OsImage::mock({
+            let mut mock_image_clone = mock_image.clone();
+            mock_image_clone.images[1].verity = None;
+            mock_image_clone
+        });
+
+        // Create an OS image with root verity enabled
+        let os_image_verity = OsImage::mock(mock_image);
+
+        // HC with root verity enabled
+        let host_config_verity = HostConfiguration {
+            storage: Storage {
+                verity: vec![VerityDevice::default()],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // HC with root verity disabled
+        let host_config_no_verity = HostConfiguration::default();
+
+        // Test root verity:
+        // OS Image: enabled
+        // HC: enabled
+        // Expected: OK
+        validate_root_verity_match(&os_image_verity, &host_config_verity).unwrap();
+
+        // Test root verity:
+        // OS Image: disabled
+        // HC: disabled
+        // Expected: OK
+        validate_root_verity_match(&os_image_no_verity, &host_config_no_verity).unwrap();
+
+        // Test root verity:
+        // OS Image: enabled
+        // HC: disabled
+        // Expected: Err
+        let err = validate_root_verity_match(&os_image_verity, &host_config_no_verity).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::RootVerityMismatch {
+                hc_verity_status: false
+            }),
+            "Expected RootVerityMismatch error"
+        );
+
+        // Test root verity:
+        // OS Image: disabled
+        // HC: enabled
+        // Expected: Err
+        let err = validate_root_verity_match(&os_image_no_verity, &host_config_verity).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::RootVerityMismatch {
+                hc_verity_status: true
+            }),
+            "Expected RootVerityMismatch error"
+        );
     }
 
     #[test]
@@ -194,20 +326,17 @@ mod tests {
                     fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
+                    verity: None,
                 })
                 .collect(),
         });
 
-        // Generate matching Engine Context and Host Configuration
-        let ctx = generate_test_engine_context(
-            os_image,
-            mock_entries.map(|(path, _, fs_type)| (path, fs_type)),
-        );
-
-        let host_config = ctx.spec.clone();
+        // Generate HC from mock entries
+        let host_config =
+            generate_test_host_config(mock_entries.map(|(path, _, fs_type)| (path, fs_type)));
 
         // Test that validation passes
-        validate_host_config(&ctx, &host_config).unwrap();
+        validate_filesystems(&os_image, &host_config).unwrap();
     }
 
     /// This test checks the scenario where there are more filesystems listed in the OS image than
@@ -233,6 +362,7 @@ mod tests {
                     fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
+                    verity: None,
                 })
                 .collect(),
         });
@@ -244,12 +374,10 @@ mod tests {
         .into_iter();
 
         // Generate Engine Context and Host Configuration
-        let ctx = generate_test_engine_context(os_image, mock_entries_hc);
-
-        let host_config = ctx.spec.clone();
+        let host_config = generate_test_host_config(mock_entries_hc);
 
         // Test that validation does not pass
-        let validation_err = validate_host_config(&ctx, &host_config).unwrap_err();
+        let validation_err = validate_filesystems(&os_image, &host_config).unwrap_err();
         assert_eq!(
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::UnusedOsImageFilesystem {
@@ -279,6 +407,7 @@ mod tests {
                     fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
+                    verity: None,
                 })
                 .collect(),
         });
@@ -290,12 +419,10 @@ mod tests {
         .into_iter();
 
         // Generate Engine Context and Host Configuration
-        let ctx = generate_test_engine_context(os_image, mock_entries_hc);
-
-        let host_config = ctx.spec.clone();
+        let host_config = generate_test_host_config(mock_entries_hc);
 
         // Test that validation does not pass
-        let validation_err = validate_host_config(&ctx, &host_config).unwrap_err();
+        let validation_err = validate_filesystems(&os_image, &host_config).unwrap_err();
         assert_eq!(
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::MismatchedFsType {
@@ -326,6 +453,7 @@ mod tests {
                     fs_type: serde_json::from_str(&format!("\"{}\"", fs_type)).unwrap(),
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::LinuxGeneric,
+                    verity: None,
                 })
                 .collect(),
         });
@@ -338,12 +466,10 @@ mod tests {
         .into_iter();
 
         // Generate Engine Context and Host Configuration
-        let ctx = generate_test_engine_context(os_image, mock_entries_hc);
-
-        let host_config = ctx.spec.clone();
+        let host_config = generate_test_host_config(mock_entries_hc);
 
         // Test that validation does not pass
-        let validation_err = validate_host_config(&ctx, &host_config).unwrap_err();
+        let validation_err = validate_filesystems(&os_image, &host_config).unwrap_err();
         assert_eq!(
             validation_err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::MissingOsImageFilesystem {

@@ -420,7 +420,7 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
         // Check if this ID is a verity device, if so, we must explore the graph
         // to obtain the underlying devices.
         if let Some(verity_device) = ctx.spec.storage.verity_device(id) {
-            let Some(image_file_verity) = image.image_file_verity.as_ref() else {
+            let Some(image_file_verity) = image.verity.as_ref() else {
                 bail!(
                     "Attempt to deploy a filesystem image sourced from the OS image to a verity \
                     device, but no verity hash is available in the OS image."

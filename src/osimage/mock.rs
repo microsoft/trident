@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io::Cursor,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Error;
 use serde::Deserialize;
@@ -9,8 +12,12 @@ use osutils::{
     partition_types::DiscoverablePartitionType,
 };
 use trident_api::primitives::hash::Sha384Hash;
+use uuid::Uuid;
 
-use super::{OsImageFile, OsImageFileSystem, OsImageFileSystemType};
+use super::{OsImageFile, OsImageFileSystem, OsImageFileSystemType, OsImageVerityHash};
+
+/// Content returned by the reader of a mock OS image file.
+pub const MOCK_OS_IMAGE_CONTENT: &str = "mock-os-image-content-lorem-ipsum";
 
 /// This is a generic abstraction of what an OS image is, which can be used to
 /// mock an OS image for testing purposes. It should not be tied to the
@@ -40,6 +47,14 @@ pub struct MockImage {
     pub fs_uuid: OsUuid,
 
     pub part_type: DiscoverablePartitionType,
+
+    pub verity: Option<MockVerity>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MockVerity {
+    pub roothash: String,
 }
 
 fn mock_os_image_file() -> OsImageFile<'static> {
@@ -47,11 +62,37 @@ fn mock_os_image_file() -> OsImageFile<'static> {
         compressed_size: 0,
         sha384: Sha384Hash::from("mock-sha384"),
         uncompressed_size: 0,
-        reader: Box::new(|| unimplemented!("Mock image reader is not implemented!")),
+        reader: Box::new(|| {
+            Ok(Box::new(Cursor::new(
+                MOCK_OS_IMAGE_CONTENT.as_bytes().to_vec(),
+            )))
+        }),
     }
 }
 
 impl MockOsImage {
+    /// Returns a new mock OS image with dummy data.
+    pub fn new() -> Self {
+        Self {
+            source: Url::parse("mock://").unwrap(),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            images: vec![],
+        }
+    }
+
+    /// Adds an image to the mock OS image.
+    pub fn with_image(mut self, image: MockImage) -> Self {
+        self.images.push(image);
+        self
+    }
+
+    /// Adds an image to the mock OS image.
+    pub fn with_images(mut self, images: impl IntoIterator<Item = MockImage>) -> Self {
+        self.images.extend(images);
+        self
+    }
+
     /// Returns an iterator of available mount points in the COSI file.
     pub(super) fn available_mount_points(&self) -> impl Iterator<Item = &Path> {
         self.images
@@ -73,7 +114,10 @@ impl MockOsImage {
                 fs_type: esp_img.fs_type,
                 part_type: esp_img.part_type,
                 image_file: mock_os_image_file(),
-                image_file_verity: None,
+                verity: esp_img.verity.as_ref().map(|verity| OsImageVerityHash {
+                    roothash: verity.roothash.clone(),
+                    hash_image_file: mock_os_image_file(),
+                }),
             })
         } else {
             Err(Error::msg("No ESP filesystem found"))
@@ -90,7 +134,10 @@ impl MockOsImage {
                 fs_type: image.fs_type,
                 part_type: image.part_type,
                 image_file: mock_os_image_file(),
-                image_file_verity: None,
+                verity: image.verity.as_ref().map(|verity| OsImageVerityHash {
+                    roothash: verity.roothash.clone(),
+                    hash_image_file: mock_os_image_file(),
+                }),
             })
     }
 
@@ -98,5 +145,25 @@ impl MockOsImage {
     #[allow(dead_code)]
     pub fn architecture(&self) -> SystemArchitecture {
         self.os_arch
+    }
+}
+
+impl MockImage {
+    /// Returns a new mock image with dummy data.
+    pub fn new(
+        mount_point: impl AsRef<Path>,
+        fs_type: OsImageFileSystemType,
+        part_type: DiscoverablePartitionType,
+        roothash: Option<impl AsRef<str>>,
+    ) -> Self {
+        Self {
+            mount_point: mount_point.as_ref().to_owned(),
+            fs_type,
+            part_type,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            verity: roothash.map(|roothash| MockVerity {
+                roothash: roothash.as_ref().to_owned(),
+            }),
+        }
     }
 }
