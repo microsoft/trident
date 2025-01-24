@@ -10,13 +10,22 @@ cd ../update-b
 python3 -m http.server 8001 &
 popd
 
-EXPECTED_VOLUME=volume-b
+EXPECTED_VOLUME=${EXPECTED_VOLUME:-volume-b}
 UPDATE_CONFIG=/var/lib/trident/update-config.yaml
+# When triggering A/B update to B, we want to use images in update-config.yaml; to A, we want to
+# use update-config2.yaml. However, if this is the rollback scenario, EXPECTED_VOLUME is current
+# volume, so the value of UPDATE_CONFIG needs to be flipped.
+if [ "$EXPECTED_VOLUME" == "volume-a" ] && [ "$ROLLBACK" == "false" ]; then
+    UPDATE_CONFIG=/var/lib/trident/update-config2.yaml
+elif [ "$EXPECTED_VOLUME" == "volume-b" ] && [ "$ROLLBACK" == "true" ]; then
+    UPDATE_CONFIG=/var/lib/trident/update-config2.yaml
+fi
+
 RETRY_COUNT=${RETRY_COUNT:-20}
 
 VM_IP=`getIp`
 
-sshCommand "sudo cp $UPDATE_CONFIG /var/lib/trident/update-config2.yaml && sudo sed -i 's/8000/8001/' /var/lib/trident/update-config2.yaml"
+sshCommand "sudo cp /var/lib/trident/update-config.yaml /var/lib/trident/update-config2.yaml && sudo sed -i 's/8000/8001/' /var/lib/trident/update-config2.yaml"
 
 for i in $(seq 1 $RETRY_COUNT); do
 
@@ -29,7 +38,6 @@ for i in $(seq 1 $RETRY_COUNT); do
         echo ""
 
         truncateLog
-        #sudo virsh reboot $VM_NAME
         sudo virsh shutdown $VM_NAME
         until [ `sudo virsh list | grep -c $VM_NAME` -eq 0 ]; do sleep 1; done
         sudo virsh start $VM_NAME
@@ -50,6 +58,35 @@ for i in $(seq 1 $RETRY_COUNT); do
 
     # Masking errors as we want to report the specific failure if it happens
     set +e
+
+    # If this is a rollback scenario, inject the script to trigger rollback into UPDATE_CONFIG
+    if [ "$ROLLBACK" == "true" ]; then
+        TRIGGER_ROLLBACK_SCRIPT=.pipelines/templates/stages/testing_common/scripts/trigger-rollback.sh
+        SCRIPT_HOST_COPY=/var/lib/trident/trigger-rollback.sh
+        sshCommand "sudo tee $SCRIPT_HOST_COPY > /dev/null" < $TRIGGER_ROLLBACK_SCRIPT
+        sshCommand "sudo chmod +x $SCRIPT_HOST_COPY"
+
+        # The VM host does not have yq installed, so create a local copy of the update config
+        # and inject the trigger-rollback script into it
+        COPY_CONFIG="./config.yaml"
+        sshCommand "sudo cat $UPDATE_CONFIG" > $COPY_CONFIG
+        sudo yq eval "
+        .scripts.postConfigure += [{
+            \"name\": \"trigger-rollback\",
+            \"runOn\": [\"ab-update\"],
+            \"path\": \"$SCRIPT_HOST_COPY\"
+        }]
+        " -i $COPY_CONFIG
+
+        # Set writableEtcOverlayHooks flag under internalParams to true, so that the script
+        # can create a new systemd service
+        sudo yq eval ".internalParams.writableEtcOverlayHooks = true" -i $COPY_CONFIG
+        sshCommand "sudo tee $UPDATE_CONFIG > /dev/null" < $COPY_CONFIG
+
+        # Print out the contents of the update config to validate that the script was injected
+        echo "Updated Host Configuration:"
+        sshCommand "sudo cat $UPDATE_CONFIG"
+    fi
 
     sshCommand "sudo trident run $LOGGING -c $UPDATE_CONFIG --allowed-operations stage"
     if [ $? -ne 0 ]; then
@@ -81,6 +118,13 @@ for i in $(seq 1 $RETRY_COUNT); do
         exit 1
     fi
     checkActiveVolume $EXPECTED_VOLUME $i
+
+    # If this is a rollback scenario, validate that firmware performed a rollback and that Trident
+    # detected it successfully
+    if [ "$ROLLBACK" == "true" ]; then
+        validateRollback
+    fi
+
     if [ $VERBOSE == True ]; then
         sshCommand "sudo trident get"
     fi

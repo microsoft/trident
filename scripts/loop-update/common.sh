@@ -59,6 +59,36 @@ function checkActiveVolume() {
     fi
 }
 
+function validateRollback() {
+    HOST_STATUS=`sshCommand "set -o pipefail; sudo systemd-run --pipe --property=After=trident.service trident get"`
+    # Validate that lastError.category is set to "servicing"
+    CATEGORY=$(echo "$HOST_STATUS" | yq eval '.lastError.category' -)
+    if [ "$CATEGORY" != "servicing" ]; then
+        sshCommand "sudo trident get"
+        echo "Category of last error is not 'servicing', but '$CATEGORY'"
+        adoError "Category of last error is not 'servicing', but '$CATEGORY'"
+        exit 1
+    fi
+
+    # Validate that lastError.error contains the expected content
+    ERROR=$(echo "$HOST_STATUS" | yq eval '.lastError.error' -)
+    if [[ "$ERROR" != *"!ab-update-reboot-check"* ]]; then
+        echo "Type of last error is not '!ab-update-reboot-check', but '$ERROR'"
+        adoError "Type of last error is not '!ab-update-reboot-check', but '$ERROR'"
+        exit 1
+    fi
+
+    # Validate that lastError.message matches the expected format
+    MESSAGE=$(echo "$HOST_STATUS" | yq eval '.lastError.message' -)
+    if ! echo "$MESSAGE" | grep -Eq '^A/B update failed as host booted from .+ instead of the expected device .+$'; then
+        echo "Message of last error does not match the expected format: '$MESSAGE'"
+        adoError "Message of last error does not match the expected format: '$MESSAGE'"
+        exit 1
+    fi
+
+    echo "Rollback validation succeeded"
+}
+
 function truncateLog() {
     sudo truncate -s 0 "$VM_SERIAL_LOG"
 }

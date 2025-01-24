@@ -202,7 +202,7 @@ pub(super) fn provision(
                 },
             )?;
 
-            // Check if `RECRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
+            // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
             // the device in-place. Otherwise, initialize a new LUKS2 volume.
             encrypt_and_open_device(
                 &device_path,

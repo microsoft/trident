@@ -27,7 +27,7 @@ use trident_api::{
 use crate::grpc;
 use crate::{
     datastore::DataStore,
-    engine::{self, boot, bootentries, osimage, storage, EngineContext, SUBSYSTEMS},
+    engine::{self, boot::esp, bootentries, osimage, storage, EngineContext, SUBSYSTEMS},
     subsystems::hooks::HooksSubsystem,
     HostUpdateCommand, SAFETY_OVERRIDE_CHECK_PATH,
 };
@@ -202,7 +202,7 @@ fn stage_clean_install(
         &ctx.partition_paths,
         AbVolumeSelection::VolumeA,
     )?;
-    ctx.install_index = boot::esp::next_install_index(newroot_mount.path())?;
+    ctx.install_index = esp::next_install_index(newroot_mount.path())?;
 
     engine::provision(subsystems, &ctx, newroot_mount.path())?;
 

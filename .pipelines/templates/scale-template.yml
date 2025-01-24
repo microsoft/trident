@@ -48,6 +48,7 @@ stages:
     parameters:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       updateIterationCount: 100
+      rollbackTesting: false
       workers: 256
       updateCheckTimeoutInMinutes: 200 # Generally need less than a minute per update, so with buffer, this should be updateIterationCount * 2
       verboseLogging: ${{ parameters.verboseLogging }}

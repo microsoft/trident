@@ -237,7 +237,7 @@ pub fn get_verity_device_paths(
 /// Returns the device path of the block device which holds the verity overlay.
 ///
 /// When root verity is used, Trident creates an overlay over the root filesystem to allow itself to
-/// perform write operations. This overlay must be located on a writeable filesystem, and thus
+/// perform write operations. This overlay must be located on a writable filesystem, and thus
 /// cannot be on the root partition itself.
 fn get_verity_overlay_device_path(ctx: &EngineContext) -> Result<PathBuf, Error> {
     let overlay_target_id = &ctx

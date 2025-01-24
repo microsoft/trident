@@ -159,6 +159,9 @@ pub mod internal_params {
     /// Enable support for cosi files
     pub const ENABLE_COSI_SUPPORT: &str = "cosi";
 
+    /// Enable support for Harpoon to query for updated Host Config documents.
+    pub const ENABLE_HARPOON_SUPPORT: &str = "harpoon";
+
     /// Experimental support for UKIs
     pub const ENABLE_UKI_SUPPORT: &str = "uki";
 
@@ -171,6 +174,10 @@ pub mod internal_params {
     /// Block trident from transitioning to the new OS after finalizing
     pub const NO_TRANSITION: &str = "noTransition";
 
+    /// Allow configuration of orchestrator connection timeout
+    pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: &str =
+        "orchestratorConnectionTimeoutSeconds";
+
     /// Run extra partition and filesystem checks before reboot
     pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
 
@@ -178,10 +185,6 @@ pub mod internal_params {
     /// new LUKS2 volumes.
     pub const REENCRYPT_ON_CLEAN_INSTALL: &str = "reencryptOnCleanInstall";
 
-    /// Enable support for Harpoon to query for updated Host Config documents.
-    pub const ENABLE_HARPOON_SUPPORT: &str = "harpoon";
-
-    /// Allow configuration of orchestrator connection timeout
-    pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: &str =
-        "orchestratorConnectionTimeoutSeconds";
+    /// Mount a writable overlay for /etc for the hooks subsystem.
+    pub const WRITABLE_ETC_OVERLAY_HOOKS: &str = "writableEtcOverlayHooks";
 }

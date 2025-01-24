@@ -14,7 +14,10 @@ use trident_api::{
         HostConfiguration, HostConfigurationDynamicValidationError,
         HostConfigurationStaticValidationError, Script, ScriptSource,
     },
-    constants::{DEFAULT_SCRIPT_INTERPRETER, ROOT_MOUNT_POINT_PATH},
+    constants::{
+        internal_params::WRITABLE_ETC_OVERLAY_HOOKS, DEFAULT_SCRIPT_INTERPRETER,
+        ROOT_MOUNT_POINT_PATH,
+    },
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
@@ -30,6 +33,7 @@ struct StagedFile {
 #[derive(Default, Debug)]
 pub struct HooksSubsystem {
     staged_files: HashMap<PathBuf, StagedFile>,
+    writable_etc_overlay: bool,
 }
 impl Subsystem for HooksSubsystem {
     fn name(&self) -> &'static str {
@@ -37,7 +41,7 @@ impl Subsystem for HooksSubsystem {
     }
 
     fn writable_etc_overlay(&self) -> bool {
-        false
+        self.writable_etc_overlay
     }
 
     fn validate_host_config(
@@ -68,6 +72,13 @@ impl Subsystem for HooksSubsystem {
     }
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        // Set the flag based on the internal param. This allows to mount a writable /etc overlay
+        // for the hooks subsystem, if a script needs to modify /etc.
+        self.writable_etc_overlay = ctx
+            .spec
+            .internal_params
+            .get_flag(WRITABLE_ETC_OVERLAY_HOOKS);
+
         for script in ctx
             .spec
             .scripts

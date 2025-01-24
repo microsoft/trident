@@ -26,6 +26,11 @@ parameters:
     displayName: "Number of updates to test"
     type: number
     default: 1
+  
+  - name: rollbackTesting
+    displayName: "Run rollback test"
+    type: boolean
+    default: true
 
   - name: workers
     displayName: "Number of workers to use"
@@ -152,7 +157,38 @@ stages:
               OUTPUT: $(ob_outputDirectory)
               VERBOSE: ${{ parameters.verboseLogging }}
               RETRY_COUNT: ${{ parameters.updateIterationCount }}
-            displayName: "Check that Trident can perform the update"
+              EXPECTED_VOLUME: "volume-b"
+              ROLLBACK: "false"
+            displayName: "Check that Trident can perform A/B update"
+            condition: succeeded()
+
+          # E2E rollback test: Trigger an A/B update back into runtime OS A, then cause a rollback
+          # by triggering an artificial reboot. Then, check that the firmware performed a rollback
+          # into B correctly. Finally, trigger two A/B updates, the first one using the same Host
+          # Configuration, and validate that they succeed. Rollback testing will only be run when
+          # the rollbackTesting parameter is true. The scaling test logic will set it to false.
+
+          - bash: ./scripts/loop-update/loop-update.sh
+            env:
+              ARTIFACTS: $(Build.ArtifactStagingDirectory)
+              OUTPUT: $(ob_outputDirectory)
+              VERBOSE: ${{ parameters.verboseLogging }}
+              RETRY_COUNT: 1
+              EXPECTED_VOLUME: "volume-b"
+              ROLLBACK: "true"
+            displayName: "Check that firmware can perform a rollback and that Trident can detect it"
+            condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
+
+          - bash: ./scripts/loop-update/loop-update.sh
+            env:
+              ARTIFACTS: $(Build.ArtifactStagingDirectory)
+              OUTPUT: $(ob_outputDirectory)
+              VERBOSE: ${{ parameters.verboseLogging }}
+              RETRY_COUNT: 2
+              EXPECTED_VOLUME: "volume-a"
+              ROLLBACK: "false"
+            displayName: "Check that Trident can perform A/B update post rollback"
+            condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
 
           # TODO add more e2e tests here (Task 8813)
 
