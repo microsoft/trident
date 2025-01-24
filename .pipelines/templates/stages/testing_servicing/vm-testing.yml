@@ -173,21 +173,10 @@ stages:
               ARTIFACTS: $(Build.ArtifactStagingDirectory)
               OUTPUT: $(ob_outputDirectory)
               VERBOSE: ${{ parameters.verboseLogging }}
-              RETRY_COUNT: 1
+              RETRY_COUNT: 3
               EXPECTED_VOLUME: "volume-b"
               ROLLBACK: "true"
-            displayName: "Check that firmware can perform a rollback and that Trident can detect it"
-            condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
-
-          - bash: ./scripts/loop-update/loop-update.sh
-            env:
-              ARTIFACTS: $(Build.ArtifactStagingDirectory)
-              OUTPUT: $(ob_outputDirectory)
-              VERBOSE: ${{ parameters.verboseLogging }}
-              RETRY_COUNT: 2
-              EXPECTED_VOLUME: "volume-a"
-              ROLLBACK: "false"
-            displayName: "Check that Trident can perform A/B update post rollback"
+            displayName: "Check that Trident can roll back and perform A/B update after"
             condition: and(succeeded(), eq(${{ parameters.rollbackTesting }}, true))
 
           # TODO add more e2e tests here (Task 8813)

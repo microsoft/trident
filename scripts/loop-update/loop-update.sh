@@ -60,7 +60,7 @@ for i in $(seq 1 $RETRY_COUNT); do
     set +e
 
     # If this is a rollback scenario, inject the script to trigger rollback into UPDATE_CONFIG
-    if [ "$ROLLBACK" == "true" ]; then
+    if [ "$ROLLBACK" == "true" ] && [ $i -eq 1 ]; then
         TRIGGER_ROLLBACK_SCRIPT=.pipelines/templates/stages/testing_common/scripts/trigger-rollback.sh
         SCRIPT_HOST_COPY=/var/lib/trident/trigger-rollback.sh
         sshCommand "sudo tee $SCRIPT_HOST_COPY > /dev/null" < $TRIGGER_ROLLBACK_SCRIPT
@@ -88,6 +88,7 @@ for i in $(seq 1 $RETRY_COUNT); do
         sshCommand "sudo cat $UPDATE_CONFIG"
     fi
 
+    sshCommand "sudo cat $UPDATE_CONFIG"
     sshCommand "sudo trident run $LOGGING -c $UPDATE_CONFIG --allowed-operations stage"
     if [ $? -ne 0 ]; then
         echo "Failed to stage update"
@@ -119,20 +120,26 @@ for i in $(seq 1 $RETRY_COUNT); do
     fi
     checkActiveVolume $EXPECTED_VOLUME $i
 
-    # If this is a rollback scenario, validate that firmware performed a rollback and that Trident
-    # detected it successfully
-    if [ "$ROLLBACK" == "true" ]; then
+    # If this is a rollback scenario and we're on 1st iteration, validate that firmware
+    # performed a rollback and that Trident detected it successfully
+    if [ "$ROLLBACK" == "true" ] && [ $i -eq 1 ]; then
         validateRollback
     fi
 
     if [ $VERBOSE == True ]; then
         sshCommand "sudo trident get"
     fi
-    if [ $EXPECTED_VOLUME == volume-a ]; then
-        EXPECTED_VOLUME=volume-b
-        UPDATE_CONFIG=/var/lib/trident/update-config.yaml
+
+    if [ "$EXPECTED_VOLUME" == "volume-a" ]; then
+        EXPECTED_VOLUME="volume-b"
+        # If this is a rollback scenario and we're on 1st iteration, do not update the config path
+        if [ "$ROLLBACK" != "true" ] || [ $i -ne 1 ]; then
+            UPDATE_CONFIG="/var/lib/trident/update-config.yaml"
+        fi
     else
-        EXPECTED_VOLUME=volume-a
-        UPDATE_CONFIG=/var/lib/trident/update-config2.yaml
+        EXPECTED_VOLUME="volume-a"
+        if [ "$ROLLBACK" != "true" ] || [ $i -ne 1 ]; then
+            UPDATE_CONFIG="/var/lib/trident/update-config2.yaml"
+        fi
     fi
 done
