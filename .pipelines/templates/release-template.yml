@@ -18,7 +18,7 @@ stages:
   - template: stages/download_staged/download-staged.yml
     parameters:
       stageType: rel
-      artifactName: usb-iso
+      artifactName: azl-installer
       specificVersion: ${{ parameters.specificVersion }}
       packageName: usb-iso
 
