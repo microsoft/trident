@@ -26,9 +26,7 @@ To track the progress of clean install or A/B upgrade and enable decoupling of
 `stage` from `finalize`, Trident uses **TWO** objects:
 
 1. **Servicing type**: `ServicingType` describes the type of changes required
-based on Host Status and Host Configuration. In Host Status, `servicingType`
-describes the type of servicing that Trident is currently executing, to achieve
-the desired state. This object has the following values:
+based on Host Status and Host Configuration. This object has the following values:
 
    - `HotPatch`: Update that can be applied without pausing the workload.
    - `NormalUpdate`: Update that requires pausing the workload.
@@ -42,38 +40,40 @@ the desired state. This object has the following values:
 2. **Servicing state**: `ServicingState` describes the current state of the
 servicing done by Trident. The host will transition through a different
 sequence of servicing states, depending on the servicing type that Trident is
-executing. In Host Status, `servicingState` describes the progress of the
-`servicingType` on the host. This object has the following values:
+executing. This object has the following values:
 
-   - `NotProvisioned`: This is the initial default state. It communicates that
-      the host is still running in the provisioning OS and has not yet been
-      provisioned by Trident.
-   - `Staged`: Servicing has been staged, i.e., the updated runtime OS image
-      has been deployed onto block devices.
-   - `Finalized`: Servicing has been finalized i.e., UEFI variables have been
-      set, so that firmware boots from the updated runtime OS image after
-      reboot.
+   - `NotProvisioned`: The host is running from the provisioning OS and has
+      not yet been provisioned by Trident.
+   - `CleanInstallStaged`: Clean install has been staged, i.e., the initial
+      runtime OS images have been deployed onto block devices.
+   - `AbUpdateStaged`: A/B update has been staged. The new runtime OS images
+      have been deployed onto block devices.
+   - `CleanInstallFinalized`: Clean install has been finalized, i.e., UEFI
+      variables have been set, so that firmware boots from the runtime OS image
+      after reboot.
+   - `AbUpdateFinalized`: A/B update has been finalized. For the next boot, the
+      firmware will boot from the updated runtime OS image.
    - `Provisioned`: Servicing has been completed, and the host succesfully
       booted from the updated runtime OS image. Trident is ready to begin a new
       servicing.
 
 ## State Diagrams
 
-The state diagrams below illustrate how `servicingState` of Trident and the
-host will change, depending on the host configuration and the value(s) provided
-in the `--allowed-operations` option, for both servicing types:
+The state diagrams below illustrate how `servicingState` of the host will
+change in Host Status, depending on Host Configuration and the value(s)
+provided in the `--allowed-operations` option:
 
 ### Clean Install State Diagram
 
 ::: mermaid
 graph TD
-    A[no-active-servicing <br/>not-provisioned] --> |'stage' <br/>Valid HC received|B[clean-install <br/>not-provisioned]
+    A[not-provisioned] --> |'stage' <br/>Valid HC received|B[not-provisioned]
     B --> |Staging failed|A
-    B --> |Staging succeeded|C[clean-install <br/>staged]
-    C --> |'finalize'<br/>Finalizing succeeded|E[clean-install <br/>finalized]
+    B --> |Staging succeeded|C[clean-install-staged]
+    C --> |'finalize'<br/>Finalizing succeeded|E[clean-install-finalized]
     C --> |'finalize'<br/>Finalizing failed|A
     C --> |'stage'<br/>Updated HC received|B
-    E --> |Successfully booted from<br/>runtime OS image|G[no-active-servicing <br/>provisioned]
+    E --> |Successfully booted from<br/>runtime OS image|G[provisioned]
     E --> |Failed to boot from<br/>runtime OS image|A
 
     %% Adjust node styles dynamically for content fitting
@@ -97,10 +97,10 @@ graph TD
 
 ::: mermaid
 graph TD
-    A[no-active-servicing <br/>provisioned] --> |'stage'<br/>Valid HC received|B[ab-update <br/>provisioned]
+    A[provisioned] --> |'stage'<br/>Valid HC received|B[provisioned]
     B --> |Staging failed|A
-    B --> |Staging succeeded|C[ab-update <br/>staged]
-    C --> |'finalize'<br/>Finalizing succeeded|E[ab-update <br/>finalized]
+    B --> |Staging succeeded|C[ab-update-staged]
+    C --> |'finalize'<br/>Finalizing succeeded|E[ab-update-finalized]
     C --> |'finalize'<br/>Finalizing failed|A
     C --> |'stage'<br/>Updated HC received|B
     E --> |Successfully booted from<br/>updated runtime OS|A

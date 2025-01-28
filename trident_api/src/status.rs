@@ -17,8 +17,8 @@ use crate::{config::HostConfiguration, is_default, BlockDeviceId};
 pub struct HostStatus {
     pub spec: HostConfiguration,
 
-    /// If an A/B update is currently in the Staged or Finalized state, this holds the previous host
-    /// configuration from before the update.
+    /// If the host is currently in AbUpdateStaged or AbUpdateFinalized state, this holds the
+    /// previous host configuration, from before the A/B update servicing has started.
     #[serde(default, skip_serializing_if = "is_default")]
     pub spec_old: HostConfiguration,
 
@@ -57,8 +57,7 @@ pub struct HostStatus {
     pub is_management_os: bool,
 }
 
-/// ServicingType is the type of servicing that the Trident agent is executing on the host. Through
-/// ServicingType, Trident communicates what servicing operations are in progress.
+/// Servicing type is the type of servicing that the Trident agent is executing on the host.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ServicingType {
@@ -77,9 +76,9 @@ pub enum ServicingType {
     NoActiveServicing = 5,
 }
 
-/// ServicingState describes the progress of the servicing that the Trident agent is executing on
-/// the host. The host will transition through a different sequence of servicing states, depending
-/// on the servicing type.
+/// Servicing state describes the progress of the servicing that the Trident agent is executing on
+/// the host. The host will transition through a different sequence of servicing states while
+/// servicing the host.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ServicingState {

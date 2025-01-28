@@ -240,16 +240,16 @@ Supported flags are:
   staged runtime OS. This is useful if you want to drive additional operations
   on the host outside of Trident or delay the reboot until a later point in
   time. After the new runtime OS image has been staged, Trident will update the
-  host's servicing state to `Staged`.
+  host's servicing state to `CleanInstallStaged` or `AbUpdateStaged`.
 - **finalize**: Trident will reboot the host into the newly staged runtime OS
   image to finalize a clean install or A/B update. Trident will first manage
   the UEFI firmware variables, to ensure that post reboot, the firmware boots
   into the updated runtime OS image. Then, Trident will set the host's
-  servicing state to `Finalized` and reboot. After the host comes back up,
-  Trident will validate that firmware correctly booted from the updated runtime
-  OS image and change the host's servicing state to `Provisioned`. Otherwise,
-  if the host failed to boot from the expected device, Trident will issue an
-  error to the user.
+  servicing state to `CleanInstallFinalized` or `AbUpdateFinalized` and reboot.
+  After the host comes back up, Trident will validate that the firmware
+  correctly booted from the updated runtime OS image and change the host's
+  servicing state to `Provisioned`. Otherwise, if the host failed to boot from
+  the expected device, Trident will issue an error to the user.
 
 The possible values are:
 
