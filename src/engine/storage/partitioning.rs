@@ -223,7 +223,7 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
                     disk.id
                 );
 
-                let part_info = osutils::lsblk::get(&part.node).with_context(|| {
+                let part_info = lsblk::get(&part.node).with_context(|| {
                     format!(
                         "Failed to retrieve information for partition '{}' on disk '{}'.",
                         part.node.display(),
@@ -825,6 +825,7 @@ mod functional_test {
     use osutils::{
         repart::RepartActivity,
         testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
+        wipefs,
     };
     use pytest_gen::functional_test;
     use trident_api::config::{Partition, PartitionTableType};
@@ -905,7 +906,7 @@ mod functional_test {
         check_part("part2");
         check_part("part3");
 
-        osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
+        wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
     }
 
     /// Create a test partition table on the test disk.
@@ -984,7 +985,7 @@ mod functional_test {
         assert!(!ctx.partition_paths.contains_key("part2"), "part2 found");
         assert!(ctx.partition_paths.contains_key("part3"), "part3 not found");
 
-        osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
+        wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
     }
 
     #[functional_test(negative = true)]
@@ -1020,6 +1021,6 @@ mod functional_test {
 
         create_partitions(&mut ctx).unwrap_err();
 
-        osutils::wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
+        wipefs::all(TEST_DISK_DEVICE_PATH).unwrap();
     }
 }

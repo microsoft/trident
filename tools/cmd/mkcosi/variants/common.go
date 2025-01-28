@@ -247,7 +247,7 @@ func addFileToCosi(tw *tar.Writer, name string, size int64, file *os.File) error
 		Format:   tar.FormatPAX,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to write tar headerfor file '%s': %w", name, err)
+		return fmt.Errorf("failed to write tar header for file '%s': %w", name, err)
 	}
 
 	_, err = io.Copy(tw, file)

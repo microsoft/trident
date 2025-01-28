@@ -34,8 +34,8 @@ impl ByteCount {
         }
     }
 
-    /// Returns a human-readable *approximation* of the byte count. This is will
-    /// ALWAYS use the largest suffix possible at the cost of precision.
+    /// Returns a human-readable *approximation* of the byte count. This will ALWAYS use the
+    /// largest suffix possible at the cost of precision.
     ///
     /// ONLY use this to give a rough idea of the size, not for precise display.
     pub fn to_human_readable_approx(&self) -> String {
