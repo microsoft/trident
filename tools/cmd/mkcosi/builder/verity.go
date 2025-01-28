@@ -1,4 +1,4 @@
-package variants
+package builder
 
 import (
 	"argus_toolkit/cmd/mkcosi/metadata"

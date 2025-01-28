@@ -1,22 +1,24 @@
 package main
 
 import (
-	"argus_toolkit/cmd/mkcosi/metadata"
-	"argus_toolkit/cmd/mkcosi/variants"
+	"argus_toolkit/cmd/mkcosi/builder"
+	"argus_toolkit/cmd/mkcosi/cmd"
 
 	"github.com/alecthomas/kong"
 	log "github.com/sirupsen/logrus"
 )
 
 type CLI struct {
-	Build        BuildCmd              `cmd:"" help:"Build an COSI file from existing test images!"`
-	ReadMetadata metadata.ReadMetadata `cmd:"" help:"Read metadata from a COSI file."`
-	ForceColor   bool                  `help:"Force color output." short:"c"`
+	Build           BuildCmd            `cmd:"" help:"Build a COSI file from existing test images!"`
+	ReadMetadata    cmd.ReadMetadata    `cmd:"" help:"Read metadata from a COSI file."`
+	RandomizeFsUuid cmd.RandomizeFsUuid `cmd:"" help:"Randomize the UUID of the specified filesystems in a COSI file."`
+	ForceColor      bool                `help:"Force color output." short:"c"`
+	Trace           bool                `help:"Enable trace logging." short:"t"`
 }
 
 type BuildCmd struct {
-	Regular variants.BuildRegular `cmd:"" help:"Build a regular COSI"`
-	Verity  variants.BuildVerity  `cmd:"" help:"Build a verity COSI"`
+	Regular builder.BuildRegular `cmd:"" help:"Build a regular COSI"`
+	Verity  builder.BuildVerity  `cmd:"" help:"Build a verity COSI"`
 }
 
 func main() {
@@ -24,6 +26,10 @@ func main() {
 	log.Debug("Starting mkcosi")
 	cli := CLI{}
 	ctx := kong.Parse(&cli)
+
+	if cli.Trace {
+		log.SetLevel(log.TraceLevel)
+	}
 
 	if cli.ForceColor {
 		log.SetFormatter(&log.TextFormatter{

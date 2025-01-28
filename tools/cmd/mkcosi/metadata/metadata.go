@@ -27,6 +27,12 @@ type ImageFile struct {
 	CompressedSize   uint64 `json:"compressedSize"`
 	UncompressedSize uint64 `json:"uncompressedSize"`
 	Sha384           string `json:"sha384"`
+
+	// Used internally when building/extracting a COSI file to store the
+	// location of the source image outside of the COSI file. This is NOT part
+	// of the COSI spec, just an implementation detail for convenience. This
+	// field is not serialized to JSON.
+	SourceFile string `json:"-"`
 }
 
 type PartitionType string

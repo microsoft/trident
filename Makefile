@@ -314,7 +314,7 @@ bin/miniproxy: tools/cmd/miniproxy/* tools/go.sum
 	mkdir -p bin
 	cd tools && go build -o ../bin/miniproxy ./cmd/miniproxy
 
-bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/variants/* tools/cmd/mkcosi/**/*
+bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 

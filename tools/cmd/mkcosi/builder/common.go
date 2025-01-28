@@ -1,7 +1,6 @@
-package variants
+package builder
 
 import (
-	"archive/tar"
 	"argus_toolkit/cmd/mkcosi/metadata"
 	"argus_toolkit/pkg/ref"
 	"crypto/sha512"
@@ -52,10 +51,8 @@ func (opts CommonOpts) Validate() error {
 }
 
 type ImageBuildData struct {
-	Source       string
-	KnownInfo    ExpectedImage
-	Metadata     *metadata.Image
-	VeritySource *string
+	KnownInfo ExpectedImage
+	Metadata  *metadata.Image
 }
 
 type ExpectedImage struct {
@@ -109,14 +106,13 @@ func buildCosiFile(variant ImageVariant) error {
 		imgMetadata := &cosiMetadata.Images[i]
 		// Populate the image build data for this index
 		imageData[i] = ImageBuildData{
-			// Create the in-host path to the image
-			Source:    path.Join(commonOpts.Source, full_image_name),
 			Metadata:  imgMetadata,
 			KnownInfo: image,
 		}
 
-		log.WithField("path", imageData[i].Source).Debug("Adding expected image to list.")
-
+		// Populate the image source
+		imgMetadata.Image.SourceFile = path.Join(commonOpts.Source, full_image_name)
+		log.WithField("path", imgMetadata.Image.SourceFile).Debug("Adding expected image to list.")
 		// Populate the in-COSI file path
 		imgMetadata.Image.Path = path.Join("images", full_image_name)
 		// Populate the partition type
@@ -126,14 +122,14 @@ func buildCosiFile(variant ImageVariant) error {
 		// Populate verity data if needed
 		if variant.IsVerity() && image.VerityImageName != nil {
 			full_verity_image_name := fmt.Sprintf("%s.%s", *image.VerityImageName, commonOpts.SourceExtension)
-			imageData[i].VeritySource = ref.Of(path.Join(commonOpts.Source, full_verity_image_name))
 			imgMetadata.Verity = &metadata.Verity{
 				Image: metadata.ImageFile{
-					Path: path.Join("images", full_verity_image_name),
+					Path:       path.Join("images", full_verity_image_name),
+					SourceFile: path.Join(commonOpts.Source, full_verity_image_name),
 				},
 			}
 
-			log.WithField("path", *imageData[i].VeritySource).Debug("Adding expected image to list.")
+			log.WithField("path", imgMetadata.Verity.Image.SourceFile).Debug("Adding expected image to list.")
 
 			// Set the pointer to the roothash
 			roothash = &imgMetadata.Verity.Roothash
@@ -148,23 +144,28 @@ func buildCosiFile(variant ImageVariant) error {
 
 	// Find all images in the source directory
 	for _, data := range imageData {
-		log.WithField("image", data.Source).Info("Processing image...")
+		if data.Metadata.Image.SourceFile == "" {
+			return errors.New("source file not set")
+		}
+		source := data.Metadata.Image.SourceFile
+
+		log.WithField("image", source).Info("Processing image...")
 		extracted, err := data.populateMetadata()
 		if err != nil {
-			return fmt.Errorf("failed to populate metadata for %s: %w", data.Source, err)
+			return fmt.Errorf("failed to populate metadata for %s: %w", source, err)
 		}
-		log.WithField("image", data.Source).Info("Populated metadata for image.")
+		log.WithField("image", source).Info("Populated metadata for image.")
 
 		if extracted.OsRelease != nil {
-			log.Debugf("Populated os-release metadata from image %s", data.Source)
+			log.Debugf("Populated os-release metadata from image %s", source)
 			cosiMetadata.OsRelease = *extracted.OsRelease
 		}
 
 		if variant.IsVerity() && extracted.GrubCfg != nil {
-			log.WithField("image", data.Source).Info("Found verity grub.cfg, extracting roothash...")
+			log.WithField("image", source).Info("Found verity grub.cfg, extracting roothash...")
 			extractedRoothash, err := extractRoothash(*extracted.GrubCfg)
 			if err != nil {
-				return fmt.Errorf("failed to extract roothash from %s: %w", data.Source, err)
+				return fmt.Errorf("failed to extract roothash from %s: %w", source, err)
 			}
 
 			// Write the roothash to the pointer
@@ -191,24 +192,9 @@ func buildCosiFile(variant ImageVariant) error {
 	}
 	defer cosiFile.Close()
 
-	// Create tar writer
-	tw := tar.NewWriter(cosiFile)
-	defer tw.Close()
-
-	tw.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg,
-		Name:     "metadata.json",
-		Size:     int64(len(metadataJson)),
-		Mode:     0o400,
-		Format:   tar.FormatPAX,
-	})
-	tw.Write(metadataJson)
-
-	for _, data := range imageData {
-		log.WithField("image", data.Source).Info("Adding image to COSI...")
-		if err := data.addToCosi(tw); err != nil {
-			return fmt.Errorf("failed to add %s to COSI: %w", data.Source, err)
-		}
+	err = BuildCosi(cosiFile, &cosiMetadata)
+	if err != nil {
+		return fmt.Errorf("failed to build COSI file: %w", err)
 	}
 
 	log.WithField("output", commonOpts.Output).Info("Finished building COSI.")
@@ -216,63 +202,7 @@ func buildCosiFile(variant ImageVariant) error {
 	return nil
 }
 
-func (data *ImageBuildData) addToCosi(tw *tar.Writer) error {
-	imageFile, err := os.Open(data.Source)
-	if err != nil {
-		return fmt.Errorf("failed to open image file: %w", err)
-	}
-	defer imageFile.Close()
-
-	addFileToCosi(tw, data.Metadata.Image.Path, int64(data.Metadata.Image.CompressedSize), imageFile)
-
-	if data.VeritySource != nil && data.Metadata.Verity != nil {
-		log.WithField("image", *data.VeritySource).Info("Adding verity file to COSI...")
-		verityFile, err := os.Open(*data.VeritySource)
-		if err != nil {
-			return fmt.Errorf("failed to open verity file: %w", err)
-		}
-		defer verityFile.Close()
-		addFileToCosi(tw, data.Metadata.Verity.Image.Path, int64(data.Metadata.Verity.Image.CompressedSize), verityFile)
-	}
-
-	return nil
-}
-
-func addFileToCosi(tw *tar.Writer, name string, size int64, file *os.File) error {
-	err := tw.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg,
-		Name:     name,
-		Size:     size,
-		Mode:     0o400,
-		Format:   tar.FormatPAX,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to write tar header for file '%s': %w", name, err)
-	}
-
-	_, err = io.Copy(tw, file)
-	if err != nil {
-		return fmt.Errorf("failed to write image '%s' to COSI: %w", name, err)
-	}
-
-	return nil
-}
-
-func sha384sum(path string) (string, error) {
-	sha384 := sha512.New384()
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	if _, err := io.Copy(sha384, file); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", sha384.Sum(nil)), nil
-}
-
-func decompressImage(source string) (*os.File, error) {
+func DecompressImage(source string) (*os.File, error) {
 	src, err := os.Open(source)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %w", source, err)
@@ -326,27 +256,33 @@ func getFsData(imagePath string) (string, string, error) {
 }
 
 func (data *ImageBuildData) populateMetadata() (*ExtractedImageData, error) {
-	stat, err := os.Stat(data.Source)
+	if data.Metadata.Image.SourceFile == "" {
+		return nil, fmt.Errorf("source file not set")
+	}
+	source := data.Metadata.Image.SourceFile
+
+	stat, err := os.Stat(source)
 	if err != nil {
-		return nil, fmt.Errorf("filed to stat %s: %w", data.Source, err)
+		return nil, fmt.Errorf("filed to stat %s: %w", source, err)
 	}
 	if stat.IsDir() {
-		return nil, fmt.Errorf("%s is a directory", data.Source)
+		return nil, fmt.Errorf("%s is a directory", source)
 	}
 	data.Metadata.Image.CompressedSize = uint64(stat.Size())
 
 	// Calculate the sha384 of the image
-	sha384, err := sha384sum(data.Source)
+	sha384, err := Sha384SumFile(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate sha384 of %s: %w", data.Source, err)
+		return nil, fmt.Errorf("failed to calculate sha384 of %s: %w", source, err)
 	}
 	data.Metadata.Image.Sha384 = sha384
 
 	// Decompress the image
-	tmpFile, err := decompressImage(data.Source)
+	tmpFile, err := DecompressImage(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decompress %s: %w", data.Source, err)
+		return nil, fmt.Errorf("failed to decompress %s: %w", source, err)
 	}
+	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	stat, err = tmpFile.Stat()
@@ -357,7 +293,7 @@ func (data *ImageBuildData) populateMetadata() (*ExtractedImageData, error) {
 	data.Metadata.Image.UncompressedSize = uint64(stat.Size())
 	data.Metadata.FsType, data.Metadata.FsUuid, err = getFsData(tmpFile.Name())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get filesystem data for %s: %w", data.Source, err)
+		return nil, fmt.Errorf("failed to get filesystem data for %s: %w", source, err)
 	}
 
 	temp_mount_path, err := os.MkdirTemp("", "mkcosi")
@@ -365,7 +301,7 @@ func (data *ImageBuildData) populateMetadata() (*ExtractedImageData, error) {
 		return nil, fmt.Errorf("failed to create temporary mount path: %w", err)
 	}
 
-	err = populateVerityMetadata(data.VeritySource, data.Metadata.Verity)
+	err = populateVerityMetadata(data.Metadata.Verity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to populate verity metadata: %w", err)
 	}
@@ -406,32 +342,34 @@ func (data *ImageBuildData) populateMetadata() (*ExtractedImageData, error) {
 	return &extractedData, nil
 }
 
-func populateVerityMetadata(source *string, verity *metadata.Verity) error {
-	if source == nil && verity == nil {
+func populateVerityMetadata(verity *metadata.Verity) error {
+	if verity == nil {
 		return nil
 	}
 
-	if source == nil || verity == nil {
-		return errors.New("source and verity file must be both defined or both undefined")
+	if verity.Image.SourceFile == "" {
+		return fmt.Errorf("verity source file not set")
 	}
+
+	source := verity.Image.SourceFile
 
 	verityFile := &verity.Image
 
-	verityStat, err := os.Stat(*source)
+	verityStat, err := os.Stat(source)
 	if err != nil {
 		return fmt.Errorf("failed to stat verity source: %w", err)
 	}
 
 	verityFile.CompressedSize = uint64(verityStat.Size())
 
-	veritySha384, err := sha384sum(*source)
+	veritySha384, err := Sha384SumFile(source)
 	if err != nil {
 		return fmt.Errorf("failed to calculate sha384 of verity source: %w", err)
 	}
 
 	verityFile.Sha384 = veritySha384
 
-	verityTmpFile, err := decompressImage(*source)
+	verityTmpFile, err := DecompressImage(source)
 	if err != nil {
 		return fmt.Errorf("failed to decompress verity source: %w", err)
 	}
@@ -445,4 +383,22 @@ func populateVerityMetadata(source *string, verity *metadata.Verity) error {
 	verityFile.UncompressedSize = uint64(verityStat.Size())
 
 	return nil
+}
+
+func Sha384SumFile(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	return Sha384SumReader(file)
+}
+
+func Sha384SumReader(reader io.Reader) (string, error) {
+	sha384 := sha512.New384()
+	if _, err := io.Copy(sha384, reader); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha384.Sum(nil)), nil
 }
