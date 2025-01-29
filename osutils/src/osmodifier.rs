@@ -129,8 +129,8 @@ pub struct IdentifiedPartition {
 pub struct Verity {
     pub id: String,
     pub name: String,
-    pub data_device_id: String,
-    pub hash_device_id: String,
+    pub data_device: String,
+    pub hash_device: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub corruption_option: Option<CorruptionOption>,
 }
