@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand};
 use log::{error, info, warn, LevelFilter};
 
 use trident::{
-    offline_init, validation, BackgroundLog, Logstream, MultiLogger, TraceStream, Trident,
+    offline_init, validation, BackgroundLog, GetKind, Logstream, MultiLogger, TraceStream, Trident,
     TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
@@ -82,12 +82,19 @@ enum Commands {
 
     /// Get the HostStatus
     #[clap(name = "get")]
-    GetHostStatus {
-        /// Path to save the resulting HostStatus
+    Get {
+        /// What data to retrieve
+        kind: Option<GetKind>,
+
+        /// Path to save the resulting output
+        #[clap(short, long)]
+        outfile: Option<PathBuf>,
+
+        /// DEPRECATED: Path to save the resulting HostStatus
         #[clap(short, long)]
         status: Option<PathBuf>,
 
-        /// Output only the 'spec' field of the Host Status.
+        /// DEPRECATED: Output only the 'spec' field of the Host Status
         #[clap(long, default_value = "false")]
         config_only: bool,
     },
@@ -119,7 +126,7 @@ impl Commands {
             Commands::Run { .. } => "run",
             Commands::RebuildRaid { .. } => "rebuild-raid",
             Commands::StartNetwork { .. } => "start-network",
-            Commands::GetHostStatus { .. } => "get-host-status",
+            Commands::Get { .. } => "get",
             Commands::Validate { .. } => "validate",
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => "pytest",
@@ -178,14 +185,20 @@ fn run_trident(
             return offline_init::execute(hs_path);
         }
 
-        Commands::GetHostStatus {
+        Commands::Get {
+            kind,
+            outfile,
             status,
             config_only,
         } => {
-            return Trident::retrieve_host_status(
+            return Trident::get(
                 &load_agent_config()?.datastore,
-                status,
-                *config_only,
+                &outfile.as_ref().or(status.as_ref()).cloned(),
+                kind.unwrap_or(if *config_only {
+                    GetKind::Configuration
+                } else {
+                    GetKind::Status
+                }),
             )
             .message("Failed to retrieve Host Status");
         }
@@ -253,9 +266,8 @@ fn run_trident(
 
                 // return HostStatus if requested
                 if status.is_some() {
-                    if let Err(e) =
-                        Trident::retrieve_host_status(&agent_config.datastore, status, false)
-                            .message("Failed to retrieve Host Status")
+                    if let Err(e) = Trident::get(&agent_config.datastore, status, GetKind::Status)
+                        .message("Failed to retrieve Host Status")
                     {
                         error!("{e:?}");
                     }

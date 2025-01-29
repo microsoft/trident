@@ -84,6 +84,13 @@ struct HostUpdateCommand {
     sender: Option<mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>>,
 }
 
+#[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
+pub enum GetKind {
+    Configuration,
+    Status,
+    LastError,
+}
+
 pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
@@ -622,26 +629,28 @@ impl Trident {
         }
     }
 
-    pub fn retrieve_host_status(
+    pub fn get(
         datastore_path: &Path,
         output_path: &Option<PathBuf>,
-        config_only: bool,
+        kind: GetKind,
     ) -> Result<(), TridentError> {
         let host_status = DataStore::open(datastore_path)
             .message("Failed to open datastore")?
             .host_status()
             .clone();
 
-        let yaml = if config_only {
-            serde_yaml::to_string(&host_status.spec)
-                .structured(InternalError::SerializeHostStatus)?
-        } else {
-            serde_yaml::to_string(&host_status).structured(InternalError::SerializeHostStatus)?
+        let yaml = match kind {
+            GetKind::Configuration => serde_yaml::to_string(&host_status.spec)
+                .structured(InternalError::SerializeHostStatus)?,
+            GetKind::Status => serde_yaml::to_string(&host_status)
+                .structured(InternalError::SerializeHostStatus)?,
+            GetKind::LastError => serde_yaml::to_string(&host_status.last_error)
+                .structured(InternalError::SerializeError)?,
         };
 
         match output_path {
             Some(path) => {
-                info!("Writing Host Status to {:?}", &path);
+                info!("Writing to {:?}", &path);
                 fs::write(path, yaml).structured(InvalidInputError::WriteOutputFile {
                     path: path.display().to_string(),
                 })?
