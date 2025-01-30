@@ -101,7 +101,8 @@ steps:
   # TODO: Remove after trident-container-verity-testimage is being used for E2E tests (Task #9652).
   - bash: |
       set -eu
-      if [ $(verityRequired) == "true" ]; then
+      verityRequired=$(sudo yq e '.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      if [ "$verityRequired" == "true" ]; then
         echo "Trident is running from the Runtime OS on the host (verity not enabled for container)."
         echo "##vso[task.setvariable variable=runtimeEnv]host"
       else
@@ -156,7 +157,7 @@ steps:
           $(verityRequired)
     displayName: "Copy runtime OS images to the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-  
+
   - bash: |
       set -eux
       chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh
