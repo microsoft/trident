@@ -655,7 +655,7 @@ mod functional_test {
     use osutils::{
         dependencies::Dependency,
         filesystems::MkfsFileSystemType,
-        hashing_reader::HashingReader,
+        hashing_reader::HashingReader256,
         image_streamer, mkfs, mountpoint,
         partition_types::DiscoverablePartitionType,
         repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
@@ -799,7 +799,7 @@ mod functional_test {
                 .unwrap(),
         );
         image_streamer::stream_zstd(
-            HashingReader::new(stream),
+            HashingReader256::new(stream),
             Path::new(format!("{TEST_DISK_DEVICE_PATH}1").as_str()),
         )
         .unwrap();
@@ -809,7 +809,7 @@ mod functional_test {
                 .unwrap(),
         );
         image_streamer::stream_zstd(
-            HashingReader::new(stream),
+            HashingReader256::new(stream),
             Path::new(format!("{TEST_DISK_DEVICE_PATH}2").as_str()),
         )
         .unwrap();

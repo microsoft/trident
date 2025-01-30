@@ -13,7 +13,7 @@ use tempfile::{NamedTempFile, TempDir};
 use osutils::{
     arch::SystemArchitecture,
     filesystems::MountFileSystemType,
-    hashing_reader::HashingReader,
+    hashing_reader::{HashingReader, HashingReader256, HashingReader384},
     image_streamer,
     mount::{self, MountGuard},
     path::join_relative,
@@ -74,8 +74,8 @@ fn copy_file_artifacts_from_api_image(
         .context("Failed to fetch image for ESP volume")?
     };
 
-    let (temp_file, computed_sha256) =
-        load_raw_image(image_url, stream).context("Failed to load raw image")?;
+    let (temp_file, computed_sha256) = load_raw_image(image_url, HashingReader256::new(stream))
+        .context("Failed to load raw image")?;
 
     // If SHA256 is ignored, log message and skip hash validation; otherwise, ensure computed
     // SHA256 matches SHA256 in HostConfig
@@ -98,17 +98,15 @@ fn copy_file_artifacts_from_api_image(
     copy_file_artifacts(temp_file.path(), ctx, mount_point)
 }
 
-/// Takes in a reader to the raw zstd-compressed ESP image and decompressed it
+/// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
 /// into a temporary file. Returns a tuple containing the temporary file and the
-/// computed SHA256 hash of the image.
+/// computed hash (SHA256 or SHA384) of the image.
 ///
 /// It also takes in the URL of the image to be shown in case of errors.
 fn load_raw_image<R>(source: &Url, reader: R) -> Result<(NamedTempFile, String), Error>
 where
-    R: Read,
+    R: Read + HashingReader,
 {
-    // Initialize HashingReader instance on stream
-    let reader = HashingReader::new(reader);
     // Create a temporary file to download ESP image
     let temp_image = NamedTempFile::new().context("Failed to create a temporary file")?;
     let temp_image_path = temp_image.path().to_path_buf();
@@ -116,10 +114,10 @@ where
     debug!("Extracting ESP image to {}", temp_image_path.display());
 
     // Stream image to the temporary file.
-    let computed_sha256 = image_streamer::stream_zstd(reader, &temp_image_path)
+    let computed_hash = image_streamer::stream_zstd(reader, &temp_image_path)
         .context(format!("Failed to stream ESP image from {}", source))?;
 
-    Ok((temp_image, computed_sha256))
+    Ok((temp_image, computed_hash))
 }
 
 /// Performs file-based update of stand-alone ESP volume by copying boot files.
@@ -600,15 +598,23 @@ pub(super) fn deploy_esp_from_os_image(
         .esp_filesystem()
         .context("Failed to get ESP image from OS image")?;
 
-    let temp_file = load_raw_image(
-        os_image.source(),
-        esp_img
-            .image_file
-            .reader()
-            .context("Failed to get reader for ESP image from OS image")?,
-    )
-    .context("Failed to load raw image")?
-    .0;
+    let stream = esp_img
+        .image_file
+        .reader()
+        .context("Failed to get reader for ESP image from OS image")?;
+
+    let (temp_file, computed_sha384) =
+        load_raw_image(os_image.source(), HashingReader384::new(stream))
+            .context("Failed to load raw image")?;
+
+    if esp_img.image_file.sha384 != computed_sha384 {
+        bail!(
+            "SHA384 mismatch for disk image {}: expected {}, got {}",
+            os_image.source(),
+            esp_img.image_file.sha384,
+            computed_sha384
+        );
+    }
 
     copy_file_artifacts(temp_file.path(), ctx, mount_point)
 }

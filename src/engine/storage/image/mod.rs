@@ -11,7 +11,11 @@ use log::{debug, info, trace, warn};
 use reqwest::Url;
 use stream_image::{exponential_backoff_get, GET_MAX_RETRIES, GET_TIMEOUT_SECS};
 
-use osutils::{e2fsck, hashing_reader::HashingReader, image_streamer, lsblk, resize2fs};
+use osutils::{
+    e2fsck,
+    hashing_reader::{HashingReader256, HashingReader384},
+    image_streamer, lsblk, resize2fs,
+};
 use trident_api::{
     config::{
         FileSystemSource, HostConfiguration, HostConfigurationDynamicValidationError, Image,
@@ -56,7 +60,7 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
         ServicingType::CleanInstall => host_config.storage.get_images(),
         ServicingType::AbUpdate => host_config.storage.get_ab_volume_pair_images(),
         _ => bail!(
-            "Servicing type cannot be '{:?}' as images must deployed during clean install or A/B update",
+            "Servicing type cannot be '{:?}' as images must be deployed during clean install or A/B update",
             ctx.servicing_type
         ),
     };
@@ -113,7 +117,7 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
                 );
 
                 // Initialize HashingReader instance on stream
-                let stream = HashingReader::new(stream);
+                let stream = HashingReader256::new(stream);
 
                 let computed_sha256 = image_streamer::stream_zstd(stream, &block_device_path)?;
 
@@ -505,19 +509,28 @@ fn deploy_os_image_file(
         dev_info.size
     );
 
-    let stream = HashingReader::new(
+    let stream = HashingReader384::new(
         image_file
             .reader()
             .context("Failed to create reader for filesystem image file")?,
     );
 
-    let computed_sha256 =
+    let computed_sha384 =
         image_streamer::stream_zstd(stream, &block_device_path).context(format!(
             "Failed to stream image to block device '{id}' at '{}'",
             block_device_path.display()
         ))?;
 
-    trace!("Deployed image with hash {computed_sha256}");
+    trace!("Deployed image with hash {computed_sha384}");
+
+    // Ensure computed SHA384 matches SHA384 in OS image
+    if image_file.sha384 != computed_sha384 {
+        bail!(
+            "SHA384 mismatch for OS image: expected {}, got {}",
+            image_file.sha384,
+            computed_sha384
+        )
+    }
 
     match fs_resize {
         // Resize an ext* filesystem

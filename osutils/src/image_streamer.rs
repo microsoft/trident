@@ -2,6 +2,7 @@ use std::{
     fs::File,
     io::{self, BufWriter, Read},
     path::Path,
+    time::Instant,
 };
 
 use anyhow::{bail, Context, Error};
@@ -11,12 +12,9 @@ use trident_api::primitives::bytes::ByteCount;
 
 use crate::hashing_reader::HashingReader;
 
-pub fn stream_zstd<R>(
-    mut reader: HashingReader<R>,
-    destination_path: &Path,
-) -> Result<String, Error>
+pub fn stream_zstd<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
 where
-    R: Read,
+    R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
     let mut decoder = zstd::stream::read::Decoder::new(&mut reader)?;
@@ -30,7 +28,7 @@ where
     // Buffer small writes to the disk, ensuring we write blocks of at least 4MB.
     let mut file = BufWriter::with_capacity(4 << 20, file);
 
-    let t = std::time::Instant::now();
+    let t = Instant::now();
 
     // Decompress the image and write it to the block device
     let bytes_copied = io::copy(&mut decoder, &mut file).context("Failed to copy image")?;

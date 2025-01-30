@@ -25,7 +25,10 @@ use reqwest::Url;
 use tempfile;
 
 use osutils::{
-    dependencies::Dependency, exe::OutputChecker, hashing_reader::HashingReader, udevadm,
+    dependencies::Dependency,
+    exe::OutputChecker,
+    hashing_reader::{HashingReader, HashingReader256},
+    udevadm,
 };
 use trident_api::{
     config::{Image, ImageSha256, PartitionType},
@@ -727,7 +730,7 @@ pub(super) fn get_local_image(
         Box::new(File::open(image_url.path()).context(format!("Failed to open {}", image.url))?);
 
     // Use HashingReader to compute sha256 hash of stream
-    let stream = HashingReader::new(stream);
+    let stream = HashingReader256::new(stream);
     let computed_sha256 = stream.hash();
 
     // If SHA256 is ignored, log message and skip hash validation; otherwise,
