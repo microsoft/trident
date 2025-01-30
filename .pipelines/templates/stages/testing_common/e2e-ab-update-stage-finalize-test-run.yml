@@ -54,7 +54,6 @@ parameters:
 steps:
   - bash: |
       set -eux
-      ls -ltr $(System.ArtifactsDirectory)
       $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/copy-runtime-os-images.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
@@ -65,6 +64,19 @@ steps:
           $(version) \
           $(verityRequired)
     displayName: "Copy runtime OS images to the host for A/B update testing"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh" \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.artifactsDirectory }}" \
+          "$(destinationDirectory)" \
+          "$(version)" \
+          "$(verityRequired)"
+    displayName: "Transfer COSI file to the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |

@@ -70,7 +70,7 @@ for i in $(seq 1 $RETRY_COUNT); do
         # and inject the trigger-rollback script into it
         COPY_CONFIG="./config.yaml"
         sshCommand "sudo cat $UPDATE_CONFIG" > $COPY_CONFIG
-        sudo yq eval "
+        yq eval "
         .scripts.postConfigure += [{
             \"name\": \"trigger-rollback\",
             \"runOn\": [\"ab-update\"],
@@ -80,7 +80,7 @@ for i in $(seq 1 $RETRY_COUNT); do
 
         # Set writableEtcOverlayHooks flag under internalParams to true, so that the script
         # can create a new systemd service
-        sudo yq eval ".internalParams.writableEtcOverlayHooks = true" -i $COPY_CONFIG
+        yq eval ".internalParams.writableEtcOverlayHooks = true" -i $COPY_CONFIG
         sshCommand "sudo tee $UPDATE_CONFIG > /dev/null" < $COPY_CONFIG
 
         # Print out the contents of the update config to validate that the script was injected

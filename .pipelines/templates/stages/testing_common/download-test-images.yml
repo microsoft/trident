@@ -86,6 +86,7 @@ steps:
       patterns: |
         netlaunch
         netlisten
+        mkcosi
       targetPath: "${{ parameters.toolsDirectory }}"
 
   - bash: |
@@ -93,6 +94,7 @@ steps:
 
       # Set tools to be executable
       chmod +x ${{ parameters.toolsDirectory }}/net*
+      chmod +x ${{ parameters.toolsDirectory }}/mkcosi
 
       # Create the target directory
       mkdir -p "${{ parameters.targetDirectory }}"

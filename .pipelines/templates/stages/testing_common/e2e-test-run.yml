@@ -80,6 +80,8 @@ steps:
   # scp it in its entirety onto the host.
   - bash: |
       set -eu
+      # TODO: Replace the check once the API is changed and verityFileSystems are removed from HC.
+      # Related ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/10770.
       verityRequired=$(sudo yq e '.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$verityRequired" == "true" ]; then
         echo "Trident config requires verity runtime OS images"
@@ -99,8 +101,7 @@ steps:
   # TODO: Remove after trident-container-verity-testimage is being used for E2E tests (Task #9652).
   - bash: |
       set -eu
-      verityRequired=$(sudo yq e '.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
-      if [ "$verityRequired" == "true" ]; then
+      if [ $(verityRequired) == "true" ]; then
         echo "Trident is running from the Runtime OS on the host (verity not enabled for container)."
         echo "##vso[task.setvariable variable=runtimeEnv]host"
       else
@@ -154,6 +155,20 @@ steps:
           $(version) \
           $(verityRequired)
     displayName: "Copy runtime OS images to the host for A/B update testing"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+  
+  - bash: |
+      set -eux
+      chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh
+      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh" \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.artifactsDirectory }}" \
+          "$(destinationDirectory)" \
+          "$(version)" \
+          "$(verityRequired)"
+    displayName: "Transfer COSI file to the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   # If current config requires A/B update testing, execute script to ssh into the host, update
@@ -238,7 +253,6 @@ steps:
 
   - bash: |
       set -eux
-      ls -ltr $(System.ArtifactsDirectory)
       $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/copy-runtime-os-images.sh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
@@ -249,6 +263,19 @@ steps:
           $(version) \
           $(verityRequired)
     displayName: "Copy runtime OS images to the host for A/B update testing"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh" \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.artifactsDirectory }}" \
+          "$(destinationDirectory)" \
+          "$(version)" \
+          "$(verityRequired)"
+    displayName: "Transfer COSI file to the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
