@@ -92,6 +92,7 @@ pub enum Dependency {
     Blkid,
     Cryptsetup,
     Dd,
+    Df,
     Dracut,
     E2fsck,
     Efibootmgr,

@@ -4,6 +4,7 @@ pub mod block_devices;
 pub mod chroot;
 pub mod container;
 pub mod dependencies;
+pub mod df;
 pub mod e2fsck;
 pub mod efibootmgr;
 pub mod encryption;

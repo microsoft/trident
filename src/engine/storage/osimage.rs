@@ -3,10 +3,12 @@ use std::{
     path::Path,
 };
 
-use log::{debug, trace};
+use log::{debug, error, trace, warn};
+use osutils::df;
 use trident_api::{
     config::{FileSystemSource, FileSystemType, HostConfiguration},
     error::{InternalError, InvalidInputError, ReportError, TridentError},
+    primitives::bytes::ByteCount,
 };
 
 use crate::osimage::{OsImage, OsImageFileSystemType};
@@ -46,6 +48,8 @@ fn check_fs_match(a: FileSystemType, b: OsImageFileSystemType) -> bool {
 /// - There must be an equal number of filesystems in the OS image and Host Configuration
 /// - Filesystems in the OS image must match on mount points with filesystems in the Host
 ///   Configuration
+/// - The OS image and the Host Configuration match in terms of root verity configuration
+/// - There is enough space to copy over the ESP image into /tmp
 pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
     let Some(os_image) = &ctx.os_image else {
         return Ok(());
@@ -56,6 +60,9 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
 
     debug!("Validating Host Configuration root verity configuration against OS image");
     validate_root_verity_match(os_image, &ctx.spec)?;
+
+    debug!("Validating ESP image in OS image");
+    validate_esp(os_image);
 
     Ok(())
 }
@@ -168,6 +175,31 @@ fn validate_root_verity_match(
         Err(TridentError::new(InvalidInputError::RootVerityMismatch {
             hc_verity_status,
         }))
+    }
+}
+
+/// Validates ESP image.
+///
+/// Checks that there is enough space in /tmp to perform file-based copy of ESP image, and warns the
+/// user if not. This function will not produce a fatal error.
+fn validate_esp(os_image: &OsImage) {
+    let Ok(available_space) = df::available_space_in_fs("/tmp") else {
+        warn!("Could not check availability of space for copying ESP image into /tmp.");
+        return;
+    };
+    trace!("Found {available_space} bytes of available space in /tmp.");
+
+    let Ok(esp_img) = os_image.esp_filesystem() else {
+        warn!("Unable to access ESP filesystem.");
+        return;
+    };
+    let esp_img_size = esp_img.image_file.uncompressed_size;
+    trace!("The uncompressed size of the ESP image is {esp_img_size} bytes.");
+
+    if esp_img_size >= available_space {
+        error!("There is not enough space to copy the ESP image into /tmp. The uncompressed size of the ESP image is {}, while /tmp has {} available.", ByteCount::from(esp_img_size).to_human_readable_approx(), ByteCount::from(available_space).to_human_readable_approx());
+    } else if esp_img_size >= available_space / 2 {
+        warn!("There may not be enough space to copy the ESP image into /tmp. The uncompressed size of the ESP image is {}, while /tmp has {} available.", ByteCount::from(esp_img_size).to_human_readable_approx(), ByteCount::from(available_space).to_human_readable_approx());
     }
 }
 
