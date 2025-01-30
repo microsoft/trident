@@ -181,7 +181,7 @@ fn stage_clean_install(
     // Execute pre-servicing scripts
     HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
 
-    engine::validate_host_config(subsystems, &ctx, host_config)?;
+    engine::validate_host_config(subsystems, &ctx)?;
 
     // Need to re-set saved Host Status in case another clean install has been previously staged
     debug!("Clearing saved Host Status");

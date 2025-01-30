@@ -5,7 +5,7 @@ use log::{debug, error, info, warn};
 
 use osutils::{osmodifier::OSModifierConfig, path};
 use trident_api::{
-    config::{HostConfiguration, ManagementOs, SshMode},
+    config::{ManagementOs, SshMode},
     constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
     error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
     status::ServicingType,
@@ -61,11 +61,7 @@ impl Subsystem for OsConfigSubsystem {
         "os-config"
     }
 
-    fn validate_host_config(
-        &self,
-        ctx: &EngineContext,
-        _host_config: &HostConfiguration,
-    ) -> Result<(), TridentError> {
+    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
         if os_config_requires_os_modifier(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
             return Err(TridentError::new(
@@ -194,11 +190,7 @@ impl Subsystem for MosConfigSubsystem {
         "mos-config"
     }
 
-    fn validate_host_config(
-        &self,
-        ctx: &EngineContext,
-        host_config: &HostConfiguration,
-    ) -> Result<(), TridentError> {
+    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type != ServicingType::CleanInstall {
             debug!(
                 "Skipping step 'Validate' for subsystem '{}' during servicing type '{:?}'",
@@ -209,7 +201,7 @@ impl Subsystem for MosConfigSubsystem {
         }
 
         // If the os-modifier binary is required but not present, return an error.
-        if mos_config_requires_os_modifier(&host_config.management_os)
+        if mos_config_requires_os_modifier(&ctx.spec.management_os)
             && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
         {
             return Err(TridentError::new(
@@ -376,7 +368,7 @@ mod functional_test {
     use super::*;
 
     use pytest_gen::functional_test;
-    use trident_api::config::Os;
+    use trident_api::config::{HostConfiguration, Os};
 
     #[functional_test(feature = "helpers")]
     fn test_os_config_configure_hostname_clean_install() {

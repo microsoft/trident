@@ -267,42 +267,39 @@ pub(crate) fn get_updated_images(
     new_images
 }
 
-/// Validates that the host configuration requests deployment only of those images that can be
-/// deployed, for the specific servicing type.
+/// Validates that the new Host Configuration in `ctx.spec` requests deployment only of images that
+/// can be deployed.
 ///
-/// Currently, this function is called only during A/B update, to ensure that the host
-/// configuration does not request Trident to re-deploy images on standalone volumes that are
-/// shared between A and B, such as /var/lib/trident.
-pub(super) fn validate_host_config(
-    ctx: &EngineContext,
-    host_config: &HostConfiguration,
-    planned_servicing_type: ServicingType,
-) -> Result<(), TridentError> {
-    if planned_servicing_type == ServicingType::AbUpdate {
-        // Get lists of all old and new images in the host configuration
+/// This function is called during A/B update to ensure that the host configuration does not request
+/// Trident to re-deploy images on standalone volumes that are shared between A and B, such as
+/// /var/lib/trident.
+pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
+    if ctx.servicing_type == ServicingType::AbUpdate {
+        // Get lists of all old and new images.
         let old_images = ctx
+            .spec_old
+            .storage
+            .get_images()
+            .into_iter()
+            .chain(ctx.spec_old.storage.get_esp_images())
+            .collect();
+        let new_images = ctx
             .spec
             .storage
             .get_images()
             .into_iter()
             .chain(ctx.spec.storage.get_esp_images())
             .collect();
-        let new_images = host_config
-            .storage
-            .get_images()
-            .into_iter()
-            .chain(host_config.storage.get_esp_images())
-            .collect();
 
-        // Filter only those images that have been updated, compared to the engine context
+        // Filter only those images that have been updated.
         let updated_images = get_updated_images(old_images, new_images);
 
         // Iterate over the updated images and ensure that they only target A/B volume pairs or ESP
         // partitions. If an image targets a standalone block device, return an error.
         for (device_id, _) in updated_images {
             // Get lists of ESP images and A/B volume pair images
-            let esp_images = host_config.storage.get_esp_images();
-            let ab_volume_pair_images = host_config.storage.get_ab_volume_pair_images();
+            let esp_images = ctx.spec.storage.get_esp_images();
+            let ab_volume_pair_images = ctx.spec.storage.get_ab_volume_pair_images();
 
             // If the device ID is not found in the list of ESP images or A/B volume pair images, return
             // an error
@@ -563,9 +560,9 @@ mod tests {
     #[test]
     fn test_validate_host_config_image() {
         // Initialize a engine context
-        let ctx = EngineContext {
+        let mut ctx = EngineContext {
             servicing_type: ServicingType::NoActiveServicing,
-            spec: HostConfiguration {
+            spec_old: HostConfiguration {
                 storage: StorageConfig {
                     disks: vec![Disk {
                         id: "os".to_owned(),
@@ -653,37 +650,38 @@ mod tests {
             ..Default::default()
         };
 
-        // Initialize a corresponding host configuration
-        let mut host_config = ctx.spec.clone();
+        ctx.spec = ctx.spec_old.clone();
         if let FileSystemSource::Image(Image { ref mut sha256, .. }) =
-            host_config.storage.filesystems[0].source
+            ctx.spec.storage.filesystems[0].source
         {
             *sha256 = ImageSha256::Checksum("new_sha256".into());
         }
         if let FileSystemSource::Image(Image { ref mut sha256, .. }) =
-            host_config.storage.filesystems[1].source
+            ctx.spec.storage.filesystems[1].source
         {
             *sha256 = ImageSha256::Checksum("new_sha256".into());
         }
 
         // Test case 0. Running validate_host_config() when the planned servicing type is
         // CleanInstall should always return ((Ok)) since there is no validation logic.
-        validate_host_config(&ctx, &host_config, ServicingType::CleanInstall).unwrap();
+        ctx.servicing_type = ServicingType::CleanInstall;
+        validate_host_config(&ctx).unwrap();
 
         // Test case 1. Running validate_host_config() when only update of the ESP partition and
         // A/B volume pair images is requested during A/B update should return ((Ok)).
         // Update servicing state to Provisioned for consistency.
-        validate_host_config(&ctx, &host_config, ServicingType::AbUpdate).unwrap();
+        ctx.servicing_type = ServicingType::AbUpdate;
+        validate_host_config(&ctx).unwrap();
 
         // Test case 2. Running validate_host_config() when update of a standalone volume 'trident'
         // is requested during A/B update should return an error.
         // Update URL and sha256sum of 'trident' image in host configuration.
-        host_config.storage.filesystems[2].source = FileSystemSource::Image(Image {
+        ctx.spec.storage.filesystems[2].source = FileSystemSource::Image(Image {
             url: "http://example.com/trident_2.img".to_string(),
             sha256: ImageSha256::Checksum("trident_sha256_2".into()),
             format: ImageFormat::RawZst,
         });
-        validate_host_config(&ctx, &host_config, ServicingType::AbUpdate).unwrap_err();
+        validate_host_config(&ctx).unwrap_err();
     }
 
     /// Validates that the logic in needs_ab_update() and get_updated_images() is correct.

@@ -11,7 +11,7 @@ use log::{debug, error, info, warn};
 
 use osutils::{dependencies::Dependency, path::join_relative};
 use trident_api::{
-    config::{HostConfiguration, Storage},
+    config::Storage,
     constants::{self, internal_params::ENABLE_UKI_SUPPORT},
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
@@ -72,12 +72,11 @@ pub(crate) trait Subsystem: Send {
         Ok(None)
     }
 
-    /// Validate the Host Configuration.
-    fn validate_host_config(
-        &self,
-        _ctx: &EngineContext,
-        _host_config: &HostConfiguration,
-    ) -> Result<(), TridentError> {
+    /// Validate that the Host Configuration in `ctx.spec` can be applied on the system.
+    ///
+    /// Implementations should consider the previous Host Configuration in `ctx.spec_old` and the
+    /// servicing type in `ctx.servicing_type`.
+    fn validate_host_config(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 
@@ -214,7 +213,6 @@ fn persist_background_log_and_metrics(
 fn validate_host_config(
     subsystems: &[Box<dyn Subsystem>],
     ctx: &EngineContext,
-    host_config: &HostConfiguration,
 ) -> Result<(), TridentError> {
     info!("Starting step 'Validate'");
     for subsystem in subsystems {
@@ -222,12 +220,10 @@ fn validate_host_config(
             "Starting step 'Validate' for subsystem '{}'",
             subsystem.name()
         );
-        subsystem
-            .validate_host_config(ctx, host_config)
-            .message(format!(
-                "Step 'Validate' failed for subsystem '{}'",
-                subsystem.name()
-            ))?;
+        subsystem.validate_host_config(ctx).message(format!(
+            "Step 'Validate' failed for subsystem '{}'",
+            subsystem.name()
+        ))?;
     }
     debug!("Finished step 'Validate'");
     Ok(())

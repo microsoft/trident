@@ -105,7 +105,7 @@ pub(crate) fn update(
     // Execute pre-servicing scripts
     HooksSubsystem::default().execute_pre_servicing_scripts(&ctx)?;
 
-    engine::validate_host_config(&subsystems, &ctx, host_config)?;
+    engine::validate_host_config(&subsystems, &ctx)?;
 
     let update_start_time = Instant::now();
     tracing::info!(

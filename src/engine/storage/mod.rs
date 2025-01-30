@@ -45,17 +45,13 @@ impl Subsystem for StorageSubsystem {
         "storage"
     }
 
-    fn validate_host_config(
-        &self,
-        ctx: &EngineContext,
-        host_config: &HostConfiguration,
-    ) -> Result<(), TridentError> {
+    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.servicing_type != ServicingType::CleanInstall {
             // Ensure that relevant portions of the host configuration have not changed.
-            if ctx.spec.storage.disks != host_config.storage.disks
-                || ctx.spec.storage.raid != host_config.storage.raid
-                || ctx.spec.storage.encryption != host_config.storage.encryption
-                || ctx.spec.storage.ab_update != host_config.storage.ab_update
+            if ctx.spec_old.storage.disks != ctx.spec.storage.disks
+                || ctx.spec_old.storage.raid != ctx.spec.storage.raid
+                || ctx.spec_old.storage.encryption != ctx.spec.storage.encryption
+                || ctx.spec_old.storage.ab_update != ctx.spec.storage.ab_update
             {
                 return Err(TridentError::new(InvalidInputError::from(
                     HostConfigurationDynamicValidationError::StorageConfigurationChanged,
@@ -89,7 +85,7 @@ impl Subsystem for StorageSubsystem {
         // Ensure any two disks point to different devices. This requires canonicalizing the device
         // paths, which can only be done on the target system.
         let mut device_paths = HashMap::<PathBuf, BlockDeviceId>::new();
-        for disk in &host_config.storage.disks {
+        for disk in &ctx.spec.storage.disks {
             let device_path = disk
                 .device
                 .canonicalize()
@@ -144,15 +140,15 @@ impl Subsystem for StorageSubsystem {
         // TODO: validate that block devices naming is consistent with the current state
         // https://dev.azure.com/mariner-org/ECF/_workitems/edit/7322/
 
-        image::validate_host_config(ctx, host_config, ctx.servicing_type).message(format!(
+        image::validate_host_config(ctx).message(format!(
             "Step 'Validate' failed for subsystem '{IMAGE_SUBSYSTEM_NAME}'"
         ))?;
 
-        encryption::validate_host_config(host_config).message(format!(
+        encryption::validate_host_config(&ctx.spec).message(format!(
             "Step 'Validate' failed for subsystem '{ENCRYPTION_SUBSYSTEM_NAME}'"
         ))?;
 
-        osimage::validate_host_config(ctx, host_config).message(format!(
+        osimage::validate_host_config(ctx).message(format!(
             "Step 'Validate' failed for subsystem '{OSIMAGE_SUBSYSTEM_NAME}'"
         ))?;
 
@@ -471,28 +467,26 @@ mod tests {
     /// Validates Storage subsystem HostConfiguration validation logic.
     #[test]
     fn test_validate_host_config_pass() {
-        let ctx = get_ctx();
+        let mut ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        ctx.spec = get_host_config(&recovery_key_file);
 
-        StorageSubsystem
-            .validate_host_config(&ctx, &host_config)
-            .unwrap();
+        StorageSubsystem.validate_host_config(&ctx).unwrap();
     }
 
     /// Invalid disk device path should fail validation.
     /// Disk device path should start with '/dev'.
     #[test]
     fn test_validate_host_config_invalid_disk_device_path_fail() {
-        let ctx = get_ctx();
+        let mut ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
-        let mut host_config = get_host_config(&recovery_key_file);
+        ctx.spec = get_host_config(&recovery_key_file);
 
-        host_config.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
+        ctx.spec.storage.disks.get_mut(0).unwrap().device = "/tmp".into();
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&ctx, &host_config)
+                .validate_host_config(&ctx)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
@@ -507,15 +501,15 @@ mod tests {
     // Disk devices must be unique.
     #[test]
     fn tests_validate_host_config_duplicate_disk_path_fail() {
-        let ctx = get_ctx();
+        let mut ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
-        let mut host_config = get_host_config(&recovery_key_file);
+        ctx.spec = get_host_config(&recovery_key_file);
 
-        host_config.storage.disks.get_mut(0).unwrap().device = "/dev".into();
+        ctx.spec.storage.disks.get_mut(0).unwrap().device = "/dev".into();
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&ctx, &host_config)
+                .validate_host_config(&ctx)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {
@@ -531,16 +525,16 @@ mod tests {
     // Validating the Storage subsystem include encryption configuration validation.
     #[test]
     fn test_validate_host_config_encryption_invalid_fail() {
-        let ctx = get_ctx();
+        let mut ctx = get_ctx();
         let recovery_key_file = get_recovery_key_file();
-        let host_config = get_host_config(&recovery_key_file);
+        ctx.spec = get_host_config(&recovery_key_file);
 
         // Delete the recovery key file to make the encryption configuration invalid.
         fs::remove_file(recovery_key_file.path()).unwrap();
 
         assert_eq!(
             StorageSubsystem
-                .validate_host_config(&ctx, &host_config)
+                .validate_host_config(&ctx)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationDynamic {

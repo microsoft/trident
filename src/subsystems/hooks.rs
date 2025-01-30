@@ -11,8 +11,8 @@ use log::{debug, info, trace};
 use osutils::{exe::OutputChecker, files, scripts::ScriptRunner};
 use trident_api::{
     config::{
-        HostConfiguration, HostConfigurationDynamicValidationError,
-        HostConfigurationStaticValidationError, Script, ScriptSource,
+        HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError, Script,
+        ScriptSource,
     },
     constants::{
         internal_params::WRITABLE_ETC_OVERLAY_HOOKS, DEFAULT_SCRIPT_INTERPRETER,
@@ -44,17 +44,14 @@ impl Subsystem for HooksSubsystem {
         self.writable_etc_overlay
     }
 
-    fn validate_host_config(
-        &self,
-        ctx: &EngineContext,
-        host_config: &HostConfiguration,
-    ) -> Result<(), TridentError> {
+    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         // Ensure that all scripts that should be run and have a path actually exist
-        for script in host_config
+        for script in ctx
+            .spec
             .scripts
             .post_configure
             .iter()
-            .chain(&host_config.scripts.post_provision)
+            .chain(&ctx.spec.scripts.post_provision)
             .filter(|script| script.should_run(ctx.servicing_type))
         {
             if let ScriptSource::Path(ref path) = script.source {
@@ -349,6 +346,7 @@ mod tests {
     use indoc::indoc;
     use maplit::hashmap;
 
+    use trident_api::config::HostConfiguration;
     use trident_api::{
         config::{Scripts, ServicingTypeSelection},
         constants::ROOT_MOUNT_POINT_PATH,

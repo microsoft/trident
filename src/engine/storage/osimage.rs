@@ -46,19 +46,16 @@ fn check_fs_match(a: FileSystemType, b: OsImageFileSystemType) -> bool {
 /// - There must be an equal number of filesystems in the OS image and Host Configuration
 /// - Filesystems in the OS image must match on mount points with filesystems in the Host
 ///   Configuration
-pub fn validate_host_config(
-    ctx: &EngineContext,
-    host_config: &HostConfiguration,
-) -> Result<(), TridentError> {
+pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
     let Some(os_image) = &ctx.os_image else {
         return Ok(());
     };
 
     debug!("Validating Host Configuration filesystems against OS image");
-    validate_filesystems(os_image, host_config)?;
+    validate_filesystems(os_image, &ctx.spec)?;
 
     debug!("Validating Host Configuration root verity configuration against OS image");
-    validate_root_verity_match(os_image, host_config)?;
+    validate_root_verity_match(os_image, &ctx.spec)?;
 
     Ok(())
 }
