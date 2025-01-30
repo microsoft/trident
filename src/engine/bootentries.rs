@@ -6,13 +6,18 @@ use log::{debug, trace};
 use osutils::{
     block_devices,
     efibootmgr::{self, EfiBootManagerOutput},
+    virt,
 };
 
 use trident_api::{
     config::RaidLevel,
-    constants::{self, internal_params::ENABLE_COSI_SUPPORT, ESP_MOUNT_POINT_PATH},
+    constants::{
+        self,
+        internal_params::{ENABLE_COSI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
+        ESP_MOUNT_POINT_PATH,
+    },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::AbVolumeSelection,
+    status::{AbVolumeSelection, ServicingType},
     BlockDeviceId,
 };
 
@@ -37,7 +42,7 @@ enum EspDevice {
 
 /// Creates a boot entry for the A/B update volume and sets the `BootNext`
 /// variable to boot from the updated partition on next boot. Also updates the
-/// `BootOrder` for non-qemu targets.
+/// `BootOrder` for non-virtdeploy targets.
 ///
 /// Takes in the path where we expect to find the entry matching the install ID.
 /// During clean install, this corresponds to /mnt/newroot/boot/efi, but during
@@ -102,21 +107,38 @@ pub fn create_and_update_boot_variables(
     )?;
 
     // Update boot variables
-    set_boot_next_and_update_boot_order(added_entry_numbers)
+    set_boot_next_and_update_boot_order(ctx, added_entry_numbers)
 }
 
-/// Updates the `BootNext` variable to boot from the first entry from entry numbers on next boot.
-/// Also updates the `BootOrder` for non-QEMU targets by rearranging the `BootOrder` to include the
-/// boot entries.
-pub fn set_boot_next_and_update_boot_order(entry_numbers: Vec<String>) -> Result<(), TridentError> {
+/// Update the `BootNext` and potentially also `BootOrder`.
+///
+/// During clean install, both `BootNext` and `BootOrder` will be updated to point to the new entry.
+/// During A/B update, only `BootNext` will be set to boot from the first entry from
+/// `entry_numbers`.
+///
+/// When the virtdeploy workaround is enabled (either because virtdeploy was detected, or because
+/// the internal parameter was passed in the Host Configuration), `BootOrder` is never updated even
+/// if it otherwise would be.
+pub fn set_boot_next_and_update_boot_order(
+    ctx: &EngineContext,
+    entry_numbers: Vec<String>,
+) -> Result<(), TridentError> {
     if !entry_numbers.is_empty() {
         // Set the `BootNext` variable to boot from the first entry on next boot.
         let boot_next_entry = entry_numbers[0].clone();
         efibootmgr::set_boot_next(&boot_next_entry)?;
         debug!("Set `BootNext` to newly added first entry '{boot_next_entry}'");
-        // HACK: detect if we're inside qemu to avoid modifying `BootOrder`.
+
+        // Detect if we're inside virtdeploy to avoid modifying `BootOrder`.
         // TODO(#7139): remove this special case.
-        if !osutils::virt::is_qemu() {
+        let use_virtdeploy_workaround = virt::is_virtdeploy()
+            || ctx
+                .spec
+                .internal_params
+                .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
+
+        // During clean install, immediately set the bootorder to use the new entry.
+        if ctx.servicing_type == ServicingType::CleanInstall && !use_virtdeploy_workaround {
             update_boot_order(entry_numbers).structured(ServicingError::UpdateBootOrder)?;
         }
     } else {
@@ -126,10 +148,11 @@ pub fn set_boot_next_and_update_boot_order(entry_numbers: Vec<String>) -> Result
     Ok(())
 }
 
-/// This function is used for QEMU targets to set the boot entries after reboot.
+/// Make the current boot option the default entry going forward.
+///
 /// The function gets the `BootCurrent` from the boot manager output and sets the `BootOrder` to
 /// include all the entries with the same label as `BootCurrent` in the `BootOrder`.
-pub fn set_bootentries_after_reboot_for_qemu() -> Result<(), TridentError> {
+pub fn persist_boot_order() -> Result<(), TridentError> {
     // Get `BootCurrent` from the boot manager output.
     let bootmgr_output = efibootmgr::list_and_parse_bootmgr_entries()
         .structured(ServicingError::ListAndParseBootEntries)?;
@@ -294,7 +317,7 @@ pub fn create_and_update_boot_variables_after_rebuilding(
     )?;
     // Update the `BootOrder` to include the newly added boot entries and to rearrange the
     // `BootOrder`.
-    set_boot_next_and_update_boot_order(entry_numbers)?;
+    set_boot_next_and_update_boot_order(ctx, entry_numbers)?;
 
     Ok(())
 }
@@ -1271,7 +1294,7 @@ mod functional_test {
             .unwrap();
         assert_ne!(boot_entry_number1, boot_entry_number2);
 
-        set_bootentries_after_reboot_for_qemu().unwrap();
+        persist_boot_order().unwrap();
 
         // Get the modified `BootOrder`
         let bootmgr_output1: EfiBootManagerOutput =

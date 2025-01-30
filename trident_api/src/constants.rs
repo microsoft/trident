@@ -188,6 +188,9 @@ pub mod internal_params {
     /// new LUKS2 volumes.
     pub const REENCRYPT_ON_CLEAN_INSTALL: &str = "reencryptOnCleanInstall";
 
+    /// Use alternate boot order logic to work around virtdeploy limitations.
+    pub const VIRTDEPLOY_BOOT_ORDER_WORKAROUND: &str = "virtdeployBootOrderWorkaround";
+
     /// Mount a writable overlay for /etc for the hooks subsystem.
     pub const WRITABLE_ETC_OVERLAY_HOOKS: &str = "writableEtcOverlayHooks";
 }

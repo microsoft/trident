@@ -7,7 +7,7 @@ use osutils::{block_devices, lsblk, veritysetup};
 
 use trident_api::{
     config::{AbUpdate, VerityDevice},
-    constants::ROOT_MOUNT_POINT_PATH,
+    constants::{internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND, ROOT_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
     BlockDeviceId,
@@ -53,12 +53,20 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
     {
         info!("Host successfully booted from updated runtime OS image");
 
-        // If it's QEMU, after confirming that we have booted into the
-        // correct image, we need to update the `BootOrder` to boot from
-        // the correct image next time.
-        if osutils::virt::is_qemu() {
-            bootentries::set_bootentries_after_reboot_for_qemu()
-                .message("Failed to set boot entries after reboot")?;
+        // If it's virtdeploy, after confirming that we have booted into the correct image, we need
+        // to update the `BootOrder` to boot from the correct image next time.
+        let use_virtdeploy_workaround = osutils::virt::is_virtdeploy()
+            || ctx
+                .spec
+                .internal_params
+                .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
+
+        // Persist the boot order change
+        if datastore.host_status().servicing_state == ServicingState::AbUpdateFinalized
+            || use_virtdeploy_workaround
+        {
+            bootentries::persist_boot_order()
+                .message("Failed to persist boot order after reboot")?;
         }
     } else if datastore.host_status().servicing_state == ServicingState::CleanInstallStaged
         || datastore.host_status().servicing_state == ServicingState::CleanInstallFinalized
