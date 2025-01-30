@@ -349,10 +349,24 @@ pub fn reboot() -> Result<(), TridentError> {
 
 /// Builds the storage graph for the given storage configuration. Since graph v2 is still in its
 /// experimental phase, any errors that occur during the graph building process are logged, and an
-/// empty/default graph is returned, without returing an error.
+/// empty/default graph is returned, without returning an error.
 pub(super) fn build_storage_graph(storage: &Storage) -> StorageGraph {
     debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
-    match storage.build_graph2() {
+
+    // Temporarily override the log level to only show warnings and above to
+    // avoid producing the graph building logs again. We can safely do this
+    // because at this point we are only running in a single thread, but this
+    // should be re-visited if we ever go more async/multithreaded.
+    let old_level = log::max_level();
+    log::set_max_level(log::LevelFilter::Warn);
+
+    // Build the storage graph
+    let graph_res = storage.build_graph2();
+
+    // Reset the log level to the original level
+    log::set_max_level(old_level);
+
+    match graph_res {
         Ok(graph) => {
             debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
             graph

@@ -161,12 +161,6 @@ impl Trident {
                 .structured(InitializationError::ConnectToTracestream)?;
         }
 
-        debug!(
-            "Trident config:\n{}",
-            serde_yaml::to_string(&host_config)
-                .unwrap_or("Failed to serialize Host Configuration".into())
-        );
-
         Ok(Self {
             host_config,
             orchestrator,
