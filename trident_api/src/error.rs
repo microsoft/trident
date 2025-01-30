@@ -414,6 +414,9 @@ pub enum ServicingError {
     #[error("Failed to do a read operation with efibootmgr")]
     ReadEfibootmgr,
 
+    #[error("Failed to read current system hostname from {path}")]
+    ReadHostname { path: String },
+
     #[error("Failed to reboot")]
     Reboot,
 

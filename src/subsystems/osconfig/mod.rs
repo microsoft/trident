@@ -5,7 +5,8 @@ use log::{debug, error, info, warn};
 
 use osutils::{osmodifier::OSModifierConfig, path};
 use trident_api::{
-    config::{HostConfiguration, ManagementOs, Os, SshMode},
+    config::{HostConfiguration, ManagementOs, SshMode},
+    constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
     error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
@@ -20,14 +21,19 @@ mod users;
 /// Path to the machine-id file, as expected by SystemD.
 const MACHINE_ID_PATH: &str = "/etc/machine-id";
 
+/// Path to hostname.
+const HOSTNAME_PATH: &str = "/etc/hostname";
+
 /// Returns whether the given OS configuration requires the os-modifier binary to be present.
-fn os_config_requires_os_modifier(os_config: &Os) -> bool {
+fn os_config_requires_os_modifier(ctx: &EngineContext) -> bool {
+    let os_config = &ctx.spec.os;
     !os_config.users.is_empty()
         || os_config.hostname.is_some()
         || !os_config.modules.is_empty()
         || !os_config.services.enable.is_empty()
         || !os_config.services.disable.is_empty()
         || !os_config.kernel_command_line.extra_command_line.is_empty()
+        || should_carry_over_hostname(ctx)
 }
 
 /// Returns whether the given MOS configuration requires the os-modifier binary to be present.
@@ -35,8 +41,21 @@ fn mos_config_requires_os_modifier(mos_config: &ManagementOs) -> bool {
     !mos_config.users.is_empty()
 }
 
+/// Returns whether the hostname should be updated during A/B Update.
+///
+/// If the OS configuration does not specify a hostname, so long as DISABLE_HOSTNAME_CARRY_OVER flag
+/// is not set to true, we want to carry over the existing machine hostname after updating.
+fn should_carry_over_hostname(ctx: &EngineContext) -> bool {
+    !ctx.spec
+        .internal_params
+        .get_flag(DISABLE_HOSTNAME_CARRY_OVER)
+        && ctx.servicing_type == ServicingType::AbUpdate
+}
+
 #[derive(Default, Debug)]
-pub struct OsConfigSubsystem;
+pub struct OsConfigSubsystem {
+    prev_hostname: Option<String>,
+}
 impl Subsystem for OsConfigSubsystem {
     fn name(&self) -> &'static str {
         "os-config"
@@ -44,13 +63,11 @@ impl Subsystem for OsConfigSubsystem {
 
     fn validate_host_config(
         &self,
-        _ctx: &EngineContext,
-        host_config: &HostConfiguration,
+        ctx: &EngineContext,
+        _host_config: &HostConfiguration,
     ) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
-        if os_config_requires_os_modifier(&host_config.os)
-            && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
-        {
+        if os_config_requires_os_modifier(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
             return Err(TridentError::new(
                 ExecutionEnvironmentMisconfigurationError::FindOSModifierBinary {
                     binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
@@ -70,6 +87,18 @@ impl Subsystem for OsConfigSubsystem {
             let dest_machine_id_path = path::join_relative(mount_path, MACHINE_ID_PATH);
             fs::copy(MACHINE_ID_PATH, dest_machine_id_path)
                 .structured(ServicingError::CopyMachineId)?;
+
+            // Save the current hostname to carry forward into the updated volume.
+            if should_carry_over_hostname(ctx) {
+                self.prev_hostname = Some(
+                    fs::read_to_string(HOSTNAME_PATH)
+                        .structured(ServicingError::ReadHostname {
+                            path: HOSTNAME_PATH.into(),
+                        })?
+                        .trim()
+                        .to_string(),
+                );
+            }
         }
 
         Ok(())
@@ -92,7 +121,7 @@ impl Subsystem for OsConfigSubsystem {
             return Ok(());
         }
 
-        if !os_config_requires_os_modifier(&ctx.spec.os) {
+        if !os_config_requires_os_modifier(ctx) {
             debug!(
                 "Skipping step 'Configure' for subsystem '{}' as OS modifier is not required",
                 self.name()
@@ -111,6 +140,11 @@ impl Subsystem for OsConfigSubsystem {
         if ctx.spec.os.hostname.is_some() {
             debug!("Setting up hostname");
             os_modifier_config.hostname = ctx.spec.os.hostname.clone();
+        } else if should_carry_over_hostname(ctx) {
+            // If no hostname is provided during A/B Update, carry forward the existing machine
+            // hostname into the new root
+            debug!("Carrying over hostname");
+            os_modifier_config.hostname = self.prev_hostname.clone();
         }
 
         if !ctx.spec.os.modules.is_empty() {
@@ -240,63 +274,83 @@ impl Subsystem for MosConfigSubsystem {
 
 #[cfg(test)]
 mod tests {
-    use trident_api::config::{KernelCommandLine, Module, Password, Services, User};
+    use trident_api::{
+        config::{
+            HostConfiguration, KernelCommandLine, ManagementOs, Module, Os, Password, Selinux,
+            Services, User,
+        },
+        status::ServicingType,
+    };
+
+    use crate::engine::EngineContext;
 
     #[test]
     fn test_os_config_requires_os_modifier() {
         use super::os_config_requires_os_modifier;
-        use trident_api::config::{Os, Selinux};
 
-        // Manually create an empty Os struct. This is the same as
-        // Os::default(), but this way it will break if the struct changes in
-        // the future, forcing us to update this test.
-        let mk_os = || Os {
-            network: None,
-            selinux: Selinux::default(),
-            users: vec![],
-            additional_files: vec![],
-            hostname: None,
+        // Manually create an empty EngineContext struct. This is the same as
+        // EngineContext::default(), but this way it will break if the struct
+        // changes in the future, forcing us to update this test.
+        let mk_ctx = || EngineContext {
+            spec: HostConfiguration {
+                os: Os {
+                    network: None,
+                    selinux: Selinux::default(),
+                    users: vec![],
+                    additional_files: vec![],
+                    hostname: None,
+                    modules: vec![],
+                    services: Services::default(),
+                    kernel_command_line: KernelCommandLine::default(),
+                },
+                ..Default::default()
+            },
             ..Default::default()
         };
-        let mut os = mk_os();
-        assert!(!os_config_requires_os_modifier(&os));
+        let mut ctx = mk_ctx();
+        assert!(!os_config_requires_os_modifier(&ctx));
 
-        os.users.push(User {
+        ctx.spec.os.users.push(User {
             name: "test".to_string(),
             password: Password::Locked,
             ..Default::default()
         });
-        assert!(os_config_requires_os_modifier(&os));
+        assert!(os_config_requires_os_modifier(&ctx));
 
-        os = mk_os();
-        os.hostname = Some("test".to_string());
-        assert!(os_config_requires_os_modifier(&os));
+        ctx = mk_ctx();
+        ctx.spec.os.hostname = Some("test".to_string());
+        assert!(os_config_requires_os_modifier(&ctx));
 
-        os = mk_os();
-        os.modules.push(Module {
+        ctx = mk_ctx();
+        ctx.spec.os.modules.push(Module {
             name: "test".to_string(),
             ..Default::default()
         });
-        assert!(os_config_requires_os_modifier(&os));
+        assert!(os_config_requires_os_modifier(&ctx));
 
-        os = mk_os();
-        os.services = Services {
+        ctx = mk_ctx();
+        ctx.spec.os.services = Services {
             enable: vec!["enabled-test".to_string()],
             disable: vec!["disabled-test".to_string()],
         };
-        assert!(os_config_requires_os_modifier(&os));
+        assert!(os_config_requires_os_modifier(&ctx));
 
-        os = mk_os();
-        os.kernel_command_line = KernelCommandLine {
+        ctx = mk_ctx();
+        ctx.spec.os.kernel_command_line = KernelCommandLine {
             extra_command_line: vec!["test".to_string()],
         };
-        assert!(os_config_requires_os_modifier(&os));
+        assert!(os_config_requires_os_modifier(&ctx));
+
+        ctx = mk_ctx();
+        ctx.servicing_type = ServicingType::AbUpdate;
+        assert!(os_config_requires_os_modifier(&ctx));
+        ctx.spec.internal_params = serde_yaml::from_str("disableHostnameCarryOver: true").unwrap();
+        assert!(!os_config_requires_os_modifier(&ctx));
     }
 
     #[test]
     fn test_mos_config_requires_os_modifier() {
         use super::mos_config_requires_os_modifier;
-        use trident_api::config::ManagementOs;
 
         // Manually create an empty ManagementOs struct. This is the same as
         // ManagementOs::default(), but this way it will break if the struct
@@ -313,5 +367,89 @@ mod tests {
             ..Default::default()
         });
         assert!(mos_config_requires_os_modifier(&mos));
+    }
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports))]
+mod functional_test {
+    use super::*;
+
+    use pytest_gen::functional_test;
+    use trident_api::config::Os;
+
+    #[functional_test(feature = "helpers")]
+    fn test_os_config_configure_hostname_clean_install() {
+        // Get current system hostname
+        let prev_hostname = fs::read_to_string(HOSTNAME_PATH)
+            .unwrap()
+            .trim()
+            .to_string();
+
+        // Create EngineContext
+        let ctx = EngineContext {
+            servicing_type: ServicingType::CleanInstall,
+            spec: HostConfiguration {
+                os: Os {
+                    hostname: Some("custom-hostname".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(os_config_requires_os_modifier(&ctx));
+
+        // Configure OsConfig subsystem
+        let mut os_config_subsystem = OsConfigSubsystem::default();
+        let _ = os_config_subsystem.configure(&ctx, Path::new("/"));
+
+        // Check that hostname has updated
+        assert_eq!(
+            fs::read_to_string(Path::new("/etc/hostname")).unwrap(),
+            "custom-hostname"
+        );
+
+        // Clean up and revert to previous hostname
+        fs::write(HOSTNAME_PATH, prev_hostname.clone()).unwrap();
+        assert_eq!(
+            fs::read_to_string(Path::new("/etc/hostname")).unwrap(),
+            prev_hostname
+        );
+    }
+
+    #[functional_test(feature = "helpers")]
+    fn test_os_config_configure_hostname_ab_update() {
+        // Get current system hostname
+        let prev_hostname = fs::read_to_string(HOSTNAME_PATH)
+            .unwrap()
+            .trim()
+            .to_string();
+
+        // Create EngineContext with no hostname specified
+        let ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            ..Default::default()
+        };
+        assert!(os_config_requires_os_modifier(&ctx));
+
+        // Configure OsConfig subsystem and set prev_hostname parameter
+        let mut os_config_subsystem = OsConfigSubsystem {
+            prev_hostname: Some("carry-over-hostname".into()),
+        };
+        let _ = os_config_subsystem.configure(&ctx, Path::new("/"));
+
+        // Check that hostname has updated
+        assert_eq!(
+            fs::read_to_string(Path::new("/etc/hostname")).unwrap(),
+            "carry-over-hostname"
+        );
+
+        // Clean up and revert to previous hostname
+        fs::write(HOSTNAME_PATH, prev_hostname.clone()).unwrap();
+        assert_eq!(
+            fs::read_to_string(Path::new("/etc/hostname")).unwrap(),
+            prev_hostname
+        );
     }
 }

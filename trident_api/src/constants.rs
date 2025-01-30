@@ -156,6 +156,9 @@ pub mod internal_params {
     /// Disable check for grub-noprefix
     pub const DISABLE_GRUB_NOPREFIX_CHECK: &str = "disableGrubNoprefixCheck";
 
+    /// Do not carry over existing machine hostname into the chroot during A/B update.
+    pub const DISABLE_HOSTNAME_CARRY_OVER: &str = "disableHostnameCarryOver";
+
     /// Enable support for cosi files
     pub const ENABLE_COSI_SUPPORT: &str = "cosi";
 
