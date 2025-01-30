@@ -43,7 +43,6 @@ function adoError() {
     set +x
     echo "##vso[task.logissue type=error]$MESSAGE"
     set -x
-
 }
 
 function checkActiveVolume() {
@@ -114,7 +113,11 @@ function waitForLogin() {
 
     if [ "$OUTPUT" != "" ]; then
         mkdir -p $OUTPUT
-        sudo cp ./serial.log $OUTPUT/serial-$ITERATION.log
+        OUTPUT_FILENAME=serial-$ITERATION.log
+        if [ "${ROLLBACK:-}" == "true" ]; then
+            OUTPUT_FILENAME=rollback-serial-$ITERATION.log
+        fi
+        sudo cp ./serial.log $OUTPUT/$OUTPUT_FILENAME
     fi
 
     if [ $WAIT_FOR_LOGIN_EXITCODE -ne 0 ]; then
