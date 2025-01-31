@@ -18,10 +18,12 @@ use osutils::{
 };
 use trident_api::{
     config::{
-        FileSystemSource, HostConfiguration, HostConfigurationDynamicValidationError, Image,
-        ImageFormat, ImageSha256,
+        FileSystemSource, HostConfiguration, HostConfigurationDynamicValidationError,
+        HostConfigurationStaticValidationError, Image, ImageFormat, ImageSha256, OsImage,
     },
-    constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY},
+    constants::{
+        internal_params::ENABLE_COSI_SUPPORT, ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY,
+    },
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
     BlockDeviceId,
@@ -54,7 +56,7 @@ fn deploy_images(ctx: &EngineContext, host_config: &HostConfiguration) -> Result
     // 1. During clean install, Trident will deploy images onto all non-ESP block devices here.
     // This includes A/B volume pairs and other standalone block devices that are not ESP.
     // 2. During A/B update, Trident will assume that all A/B volume pair and ESP images have been
-    // updated in the host configuration. Here, Trident will deploy images onto the A/B volume
+    // updated in the Host Configuration. Here, Trident will deploy images onto the A/B volume
     // pairs.
     let images_to_deploy = match ctx.servicing_type {
         ServicingType::CleanInstall => host_config.storage.get_images(),
@@ -230,10 +232,18 @@ fn resize_ext_fs(block_device_path: &Path) -> Result<(), Error> {
     ))
 }
 
-/// Checks if the host needs an A/B update by comparing the images targeting ESP partitions and A/B
-/// volume pairs in the host configuration with those in the engine context. Returns true if there is
-/// at least one image that needs to be updated; otherwise, returns false.
-pub(super) fn needs_ab_update(ctx: &EngineContext) -> bool {
+/// Checks if the host needs an A/B update. First, compares the partition images in the specs. If
+/// the partition images have not been updated, checks if the new Host Configuration requests an OS
+/// image. If yes, update is needed, unless the old Host Configuration also requested an OS image
+/// and the URLs and SHA256 checksums are the same.
+///
+/// TODO: Remove this logic for partition images once COSI becomes the default for GA.
+///
+/// TODO: Once hashes for OS images are introduced into Host Configuration, need to compare hashes
+/// for OS images. Related ADO task:
+/// https://dev.azure.com/mariner-org/ECF/_workitems/edit/10845.
+pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentError> {
+    // First, check if the images have been updated
     let old_images = ctx
         .spec_old
         .storage
@@ -248,7 +258,37 @@ pub(super) fn needs_ab_update(ctx: &EngineContext) -> bool {
         .into_iter()
         .chain(ctx.spec.storage.get_esp_images())
         .collect();
-    !get_updated_images(old_images, new_images).is_empty()
+    let ab_update_needed = !get_updated_images(old_images, new_images).is_empty();
+
+    // If the images have been updated, return immediately
+    if ab_update_needed || !ctx.spec.internal_params.get_flag(ENABLE_COSI_SUPPORT) {
+        debug!("Partition images have not been updated, and COSI is not enabled, so no A/B update is required");
+        return Ok(ab_update_needed);
+    }
+
+    debug!("COSI is enabled, so checking OS images to determine if an A/B update is required");
+    // Otherwise, continue checking OS images, if COSI is enabled
+    match (&ctx.spec_old.os_image, &ctx.spec.os_image) {
+        // If OS image is not requested in the new spec, no update is needed.
+        (None, None) => Ok(false),
+        // Return an error if the old spec didn't request an OS image but the new spec does.
+        (None, Some(_)) => {
+            // Return an error if the old spec requests an OS image but the new spec does not.
+            Err(TridentError::new(InvalidInputError::from(
+                HostConfigurationStaticValidationError::DeployOsImageAfterPartitionImages,
+            )))
+        }
+        // If OS image is requested in both specs, compare the URLs.
+        (Some(OsImage::Cosi(old_cosi)), Some(OsImage::Cosi(new_cosi))) => {
+            Ok(old_cosi.url != new_cosi.url)
+        }
+        (Some(_), None) => {
+            // Return an error if the old spec requests an OS image but the new spec does not.
+            Err(TridentError::new(InvalidInputError::from(
+                HostConfigurationStaticValidationError::DeployPartitionImagesAfterOsImage,
+            )))
+        }
+    }
 }
 
 /// Returns the images that need to be updated.
@@ -274,7 +314,7 @@ pub(crate) fn get_updated_images(
 /// Validates that the new Host Configuration in `ctx.spec` requests deployment only of images that
 /// can be deployed.
 ///
-/// This function is called during A/B update to ensure that the host configuration does not request
+/// This function is called during A/B update to ensure that the Host Configuration does not request
 /// Trident to re-deploy images on standalone volumes that are shared between A and B, such as
 /// /var/lib/trident.
 pub(super) fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
@@ -688,7 +728,7 @@ mod tests {
 
         // Test case 2. Running validate_host_config() when update of a standalone volume 'trident'
         // is requested during A/B update should return an error.
-        // Update URL and sha256sum of 'trident' image in host configuration.
+        // Update URL and sha256sum of 'trident' image in Host Configuration.
         ctx.spec.storage.filesystems[2].source = FileSystemSource::Image(Image {
             url: "http://example.com/trident_2.img".to_string(),
             sha256: ImageSha256::Checksum("trident_sha256_2".into()),
@@ -697,10 +737,10 @@ mod tests {
         validate_host_config(&ctx).unwrap_err();
     }
 
-    /// Validates that the logic in needs_ab_update() and get_updated_images() is correct.
+    /// Validates that the logic in ab_update_required() and get_updated_images() is correct.
     #[test]
-    fn test_needs_ab_update_and_get_updated_images() {
-        // Initialize a host configuration
+    fn test_ab_update_required_and_get_updated_images() {
+        // Initialize a Host Configuration
         let host_config = HostConfiguration {
             storage: StorageConfig {
                 disks: vec![Disk {
@@ -780,7 +820,7 @@ mod tests {
             ..Default::default()
         };
 
-        // Initialize a engine context with spec matching the host configuration
+        // Initialize an engine context object with spec matching the Host Configuration
         let mut ctx = EngineContext {
             servicing_type: ServicingType::NoActiveServicing,
             spec: host_config.clone(),
@@ -797,9 +837,9 @@ mod tests {
             ..Default::default()
         };
 
-        // Test case 1. Running needs_ab_update() when images are the same in engine context and host
+        // Test case 1. Running ab_update_required() when images are the same in engine context and host
         // configuration should return false.
-        assert!(!needs_ab_update(&ctx));
+        assert!(!ab_update_required(&ctx).unwrap());
         // Running get_updated_images() should return an empty list.
         assert!(get_updated_images(
             ctx.spec_old.storage.get_images(),
@@ -807,14 +847,14 @@ mod tests {
         )
         .is_empty());
 
-        // Test case 2. Running needs_ab_update() when the URL of the ESP image in the host
+        // Test case 2. Running ab_update_required() when the URL of the ESP image in the host
         // configuration is different from that in the engine context should return true.
         ctx.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_2.img".to_string(),
             sha256: ImageSha256::Checksum("esp_sha256_1".into()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&ctx));
+        assert!(ab_update_required(&ctx).unwrap());
         // Running get_updated_images() should return the 'esp' image.
         assert_eq!(
             get_updated_images(
@@ -831,14 +871,14 @@ mod tests {
             )]
         );
 
-        // Test case 3. Running needs_ab_update() when the sha256sum of the ESP image in the host
+        // Test case 3. Running ab_update_required() when the sha256sum of the ESP image in the host
         // configuration is different from that in the engine context should return true.
         ctx.spec.storage.filesystems[0].source = FileSystemSource::EspImage(Image {
             url: "http://example.com/esp_1.img".to_string(),
             sha256: ImageSha256::Checksum("esp_sha256_2".into()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&ctx));
+        assert!(ab_update_required(&ctx).unwrap());
         // Running get_updated_images() for ESP only should return the 'esp' image.
         assert_eq!(
             get_updated_images(
@@ -861,14 +901,14 @@ mod tests {
         )
         .is_empty());
 
-        // Test case 4. Running needs_ab_update() when the URL of the root image in the host
+        // Test case 4. Running ab_update_required() when the URL of the root image in the host
         // configuration is different from that in the engine context should return true.
         ctx.spec.storage.filesystems[1].source = FileSystemSource::Image(Image {
             url: "http://example.com/root_2.img".to_string(),
             sha256: ImageSha256::Checksum("root_sha256_2".into()),
             format: ImageFormat::RawZst,
         });
-        assert!(needs_ab_update(&ctx));
+        assert!(ab_update_required(&ctx).unwrap());
         // Running get_updated_images() for all non-ESP images should return the 'root' image.
         assert_eq!(
             get_updated_images(

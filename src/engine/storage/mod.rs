@@ -159,8 +159,10 @@ impl Subsystem for StorageSubsystem {
         &self,
         ctx: &EngineContext,
     ) -> Result<Option<ServicingType>, TridentError> {
-        // If needs_ab_update() returns true, A/B update is required.
-        if image::needs_ab_update(ctx) {
+        // If ab_update_required() returns true, A/B update is required.
+        if image::ab_update_required(ctx)
+            .message("Failed to determine if A/B update is required")?
+        {
             return Ok(Some(ServicingType::AbUpdate));
         }
 

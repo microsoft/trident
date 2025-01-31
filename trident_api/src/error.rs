@@ -88,7 +88,7 @@ pub enum InternalError {
     #[error(
         "Failed to find mount point in Host Configuration for filesystems sourced from an OS image"
     )]
-    GetMountPointForOSImage,
+    GetMountPointForOsImage,
 
     #[error("Failed to get root block device path")]
     GetRootBlockDevicePath,

@@ -1,4 +1,4 @@
-//! Validation errors for the host configuration.
+//! Validation errors for Host Configuration.
 
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ use super::storage::{
     blkdev_graph::error::BlockDeviceGraphBuildError, storage_graph::error::StorageGraphBuildError,
 };
 
-/// Identifies errors detected during static validation of the host configuration, i.e. errors that
+/// Identifies errors detected during static validation of the Host Configuration, i.e. errors that
 /// can be detected without applying the configuration to the host.
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -42,7 +42,13 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Datastore path '{datastore_path}' must be in a known volume")]
     DatastorePathNotInKnownVolume { datastore_path: String },
 
-    #[error("Host configuration contains duplicate usernames '{username}', but usernames must be unique")]
+    #[error("Host Configuration contains partition images, but an OS image must be used if one was previously deployed")]
+    DeployPartitionImagesAfterOsImage,
+
+    #[error("Host Configuration contains OS image, but partition images must be used if they were previously deployed")]
+    DeployOsImageAfterPartitionImages,
+
+    #[error("Host Configuration contains duplicate usernames '{username}', but usernames must be unique")]
     DuplicateUsernames { username: String },
 
     #[error("Underlying device of encrypted volume '{encrypted_volume}' must be a partition or a software RAID array")]
@@ -138,8 +144,8 @@ impl From<HostConfigurationStaticValidationError> for TridentError {
     }
 }
 
-/// Identifies errors detected during dynamic validation of the host configuration, i.e. errors
-/// that can only be detected by applying the configuration to the host.
+/// Identifies errors detected during dynamic validation of Host Configuration, i.e. errors that
+/// can only be detected by applying the configuration to the host.
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum HostConfigurationDynamicValidationError {
@@ -158,7 +164,7 @@ pub enum HostConfigurationDynamicValidationError {
         device: String,
     },
 
-    #[error("Images and host configuration have incompatible dm-verity configuration")]
+    #[error("Images and Host Configuration have incompatible dm-verity configuration")]
     DmVerityMisconfiguration,
 
     #[error("Encryption recovery key file '{key_file}' must not be empty")]

@@ -94,7 +94,7 @@ fn validate_filesystems(
                 .mount_point
                 .as_ref()
                 .map(|mp| mp.path.as_path())
-                .structured(InternalError::GetMountPointForOSImage)?;
+                .structured(InternalError::GetMountPointForOsImage)?;
             Ok((mount_point, fs.fs_type))
         })
         .collect::<Result<HashMap<_, _>, TridentError>>()?;
