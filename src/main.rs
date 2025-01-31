@@ -84,19 +84,12 @@ enum Commands {
     #[clap(name = "get")]
     Get {
         /// What data to retrieve
-        kind: Option<GetKind>,
+        #[clap(default_value = "status")]
+        kind: GetKind,
 
         /// Path to save the resulting output
         #[clap(short, long)]
         outfile: Option<PathBuf>,
-
-        /// DEPRECATED: Path to save the resulting HostStatus
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// DEPRECATED: Output only the 'spec' field of the Host Status
-        #[clap(long, default_value = "false")]
-        config_only: bool,
     },
 
     /// Validate HostConfiguration
@@ -185,22 +178,9 @@ fn run_trident(
             return offline_init::execute(hs_path);
         }
 
-        Commands::Get {
-            kind,
-            outfile,
-            status,
-            config_only,
-        } => {
-            return Trident::get(
-                &load_agent_config()?.datastore,
-                &outfile.as_ref().or(status.as_ref()).cloned(),
-                kind.unwrap_or(if *config_only {
-                    GetKind::Configuration
-                } else {
-                    GetKind::Status
-                }),
-            )
-            .message("Failed to retrieve Host Status");
+        Commands::Get { kind, outfile } => {
+            return Trident::get(&load_agent_config()?.datastore, outfile, *kind)
+                .message("Failed to retrieve Host Status");
         }
 
         Commands::StartNetwork { config } => {
