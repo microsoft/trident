@@ -40,11 +40,17 @@ represents a full log line, with the following fields:
 | `line`    | u32    | Line number where the log was generated.          |
 
 ## Logs from Past Servicing
+
 In addition to the full Trident log file from the current servicing, the user
 can also view the logs from any **past** servicing executed by Trident. These
 logs are persisted from the MOS or old runtime OS to **the directory adjacent**
 **to the datastore** in the updated runtime OS.
 
 After each servicing, the full Trident log is persisted to a file named
-`trident-<servicing_type>-<timestamp>.log`, where the timestamp corresponds to
-the time when the log was persisted to the updated runtime OS. 
+`trident-<servicing_state>-<timestamp>.log`, where the timestamp corresponds to
+the time when the log was persisted to the updated runtime OS. Servicing state
+is the state that Trident was in when the logs were copied over: e.g. the logs
+for the staging of an A/B update would be named `trident-ab-update-staged-<timestamp>.log`.
+
+Similarly, Trident also persists the metrics logs to the updated runtime OS,
+i.e. `trident-metrics-<servicing_state>-<timestamp>.log`.

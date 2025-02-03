@@ -14,7 +14,7 @@ use trident_api::{
     config::Storage,
     constants::{self, internal_params::ENABLE_UKI_SUPPORT},
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
-    status::ServicingType,
+    status::{ServicingState, ServicingType},
     storage_graph::graph::StorageGraph,
 };
 
@@ -115,29 +115,32 @@ lazy_static::lazy_static! {
     ]);
 }
 
-/// Persists the Trident background log and metrics files to the updated runtime
-/// OS, by copying the files at TRIDENT_BACKGROUND_LOG_PATH and
-/// TRIDENT_METRICS_FILE_PATH to the directory adjacent to the datastore. On
-/// failure, only prints out an error message.
+/// Persists the Trident background log and metrics files to the updated runtime OS, by copying the
+/// TRIDENT_BACKGROUND_LOG_PATH and TRIDENT_METRICS_FILE_PATH to the directory adjacent to the
+/// datastore. On failure, only prints out an error message.
 ///
-/// In case of clean install, the files are persisted to the datastore path in
-/// the new root, so newroot_path is provided.
+/// Each copy is named following the format "trident-<servicing_state>-<timestamp>.log", where
+/// <servicing_state> is the state in Host Status set when the logs were copied. So, e.g., the logs
+/// for the staging of an A/B update would be named `trident-ab-update-staged-<timestamp>.log`.
+///
+/// In case of clean install, the files are persisted to the datastore path in the new root, so
+/// newroot_path is provided.
 fn persist_background_log_and_metrics(
     datastore_path: &Path,
     newroot_path: Option<&Path>,
-    servicing_type: ServicingType,
+    servicing_state: ServicingState,
 ) {
-    // Generate the new log filename based on the servicing type and the current timestamp
+    // Generate the new log filename
     let new_background_log_filename = format!(
         "trident-{:?}-{}.log",
-        servicing_type,
+        servicing_state,
         Utc::now().format("%Y%m%dT%H%M%SZ")
     );
 
-    // Generate the new metrics filename based on the servicing type and the current timestamp
+    // Generate the new metrics filename
     let new_metrics_filename = format!(
         "trident-metrics-{:?}-{}.jsonl",
-        servicing_type,
+        servicing_state,
         Utc::now().format("%Y%m%dT%H%M%SZ")
     );
 
@@ -389,14 +392,14 @@ mod functional_test {
 
     use tempfile::tempdir;
 
-    /// Helper function to check if the persisted background log and metrics
-    /// file, i.e. 'trident-<servicingType>-<timeStamp>.log' and
-    /// `trident-metrics-<servicingType>-<timeStamp>.jsonl`, exists in the log
+    /// Helper function to check if the persisted background log and metrics file exist in the log
     /// directory.
-    fn persisted_log_and_metrics_exists(dir: &Path, servicing_type: ServicingType) -> bool {
+    fn persisted_log_and_metrics_exist(dir: &Path, servicing_state: ServicingState) -> bool {
         let files = fs::read_dir(dir).unwrap();
-        let log_prefix = format!("trident-{:?}-", servicing_type);
-        let metrics_prefix = format!("trident-metrics-{:?}-", servicing_type);
+
+        let log_prefix = format!("trident-{:?}-", servicing_state);
+        let metrics_prefix = format!("trident-metrics-{:?}-", servicing_state);
+
         let (mut log_found, mut metrics_found) = (false, false);
         for entry in files {
             let entry = entry.unwrap();
@@ -434,11 +437,11 @@ mod functional_test {
         fs::create_dir_all(&log_dir).unwrap();
 
         // Persist the background log and metrics file
-        let servicing_type = ServicingType::CleanInstall;
-        persist_background_log_and_metrics(&datastore_path, Some(newroot_path), servicing_type);
+        let servicing_state = ServicingState::AbUpdateFinalized;
+        persist_background_log_and_metrics(&datastore_path, Some(newroot_path), servicing_state);
 
         assert!(
-            persisted_log_and_metrics_exists(&log_dir, servicing_type),
+            persisted_log_and_metrics_exist(&log_dir, servicing_state),
             "Trident background log and metrics should be persisted successfully."
         );
     }
@@ -466,11 +469,11 @@ mod functional_test {
         fs::remove_file(TRIDENT_METRICS_FILE_PATH).unwrap();
 
         // Persist the background log and metrics file
-        let servicing_type = ServicingType::AbUpdate;
-        persist_background_log_and_metrics(&datastore_path, None, servicing_type);
+        let servicing_state = ServicingState::AbUpdateFinalized;
+        persist_background_log_and_metrics(&datastore_path, None, servicing_state);
 
         assert!(
-            !persisted_log_and_metrics_exists(datastore_dir, servicing_type),
+            !persisted_log_and_metrics_exist(datastore_dir, servicing_state),
             "Trident background log and metrics should not be persisted."
         );
 

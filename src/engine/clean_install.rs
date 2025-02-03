@@ -84,6 +84,14 @@ pub(crate) fn clean_install(
         info!("Finalizing of clean install not requested, skipping finalizing and reboot");
         state.close();
 
+        // Persist the Trident background log and metrics file to the new root. Otherwise, the
+        // staging logs would be lost.
+        engine::persist_background_log_and_metrics(
+            &state.host_status().spec.trident.datastore_path,
+            Some(root_mount.path()),
+            state.host_status().servicing_state,
+        );
+
         debug!("Unmounting '{}'", root_mount.path().display());
         root_mount.unmount_all()?;
     } else {
@@ -318,7 +326,7 @@ pub(crate) fn finalize_clean_install(
     engine::persist_background_log_and_metrics(
         &state.host_status().spec.trident.datastore_path,
         Some(new_root.path()),
-        ServicingType::CleanInstall,
+        state.host_status().servicing_state,
     );
 
     if let Err(e) = new_root.unmount_all() {

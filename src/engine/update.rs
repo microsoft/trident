@@ -136,6 +136,14 @@ pub(crate) fn update(
         ServicingType::UpdateAndReboot | ServicingType::AbUpdate => {
             if !allowed_operations.has_finalize() {
                 info!("Finalizing of update not requested, skipping reboot");
+
+                // Persist the Trident background log and metrics file to the new root. Otherwise,
+                // the staging logs would be lost.
+                engine::persist_background_log_and_metrics(
+                    &state.host_status().spec.trident.datastore_path,
+                    None,
+                    state.host_status().servicing_state,
+                );
             } else {
                 finalize_update(
                     state,
@@ -160,7 +168,7 @@ pub(crate) fn update(
             engine::persist_background_log_and_metrics(
                 &state.host_status().spec.trident.datastore_path,
                 None,
-                servicing_type,
+                state.host_status().servicing_state,
             );
 
             info!("Update of servicing type '{:?}' succeeded", servicing_type);
@@ -336,7 +344,7 @@ pub(crate) fn finalize_update(
     engine::persist_background_log_and_metrics(
         &state.host_status().spec.trident.datastore_path,
         None,
-        servicing_type,
+        state.host_status().servicing_state,
     );
 
     if !state
