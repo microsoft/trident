@@ -116,7 +116,7 @@ impl EngineContext {
     ///
     /// If the volume is part of an A/B Volume Pair this returns the update volume (i.e. the one that
     /// isn't active).
-    pub(super) fn get_block_device_path(&self, block_device_id: &BlockDeviceId) -> Option<PathBuf> {
+    pub(crate) fn get_block_device_path(&self, block_device_id: &BlockDeviceId) -> Option<PathBuf> {
         if let Some(partition_path) = self.partition_paths.get(block_device_id) {
             return Some(partition_path.clone());
         }

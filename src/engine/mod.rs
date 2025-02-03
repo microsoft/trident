@@ -19,7 +19,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{boot::BootSubsystem, storage::StorageSubsystem},
+    engine::boot::BootSubsystem,
     subsystems::{
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
@@ -27,6 +27,7 @@ use crate::{
         network::NetworkSubsystem,
         osconfig::{MosConfigSubsystem, OsConfigSubsystem},
         selinux::SelinuxSubsystem,
+        storage::StorageSubsystem,
     },
     TRIDENT_BACKGROUND_LOG_PATH, TRIDENT_METRICS_FILE_PATH,
 };

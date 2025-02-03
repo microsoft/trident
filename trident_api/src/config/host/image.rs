@@ -20,3 +20,12 @@ pub struct CosiFile {
     /// The path to the COSI file.
     pub url: Url,
 }
+
+impl OsImage {
+    /// Returns the URL of the OsImage file.
+    pub fn url(&self) -> &Url {
+        match self {
+            OsImage::Cosi(cosi) => &cosi.url,
+        }
+    }
+}
