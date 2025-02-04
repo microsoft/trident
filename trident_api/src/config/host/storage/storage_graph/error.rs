@@ -88,6 +88,15 @@ pub enum StorageGraphBuildError {
         fs_type: FileSystemType,
     },
 
+    #[error(
+        "Filesystem [{fs_desc}] is placed on top of a verity device, but filesystems of type \
+        '{fs_type}' cannot be used with verity."
+    )]
+    FilesystemVerityIncompatible {
+        fs_desc: String,
+        fs_type: FileSystemType,
+    },
+
     #[error("Internal error: {body}")]
     InternalError { body: String },
 
