@@ -11,6 +11,12 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: previewContainerPipeline
+    type: string
+    default: "[AMD64-6-OneBranch]-Prod-BuildImages"
+    displayName: Name of preview container pipeline
+
+
 steps:
   - script: |
       set -eux
@@ -39,6 +45,7 @@ steps:
         parameters:
           dockerfilePath: $(Build.SourcesDirectory)/Dockerfile.full
           dockerBuildContext: $(Build.SourcesDirectory)
+          previewContainerPipeline: ${{ parameters.previewContainerPipeline }}
           ${{ if eq(parameters.previewContainerImageBuildId, 'latestFromBranch') }}:
             runVersion: ${{ parameters.previewContainerImageBuildId }}
           ${{ else }}:

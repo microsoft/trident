@@ -28,6 +28,10 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: previewContainerImageArm64BuildId
+    type: string
+    default: "latestFromBranch"
+
   - name: forceTridentRebuild
     type: boolean
     default: false
@@ -40,6 +44,7 @@ stages:
           codeCoverage: ${{ parameters.codeCoverage }}
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
 
   - ${{ else }}:
       - template: ../download_staged/download-staged.yml

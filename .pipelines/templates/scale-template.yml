@@ -22,6 +22,11 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: previewContainerImageArm64BuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2117 ([ARM64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
   - name: baseimgAzlVersion
     displayName: Base Image AZL version
     type: string
@@ -41,6 +46,7 @@ stages:
       codeCoverage: false
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
       forceTridentRebuild: ${{ eq(parameters.baseimgBuildType, 'preview') }}
 
   # Test Servicing on VMs

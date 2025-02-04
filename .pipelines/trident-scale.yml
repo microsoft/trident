@@ -17,6 +17,11 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: previewContainerImageArm64BuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2117 ([ARM64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
+    default: "latestFromBranch"
+
   - name: baseimgAzlVersion
     displayName: Base Image AZL version
     type: string
@@ -78,6 +83,12 @@ resources:
       branch: master
       tags:
         - "3.0-preview"
+    - pipeline: "[ARM64-6-OneBranch]-Prod-BuildImages"
+      source: "[ARM64-6-OneBranch]-Prod-BuildImages"
+      project: mariner
+      branch: master
+      tags:
+        - "3.0-preview"
 
 extends:
   template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates
@@ -106,4 +117,5 @@ extends:
           baseimgBuildType: ${{ parameters.baseimgBuildType }}
           verboseLogging: ${{ parameters.debug }}
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+          previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}

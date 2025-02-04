@@ -7,6 +7,9 @@ parameters:
   - name: previewContainerImageBuildId
     displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2116 ([AMD64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
     type: string
+  - name: previewContainerImageArm64BuildId
+    displayName: "Build Id of the pipeline run, default will select latest successful run from pipeline 2117 ([ARM64-6-OneBranch]-Prod-BuildImages) with tag 3.0-preview"
+    type: string
 
 stages:
     - template: e2e-template.yml
@@ -15,4 +18,5 @@ stages:
         blockPublishing: true
         baseimgBuildType: preview
         previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+        previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
         forceTridentRebuild: true

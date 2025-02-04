@@ -21,6 +21,10 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: previewContainerImageArm64BuildId
+    type: string
+    default: "latestFromBranch"
+
   - name: blockPublishing
     displayName: "Block publishing to artifact feed"
     type: boolean
@@ -40,6 +44,7 @@ stages:
       codeCoverage: false
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+      previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
       forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
 
   # Build tools (Go stuff)

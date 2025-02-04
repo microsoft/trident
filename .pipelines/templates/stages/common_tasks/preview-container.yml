@@ -4,6 +4,11 @@ parameters:
     default: latestFromBranch
     displayName: Specific run or latest successful run
 
+  - name: previewContainerPipeline
+    type: string
+    default: "[AMD64-6-OneBranch]-Prod-BuildImages"
+    displayName: Name of preview container pipeline
+
   - name: previewContainerImageBuildId
     type: string
     default: ""
@@ -25,7 +30,7 @@ steps:
     inputs:
       buildType: "specific"
       project: "mariner"
-      pipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
+      pipeline: ${{ parameters.previewContainerPipeline }}
       runVersion: ${{ parameters.runVersion }}
       branchName: "refs/heads/master"
       runId: ${{ parameters.previewContainerImageBuildId }}

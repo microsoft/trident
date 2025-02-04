@@ -18,6 +18,10 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: previewContainerImageArm64BuildId
+    type: string
+    default: "latestFromBranch"
+
 stages:
   - stage: GetTridentBinaries_rpms
     displayName: Trident RPMs (Build)
@@ -88,6 +92,7 @@ stages:
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              previewContainerPipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
 
       - job: BuildTridentARM64
         displayName: Build Trident 3.0 RPMs for ARM64
@@ -111,7 +116,8 @@ stages:
           - template: release.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
-              previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
+              previewContainerImageBuildId: ${{ parameters.previewContainerImageArm64BuildId }}
+              previewContainerPipeline: "[ARM64-6-OneBranch]-Prod-BuildImages"
 
       - job: BuildTrident2
         displayName: Build Trident 2.0 RPMs

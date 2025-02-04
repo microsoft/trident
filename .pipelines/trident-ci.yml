@@ -45,14 +45,6 @@ resources:
       type: git
       ref: refs/heads/main
 
-  pipelines:
-    - pipeline: "[AMD64-6-OneBranch]-Prod-BuildImages"
-      source: "[AMD64-6-OneBranch]-Prod-BuildImages"
-      project: mariner
-      branch: master
-      tags:
-        - "3.0-preview"
-
 variables:
   - group: bot # added for access to dom0 RPMs
 
