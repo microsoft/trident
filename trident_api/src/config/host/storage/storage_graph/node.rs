@@ -81,6 +81,7 @@ impl StorageGraphNode {
     }
 
     /// Returns the inner block device, if this node is a block device.
+    #[allow(dead_code)]
     pub fn as_block_device(&self) -> Option<&BlockDevice> {
         match self {
             Self::BlockDevice(dev) => Some(dev),
@@ -192,6 +193,7 @@ impl BlockDevice {
     }
 
     /// Returns the kind of referrer this node represents.
+    #[allow(dead_code)]
     pub fn referrer_kind(&self) -> BlkDevReferrerKind {
         self.host_config_ref.referrer_kind()
     }
