@@ -101,7 +101,7 @@ mod tests {
     use event::{OmahaEvent, OmahaEventType};
     use request::AppRequest;
 
-    use crate::EventResult;
+    use crate::{EventResult, IdSource};
 
     #[test]
     fn test_send() {
@@ -149,7 +149,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap();
         let request = Request::default().with_app(
-            AppRequest::new_event("app_id", "track")
+            AppRequest::new_event("app_id", "track", IdSource::MachineIdHashed)
                 .unwrap()
                 .with_event(OmahaEvent::new(
                     OmahaEventType::EventUpdateInstalled,
@@ -183,7 +183,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap();
         let request = Request::default().with_app(
-            AppRequest::new_event("app_id", "track")
+            AppRequest::new_event("app_id", "track", IdSource::MachineIdHashed)
                 .unwrap()
                 .with_event(OmahaEvent::new(
                     OmahaEventType::EventUpdateInstalled,
@@ -221,7 +221,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap();
         let request = Request::default().with_app(
-            AppRequest::new_event("app_id", "track")
+            AppRequest::new_event("app_id", "track", IdSource::MachineIdHashed)
                 .unwrap()
                 .with_event(OmahaEvent::new(
                     OmahaEventType::EventUpdateInstalled,

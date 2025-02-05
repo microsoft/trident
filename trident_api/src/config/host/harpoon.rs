@@ -3,6 +3,20 @@ use url::Url;
 
 use crate::primitives::version::SemverVersion;
 
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum HarpoonIdSource {
+    /// Use a hash of /etc/machine-id as the source for the Harpoon ID.
+    #[default]
+    MachineIdHashed,
+
+    /// Use the raw contents of /etc/machine-id as the source for the Harpoon ID.
+    MachineIdRaw,
+
+    /// The raw hostname is used as the Harpoon ID.
+    Hostname,
+}
+
 /// Configuration for the Harpoon update client.
 ///
 /// Harpoon is an Omaha client that can be used to poll updated Host
@@ -29,4 +43,9 @@ pub struct HarpoonConfig {
     ///
     /// It MUST be valid semver. It is passed to the Omaha server as-is.
     pub document_version: SemverVersion,
+
+    /// The source to use to create the Harpoon ID. This ID is reported as the
+    /// machine ID in Omaha requests.
+    #[serde(default)]
+    pub id_source: HarpoonIdSource,
 }

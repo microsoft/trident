@@ -15,6 +15,7 @@ pub mod findmnt;
 pub mod grub;
 pub mod grub_mkconfig;
 pub mod hashing_reader;
+pub mod hostname;
 pub mod image_streamer;
 pub mod lsblk;
 pub mod lsof;

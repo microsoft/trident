@@ -12,6 +12,7 @@ configparser = { version = "3.1.0", features = ["indexmap"] }
 const_format = "0.2.33"
 duct = "0.13.7"
 enumflags2 = { version = "0.7", features = ["serde"] }
+hostname = "0.4.0"
 indoc = "2.0.5"
 inventory = "0.3.15"
 log = "0.4.22"

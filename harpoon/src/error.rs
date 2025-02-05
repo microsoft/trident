@@ -5,11 +5,17 @@ use crate::omaha::event::{EventResult, OmahaEventType};
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum HarpoonError {
+    #[error("Failed to initialize the Harpoon client: {0}")]
+    InitializationError(String),
+
     #[error("The version provided '{version}' is not valid semver: {inner}")]
     InvalidVersion { version: String, inner: String },
 
     #[error("Failed to read machine-id: {0}")]
     MachineIdRead(String),
+
+    #[error("Failed to read hostname: {0}")]
+    HostnameRead(String),
 
     #[error("Internal error: {0}")]
     Internal(String),

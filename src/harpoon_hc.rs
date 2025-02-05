@@ -1,7 +1,7 @@
-use harpoon::{EventResult, EventType, QueryResult};
+use harpoon::{EventResult, EventType, IdSource, QueryResult};
 use log::{debug, error};
 use trident_api::{
-    config::{HarpoonConfig, HostConfiguration},
+    config::{HarpoonConfig, HarpoonIdSource, HostConfiguration},
     constants::internal_params::ENABLE_HARPOON_SUPPORT,
     error::{InitializationError, TridentError},
     primitives::version::SemverVersion,
@@ -17,6 +17,16 @@ pub(super) enum HostConfigUpdate {
     NoUpdate,
 }
 
+/// Convert the HarpoonIdSource enum from the trident_api to the IdSource enum
+/// from the harpoon crate.
+fn id_source(config: &HarpoonConfig) -> IdSource {
+    match config.id_source {
+        HarpoonIdSource::MachineIdHashed => IdSource::MachineIdHashed,
+        HarpoonIdSource::MachineIdRaw => IdSource::MachineIdRaw,
+        HarpoonIdSource::Hostname => IdSource::Hostname,
+    }
+}
+
 pub(crate) fn query_and_fetch_host_config(
     config: &HarpoonConfig,
 ) -> Result<HostConfigUpdate, TridentError> {
@@ -25,6 +35,7 @@ pub(crate) fn query_and_fetch_host_config(
         &config.app_id,
         &config.track,
         config.document_version.as_version(),
+        id_source(config),
     )
     .map_err(|e| TridentError::new(InitializationError::QueryForUpdates(e.to_string())))?;
 
@@ -75,6 +86,7 @@ pub(crate) fn on_harpoon_enabled_event(
             &harpoon_config.track,
             event_type,
             event_result,
+            id_source(harpoon_config),
         ) {
             Ok(()) => {
                 debug!("Successfully reported '{event_type:?}:{event_result:?}' event to Harpoon")

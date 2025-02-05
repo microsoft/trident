@@ -5,9 +5,9 @@ use quick_xml::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use osutils::{arch::SystemArchitecture, machine_id::MachineId, osrelease::OsRelease};
+use osutils::{arch::SystemArchitecture, osrelease::OsRelease};
 
-use crate::error::HarpoonError;
+use crate::{error::HarpoonError, IdSource};
 
 use super::{
     app::AppVersion, event::OmahaEvent, OMAHA_VERSION, XML_HEADER_ENCODING, XML_HEADER_VERSION,
@@ -133,7 +133,7 @@ pub(crate) struct AppRequest {
     track: String,
 
     #[serde(rename = "@machineid")]
-    machine_id: Uuid,
+    machine_id: String,
 
     #[serde(rename = "updatecheck", skip_serializing_if = "Option::is_none")]
     update_check: Option<UpdateCheckRequest>,
@@ -143,36 +143,28 @@ pub(crate) struct AppRequest {
 }
 
 impl AppRequest {
-    /// Creates a new `AppRequest` with the given `app_id`, `version`, and
-    /// `track`. The `machine_id` is read from the system.
+    /// Creates a new `AppRequest` with the given `app_id` to be used to send
+    /// update events to the server, and the given `machine_id_source` to
+    /// determine the machine ID.
+    pub(crate) fn new_event(
+        app_id: impl Into<String>,
+        track: impl Into<String>,
+        machine_id_source: IdSource,
+    ) -> Result<Self, HarpoonError> {
+        Self::new(app_id, AppVersion::default(), track, machine_id_source)
+    }
+
     pub(crate) fn new(
         app_id: impl Into<String>,
         version: impl Into<AppVersion>,
         track: impl Into<String>,
+        machine_id_source: IdSource,
     ) -> Result<Self, HarpoonError> {
         Ok(Self::new_with_machine_id(
             app_id,
             version,
             track,
-            MachineId::read()
-                .map_err(|err| HarpoonError::MachineIdRead(err.to_string()))?
-                .hashed_uuid(),
-        ))
-    }
-
-    /// Creates a new `AppRequest` with the given `app_id` to be used to send
-    /// update events to the server.
-    pub(crate) fn new_event(
-        app_id: impl Into<String>,
-        track: impl Into<String>,
-    ) -> Result<Self, HarpoonError> {
-        Ok(Self::new_with_machine_id(
-            app_id,
-            AppVersion::default(),
-            track,
-            MachineId::read()
-                .map_err(|err| HarpoonError::MachineIdRead(err.to_string()))?
-                .hashed_uuid(),
+            machine_id_source.produce_id()?,
         ))
     }
 
@@ -180,7 +172,7 @@ impl AppRequest {
         app_id: impl Into<String>,
         version: impl Into<AppVersion>,
         track: impl Into<String>,
-        machine_id: Uuid,
+        machine_id: String,
     ) -> Self {
         Self {
             app_id: app_id.into(),
@@ -223,9 +215,11 @@ pub(crate) struct UpdateCheckRequest;
 
 #[cfg(test)]
 mod tests {
-    use crate::{omaha::event::OmahaEventType, EventResult};
-
     use super::*;
+
+    use osutils::machine_id::MachineId;
+
+    use crate::{omaha::event::OmahaEventType, EventResult};
 
     #[test]
     fn test_bool2num() {
@@ -272,34 +266,59 @@ mod tests {
 
     #[test]
     fn test_request_with_app() {
-        let app = AppRequest::new("app_id", AppVersion::default(), "track").unwrap();
+        let app = AppRequest::new(
+            "app_id",
+            AppVersion::default(),
+            "track",
+            IdSource::MachineIdHashed,
+        )
+        .unwrap();
         let request = Request::default().with_app(app);
         assert_eq!(request.apps().len(), 1);
     }
 
     #[test]
     fn test_app_request_new() {
-        let app = AppRequest::new("app_id", AppVersion::default(), "track").unwrap();
+        let app = AppRequest::new(
+            "app_id",
+            AppVersion::default(),
+            "track",
+            IdSource::MachineIdHashed,
+        )
+        .unwrap();
         assert_eq!(app.app_id(), "app_id");
         assert_eq!(app.version, AppVersion::default());
         assert_eq!(app.next_version, None);
         assert_eq!(app.track, "track");
-        assert_eq!(app.machine_id, MachineId::read().unwrap().hashed_uuid());
+        assert_eq!(
+            app.machine_id,
+            MachineId::read().unwrap().hashed_uuid().to_string()
+        );
         assert_eq!(app.update_check, None);
         assert_eq!(app.events, Vec::new());
     }
 
     #[test]
     fn test_app_request_new_with_machine_id() {
-        let machine_id = Uuid::new_v4();
-        let app =
-            AppRequest::new_with_machine_id("app_id", AppVersion::default(), "track", machine_id);
+        let machine_id = Uuid::new_v4().to_string();
+        let app = AppRequest::new_with_machine_id(
+            "app_id",
+            AppVersion::default(),
+            "track",
+            machine_id.clone(),
+        );
         assert_eq!(app.machine_id, machine_id);
     }
 
     #[test]
     fn test_app_request_with_next_version() {
-        let app = AppRequest::new("app_id", AppVersion::default(), "track").unwrap();
+        let app = AppRequest::new(
+            "app_id",
+            AppVersion::default(),
+            "track",
+            IdSource::MachineIdHashed,
+        )
+        .unwrap();
         let next_version = AppVersion::default();
         let app = app.with_next_version(next_version.clone());
         assert_eq!(app.next_version, Some(next_version));
@@ -307,14 +326,26 @@ mod tests {
 
     #[test]
     fn test_app_request_with_update_check() {
-        let app = AppRequest::new("app_id", AppVersion::default(), "track").unwrap();
+        let app = AppRequest::new(
+            "app_id",
+            AppVersion::default(),
+            "track",
+            IdSource::MachineIdHashed,
+        )
+        .unwrap();
         let app = app.with_update_check();
         assert_eq!(app.update_check, Some(UpdateCheckRequest));
     }
 
     #[test]
     fn test_app_request_with_event() {
-        let app = AppRequest::new("app_id", AppVersion::default(), "track").unwrap();
+        let app = AppRequest::new(
+            "app_id",
+            AppVersion::default(),
+            "track",
+            IdSource::MachineIdHashed,
+        )
+        .unwrap();
         let event = OmahaEvent::new(OmahaEventType::Unknown, EventResult::Error);
         let app = app.with_event(event);
         assert_eq!(app.events().len(), 1);
@@ -322,12 +353,15 @@ mod tests {
 
     #[test]
     fn test_app_new_event() {
-        let app = AppRequest::new_event("app_id", "track").unwrap();
+        let app = AppRequest::new_event("app_id", "track", IdSource::MachineIdHashed).unwrap();
         assert_eq!(app.app_id(), "app_id");
         assert_eq!(app.version, AppVersion::default());
         assert_eq!(app.next_version, None);
         assert_eq!(app.track, "track");
-        assert_eq!(app.machine_id, MachineId::read().unwrap().hashed_uuid());
+        assert_eq!(
+            app.machine_id,
+            MachineId::read().unwrap().hashed_uuid().to_string()
+        );
         assert_eq!(app.update_check, None);
         assert_eq!(app.events, Vec::new());
     }

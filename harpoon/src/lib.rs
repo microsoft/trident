@@ -17,6 +17,7 @@ use url::Url;
 use uuid::Uuid;
 
 pub mod error;
+pub mod id;
 pub mod omaha;
 
 use error::HarpoonError;
@@ -26,6 +27,7 @@ use omaha::{
     response::Package,
 };
 
+pub use id::IdSource;
 pub use omaha::event::EventResult;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -60,9 +62,11 @@ pub fn query_and_fetch_yaml_document(
     app_id: &str,
     track: &str,
     document_version: &Version,
+    machine_id_source: IdSource,
 ) -> Result<HarpoonQueryResponse, HarpoonError> {
-    let request = Request::default()
-        .with_app(AppRequest::new(app_id, document_version, track)?.with_update_check());
+    let request = Request::default().with_app(
+        AppRequest::new(app_id, document_version, track, machine_id_source)?.with_update_check(),
+    );
 
     let response = omaha::send(url, &request)?;
 
@@ -143,6 +147,7 @@ pub fn query_and_fetch_yaml_document(
             Ok(_) => EventResult::Success,
             Err(_) => EventResult::Error,
         },
+        machine_id_source,
     ) {
         error!("Failed to send UpdateDownloadFinished event to server at '{url}': {err}");
     }
@@ -262,11 +267,13 @@ fn report_omaha_event(
     track: &str,
     event: OmahaEventType,
     result: EventResult,
+    machine_id_source: IdSource,
 ) -> Result<(), HarpoonError> {
     omaha::send_event(
         url,
         &Request::default().with_app(
-            AppRequest::new_event(app_id, track)?.with_event(OmahaEvent::new(event, result)),
+            AppRequest::new_event(app_id, track, machine_id_source)?
+                .with_event(OmahaEvent::new(event, result)),
         ),
     )?;
     Ok(())
@@ -280,8 +287,9 @@ pub fn report_event(
     track: &str,
     event: EventType,
     result: EventResult,
+    machine_id_source: IdSource,
 ) -> Result<(), HarpoonError> {
-    report_omaha_event(url, app_id, track, event.into(), result)
+    report_omaha_event(url, app_id, track, event.into(), result, machine_id_source)
 }
 
 #[cfg(test)]
@@ -390,6 +398,7 @@ mod tests {
             "test",
             "track",
             &Version::new(0, 1, 0),
+            IdSource::MachineIdHashed,
         )
         .unwrap();
 
