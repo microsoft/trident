@@ -205,6 +205,9 @@ pub enum InvalidInputError {
     #[error("Failed to translate kickstart")]
     TranslateKickstart,
 
+    #[error("Found verity hash on ESP image. ESP filesystem should never have verity enabled.")]
+    UnexpectedVerityOnEsp,
+
     #[error("Filesystem at '{mount_point}' of type '{fs_type}' in OS Image is not being used by the provided Host Configuration")]
     UnusedOsImageFilesystem {
         mount_point: String,
