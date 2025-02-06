@@ -2,8 +2,10 @@ use std::path::Path;
 
 use anyhow::{Context, Error};
 use petgraph::{
-    csr::DefaultIx, graph::NodeIndex as PetgraphNodeIndex, visit::IntoNodeReferences, Directed,
-    Direction, Graph,
+    csr::DefaultIx,
+    graph::NodeIndex as PetgraphNodeIndex,
+    visit::{Dfs, IntoNodeReferences, Walker},
+    Directed, Direction, Graph,
 };
 
 use crate::{config::FileSystemSource, constants::ROOT_MOUNT_POINT_PATH, BlockDeviceId};
@@ -43,6 +45,13 @@ impl StorageGraph {
                     // Check if the verity filesystem is the root filesystem.
                     vfs.mount_point.path == Path::new(ROOT_MOUNT_POINT_PATH)})
         })
+    }
+
+    /// Returns the node index and a reference to the node with the given block device id.
+    fn node_by_id(&self, device_id: &BlockDeviceId) -> Option<(NodeIndex, &StorageGraphNode)> {
+        self.inner
+            .node_references()
+            .find(|(_, node)| node.id() == Some(device_id))
     }
 
     /// Check if a volume is present and backed by an image.
@@ -114,6 +123,19 @@ impl StorageGraph {
             .neighbors_directed(node_idx, Direction::Incoming)
             .count()
             > 0)
+    }
+
+    /// Returns whether the existing node is an A/B volume, or is on top of an A/B volume, meaning
+    /// that it is capable of A/B updates.
+    pub fn has_ab_capabilities(&self, node_id: &BlockDeviceId) -> Option<bool> {
+        let (idx, _) = self.node_by_id(node_id)?;
+        // Do a DFS starting on the node to check if it, or any of its dependencies, are A/B
+        // volumes.
+        Some(
+            Dfs::new(&self.inner, idx)
+                .iter(&self.inner)
+                .any(|idx| self.inner[idx].device_kind() == BlkDevKind::ABVolume),
+        )
     }
 }
 

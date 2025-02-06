@@ -273,6 +273,23 @@ fn deploy_os_image(ctx: &EngineContext, host_config: &HostConfiguration) -> Resu
                 continue;
             }
 
+            // If we're executing A/B update, Trident will only re-deploy images onto the A/B
+            // volume pairs
+            if ctx.servicing_type == ServicingType::AbUpdate
+                && !ctx
+                    .storage_graph
+                    .has_ab_capabilities(device_id)
+                    .with_context(|| {
+                        format!("Failed to find device '{device_id}' in storage graph")
+                    })?
+            {
+                debug!(
+                    "Skipping deployment of filesystem [{}] sourced from OS Image, as it is not part of an A/B volume pair.",
+                    filesystem.description()
+                );
+                continue;
+            }
+
             fs_list.push((device_id, mount_point, filesystem.fs_type));
         }
 
