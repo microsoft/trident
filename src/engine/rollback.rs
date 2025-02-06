@@ -135,10 +135,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<(), TridentError> {
 /// Returns the current root device path, i.e., the path of the root block device that the host
 /// booted from. The path is given in its canonical form.
 fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
-    // If the root is verity, fetch the block device path of the root data device path from the
-    // 'veritysetup' output; otherwise, fetch the root device path from the host.
-    let current_root_device_path = if ctx.spec.storage.root_is_verity() {
-        // Get the block device ID of root
+    // If root is on verity, will need to use 'veritysetup' to get the data device path.
+    let current_root_device_path = if ctx.storage_graph.root_fs_is_verity() {
         let root_device_id = ctx
             .spec
             .storage
@@ -152,7 +150,7 @@ fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentE
         get_root_verity_data_device_path(ctx, root_device_id)
             .structured(ServicingError::GetRootVerityDataDevPath)?
     } else {
-        // Fetch the root device path that the host booted from
+        // No verity device found, fallback to old logic.
         block_devices::get_root_device_path()?
     };
 
@@ -216,12 +214,12 @@ fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, Trident
             root_path: ROOT_MOUNT_POINT_PATH.to_string(),
         })?;
 
-    let expected_root_path = if ctx.spec.storage.root_is_verity() {
+    let expected_root_path = if ctx.storage_graph.root_fs_is_verity() {
         // If root is on verity, fetch the block device path of the verity data device. Because
         // get_block_device_path(), which is called eventually, already has the logic for
         // determining the update volume, i.e. volume we expect to have booted from, getting the
         // block device path of the verity data device is sufficient.
-        let root_verity_device_config = get_root_verity_device_config(ctx, root_device_id)
+        let root_verity_device_config = get_verity_config(ctx, root_device_id)
             .structured(ServicingError::GetRootVerityDeviceConfig)?;
 
         let (verity_data_path, _) =
@@ -335,7 +333,7 @@ pub(crate) fn validate_active_volume(
         .context("No mount point for root volume found")?;
     debug!("Root device ID: {:?}", root_device_id);
 
-    let (volume_pair_paths, root_data_device_path) = if ctx.spec.storage.root_is_verity() {
+    let (volume_pair_paths, root_data_device_path) = if ctx.storage_graph.root_fs_is_verity() {
         debug!("Root is a verity device");
 
         let volume_pair = get_verity_data_volume_pair_paths(ctx, ab_update, root_device_id)
@@ -481,7 +479,7 @@ fn get_verity_data_volume_pair_paths(
     ab_update: &AbUpdate,
     root_device_id: &BlockDeviceId,
 ) -> Result<VolumePairPaths, Error> {
-    let root_verity_device_config = get_root_verity_device_config(ctx, root_device_id)?;
+    let root_verity_device_config = get_verity_config(ctx, root_device_id)?;
 
     let root_data_device_pair = ab_update
         .volume_pairs
@@ -516,11 +514,10 @@ fn get_root_verity_data_device_path(
     ctx: &EngineContext,
     root_device_id: &BlockDeviceId,
 ) -> Result<PathBuf, Error> {
-    let root_verity_device_config =
-        get_root_verity_device_config(ctx, root_device_id).context(format!(
-            "Failed to get configuration for root verity device '{}'",
-            root_device_id
-        ))?;
+    let root_verity_device_config = get_verity_config(ctx, root_device_id).context(format!(
+        "Failed to get configuration for root verity device '{}'",
+        root_device_id
+    ))?;
 
     // Run 'veritysetup' to get the data device path
     let root_verity_status =
@@ -534,22 +531,26 @@ fn get_root_verity_data_device_path(
 }
 
 /// Gets the configuration for the root verity device for the given root device ID.
-pub fn get_root_verity_device_config(
+///
+/// TODO: Remove old verity API.
+pub fn get_verity_config(
     ctx: &EngineContext,
     root_device_id: &BlockDeviceId,
 ) -> Result<VerityDevice, Error> {
-    // Get the root data device path from the 'veritysetup' output
+    // Prefer old API: Try to get the config from internal_verity first. Then, check the new API
     let root_verity_device_config = ctx
         .spec
         .storage
         .internal_verity
         .iter()
+        .chain(ctx.spec.storage.verity.iter())
         .find(|vd| &vd.id == root_device_id)
         .cloned()
         .context(format!(
             "Failed to find configuration for root verity device '{}'",
             root_device_id
         ))?;
+
     trace!("Root verity device config: {:?}", root_verity_device_config);
 
     Ok(root_verity_device_config)
@@ -561,12 +562,15 @@ mod tests {
 
     use std::path::PathBuf;
 
+    use const_format::formatcp;
     use maplit::btreemap;
+
+    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
 
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystemType, Image, ImageFormat, ImageSha256,
-            InternalMountPoint, MountOptions, MountPoint, Partition, PartitionType, VerityDevice,
+            InternalMountPoint, MountOptions, MountPoint, Partition, PartitionType,
             VerityFileSystem,
         },
         constants::MOUNT_OPTION_READ_ONLY,
@@ -639,14 +643,14 @@ mod tests {
         // Test case #3: When block devices are defined, should return the expected root device
         // path of 'root-a'.
         ctx.partition_paths = btreemap! {
-            "os".to_owned() => PathBuf::from("/dev/sda"),
-            "efi".to_owned() => PathBuf::from("/dev/sda1"),
-            "root-a".to_owned() => PathBuf::from("/dev/sda2"),
-            "root-b".to_owned() => PathBuf::from("/dev/sda3"),
+            "os".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+            "efi".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+            "root-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            "root-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
         };
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from("/dev/sda2")
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
         );
 
         // Test case #4: After rebooting after an A/B update, should return the expected root
@@ -655,7 +659,7 @@ mod tests {
         ctx.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from("/dev/sda3")
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
         );
     }
 
@@ -675,33 +679,38 @@ mod tests {
             partitions: vec![
                 Partition {
                     id: "esp".to_owned(),
-                    size: 100.into(),
+                    size: 4096.into(),
                     partition_type: PartitionType::Esp,
                 },
                 Partition {
                     id: "root-data-a".to_owned(),
-                    size: 900.into(),
-                    partition_type: PartitionType::RootVerity,
+                    size: 4096.into(),
+                    partition_type: PartitionType::Root,
                 },
                 Partition {
                     id: "root-data-b".to_owned(),
-                    size: 9000.into(),
-                    partition_type: PartitionType::RootVerity,
+                    size: 4096.into(),
+                    partition_type: PartitionType::Root,
                 },
                 Partition {
                     id: "root-hash-a".to_owned(),
-                    size: 900.into(),
+                    size: 4096.into(),
                     partition_type: PartitionType::RootVerity,
                 },
                 Partition {
                     id: "root-hash-b".to_owned(),
-                    size: 9000.into(),
+                    size: 4096.into(),
                     partition_type: PartitionType::RootVerity,
                 },
                 Partition {
-                    id: "root".to_owned(),
-                    size: 9000.into(),
-                    partition_type: PartitionType::RootVerity,
+                    id: "trident-overlay-a".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::LinuxGeneric,
+                },
+                Partition {
+                    id: "trident-overlay-b".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::LinuxGeneric,
                 },
             ],
             ..Default::default()
@@ -730,14 +739,14 @@ mod tests {
 
         // Update the block device paths
         ctx.partition_paths = btreemap! {
-            "os".to_owned() => PathBuf::from("/dev/sda"),
-            "efi".to_owned() => PathBuf::from("/dev/sda1"),
-            "root-data-a".to_owned() => PathBuf::from("/dev/sda2"),
-            "root-data-b".to_owned() => PathBuf::from("/dev/sda3"),
-            "root-hash-a".to_owned() => PathBuf::from("/dev/sda4"),
-            "root-hash-b".to_owned() => PathBuf::from("/dev/sda5"),
-            "trident-overlay-a".to_owned() => PathBuf::from("/dev/sda6"),
-            "trident-overlay-b".to_owned() => PathBuf::from("/dev/sda7"),
+            "os".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+            "esp".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+            "root-data-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            "root-data-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+            "root-hash-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
+            "root-hash-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}5")),
+            "trident-overlay-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}6")),
+            "trident-overlay-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}7")),
         };
 
         // Add internal mount points
@@ -756,7 +765,8 @@ mod tests {
             },
         ];
 
-        // Add verity file systems
+        // Add verity file systems per old API
+        // TODO: Remove old verity API!
         ctx.spec.storage.verity_filesystems = vec![VerityFileSystem {
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
@@ -778,7 +788,10 @@ mod tests {
             },
         }];
 
-        // Test case #0: If no internal verity devices defined, should return an error.
+        // Build storage graph
+        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
+
+        // Test case #0: If no internal verity devices defined, should return an error
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap_err().kind(),
             &ErrorKind::Servicing(ServicingError::GetRootVerityDeviceConfig)
@@ -796,7 +809,7 @@ mod tests {
 
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from("/dev/sda2")
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
         );
 
         // Test case #2. Change active volume to VolumeA and servicing type to AbUpdate, and
@@ -806,7 +819,7 @@ mod tests {
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from("/dev/sda3")
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
         );
 
         // Test case #3. Change active volume to VolumeB and validate that the expected root device
@@ -814,7 +827,23 @@ mod tests {
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from("/dev/sda2")
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
+        );
+
+        // Test case #4. Remove internal verity device configuration and add a verity device
+        // configuration. Should still correctly return.
+        ctx.spec.storage.internal_verity = vec![];
+        ctx.spec.storage.verity = vec![VerityDevice {
+            id: "root".into(),
+            name: "root".into(),
+            data_device_id: "root-data".into(),
+            hash_device_id: "root-hash".into(),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            get_expected_root_device_path(&ctx).unwrap(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
         );
     }
 }
@@ -850,17 +879,19 @@ mod functional_test {
     fn test_compare_root_device_paths() {
         // Test case #0: If current root device path is the same as the expected root device path,
         // should return true.
-        assert!(
-            compare_root_device_paths(PathBuf::from("/dev/sda2"), PathBuf::from("/dev/sda2"))
-                .unwrap()
-        );
+        assert!(compare_root_device_paths(
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
+        )
+        .unwrap());
 
         // Test case #1: If current root device path is NOT the same as the expected root device
         // path, should return false.
-        assert!(
-            !compare_root_device_paths(PathBuf::from("/dev/sda2"), PathBuf::from("/dev/sda3"))
-                .unwrap()
-        );
+        assert!(!compare_root_device_paths(
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
+        )
+        .unwrap());
     }
 
     #[functional_test]
@@ -897,7 +928,7 @@ mod functional_test {
 
         ctx.spec.storage.disks = vec![Disk {
             id: "os".to_owned(),
-            device: PathBuf::from("/dev/sda"),
+            device: PathBuf::from(TEST_DISK_DEVICE_PATH),
             partition_table_type: config::PartitionTableType::Gpt,
             adopted_partitions: vec![],
             partitions: vec![Partition {
@@ -906,8 +937,10 @@ mod functional_test {
                 size: 100.into(),
             }],
         }];
-        ctx.partition_paths
-            .insert("root-a".to_string(), PathBuf::from("/dev/sda1"));
+        ctx.partition_paths.insert(
+            "root-a".to_string(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+        );
 
         assert_eq!(
             get_plain_volume_pair_paths(
@@ -933,8 +966,10 @@ mod functional_test {
                 partition_type: PartitionType::Root,
                 size: 100.into(),
             });
-        ctx.partition_paths
-            .insert("root-b".to_string(), PathBuf::from("/dev/sda2"));
+        ctx.partition_paths.insert(
+            "root-b".to_string(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+        );
 
         assert_eq!(
             get_plain_volume_pair_paths(
@@ -944,8 +979,8 @@ mod functional_test {
             )
             .unwrap(),
             VolumePairPaths {
-                volume_a_path: PathBuf::from("/dev/sda1"),
-                volume_b_path: PathBuf::from("/dev/sda2"),
+                volume_a_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                volume_b_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 volume_a_id: "root-a".to_string(),
                 volume_b_id: "root-b".to_string(),
             }
@@ -959,8 +994,8 @@ mod functional_test {
             )
             .unwrap(),
             VolumePairPaths {
-                volume_a_path: PathBuf::from("/dev/sda1"),
-                volume_b_path: PathBuf::from("/dev/sda2"),
+                volume_a_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                volume_b_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 volume_a_id: "root-a".to_string(),
                 volume_b_id: "root-b".to_string(),
             }
@@ -974,8 +1009,8 @@ mod functional_test {
             )
             .unwrap(),
             VolumePairPaths {
-                volume_a_path: PathBuf::from("/dev/sda1"),
-                volume_b_path: PathBuf::from("/dev/sda2"),
+                volume_a_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                volume_b_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 volume_a_id: "root-a".to_string(),
                 volume_b_id: "root-b".to_string(),
             }
@@ -1009,7 +1044,7 @@ mod functional_test {
 
         ctx.spec = HostConfiguration {
             storage: config::Storage {
-                internal_verity: vec![config::VerityDevice {
+                internal_verity: vec![VerityDevice {
                     id: "root".to_string(),
                     name: "root".to_string(),
                     data_device_id: "root-data".to_string(),
@@ -1054,7 +1089,7 @@ mod functional_test {
 
         ctx.spec.storage.disks = vec![Disk {
             id: "os".into(),
-            device: PathBuf::from("/dev/sda"),
+            device: PathBuf::from(TEST_DISK_DEVICE_PATH),
             partition_table_type: config::PartitionTableType::Gpt,
             adopted_partitions: vec![],
             partitions: vec![Partition {
@@ -1063,8 +1098,10 @@ mod functional_test {
                 size: 100.into(),
             }],
         }];
-        ctx.partition_paths
-            .insert("root-data-a".to_string(), PathBuf::from("/dev/sda1"));
+        ctx.partition_paths.insert(
+            "root-data-a".to_string(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+        );
 
         assert_eq!(
             get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root".to_owned())
@@ -1079,15 +1116,38 @@ mod functional_test {
             partition_type: PartitionType::Root,
             size: 100.into(),
         });
-        ctx.partition_paths
-            .insert("root-data-b".to_string(), PathBuf::from("/dev/sda2"));
+        ctx.partition_paths.insert(
+            "root-data-b".to_string(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+        );
 
         // Test case #3: When information is complete, returns the volume pair paths.
         assert_eq!(
             get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root".to_owned()).unwrap(),
             VolumePairPaths {
-                volume_a_path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
-                volume_b_path: PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                volume_a_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                volume_b_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+                volume_a_id: "root-data-a".to_string(),
+                volume_b_id: "root-data-b".to_string(),
+            }
+        );
+
+        // Test case #4: Remove the internal verity device configuration and add a verity device
+        // configuration. Should still correctly return.
+        ctx.spec.storage.internal_verity = vec![];
+        ctx.spec.storage.verity = vec![VerityDevice {
+            id: "root".into(),
+            name: "root".into(),
+            data_device_id: "root-data".into(),
+            hash_device_id: "root-hash".into(),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            get_verity_data_volume_pair_paths(&ctx, &ab_update, &"root".to_owned()).unwrap(),
+            VolumePairPaths {
+                volume_a_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+                volume_b_path: PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 volume_a_id: "root-data-a".to_string(),
                 volume_b_id: "root-data-b".to_string(),
             }
@@ -1116,7 +1176,7 @@ mod functional_test {
         );
 
         // Test case #1. Add an internal verity device config and ensure it is returned.
-        ctx.spec.storage.internal_verity = vec![config::VerityDevice {
+        ctx.spec.storage.internal_verity = vec![VerityDevice {
             id: "root".to_string(),
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
@@ -1141,7 +1201,7 @@ mod functional_test {
 
         ctx.spec.storage.disks = vec![Disk {
             id: "os".into(),
-            device: PathBuf::from("/dev/sda"),
+            device: PathBuf::from(TEST_DISK_DEVICE_PATH),
             partition_table_type: config::PartitionTableType::Gpt,
             adopted_partitions: vec![],
             partitions: vec![
@@ -1167,10 +1227,14 @@ mod functional_test {
                 },
             ],
         }];
-        ctx.partition_paths
-            .insert("root-data-a".to_string(), PathBuf::from("/dev/sda1"));
-        ctx.partition_paths
-            .insert("root-data-b".to_string(), PathBuf::from("/dev/sda2"));
+        ctx.partition_paths.insert(
+            "root-data-a".to_string(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+        );
+        ctx.partition_paths.insert(
+            "root-data-b".to_string(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+        );
 
         // Test case #2: Returns an error if the verity device is not active.
         let _ = veritysetup::close("root");
@@ -1234,10 +1298,26 @@ mod functional_test {
             get_root_verity_data_device_path(&ctx, &"root".to_owned()).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
         );
+
+        // Test case #6: Remove the internal verity device configuration and add a verity device
+        // configuration. Should still correctly return.
+        ctx.spec.storage.internal_verity = vec![];
+        ctx.spec.storage.verity = vec![VerityDevice {
+            id: "root".into(),
+            name: "root".into(),
+            data_device_id: "root-data".into(),
+            hash_device_id: "root-hash".into(),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            get_root_verity_data_device_path(&ctx, &"root".to_owned()).unwrap(),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
+        );
     }
 
     #[functional_test]
-    fn test_get_root_verity_device_config() {
+    fn test_get_verity_config() {
         let mut ctx = EngineContext {
             spec: HostConfiguration {
                 storage: config::Storage {
@@ -1250,7 +1330,7 @@ mod functional_test {
 
         // Test case #0: If there is no internal verity device configuration, returns an error.
         assert_eq!(
-            get_root_verity_device_config(&ctx, &"root".to_owned())
+            get_verity_config(&ctx, &"root".to_owned())
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1258,7 +1338,7 @@ mod functional_test {
         );
 
         // Test case #1. Add an internal verity device config and ensure it is returned.
-        ctx.spec.storage.internal_verity = vec![config::VerityDevice {
+        ctx.spec.storage.internal_verity = vec![VerityDevice {
             id: "root".to_string(),
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
@@ -1267,8 +1347,8 @@ mod functional_test {
         }];
 
         assert_eq!(
-            get_root_verity_device_config(&ctx, &"root".to_owned()).unwrap(),
-            config::VerityDevice {
+            get_verity_config(&ctx, &"root".to_owned()).unwrap(),
+            VerityDevice {
                 id: "root".to_string(),
                 name: "root".to_string(),
                 data_device_id: "root-data".to_string(),
@@ -1279,11 +1359,33 @@ mod functional_test {
 
         // Test case #2: Requesting config for a non-existent device should return an error.
         assert_eq!(
-            get_root_verity_device_config(&ctx, &"non-existent".to_owned())
+            get_verity_config(&ctx, &"non-existent".to_owned())
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to find configuration for root verity device 'non-existent'"
+        );
+
+        // Test case #3: If there is no internal verity device configuration, check for a verity
+        // device configuration (new API) and ensure it is returned.
+        ctx.spec.storage.internal_verity = vec![];
+        ctx.spec.storage.verity = vec![VerityDevice {
+            id: "root".to_string(),
+            name: "root".to_string(),
+            data_device_id: "root-data".to_string(),
+            hash_device_id: "root-hash".to_string(),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            get_verity_config(&ctx, &"root".to_owned()).unwrap(),
+            VerityDevice {
+                id: "root".to_string(),
+                name: "root".to_string(),
+                data_device_id: "root-data".to_string(),
+                hash_device_id: "root-hash".to_string(),
+                ..Default::default()
+            }
         );
     }
 
@@ -1297,7 +1399,7 @@ mod functional_test {
         };
 
         assert_eq!(
-            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1314,7 +1416,7 @@ mod functional_test {
         });
 
         assert_eq!(
-            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1330,7 +1432,7 @@ mod functional_test {
         }];
 
         assert_eq!(
-            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1347,7 +1449,7 @@ mod functional_test {
         });
 
         assert_eq!(
-            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1360,7 +1462,7 @@ mod functional_test {
         };
 
         assert_eq!(
-            validate_active_volume(&ctx, PathBuf::from("/dev/sda"))
+            validate_active_volume(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1374,7 +1476,7 @@ mod functional_test {
 
         // Test case #5: Volume A path cannot be resolved.
         assert_eq!(
-            validate_active_volume(&ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")))
+            validate_active_volume(&ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")))
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1384,7 +1486,6 @@ mod functional_test {
         // Test case #6: A or B paths do not match the root volume path.
         *ctx.partition_paths.get_mut("root-a").unwrap() =
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
-
         assert_eq!(
             validate_active_volume(&ctx, PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")))
                 .unwrap_err()
@@ -1409,7 +1510,8 @@ mod functional_test {
             "Volume A is active, but active volume in Host Status is set to Volume B"
         );
 
-        // Verity tests. Set up verity devices.
+        // Test case #10: Set up verity devices to test a scenario where root is an A/B volume on
+        // verity.
         let expected_root_hash = verity::setup_verity_volumes();
 
         let verity_device_path = Path::new("/dev/mapper/root");
@@ -1417,9 +1519,9 @@ mod functional_test {
             veritysetup::close("root").unwrap();
         }
         veritysetup::open(
-            formatcp!("{TEST_DISK_DEVICE_PATH}3"),
+            formatcp!("{TEST_DISK_DEVICE_PATH}1"), // Data device path
             "root",
-            formatcp!("{TEST_DISK_DEVICE_PATH}2"),
+            formatcp!("{TEST_DISK_DEVICE_PATH}2"), // Hash device path
             &expected_root_hash,
         )
         .unwrap();
@@ -1427,19 +1529,76 @@ mod functional_test {
             device_name: "root",
         };
 
+        // Add partitions
         ctx.partition_paths = btreemap! {
-            "root-a".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
-            "root-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            "os".into() => PathBuf::from(TEST_DISK_DEVICE_PATH),
+            "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}5")),
+            "root-data-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
+            "root-hash-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            "root-data-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
+            "root-hash-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}4")),
+            "root".into() => PathBuf::from("/dev/mapper/root"),
         };
+        ctx.spec.storage.disks.push(Disk {
+            id: "os".to_owned(),
+            device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+            partitions: vec![
+                Partition {
+                    id: "esp".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::Esp,
+                },
+                Partition {
+                    id: "root-data-a".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::Root,
+                },
+                Partition {
+                    id: "root-data-b".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::Root,
+                },
+                Partition {
+                    id: "root-hash-a".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::RootVerity,
+                },
+                Partition {
+                    id: "root-hash-b".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::RootVerity,
+                },
+                Partition {
+                    id: "trident-overlay-a".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::LinuxGeneric,
+                },
+                Partition {
+                    id: "trident-overlay-b".to_owned(),
+                    size: 4096.into(),
+                    partition_type: PartitionType::LinuxGeneric,
+                },
+            ],
+            ..Default::default()
+        });
 
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))).unwrap();
+        ctx.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![
+                AbVolumePair {
+                    id: "root-data".to_string(),
+                    volume_a_id: "root-data-a".to_string(),
+                    volume_b_id: "root-data-b".to_string(),
+                },
+                AbVolumePair {
+                    id: "root-hash".to_string(),
+                    volume_a_id: "root-hash-a".to_string(),
+                    volume_b_id: "root-hash-b".to_string(),
+                },
+            ],
+        });
 
-        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))).unwrap();
-
-        ctx.partition_paths
-            .insert("root".to_string(), PathBuf::from("/dev/mapper/root"));
+        // Add verity file systems per old API.
+        // TODO: Remove old verity API!
         ctx.spec.storage.verity_filesystems = vec![VerityFileSystem {
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
@@ -1460,30 +1619,33 @@ mod functional_test {
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             },
         }];
-        ctx.spec.storage.internal_verity = vec![config::VerityDevice {
+        ctx.spec.storage.internal_verity = vec![VerityDevice {
             id: "root".to_string(),
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
             hash_device_id: "root-hash".to_string(),
             ..Default::default()
         }];
-        ctx.spec.storage.ab_update = Some(AbUpdate {
-            volume_pairs: vec![
-                AbVolumePair {
-                    id: "root-data".to_string(),
-                    volume_a_id: "root-a".to_string(),
-                    volume_b_id: "root-b".to_string(),
-                },
-                AbVolumePair {
-                    id: "root-hash".to_string(),
-                    volume_a_id: "root-hash-a".to_string(),
-                    volume_b_id: "root-hash-b".to_string(),
-                },
-            ],
-        });
+
+        // Build storage graph to validate
+        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
 
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
-        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))).unwrap();
+        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1"))).unwrap();
+
+        // Test case #11: Remove the old verity API and add a verity device configuration.
+        // Should still correctly return.
+        ctx.spec.storage.internal_verity = vec![];
+        ctx.spec.storage.verity_filesystems = vec![];
+        ctx.spec.storage.verity = vec![VerityDevice {
+            id: "root".into(),
+            name: "root".into(),
+            data_device_id: "root-data".into(),
+            hash_device_id: "root-hash".into(),
+            ..Default::default()
+        }];
+
+        validate_active_volume(&ctx, PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1"))).unwrap();
     }
 
     #[functional_test]

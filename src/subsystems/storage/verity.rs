@@ -13,7 +13,7 @@ use osutils::{
     osrelease::{AzureLinuxRelease, Distro, OsRelease},
 };
 use trident_api::{
-    config::{self, InternalMountPoint},
+    config::{self, InternalMountPoint, VerityDevice},
     constants::{
         BOOT_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
         GRUB2_DIRECTORY, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
@@ -97,7 +97,7 @@ pub(super) fn create_machine_id(new_root_path: &Path) -> Result<(), Error> {
 /// Verity data and hash devices are fetched from the engine context.
 pub fn get_verity_device_paths(
     ctx: &EngineContext,
-    verity_device: &config::VerityDevice,
+    verity_device: &VerityDevice,
 ) -> Result<(PathBuf, PathBuf), Error> {
     let verity_data_path = ctx
         .get_block_device_path(&verity_device.data_device_id)
@@ -411,7 +411,7 @@ mod tests {
                         target_id: "overlay".to_string(),
                         options: vec!["defaults".to_string()],
                     }],
-                    internal_verity: vec![config::VerityDevice {
+                    internal_verity: vec![VerityDevice {
                         id: "root-verity".into(),
                         name: "root".into(),
                         data_device_id: "root".into(),
@@ -616,7 +616,7 @@ mod functional_test {
                             options: vec!["defaults".to_string()],
                         },
                     ],
-                    internal_verity: vec![config::VerityDevice {
+                    internal_verity: vec![VerityDevice {
                         id: "root-verity".into(),
                         name: "root".into(),
                         data_device_id: "root".into(),

@@ -13,7 +13,7 @@ use crate::{dependencies::Dependency, lsblk};
 pub fn open(
     data_device_path: impl AsRef<Path>,
     device_name: &str,
-    hash_device_name: impl AsRef<Path>,
+    hash_device_path: impl AsRef<Path>,
     root_hash: &str,
 ) -> Result<(), Error> {
     Dependency::Veritysetup
@@ -21,7 +21,7 @@ pub fn open(
         .arg("open")
         .arg(data_device_path.as_ref())
         .arg(device_name)
-        .arg(hash_device_name.as_ref())
+        .arg(hash_device_path.as_ref())
         .arg(root_hash)
         .arg("--verbose")
         .run_and_check()
