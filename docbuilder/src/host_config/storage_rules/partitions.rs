@@ -1,4 +1,4 @@
-use trident_api::blkdev_graph::mountpoints::ValidMountpoints;
+use trident_api::storage_graph::containers::AllowBlockList;
 
 use crate::markdown::table::MdTable;
 
@@ -11,13 +11,21 @@ pub(super) fn valid_mount_paths() -> RuleDefinition {
         table.add_row(vec![
             pt.to_string(),
             match pt.valid_mountpoints() {
-                ValidMountpoints::None => "None".to_owned(),
-                ValidMountpoints::Any => "Any path".to_owned(),
-                ValidMountpoints::Specific(paths) => paths
+                AllowBlockList::None => "None".to_owned(),
+                AllowBlockList::Any => "Any path".to_owned(),
+                AllowBlockList::Allow(paths) => paths
                     .iter()
                     .map(|p| format!("`{}`", p.display()))
                     .collect::<Vec<String>>()
                     .join(" or "),
+                AllowBlockList::Block(paths) => format!(
+                    "Any except: {}",
+                    paths
+                        .iter()
+                        .map(|p| format!("`{}`", p.display()))
+                        .collect::<Vec<String>>()
+                        .join(" nor ")
+                ),
             },
         ]);
     }

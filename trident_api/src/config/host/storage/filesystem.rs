@@ -336,8 +336,8 @@ impl FileSystem {
 }
 
 impl VerityFileSystem {
-    /// Provide a quick description of the filesystem.
-    pub(crate) fn description(&self) -> String {
+    /// Provide a quick description of the verity filesystem.
+    pub fn description(&self) -> String {
         format!(
             "'{}' on devices data: '{}', hash: '{}'",
             self.name, self.data_device_id, self.hash_device_id

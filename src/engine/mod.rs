@@ -13,7 +13,7 @@ use osutils::{dependencies::Dependency, path::join_relative};
 use trident_api::{
     config::Storage,
     constants::{self, internal_params::ENABLE_UKI_SUPPORT},
-    error::{ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{ServicingState, ServicingType},
     storage_graph::graph::StorageGraph,
 };
@@ -354,8 +354,8 @@ pub fn reboot() -> Result<(), TridentError> {
 /// Builds the storage graph for the given storage configuration. Since graph v2 is still in its
 /// experimental phase, any errors that occur during the graph building process are logged, and an
 /// empty/default graph is returned, without returning an error.
-pub(super) fn build_storage_graph(storage: &Storage) -> StorageGraph {
-    debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
+pub(super) fn build_storage_graph(storage: &Storage) -> Result<StorageGraph, TridentError> {
+    debug!("Rebuilding storage graph for engine context");
 
     // Temporarily override the log level to only show warnings and above to
     // avoid producing the graph building logs again. We can safely do this
@@ -365,24 +365,12 @@ pub(super) fn build_storage_graph(storage: &Storage) -> StorageGraph {
     log::set_max_level(log::LevelFilter::Warn);
 
     // Build the storage graph
-    let graph_res = storage.build_graph2();
+    let graph_res = storage.build_graph();
 
     // Reset the log level to the original level
     log::set_max_level(old_level);
 
-    match graph_res {
-        Ok(graph) => {
-            debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
-            graph
-        }
-        Err(err) => {
-            error!(
-                "EXPERIMENTAL GRAPHv2: Failed to build storage graph: {}",
-                err
-            );
-            Default::default()
-        }
-    }
+    graph_res.map_err(|e| TridentError::new(InternalError::from(e)))
 }
 
 #[cfg(feature = "functional-test")]

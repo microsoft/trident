@@ -27,30 +27,32 @@ Documentation about the rules used to validate the storage configuration.
 This table lists all the different kinds of block devices that exist in the
 configuration, along with their descriptions.
 
-| Block device kind | Description                                          |
-| ----------------- | ---------------------------------------------------- |
-| disk              | A disk                                               |
-| partition         | A new physical partition                             |
-| adopted-partition | An existing physical partition that is being adopted |
-| raid-array        | A RAID array                                         |
-| ab-volume         | An A/B volume                                        |
-| encrypted-volume  | An encrypted volume                                  |
+| Block device kind | Description                                                                  |
+| ----------------- | ---------------------------------------------------------------------------- |
+| none              | Represents a 'null device' i.e. something that is not really a block device. |
+| disk              | A disk                                                                       |
+| partition         | A new physical partition                                                     |
+| adopted-partition | An existing physical partition that is being adopted                         |
+| raid-array        | A RAID array                                                                 |
+| ab-volume         | An A/B volume                                                                |
+| encrypted-volume  | An encrypted volume                                                          |
+| verity-device     | A verity device                                                              |
 
 ## Referrer Description
 
 This table lists all the different kinds of referrers that exist in the
 configuration, along with their descriptions.
 
-| Referrer kind          | Description           |
-| ---------------------- | --------------------- |
-| raid-array             | A RAID array          |
-| ab-volume              | An A/B volume         |
-| encrypted-volume       | An encrypted volume   |
-| filesystem             | A regular filesystem  |
-| filesystem-esp         | An ESP/EFI filesystem |
-| filesystem-adopted     | An adopted filesystem |
-| verity-filesystem-data | A Verity filesystem   |
-| verity-filesystem-hash | A Verity filesystem   |
+| Referrer kind      | Description           |
+| ------------------ | --------------------- |
+| raid-array         | A RAID array          |
+| ab-volume          | An A/B volume         |
+| encrypted-volume   | An encrypted volume   |
+| verity-device      | A verity device       |
+| filesystem         | A regular filesystem  |
+| filesystem-esp     | An ESP/EFI filesystem |
+| filesystem-verity  | A verity filesystem   |
+| filesystem-adopted | An adopted filesystem |
 
 ## Reference Validity
 
@@ -62,48 +64,48 @@ that can be referenced.
 A single cell in the table represents whether a referrer of a certain type can
 reference a block device of a certain type.
 
-| Referrer \ Device      | disk | partition | adopted-partition | raid-array | ab-volume | encrypted-volume |
-| ---------------------- | ---- | --------- | ----------------- | ---------- | --------- | ---------------- |
-| raid-array             | No   | Yes       | No                | No         | No        | No               |
-| ab-volume              | No   | Yes       | No                | Yes        | No        | Yes              |
-| encrypted-volume       | No   | Yes       | No                | Yes        | No        | No               |
-| filesystem             | No   | Yes       | No                | Yes        | Yes       | Yes              |
-| filesystem-esp         | No   | Yes       | Yes               | Yes        | No        | No               |
-| filesystem-adopted     | No   | No        | Yes               | No         | No        | No               |
-| verity-filesystem-data | No   | Yes       | No                | Yes        | Yes       | No               |
-| verity-filesystem-hash | No   | Yes       | No                | Yes        | Yes       | No               |
+| Referrer \ Device  | none | disk | partition | adopted-partition | raid-array | ab-volume | encrypted-volume | verity-device |
+| ------------------ | ---- | ---- | --------- | ----------------- | ---------- | --------- | ---------------- | ------------- |
+| raid-array         | Yes  | No   | Yes       | No                | No         | No        | No               | No            |
+| ab-volume          | Yes  | No   | Yes       | No                | Yes        | No        | Yes              | No            |
+| encrypted-volume   | Yes  | No   | Yes       | No                | Yes        | No        | No               | No            |
+| verity-device      | Yes  | No   | Yes       | No                | Yes        | Yes       | No               | No            |
+| filesystem         | Yes  | No   | Yes       | No                | Yes        | Yes       | Yes              | Yes           |
+| filesystem-esp     | Yes  | No   | Yes       | Yes               | Yes        | No        | No               | No            |
+| filesystem-verity  | Yes  | No   | Yes       | No                | Yes        | Yes       | No               | No            |
+| filesystem-adopted | Yes  | No   | No        | Yes               | No         | No        | No               | No            |
 
 ## Reference Count
 
 A referrer may only reference a certain number of block devices. The table below
 shows valid reference counts for each referrer type.
 
-| Referrer type          | Min | Max |
-| ---------------------- | --- | --- |
-| raid-array             | 2   | ∞   |
-| ab-volume              | 2   | 2   |
-| encrypted-volume       | 1   | 1   |
-| filesystem             | 0   | 1   |
-| filesystem-esp         | 1   | 1   |
-| filesystem-adopted     | 1   | 1   |
-| verity-filesystem-data | 1   | 1   |
-| verity-filesystem-hash | 1   | 1   |
+| Referrer type      | Min | Max |
+| ------------------ | --- | --- |
+| raid-array         | 2   | ∞   |
+| ab-volume          | 2   | 2   |
+| encrypted-volume   | 1   | 1   |
+| verity-device      | 2   | 2   |
+| filesystem         | 0   | 1   |
+| filesystem-esp     | 1   | 1   |
+| filesystem-verity  | 2   | 2   |
+| filesystem-adopted | 1   | 1   |
 
 ## Reference Sharing
 
 Most referrers claim exlusive access over their references. This table contains
 the rules for sharing references in the storage configuration.
 
-| Referrer type          | Valid sharing peers |
-| ---------------------- | ------------------- |
-| raid-array             | (none)              |
-| ab-volume              | (none)              |
-| encrypted-volume       | (none)              |
-| filesystem             | (none)              |
-| filesystem-esp         | (none)              |
-| filesystem-adopted     | (none)              |
-| verity-filesystem-data | (none)              |
-| verity-filesystem-hash | (none)              |
+| Referrer type      | Valid sharing peers |
+| ------------------ | ------------------- |
+| raid-array         | (none)              |
+| ab-volume          | (none)              |
+| encrypted-volume   | (none)              |
+| verity-device      | (none)              |
+| filesystem         | (none)              |
+| filesystem-esp     | (none)              |
+| filesystem-verity  | (none)              |
+| filesystem-adopted | (none)              |
 
 ## Unique Field Value Constraints
 
@@ -117,68 +119,69 @@ across all block devices of that type.
 | adopted-partition | matchUuid  |
 | raid-array        | name       |
 | encrypted-volume  | deviceName |
+| verity-device     | name       |
 
 ## Filesystem Block Device Requirements
 
 Depending on the type of a filesystem, they may or may nor reference a backing
 block device.
 
-| File System Type | Requires Block Device |
-| ---------------- | --------------------- |
-| ext4             | Yes                   |
-| xfs              | Yes                   |
-| vfat             | Yes                   |
-| ntfs             | Yes                   |
-| swap             | Yes                   |
-| tmpfs            | No                    |
-| auto             | Yes                   |
-| other            | Yes                   |
+| Filesystem Type | Expects Block Device |
+| --------------- | -------------------- |
+| ext4            | Yes                  |
+| xfs             | Yes                  |
+| vfat            | Yes                  |
+| ntfs            | Yes                  |
+| swap            | Yes                  |
+| tmpfs           | No                   |
+| auto            | Yes                  |
+| other           | Yes                  |
 
 ## Filesystem Source Requirements
 
 Depending on the type of a filesystem, they may have different source types.
 
-| File System Type | Valid Source Type                       |
-| ---------------- | --------------------------------------- |
-| ext4             | create or image or adopted              |
-| xfs              | create or image or adopted              |
-| vfat             | create or image or adopted or esp-image |
-| ntfs             | create or image or adopted              |
-| swap             | create                                  |
-| tmpfs            | create                                  |
-| auto             | adopted                                 |
-| other            | image                                   |
+| Filesystem Type | Valid Source Type                       |
+| --------------- | --------------------------------------- |
+| ext4            | create or image or adopted              |
+| xfs             | create or image or adopted              |
+| vfat            | create or image or adopted or esp-image |
+| ntfs            | create or image or adopted              |
+| swap            | create                                  |
+| tmpfs           | create                                  |
+| auto            | adopted                                 |
+| other           | image                                   |
 
 ## Filesystem Mounting
 
-Depending on the type of a filesystem, they may or may not have a mountpoint
+Depending on the type of a filesystem, they may or may not have a mount point
 configured.
 
-| File System Type | Can Have Mount Point |
-| ---------------- | -------------------- |
-| ext4             | Yes                  |
-| xfs              | Yes                  |
-| vfat             | Yes                  |
-| ntfs             | Yes                  |
-| swap             | No                   |
-| tmpfs            | Yes                  |
-| auto             | Yes                  |
-| other            | No                   |
+| Filesystem Type | Mount Point   |
+| --------------- | ------------- |
+| ext4            | Optional      |
+| xfs             | Optional      |
+| vfat            | Optional      |
+| ntfs            | Optional      |
+| swap            | Not Supported |
+| tmpfs           | Required      |
+| auto            | Optional      |
+| other           | Not Supported |
 
 ## Filesystem Verity Support
 
 Depending on the type of a filesystem, they may or may not be used for verity.
 
-| File System Type | Supports Verity |
-| ---------------- | --------------- |
-| ext4             | Yes             |
-| xfs              | Yes             |
-| vfat             | No              |
-| ntfs             | No              |
-| swap             | No              |
-| tmpfs            | No              |
-| auto             | No              |
-| other            | No              |
+| Filesystem Type | Supports Verity |
+| --------------- | --------------- |
+| ext4            | Yes             |
+| xfs             | Yes             |
+| vfat            | No              |
+| ntfs            | No              |
+| swap            | No              |
+| tmpfs           | No              |
+| auto            | No              |
+| other           | No              |
 
 ## Homogeneous References
 
@@ -187,7 +190,8 @@ The following referrers require that all referenced devices are of the same type
 - raid-array
 - ab-volume
 - encrypted-volume
-- verity-filesystem-data
+- verity-device
+- filesystem-verity
 
 ## Homogeneous Partition Types
 
@@ -195,42 +199,47 @@ The following referrers require that all underlying partitions are of the same t
 
 - raid-array
 - ab-volume
+- encrypted-volume
+- filesystem
+- filesystem-esp
+- filesystem-adopted
 
 ## Homogeneous Partition Sizes
 
 The following referrers require that all underlying partitions are of the same size:
 
 - raid-array
+- ab-volume
 
 ## Allowed Partition Types
 
 Some referrers only support specific underlying partitions types.
 
-| Referrer type          | Allowed partition types                                    |
-| ---------------------- | ---------------------------------------------------------- |
-| raid-array             | any                                                        |
-| ab-volume              | any                                                        |
-| encrypted-volume       | any type except 'esp' or 'root' or 'root-verity' or 'home' |
-| filesystem             | any type except 'esp'                                      |
-| filesystem-esp         | 'esp'                                                      |
-| filesystem-adopted     | any type except 'esp'                                      |
-| verity-filesystem-data | 'root'                                                     |
-| verity-filesystem-hash | 'root-verity'                                              |
+| Referrer type      | Allowed partition types                                    |
+| ------------------ | ---------------------------------------------------------- |
+| raid-array         | any                                                        |
+| ab-volume          | any                                                        |
+| encrypted-volume   | any type except 'esp' or 'root' or 'root-verity' or 'home' |
+| verity-device      | 'root' or 'root-verity'                                    |
+| filesystem         | any type except 'esp'                                      |
+| filesystem-esp     | 'esp'                                                      |
+| filesystem-verity  | 'root' or 'root-verity'                                    |
+| filesystem-adopted | any type except 'esp'                                      |
 
 ## Allowed RAID Levels
 
 Some referrers are limited to specific RAID levels within the available supported RAID options.
 
-| Referrer type          | Allowed RAID levels    |
-| ---------------------- | ---------------------- |
-| raid-array             | No allowed RAID levels |
-| ab-volume              | any                    |
-| encrypted-volume       | any                    |
-| filesystem             | any                    |
-| filesystem-esp         | 'raid1'                |
-| filesystem-adopted     | No allowed RAID levels |
-| verity-filesystem-data | any                    |
-| verity-filesystem-hash | any                    |
+| Referrer type      | Allowed RAID levels    |
+| ------------------ | ---------------------- |
+| raid-array         | No allowed RAID levels |
+| ab-volume          | any                    |
+| encrypted-volume   | any                    |
+| verity-device      | any                    |
+| filesystem         | any                    |
+| filesystem-esp     | 'raid1'                |
+| filesystem-verity  | any                    |
+| filesystem-adopted | No allowed RAID levels |
 
 ## Partition Type Valid Mounting Paths
 

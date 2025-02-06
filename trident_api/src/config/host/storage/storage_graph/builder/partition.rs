@@ -182,7 +182,7 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
             // Try to get the homogeneous partition type.
             if let Some(part_type) = partition_types.get_homogeneous() {
                 // Check if the partition type is valid for the filesystem.
-                let valid_mntpoints = part_type.valid_mountpoints2();
+                let valid_mntpoints = part_type.valid_mountpoints();
                 if !valid_mntpoints.contains(mnt_path) {
                     warn!(
                         "Mount point '{}' for {} may not be valid for partition type '{}', partitions \

@@ -108,7 +108,7 @@ pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), TridentEr
 
 fn validate_host_config(hc: HostConfiguration) -> Result<(), TridentError> {
     hc.validate()
-        .map_err(Into::into)
+        .map_err(|e| TridentError::new(InvalidInputError::from(e)))
         .message("Host Configuration is invalid")?;
 
     info!("Host Configuration is valid");

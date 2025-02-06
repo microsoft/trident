@@ -66,7 +66,7 @@ pub(crate) fn update(
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         os_image: osimage::load_os_image(&command.host_config)?,
-        storage_graph: engine::build_storage_graph(&host_config.storage), // Build storage graph
+        storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
     };
 
     // Before starting an update servicing, need to validate that the active volume is set
@@ -309,7 +309,7 @@ pub(crate) fn finalize_update(
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         os_image: None, // Not used in finalize_update
-        storage_graph: engine::build_storage_graph(&state.host_status().spec.storage), // Build storage graph
+        storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
     };
 
     let esp_path = if container::is_running_in_container()

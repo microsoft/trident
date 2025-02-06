@@ -183,7 +183,7 @@ fn stage_clean_install(
         disk_uuids: Default::default(),      // Will be initialized later
         install_index: 0,                    // Will be initialized later
         os_image: osimage::load_os_image(host_config)?,
-        storage_graph: engine::build_storage_graph(&host_config.storage), // Build storage graph
+        storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
     };
 
     // Execute pre-servicing scripts
@@ -278,7 +278,7 @@ pub(crate) fn finalize_clean_install(
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         os_image: None, // Not used in finalize_clean_install
-        storage_graph: engine::build_storage_graph(&state.host_status().spec.storage), // Build storage graph
+        storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
     };
 
     let new_root = match new_root {

@@ -2,12 +2,12 @@ use crate::markdown::table::MdTable;
 
 use super::{get_filesystems, RuleDefinition};
 
-pub(super) fn requires_block_device() -> RuleDefinition {
-    let mut table = MdTable::new(vec!["File System Type", "Requires Block Device"]);
+pub(super) fn expects_block_device_id() -> RuleDefinition {
+    let mut table = MdTable::new(vec!["Filesystem Type", "Expects Block Device"]);
     for fs in get_filesystems() {
         table.add_row(vec![
             fs.to_string(),
-            if fs.requires_block_device_id() {
+            if fs.expects_block_device_id() {
                 "Yes"
             } else {
                 "No"
@@ -24,7 +24,7 @@ pub(super) fn requires_block_device() -> RuleDefinition {
 }
 
 pub(super) fn sources() -> RuleDefinition {
-    let mut table = MdTable::new(vec!["File System Type", "Valid Source Type"]);
+    let mut table = MdTable::new(vec!["Filesystem Type", "Valid Source Type"]);
     for fs in get_filesystems() {
         table.add_row(vec![
             fs.to_string(),
@@ -40,14 +40,18 @@ pub(super) fn sources() -> RuleDefinition {
 }
 
 pub(super) fn can_be_mounted() -> RuleDefinition {
-    let mut table = MdTable::new(vec!["File System Type", "Can Have Mount Point"]);
+    let mut table = MdTable::new(vec!["Filesystem Type", "Mount Point"]);
     for fs in get_filesystems() {
         table.add_row(vec![
             fs.to_string(),
-            if fs.can_have_mountpoint() {
-                "Yes"
-            } else {
-                "No"
+            {
+                if fs.must_have_mountpoint() {
+                    "Required"
+                } else if fs.can_have_mountpoint() {
+                    "Optional"
+                } else {
+                    "Not Supported"
+                }
             }
             .to_owned(),
         ]);
@@ -61,7 +65,7 @@ pub(super) fn can_be_mounted() -> RuleDefinition {
 }
 
 pub(super) fn verity_support() -> RuleDefinition {
-    let mut table = MdTable::new(vec!["File System Type", "Supports Verity"]);
+    let mut table = MdTable::new(vec!["Filesystem Type", "Supports Verity"]);
 
     for fs in get_filesystems() {
         table.add_row(vec![

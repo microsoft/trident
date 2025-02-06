@@ -42,7 +42,7 @@ pub enum BlkDevKind {
     /// An encrypted volume
     EncryptedVolume,
 
-    /// A Verity device
+    /// A verity device
     VerityDevice,
 }
 
@@ -83,7 +83,7 @@ pub enum HostConfigBlockDevice {
     /// An encrypted volume
     EncryptedVolume(EncryptedVolume),
 
-    /// A Verity device
+    /// A verity device
     VerityDevice(VerityDevice),
 }
 
@@ -112,7 +112,7 @@ pub enum BlkDevReferrerKind {
     /// An encrypted volume
     EncryptedVolume,
 
-    /// A Verity device
+    /// A verity device
     VerityDevice,
 
     /// A regular filesystem
@@ -257,7 +257,7 @@ impl HostConfigBlockDevice {
         if let HostConfigBlockDevice::VerityDevice(verity_device) = self {
             Ok(verity_device)
         } else {
-            bail!("Block device is not a Verity device")
+            bail!("Block device is not a verity device")
         }
     }
 }

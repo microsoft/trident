@@ -99,7 +99,7 @@ fn check_filesystem(fs: &FileSystem) -> Result<(), StorageGraphBuildError> {
                 fs_type: fs.fs_type,
             });
         }
-    } else if fs.fs_type.must_have_mountpoint2() {
+    } else if fs.fs_type.must_have_mountpoint() {
         // This filesystem must have a mount point, but none was provided.
         return Err(StorageGraphBuildError::FilesystemMissingMountPoint {
             fs_desc: fs.description(),
@@ -108,7 +108,7 @@ fn check_filesystem(fs: &FileSystem) -> Result<(), StorageGraphBuildError> {
 
     // Check that the filesystem source is compatible with the filesystem type.
     {
-        let fs_compatible_sources = fs.fs_type.valid_sources2();
+        let fs_compatible_sources = fs.fs_type.valid_sources();
         let fs_src_kind = FileSystemSourceKind::from(&fs.source);
         if !fs_compatible_sources.contains(fs_src_kind) {
             return Err(StorageGraphBuildError::FilesystemIncompatibleSource {

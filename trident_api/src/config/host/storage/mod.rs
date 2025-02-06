@@ -3,9 +3,7 @@ use std::{
     path::Path,
 };
 
-use log::{debug, error, warn};
-
-use blkdev_graph::types::BlkDevNode;
+use log::trace;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -22,7 +20,6 @@ use crate::{
 
 use super::error::HostConfigurationStaticValidationError;
 
-pub mod blkdev_graph;
 pub mod disks;
 pub mod encryption;
 pub mod filesystem;
@@ -34,11 +31,6 @@ pub mod storage_graph;
 pub mod verity;
 
 use self::{
-    blkdev_graph::{
-        builder::BlockDeviceGraphBuilder,
-        error::BlockDeviceGraphBuildError,
-        graph::{BlockDeviceGraph, VolumeStatus},
-    },
     disks::Disk,
     encryption::Encryption,
     filesystem::{FileSystem, FileSystemSource, MountPointInfo, VerityFileSystem},
@@ -49,13 +41,10 @@ use self::{
     storage_graph::{
         builder::StorageGraphBuilder,
         error::StorageGraphBuildError,
-        graph::{StorageGraph, VolumeStatus as VolumeStatusGraph2},
+        graph::{StorageGraph, VolumeStatus},
     },
     verity::VerityDevice,
 };
-
-type VolumePresenceValidator<'a> =
-    Box<dyn Fn(&Path) -> Result<(), HostConfigurationStaticValidationError> + 'a>;
 
 /// Storage configuration describes the disks of the host that will be used to
 /// store the OS and data. Not all disks of the host need to be captured inside
@@ -130,25 +119,8 @@ impl Storage {
             .find(|p| &p.id == id)
     }
 
-    /// Verifies if the partition is an unformatted partition. An unformatted partition is one that
-    /// does not contain a filesystem or verity-filesystem, and is not part of any
-    /// RAID array or encryption volume.
-    pub fn is_unformatted_partition(
-        &self,
-        nodes: &BTreeMap<String, BlkDevNode>,
-        partition_id: &BlockDeviceId,
-    ) -> bool {
-        if let Some(node) = nodes.get(partition_id) {
-            if node.dependents.is_empty() && node.targets.is_empty() && node.filesystem.is_none() {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    /// Builds a storage graph from the storage configuration. (GraphV2)
-    pub fn build_graph2(&self) -> Result<StorageGraph, StorageGraphBuildError> {
+    /// Builds a storage graph from the storage configuration.
+    pub fn build_graph(&self) -> Result<StorageGraph, StorageGraphBuildError> {
         let mut builder = StorageGraphBuilder::default();
 
         // Add disks
@@ -202,56 +174,6 @@ impl Storage {
         builder.build()
     }
 
-    /// Builds a block device graph from the storage configuration. (GraphV1)
-    pub fn build_graph(&self) -> Result<BlockDeviceGraph<'_>, BlockDeviceGraphBuildError> {
-        let mut builder = BlockDeviceGraphBuilder::default();
-
-        // Add disks
-        for disk in &self.disks {
-            builder.add_node(disk.into());
-
-            // Add partitions
-            for partition in &disk.partitions {
-                builder.add_node(partition.into());
-            }
-
-            // Add adopted partitions
-            for adopted_partition in &disk.adopted_partitions {
-                builder.add_node(adopted_partition.into());
-            }
-        }
-
-        // Add RAID arrays
-        for raid in &self.raid.software {
-            builder.add_node(raid.into());
-        }
-
-        // Add A/B update volume pairs
-        if let Some(ab_update) = &self.ab_update {
-            for pair in &ab_update.volume_pairs {
-                builder.add_node(pair.into());
-            }
-        }
-
-        // Add encrypted volumes
-        if let Some(encryption) = &self.encryption {
-            for volume in &encryption.volumes {
-                builder.add_node(volume.into());
-            }
-        }
-
-        for fs in &self.filesystems {
-            builder.add_filesystem(fs);
-        }
-
-        for vfs in &self.verity_filesystems {
-            builder.add_verity_filesystem(vfs);
-        }
-
-        // Try to build the graph
-        builder.build()
-    }
-
     /// Validate the storage configuration
     ///
     /// This function will validate the storage configuration and return an error
@@ -268,57 +190,17 @@ impl Storage {
             encryption.validate()?;
         }
 
-        // ⚠️ NOTE: ⚠️
-        //
-        // The following is a bit messy, but will be cleaned up once graphv1 is
-        // deprecated. This setup is meant to allow for use of both graphv1 and
-        // graphv2 for storage graph building in the same function, depending on
-        // whether the new Verity API is in use. This is because the new Verity
-        // API requires graphv2 for validation, but we still want to validate
-        // the storage graph using graphv1 if the new Verity API is not in use.
-
         // Check that the new and old APIs are not used at the same time!
         if !self.verity_filesystems.is_empty() && !self.internal_verity.is_empty() {
             return Err(HostConfigurationStaticValidationError::VerityApiMixed);
         }
 
-        // If we are using the new verity API, we NEED to validate with graphv2.
-        let validate_with_graph_v2 = !self.verity.is_empty();
+        let graph = self.build_graph()?;
 
         // Build the graph version that was requested, report on the status of
         // the other. Also returns the corresponding VolumePresenceValidator
         // function.
-        let validate_volume_presence: VolumePresenceValidator = if validate_with_graph_v2 {
-            warn!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building because new Verity API is in use!");
-            // Report if graphv1 built successfully, but don't break.
-            if let Err(err) = self.build_graph() {
-                error!("GRAPHv1: Failed to build storage graph: {}", err);
-            } else {
-                debug!("GRAPHv1: Storage graph built successfully.");
-            }
-
-            // Ensure graphv2 was built successfully.
-            let graphv2 = self.build_graph2()?;
-            debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
-
-            Box::new(move |path| validate_volume_presence_graphv2(&graphv2, path))
-        } else {
-            // Ensure graphv1 was built successfully.
-            let graphv1 = self.build_graph()?;
-
-            // Report if graphv2 built successfully, but don't break.
-            debug!("EXPERIMENTAL GRAPHv2: Using graph2 for storage graph building.");
-            if let Err(err) = self.build_graph2() {
-                error!(
-                    "EXPERIMENTAL GRAPHv2: Failed to build storage graph: {}",
-                    err
-                );
-            } else {
-                debug!("EXPERIMENTAL GRAPHv2: Storage graph built successfully.");
-            }
-
-            Box::new(move |path| validate_volume_presence_graphv1(&graphv1, path))
-        };
+        let validate_volume_presence = move |path: &'_ Path| validate_volume_presence(&graph, path);
 
         // If storage configuration is requested, then
         if *self != Storage::default() {
@@ -420,8 +302,11 @@ impl Storage {
     ) -> Result<(), HostConfigurationStaticValidationError> {
         // Return early if no verity devices are present
         if self.verity.is_empty() {
+            trace!("No verity devices found in the host configuration, skipping validation");
             return Ok(());
         }
+
+        trace!("Validating verity devices in the host configuration");
 
         // Verity is only supported for root volume, verify the input is not
         // asking for something else
@@ -561,8 +446,11 @@ impl Storage {
     ) -> Result<(), HostConfigurationStaticValidationError> {
         // Return early if no verity filesystems are present
         if self.verity_filesystems.is_empty() {
+            trace!("No verity filesystems found in the host configuration, skipping validation");
             return Ok(());
         }
+
+        trace!("Validating verity filesystems in the host configuration");
 
         // Verity is only supported for root volume, verify the input is not
         // asking for something else
@@ -888,10 +776,8 @@ impl Storage {
 
 /// Validate that a volume is present and backed by an image or an adopted
 /// filesystem.
-///
-/// NOTE: Will be replaced by graphv2.
-fn validate_volume_presence_graphv1(
-    graph: &BlockDeviceGraph,
+fn validate_volume_presence(
+    graph: &StorageGraph,
     path: impl AsRef<Path>,
 ) -> Result<(), HostConfigurationStaticValidationError> {
     match graph.get_volume_status(path.as_ref()) {
@@ -909,40 +795,18 @@ fn validate_volume_presence_graphv1(
     }
 }
 
-/// Validate that a volume is present and backed by an image or an adopted
-/// filesystem.
-fn validate_volume_presence_graphv2(
-    graph: &StorageGraph,
-    path: impl AsRef<Path>,
-) -> Result<(), HostConfigurationStaticValidationError> {
-    match graph.get_volume_status(path.as_ref()) {
-        VolumeStatusGraph2::PresentAndBackedByImage
-        | VolumeStatusGraph2::PresentAndBackedByAdoptedFs => Ok(()),
-        VolumeStatusGraph2::PresentButNotBackedByImage => Err(
-            HostConfigurationStaticValidationError::MountPointNotBackedByImage {
-                mount_point_path: path.as_ref().to_string_lossy().to_string(),
-            },
-        ),
-        VolumeStatusGraph2::NotPresent => Err(
-            HostConfigurationStaticValidationError::ExpectedMountPointNotFound {
-                mount_point_path: path.as_ref().to_string_lossy().to_string(),
-            },
-        ),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{path::PathBuf, str::FromStr};
 
-    use blkdev_graph::types::AllowBlockList;
+    use storage_graph::{
+        node::NodeIdentifier,
+        types::{BlkDevKind, BlkDevReferrerKind},
+    };
     use url::{ParseError, Url};
 
     use crate::{
-        config::{
-            host::storage::blkdev_graph::types::{BlkDevKind, BlkDevReferrerKind},
-            HostConfiguration,
-        },
+        config::HostConfiguration,
         constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     };
 
@@ -1365,11 +1229,11 @@ mod tests {
         };
         assert_eq!(
             bad_volume_pair.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateTargetId {
-                    node_id: "ab-update-volume-pair".into(),
-                    kind: BlkDevKind::ABVolume,
-                    target_id: "disk1-partition1".into()
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateTargetId {
+                    node_identifier: NodeIdentifier::block_device("ab-update-volume-pair"),
+                    kind: BlkDevReferrerKind::ABVolume,
+                    target_id: "disk1-partition1".into(),
                 }
             )
         );
@@ -1386,8 +1250,8 @@ mod tests {
         };
         assert_eq!(
             bad_volume_pair_id.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateDeviceId("disk1".into())
             )
         );
 
@@ -1409,10 +1273,11 @@ mod tests {
         };
         assert_eq!(
             bad_filesystem_target.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::FilesystemNonExistentReference {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::NonExistentReference {
+                    node_identifier: NodeIdentifier::from(&bad_filesystem_target.filesystems[0]),
+                    kind: BlkDevReferrerKind::FileSystem,
                     target_id: "disk99".into(),
-                    fs_desc: bad_filesystem_target.filesystems[0].description()
                 }
             )
         );
@@ -1521,8 +1386,8 @@ mod tests {
         }];
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateDeviceId("part1".into())
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateDeviceId("part1".into())
             ),
         );
 
@@ -1531,8 +1396,8 @@ mod tests {
         storage.ab_update.as_mut().unwrap().volume_pairs[0].id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateDeviceId("disk1".into())
             ),
         );
 
@@ -1541,10 +1406,10 @@ mod tests {
         storage.ab_update.as_mut().unwrap().volume_pairs[0].volume_a_id = "disk4".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::NonExistentReference {
-                    node_id: "ab1".into(),
-                    kind: BlkDevKind::ABVolume,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::NonExistentReference {
+                    node_identifier: NodeIdentifier::block_device("ab1"),
+                    kind: BlkDevReferrerKind::ABVolume,
                     target_id: "disk4".into()
                 }
             ),
@@ -1555,10 +1420,11 @@ mod tests {
         storage.filesystems[0].device_id = Some("disk4".into());
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::FilesystemNonExistentReference {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::NonExistentReference {
+                    node_identifier: NodeIdentifier::from(&storage.filesystems[0]),
+                    kind: BlkDevReferrerKind::FileSystemEsp,
                     target_id: "disk4".into(),
-                    fs_desc: storage.filesystems[0].description(),
                 }
             ),
         );
@@ -1568,12 +1434,13 @@ mod tests {
         storage.filesystems[0].device_id = Some("disk1".into());
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::FilesystemIncompatibleReference {
-                    fs_desc: storage.filesystems[0].description(),
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidReferenceKind {
+                    node_identifier: NodeIdentifier::from(&storage.filesystems[0]),
+                    kind: BlkDevReferrerKind::FileSystemEsp,
                     target_id: "disk1".into(),
                     target_kind: BlkDevKind::Disk,
-                    compatible_kinds: BlkDevReferrerKind::FileSystemEsp.compatible_kinds()
+                    valid_references: BlkDevReferrerKind::FileSystemEsp.compatible_kinds()
                 }
             ),
         );
@@ -1583,10 +1450,10 @@ mod tests {
         storage.disks[1].partitions[3].size = PartitionSize::from_str("2G").unwrap();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::PartitionSizeMismatch {
-                    node_id: "my-raid1".into(),
-                    kind: BlkDevKind::RaidArray
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::PartitionSizeMismatch {
+                    node_identifier: NodeIdentifier::block_device("my-raid1"),
+                    kind: BlkDevReferrerKind::RaidArray
                 }
             ),
         );
@@ -1606,8 +1473,8 @@ mod tests {
         storage.disks[0].device = "disk1".into();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::BasicCheckFailed {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::BasicCheckFailed {
                     node_id: "disk1".into(),
                     kind: BlkDevKind::Disk,
                     body: "Path 'disk1' must be absolute".into()
@@ -1725,10 +1592,10 @@ mod tests {
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidTargetCount {
-                    node_id: "mnt".into(),
-                    kind: BlkDevKind::RaidArray,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidTargetCount {
+                    node_identifier: NodeIdentifier::block_device("mnt"),
+                    kind: BlkDevReferrerKind::RaidArray,
                     target_count: 0,
                     expected: BlkDevReferrerKind::RaidArray.valid_target_count()
                 }
@@ -1744,10 +1611,10 @@ mod tests {
         eprintln!("{:?}", storage.validate(true).unwrap_err());
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidReferenceKind {
-                    node_id: "mnt".into(),
-                    kind: BlkDevKind::RaidArray,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidReferenceKind {
+                    node_identifier: NodeIdentifier::block_device("mnt"),
+                    kind: BlkDevReferrerKind::RaidArray,
                     target_id: "srv".into(),
                     target_kind: BlkDevKind::EncryptedVolume,
                     valid_references: BlkDevReferrerKind::RaidArray.compatible_kinds()
@@ -1763,8 +1630,8 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateDeviceId("disk1".into())
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateDeviceId("disk1".into())
             )
         );
     }
@@ -1776,8 +1643,8 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].id = "esp".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateDeviceId("esp".into())
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateDeviceId("esp".into())
             )
         );
     }
@@ -1789,8 +1656,8 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].id = "mnt".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateDeviceId("mnt".into())
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateDeviceId("mnt".into())
             )
         );
     }
@@ -1802,8 +1669,8 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].id = "root".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateDeviceId("root".into())
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateDeviceId("root".into())
             )
         );
     }
@@ -1830,8 +1697,8 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::DuplicateDeviceId("srv".into())
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::DuplicateDeviceId("srv".into())
             )
         );
     }
@@ -1866,10 +1733,10 @@ mod tests {
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::UniqueFieldConstraintError {
-                    node_id: "srv".into(),
-                    other_id: "alt".into(),
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::UniqueFieldConstraintError {
+                    node_id: "alt".into(),
+                    other_id: "srv".into(),
                     kind: BlkDevKind::EncryptedVolume,
                     field_name: "deviceName".into(),
                     value: "luks-srv".into(),
@@ -1914,10 +1781,10 @@ mod tests {
             .partition_type = PartitionType::Home;
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidPartitionType {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidPartitionType {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
                     partition_id: "srv-enc".into(),
                     partition_type: PartitionType::Home,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
@@ -1940,10 +1807,10 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidPartitionType {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidPartitionType {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
                     partition_id: "esp".into(),
                     partition_type: PartitionType::Esp,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types(),
@@ -1978,10 +1845,10 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidPartitionType {
-                    node_id: "alt".into(),
-                    kind: BlkDevKind::EncryptedVolume,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidPartitionType {
+                    node_identifier: NodeIdentifier::block_device("alt"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
                     partition_id: "alt-root".into(),
                     partition_type: PartitionType::Root,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
@@ -2004,10 +1871,10 @@ mod tests {
             .device_id = "root-b-verity".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidPartitionType {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidPartitionType {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
                     partition_id: "root-b-verity".into(),
                     partition_type: PartitionType::RootVerity,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
@@ -2041,11 +1908,11 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidPartitionType {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
-                    partition_id: "mnt-raid-1".into(),
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidPartitionType {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
+                    partition_id: "mnt-raid-2".into(),
                     partition_type: PartitionType::Home,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
                 }
@@ -2077,11 +1944,11 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidPartitionType {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
-                    partition_id: "mnt-raid-1".into(),
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidPartitionType {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
+                    partition_id: "mnt-raid-2".into(),
                     partition_type: PartitionType::Esp,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
                 }
@@ -2113,11 +1980,11 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidPartitionType {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
-                    partition_id: "mnt-raid-1".into(),
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidPartitionType {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
+                    partition_id: "mnt-raid-2".into(),
                     partition_type: PartitionType::Root,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
                 }
@@ -2149,11 +2016,11 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidPartitionType {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
-                    partition_id: "mnt-raid-1".into(),
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidPartitionType {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
+                    partition_id: "mnt-raid-2".into(),
                     partition_type: PartitionType::RootVerity,
                     valid_types: BlkDevReferrerKind::EncryptedVolume.allowed_partition_types()
                 }
@@ -2169,10 +2036,10 @@ mod tests {
         storage.raid.software[0].devices = Vec::new();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidTargetCount {
-                    node_id: "mnt".into(),
-                    kind: BlkDevKind::RaidArray,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidTargetCount {
+                    node_identifier: NodeIdentifier::block_device("mnt"),
+                    kind: BlkDevReferrerKind::RaidArray,
                     target_count: 0,
                     expected: BlkDevReferrerKind::RaidArray.valid_target_count()
                 }
@@ -2189,10 +2056,10 @@ mod tests {
         // Remove the first mount point
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidTargetCount {
-                    node_id: "mnt".into(),
-                    kind: BlkDevKind::RaidArray,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidTargetCount {
+                    node_identifier: NodeIdentifier::block_device("mnt"),
+                    kind: BlkDevReferrerKind::RaidArray,
                     target_count: 1,
                     expected: BlkDevReferrerKind::RaidArray.valid_target_count()
                 }
@@ -2207,10 +2074,10 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].device_id = "disk1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidReferenceKind {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidReferenceKind {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
                     target_id: "disk1".into(),
                     target_kind: BlkDevKind::Disk,
                     valid_references: BlkDevReferrerKind::EncryptedVolume.compatible_kinds()
@@ -2249,10 +2116,10 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::InvalidReferenceKind {
-                    node_id: "srv".into(),
-                    kind: BlkDevKind::EncryptedVolume,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidReferenceKind {
+                    node_identifier: NodeIdentifier::block_device("srv"),
+                    kind: BlkDevReferrerKind::EncryptedVolume,
                     target_id: "root".into(),
                     target_kind: BlkDevKind::ABVolume,
                     valid_references: BlkDevReferrerKind::EncryptedVolume.compatible_kinds()
@@ -2286,15 +2153,15 @@ mod tests {
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "srv-enc".into(),
                     target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "alt".into(),
+                    referrer_a_id: NodeIdentifier::block_device("alt"),
                     referrer_a_kind: BlkDevReferrerKind::EncryptedVolume,
                     referrer_a_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
-                    referrer_b_id: "srv".into(),
+                    referrer_b_id: NodeIdentifier::block_device("srv"),
                     referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
                     referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
@@ -2321,15 +2188,15 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "srv-enc".into(),
                     target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "ext4 filesystem mounted at /mnt/some-mount-point".into(),
+                    referrer_a_id: NodeIdentifier::from(storage.filesystems.last().unwrap()),
                     referrer_a_kind: BlkDevReferrerKind::FileSystem,
                     referrer_a_valid_sharing_peers: BlkDevReferrerKind::FileSystem
                         .valid_sharing_peers(),
-                    referrer_b_id: "srv".into(),
+                    referrer_b_id: NodeIdentifier::block_device("srv"),
                     referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
                     referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
@@ -2345,17 +2212,17 @@ mod tests {
         storage.encryption.as_mut().unwrap().volumes[0].device_id = "mnt-raid-1".to_owned();
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "mnt-raid-1".into(),
                     target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "mnt".into(),
-                    referrer_a_kind: BlkDevReferrerKind::RaidArray,
-                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::RaidArray
+                    referrer_a_id: NodeIdentifier::block_device("srv"),
+                    referrer_a_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
-                    referrer_b_id: "srv".into(),
-                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
-                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                    referrer_b_id: NodeIdentifier::block_device("mnt"),
+                    referrer_b_kind: BlkDevReferrerKind::RaidArray,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::RaidArray
                         .valid_sharing_peers(),
                 }
             ),
@@ -2371,17 +2238,17 @@ mod tests {
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "root-a".into(),
                     target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "root".into(),
-                    referrer_a_kind: BlkDevReferrerKind::ABVolume,
-                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
+                    referrer_a_id: NodeIdentifier::block_device("srv"),
+                    referrer_a_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
-                    referrer_b_id: "srv".into(),
-                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
-                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                    referrer_b_id: NodeIdentifier::block_device("root"),
+                    referrer_b_kind: BlkDevReferrerKind::ABVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::ABVolume
                         .valid_sharing_peers(),
                 }
             ),
@@ -2397,17 +2264,17 @@ mod tests {
         storage.disks[1].partitions[3].partition_type = PartitionType::LinuxGeneric;
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "root-b".into(),
                     target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "root".into(),
-                    referrer_a_kind: BlkDevReferrerKind::ABVolume,
-                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
+                    referrer_a_id: NodeIdentifier::block_device("srv"),
+                    referrer_a_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
-                    referrer_b_id: "srv".into(),
-                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
-                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                    referrer_b_id: NodeIdentifier::block_device("root"),
+                    referrer_b_kind: BlkDevReferrerKind::ABVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::ABVolume
                         .valid_sharing_peers(),
                 }
             ),
@@ -2455,17 +2322,17 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "alt-a-enc".into(),
                     target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "alt".into(),
-                    referrer_a_kind: BlkDevReferrerKind::ABVolume,
-                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
+                    referrer_a_id: NodeIdentifier::block_device("alt-a"),
+                    referrer_a_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
-                    referrer_b_id: "alt-a".into(),
-                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
-                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                    referrer_b_id: NodeIdentifier::block_device("alt"),
+                    referrer_b_kind: BlkDevReferrerKind::ABVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::ABVolume
                         .valid_sharing_peers(),
                 }
             ),
@@ -2513,17 +2380,17 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::ReferrerForbiddenSharing {
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::ReferrerForbiddenSharing {
                     target_id: "alt-b-enc".into(),
                     target_kind: BlkDevKind::Partition,
-                    referrer_a_id: "alt".into(),
-                    referrer_a_kind: BlkDevReferrerKind::ABVolume,
-                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::ABVolume
+                    referrer_a_id: NodeIdentifier::block_device("alt-b"),
+                    referrer_a_kind: BlkDevReferrerKind::EncryptedVolume,
+                    referrer_a_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
                         .valid_sharing_peers(),
-                    referrer_b_id: "alt-b".into(),
-                    referrer_b_kind: BlkDevReferrerKind::EncryptedVolume,
-                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::EncryptedVolume
+                    referrer_b_id: NodeIdentifier::block_device("alt"),
+                    referrer_b_kind: BlkDevReferrerKind::ABVolume,
+                    referrer_b_valid_sharing_peers: BlkDevReferrerKind::ABVolume
                         .valid_sharing_peers(),
                 }
             ),
@@ -2549,32 +2416,6 @@ mod tests {
         });
 
         storage.validate(true).unwrap();
-    }
-
-    /// Image must not be a partition if format is raw-lzma
-    #[test]
-    #[cfg(feature = "sysupdate")]
-    fn test_validate_image_raw_lzma_partition_fail() {
-        let mut storage: Storage = get_storage();
-
-        // Change the image format to raw-lzma in the esp filesystem
-        storage.filesystems[0].source = FileSystemSource::Image(Image {
-            url: "file:///esp.raw.lzma".into(),
-            sha256: ImageSha256::Ignored,
-            format: ImageFormat::RawLzma,
-        });
-
-        assert_eq!(
-            storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::FilesystemIncompatibleReference {
-                    fs_desc: storage.filesystems[0].description(),
-                    target_id: "esp".into(),
-                    target_kind: BlkDevKind::Partition,
-                    compatible_kinds: BlkDevReferrerKind::FileSystemSysupdate.compatible_kinds()
-                },
-            )
-        );
     }
 
     /// Images can target encrypted volumes
@@ -2808,13 +2649,15 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::FilesystemInvalidRaidlevel {
-                    target_id: "esp".into(),
-                    target_kind: BlkDevKind::RaidArray,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidRaidlevel {
+                    node_identifier: NodeIdentifier::from(&storage.filesystems[0]),
+                    kind: BlkDevReferrerKind::FileSystemEsp,
+                    raid_id: "esp".into(),
                     raid_level: RaidLevel::Raid0,
-                    valid_levels: AllowBlockList::Allow(vec![RaidLevel::Raid1]),
-                    fs_desc: storage.filesystems[0].description()
+                    valid_levels: BlkDevReferrerKind::FileSystemEsp
+                        .allowed_raid_levels()
+                        .unwrap(),
                 }
             )
         );
@@ -2823,13 +2666,15 @@ mod tests {
         storage.raid.software[0].level = RaidLevel::Raid5;
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::InvalidBlockDeviceGraph(
-                BlockDeviceGraphBuildError::FilesystemInvalidRaidlevel {
-                    target_id: "esp".into(),
-                    target_kind: BlkDevKind::RaidArray,
+            HostConfigurationStaticValidationError::InvalidStorageGraph(
+                StorageGraphBuildError::InvalidRaidlevel {
+                    node_identifier: NodeIdentifier::from(&storage.filesystems[0]),
+                    kind: BlkDevReferrerKind::FileSystemEsp,
+                    raid_id: "esp".into(),
                     raid_level: RaidLevel::Raid5,
-                    valid_levels: AllowBlockList::Allow(vec![RaidLevel::Raid1]),
-                    fs_desc: storage.filesystems[0].description()
+                    valid_levels: BlkDevReferrerKind::FileSystemEsp
+                        .allowed_raid_levels()
+                        .unwrap(),
                 }
             )
         );

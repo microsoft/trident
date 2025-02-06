@@ -401,7 +401,7 @@ impl Trident {
             disk_uuids: host_status.disk_uuids.clone(),
             install_index: host_status.install_index,
             os_image: None,
-            storage_graph: engine::build_storage_graph(&host_config.storage), // Build storage graph
+            storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
         };
 
         if ctx.ab_active_volume.is_none() {

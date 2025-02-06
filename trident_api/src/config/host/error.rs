@@ -7,9 +7,7 @@ use crate::{
     error::{InvalidInputError, TridentError},
 };
 
-use super::storage::{
-    blkdev_graph::error::BlockDeviceGraphBuildError, storage_graph::error::StorageGraphBuildError,
-};
+use super::storage::storage_graph::error::StorageGraphBuildError;
 
 /// Identifies errors detected during static validation of the Host Configuration, i.e. errors that
 /// can be detected without applying the configuration to the host.
@@ -56,9 +54,6 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error("Failed to find expected mount point '{mount_point_path}'")]
     ExpectedMountPointNotFound { mount_point_path: String },
-
-    #[error(transparent)]
-    InvalidBlockDeviceGraph(#[from] BlockDeviceGraphBuildError),
 
     #[error(transparent)]
     InvalidStorageGraph(#[from] StorageGraphBuildError),

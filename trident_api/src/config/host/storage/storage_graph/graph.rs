@@ -1,11 +1,12 @@
 use std::path::Path;
 
+use anyhow::{Context, Error};
 use petgraph::{
     csr::DefaultIx, graph::NodeIndex as PetgraphNodeIndex, visit::IntoNodeReferences, Directed,
-    Graph,
+    Direction, Graph,
 };
 
-use crate::{config::FileSystemSource, constants::ROOT_MOUNT_POINT_PATH};
+use crate::{config::FileSystemSource, constants::ROOT_MOUNT_POINT_PATH, BlockDeviceId};
 
 use super::{node::StorageGraphNode, references::ReferenceKind, types::BlkDevKind};
 
@@ -48,7 +49,8 @@ impl StorageGraph {
     ///
     /// A volume is a file system on a specific mount point.
     pub(crate) fn get_volume_status(&self, mnt_point: impl AsRef<Path>) -> VolumeStatus {
-        self.inner
+        if let Some(filesystem) = self
+            .inner
             .node_weights()
             .filter_map(|node| node.as_filesystem())
             .find(|fs| {
@@ -57,14 +59,24 @@ impl StorageGraph {
                     .map(|mp| mp.path == mnt_point.as_ref())
                     .unwrap_or_default()
             })
-            .map(|fs| match fs.source {
+        {
+            match filesystem.source {
                 FileSystemSource::Image(_)
                 | FileSystemSource::EspImage(_)
                 | FileSystemSource::OsImage => VolumeStatus::PresentAndBackedByImage,
                 FileSystemSource::Adopted => VolumeStatus::PresentAndBackedByAdoptedFs,
                 FileSystemSource::Create => VolumeStatus::PresentButNotBackedByImage,
-            })
-            .unwrap_or(VolumeStatus::NotPresent)
+            }
+        } else if self
+            .inner
+            .node_weights()
+            .filter_map(|node| node.as_verity_filesystem())
+            .any(|vfs| vfs.mount_point.path == mnt_point.as_ref())
+        {
+            VolumeStatus::PresentAndBackedByImage
+        } else {
+            VolumeStatus::NotPresent
+        }
     }
 
     /// Returns whether the root filesystem is on a verity device.
@@ -81,8 +93,27 @@ impl StorageGraph {
 
         // Check if the root filesystem is directly on a verity device.
         self.inner
-            .neighbors_directed(rootfs_idx, petgraph::EdgeDirection::Outgoing)
+            .neighbors_directed(rootfs_idx, Direction::Outgoing)
             .any(|neighbor_idx| self.inner[neighbor_idx].device_kind() == BlkDevKind::VerityDevice)
+    }
+
+    /// Returns whether the block device with the given ID has dependents.
+    pub fn has_dependents(&self, id: &BlockDeviceId) -> Result<bool, Error> {
+        // First, find the node index of the block device with the given ID.
+        let (node_idx, _) = self
+            .inner
+            .node_references()
+            .find(|(_, node)| node.id() == Some(id))
+            .with_context(|| format!("Block device '{}' not found", id))?;
+
+        // Then, get the count of incoming edges to the block device node. An
+        // outgoing edge represents a dependency, so incoming edges represent
+        // dependents.
+        Ok(self
+            .inner
+            .neighbors_directed(node_idx, Direction::Incoming)
+            .count()
+            > 0)
     }
 }
 
@@ -295,5 +326,53 @@ mod tests {
         // Assert that the root filesystem is not on a verity device when it is
         // directly on a non-verity device.
         assert!(!graph.root_fs_is_verity());
+    }
+
+    #[test]
+    fn test_has_dependents() {
+        let mut graph = StorageGraph::default();
+
+        // Assert we get an error when the block device is not found.
+        assert_eq!(
+            graph
+                .has_dependents(&"rootfs".into())
+                .unwrap_err()
+                .to_string(),
+            "Block device 'rootfs' not found"
+        );
+
+        // Add a partition node.
+        let dev_id = "myPartition";
+        let partition_node_idx = graph
+            .inner
+            .add_node(StorageGraphNode::BlockDevice(BlockDevice {
+                id: dev_id.into(),
+                host_config_ref: HostConfigBlockDevice::Partition(Partition {
+                    id: dev_id.into(),
+                    partition_type: PartitionType::Root,
+                    size: "1G".parse().unwrap(),
+                }),
+            }));
+
+        // Assert that the partition has no dependents.
+        assert!(!graph.has_dependents(&dev_id.into()).unwrap());
+
+        // Add a filesystem node that depends on the partition.
+        let fs_node_idx = graph
+            .inner
+            .add_node(StorageGraphNode::FileSystem(FileSystem {
+                fs_type: FileSystemType::Ext4,
+                device_id: Some(dev_id.into()),
+                mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+                source: FileSystemSource::Create,
+            }));
+
+        // Add an edge from the partition to the filesystem.
+        graph
+            .inner
+            .add_edge(fs_node_idx, partition_node_idx, ReferenceKind::Regular);
+
+        // Assert that the partition has dependents.
+        assert!(graph.has_dependents(&dev_id.into()).unwrap());
     }
 }

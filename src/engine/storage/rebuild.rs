@@ -221,12 +221,15 @@ pub(crate) fn validate_rebuild_raid(
 
         for partition in &disk_info.partitions {
             if !partition_is_raid_member(&partition.id, host_config) {
-                if !host_config
-                    .storage
-                    .is_unformatted_partition(&graph.nodes, &partition.id)
-                {
+                if graph.has_dependents(&partition.id).with_context(|| {
+                    format!(
+                        "Failed to check if partition '{}' has dependents",
+                        partition.id
+                    )
+                })? {
                     bail!(
-                        "Partition '{}' is neither a member of a software RAID array nor an unformatted partition, refusing to rebuild",
+                        "Partition '{}' is neither a member of a software RAID array nor an \
+                            unformatted partition, refusing to rebuild",
                         partition.id
                     );
                 } else {

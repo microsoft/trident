@@ -45,11 +45,9 @@ impl StorageGraphNode {
     /// Returns a user friendly identifier of the node.
     pub fn identifier(&self) -> NodeIdentifier {
         match self {
-            Self::BlockDevice(dev) => NodeIdentifier::BlockDevice(dev.id.clone()),
-            Self::FileSystem(fs) => NodeIdentifier::FileSystem(fs.description()),
-            Self::VerityFileSystem(verity_fs) => {
-                NodeIdentifier::VerityFileSystem(verity_fs.name.clone())
-            }
+            Self::BlockDevice(dev) => NodeIdentifier::from(dev),
+            Self::FileSystem(fs) => NodeIdentifier::from(fs),
+            Self::VerityFileSystem(verity_fs) => NodeIdentifier::from(verity_fs),
         }
     }
 
@@ -184,6 +182,39 @@ pub enum NodeIdentifier {
     BlockDevice(String),
     FileSystem(String),
     VerityFileSystem(String),
+}
+
+impl From<&FileSystem> for NodeIdentifier {
+    fn from(fs: &FileSystem) -> Self {
+        Self::FileSystem(fs.description())
+    }
+}
+
+impl From<&VerityFileSystem> for NodeIdentifier {
+    fn from(fs: &VerityFileSystem) -> Self {
+        Self::VerityFileSystem(fs.name.clone())
+    }
+}
+
+impl From<&BlockDevice> for NodeIdentifier {
+    fn from(dev: &BlockDevice) -> Self {
+        Self::BlockDevice(dev.id.clone())
+    }
+}
+
+#[cfg(test)]
+impl NodeIdentifier {
+    pub fn block_device(id: &str) -> Self {
+        Self::BlockDevice(id.to_string())
+    }
+
+    pub fn filesystem(id: &str) -> Self {
+        Self::FileSystem(id.to_string())
+    }
+
+    pub fn verity_filesystem(id: &str) -> Self {
+        Self::VerityFileSystem(id.to_string())
+    }
 }
 
 impl BlockDevice {

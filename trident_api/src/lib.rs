@@ -20,10 +20,7 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
 #[cfg(feature = "samples")]
 pub mod samples;
 
-/// Give docbuilder easy access to the block device graph types.
-#[cfg(feature = "documentation")]
-pub use config::host::storage::blkdev_graph;
-
+/// The storage graph submodule.
 pub use config::host::storage::storage_graph;
 
 /// Re-export dependency so docbuilder can use the exact same version without having to manage a

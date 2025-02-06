@@ -110,7 +110,7 @@ impl FileSystemType {
     }
 
     /// Returns whether a filesystem type can have a mountpoint.
-    pub fn can_have_mountpoint2(&self) -> bool {
+    pub fn can_have_mountpoint(&self) -> bool {
         match self {
             Self::Ext4
             | Self::Xfs
@@ -125,15 +125,15 @@ impl FileSystemType {
     }
 
     /// Returns whether a filesystem type must have a mountpoint.
-    pub fn must_have_mountpoint2(&self) -> bool {
+    pub fn must_have_mountpoint(&self) -> bool {
         // Something that does not have a block device and can have a
         // mountpoint, must have a mountpoint. Today this covers only Tmpfs and
         // Overlay. These NEED to be mounted otherwise they don't really exist.
-        !self.expects_block_device_id() && self.can_have_mountpoint2()
+        !self.expects_block_device_id() && self.can_have_mountpoint()
     }
 
     /// Returns the valid sources for a filesystem type.
-    pub fn valid_sources2(&self) -> ItemList<FileSystemSourceKind> {
+    pub fn valid_sources(&self) -> ItemList<FileSystemSourceKind> {
         match self {
             Self::Ext4 | Self::Xfs | Self::Ntfs => ItemList(vec![
                 FileSystemSourceKind::Create,
@@ -156,6 +156,27 @@ impl FileSystemType {
             Self::Swap | Self::Tmpfs | Self::Overlay => {
                 ItemList(vec![FileSystemSourceKind::Create])
             }
+        }
+    }
+
+    /// Returns whether a filesystem type can be used with verity.
+    pub fn supports_verity(&self) -> bool {
+        // If a filesystem cannot be mounted, by default it cannot be used with
+        // verity.
+        if !self.can_have_mountpoint() {
+            return false;
+        }
+
+        match self {
+            Self::Ext4 | Self::Xfs => true,
+            Self::Vfat
+            | Self::Iso9660
+            | Self::Swap
+            | Self::Ntfs
+            | Self::Tmpfs
+            | Self::Overlay
+            | Self::Auto
+            | Self::Other => false,
         }
     }
 }
@@ -478,7 +499,7 @@ impl SpecialReferenceKind {
 
 impl PartitionType {
     /// Return known-valid and expected mountpoints for a partition type.
-    pub fn valid_mountpoints2(&self) -> AllowBlockList<PathBuf> {
+    pub fn valid_mountpoints(&self) -> AllowBlockList<PathBuf> {
         match self {
             Self::Esp => AllowBlockList::new_allow(["/boot", "/efi", "/boot/efi"]),
             Self::Home => AllowBlockList::new_allow(["/home"]),
