@@ -2,10 +2,12 @@ use std::{
     collections::BTreeMap,
     fmt::Write,
     path::{Path, PathBuf},
+    thread,
+    time::Duration,
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, error, warn};
+use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
 use osutils::{
@@ -167,15 +169,28 @@ impl NewrootMount {
     }
 
     fn unmount_all_impl(&mut self) -> Result<(), TridentError> {
-        // Unmount all mounts in reverse order. If we fail to unmount one, we still clear
-        // `self.mounts` but stop trying to unmount the rest of the mounts.
+        // Unmount all mounts in reverse order.
         for mount in self.mounts.drain(..).rev() {
             debug!("Unmounting '{}'", mount.display());
-            mount::umount(&mount, false).structured(ServicingError::UnmountNewroot {
-                dir: mount.to_string_lossy().into(),
-            })?;
+            // Try up to 5 times to unmount, allowing for the
+            // async nature of umount.
+            for retry_count in 1..6 {
+                if retry_count != 1 {
+                    trace!("Unmounting '{}' attempt {}", mount.display(), retry_count);
+                }
+                let ret = mount::umount(&mount, false);
+                if ret.is_ok() {
+                    break;
+                } else if retry_count == 5 {
+                    return ret.structured(ServicingError::UnmountNewroot {
+                        dir: mount.to_string_lossy().into(),
+                    });
+                } else {
+                    thread::sleep(Duration::from_secs(1));
+                }
+            }
+            trace!("Unmounted '{}' successfully", mount.display());
         }
-
         Ok(())
     }
 

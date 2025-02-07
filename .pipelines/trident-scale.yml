@@ -27,6 +27,16 @@ parameters:
     type: string
     default: "3.0"
 
+  - name: numberOfUpdateIterations
+    displayName: Number of times each worker invokes A/B Update
+    type: number
+    default: 100
+
+  - name: forceTridentRebuild
+    displayName: "Force trident rebuild rather than downloading previously built."
+    type: boolean
+    default: false
+
 schedules:
   - cron: "0 8 * * *" # 1 am PST
     displayName: Daily build
@@ -119,3 +129,5 @@ extends:
           previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
           previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+          numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
+          forceTridentRebuild: ${{ parameters.forceTridentRebuild }}

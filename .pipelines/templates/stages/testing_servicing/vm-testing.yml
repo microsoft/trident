@@ -188,8 +188,8 @@ stages:
               . ./scripts/loop-update/common.sh
               sudo virsh shutdown $VM_NAME
               mkdir -p $(ob_outputDirectory)
-              sudo zstd -T0 $(Build.ArtifactStagingDirectory)/trident-vm-verity-testimage.qcow2
-              sudo mv $(Build.ArtifactStagingDirectory)/trident-vm-verity-testimage.qcow2.zst $(ob_outputDirectory)/
+              sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
+              sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
             workingDirectory: $(tridentSourceDirectory)
             condition: failed()
             displayName: "Publish OS disk"

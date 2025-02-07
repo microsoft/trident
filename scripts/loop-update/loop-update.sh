@@ -3,6 +3,10 @@ set -euo pipefail
 
 . $(dirname $0)/common.sh
 
+if [ "$OUTPUT" != "" ]; then
+    mkdir -p $OUTPUT
+fi
+
 pushd $ARTIFACTS/update-a
 killall python3 || true
 python3 -m http.server 8000 &
@@ -90,6 +94,11 @@ for i in $(seq 1 $RETRY_COUNT); do
 
     sshCommand "sudo cat $UPDATE_CONFIG"
     sshCommand "sudo trident run $LOGGING -c $UPDATE_CONFIG --allowed-operations stage"
+
+    if [ "$OUTPUT" != "" ]; then
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_USER@$VM_IP:/var/log/trident-full.log $OUTPUT/staged-trident-full-$i.log
+    fi
+
     if [ $? -ne 0 ]; then
         echo "Failed to stage update"
         adoError "Failed to stage update for iteration $i"

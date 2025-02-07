@@ -37,6 +37,21 @@ parameters:
     type: boolean
     default: false
 
+  - name: numberOfWorkers
+    displayName: Number of worker to run tests on (max of 256)
+    type: number
+    default: 256
+
+  - name: numberOfUpdateIterations
+    displayName: Number of times each worker invokes A/B Update
+    type: number
+    default: 100
+
+  - name: forceTridentRebuild
+    displayName: "Force trident rebuild rather than downloading previously built."
+    type: boolean
+    default: false
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -47,15 +62,15 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
       previewContainerImageArm64BuildId: ${{ parameters.previewContainerImageArm64BuildId }}
-      forceTridentRebuild: ${{ eq(parameters.baseimgBuildType, 'preview') }}
+      forceTridentRebuild: ${{ or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
     parameters:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
-      updateIterationCount: 100
       rollbackTesting: false
-      workers: 256
+      updateIterationCount: ${{ parameters.numberOfUpdateIterations }}
+      workers: ${{ parameters.numberOfWorkers }}
       updateCheckTimeoutInMinutes: 200 # Generally need less than a minute per update, so with buffer, this should be updateIterationCount * 2
       verboseLogging: ${{ parameters.verboseLogging }}
       previewContainerImageBuildId: ${{ parameters.previewContainerImageBuildId }}
