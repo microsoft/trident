@@ -4,6 +4,7 @@ import io
 import time
 from typing import Dict, List, Tuple
 import yaml
+import logging
 from invoke.exceptions import CommandTimedOut
 from ssh_utilities import (
     LOCAL_TRIDENT_CONFIG_PATH,
@@ -14,6 +15,9 @@ from ssh_utilities import (
 
 RETRY_INTERVAL = 60
 MAX_RETRIES = 5
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("ab_update")
 
 
 class YamlSafeLoader(yaml.SafeLoader):
@@ -83,53 +87,31 @@ def trident_run_command(
     raise Exception("Maximum retries exceeded for Trident run")
 
 
-def update_host_config_images(runtime_env, destination_directory, host_config, version):
-    """Updates the images in the host configuration in the RW Trident config via sed command."""
+def update_osimage_url(runtime_env, destination_directory, host_config, version):
+    """Updates the OS image URL in Host Configuration."""
 
     host_directory = "/" if runtime_env == "host" else "/host/"
     destination_directory = destination_directory.strip("/")
 
-    # Determine targetId of ESP partition
-    esp_partition_target_id = None
-    for disk in host_config["storage"]["disks"]:
-        for partition in disk["partitions"]:
-            if partition["type"] == "esp":
-                esp_partition_target_id = partition["id"]
-                break
+    old_url = host_config.get("osImage", {}).get("url", None)
+    if old_url is None:
+        raise Exception("No current osImage URL found in Host Configuration")
 
-    # Collect IDs of A/B volume pairs
-    ab_volume_pair_ids = []
-    for pair in host_config["storage"]["abUpdate"]["volumePairs"]:
-        ab_volume_pair_ids.append(pair["id"])
+    if old_url.startswith("http://"):
+        # Extract part between the last '/' and '.cosi'
+        image_name = old_url.split("/")[-1].split(".cosi")[0]
+    else:
+        # Additional logic to strip "_vN", e.g. for URLs like file:///abupdate/regular_v2.cosi,
+        # extract 'regular'; for file:///run/verity_v2.cosi, extract 'verity'
+        image_name = "_".join(
+            old_url.split("/")[-1].split(".cosi")[0].rsplit("_", 1)[:-1]
+        )
+    new_url = (
+        f"file://{host_directory}{destination_directory}/{image_name}_v{version}.cosi"
+    )
 
-    def update_url(device_id, old_url):
-        if device_id == esp_partition_target_id or device_id in ab_volume_pair_ids:
-            if old_url.startswith("http://"):
-                # Extract part between the last '/' and '.rawzst'
-                image_name = old_url.split("/")[-1].split(".rawzst")[0]
-            else:
-                # Additional logic to strip "_vN", e.g. for URLs like file:///abupdate/esp_v2.rawzst,
-                # extract 'esp'; for file:///run/verity_roothash_v2.rawzst, extract 'verity_roothash'
-                image_name = "_".join(
-                    old_url.split("/")[-1].split(".rawzst")[0].rsplit("_", 1)[:-1]
-                )
-            return f"file://{host_directory}{destination_directory}/{image_name}_v{version}.rawzst"
-        else:
-            return old_url
-
-    # First check all filesystems
-    for fs in host_config["storage"].get("filesystems") or []:
-        device_id = fs.get("deviceId")
-        if not device_id:
-            continue
-        source: Dict = fs.get("source", {})
-        if source.get("type") in ["image", "esp-image"]:
-            source["url"] = update_url(device_id, source["url"])
-
-    # Then check all verity filesystems:
-    for fs in host_config["storage"].get("verityFilesystems") or []:
-        fs["dataImage"]["url"] = update_url(fs["dataDeviceId"], fs["dataImage"]["url"])
-        fs["hashImage"]["url"] = update_url(fs["hashDeviceId"], fs["hashImage"]["url"])
+    log.info(f"Updating OS image URL from {old_url} to {new_url}")
+    host_config["osImage"]["url"] = new_url
 
     # Remove selfUpgrade field from the Trident config
     host_config["trident"]["selfUpgrade"] = False
@@ -157,11 +139,9 @@ def trigger_ab_update(
     host_status_dict = yaml.load(host_status, Loader=yaml.SafeLoader)
     host_config = host_status_dict["spec"]
 
-    # If staging of A/B update is required, update the images
+    # If staging of A/B update is required, update the OS image URL in Host Configuration
     if stage_ab_update:
-        update_host_config_images(
-            runtime_env, destination_directory, host_config, version
-        )
+        update_osimage_url(runtime_env, destination_directory, host_config, version)
         connection.run("sudo mkdir -p /tmp/staging")
         connection.run("sudo chmod 777 /tmp/staging")
         connection.put(io.StringIO(yaml.dump(host_config)), "/tmp/staging/hc.yaml")

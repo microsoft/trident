@@ -40,12 +40,6 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Datastore path '{datastore_path}' must be in a known volume")]
     DatastorePathNotInKnownVolume { datastore_path: String },
 
-    #[error("Host Configuration contains partition images, but an OS image must be used if one was previously deployed")]
-    DeployPartitionImagesAfterOsImage,
-
-    #[error("Host Configuration contains OS image, but partition images must be used if they were previously deployed")]
-    DeployOsImageAfterPartitionImages,
-
     #[error("Host Configuration contains duplicate usernames '{username}', but usernames must be unique")]
     DuplicateUsernames { username: String },
 
@@ -158,6 +152,12 @@ pub enum HostConfigurationDynamicValidationError {
         disk2: String,
         device: String,
     },
+
+    #[error("Host Configuration contains partition images, but an OS image must be used if one was previously deployed")]
+    DeployPartitionImagesAfterOsImage,
+
+    #[error("Host Configuration contains OS image, but partition images must be used if they were previously deployed")]
+    DeployOsImageAfterPartitionImages,
 
     #[error("Images and Host Configuration have incompatible dm-verity configuration")]
     DmVerityMisconfiguration,

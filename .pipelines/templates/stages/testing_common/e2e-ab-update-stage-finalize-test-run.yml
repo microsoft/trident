@@ -54,21 +54,7 @@ parameters:
 steps:
   - bash: |
       set -eux
-      $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/copy-runtime-os-images.sh \
-          "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.userName }}" \
-          "${{ parameters.hostIp }}" \
-          "${{ parameters.artifactsDirectory }}" \
-          $(localTempDirectory) \
-          $(destinationDirectory) \
-          $(version) \
-          $(verityRequired)
-    displayName: "Copy runtime OS images to the host for A/B update testing"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
-  - bash: |
-      set -eux
-      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh" \
+      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-os-image.sh" \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
@@ -76,7 +62,7 @@ steps:
           "$(destinationDirectory)" \
           "$(version)" \
           "$(verityRequired)"
-    displayName: "Transfer COSI file to the host for A/B update testing"
+    displayName: "Transfer updated OS image to the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |

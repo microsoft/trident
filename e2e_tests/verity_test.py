@@ -2,9 +2,12 @@ import os
 import pytest
 import yaml
 import re
+import logging
 from base_test import get_raid_name_from_device_name
 
 pytestmark = [pytest.mark.verity]
+
+log = logging.getLogger(__name__)
 
 
 class HostStatusSafeLoader(yaml.SafeLoader):
@@ -12,7 +15,7 @@ class HostStatusSafeLoader(yaml.SafeLoader):
         return self.construct_mapping(node)
 
 
-def test_verity(connection, hostConfiguration, tridentCommand, abActiveVolume):
+def test_verity_root(connection, hostConfiguration, tridentCommand, abActiveVolume):
     # Print out result of blkid for asserting verity root device mapper.
     res_blkid = connection.run("sudo blkid")
     # Expected output example:
@@ -58,7 +61,9 @@ def test_verity(connection, hostConfiguration, tridentCommand, abActiveVolume):
     # Collect expected verity info from host config for the later testing usage.
     expected_verity_config = dict()
 
-    for verity in hostConfiguration["storage"]["verityFilesystems"]:
+    items = hostConfiguration["storage"].get("verity", [])
+
+    for verity in items:
         expected_verity_config[verity["name"]] = verity
 
     # Collect veritysetup status output.
@@ -144,27 +149,26 @@ def test_verity(connection, hostConfiguration, tridentCommand, abActiveVolume):
             root_mount_id = fs.get("deviceId")
             break
 
-    # If root_mount_id is still None, look in verityFilesystems
-    verity_device_name, hash_device_id = None, None
-    if root_mount_id is None:
-        for vfs in host_status["spec"]["storage"].get("verityFilesystems") or []:
-            mp = vfs.get("mountPoint")
-            if not mp:
-                continue
-            if mp["path"] == "/":
-                verity_device_name = vfs.get("name")
-                root_mount_id = vfs.get("dataDeviceId")
-                hash_device_id = vfs.get("hashDeviceId")
-                break
     # If no mount point with path / found, raise an exception
     if root_mount_id is None:
         raise Exception("Root mount point not found")
+
+    # If root_mount_id is still None, look in verity
+    verity_device_name = None
+    data_device_id = None
+    hash_device_id = None
+    items = host_status["spec"]["storage"].get("verity", [])
+    for verity_dev in items:
+        if verity_dev.get("id") == root_mount_id:
+            verity_device_name = verity_dev.get("name")
+            data_device_id = verity_dev.get("dataDeviceId")
+            hash_device_id = verity_dev.get("hashDeviceId")
+            break
 
     # If root is not a verity device, no more testing to do here
     if verity_device_name is None or hash_device_id is None:
         raise Exception("No verity configuration found for the provided root mount ID")
 
-    data_device_id = root_mount_id
     if "abUpdate" in host_status["spec"]["storage"] and abActiveVolume is not None:
         active_data_id, active_hash_id = None, None
         # Identify block devices we expect to be in use, given the value of abActiveVolume.

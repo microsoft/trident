@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use log::debug;
 
 use trident_api::{
-    config::{
-        HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError, Image,
-    },
+    config::{HostConfigurationDynamicValidationError, Image},
     constants::internal_params::ENABLE_COSI_SUPPORT,
     error::{InvalidInputError, TridentError},
     status::ServicingType,
@@ -57,7 +55,7 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
         (None, Some(_)) => {
             // Return an error if the old spec requests an OS image but the new spec does not.
             Err(TridentError::new(InvalidInputError::from(
-                HostConfigurationStaticValidationError::DeployOsImageAfterPartitionImages,
+                HostConfigurationDynamicValidationError::DeployOsImageAfterPartitionImages,
             )))
         }
         // If OS image is requested in both specs, compare the URLs.
@@ -65,7 +63,7 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
         (Some(_), None) => {
             // Return an error if the old spec requests an OS image but the new spec does not.
             Err(TridentError::new(InvalidInputError::from(
-                HostConfigurationStaticValidationError::DeployPartitionImagesAfterOsImage,
+                HostConfigurationDynamicValidationError::DeployPartitionImagesAfterOsImage,
             )))
         }
     }

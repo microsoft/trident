@@ -1,3 +1,8 @@
+internalParams:
+  cosi: true
+osImage:
+  type: cosi
+  url: http://NETLAUNCH_HOST_ADDRESS/files/verity.cosi
 storage:
   disks:
     - id: os
@@ -13,16 +18,16 @@ storage:
         - id: boot-b
           type: xbootldr
           size: 200M
-        - id: root-a-1
+        - id: root-data-a-1
           type: root
           size: 4G
-        - id: root-b-1
+        - id: root-data-b-1
           type: root
           size: 4G
-        - id: root-a-2
+        - id: root-data-a-2
           type: root
           size: 4G
-        - id: root-b-2
+        - id: root-data-b-2
           type: root
           size: 4G
         - id: root-hash-a-1
@@ -88,18 +93,18 @@ storage:
         devices:
           - home-b-e-1
           - home-b-e-2
-      - id: root-a
-        name: root-a
+      - id: root-data-a
+        name: root-data-a
         level: raid1
         devices:
-          - root-a-1
-          - root-a-2
-      - id: root-b
-        name: root-b
+          - root-data-a-1
+          - root-data-a-2
+      - id: root-data-b
+        name: root-data-b
         level: raid1
         devices:
-          - root-b-1
-          - root-b-2
+          - root-data-b-1
+          - root-data-b-2
       - id: root-hash-a
         name: root-hash-a
         level: raid1
@@ -140,9 +145,9 @@ storage:
       - id: boot
         volumeAId: boot-a
         volumeBId: boot-b
-      - id: root
-        volumeAId: root-a
-        volumeBId: root-b
+      - id: root-data
+        volumeAId: root-data-a
+        volumeBId: root-data-b
       - id: root-hash
         volumeAId: root-hash-a
         volumeBId: root-hash-b
@@ -152,6 +157,11 @@ storage:
       - id: home
         volumeAId: home-a
         volumeBId: home-b
+  verity:
+    - id: root
+      name: root
+      dataDeviceId: root-data
+      hashDeviceId: root-hash
   filesystems:
     - deviceId: trident
       type: ext4
@@ -166,10 +176,7 @@ storage:
     - deviceId: var
       type: ext4
       source:
-        type: image
-        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_var.rawzst
-        sha256: ignored
-        format: raw-zst
+        type: os-image
       mountPoint: /var
     - deviceId: home
       type: ext4
@@ -177,37 +184,22 @@ storage:
     - deviceId: esp
       type: vfat
       source:
-        type: esp-image
-        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_esp.rawzst
-        sha256: ignored
-        format: raw-zst
+        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: boot
       type: ext4
       source:
-        type: image
-        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_boot.rawzst
-        sha256: ignored
-        format: raw-zst
+        type: os-image
       mountPoint: /boot
     - deviceId: trident-overlay
       type: ext4
       mountPoint: /var/lib/trident-overlay
-  verityFilesystems:
-    - name: root
-      dataDeviceId: root
-      hashDeviceId: root-hash
-      dataImage:
-        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_root.rawzst
-        sha256: ignored
-        format: raw-zst
-      hashImage:
-        url: http://NETLAUNCH_HOST_ADDRESS/files/verity_roothash.rawzst
-        sha256: ignored
-        format: raw-zst
+    - deviceId: root
       type: ext4
+      source:
+        type: os-image
       mountPoint:
         path: /
         options: defaults,ro

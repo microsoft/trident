@@ -1,5 +1,5 @@
 #!/bin/bash
-# transfer-update-cosi-file.sh
+# transfer-update-os-image.sh
 
 set -eux
 

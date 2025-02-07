@@ -74,15 +74,12 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Check if Trident config requires A/B update testing"
 
-  # Check if Trident config requires verity runtime OS images. If yes, need to copy verity runtime
-  # OS images to a writable directory /run on the VM. If not, copy runtime OS images to /abupdate.
-  # For both cases, create a new variable localTempDirectory to copy runtime OS images to, and then
-  # scp it in its entirety onto the host.
+  # Check if Trident config uses verity. If yes, we need to copy the verity COSI
+  # to a writable directory /run on the VM. Otherwise, copy the regular COSI to
+  # /abupdate.
   - bash: |
       set -eu
-      # TODO: Replace the check once the API is changed and verityFileSystems are removed from HC.
-      # Related ADO task: https://dev.azure.com/mariner-org/ECF/_workitems/edit/10770.
-      verityRequired=$(sudo yq e '.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      verityRequired=$(sudo yq e '.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$verityRequired" == "true" ]; then
         echo "Trident config requires verity runtime OS images"
         echo "##vso[task.setvariable variable=verityRequired]true"
@@ -92,8 +89,6 @@ steps:
         echo "##vso[task.setvariable variable=verityRequired]false"
         echo "##vso[task.setvariable variable=destinationDirectory]/abupdate"
       fi
-
-      echo "##vso[task.setvariable variable=localTempDirectory]$(Build.SourcesDirectory)/e2e_tests/helpers/runtime_os_images"
     workingDirectory: $(Build.SourcesDirectory)/e2e_tests
     displayName: "Check if Trident config requires verity runtime OS images"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
@@ -101,7 +96,7 @@ steps:
   # TODO: Remove after trident-container-verity-testimage is being used for E2E tests (Task #9652).
   - bash: |
       set -eu
-      verityRequired=$(sudo yq e '.storage.verityFilesystems != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      verityRequired=$(sudo yq e '.storage.verity != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$verityRequired" == "true" ]; then
         echo "Trident is running from the Runtime OS on the host (verity not enabled for container)."
         echo "##vso[task.setvariable variable=runtimeEnv]host"
@@ -142,26 +137,10 @@ steps:
       testRunTitle: ${{ parameters.deploymentEnvironment }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_clean_install_$(System.JobAttempt)
     displayName: "Publish test results for clean install of runtime OS"
 
-  # If current Trident config requires A/B update testing, copy runtime OS images onto the host.
   - bash: |
       set -eux
-      chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/copy-runtime-os-images.sh
-      $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/copy-runtime-os-images.sh \
-          "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.userName }}" \
-          "${{ parameters.hostIp }}" \
-          "${{ parameters.artifactsDirectory }}" \
-          $(localTempDirectory) \
-          $(destinationDirectory) \
-          $(version) \
-          $(verityRequired)
-    displayName: "Copy runtime OS images to the host for A/B update testing"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
-  - bash: |
-      set -eux
-      chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh
-      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh" \
+      chmod +x $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-os-image.sh
+      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-os-image.sh" \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
@@ -169,7 +148,7 @@ steps:
           "$(destinationDirectory)" \
           "$(version)" \
           "$(verityRequired)"
-    displayName: "Transfer COSI file to the host for A/B update testing"
+    displayName: "Transfer update OS image to the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   # If current config requires A/B update testing, execute script to ssh into the host, update
@@ -254,21 +233,7 @@ steps:
 
   - bash: |
       set -eux
-      $(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/copy-runtime-os-images.sh \
-          "${{ parameters.sshKeyPath }}" \
-          "${{ parameters.userName }}" \
-          "${{ parameters.hostIp }}" \
-          "${{ parameters.artifactsDirectory }}" \
-          $(localTempDirectory) \
-          $(destinationDirectory) \
-          $(version) \
-          $(verityRequired)
-    displayName: "Copy runtime OS images to the host for A/B update testing"
-    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
-
-  - bash: |
-      set -eux
-      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-cosi-file.sh" \
+      "$(Build.SourcesDirectory)/.pipelines/templates/stages/testing_common/scripts/transfer-update-os-image.sh" \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.hostIp }}" \
@@ -276,7 +241,7 @@ steps:
           "$(destinationDirectory)" \
           "$(version)" \
           "$(verityRequired)"
-    displayName: "Transfer COSI file to the host for A/B update testing"
+    displayName: "Transfer update OS image to the host for A/B update testing"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |

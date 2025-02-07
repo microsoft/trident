@@ -10,7 +10,7 @@ pytestmark = [pytest.mark.base]
 
 # Size units
 class SizeUnit(Enum):
-    B = math.pow(1024, 0)
+    B = 1
     K = math.pow(1024, 1)
     M = math.pow(1024, 2)
     G = math.pow(1024, 3)
@@ -197,20 +197,38 @@ def test_partitions(connection, hostConfiguration, tridentCommand, abActiveVolum
             if mp["path"] == "/":
                 root_mount_id = fs.get("deviceId")
                 break
-        # If root_mount_id is still None, look in verityFilesystems
-        verity_device_name = None
-        if root_mount_id is None:
-            for vfs in host_status["spec"]["storage"]["verityFilesystems"]:
-                mp = vfs.get("mountPoint")
-                if not mp:
-                    continue
-                if mp["path"] == "/":
-                    verity_device_name = vfs.get("name")
-                    root_mount_id = vfs.get("dataDeviceId")
-                    break
+
         # If no mount point with path / found, raise an exception
         if root_mount_id is None:
             raise Exception("Root mount point not found")
+
+        print(f"Root mount point ID: {root_mount_id}")
+
+        verity_device_name = None
+        verity_data_device_id = None
+        for verity_dev in host_status["spec"]["storage"].get("verity", []):
+            print("Inspecting verity device:", verity_dev)
+            if verity_dev.get("id") == root_mount_id:
+                print(f"Found verity device with matching ID '{root_mount_id}'")
+                verity_device_name = verity_dev.get("name")
+                verity_data_device_id = verity_dev.get("dataDeviceId")
+                break
+
+        print(f"Verity device name: {verity_device_name}")
+        print(f"Verity data device ID: {verity_data_device_id}")
+
+        # Find the ID of the AB volume pair. If verity_data_device_id is set,
+        # the root filesystem is on a verity device. This device MUST be on an A/B
+        # volume pair. The volume pair ID is the ID of the verity device.
+        # If verity_data_device_id is not set, the root filesystem is on a non-verity
+        # device. In this case, the ID of the AB volume pair is the device the filesystem is on.
+        ab_volume_id = (
+            verity_data_device_id
+            if verity_data_device_id is not None
+            else root_mount_id
+        )
+
+        print(f"Root A/B volume ID: {ab_volume_id}")
 
         # Check the block device mounted at /. For verity devices, root and
         # root-hash A/B volume pairs are tested in verity_test.py. In this
@@ -222,12 +240,15 @@ def test_partitions(connection, hostConfiguration, tridentCommand, abActiveVolum
             for volume_pair in host_status["spec"]["storage"]["abUpdate"][
                 "volumePairs"
             ]:
-                if volume_pair["id"] == root_mount_id:
+                if volume_pair["id"] == ab_volume_id:
+                    print(f"Found volume pair: {ab_volume_id}")
                     if abActiveVolume == "volume-a":
                         active_volume_id = volume_pair["volumeAId"]
                     else:
                         active_volume_id = volume_pair["volumeBId"]
+                    print(f"Active volume ID: {active_volume_id}")
                     break
+
             assert active_volume_id is not None
 
             active_volume_is_partition = is_partition(host_status, active_volume_id)

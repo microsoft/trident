@@ -1,3 +1,8 @@
+internalParams:
+  cosi: true
+osImage:
+  type: cosi
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
 storage:
   disks:
     - id: os
@@ -32,18 +37,12 @@ storage:
     - deviceId: root-a
       type: ext4
       source:
-        type: image
-        url: http://NETLAUNCH_HOST_ADDRESS/files/root.rawzst
-        sha256: ignored
-        format: raw-zst
+        type: os-image
       mountPoint: /
     - deviceId: esp1
       type: vfat
       source:
-        type: esp-image
-        url: http://NETLAUNCH_HOST_ADDRESS/files/esp.rawzst
-        sha256: ignored
-        format: raw-zst
+        type: os-image
       mountPoint:
         path: /boot/efi
         options: umask=0077
