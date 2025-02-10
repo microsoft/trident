@@ -218,4 +218,5 @@ stages:
               patterns: |
                 netlaunch
                 netlisten
+                mkcosi
               targetPath: $(ob_outputDirectory)
