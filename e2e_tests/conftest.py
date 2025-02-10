@@ -81,7 +81,7 @@ def connection(request):
         docker_permission = "setenforce 0"
         ssh_connection.run(
             f"sudo {docker_permission}"
-        )  # TODO: Re-enable SELinx (#9508).
+        )  # TODO: Re-enable SELinux (#9508).
         # Load Docker Image
         load_container = f"docker load --input {DOCKER_IMAGE_PATH}"
         ssh_connection.run(f"sudo {docker_permission}")

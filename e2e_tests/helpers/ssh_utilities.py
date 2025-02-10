@@ -87,7 +87,7 @@ def _reload_container_image(connection: Connection):
     docker_permission = "sudo setenforce 0"
     _connection_run_command(
         connection, docker_permission
-    )  # TODO: Re-enable SELinx (#9508).
+    )  # TODO: Re-enable SELinux (#9508).
 
     command = f"sudo docker load --input {DOCKER_IMAGE_PATH}"
     result = _connection_run_command(connection, command)
