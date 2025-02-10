@@ -16,6 +16,8 @@ use super::EngineContext;
 pub(super) mod esp;
 pub(super) mod grub;
 
+pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = "/tmp";
+
 #[derive(Default, Debug)]
 pub(super) struct BootSubsystem;
 impl Subsystem for BootSubsystem {

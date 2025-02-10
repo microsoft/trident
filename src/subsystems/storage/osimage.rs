@@ -4,6 +4,7 @@ use std::{
 };
 
 use log::{debug, error, trace, warn};
+
 use osutils::df;
 use trident_api::{
     config::{FileSystemSource, FileSystemType, HostConfiguration},
@@ -11,7 +12,10 @@ use trident_api::{
     primitives::bytes::ByteCount,
 };
 
-use crate::osimage::{OsImage, OsImageFileSystemType};
+use crate::{
+    engine::boot::ESP_EXTRACTION_DIRECTORY,
+    osimage::{OsImage, OsImageFileSystemType},
+};
 
 use super::EngineContext;
 
@@ -196,26 +200,26 @@ fn validate_esp(os_image: &OsImage) -> Result<(), TridentError> {
     }
 
     // Ensure there is enough space in /tmp to perform file-based copy of ESP image
-    let Ok(available_space) = df::available_space_in_fs("/tmp") else {
-        warn!("Failed to check if there is enough space available on '/tmp' to copy ESP image.");
+    let Ok(available_space) = df::available_space_in_fs(ESP_EXTRACTION_DIRECTORY) else {
+        warn!("Failed to check if there is enough space available on '{ESP_EXTRACTION_DIRECTORY}' to copy ESP image.");
         return Ok(());
     };
-    trace!("Found {available_space} bytes of available space in /tmp.");
+    trace!("Found {available_space} bytes of available space in {ESP_EXTRACTION_DIRECTORY}.");
 
     let esp_img_size = esp_img.image_file.uncompressed_size;
     trace!("The uncompressed size of the ESP image is {esp_img_size} bytes.");
 
     if esp_img_size >= available_space {
         error!(
-            "There is not enough space to copy the ESP image into /tmp. The uncompressed size of \
-                the ESP image is {}, while /tmp has {} available.",
+            "There is not enough space to copy the ESP image into {ESP_EXTRACTION_DIRECTORY}. The \
+            uncompressed size of the ESP image is {}, while {ESP_EXTRACTION_DIRECTORY} has {} available.",
             ByteCount::from(esp_img_size).to_human_readable_approx(),
             ByteCount::from(available_space).to_human_readable_approx()
         );
     } else if esp_img_size >= available_space / 2 {
         warn!(
-            "There may not be enough space to copy the ESP image into /tmp. The uncompressed size \
-                of the ESP image is {}, while /tmp has {} available.",
+            "There may not be enough space to copy the ESP image into {ESP_EXTRACTION_DIRECTORY}. \
+            The uncompressed size of the ESP image is {}, while {ESP_EXTRACTION_DIRECTORY} has {} available.",
             ByteCount::from(esp_img_size).to_human_readable_approx(),
             ByteCount::from(available_space).to_human_readable_approx()
         );

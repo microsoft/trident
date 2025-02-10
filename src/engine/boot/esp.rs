@@ -29,6 +29,7 @@ use trident_api::{
 };
 
 use crate::engine::{
+    boot::ESP_EXTRACTION_DIRECTORY,
     constants::{
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
@@ -108,7 +109,8 @@ where
     R: Read + HashingReader,
 {
     // Create a temporary file to download ESP image
-    let temp_image = NamedTempFile::new().context("Failed to create a temporary file")?;
+    let temp_image = NamedTempFile::new_in(ESP_EXTRACTION_DIRECTORY)
+        .context("Failed to create a temporary file")?;
     let temp_image_path = temp_image.path().to_path_buf();
 
     debug!("Extracting ESP image to {}", temp_image_path.display());
