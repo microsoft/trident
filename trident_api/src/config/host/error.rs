@@ -49,6 +49,12 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Failed to find expected mount point '{mount_point_path}'")]
     ExpectedMountPointNotFound { mount_point_path: String },
 
+    #[error(
+        "The Host Configuration is using both an image and partition images, these APIs are \
+        mutually exclusive"
+    )]
+    ImageApiMixed,
+
     #[error(transparent)]
     InvalidStorageGraph(#[from] StorageGraphBuildError),
 
@@ -73,7 +79,10 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Mount point '{mount_point_path}' must be backed by an image")]
     MountPointNotBackedByImage { mount_point_path: String },
 
-    #[error("Directory '{VAR_TMP_PATH}' must be on a read-write volume, but is on a read-only volume mounted at '{mount_point_path}'")]
+    #[error(
+        "Directory '{VAR_TMP_PATH}' must be on a read-write volume, but is on a read-only \
+        volume mounted at '{mount_point_path}'"
+    )]
     VarTmpOnReadOnlyVolume { mount_point_path: String },
 
     #[error(
@@ -113,7 +122,10 @@ pub enum HostConfigurationStaticValidationError {
     )]
     VerityAndSelinuxUnsupported { selinux_mode: String },
 
-    #[error("Verity device '{device_name}' is mounted read-write at '{mount_point_path}', but must be mounted read-only")]
+    #[error(
+        "Verity device '{device_name}' is mounted read-write at '{mount_point_path}', but must \
+        be mounted read-only"
+    )]
     VerityDeviceMountedReadWrite {
         device_name: String,
         mount_point_path: String,

@@ -11,11 +11,7 @@ use osutils::{
 
 use trident_api::{
     config::RaidLevel,
-    constants::{
-        self,
-        internal_params::{ENABLE_COSI_SUPPORT, VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
-        ESP_MOUNT_POINT_PATH,
-    },
+    constants::{self, internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND, ESP_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingType},
     BlockDeviceId,
@@ -454,7 +450,7 @@ fn get_esp_device_id(ctx: &EngineContext) -> Result<BlockDeviceId, Error> {
     Ok(
         // We need to check for the OS Image manually because the COSI image is
         // not re-read for finalize, so ctx.os_image is None.
-        if ctx.spec.os_image.is_some() && ctx.spec.internal_params.get_flag(ENABLE_COSI_SUPPORT) {
+        if ctx.spec.os_image.is_some() {
             // There is an OS Image, therefore the only means we have to identify the ESP is through
             // the mount point.
             trace!("Using ESP mount point to identify ESP device ID");

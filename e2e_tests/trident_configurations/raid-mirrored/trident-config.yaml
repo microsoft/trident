@@ -1,5 +1,3 @@
-internalParams:
-  cosi: true
 osImage:
   type: cosi
   url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi

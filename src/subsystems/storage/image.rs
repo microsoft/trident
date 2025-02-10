@@ -4,7 +4,6 @@ use log::debug;
 
 use trident_api::{
     config::{HostConfigurationDynamicValidationError, Image},
-    constants::internal_params::ENABLE_COSI_SUPPORT,
     error::{InvalidInputError, TridentError},
     status::ServicingType,
     BlockDeviceId,
@@ -41,13 +40,13 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
     let ab_update_needed = !get_updated_images(old_images, new_images).is_empty();
 
     // If the images have been updated, return immediately
-    if ab_update_needed || !ctx.spec.internal_params.get_flag(ENABLE_COSI_SUPPORT) {
-        debug!("Partition images have not been updated, and COSI is not enabled, so no A/B update is required");
+    if ab_update_needed {
+        debug!("Partition images have been updated: A/B update is required");
         return Ok(ab_update_needed);
     }
 
-    debug!("COSI is enabled, so checking OS images to determine if an A/B update is required");
-    // Otherwise, continue checking OS images, if COSI is enabled
+    debug!("Checking OS image to determine if an A/B update is required");
+    // Otherwise, continue checking OS images
     match (&ctx.spec_old.os_image, &ctx.spec.os_image) {
         // If OS image is not requested in the new spec, no update is needed.
         (None, None) => Ok(false),

@@ -195,11 +195,10 @@ impl Storage {
             return Err(HostConfigurationStaticValidationError::VerityApiMixed);
         }
 
+        // Build the storage graph
         let graph = self.build_graph()?;
 
-        // Build the graph version that was requested, report on the status of
-        // the other. Also returns the corresponding VolumePresenceValidator
-        // function.
+        // Generic function to validate the presence of a volume
         let validate_volume_presence = move |path: &'_ Path| validate_volume_presence(&graph, path);
 
         // If storage configuration is requested, then

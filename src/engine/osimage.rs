@@ -1,11 +1,10 @@
 use std::fmt::Write;
 
-use log::{debug, info, warn};
+use log::{debug, info};
 
 use osutils::arch::SystemArchitecture;
 use trident_api::{
     config::{HostConfiguration, OsImage as ApiOsImage},
-    constants::internal_params::ENABLE_COSI_SUPPORT,
     error::{InvalidInputError, ReportError, TridentError},
 };
 
@@ -15,12 +14,17 @@ use crate::osimage::OsImage;
 pub(super) fn load_os_image(
     host_config: &HostConfiguration,
 ) -> Result<Option<OsImage>, TridentError> {
-    if !host_config.internal_params.get_flag(ENABLE_COSI_SUPPORT) {
-        debug!("COSI file usage disabled");
+    // Skip when using the old API
+    if host_config
+        .storage
+        .filesystems
+        .iter()
+        .any(|fs| fs.source.is_old_api())
+    {
+        debug!("Skipping OS image loading because the old API is being used");
         return Ok(None);
     }
 
-    warn!("USING EXPERIMENTAL COSI FILE SUPPORT");
     let Some(os_image_source) = &host_config.os_image else {
         return Err(TridentError::new(InvalidInputError::MissingOsImage));
     };

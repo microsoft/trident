@@ -361,4 +361,16 @@ impl FileSystemSource {
             _ => None,
         }
     }
+
+    /// Returns whether the given filesystem source belongs to the old API.
+    ///
+    /// TODO: REMOVE WHEN THE OLD API IS REMOVED!!
+    pub fn is_old_api(&self) -> bool {
+        match self {
+            FileSystemSource::Image(_) | FileSystemSource::EspImage(_) => true,
+            FileSystemSource::Create | FileSystemSource::Adopted | FileSystemSource::OsImage => {
+                false
+            }
+        }
+    }
 }
