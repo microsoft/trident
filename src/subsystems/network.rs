@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use log::debug;
 
 use osutils::netplan;
@@ -15,7 +13,7 @@ impl Subsystem for NetworkSubsystem {
     }
 
     #[tracing::instrument(name = "network_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         match ctx.spec.os.network.as_ref() {
             Some(config) => {
                 debug!("Configuring network");

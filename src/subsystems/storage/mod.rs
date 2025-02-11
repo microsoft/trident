@@ -181,7 +181,7 @@ impl Subsystem for StorageSubsystem {
     }
 
     #[tracing::instrument(name = "storage_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         generate_fstab(ctx, Path::new(tabfile::DEFAULT_FSTAB_PATH)).structured(
             ServicingError::GenerateFstab {
                 fstab_path: tabfile::DEFAULT_FSTAB_PATH.to_string(),

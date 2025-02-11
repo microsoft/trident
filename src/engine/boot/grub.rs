@@ -10,7 +10,7 @@ use osutils::{
     grub::GrubConfig,
     grub_mkconfig::GrubMkConfigScript,
     osmodifier::{self, BootConfig, IdentifiedPartition, Overlay, Verity},
-    osrelease, path,
+    osrelease,
 };
 use trident_api::{
     config::{FileSystemType, Selinux, SelinuxMode},
@@ -21,10 +21,7 @@ use trident_api::{
     },
 };
 
-use crate::{
-    engine::{constants::TRIDENT_OVERLAY_PATH, storage::verity, EngineContext},
-    OS_MODIFIER_BINARY_PATH,
-};
+use crate::engine::{constants::TRIDENT_OVERLAY_PATH, storage::verity, EngineContext};
 
 /// Updates the boot filesystem UUID on the search command inside the GRUB
 /// config.
@@ -67,7 +64,7 @@ fn update_grub_config_boot(
     grub_config.write()
 }
 
-pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<(), Error> {
+pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Result<(), Error> {
     // Get the root block device path
     let root_device_path = ctx
         .get_root_block_device_path()
@@ -129,7 +126,6 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
         }
 
         debug!("Updating GRUB config for Azure Linux 3.0 with OS modifier");
-        let os_modifier_path = path::join_relative(exec_root, OS_MODIFIER_BINARY_PATH);
 
         // OS modifier will read values of verity, selinux, root device, and overlay from original GRUB config
         // stamp them into /etc/default/grub and regenerate the GRUB config using grub-mkconfig.
@@ -141,7 +137,7 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
             grub_config
         );
 
-        osmodifier::update_grub(&os_modifier_path)?;
+        osmodifier::update_grub(os_modifier_path)?;
 
         let updated_grub_config = fs::read_to_string(&boot_grub_config_path)?;
         trace!(
@@ -256,7 +252,7 @@ pub(super) fn update_configs(ctx: &EngineContext, exec_root: &Path) -> Result<()
             tmpfile.path()
         ))?;
 
-        osmodifier::run(&os_modifier_path, tmpfile.path()).with_context(|| {
+        osmodifier::run(os_modifier_path, tmpfile.path()).with_context(|| {
             format!(
             "Failed to run OS modifier to update GRUB config with temporary config file at {:?}",
             tmpfile.path()
@@ -401,7 +397,7 @@ pub(crate) mod functional_test {
     use const_format::formatcp;
     use maplit::btreemap;
 
-    use crate::engine::storage::raid;
+    use crate::{engine::storage::raid, OS_MODIFIER_BINARY_PATH};
 
     use osutils::{
         filesystems::MkfsFileSystemType,
@@ -678,7 +674,7 @@ pub(crate) mod functional_test {
 
         mkfs::run(root_device_path, MkfsFileSystemType::Ext4).unwrap();
 
-        update_configs(ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+        update_configs(ctx, Path::new(OS_MODIFIER_BINARY_PATH))
     }
 
     #[functional_test(feature = "helpers")]
@@ -739,7 +735,7 @@ pub(crate) mod functional_test {
 
         // fail on unsupported filesystem
         assert_eq!(
-            update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+            update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH))
                 .unwrap_err()
                 .to_string(),
             "Unsupported filesystem type for block device 'boot': vfat"
@@ -757,7 +753,7 @@ pub(crate) mod functional_test {
                 options: vec![],
             });
 
-        update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH)).unwrap();
+        update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH)).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -828,7 +824,7 @@ pub(crate) mod functional_test {
 
         let root_device_path = PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"));
         mkfs::run(&root_device_path, MkfsFileSystemType::Ext4).unwrap();
-        update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH)).unwrap();
+        update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH)).unwrap();
     }
 
     #[functional_test(feature = "helpers")]

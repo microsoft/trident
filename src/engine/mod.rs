@@ -97,7 +97,7 @@ pub(crate) trait Subsystem: Send {
 
     /// Configure the system as specified by the Host Configuration, and update the Host Status
     /// accordingly.
-    fn configure(&mut self, _ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+    fn configure(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
         Ok(())
     }
 }
@@ -285,7 +285,6 @@ fn provision(
 fn configure(
     subsystems: &mut [Box<dyn Subsystem>],
     ctx: &EngineContext,
-    exec_root: &Path,
 ) -> Result<(), TridentError> {
     // UKI support currently assumes root verity without a writable overlay. Many module's configure
     // methods would fail in this case, so we skip all of them.
@@ -319,7 +318,7 @@ fn configure(
         } else {
             None
         };
-        subsystem.configure(ctx, exec_root).message(format!(
+        subsystem.configure(ctx).message(format!(
             "Step 'Configure' failed for subsystem '{}'",
             subsystem.name()
         ))?;

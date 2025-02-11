@@ -202,11 +202,11 @@ scripts:
       runOn: [all]
       content: |
         systemctl status trident | grep Memory
-        if [ ! -f "$EXEC_ROOT/run/already-run" ]; then
+        if [ ! -f "/run/already-run" ]; then
           echo "Setting memory limit for trident.service"
           systemctl set-property trident.service MemoryMax=64M
           systemd-run --property=After=trident.service --no-block systemctl start trident.service
-          touch "$EXEC_ROOT/run/already-run"
+          touch "/run/already-run"
           exit 1
         fi
   postConfigure:

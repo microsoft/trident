@@ -74,6 +74,11 @@ for i in $(seq 1 $RETRY_COUNT); do
         # and inject the trigger-rollback script into it
         COPY_CONFIG="./config.yaml"
         sshCommand "sudo cat $UPDATE_CONFIG" > $COPY_CONFIG
+        yq eval ".scripts.postProvision += [{
+            \"name\": \"mount-var\",
+            \"runOn\": [\"ab-update\"],
+            \"content\": \"mkdir -p \$TARGET_ROOT/tmp/var && mount --bind /var \$TARGET_ROOT/tmp/var\"
+        }]" -i $COPY_CONFIG
         yq eval "
         .scripts.postConfigure += [{
             \"name\": \"trigger-rollback\",

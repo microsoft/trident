@@ -13,7 +13,7 @@ use trident_api::{
 
 use crate::{
     engine::{EngineContext, Subsystem},
-    OS_MODIFIER_BINARY_PATH,
+    OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH,
 };
 
 mod users;
@@ -101,7 +101,7 @@ impl Subsystem for OsConfigSubsystem {
     }
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         // TODO: When we switch to MIC, figure out a strategy for handling
         // other kinds of updates. Limit operation to:
         // 1. ServicingType::CleanInstall,
@@ -171,12 +171,8 @@ impl Subsystem for OsConfigSubsystem {
             os_modifier_config.kernel_command_line = Some(ctx.spec.os.kernel_command_line.clone());
         }
 
-        // Get the path to the os-modifier binary. We've already validated that
-        // it exists when required in 'validate_host_config'.
-        let os_modifier_path = path::join_relative(exec_root, OS_MODIFIER_BINARY_PATH);
-
         os_modifier_config
-            .call_os_modifier(&os_modifier_path)
+            .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
             .structured(ServicingError::RunOsModifier)?;
 
         Ok(())
@@ -368,6 +364,7 @@ mod functional_test {
     use super::*;
 
     use pytest_gen::functional_test;
+    use sys_mount::{MountBuilder, MountFlags, Unmount, UnmountFlags};
     use trident_api::config::{HostConfiguration, Os};
 
     #[functional_test(feature = "helpers")]
@@ -392,9 +389,16 @@ mod functional_test {
         };
         assert!(os_config_requires_os_modifier(&ctx));
 
+        fs::write(OS_MODIFIER_NEWROOT_PATH, b"").unwrap();
+        let _mount = MountBuilder::default()
+            .flags(MountFlags::BIND)
+            .mount(OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH)
+            .unwrap()
+            .into_unmount_drop(UnmountFlags::empty());
+
         // Configure OsConfig subsystem
         let mut os_config_subsystem = OsConfigSubsystem::default();
-        let _ = os_config_subsystem.configure(&ctx, Path::new("/"));
+        let _ = os_config_subsystem.configure(&ctx);
 
         // Check that hostname has updated
         assert_eq!(
@@ -425,11 +429,18 @@ mod functional_test {
         };
         assert!(os_config_requires_os_modifier(&ctx));
 
+        fs::write(OS_MODIFIER_NEWROOT_PATH, b"").unwrap();
+        let _mount = MountBuilder::default()
+            .flags(MountFlags::BIND)
+            .mount(OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH)
+            .unwrap()
+            .into_unmount_drop(UnmountFlags::empty());
+
         // Configure OsConfig subsystem and set prev_hostname parameter
         let mut os_config_subsystem = OsConfigSubsystem {
             prev_hostname: Some("carry-over-hostname".into()),
         };
-        let _ = os_config_subsystem.configure(&ctx, Path::new("/"));
+        let _ = os_config_subsystem.configure(&ctx);
 
         // Check that hostname has updated
         assert_eq!(

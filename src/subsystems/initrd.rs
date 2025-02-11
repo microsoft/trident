@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use log::info;
 
 use osutils::mkinitrd;
@@ -19,7 +17,7 @@ impl Subsystem for InitrdSubsystem {
     }
 
     #[tracing::instrument(name = "initrd_regeneration", skip_all)]
-    fn configure(&mut self, _ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+    fn configure(&mut self, _ctx: &EngineContext) -> Result<(), TridentError> {
         // We could autodetect configurations on the fly, but for more predictable
         // behavior and speedier subsequent boots, we will regenerate the host-specific initrd
         // here.

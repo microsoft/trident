@@ -67,7 +67,7 @@ impl Subsystem for SelinuxSubsystem {
     }
 
     #[tracing::instrument(name = "selinux_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext, _exec_root: &Path) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if let ServicingType::CleanInstall | ServicingType::AbUpdate = ctx.servicing_type {
             // If a verity filesystem is mounted at root, ensure that SELinux is not in enforcing mode and
             // warn if it is in permissive mode

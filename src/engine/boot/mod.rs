@@ -9,7 +9,7 @@ use trident_api::{
     status::AbVolumeSelection,
 };
 
-use crate::engine::Subsystem;
+use crate::{engine::Subsystem, OS_MODIFIER_NEWROOT_PATH};
 
 use super::EngineContext;
 
@@ -50,8 +50,9 @@ impl Subsystem for BootSubsystem {
     }
 
     #[tracing::instrument(name = "boot_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
-        grub::update_configs(ctx, exec_root).structured(ServicingError::UpdateGrubConfigs)?;
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        grub::update_configs(ctx, Path::new(OS_MODIFIER_NEWROOT_PATH))
+            .structured(ServicingError::UpdateGrubConfigs)?;
 
         Ok(())
     }

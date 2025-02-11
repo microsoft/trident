@@ -48,8 +48,8 @@ impl Subsystem for ManagementSubsystem {
         Ok(())
     }
 
-    #[tracing::instrument(name = "management_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
+    #[tracing::instrument(name = "management_provision", skip_all)]
+    fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         if ctx.spec.trident.disable {
             return Ok(());
         }
@@ -57,8 +57,8 @@ impl Subsystem for ManagementSubsystem {
         if ctx.spec.trident.self_upgrade {
             info!("Copying Trident binary to runtime OS");
             fs::copy(
-                path::join_relative(exec_root, TRIDENT_BINARY_PATH),
                 TRIDENT_BINARY_PATH,
+                path::join_relative(mount_path, TRIDENT_BINARY_PATH),
             )
             .structured(ServicingError::CopyTridentBinary)?;
         }

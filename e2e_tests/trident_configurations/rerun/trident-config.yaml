@@ -204,15 +204,18 @@ storage:
 scripts:
   postProvision:
     - name: rerun-trident
-      runOn:
-        - clean-install
+      runOn: [clean-install]
       content: systemd-run --property=After=trident.service --no-block systemctl start trident.service
+    - name: mount-var
+      runOn: [all]
+      content: mkdir -p $TARGET_ROOT/tmp/var && mount --bind /var $TARGET_ROOT/tmp/var
   postConfigure:
     - name: fail-on-the-first-run
       runOn: [all]
       content: |
-        if [ ! -f "$EXEC_ROOT/var/already-run" ]; then
-          touch "$EXEC_ROOT/var/already-run"
+        trap "umount /tmp/var" EXIT
+        if [ ! -f "/tmp/var/already-run" ]; then
+          touch "/tmp/var/already-run"
           exit 1
         fi
     - name: overlay

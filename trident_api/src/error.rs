@@ -400,8 +400,8 @@ pub enum ServicingError {
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
 
-    #[error("Failed to mount execroot")]
-    MountExecroot,
+    #[error("Failed to mount execroot binary")]
+    MountExecrootBinary,
 
     #[error("Failed to mount newroot")]
     MountNewroot,

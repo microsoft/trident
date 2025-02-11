@@ -5,8 +5,9 @@ set -eux
 
 # Only trigger rollback on the first run of the script. This is necessary so that we can test
 # whether Trident can re-run A/B update successfully with the same HC after a rollback.
-if [ ! -f "$EXEC_ROOT/var/already-run" ]; then
-    touch "$EXEC_ROOT/var/already-run"
+trap "umount /tmp/var" EXIT
+if [ ! -f "/tmp/var/already-run" ]; then
+    touch "/tmp/var/already-run"
 
     # Define the service file path
     SERVICE_NAME="one-time-reboot.service"

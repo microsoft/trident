@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    time::Instant,
-};
+use std::{path::PathBuf, time::Instant};
 
 use log::{debug, info, warn};
 #[cfg(feature = "grpc-dangerous")]
@@ -9,7 +6,7 @@ use tokio::sync::mpsc;
 
 use osutils::{block_devices, chroot, container, path::join_relative};
 use trident_api::{
-    constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+    constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH},
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -238,9 +235,7 @@ fn stage_update(
         debug!("Entering '{}' chroot", newroot_mount.path().display());
         let result = chroot::enter_update_chroot(newroot_mount.path())
             .message("Failed to enter chroot")?
-            .execute_and_exit(|| {
-                engine::configure(subsystems, &ctx, newroot_mount.execroot_relative_path())
-            });
+            .execute_and_exit(|| engine::configure(subsystems, &ctx));
 
         if let Err(original_error) = result {
             if let Err(e) = newroot_mount.unmount_all() {
@@ -251,7 +246,7 @@ fn stage_update(
 
         newroot_mount.unmount_all()?;
     } else {
-        engine::configure(subsystems, &ctx, Path::new(ROOT_MOUNT_POINT_PATH))?;
+        engine::configure(subsystems, &ctx)?;
     };
 
     // At this point, deployment has been staged, so update servicing state

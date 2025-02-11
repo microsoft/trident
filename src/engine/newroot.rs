@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fmt::Write,
+    fs,
     path::{Path, PathBuf},
     thread,
     time::Duration,
@@ -10,16 +10,10 @@ use anyhow::{bail, Context, Error};
 use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
-use osutils::{
-    container, files,
-    filesystems::MountFileSystemType,
-    findmnt::{FindMnt, MountpointMetadata},
-    lsblk, mount, path,
-};
+use osutils::{files, filesystems::MountFileSystemType, lsblk, mount, path};
 use trident_api::{
     config::{FileSystemType, HostConfiguration, InternalMountPoint},
     constants::{
-        internal_params::EXECROOT_DENYLIST_EXTENSION, EXEC_ROOT_PATH, MOUNT_OPTION_READ_ONLY,
         NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -27,33 +21,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-/// List of special directories that should not be bind mounted anywhere in the
-/// execroot.
-const PROHIBITED_EXECROOT_MOUNTS: [&str; 5] = [
-    // All devfs
-    "/dev",
-    // All procfs
-    "/proc",
-    // All sysfs
-    "/sys",
-    // Docker containers
-    "/var/lib/docker/vfs/dir",
-    // Everything under /run, fix for #8879 and #8926
-    "/run",
-];
-
-/// Filter function to prevent specific mount points from being bind mounted in
-/// the execroot.
-///
-/// Used in a call to
-/// `FindMnt::traverse_depth().into_iter().filter(execroot_filter)`
-///
-/// Should return `true` if the mount point should be bind mounted in the
-/// execroot.
-fn execroot_filter(mnt: &&MountpointMetadata) -> bool {
-    // Skip anything with docker in the name
-    !mnt.target.components().any(|c| c.as_os_str() == "docker")
-}
+use crate::{OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH};
 
 /// NewrootMount represents all the necessary mounting points for newroot and
 /// the nested execmount to exit the chroot jail. It is also responsible for
@@ -72,11 +40,6 @@ pub struct NewrootMount {
     /// E.g.: `/mnt/newroot`
     newroot_mount_path: PathBuf,
 
-    /// Absolute path in the host to execroot's mount point.
-    ///
-    /// E.g.: `/mnt/newroot/tmp/execroot`
-    execroot_mount_path: PathBuf,
-
     /// List of active mount points being managed by the NewrootMount object.
     mounts: Vec<PathBuf>,
 }
@@ -85,7 +48,6 @@ impl NewrootMount {
     /// Construct a simple NewrootMount object with the given newroot path.
     fn new(newroot_mount_path: PathBuf) -> Self {
         Self {
-            execroot_mount_path: path::join_relative(&newroot_mount_path, EXEC_ROOT_PATH),
             newroot_mount_path,
             mounts: Vec::new(),
         }
@@ -119,30 +81,21 @@ impl NewrootMount {
         newroot_mount.mount_tmpfs("/tmp")?;
         newroot_mount.mount_tmpfs("/run")?;
 
-        // PREVIEW-ONLY OVERRIDE
-        let execroot_deny_list_extension = if let Some(res) = host_config
-            .internal_params
-            .get_vec_string(EXECROOT_DENYLIST_EXTENSION)
-        {
-            let overrides = res.structured(InternalError::Internal(
-                "Failed to get execroot deny-list extension",
-            ))?;
+        if Path::new(OS_MODIFIER_BINARY_PATH).exists() {
+            // Bind mount the execroot binary to the newroot
+            debug!("Bind mounting osmodifier binary into newroot");
+            let mount_path = path::join_relative(newroot_mount.path(), OS_MODIFIER_NEWROOT_PATH);
 
-            let mut overrides_string = String::new();
-            for s in &overrides {
-                let _ = writeln!(overrides_string, "  - {s}");
-            }
-            warn!("PREVIEW ONLY: Extending execroot deny-list with:\n{overrides_string}");
+            fs::write(&mount_path, b"").structured(ServicingError::MountExecrootBinary)?;
 
-            overrides
+            MountBuilder::default()
+                .flags(MountFlags::BIND)
+                .mount(OS_MODIFIER_BINARY_PATH, &mount_path)
+                .structured(ServicingError::MountExecrootBinary)?;
+            newroot_mount.mounts.push(mount_path);
         } else {
-            Vec::new()
-        };
-
-        // Mount execroot on newroot
-        newroot_mount
-            .mount_execroot(execroot_deny_list_extension)
-            .structured(ServicingError::MountExecroot)?;
+            debug!("Skipping bind mount of osmodifier binary into newroot");
+        }
 
         Ok(newroot_mount)
     }
@@ -152,20 +105,6 @@ impl NewrootMount {
     /// E.g.: `/mnt/newroot`
     pub fn path(&self) -> &Path {
         &self.newroot_mount_path
-    }
-
-    /// Returns the absolute path in the host to execroot's mount point.
-    ///
-    /// E.g.: `/mnt/newroot/tmp/execroot`
-    pub fn execroot_path(&self) -> &Path {
-        &self.execroot_mount_path
-    }
-
-    /// Returns the absolute path of the execroot relative to newroot.
-    ///
-    /// E.g.: `/tmp/execroot`
-    pub fn execroot_relative_path(&self) -> &Path {
-        Path::new(EXEC_ROOT_PATH)
     }
 
     fn unmount_all_impl(&mut self) -> Result<(), TridentError> {
@@ -359,119 +298,6 @@ impl NewrootMount {
 
         Ok(())
     }
-
-    /// Create bind mount points to the local root filesystem & nested mounts
-    /// for the execroot inside newroot.
-    fn mount_execroot(&mut self, execroot_deny_list_extension: Vec<String>) -> Result<(), Error> {
-        debug!(
-            "Attempting to bind mount execroot to '{}'",
-            self.execroot_path().display()
-        );
-
-        std::fs::create_dir_all(self.execroot_path()).context(format!(
-            "Failed to create directory '{}' for execroot",
-            self.execroot_path().display()
-        ))?;
-
-        debug!("Mounting execroot to '{}'", self.execroot_path().display());
-
-        let mut mounts = FindMnt::run()
-            .context("Failed to get current mount points")?
-            .root()
-            .context("Failed to get root mount point")?;
-
-        // Remove anything mounted under newroot from the execroot mounts
-        mounts.prune_prefix(self.path());
-
-        // Generate a list of paths to deny-list from being bind mounted in the
-        // execroot.
-        let execroot_deny_list = PROHIBITED_EXECROOT_MOUNTS
-            .iter()
-            .map(|s| s.to_string())
-            .chain(execroot_deny_list_extension)
-            .collect::<Vec<_>>();
-
-        // Prune special directories from the execroot mounts
-        execroot_deny_list.iter().for_each(|deny_path| {
-            debug!(
-                "Blocking all mounts under '{}' from being bind mounted in execroot",
-                deny_path
-            );
-            mounts.prune_prefix(deny_path)
-        });
-
-        // If we are running in a container, we expect a bind mount to the
-        // container's host, generally `/host`. We must also prune the special
-        // directories from the host root path.
-        if container::is_running_in_container()
-            .unstructured("Failed to check if running in container")?
-        {
-            // Get the host root path, generally `/host`
-            let host =
-                container::get_host_root_path().unstructured("Failed to get host root path")?;
-
-            debug!(
-                "Running in a container, pruning special mounts under host root path '{}'",
-                host.display()
-            );
-
-            // Prune special directories from the host root path. (e.g. `/host/dev`)
-            execroot_deny_list.iter().for_each(|deny_path| {
-                let prune = path::join_relative(&host, deny_path);
-                debug!(
-                    "Blocking all mounts under '{}' from being bind mounted in execroot",
-                    prune.display()
-                );
-                mounts.prune_prefix(prune);
-            });
-        }
-
-        // Go over all remaining mounts to filter out anything else we don't want
-        // and bind mount the rest.
-        mounts
-            .traverse_depth()
-            .into_iter()
-            .filter(execroot_filter)
-            .try_for_each(|item| {
-                // The target for the bind mount is the path in the newroot
-                let target = path::join_relative(self.execroot_path(), &item.target);
-                // The source for the bind mount is the path in the host
-                let source = &item.target;
-
-                if item.is_unbindable() {
-                    warn!(
-                        "Skipping unbindable mount '{}' to '{}'",
-                        source.display(),
-                        target.display()
-                    );
-
-                    return Ok(());
-                }
-
-                // Check if the mount is read-only, if so, we need to bind mount
-                // it as read-only.
-                let flags = if item.options.contains(MOUNT_OPTION_READ_ONLY) {
-                    MountFlags::RDONLY
-                } else {
-                    MountFlags::empty()
-                };
-
-                do_bind_mount(source, &target, flags).with_context(|| {
-                    format!(
-                        "Failed to bind mount '{}' to '{}' in execroot. This is likely due to a \
-                        special directory that should not be bind mounted. Please send all of this \
-                        output to support :)\n{:#?}",
-                        source.display(),
-                        target.display(),
-                        item,
-                    )
-                })?;
-
-                self.add_mount(target);
-
-                Ok(())
-            })
-    }
 }
 
 impl Drop for NewrootMount {
@@ -636,16 +462,6 @@ mod tests {
         let newroot_mount = NewrootMount::new(newroot_path.to_owned());
 
         assert_eq!(newroot_mount.path(), newroot_path, "Newroot path mismatch");
-        assert_eq!(
-            newroot_mount.execroot_path(),
-            path::join_relative(newroot_path, EXEC_ROOT_PATH),
-            "Execroot path mismatch"
-        );
-        assert_eq!(
-            newroot_mount.execroot_relative_path(),
-            Path::new(EXEC_ROOT_PATH),
-            "Execroot relative path mismatch"
-        );
     }
 }
 
@@ -670,6 +486,7 @@ mod functional_test {
     use osutils::{
         dependencies::Dependency,
         filesystems::MkfsFileSystemType,
+        findmnt::FindMnt,
         hashing_reader::HashingReader256,
         image_streamer, mkfs, mountpoint,
         partition_types::DiscoverablePartitionType,

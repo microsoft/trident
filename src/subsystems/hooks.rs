@@ -121,17 +121,18 @@ impl Subsystem for HooksSubsystem {
             .post_provision
             .iter()
             .try_for_each(|script| {
-                self.run_script(script, ctx, mount_path, Path::new(ROOT_MOUNT_POINT_PATH))
-                    .structured(ServicingError::RunPostProvisionScript {
+                self.run_script(script, ctx, mount_path).structured(
+                    ServicingError::RunPostProvisionScript {
                         script_name: script.name.clone(),
-                    })
+                    },
+                )
             })?;
 
         Ok(())
     }
 
     #[tracing::instrument(name = "hooks_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext, exec_root: &Path) -> Result<(), TridentError> {
+    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if !ctx.spec.os.additional_files.is_empty() {
             debug!("Adding additional files");
         }
@@ -186,7 +187,7 @@ impl Subsystem for HooksSubsystem {
             .post_configure
             .iter()
             .try_for_each(|script| {
-                self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH), exec_root)
+                self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH))
                     .structured(ServicingError::RunPostConfigureScript {
                         script_name: script.name.clone(),
                     })
@@ -218,7 +219,6 @@ impl HooksSubsystem {
         script: &Script,
         ctx: &EngineContext,
         target_root: &Path,
-        exec_root: &Path,
     ) -> Result<(), Error> {
         if !script.should_run(ctx.servicing_type) {
             trace!(
@@ -273,9 +273,6 @@ impl HooksSubsystem {
         script_runner
             .env_vars
             .insert(OsStr::new("TARGET_ROOT"), target_root.as_os_str());
-        script_runner
-            .env_vars
-            .insert(OsStr::new("EXEC_ROOT"), exec_root.as_os_str());
         if let Some(ref phonehome_url) = ctx.spec.trident.phonehome {
             script_runner
                 .env_vars
@@ -311,15 +308,10 @@ impl HooksSubsystem {
             .pre_servicing
             .iter()
             .try_for_each(|script| {
-                self.run_script(
-                    script,
-                    ctx,
-                    Path::new(ROOT_MOUNT_POINT_PATH),
-                    Path::new(ROOT_MOUNT_POINT_PATH),
-                )
-                .structured(ServicingError::RunPreServicingScript {
-                    script_name: script.name.clone(),
-                })
+                self.run_script(script, ctx, Path::new(ROOT_MOUNT_POINT_PATH))
+                    .structured(ServicingError::RunPreServicingScript {
+                        script_name: script.name.clone(),
+                    })
             })?;
         Ok(())
     }
@@ -401,7 +393,6 @@ mod tests {
                     ..Default::default()
                 },
                 Path::new("/mnt/newroot"),
-                Path::new("/"),
             )
             .unwrap();
         assert!(test_dir.exists());
@@ -511,7 +502,6 @@ mod tests {
                     ..Default::default()
                 },
                 Path::new("/mnt/newroot"),
-                Path::new("/")
             )
             .is_err());
     }
@@ -533,7 +523,6 @@ mod tests {
                     ..Default::default()
                 },
                 Path::new("/mnt/newroot"),
-                Path::new("/")
             )
             .is_err());
     }
@@ -562,7 +551,6 @@ mod tests {
                     ..Default::default()
                 },
                 Path::new("/mnt/newroot"),
-                Path::new("/"),
             )
             .unwrap();
         assert!(!test_dir.exists());
@@ -591,7 +579,6 @@ mod tests {
                     ..Default::default()
                 },
                 Path::new("/mnt/newroot"),
-                Path::new("/"),
             )
             .unwrap();
         assert!(test_dir.exists(), "{}", test_dir.display());
@@ -680,13 +667,12 @@ mod tests {
     #[test]
     fn test_paths_set() {
         let target_root = tempfile::tempdir().unwrap();
-        let exec_root = tempfile::tempdir().unwrap();
 
         let script = Script {
             name: "test-script".into(),
             run_on: vec![ServicingTypeSelection::CleanInstall],
             interpreter: Some("/bin/bash".into()),
-            source: ScriptSource::Content("touch $TARGET_ROOT/a && touch $EXEC_ROOT/b".into()),
+            source: ScriptSource::Content("touch $TARGET_ROOT/a".into()),
             ..Default::default()
         };
         HooksSubsystem::default()
@@ -697,16 +683,13 @@ mod tests {
                     ..Default::default()
                 },
                 target_root.path(),
-                exec_root.path(),
             )
             .unwrap();
 
         assert!(target_root.path().join("a").exists());
-        assert!(exec_root.path().join("b").exists());
 
         // Cleanup
         target_root.close().unwrap();
-        exec_root.close().unwrap();
     }
 
     #[test]
@@ -732,9 +715,7 @@ mod tests {
             ..Default::default()
         };
         subsystem.prepare(&ctx).unwrap();
-        subsystem
-            .configure(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
-            .unwrap();
+        subsystem.configure(&ctx).unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
             fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
@@ -759,9 +740,7 @@ mod tests {
             ..Default::default()
         };
         subsystem.prepare(&ctx).unwrap();
-        subsystem
-            .configure(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
-            .unwrap();
+        subsystem.configure(&ctx).unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), test_content);
         assert_eq!(
             fs::metadata(&test_file).unwrap().permissions().mode() & 0o777,
@@ -787,9 +766,7 @@ mod tests {
             ..Default::default()
         };
         subsystem.prepare(&ctx).unwrap();
-        subsystem
-            .configure(&ctx, Path::new(ROOT_MOUNT_POINT_PATH))
-            .unwrap();
+        subsystem.configure(&ctx).unwrap();
         assert_eq!(fs::read_to_string(&test_file).unwrap(), "\u{2603}");
         assert_eq!(
             fs::metadata(&source_file).unwrap().permissions().mode() & 0o777,
