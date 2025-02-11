@@ -49,6 +49,9 @@ def update_trident_host_config(
         elif disk["id"] == "disk2":
             disk["device"] = "/dev/sdb"
 
+    internal_params = host_configuration.setdefault("internalParams", {})
+    internal_params["waitForSystemdNetworkd"] = True
+
     logging.info(
         "Final trident_yaml content post all the updates: %s", host_configuration
     )

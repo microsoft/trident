@@ -168,6 +168,9 @@ pub mod internal_params {
     /// Block trident from transitioning to the new OS after finalizing
     pub const NO_TRANSITION: &str = "noTransition";
 
+    /// Force trident to wait for systemd-networkd-wait-online
+    pub const WAIT_FOR_SYSTEMD_NETWORKD: &str = "waitForSystemdNetworkd";
+
     /// Allow configuration of orchestrator connection timeout
     pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: &str =
         "orchestratorConnectionTimeoutSeconds";

@@ -54,11 +54,11 @@ pub enum InitializationError {
     #[error("Failed to parse Host Status")]
     ParseHostStatus,
 
-    #[error("Failed to read '/proc/cmdline'")]
-    ReadCmdline,
-
     #[error("Failed to query for updates with Harpoon: {0}")]
     QueryForUpdates(String),
+
+    #[error("Failed to read '/proc/cmdline'")]
+    ReadCmdline,
 }
 
 /// Identifies errors that occur when the host is running from a docker container, but the system
@@ -120,6 +120,9 @@ pub enum InternalError {
 
     #[error("Failed to build storage graph: {0}")]
     RebuildStorageGraph(#[from] StorageGraphBuildError),
+
+    #[error("Failed to wait for 'systemd-networkd'")]
+    WaitForSystemdNetworkd,
 }
 
 /// Identifies errors that occur when the user provides an invalid input.

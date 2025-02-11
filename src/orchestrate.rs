@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
 /// Timeout in seconds for connecting to the orchestrator.
-pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: u16 = 20;
+pub const ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS: u16 = 60;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]

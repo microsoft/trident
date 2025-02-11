@@ -8,13 +8,15 @@ use log::{debug, error, info, warn};
 use nix::unistd::Uid;
 use tokio::sync::mpsc::{self};
 
-use osutils::{block_devices, container};
+use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
     config::{GrpcConfiguration, HostConfiguration, HostConfigurationSource, Operations},
     status::ServicingType,
 };
 use trident_api::{
-    constants::internal_params::ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
+    constants::internal_params::{
+        ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS, WAIT_FOR_SYSTEMD_NETWORKD,
+    },
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
@@ -114,7 +116,7 @@ impl Trident {
             .map(|source| Self::load_host_config(&source))
             .transpose()?;
 
-        let (phonehome_url, logstream_url, connection_timeout_param) =
+        let (phonehome_url, logstream_url, connection_timeout_param, wait_for_network) =
             if let Some(config) = &host_config {
                 (
                     config.trident.phonehome.clone(),
@@ -122,6 +124,7 @@ impl Trident {
                     config
                         .internal_params
                         .get_u16(ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS),
+                    config.internal_params.get_flag(WAIT_FOR_SYSTEMD_NETWORKD),
                 )
             } else if let Ok(datastore) = DataStore::open(datastore_path) {
                 let host_config = &datastore.host_status().spec;
@@ -131,10 +134,24 @@ impl Trident {
                     host_config
                         .internal_params
                         .get_u16(ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS),
+                    host_config
+                        .internal_params
+                        .get_flag(WAIT_FOR_SYSTEMD_NETWORKD),
                 )
             } else {
-                (None, None, None)
+                (None, None, None, false)
             };
+
+        if wait_for_network {
+            debug!("Waiting for systemd-networkd-wait-online");
+            Dependency::Systemctl
+                .cmd()
+                .arg("start")
+                .arg("systemd-networkd-wait-online")
+                .run_and_check()
+                .structured(InternalError::WaitForSystemdNetworkd)?;
+            debug!("Finished waiting for systemd-networkd-wait-online");
+        }
 
         let connection_timeout = if let Some(connection_timeout_result) = connection_timeout_param {
             match connection_timeout_result {
