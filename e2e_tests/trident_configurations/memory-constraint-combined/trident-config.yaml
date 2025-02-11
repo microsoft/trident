@@ -199,7 +199,8 @@ storage:
 scripts:
   preServicing:
     - name: rerun-trident-with-memory-limit
-      runOn: [all]
+      runOn:
+        - clean-install
       content: |
         systemctl status trident | grep Memory
         if [ ! -f "/run/already-run" ]; then
