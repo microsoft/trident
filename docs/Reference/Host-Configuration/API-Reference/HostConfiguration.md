@@ -10,6 +10,15 @@ HostConfiguration is the configuration for a host. Trident agent will use this t
 
 ## Properties
 
+### `image` (optional)
+
+Data about the image to deploy on the host, including sourcing and integrity information.
+
+| Characteristic | Value                   |
+| -------------- | ----------------------- |
+| Type           | `OsImage`               |
+| Link           | [OsImage](./OsImage.md) |
+
 ### `managementOs` (optional)
 
 OS Configuration for the management OS.

@@ -91,7 +91,7 @@ def update_osimage_url(runtime_env, destination_directory, host_config, version)
     host_directory = "/" if runtime_env == "host" else "/host/"
     destination_directory = destination_directory.strip("/")
 
-    old_url = host_config.get("osImage", {}).get("url", None)
+    old_url = host_config.get("image", {}).get("url", None)
     if old_url is None:
         raise Exception("No current osImage URL found in Host Configuration")
 
@@ -109,7 +109,7 @@ def update_osimage_url(runtime_env, destination_directory, host_config, version)
     )
 
     log.info(f"Updating OS image URL from {old_url} to {new_url}")
-    host_config["osImage"]["url"] = new_url
+    host_config["image"]["url"] = new_url
 
     # Remove selfUpgrade field from the Trident config
     host_config["trident"]["selfUpgrade"] = False

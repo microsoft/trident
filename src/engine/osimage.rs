@@ -4,7 +4,7 @@ use log::{debug, info};
 
 use osutils::arch::SystemArchitecture;
 use trident_api::{
-    config::{HostConfiguration, OsImage as ApiOsImage},
+    config::HostConfiguration,
     error::{InvalidInputError, ReportError, TridentError},
 };
 
@@ -25,18 +25,14 @@ pub(super) fn load_os_image(
         return Ok(None);
     }
 
-    let Some(os_image_source) = &host_config.os_image else {
+    let Some(os_image_source) = &host_config.image else {
         return Err(TridentError::new(InvalidInputError::MissingOsImage));
     };
 
-    let os_image = match os_image_source {
-        ApiOsImage::Cosi(cosi_file) => {
-            debug!("Loading COSI file '{}'", cosi_file.url);
-            OsImage::cosi(&cosi_file.url).structured(InvalidInputError::LoadCosi {
-                url: cosi_file.url.clone(),
-            })?
-        }
-    };
+    debug!("Loading COSI file '{}'", os_image_source.url);
+    let os_image = OsImage::cosi(&os_image_source.url).structured(InvalidInputError::LoadCosi {
+        url: os_image_source.url.clone(),
+    })?;
 
     info!(
         "Successfully loaded OS image of type '{}' from '{}'",

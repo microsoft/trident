@@ -1,6 +1,6 @@
-osImage:
-  type: cosi
+image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/verity.cosi
+  sha384: ignored
 storage:
   disks:
     - id: os

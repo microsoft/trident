@@ -6,9 +6,10 @@ use std::{
 
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace};
-use osutils::arch::SystemArchitecture;
 use tar::Archive;
 use url::Url;
+
+use osutils::arch::SystemArchitecture;
 
 mod metadata;
 mod reader;
@@ -324,7 +325,10 @@ fn populate_cosi_metadata_content_location(
 mod tests {
     use super::*;
 
-    use std::io::{Cursor, Write};
+    use std::{
+        io::{Cursor, Write},
+        str,
+    };
 
     use metadata::{Image, VerityMetadata};
     use sha2::{Digest, Sha384};

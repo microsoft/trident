@@ -4,6 +4,15 @@
   "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
   "type": "object",
   "properties": {
+    "image": {
+      "description": "Data about the image to deploy on the host, including sourcing and integrity information.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/OsImage"
+        }
+      ],
+      "nullable": true
+    },
     "managementOs": {
       "description": "OS Configuration for the management OS.\n\nThese settings are only applicable for clean install servicing. They are ignored on updates.",
       "allOf": [
@@ -549,6 +558,25 @@
         }
       ]
     },
+    "ImageSha384": {
+      "description": "Image SHA384 checksum.",
+      "oneOf": [
+        {
+          "title": "Ignored",
+          "description": "You can pass `ignored` to skip the checksum verification.",
+          "type": "string",
+          "enum": [
+            "ignored"
+          ]
+        },
+        {
+          "title": "Checksum",
+          "description": "The SHA384 checksum of the image.\n\n*Details:*\n\nThe Sha384Hash is a 96-character hexadecimal string.",
+          "type": "string",
+          "format": "[a-fA-F0-9]96"
+        }
+      ]
+    },
     "KernelCommandLine": {
       "description": "Additional kernel command line options to add to the image.",
       "type": "object",
@@ -734,6 +762,30 @@
           "items": {
             "$ref": "#/definitions/User"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "OsImage": {
+      "description": "Data about the image to deploy on the host, including sourcing and integrity information.\n\nCurrently, the only format supported by Trident is Composable OS Image (COSI). COSI files can be generated with PRISM.",
+      "type": "object",
+      "required": [
+        "sha384",
+        "url"
+      ],
+      "properties": {
+        "sha384": {
+          "description": "The Sha384 of the entire COSI file.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ImageSha384"
+            }
+          ]
+        },
+        "url": {
+          "description": "The path to the COSI file.",
+          "type": "string",
+          "format": "uri"
         }
       },
       "additionalProperties": false

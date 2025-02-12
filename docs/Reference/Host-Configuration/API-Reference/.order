@@ -13,12 +13,14 @@ FileSystemType
 Image
 ImageFormat
 ImageSha256
+ImageSha384
 KernelCommandLine
 LoadMode
 ManagementOs
 Module
 MountPoint
 Os
+OsImage
 Partition
 PartitionSize
 PartitionTableType

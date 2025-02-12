@@ -4,7 +4,7 @@ pub(crate) mod local;
 pub use host::{
     error::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
     harpoon::{HarpoonConfig, HarpoonIdSource},
-    image::{CosiFile, OsImage},
+    image::{ImageSha384, OsImage},
     os::{
         additional_files::AdditionalFile,
         modules::{LoadMode, Module},

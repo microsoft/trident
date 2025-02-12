@@ -67,10 +67,10 @@ pub struct HostConfiguration {
     #[cfg_attr(feature = "schemars", schemars(skip))]
     pub internal_params: InternalParams,
 
-    /// OS Image
-    #[serde(default, skip_serializing_if = "is_default")]
-    #[cfg_attr(feature = "schemars", schemars(skip))]
-    pub os_image: Option<OsImage>,
+    /// Data about the image to deploy on the host, including sourcing and
+    /// integrity information.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<OsImage>,
 }
 
 impl HostConfiguration {
@@ -81,7 +81,7 @@ impl HostConfiguration {
             .filesystems
             .iter()
             .any(|fs| fs.source.is_old_api())
-            && self.os_image.is_some()
+            && self.image.is_some()
         {
             return Err(HostConfigurationStaticValidationError::ImageApiMixed);
         }

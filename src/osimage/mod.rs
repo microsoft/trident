@@ -34,7 +34,7 @@ enum OsImageInner {
 }
 
 impl OsImage {
-    pub(crate) fn cosi(url: &Url) -> Result<Self, anyhow::Error> {
+    pub(crate) fn cosi(url: &Url) -> Result<Self, Error> {
         Ok(Self(OsImageInner::Cosi(Cosi::new(url)?)))
     }
 

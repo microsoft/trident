@@ -47,7 +47,7 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
 
     debug!("Checking OS image to determine if an A/B update is required");
     // Otherwise, continue checking OS images
-    match (&ctx.spec_old.os_image, &ctx.spec.os_image) {
+    match (&ctx.spec_old.image, &ctx.spec.image) {
         // If OS image is not requested in the new spec, no update is needed.
         (None, None) => Ok(false),
         // Return an error if the old spec didn't request an OS image but the new spec does.
@@ -58,7 +58,7 @@ pub(super) fn ab_update_required(ctx: &EngineContext) -> Result<bool, TridentErr
             )))
         }
         // If OS image is requested in both specs, compare the URLs.
-        (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.url() != new_os_image.url()),
+        (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.url != new_os_image.url),
         (Some(_), None) => {
             // Return an error if the old spec requests an OS image but the new spec does not.
             Err(TridentError::new(InvalidInputError::from(
@@ -156,9 +156,10 @@ mod tests {
 
     use trident_api::{
         config::{
-            AbUpdate, AbVolumePair, CosiFile, Disk, FileSystem, FileSystemSource, FileSystemType,
-            HostConfiguration, Image, ImageFormat, ImageSha256, MountOptions, MountPoint,
-            OsImage as OsImageConfig, Partition, PartitionType, Storage as StorageConfig,
+            AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, FileSystemType,
+            HostConfiguration, Image, ImageFormat, ImageSha256, ImageSha384, MountOptions,
+            MountPoint, OsImage as OsImageConfig, Partition, PartitionType,
+            Storage as StorageConfig,
         },
         error::ErrorKind,
         status::{AbVolumeSelection, ServicingType},
@@ -604,9 +605,10 @@ mod tests {
 
         // Initialize a Host Configuration with COSI enabled and OS image provided
         let hc_os_image = HostConfiguration {
-            os_image: Some(OsImageConfig::Cosi(CosiFile {
+            image: Some(OsImageConfig {
                 url: Url::parse("http://example.com/osimage").unwrap(),
-            })),
+                sha384: ImageSha384::Ignored,
+            }),
             storage: StorageConfig {
                 disks: vec![Disk {
                     id: "os".to_owned(),
@@ -754,9 +756,10 @@ mod tests {
         // Test case #4: If OS image has changed, return true.
         let mut hc_os_image_updated = hc_os_image.clone();
         // Update OS image URL
-        hc_os_image_updated.os_image = Some(OsImageConfig::Cosi(CosiFile {
+        hc_os_image_updated.image = Some(OsImageConfig {
             url: Url::parse("http://example.com/osimage_2").unwrap(),
-        }));
+            sha384: ImageSha384::Ignored,
+        });
         ctx.spec = hc_os_image_updated;
         assert!(ab_update_required(&ctx).unwrap());
     }

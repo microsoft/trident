@@ -449,8 +449,8 @@ fn get_entry_number(entry_label: &str) -> Result<String, TridentError> {
 fn get_esp_device_id(ctx: &EngineContext) -> Result<BlockDeviceId, Error> {
     Ok(
         // We need to check for the OS Image manually because the COSI image is
-        // not re-read for finalize, so ctx.os_image is None.
-        if ctx.spec.os_image.is_some() {
+        // not re-read for finalize, so ctx.image is None.
+        if ctx.spec.image.is_some() {
             // There is an OS Image, therefore the only means we have to identify the ESP is through
             // the mount point.
             trace!("Using ESP mount point to identify ESP device ID");
